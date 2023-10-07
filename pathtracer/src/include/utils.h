@@ -15,5 +15,14 @@
 #define GLOBAL
 #endif
 
+#ifdef __INTELLISENSE__
+#define KERN_PARAM(x,y)
+#define __syncthreads()
+#else
+#define KERN_PARAM(x,y) <<< x,y >>>
+#endif
 
-#define DIV_UP(x, y) (((x) + (y) - 1) / (y))
+template<typename T>
+constexpr T div_up(T x, T y) {
+    return (x + y - 1) / y;
+}

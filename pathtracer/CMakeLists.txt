@@ -6,14 +6,15 @@ set(exec_name "pathtracer")
 #GLOB source files 
 file(GLOB_RECURSE src_files 
 	${CMAKE_CURRENT_SOURCE_DIR}/include/*.*
-	${CMAKE_CURRENT_SOURCE_DIR}/src/*.*)
+	${CMAKE_CURRENT_SOURCE_DIR}/src/include/*.*
+)
 
 #Dependency
 find_package(Thrust REQUIRED CONFIG)
 thrust_create_target(Thrust)
 
 #Executable
-add_executable(${exec_name} ${src_files})
+cuda_add_executable(${exec_name} ${src_files})
 set_property(TARGET ${exec_name} PROPERTY 
 	CUDA_SEPARABLE_COMPILATION ON)
 
@@ -22,4 +23,3 @@ target_link_libraries( ${exec_name}
 	$<BUILD_INTERFACE:developer_flags>
 	Thrust
 )
-

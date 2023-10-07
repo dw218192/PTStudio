@@ -6,8 +6,8 @@
 
 #include <iostream>
 
-#include "../include/utils.h"
-#include "../include/helpers.cuh"
+#include "include/utils.h"
+#include "include/helpers.cuh"
 
 GLOBAL void incrementKernel(int* d_array, int arraySize) {
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -21,9 +21,11 @@ int main() {
 	v.assign(vh.begin(), vh.end());
 	thrust::sort(thrust::device, v.begin(), v.end());
 
-	dim3 grid_dim (DIV_UP(v.size(), 8), DIV_UP(v.size(), 8));
+	dim3 grid_dim (div_up(v.size(), static_cast<size_t>(8)), div_up(v.size(), static_cast<size_t>(8)));
 	dim3 block_dim (8, 8);
-	incrementKernel<<<grid_dim, block_dim >>>(thrust::raw_pointer_cast(v.data()), v.size());
+
+	incrementKernel KERN_PARAM(grid_dim, block_dim)
+		(thrust::raw_pointer_cast(v.data()), v.size());
 
 	thrust::copy(v.begin(), v.end(), vh.begin());
 	for(size_t i=0; i<vh.size(); ++i) {

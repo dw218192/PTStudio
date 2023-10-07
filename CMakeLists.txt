@@ -63,4 +63,48 @@ target_compile_features(developer_flags INTERFACE cxx_std_17)
 
 enable_testing()
 
+set(EXT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ext")
+
+# OpenGL and common stuff
+add_definitions(-DGLEW_STATIC)
+add_subdirectory(${EXT_DIR}/glfw EXCLUDE_FROM_ALL)
+add_subdirectory(${EXT_DIR}/glew-cmake EXCLUDE_FROM_ALL)
+add_subdirectory(${EXT_DIR}/glm EXCLUDE_FROM_ALL)
+add_subdirectory(${EXT_DIR}/tinyobjloader EXCLUDE_FROM_ALL)
+add_subdirectory(${EXT_DIR}/stb EXCLUDE_FROM_ALL)
+
+# Manually add imgui
+add_library(imgui STATIC
+    ${EXT_DIR}/imgui/imgui.cpp
+    ${EXT_DIR}/imgui/imgui_draw.cpp
+    ${EXT_DIR}/imgui/imgui_widgets.cpp
+    ${EXT_DIR}/imgui/imgui_demo.cpp
+    ${EXT_DIR}/imgui/imgui_tables.cpp
+)
+# add windows, linux and mac specific files
+# use glfw as backend
+file(GLOB IMGUI_BACKEND_SOURCES
+    ${EXT_DIR}/imgui/backends/imgui_impl_glfw.*
+    ${EXT_DIR}/imgui/backends/imgui_impl_opengl3.*
+    ${EXT_DIR}/imgui/backends/imgui_impl_win32.*
+)
+target_sources(imgui 
+    PRIVATE
+        ${IMGUI_BACKEND_SOURCES}
+)
+target_include_directories(imgui
+    PUBLIC
+        ${EXT_DIR}/imgui
+        ${EXT_DIR}/imgui/backends
+)
+target_link_libraries(imgui
+    PRIVATE
+        glfw
+)
+
+# add subprojects
+add_subdirectory(editor)
 add_subdirectory(pathtracer)
+
+# set editor as the start-up project
+set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT editor)
