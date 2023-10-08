@@ -2,9 +2,9 @@
 #include "include/ext.h"
 #include "include/shader.h"
 
-auto RenderResult::init(unsigned width, unsigned height) noexcept -> Result<void> {
+auto RenderResult::init(unsigned width, unsigned height) noexcept -> tl::expected<void, std::string> {
     if(m_fbo) {
-        return std::string{ "reinitialization is not supported"};
+        return tl::unexpected{ "reinitialization is not supported"};
     }
 
     GLuint fbo, rbo, tex;
@@ -27,7 +27,7 @@ auto RenderResult::init(unsigned width, unsigned height) noexcept -> Result<void
 
         err = glGetError();
         if (err != GL_NO_ERROR) {
-            return GLErrorResult<void>(err);
+            return unexpected_gl_error(err);
         }
 
         // create tex to render to
@@ -42,7 +42,7 @@ auto RenderResult::init(unsigned width, unsigned height) noexcept -> Result<void
 
             err = glGetError();
             if (err != GL_NO_ERROR) {
-                return GLErrorResult<void>(err);
+                return unexpected_gl_error(err);
             }
 
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -54,11 +54,11 @@ auto RenderResult::init(unsigned width, unsigned height) noexcept -> Result<void
 
             err = glGetError();
             if (err != GL_NO_ERROR) {
-                return GLErrorResult<void>(err);
+                return unexpected_gl_error(err);
             }
 
             if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-                return std::string{ "frame buffer is not valid" };
+                return tl::unexpected { "frame buffer is not valid" };
             }
         }
         glBindTexture(GL_TEXTURE_2D, 0);
@@ -73,7 +73,7 @@ auto RenderResult::init(unsigned width, unsigned height) noexcept -> Result<void
     m_fbo = fbo;
     m_depth_rbo = rbo;
     m_tex = tex;
-    return Result<void>::ok();
+    return {};
 }
 
 void RenderResult::save(FileFormat fmt, std::string_view file_path) const noexcept {
@@ -96,14 +96,12 @@ void RenderResult::save(FileFormat fmt, std::string_view file_path) const noexce
     }
 }
 
-auto RenderResult::upload_to_frame_buffer() const noexcept -> Result<void> {
+auto RenderResult::upload_to_frame_buffer() const noexcept -> tl::expected<void, std::string> {
     static ShaderProgram program;
     static GLuint quad_vbo;
+
     if(!program.valid()) {
 	    // first time init
-        Shader tex_vs{ ShaderType::Vertex };
-        Shader tex_ps{ ShaderType::Fragment };
-
     	static constexpr float quad_data[] = {
 		    -1.0, -1.0, 0.0,
 		    1.0, -1.0, 0.0,
@@ -112,29 +110,35 @@ auto RenderResult::upload_to_frame_buffer() const noexcept -> Result<void> {
 		    1.0, -1.0, 0.0,
 		    1.0,  1.0, 0.0,
         };
-        auto res = tex_vs.from_src("\
+        auto vs_res = Shader::from_src(
+			ShaderType::Vertex,
+        "\
 	        #version 330 core\n\
 	        layout (location = 0) in vec3 aPos;\n\
 			out vec2 uv; \n\
 	        void main() {\n\
 	            gl_Position = vec4(aPos.x, aPos.y, aPos.z, 1.0);\n\
 				uv = 0.5 * gl_Position.xy + vec2(0.5); \n\
-	        }\n\
-	    ");
-        if(!res.valid()) {
-            return res;
+	        }\n"
+	    );
+        if(!vs_res) {
+            return tl::unexpected{ vs_res.error() };
         }
-        res = tex_ps.from_src("\
+
+
+        auto ps_res = Shader::from_src(
+            ShaderType::Fragment,
+        "\
 	        #version 420 core\n\
 	        in vec2 uv;\n\
 			layout(binding=0) uniform sampler2D tex;\n\
 			out vec4 color; \n\
 	        void main() {\n\
 	            color = texture(tex, uv);\n\
-	        }\n\
-	    ");
-        if(!res.valid()) {
-            return res;
+	        }\n"
+		);
+        if (!ps_res) {
+            return tl::unexpected{ ps_res.error() };
         }
 
         glGenBuffers(1, &quad_vbo);
@@ -142,10 +146,12 @@ auto RenderResult::upload_to_frame_buffer() const noexcept -> Result<void> {
         glBufferData(GL_ARRAY_BUFFER, sizeof(quad_data), quad_data, GL_STATIC_DRAW);
         glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-        res = program.from_shaders(std::move(tex_vs), std::move(tex_ps));
-        if(!res.valid()) {
-            return res;
+        auto res = ShaderProgram::from_shaders(std::move(vs_res.value()), std::move(ps_res.value()));
+        if(!res) {
+            return tl::unexpected{ res.error() };
         }
+
+        program = std::move(res.value());
     }
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -154,7 +160,7 @@ auto RenderResult::upload_to_frame_buffer() const noexcept -> Result<void> {
 	glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, m_tex);
     if (auto const err = glGetError(); err != GL_NO_ERROR) {
-        return GLErrorResult<void>(err);
+        return unexpected_gl_error(err);
     }
 
     // draw the rendered texture onto a quad
@@ -164,17 +170,17 @@ auto RenderResult::upload_to_frame_buffer() const noexcept -> Result<void> {
         {
             glDrawArrays(GL_TRIANGLES, 0, 2);
             if (auto const err = glGetError(); err != GL_NO_ERROR) {
-                return GLErrorResult<void>(err);
+                return unexpected_gl_error(err);
             }
         }
         glBindBuffer(GL_ARRAY_BUFFER, 0);
     }
     program.unuse();
     if (auto const err = glGetError(); err != GL_NO_ERROR) {
-        return GLErrorResult<void>(err);
+        return unexpected_gl_error(err);
     }
 
-    return Result<void>::ok();
+    return {};
 }
 
 void RenderResult::prepare() const noexcept {

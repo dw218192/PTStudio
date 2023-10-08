@@ -1,10 +1,12 @@
 #pragma once
-#include "result.h"
 #include "commands.h"
 #include "renderResult.h"
 #include "scene.h"
 #include "camera.h"
 #include <vector>
+#include <tl/expected.hpp>
+
+using RenderResultRef = std::reference_wrapper<RenderResult>;
 
 struct RenderConfig {
 	RenderConfig(unsigned width, unsigned height, float fovy, float max_fps)
@@ -45,21 +47,21 @@ struct Renderer {
 	 * \return on failure, a Result object that contains an error message\n
 	 * on success, an empty Result object.
 	 */
-	[[nodiscard]] auto open_scene(Scene scene) noexcept -> Result<void>;
+	[[nodiscard]] auto open_scene(Scene scene) noexcept -> tl::expected<void, std::string>;
     /**
      * \brief Executes a command.
      * \param cmd The command to be executed
      * \return on failure, a Result object that contains an error message\n
      * on success, an empty Result object.
      */
-    [[nodiscard]] auto exec(Cmd const& cmd) noexcept -> Result<void>;
+    [[nodiscard]] auto exec(Cmd const& cmd) noexcept -> tl::expected<void, std::string>;
     /**
      * \brief Renders the scene. Note that if you call this function outside of Application::loop(),\n
      * you will need to poll events, call glClear(), and swap buffers yourself.
      * \return on failure, a Result object that contains an error message\n
      * on success, a Result object that contains a handle to the rendered image.
      */
-    [[nodiscard]] auto render() noexcept -> Result<RenderResult const&>;
+    [[nodiscard]] auto render() noexcept -> tl::expected<RenderResultRef, std::string>;
 
     /**
      * \brief Checks if the renderer has a valid scene opened.

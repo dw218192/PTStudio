@@ -9,7 +9,6 @@ file(GLOB_RECURSE src_files
 	${CMAKE_CURRENT_SOURCE_DIR}/src/include/*.*
 )
 
-
 #Executable
 add_executable(${exec_name} ${src_files})
 
@@ -22,4 +21,5 @@ target_link_libraries(${exec_name}
 	tinyobjloader
 	stb
 	imgui
+	expected
 )

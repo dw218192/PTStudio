@@ -4,7 +4,7 @@
 #include <string>
 #include <string_view>
 
-#include "result.h"
+#include <tl/expected.hpp>
 #include "ext.h"
 
 constexpr char const* ps_unicolor_src =
@@ -77,10 +77,16 @@ enum class ShaderType {
     Fragment
 };
 
+using ShaderProgramRef = std::reference_wrapper<struct ShaderProgram>;
+
 struct Shader {
     friend struct ShaderProgram;
-    explicit Shader(ShaderType type) noexcept;
-    ~Shader() noexcept;
+
+    [[nodiscard]] static auto from_file(ShaderType type, std::string_view file) noexcept -> tl::expected<Shader, std::string>;
+    [[nodiscard]] static auto from_src(ShaderType type, std::string_view src) noexcept -> tl::expected<Shader, std::string>;
+
+    Shader() = default;
+	~Shader() noexcept;
 
     Shader(Shader&&) noexcept;
     Shader& operator=(Shader&&) noexcept;
@@ -89,18 +95,19 @@ struct Shader {
     Shader(Shader&) = delete;
     Shader& operator=(Shader&) = delete;
 
-    [[nodiscard]] auto from_file(std::string_view file) noexcept -> Result<void>;
-    [[nodiscard]] auto from_src(std::string_view src) noexcept -> Result<void>;
+
     [[nodiscard]] auto valid() const noexcept -> bool { return m_handle != 0; }
 
 private:
-    Shader() noexcept : m_type{0}, m_handle(0) { }
+    Shader(ShaderType type) noexcept;
     GLenum m_type;
     GLuint m_handle;
 };
 
 struct ShaderProgram {
-    ShaderProgram() noexcept : m_handle(0) { }
+    [[nodiscard]] static auto from_shaders(Shader&& vs, Shader&& ps) noexcept -> tl::expected<ShaderProgram, std::string>;
+
+    ShaderProgram() = default;
     ~ShaderProgram() noexcept;
 
     ShaderProgram(ShaderProgram&&) noexcept;
@@ -110,15 +117,16 @@ struct ShaderProgram {
     ShaderProgram(ShaderProgram&) = delete;
     ShaderProgram& operator=(ShaderProgram&) = delete;
 
-    [[nodiscard]] auto from_shaders(Shader&& vs, Shader&& ps) noexcept -> Result<void>;
-    [[nodiscard]] auto set_uniform(std::string_view name, glm::mat4 const& value) const noexcept -> Result<void>;
-    [[nodiscard]] auto set_uniform(std::string_view name, glm::vec3 const& value) const noexcept -> Result<void>;
+    [[nodiscard]] auto set_uniform(std::string_view name, glm::mat4 const& value) const noexcept -> tl::expected<void, std::string>;
+    [[nodiscard]] auto set_uniform(std::string_view name, glm::vec3 const& value) const noexcept -> tl::expected<void, std::string>;
     
     [[nodiscard]] auto valid() const noexcept { return m_handle != 0; }
 
     void use() const noexcept;
     void unuse() const noexcept;
 private:
+    ShaderProgram(Shader&& vs, Shader&& ps) noexcept : m_handle(0), m_vs{ std::move(vs) }, m_ps{ std::move(ps) } { }
+
     GLuint m_handle;
     Shader m_vs;
     Shader m_ps;

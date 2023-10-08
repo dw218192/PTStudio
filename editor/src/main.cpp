@@ -8,7 +8,10 @@ constexpr float k_init_zoom_sensitivity = 10.0;
 
 struct TestApp : public Application {
 	TestApp(RenderConfig const& config, std::string_view const& name)
-		: Application{config, name} {}
+		: Application{config, name} {
+        auto scene = check_error(Scene::from_obj_file("C:/Users/tongw/Dropbox/repos/PTStudio/_files/ada.obj"));
+        check_error(get_renderer().open_scene(scene));
+	}
 
 	void cursor_moved(double x, double y) override;
 	void mouse_clicked(int button, int action, int mods) override;
@@ -63,11 +66,7 @@ void TestApp::cursor_moved(double x, double y) {
             };
         }
 
-        auto const res = get_renderer().exec(cmd);
-        if (!res.valid()) {
-            std::cerr << res.error() << std::endl;
-            return;
-        }
+        check_error(get_renderer().exec(cmd));
     }
     else {
         first_time_motion = false;
@@ -117,7 +116,7 @@ void TestApp::loop() {
         return;
     }
     auto&& render_res = check_error(get_renderer().render());
-    check_error(render_res.upload_to_frame_buffer());
+    check_error(render_res.get().upload_to_frame_buffer());
 }
 
 int main() {

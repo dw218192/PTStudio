@@ -19,7 +19,7 @@ Renderer::~Renderer() noexcept {
     }
 }
 
-auto Renderer::exec(Cmd const& cmd) noexcept -> Result<void> {
+auto Renderer::exec(Cmd const& cmd) noexcept -> tl::expected<void, std::string> {
     struct Handler {
         Handler (Renderer& rend) : rend(rend) { }
         void operator()(Cmd_CameraRot const& rot) const {
@@ -37,10 +37,10 @@ auto Renderer::exec(Cmd const& cmd) noexcept -> Result<void> {
     if(valid()) {
         std::visit(handler, cmd);
     }
-    return Result<void>::ok();
+    return {};
 }
 
-auto Renderer::open_scene(Scene scene) noexcept -> Result<void> {
+auto Renderer::open_scene(Scene scene) noexcept -> tl::expected<void, std::string> {
     GLenum err;
     auto roll_back = [this]() {
         if (m_vao) glDeleteVertexArrays(1, &m_vao);
@@ -52,7 +52,7 @@ auto Renderer::open_scene(Scene scene) noexcept -> Result<void> {
 	err = glGetError();\
 	if(err != GL_NO_ERROR) {\
 		roll_back();\
-		return GLErrorResult<void>(err);\
+		return unexpected_gl_error(err);\
 	} } while(false)
 
     if(!valid()) {
@@ -63,8 +63,8 @@ auto Renderer::open_scene(Scene scene) noexcept -> Result<void> {
         glGenBuffers(1, m_buffer_handles.data());
 
         auto const res = m_res.init(m_config.width, m_config.height);
-        if(!res.valid()) {
-            return res.error();
+        if(!res) {
+            return tl::unexpected{ res.error() };
         }
         CHECK_GL();
     }
@@ -119,27 +119,27 @@ auto Renderer::open_scene(Scene scene) noexcept -> Result<void> {
     // Set up camera position so it has a good view of the object
     m_cam.set_transform(m_scene.get_good_cam_start());
 
-    return Result<void>::ok();
+    return {};
 
 #undef CHECK_GL
 }
 
-auto Renderer::render() noexcept -> Result<RenderResult const&> {
+auto Renderer::render() noexcept -> tl::expected<RenderResultRef, std::string> {
     if(!valid()) {
-        return std::string { "render() called on invalid renderer" };
+        return tl::unexpected { "render() called on invalid renderer" };
     }
 
     auto res = m_scene.begin_draw();
-    if (!res.valid()) {
-        return res.error();
+    if (!res) {
+        return tl::unexpected{ res.error() };
     }
 
 	for (size_t i = 0, vbo_offset = 0; i < m_scene.objects().size(); ++i) {
         auto&& obj = m_scene.objects()[i];
 
         res = obj.begin_draw(m_cam);
-        if (!res.valid()) {
-            return res.error();
+        if (!res) {
+            return tl::unexpected{ res.error() };
         }
         glDrawArrays(GL_TRIANGLES,
             static_cast<GLint>(vbo_offset),
@@ -152,7 +152,7 @@ auto Renderer::render() noexcept -> Result<RenderResult const&> {
     // check for errors
     auto const err = glGetError();
     if (err != GL_NO_ERROR) {
-        return GLErrorResult<RenderResult const&>(err);
+        return tl::unexpected{ reinterpret_cast<char const*>(glewGetErrorString(err)) };
     }
 
     return m_res;

@@ -3,12 +3,11 @@
 
 #include <iostream>
 
-Object::Object(ShaderProgram const& shader, Transform transform) 
-    : m_transform{std::move(transform)}, m_program{&shader} 
-{ }
+Object::Object(ShaderProgramRef shader_prog) : m_bound{}, m_shader_prog{shader_prog} { }
 
-auto Object::from_obj(std::string_view filename) noexcept -> Result<void> {
-    m_vertices.clear();
+auto Object::from_obj(ShaderProgramRef shader_prog, std::string_view filename) noexcept -> tl::expected<Object, std::string> {
+    Object ret{ shader_prog };
+	ret.m_vertices.clear();
 
     tinyobj::ObjReaderConfig config;
     config.mtl_search_path = "./";
@@ -16,10 +15,10 @@ auto Object::from_obj(std::string_view filename) noexcept -> Result<void> {
     tinyobj::ObjReader reader;
     if (!reader.ParseFromFile(filename.data(), config)) {
         if (!reader.Error().empty()) {
-            return "Tiny Obj Error:\n" + reader.Error();
+            return tl::unexpected{ "Tiny Obj Error:\n" + reader.Error() };
         }
         else {
-            return std::string{ "Unknown Tiny Obj Error" };
+            return tl::unexpected{ "Unknown Tiny Obj Error" };
         }
     }
 
@@ -69,7 +68,7 @@ auto Object::from_obj(std::string_view filename) noexcept -> Result<void> {
                 }
 
 
-                m_vertices.emplace_back(vertex);
+                ret.m_vertices.emplace_back(vertex);
                 min_pos = glm::min(vertex.position, min_pos);
                 max_pos = glm::max(vertex.position, max_pos);
             }
@@ -78,52 +77,56 @@ auto Object::from_obj(std::string_view filename) noexcept -> Result<void> {
 
     if(infer_normal) {
         // clear all normals
-        for (auto& v : m_vertices) {
+        for (auto& v : ret.m_vertices) {
             v.normal = glm::vec3{ 0 };
         }
-        for (size_t i = 2; i < m_vertices.size(); i += 3) {
+        for (size_t i = 2; i < ret.m_vertices.size(); i += 3) {
             glm::vec3 normal = glm::cross(
-                m_vertices[i - 1].position - m_vertices[i - 2].position,
-                m_vertices[i - 0].position - m_vertices[i - 2].position
+                ret.m_vertices[i - 1].position - ret.m_vertices[i - 2].position,
+                ret.m_vertices[i - 0].position - ret.m_vertices[i - 2].position
             );
-            m_vertices[i - 2].normal += normal;
-            m_vertices[i - 1].normal += normal;
-            m_vertices[i].normal += normal;
+            ret.m_vertices[i - 2].normal += normal;
+            ret.m_vertices[i - 1].normal += normal;
+            ret.m_vertices[i].normal += normal;
         }
-        for (auto& v : m_vertices) {
+        for (auto& v : ret.m_vertices) {
             v.normal = glm::normalize(v.normal);
         }
     }
 
-    m_bound = { min_pos, max_pos };
-    return Result<void>::ok();
+    ret.m_bound = { min_pos, max_pos };
+    return ret;
 }
 
 // TODO: if we want to support multi-shader, this should be moved to the ShaderProgram class
-auto Object::begin_draw(Camera const& cam) const noexcept -> Result<void> {
-    m_program->use();
-    auto res = m_program->set_uniform(k_uniform_model, m_transform.get_matrix());
-    if (!res.valid()) {
+auto Object::begin_draw(Camera const& cam) const noexcept -> tl::expected<void, std::string> {
+    auto& prog = m_shader_prog.get();
+
+    prog.use();
+    auto res = prog.set_uniform(k_uniform_model, m_transform.get_matrix());
+    if (!res) {
         return res;
     }
-    res = m_program->set_uniform(k_uniform_view, cam.get_transform().get_matrix());
-    if (!res.valid()) {
+    res = prog.set_uniform(k_uniform_view, cam.get_transform().get_matrix());
+    if (!res) {
         return res;
     }
-    res = m_program->set_uniform(k_uniform_projection, cam.get_projection());
-    if (!res.valid()) {
+    res = prog.set_uniform(k_uniform_projection, cam.get_projection());
+    if (!res) {
         return res;
     }
 
-    return Result<void>::ok();
+    return {};
 }
 
 void Object::end_draw() const noexcept {
-    m_program->unuse();
+    m_shader_prog.get().unuse();
 }
 
-auto Object::make_triangle_obj(ShaderProgram const& shader, Transform const& trans) noexcept -> Object {
-    Object obj{ shader, trans };
+auto Object::make_triangle_obj(ShaderProgramRef shader, Transform const& trans) noexcept -> Object {
+    Object obj{ shader };
+    obj.m_transform = trans;
+
 	obj.m_vertices = {
 	    Vertex{ glm::vec3{ -0.5, -0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 0, 0 } },
 	    Vertex{ glm::vec3{ 0.5, -0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 1, 0 } },

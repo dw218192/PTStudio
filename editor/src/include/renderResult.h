@@ -1,7 +1,8 @@
 #pragma once
+#include <string>
 #include <GL/glew.h>
 #include <vector>
-#include "result.h"
+#include <tl/expected.hpp>
 
 enum class FileFormat {
     PNG,
@@ -22,7 +23,7 @@ struct RenderResult {
     RenderResult& operator=(RenderResult&) = delete;
     RenderResult& operator=(RenderResult&&) = delete;
 
-    [[nodiscard]] auto init(unsigned width, unsigned height) noexcept -> Result<void>;
+    [[nodiscard]] auto init(unsigned width, unsigned height) noexcept -> tl::expected<void, std::string>;
     [[nodiscard]] auto get_pixels() const noexcept -> std::vector<unsigned char> const& {
         return m_pixels;
     }
@@ -52,7 +53,7 @@ struct RenderResult {
      * \return on failure, a Result object that contains an error message\n
      * on success, an empty Result object.
     */
-    auto upload_to_frame_buffer() const noexcept -> Result<void>;
+    auto upload_to_frame_buffer() const noexcept -> tl::expected<void, std::string>;
 private:
     void prepare() const noexcept;
     void update() noexcept;

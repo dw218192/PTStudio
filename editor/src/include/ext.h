@@ -19,3 +19,9 @@
 #else
 #error "Unsupported platform"
 #endif
+
+#include <tl/expected.hpp>
+
+inline tl::unexpected<char const*> unexpected_gl_error(GLenum err) {
+	return tl::unexpected{ reinterpret_cast<char const*>(glewGetErrorString(err)) };
+}

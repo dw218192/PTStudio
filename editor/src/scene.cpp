@@ -1,17 +1,18 @@
 #include "include/scene.h"
 
-auto Scene::from_obj_file(std::string_view filename) noexcept -> Result<void> {
-    auto const res = get_default_shader();
-    if(!res.valid()) {
-        return res.error();
+auto Scene::from_obj_file(std::string_view filename) noexcept -> tl::expected<Scene, std::string> {
+    auto res = get_default_shader();
+    if (!res) {
+        return tl::unexpected{ res.error() };
+    }
+    auto ores = Object::from_obj(res.value(), filename);
+    if(!ores) {
+        return tl::unexpected{ ores.error() };
     }
 
-    Object obj{ res.value(), Transform{} };
-    if(auto ores = obj.from_obj(filename); !ores.valid()) {
-        return ores;
-    }
-    m_objects.emplace_back(std::move(obj));
-    return Result<void>::ok();
+    Scene ret;
+    ret.m_objects.emplace_back(ores.value());
+    return ret;
 }
 
 // here we assume +y is up
@@ -40,20 +41,15 @@ auto Scene::get_good_light_pos() const noexcept -> glm::vec3 {
     return center + glm::vec3{ 0, y_extent + 3, 0 };
 }
 
-auto Scene::begin_draw() const noexcept -> Result<void> {
+auto Scene::begin_draw() const noexcept -> tl::expected<void, std::string> {
     s_default_shader.use();
-    auto const res = s_default_shader.set_uniform(k_uniform_light_pos, get_good_light_pos());
-    if (!res.valid()) {
-        return res.error();
-    }
-
-    return Result<void>::ok();
+    return s_default_shader.set_uniform(k_uniform_light_pos, get_good_light_pos());
 }
 
-auto Scene::make_triangle_scene() noexcept -> Result<Scene> {
-    auto const res = get_default_shader();
-    if (!res.valid()) {
-        return res.error();
+auto Scene::make_triangle_scene() noexcept -> tl::expected<Scene, std::string> {
+    auto res = get_default_shader();
+    if (!res) {
+        return tl::unexpected{ res.error() };
     }
     Scene scene;
     scene.m_objects.emplace_back(Object::make_triangle_obj(res.value(), 
@@ -63,29 +59,22 @@ auto Scene::make_triangle_scene() noexcept -> Result<Scene> {
     return scene;
 }
 
-auto Scene::get_default_shader() noexcept -> Result<ShaderProgram const&> {
+auto Scene::get_default_shader() noexcept -> tl::expected<ShaderProgramRef, std::string> {
     if (!s_default_shader.valid()) {
-        // initialize default shader program
-        Shader vs(ShaderType::Vertex);
-        {
-            auto const res = vs.from_src(vs_obj_src);
-            if (!res.valid()) {
-                return res.error();
-            }
+        auto vs_res = Shader::from_src(ShaderType::Vertex, vs_obj_src);
+        if (!vs_res) {
+            return tl::unexpected{ vs_res.error() };
         }
-        Shader fs(ShaderType::Fragment);
-        {
-            auto const res = fs.from_src(ps_obj_src);
-            if (!res.valid()) {
-                return res.error();
-            }
+        auto ps_res = Shader::from_src(ShaderType::Fragment, ps_obj_src);
+        if (!ps_res) {
+            return tl::unexpected{ ps_res.error() };
         }
-        {
-            auto const res = s_default_shader.from_shaders(std::move(vs), std::move(fs));
-            if (!res.valid()) {
-                return res.error();
-            }
+
+        auto res = ShaderProgram::from_shaders(std::move(vs_res.value()), std::move(ps_res.value()));
+        if (!res) {
+            return tl::unexpected{ res.error() };
         }
+        s_default_shader = std::move(res.value());
     }
     return s_default_shader;
 }

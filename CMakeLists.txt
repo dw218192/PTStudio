@@ -19,15 +19,15 @@ include("cmake/AutoDetectCudaArch.cmake")
 # CUDA and C++ compiler flags
 set(cxx_flags 
 	$<$<CXX_COMPILER_ID:MSVC>:-D_SCL_SECURE_NO_WARNINGS /std:c++17>
-	$<$<CONFIG:Debug>:/MDd /Zi /Ob0 /Od /RTC1>
+	$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Debug>>:/MDd /Zi /Ob0 /Od /RTC1>
 	# Add MSVC-specific compiler flags here
 	
 	$<$<CXX_COMPILER_ID:GNU>:-Wall -m64 -O3 -std=c++17>
-	$<$<CONFIG:Debug>:-g -O0>
+	$<$<AND:$<CXX_COMPILER_ID:GNU>,$<CONFIG:Debug>>:-g -O0>
 	# Add GCC compiler flags here
 	
 	$<$<CXX_COMPILER_ID:Clang>:-Wall -m64 -O3 -std=c++17>
-	$<$<CONFIG:Debug>:-g -O0>
+	$<$<AND:$<CXX_COMPILER_ID:Clang>,$<CONFIG:Debug>>:-g -O0>
 	# Add Clang compiler flags here
 )
 
@@ -72,6 +72,7 @@ add_subdirectory(${EXT_DIR}/glew-cmake EXCLUDE_FROM_ALL)
 add_subdirectory(${EXT_DIR}/glm EXCLUDE_FROM_ALL)
 add_subdirectory(${EXT_DIR}/tinyobjloader EXCLUDE_FROM_ALL)
 add_subdirectory(${EXT_DIR}/stb EXCLUDE_FROM_ALL)
+add_subdirectory(${EXT_DIR}/expected EXCLUDE_FROM_ALL)
 
 # Manually add imgui
 add_library(imgui STATIC

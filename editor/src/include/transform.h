@@ -7,6 +7,7 @@ enum class TransformSpace {
 };
 
 struct Transform {
+    // creates an identity transform
     Transform() noexcept;
     // create a transform from a position, rotation, and scale
     // rotation is in degrees, and is applied in the order XYZ

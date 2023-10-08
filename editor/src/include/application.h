@@ -68,7 +68,7 @@ struct Application {
      * \return The real return value if no error
      */
     template<typename T, typename E>
-    static constexpr T check_error(Result<T, E> const& res);
+    static constexpr T check_error(tl::expected<T, E> const& res);
 
     /**
      * \brief Terminates the program with the given exit code
@@ -99,10 +99,15 @@ private:
 };
 
 template <typename T, typename E>
-constexpr T Application::check_error(Result<T, E> const& res) {
-    if(!res.valid()) {
+constexpr T Application::check_error(tl::expected<T, E> const& res) {
+    if(!res) {
         std::cerr << res.error() << std::endl;
         Application::quit(-1);
     }
-    return res.value();
+
+    if constexpr (std::is_void_v<T>) {
+        return;
+    } else {
+        return res.value();
+    }
 }

@@ -31,28 +31,29 @@ Shader& Shader::operator=(Shader&& other) noexcept {
     return *this;
 }
 
-auto Shader::from_file(std::string_view file) noexcept -> Result<void> {
+auto Shader::from_file(ShaderType type, std::string_view file) noexcept -> tl::expected<Shader, std::string> {
     std::ifstream stream(file.data());
     if (!stream.is_open()) {
-        return std::string("Failed to open vertex shader file");
+        return tl::unexpected{ "Failed to open vertex shader file" };
     }
 
     std::string src{std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};    
-    return from_src(src);
+    return from_src(type, src);
 }
 
-auto Shader::from_src(std::string_view src) noexcept -> Result<void> {
-    GLuint handle = glCreateShader(m_type);
+auto Shader::from_src(ShaderType type, std::string_view src) noexcept -> tl::expected<Shader, std::string> {
+    Shader ret{ type };
+    GLuint handle = glCreateShader(ret.m_type);
     if (!handle) {
-        if (m_type == GL_VERTEX_SHADER) {
-            return std::string("Failed to create vertex shader");
+        if (ret.m_type == GL_VERTEX_SHADER) {
+            return tl::unexpected{ "Failed to create vertex shader" };
         } else {
-            return std::string("Failed to create pixel shader");
+            return tl::unexpected{ "Failed to create pixel shader" };
         }
     }
 
     auto src_ptr = src.data();
-    glShaderSource(handle, 1, static_cast<GLchar const**>(&src_ptr), nullptr);
+    glShaderSource(handle, 1, &src_ptr, nullptr);
     glCompileShader(handle);
 
     GLint status;
@@ -62,14 +63,14 @@ auto Shader::from_src(std::string_view src) noexcept -> Result<void> {
         glGetShaderiv(handle, GL_INFO_LOG_LENGTH, &maxLength);
 
         std::string infoLog(maxLength, '\0');
-        glGetShaderInfoLog(handle, maxLength, &maxLength, static_cast<GLchar*>(infoLog.data()));
+        glGetShaderInfoLog(handle, maxLength, &maxLength, infoLog.data());
 
         infoLog = "Failed to compile shader:\n" + infoLog;
-        return infoLog;
+        return tl::unexpected{ infoLog };
     }
 
-    m_handle = handle;
-    return Result<void>::ok();
+    ret.m_handle = handle;
+    return ret;
 }
 
 ShaderProgram::~ShaderProgram() noexcept {
@@ -101,17 +102,17 @@ void ShaderProgram::unuse() const noexcept {
     glUseProgram(0);
 }
 
-auto ShaderProgram::from_shaders(Shader&& vs, Shader&& ps) noexcept -> Result<void> {
+auto ShaderProgram::from_shaders(Shader&& vs, Shader&& ps) noexcept -> tl::expected<ShaderProgram, std::string> {
     if(!vs.valid()) {
-        return std::string("Invalid vertex shader");
+        return tl::unexpected{ "Invalid vertex shader" };
     }
     if(!ps.valid()) {
-        return std::string("Invalid pixel shader");
+        return tl::unexpected{ "Invalid pixel shader" };
     }
 
     GLuint program = glCreateProgram();
     if (!program) {
-        return std::string("Failed to create shader program");
+        return tl::unexpected{ "Failed to create shader program" };
     }
     glAttachShader(program, vs.m_handle);
     glAttachShader(program, ps.m_handle);
@@ -123,42 +124,39 @@ auto ShaderProgram::from_shaders(Shader&& vs, Shader&& ps) noexcept -> Result<vo
         glGetProgramiv(program, GL_INFO_LOG_LENGTH, &maxLength);
 
         std::string infoLog(maxLength, '\0');
-        glGetProgramInfoLog(program, maxLength, &maxLength, static_cast<GLchar*>(infoLog.data()));
+        glGetProgramInfoLog(program, maxLength, &maxLength, infoLog.data());
 
         infoLog = "Failed to compile shader:\n" + infoLog;
-        return infoLog;
+        return tl::unexpected{ infoLog };
     }
-
-    m_handle = program;
-    m_vs = std::move(vs);
-    m_ps = std::move(ps);
-    return Result<void>::ok();
+    ShaderProgram ret{ std::move(vs), std::move(ps) };
+    ret.m_handle = program;
+    return ret;
 }
 
-auto ShaderProgram::set_uniform(std::string_view name, glm::mat4 const& value) const noexcept -> Result<void> {
+auto ShaderProgram::set_uniform(std::string_view name, glm::mat4 const& value) const noexcept -> tl::expected<void, std::string> {
     GLint const location = glGetUniformLocation(m_handle, name.data());
     if (location == -1) {
-        return std::string("Failed to find uniform location");
+        return tl::unexpected{ "Failed to find uniform location" };
     }
     glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(value));
     auto const err = glGetError();
     if (err != GL_NO_ERROR) {
-        return GLErrorResult<void>(err);
+        return tl::unexpected{ reinterpret_cast<char const*>(glewGetErrorString(err))};
     }
-
-    return Result<void>::ok();
+    return {};
 }
 
-auto ShaderProgram::set_uniform(std::string_view name, glm::vec3 const& value) const noexcept -> Result<void> {
+auto ShaderProgram::set_uniform(std::string_view name, glm::vec3 const& value) const noexcept -> tl::expected<void, std::string> {
     GLint const location = glGetUniformLocation(m_handle, name.data());
     if (location == -1) {
-        return std::string("Failed to find uniform location");
+        return tl::unexpected{ "Failed to find uniform location" };
     }
     glUniform3fv(location, 1, glm::value_ptr(value));
     auto const err = glGetError();
     if (err != GL_NO_ERROR) {
-        return GLErrorResult<void>(err);
+        return tl::unexpected{ reinterpret_cast<char const*>(glewGetErrorString(err)) };
     }
 
-    return Result<void>::ok();
+    return {};
 }
