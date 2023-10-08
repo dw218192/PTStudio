@@ -13,3 +13,6 @@
 [submodule "ext/imgui"]
 	path = ext/imgui
 	url = https://github.com/ocornut/imgui.git
+[submodule "ext/expected"]
+	path = ext/expected
+	url = https://github.com/TartanLlama/expected.git
