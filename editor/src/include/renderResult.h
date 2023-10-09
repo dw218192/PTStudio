@@ -4,12 +4,16 @@
 #include <vector>
 #include <tl/expected.hpp>
 
+struct RenderResult;
+
 enum class FileFormat {
     PNG,
     BMP,
     JPG,
     TGA
 };
+
+using RenderResultRef = std::reference_wrapper<RenderResult const>;
 
 /** \brief Represents the result of a render operation\n
  * This class is not meant to be created directly. Instead, use Renderer::render() to get a RenderResult object.

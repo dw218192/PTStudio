@@ -3,10 +3,10 @@
 
 #include <iostream>
 
-Object::Object(ShaderProgramRef shader_prog) : m_bound{}, m_shader_prog{shader_prog} { }
+Object::Object(Material mat) : m_bound{}, m_material{mat} { }
 
-auto Object::from_obj(ShaderProgramRef shader_prog, std::string_view filename) noexcept -> tl::expected<Object, std::string> {
-    Object ret{ shader_prog };
+auto Object::from_obj(Material mat, std::string_view filename) noexcept -> tl::expected<Object, std::string> {
+    Object ret{ mat };
 	ret.m_vertices.clear();
 
     tinyobj::ObjReaderConfig config;
@@ -98,33 +98,8 @@ auto Object::from_obj(ShaderProgramRef shader_prog, std::string_view filename) n
     return ret;
 }
 
-// TODO: if we want to support multi-shader, this should be moved to the ShaderProgram class
-auto Object::begin_draw(Camera const& cam) const noexcept -> tl::expected<void, std::string> {
-    auto& prog = m_shader_prog.get();
-
-    prog.use();
-    auto res = prog.set_uniform(k_uniform_model, m_transform.get_matrix());
-    if (!res) {
-        return res;
-    }
-    res = prog.set_uniform(k_uniform_view, cam.get_transform().get_matrix());
-    if (!res) {
-        return res;
-    }
-    res = prog.set_uniform(k_uniform_projection, cam.get_projection());
-    if (!res) {
-        return res;
-    }
-
-    return {};
-}
-
-void Object::end_draw() const noexcept {
-    m_shader_prog.get().unuse();
-}
-
-auto Object::make_triangle_obj(ShaderProgramRef shader_prog, Transform const& trans) noexcept -> Object {
-    Object obj{ shader_prog };
+auto Object::make_triangle_obj(Material mat, Transform const& trans) noexcept -> Object {
+    Object obj{ mat };
     obj.m_transform = trans;
 
 	obj.m_vertices = {
@@ -137,8 +112,8 @@ auto Object::make_triangle_obj(ShaderProgramRef shader_prog, Transform const& tr
     return obj;
 }
 
-auto Object::make_quad_obj(ShaderProgramRef shader_prog, Transform const& trans) noexcept -> Object {
-    Object obj{ shader_prog };
+auto Object::make_quad_obj(Material mat, Transform const& trans) noexcept -> Object {
+    Object obj{ mat };
     obj.m_transform = trans;
 
     obj.m_vertices = {

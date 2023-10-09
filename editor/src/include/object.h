@@ -2,19 +2,11 @@
 #include "ext.h"
 #include "shader.h"
 #include "transform.h"
+#include "boundingBox.h"
+#include "material.h"
+
 #include <tl/expected.hpp>
 #include <string_view>
-
-struct AABB {
-    glm::vec3 min_pos, max_pos;
-
-    [[nodiscard]] glm::vec3 get_center() const noexcept {
-        return (min_pos + max_pos) * 0.5f;
-    }
-    [[nodiscard]] glm::vec3 get_extent() const noexcept {
-        return (max_pos - min_pos) * 0.5f;
-    }
-};
 
 struct Vertex {
     glm::vec3 position;
@@ -23,19 +15,19 @@ struct Vertex {
 };
 
 struct Object {
-	[[nodiscard]] auto vertices() const noexcept -> std::vector<Vertex> const& { return m_vertices; }
-	[[nodiscard]] auto bound() const noexcept -> AABB const& { return m_bound; }
-    [[nodiscard]] auto begin_draw(struct Camera const& cam) const noexcept -> tl::expected<void, std::string>;
-    void end_draw() const noexcept;
+    [[nodiscard]] auto get_transform() const noexcept -> Transform const& { return m_transform; }
+    [[nodiscard]] auto get_material() const noexcept -> Material const& { return m_material; }
+	[[nodiscard]] auto get_vertices() const noexcept -> std::vector<Vertex> const& { return m_vertices; }
+	[[nodiscard]] auto get_bound() const noexcept -> BoundingBox const& { return m_bound; }
 
-    [[nodiscard]] static auto from_obj(ShaderProgramRef shader_prog, std::string_view filename) noexcept -> tl::expected<Object, std::string>;
-    [[nodiscard]] static auto make_triangle_obj(ShaderProgramRef shader_prog, Transform const& trans) noexcept -> Object;
-    [[nodiscard]] static auto make_quad_obj(ShaderProgramRef shader_prog, Transform const& trans) noexcept -> Object;
+    [[nodiscard]] static auto from_obj(Material mat, std::string_view filename) noexcept -> tl::expected<Object, std::string>;
+    [[nodiscard]] static auto make_triangle_obj(Material mat, Transform const& trans) noexcept -> Object;
+    [[nodiscard]] static auto make_quad_obj(Material mat, Transform const& trans) noexcept -> Object;
 
 private:
-    Object(ShaderProgramRef shader_prog);
-    AABB m_bound;
+    Object(Material mat);
+    BoundingBox m_bound;
     Transform m_transform;
-    ShaderProgramRef m_shader_prog;
+    Material m_material;
     std::vector<Vertex> m_vertices;
 };

@@ -1,6 +1,7 @@
 #pragma once
 #include <variant>
 #include "ext.h"
+#include "renderConfig.h"
 
 /**
  * \brief A camera rotation command.
@@ -28,8 +29,17 @@ struct Cmd_CameraZoom {
     float delta;
 };
 
+/**
+ * \brief A render config change command
+ * This will cause the renderer to update the render setting to reflect the changes
+*/
+struct Cmd_ChangeRenderConfig {
+    RenderConfig config;
+};
+
 using Cmd = std::variant<
     Cmd_CameraRot,
     Cmd_CameraMove,
-    Cmd_CameraZoom
+    Cmd_CameraZoom,
+    Cmd_ChangeRenderConfig
 >;

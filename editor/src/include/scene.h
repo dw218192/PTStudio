@@ -23,12 +23,8 @@ struct Scene {
 	[[nodiscard]] auto get_good_cam_start() const noexcept -> Transform;
     [[nodiscard]] auto get_good_light_pos() const noexcept -> glm::vec3;
 
-    [[nodiscard]] auto begin_draw() const noexcept -> tl::expected<void, std::string>;
-
-
 private:
-    static auto get_default_shader() noexcept -> tl::expected<ShaderProgramRef, std::string>;
-    AABB compute_scene_bound() const noexcept;
+    auto compute_scene_bound() const noexcept -> BoundingBox;
 
     // for now all objects use this shader
     static inline ShaderProgram s_default_shader;

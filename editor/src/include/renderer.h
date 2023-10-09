@@ -3,24 +3,13 @@
 #include "renderResult.h"
 #include "scene.h"
 #include "camera.h"
-#include <vector>
+#include "renderConfig.h"
+
 #include <tl/expected.hpp>
 
-using RenderResultRef = std::reference_wrapper<RenderResult const>;
-
-struct RenderConfig {
-	RenderConfig(unsigned width, unsigned height, float fovy, float max_fps)
-		: width{width}, height{height}, fovy{fovy}, max_fps{max_fps}, min_frame_time{1.0f / max_fps}
-	{ }
-
-	unsigned width, height;
-    float fovy;
-    float max_fps;
-    float min_frame_time;
-};
 
 struct Renderer {
-	explicit Renderer(RenderConfig config) noexcept;
+	explicit Renderer(RenderConfig const& config) noexcept;
     virtual ~Renderer() noexcept;
 
 	// don't copy because we have handles to GL resources
