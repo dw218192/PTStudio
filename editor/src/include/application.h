@@ -12,7 +12,7 @@
  * There can only be one application at a time. Be sure not to create multiple applications.
 */
 struct Application {
-    Application(RenderConfig const& config, std::string_view name);
+    Application(Renderer& renderer, std::string_view name);
     Application(Application const&) = delete;
     Application(Application&&) = delete;
     Application& operator=(Application const&) = delete;
@@ -95,7 +95,7 @@ protected:
 private:
     static inline Application* s_app = nullptr;
     GLFWwindow* m_window;
-    Renderer m_renderer;
+    Renderer& m_renderer;
 };
 
 template <typename T, typename E>

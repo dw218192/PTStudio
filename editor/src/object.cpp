@@ -123,8 +123,8 @@ void Object::end_draw() const noexcept {
     m_shader_prog.get().unuse();
 }
 
-auto Object::make_triangle_obj(ShaderProgramRef shader, Transform const& trans) noexcept -> Object {
-    Object obj{ shader };
+auto Object::make_triangle_obj(ShaderProgramRef shader_prog, Transform const& trans) noexcept -> Object {
+    Object obj{ shader_prog };
     obj.m_transform = trans;
 
 	obj.m_vertices = {
@@ -134,5 +134,23 @@ auto Object::make_triangle_obj(ShaderProgramRef shader, Transform const& trans) 
     };
     obj.m_bound = { glm::vec3{ -0.5, -0.5, 0 }, glm::vec3{ 0.5, 0.5, 0 } };
     
+    return obj;
+}
+
+auto Object::make_quad_obj(ShaderProgramRef shader_prog, Transform const& trans) noexcept -> Object {
+    Object obj{ shader_prog };
+    obj.m_transform = trans;
+
+    obj.m_vertices = {
+        Vertex{ glm::vec3{ -0.5, -0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 0, 0 } },
+        Vertex{ glm::vec3{ 0.5, -0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 1, 0 } },
+        Vertex{ glm::vec3{ -0.5, 0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 0, 1 } },
+
+        Vertex{ glm::vec3{ -0.5, 0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 0, 1 } },
+        Vertex{ glm::vec3{ 0.5, -0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 1, 0 } },
+        Vertex{ glm::vec3{ 0.5, 0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 1, 1 } }
+    };
+    obj.m_bound = { glm::vec3{ -0.5, -0.5, 0 }, glm::vec3{ 0.5, 0.5, 0 } };
+
     return obj;
 }

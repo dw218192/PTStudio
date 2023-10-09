@@ -28,8 +28,8 @@ static void errorFunc(int error, const char* description) {
     Application::quit(-1);
 }
 
-Application::Application(RenderConfig const& config, std::string_view name)
-    : m_renderer{ config } {
+Application::Application(Renderer& renderer, std::string_view name)
+    : m_renderer{ renderer } {
     if (s_app) {
         std::cerr << "There can only be one instance of application" << std::endl;
         Application::quit(-1);
@@ -48,7 +48,7 @@ Application::Application(RenderConfig const& config, std::string_view name)
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    m_window = glfwCreateWindow(config.width, config.height, name.data(), nullptr, nullptr);
+    m_window = glfwCreateWindow(renderer.get_config().width, renderer.get_config().height, name.data(), nullptr, nullptr);
     if (!m_window) {
         std::cerr << "Failed to create window" << std::endl;
         quit(-1);
@@ -84,7 +84,7 @@ Application::Application(RenderConfig const& config, std::string_view name)
     ImGui_ImplOpenGL3_Init("#version 130");
 
     ImGui::SetNextWindowPos({ 10, 10 });
-    ImGui::SetNextWindowSize({ 0, static_cast<float>(config.height) / 5.0f });
+    ImGui::SetNextWindowSize({ 0, static_cast<float>(renderer.get_config().height) / 5.0f });
     // ImGui::GetIO().IniFilename = nullptr;
 }
 

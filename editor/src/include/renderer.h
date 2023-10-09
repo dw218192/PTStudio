@@ -6,7 +6,7 @@
 #include <vector>
 #include <tl/expected.hpp>
 
-using RenderResultRef = std::reference_wrapper<RenderResult>;
+using RenderResultRef = std::reference_wrapper<RenderResult const>;
 
 struct RenderConfig {
 	RenderConfig(unsigned width, unsigned height, float fovy, float max_fps)
@@ -19,19 +19,9 @@ struct RenderConfig {
     float min_frame_time;
 };
 
-/**
- * \brief This class is responsible for rendering a scene and managing the underlying OpenGL resources.\n
- * Normally you would not need to create this class directly.\n
- * Instead, the Application class will create & manage it for you.
- */
 struct Renderer {
-    /**
-     * \brief Constructs an empty renderer\n
-     * use open_scene() to open a scene and fully initialize the renderer.
-     * \param config The renderer configuration to be used
-     */
 	explicit Renderer(RenderConfig config) noexcept;
-    ~Renderer() noexcept;
+    virtual ~Renderer() noexcept;
 
 	// don't copy because we have handles to GL resources
 	Renderer(Renderer&) = delete;
@@ -47,40 +37,43 @@ struct Renderer {
 	 * \return on failure, a Result object that contains an error message\n
 	 * on success, an empty Result object.
 	 */
-	[[nodiscard]] auto open_scene(Scene scene) noexcept -> tl::expected<void, std::string>;
-    /**
+    [[nodiscard]] virtual auto open_scene(Scene scene) noexcept -> tl::expected<void, std::string> = 0;
+
+	/**
      * \brief Executes a command.
      * \param cmd The command to be executed
      * \return on failure, a Result object that contains an error message\n
      * on success, an empty Result object.
      */
-    [[nodiscard]] auto exec(Cmd const& cmd) noexcept -> tl::expected<void, std::string>;
-    /**
+    [[nodiscard]] virtual auto exec(Cmd const& cmd) noexcept -> tl::expected<void, std::string> = 0;
+
+	/**
      * \brief Renders the scene. Note that if you call this function outside of Application::loop(),\n
      * you will need to poll events, call glClear(), and swap buffers yourself.
      * \return on failure, a Result object that contains an error message\n
      * on success, a Result object that contains a handle to the rendered image.
      */
-    [[nodiscard]] auto render() noexcept -> tl::expected<RenderResultRef, std::string>;
+    [[nodiscard]] virtual auto render() noexcept -> tl::expected<void, std::string> = 0;
+
+	/**
+	 * \brief Renders the scene to an internal buffer. Note that if you call this function outside of Application::loop(),\n
+	 * you will need to poll events, call glClear(), and swap buffers yourself.
+	 * \return on failure, a Result object that contains an error message\n
+	 * on success, a Result object that contains a handle to the rendered image.
+	 */
+    [[nodiscard]] virtual auto render_buffered() noexcept -> tl::expected<RenderResultRef, std::string> = 0;
 
     /**
      * \brief Checks if the renderer has a valid scene opened.
      * \return true if the renderer has a valid scene opened, false otherwise.
      */
-    [[nodiscard]] auto valid() const noexcept -> bool { return m_vao != 0; }
+    [[nodiscard]] virtual auto valid() const noexcept -> bool = 0;
     [[nodiscard]] auto get_config() const noexcept -> RenderConfig const& { return m_config; }
+
+protected:
+    [[nodiscard]] auto get_cam() noexcept -> Camera& { return m_cam; }
+
 private:
     RenderConfig m_config;
     Camera m_cam;
-    RenderResult m_res;
-    Scene m_scene;
-
-    // TODO: may abstract these into a class later
-    // use 1 vao, 1 vbo for all meshes (objects)
-	GLuint m_vao;
-
-    [[nodiscard]] auto get_vbo() const noexcept { return m_buffer_handles[0]; }
-    [[nodiscard]] auto get_bufhandle_size() const noexcept { return static_cast<GLsizei>(m_buffer_handles.size()); }
-    [[nodiscard]] auto get_bufhandles() const noexcept { return m_buffer_handles.data(); }
-    std::vector<GLuint> m_buffer_handles;
 };

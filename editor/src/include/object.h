@@ -30,6 +30,7 @@ struct Object {
 
     [[nodiscard]] static auto from_obj(ShaderProgramRef shader_prog, std::string_view filename) noexcept -> tl::expected<Object, std::string>;
     [[nodiscard]] static auto make_triangle_obj(ShaderProgramRef shader_prog, Transform const& trans) noexcept -> Object;
+    [[nodiscard]] static auto make_quad_obj(ShaderProgramRef shader_prog, Transform const& trans) noexcept -> Object;
 
 private:
     Object(ShaderProgramRef shader_prog);
