@@ -40,6 +40,8 @@ private:
 };
 
 struct ShaderProgram {
+    [[nodiscard]] static auto from_srcs(std::string_view vs, std::string_view ps) noexcept -> tl::expected<ShaderProgram, std::string>;
+    [[nodiscard]] static auto from_files(std::string_view vs, std::string_view ps) noexcept -> tl::expected<ShaderProgram, std::string>;
     [[nodiscard]] static auto from_shaders(Shader&& vs, Shader&& ps) noexcept -> tl::expected<ShaderProgram, std::string>;
 
     ShaderProgram() = default;

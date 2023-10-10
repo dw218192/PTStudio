@@ -134,6 +134,30 @@ auto ShaderProgram::from_shaders(Shader&& vs, Shader&& ps) noexcept -> tl::expec
     return ret;
 }
 
+auto ShaderProgram::from_files(std::string_view vs, std::string_view ps) noexcept -> tl::expected<ShaderProgram, std::string> {
+    auto vs_shader = Shader::from_file(ShaderType::Vertex, vs);
+    if (!vs_shader) {
+        return tl::unexpected{ vs_shader.error() };
+    }
+    auto ps_shader = Shader::from_file(ShaderType::Fragment, ps);
+    if (!ps_shader) {
+        return tl::unexpected{ ps_shader.error() };
+    }
+    return from_shaders(std::move(vs_shader.value()), std::move(ps_shader.value()));
+}
+
+auto ShaderProgram::from_srcs(std::string_view vs, std::string_view ps) noexcept -> tl::expected<ShaderProgram, std::string> {
+    auto vs_shader = Shader::from_src(ShaderType::Vertex, vs);
+    if (!vs_shader) {
+        return tl::unexpected{ vs_shader.error() };
+    }
+    auto ps_shader = Shader::from_src(ShaderType::Fragment, ps);
+    if (!ps_shader) {
+        return tl::unexpected{ ps_shader.error() };
+    }
+    return from_shaders(std::move(vs_shader.value()), std::move(ps_shader.value()));
+}
+
 auto ShaderProgram::set_uniform(std::string_view name, glm::mat4 const& value) const noexcept -> tl::expected<void, std::string> {
     GLint const location = glGetUniformLocation(m_handle, name.data());
     if (location == -1) {

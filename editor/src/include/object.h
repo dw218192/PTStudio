@@ -15,6 +15,9 @@ struct Vertex {
 };
 
 struct Object {
+    Object();
+    Object(Material mat);
+
     [[nodiscard]] auto get_transform() const noexcept -> Transform const& { return m_transform; }
     [[nodiscard]] auto get_material() const noexcept -> Material const& { return m_material; }
 	[[nodiscard]] auto get_vertices() const noexcept -> std::vector<Vertex> const& { return m_vertices; }
@@ -25,7 +28,6 @@ struct Object {
     [[nodiscard]] static auto make_quad_obj(Material mat, Transform const& trans) noexcept -> Object;
 
 private:
-    Object(Material mat);
     BoundingBox m_bound;
     Transform m_transform;
     Material m_material;

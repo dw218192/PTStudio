@@ -1,4 +1,5 @@
 #include "renderer.h"
+#include <array>
 
 struct EditorRenderer : Renderer {
     EditorRenderer(RenderConfig const& config) noexcept;
@@ -8,31 +9,41 @@ struct EditorRenderer : Renderer {
     [[nodiscard]] auto exec(Cmd const& cmd) noexcept -> tl::expected<void, std::string> override;
     [[nodiscard]] auto render() noexcept -> tl::expected<void, std::string> override;
     [[nodiscard]] auto render_buffered() noexcept -> tl::expected<RenderResultRef, std::string> override;
-	[[nodiscard]] auto valid() const noexcept -> bool override { return m_vao != 0; }
+	[[nodiscard]] auto valid() const noexcept -> bool override { return m_valid; }
 
 private:
-    struct RenderBuf {
-        // buffers for rendering
-        GLuint fbo = 0;
-        GLuint tex = 0;
-        GLuint depth_rbo = 0;
+    enum BufIndex {        
+        OBJ_VBO,
+        GRID_VBO,
+        BUF_COUNT
+    };
+    enum VAOIndex {
+        OBJ_VAO,
+        GRID_VAO,
+        VAO_COUNT
     };
 
     [[nodiscard]] auto render_internal(GLuint fbo) noexcept -> tl::expected<void, std::string>;
-    [[nodiscard]] auto create_frame_buf() noexcept -> tl::expected<RenderBuf, std::string>;
-    [[nodiscard]] auto create_default_shader() noexcept -> tl::expected<ShaderProgram, std::string>;
-    
-    [[nodiscard]] auto get_vbo() const noexcept { return m_buffer_handles[0]; }
-    [[nodiscard]] auto get_bufhandle_size() const noexcept { return static_cast<GLsizei>(m_buffer_handles.size()); }
-    [[nodiscard]] auto get_bufhandles() const noexcept { return m_buffer_handles.data(); }
+    [[nodiscard]] auto create_frame_buf() noexcept -> tl::expected<void, std::string>;
+    [[nodiscard]] auto get_buf(BufIndex idx) noexcept -> GLuint& { return m_buffer_handles[idx]; }
+    [[nodiscard]] auto get_vao(VAOIndex idx) noexcept -> GLuint& { return m_vao_handles[idx]; }
+    [[nodiscard]] auto get_bufs() const noexcept { return m_buffer_handles.data(); }
+    [[nodiscard]] auto get_vaos() const noexcept { return m_vao_handles.data(); }
+
+    std::array<GLuint, VAO_COUNT> m_vao_handles;
+    std::array<GLuint, BUF_COUNT> m_buffer_handles;
 
     // use 1 vao, 1 vbo for all meshes (objects)
-    GLuint m_vao = 0;
-    RenderBuf m_rend_buf;
     Scene m_scene;
     RenderResult m_res;
-    std::vector<GLuint> m_buffer_handles;
+    struct {
+        GLuint fbo;
+        GLuint tex;
+        GLuint rbo;
+    } m_render_buf;
 
     // shader
+    bool m_valid = false;
     ShaderProgram m_editor_shader;
+    ShaderProgram m_grid_shader;
 };

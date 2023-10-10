@@ -3,6 +3,7 @@
 
 #include <iostream>
 
+Object::Object() = default;
 Object::Object(Material mat) : m_bound{}, m_material{mat} { }
 
 auto Object::from_obj(Material mat, std::string_view filename) noexcept -> tl::expected<Object, std::string> {

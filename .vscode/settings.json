@@ -85,6 +85,7 @@
         "xtree": "cpp",
         "xutility": "cpp",
         "__nullptr": "cpp",
-        "string_view": "cpp"
+        "string_view": "cpp",
+        "__locale": "cpp"
     }
 }

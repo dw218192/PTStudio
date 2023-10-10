@@ -61,6 +61,27 @@ constexpr char const* ps_obj_src =
     }\n\
 ";
 
+constexpr char const* vs_grid_src = 
+"\
+    #version 330 core\n\
+    layout (location = 0) in vec3 aPos;\n\
+    uniform mat4 model;\n\
+    uniform mat4 view;\n\
+    uniform mat4 projection;\n\
+    void main() {\n\
+        gl_Position = projection * view * model * vec4(aPos, 1.0);\n\
+    }\n\
+";
+
+constexpr char const* ps_grid_src = 
+"\
+    #version 330 core\n\
+    out vec4 FragColor;\n\
+    void main() {\n\
+        FragColor = vec4(0.7, 0.7, 0.7, 1.0);\n\
+    }\n\
+";
+
 constexpr char const* k_uniform_model = "model";
 constexpr char const* k_uniform_view = "view";
 constexpr char const* k_uniform_projection = "projection";
@@ -74,11 +95,12 @@ EditorRenderer::EditorRenderer(RenderConfig const& config) noexcept
 
 EditorRenderer::~EditorRenderer() {
     if (EditorRenderer::valid()) {
-        glDeleteBuffers(get_bufhandle_size(), get_bufhandles());
-        glDeleteVertexArrays(1, &m_vao);
-        glDeleteFramebuffers(1, &m_rend_buf.fbo);
-        glDeleteRenderbuffers(1, &m_rend_buf.depth_rbo);
-        glDeleteTextures(1, &m_rend_buf.tex);
+        glDeleteBuffers(BufIndex::BUF_COUNT, get_bufs());
+        glDeleteVertexArrays(VAOIndex::VAO_COUNT, get_vaos());
+
+        glDeleteFramebuffers(1, &m_render_buf.fbo);
+        glDeleteRenderbuffers(1, &m_render_buf.rbo);
+        glDeleteTextures(1, &m_render_buf.tex);
     }
 }
 
@@ -108,15 +130,12 @@ auto EditorRenderer::exec(Cmd const& cmd) noexcept -> tl::expected<void, std::st
 }
 
 auto EditorRenderer::open_scene(Scene scene) noexcept -> tl::expected<void, std::string> {
-    GLenum err;
-
-    if (!valid()) {
+    auto init = [this]() -> tl::expected<void, std::string> {
         // set up object buffers
-        glGenVertexArrays(1, &m_vao);
-        m_buffer_handles.resize(1);
-        glGenBuffers(1, m_buffer_handles.data());
+        glGenVertexArrays(VAOIndex::VAO_COUNT, m_vao_handles.data());
+        glGenBuffers(BufIndex::BUF_COUNT, m_buffer_handles.data());
 
-        err = glGetError();
+        auto err = glGetError();
         if (err != GL_NO_ERROR) {
             return unexpected_gl_error(err);
         }
@@ -125,23 +144,37 @@ auto EditorRenderer::open_scene(Scene scene) noexcept -> tl::expected<void, std:
         auto res = create_frame_buf();
         if (!res) {
             return tl::unexpected{ res.error() };
-        } else {
-            m_rend_buf = std::move(res.value());
         }
 
         // set up shader
-        auto shader_res = create_default_shader();
+        auto shader_res = ShaderProgram::from_srcs(vs_obj_src, ps_obj_src);
         if (!shader_res) {
             return tl::unexpected{ shader_res.error() };
         } else {
             m_editor_shader = std::move(shader_res.value());
         }
+
+        shader_res = ShaderProgram::from_srcs(vs_grid_src, ps_grid_src);
+        if (!shader_res) {
+            return tl::unexpected{ shader_res.error() };
+        } else {
+            m_grid_shader = std::move(shader_res.value());
+        }
+        return {};
+    };
+
+    if (!valid()) {
+        auto res = init();
+        if(!res) {
+            return res;
+        }
+        m_valid = true;
     }
 
     // fill buffers with data
-    glBindVertexArray(m_vao);
+    glBindVertexArray(get_vao(VAOIndex::OBJ_VAO));
     {
-        glBindBuffer(GL_ARRAY_BUFFER, get_vbo());
+        glBindBuffer(GL_ARRAY_BUFFER, get_buf(BufIndex::OBJ_VBO));
         {
             // gather all vertices from all objects in the scene
             std::vector<Vertex> all_vertices;
@@ -155,7 +188,8 @@ auto EditorRenderer::open_scene(Scene scene) noexcept -> tl::expected<void, std:
                 all_vertices.data(),
                 GL_STATIC_DRAW
             );
-            err = glGetError();
+
+            auto err = glGetError();
             if (err != GL_NO_ERROR) {
                 return unexpected_gl_error(err);
             }
@@ -178,7 +212,7 @@ auto EditorRenderer::open_scene(Scene scene) noexcept -> tl::expected<void, std:
         glBindBuffer(GL_ARRAY_BUFFER, 0);
     }
     glBindVertexArray(0);
-    err = glGetError();
+    auto err = glGetError();
     if (err != GL_NO_ERROR) {
         return unexpected_gl_error(err);
     }
@@ -190,7 +224,6 @@ auto EditorRenderer::open_scene(Scene scene) noexcept -> tl::expected<void, std:
     glEnable(GL_POLYGON_SMOOTH);
     glHint(GL_POLYGON_SMOOTH_HINT, GL_NICEST);
 
-    glBindVertexArray(m_vao);
     err = glGetError();
     if (err != GL_NO_ERROR) {
         return unexpected_gl_error(err);
@@ -209,7 +242,7 @@ auto EditorRenderer::render() noexcept -> tl::expected<void, std::string> {
 }
 
 auto EditorRenderer::render_buffered() noexcept -> tl::expected<RenderResultRef, std::string> {
-    auto res = render_internal(m_rend_buf.fbo);
+    auto res = render_internal(m_render_buf.fbo);
     if (!res) {
         return tl::unexpected{ res.error() };
     }
@@ -234,15 +267,24 @@ auto EditorRenderer::render_buffered() noexcept -> tl::expected<RenderResultRef,
 
 auto EditorRenderer::render_internal(GLuint fbo) noexcept -> tl::expected<void, std::string> {
     if (!valid()) {
-        return tl::unexpected{ "render() called on invalid EditorRenderer" };
+        return tl::unexpected{ "render_internal() called on invalid EditorRenderer" };
+    } else if (!m_grid_shader.valid()) {
+        return tl::unexpected{ "render_internal() called on EditorRenderer with invalid grid shader" };
+    } else if (!m_editor_shader.valid()) {
+        return tl::unexpected{ "render_internal() called on EditorRenderer with invalid editor shader" };
     }
 
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
     glViewport(0, 0, get_config().width, get_config().height);
 
+    glBindVertexArray(get_vao(VAOIndex::OBJ_VAO));
+    // render objects
     m_editor_shader.use();
-    m_editor_shader.set_uniform(k_uniform_light_pos, m_scene.get_good_light_pos());
-    auto res = m_editor_shader.set_uniform(k_uniform_view, get_cam().get_transform().get_matrix());
+    auto res = m_editor_shader.set_uniform(k_uniform_light_pos, m_scene.get_good_light_pos());
+    if (!res) {
+        return res;
+    }
+    res = m_editor_shader.set_uniform(k_uniform_view, get_cam().get_transform().get_matrix());
     if (!res) {
         return res;
     }
@@ -251,7 +293,8 @@ auto EditorRenderer::render_internal(GLuint fbo) noexcept -> tl::expected<void, 
         return res;
     }
 
-	for (size_t i = 0, vbo_offset = 0; i < m_scene.objects().size(); ++i) {
+    size_t vbo_offset = 0;
+	for (size_t i = 0; i < m_scene.objects().size(); ++i) {
         auto&& obj = m_scene.objects()[i];
 
         res = m_editor_shader.set_uniform(k_uniform_model, obj.get_transform().get_matrix());
@@ -263,25 +306,35 @@ auto EditorRenderer::render_internal(GLuint fbo) noexcept -> tl::expected<void, 
             static_cast<GLint>(vbo_offset),
             static_cast<GLsizei>(obj.get_vertices().size()));
         vbo_offset += obj.get_vertices().size();
+
+        auto err = glGetError();
+        if (err != GL_NO_ERROR) {
+            return unexpected_gl_error(err);
+        }
     }
 
+    // render grid
+    // glRenderMode(GL_LINE);
+    // glBindVertexArray(get_vao(VAOIndex::GRID_VAO));
+
+    // m_grid_shader.use();
+    // res = m_grid_shader.set_uniform(k_uniform_view, get_cam().get_transform().get_matrix());
+    // if (!res) {
+    //     return res;
+    // }
+    // res = m_grid_shader.set_uniform(k_uniform_projection, get_cam().get_projection());
+    // if (!res) {
+    //     return res;
+    // }
+
+    // auto err = glGetError();
+    // if (err != GL_NO_ERROR) {
+    //     return unexpected_gl_error(err);
+    // }
     return {};
 }
 
-auto EditorRenderer::create_default_shader() noexcept -> tl::expected<ShaderProgram, std::string> {
-    auto vs_res = Shader::from_src(ShaderType::Vertex, vs_obj_src);
-    if (!vs_res) {
-        return tl::unexpected{ vs_res.error() };
-    }
-    auto ps_res = Shader::from_src(ShaderType::Fragment, ps_obj_src);
-    if (!ps_res) {
-        return tl::unexpected{ ps_res.error() };
-    }
-
-    return ShaderProgram::from_shaders(std::move(vs_res.value()), std::move(ps_res.value()));
-}
-
-auto EditorRenderer::create_frame_buf() noexcept -> tl::expected<RenderBuf, std::string> {
+auto EditorRenderer::create_frame_buf() noexcept -> tl::expected<void, std::string> {
     GLuint fbo, rbo, tex;
     GLsizei const w = get_config().width;
     GLsizei const h = get_config().height;
@@ -339,5 +392,7 @@ auto EditorRenderer::create_frame_buf() noexcept -> tl::expected<RenderBuf, std:
     }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-    return RenderBuf { fbo, rbo, tex };
+    m_render_buf.fbo = fbo;
+    m_render_buf.rbo = rbo;
+    m_render_buf.tex = tex;
 }
