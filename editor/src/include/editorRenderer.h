@@ -15,6 +15,7 @@ private:
     enum BufIndex {        
         OBJ_VBO,
         GRID_VBO,
+        GRID_EBO,
         BUF_COUNT
     };
     enum VAOIndex {
@@ -45,5 +46,7 @@ private:
     // shader
     bool m_valid = false;
     ShaderProgram m_editor_shader;
+
+    unsigned m_grid_ebo_count = 0;
     ShaderProgram m_grid_shader;
 };

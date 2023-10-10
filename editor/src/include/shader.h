@@ -3,8 +3,8 @@
 #include <GL/glew.h>
 #include <string>
 #include <string_view>
-
 #include <tl/expected.hpp>
+
 #include "ext.h"
 
 enum class ShaderType {
@@ -54,8 +54,8 @@ struct ShaderProgram {
     ShaderProgram(ShaderProgram&) = delete;
     ShaderProgram& operator=(ShaderProgram&) = delete;
 
-    [[nodiscard]] auto set_uniform(std::string_view name, glm::mat4 const& value) const noexcept -> tl::expected<void, std::string>;
-    [[nodiscard]] auto set_uniform(std::string_view name, glm::vec3 const& value) const noexcept -> tl::expected<void, std::string>;
+    template<typename UniformType>
+    [[nodiscard]] auto set_uniform(std::string_view name, UniformType const& value) const noexcept -> tl::expected<void, std::string>;
     
     [[nodiscard]] auto valid() const noexcept { return m_handle != 0; }
 
@@ -68,3 +68,39 @@ private:
     Shader m_vs;
     Shader m_ps;
 };
+
+template<typename UniformType>
+auto ShaderProgram::set_uniform(std::string_view name, UniformType const& value) const noexcept -> tl::expected<void, std::string> {
+    if (!valid()) {
+        return tl::unexpected{ "Invalid shader program" };
+    }
+    GLint loc = glGetUniformLocation(m_handle, name.data());
+    if (loc == -1) {
+        return tl::unexpected{ "Failed to get uniform location" };
+    }
+    if constexpr (std::is_same_v<UniformType, glm::mat4>) {
+        glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(value));
+    }
+    else if constexpr (std::is_same_v<UniformType, glm::vec3>) {
+        glUniform3fv(loc, 1, glm::value_ptr(value));
+    }
+    else if constexpr (std::is_same_v<UniformType, glm::vec4>) {
+        glUniform4fv(loc, 1, glm::value_ptr(value));
+    }
+    else if constexpr (std::is_same_v<UniformType, float>) {
+        glUniform1f(loc, value);
+    }
+    else if constexpr (std::is_same_v<UniformType, int>) {
+        glUniform1i(loc, value);
+    }
+    else {
+        static_assert(false, "Unsupported uniform type");
+    }
+
+    auto const err = glGetError();
+    if (err != GL_NO_ERROR) {
+        return unexpected_gl_error(err);
+    }
+
+    return {};
+}

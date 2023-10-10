@@ -65,20 +65,25 @@ constexpr char const* vs_grid_src =
 "\
     #version 330 core\n\
     layout (location = 0) in vec3 aPos;\n\
-    uniform mat4 model;\n\
     uniform mat4 view;\n\
     uniform mat4 projection;\n\
+    out vec2 grid_coords;\n\
     void main() {\n\
-        gl_Position = projection * view * model * vec4(aPos, 1.0);\n\
+        grid_coords = aPos.xz;\n\
+        gl_Position = projection * view * vec4(aPos, 1.0);\n\
     }\n\
 ";
 
 constexpr char const* ps_grid_src = 
 "\
     #version 330 core\n\
+    uniform float grid_dim;\n\
+    in vec2 grid_coords;\n\
     out vec4 FragColor;\n\
     void main() {\n\
-        FragColor = vec4(0.7, 0.7, 0.7, 1.0);\n\
+        float dist = max(abs(grid_coords.x), abs(grid_coords.y)) / grid_dim;\n\
+        float alpha = 1.0 - pow(dist, 0.55);\n\
+        FragColor = vec4(0.7, 0.7, 0.7, alpha);\n\
     }\n\
 ";
 
@@ -88,6 +93,10 @@ constexpr char const* k_uniform_projection = "projection";
 constexpr char const* k_uniform_light_pos = "lightPos";
 constexpr char const* k_uniform_light_color = "lightColor";
 constexpr char const* k_uniform_object_color = "objectColor";
+constexpr char const* k_uniform_grid_dim = "grid_dim";
+
+constexpr float k_grid_dim = 100.0f;
+constexpr float k_grid_spacing = 1.0f;
 
 
 EditorRenderer::EditorRenderer(RenderConfig const& config) noexcept
@@ -130,7 +139,81 @@ auto EditorRenderer::exec(Cmd const& cmd) noexcept -> tl::expected<void, std::st
 }
 
 auto EditorRenderer::open_scene(Scene scene) noexcept -> tl::expected<void, std::string> {
-    auto init = [this]() -> tl::expected<void, std::string> {
+    auto create_grid = [this](float grid_dim, float spacing) -> tl::expected<void, std::string> {
+        std::vector<glm::vec3> vertices;
+        std::vector<unsigned> indices;
+
+        float const half_dim = grid_dim / 2.0f;
+        for (float x = -half_dim; x <= half_dim; x += spacing) {
+            vertices.emplace_back(x, 0.0f, -half_dim);
+            vertices.emplace_back(x, 0.0f, half_dim);
+        }
+        for (float z = -half_dim; z <= half_dim; z += spacing) {
+            vertices.emplace_back(-half_dim, 0.0f, z);
+            vertices.emplace_back(half_dim, 0.0f, z);
+        }
+        for (unsigned i = 0; i < vertices.size(); ++i) {
+            indices.push_back(i);
+        }
+
+        glBindVertexArray(get_vao(VAOIndex::GRID_VAO));
+        {
+            glBindBuffer(GL_ARRAY_BUFFER, get_buf(BufIndex::GRID_VBO));
+            {
+                glBufferData(
+                    GL_ARRAY_BUFFER,
+                    vertices.size() * sizeof(glm::vec3),
+                    vertices.data(),
+                    GL_STATIC_DRAW
+                );
+                auto err = glGetError();
+                if (err != GL_NO_ERROR) {
+                    return unexpected_gl_error(err);
+                }
+
+                glEnableVertexAttribArray(0);
+                glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
+                err = glGetError();
+                if (err != GL_NO_ERROR) {
+                    return unexpected_gl_error(err);
+                }
+            }
+            glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, get_buf(BufIndex::GRID_EBO));
+            {
+                glBufferData(
+                    GL_ELEMENT_ARRAY_BUFFER,
+                    indices.size() * sizeof(GLuint),
+                    indices.data(),
+                    GL_STATIC_DRAW
+                );
+                auto err = glGetError();
+                if (err != GL_NO_ERROR) {
+                    return unexpected_gl_error(err);
+                }
+            }
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+        }
+        glBindVertexArray(0);
+        auto err = glGetError();
+        if (err != GL_NO_ERROR) {
+            return unexpected_gl_error(err);
+        }
+
+        m_grid_ebo_count = indices.size();
+
+        // set invariant uniforms
+        m_grid_shader.use();
+        auto res = m_grid_shader.set_uniform(k_uniform_grid_dim, half_dim);
+        if (!res) {
+            return res;
+        }
+
+        return {};
+    };
+
+    auto init = [this, &create_grid]() -> tl::expected<void, std::string> {
         // set up object buffers
         glGenVertexArrays(VAOIndex::VAO_COUNT, m_vao_handles.data());
         glGenBuffers(BufIndex::BUF_COUNT, m_buffer_handles.data());
@@ -160,6 +243,12 @@ auto EditorRenderer::open_scene(Scene scene) noexcept -> tl::expected<void, std:
         } else {
             m_grid_shader = std::move(shader_res.value());
         }
+
+        res = create_grid(k_grid_dim, k_grid_spacing);
+        if (!res) {
+            return res;
+        }
+
         return {};
     };
 
@@ -222,7 +311,10 @@ auto EditorRenderer::open_scene(Scene scene) noexcept -> tl::expected<void, std:
     // Set a few settings/modes in OpenGL rendering
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_POLYGON_SMOOTH);
+    glEnable(GL_LINE_SMOOTH);
+    
     glHint(GL_POLYGON_SMOOTH_HINT, GL_NICEST);
+    glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
 
     err = glGetError();
     if (err != GL_NO_ERROR) {
@@ -314,23 +406,29 @@ auto EditorRenderer::render_internal(GLuint fbo) noexcept -> tl::expected<void, 
     }
 
     // render grid
-    // glRenderMode(GL_LINE);
-    // glBindVertexArray(get_vao(VAOIndex::GRID_VAO));
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBindVertexArray(get_vao(VAOIndex::GRID_VAO));
 
-    // m_grid_shader.use();
-    // res = m_grid_shader.set_uniform(k_uniform_view, get_cam().get_transform().get_matrix());
-    // if (!res) {
-    //     return res;
-    // }
-    // res = m_grid_shader.set_uniform(k_uniform_projection, get_cam().get_projection());
-    // if (!res) {
-    //     return res;
-    // }
+    m_grid_shader.use();
+    res = m_grid_shader.set_uniform(k_uniform_view, get_cam().get_transform().get_matrix());
+    if (!res) {
+        return res;
+    }
+    res = m_grid_shader.set_uniform(k_uniform_projection, get_cam().get_projection());
+    if (!res) {
+        return res;
+    }
 
-    // auto err = glGetError();
-    // if (err != GL_NO_ERROR) {
-    //     return unexpected_gl_error(err);
-    // }
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, get_buf(BufIndex::GRID_EBO));
+    glDrawElements(GL_LINES, m_grid_ebo_count, GL_UNSIGNED_INT, nullptr);
+
+    auto err = glGetError();
+    if (err != GL_NO_ERROR) {
+        return unexpected_gl_error(err);
+    }
+    glDisable(GL_BLEND);
+
     return {};
 }
 

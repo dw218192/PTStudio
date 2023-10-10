@@ -157,30 +157,3 @@ auto ShaderProgram::from_srcs(std::string_view vs, std::string_view ps) noexcept
     }
     return from_shaders(std::move(vs_shader.value()), std::move(ps_shader.value()));
 }
-
-auto ShaderProgram::set_uniform(std::string_view name, glm::mat4 const& value) const noexcept -> tl::expected<void, std::string> {
-    GLint const location = glGetUniformLocation(m_handle, name.data());
-    if (location == -1) {
-        return tl::unexpected{ "Failed to find uniform location" };
-    }
-    glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(value));
-    auto const err = glGetError();
-    if (err != GL_NO_ERROR) {
-        return tl::unexpected{ reinterpret_cast<char const*>(glewGetErrorString(err))};
-    }
-    return {};
-}
-
-auto ShaderProgram::set_uniform(std::string_view name, glm::vec3 const& value) const noexcept -> tl::expected<void, std::string> {
-    GLint const location = glGetUniformLocation(m_handle, name.data());
-    if (location == -1) {
-        return tl::unexpected{ "Failed to find uniform location" };
-    }
-    glUniform3fv(location, 1, glm::value_ptr(value));
-    auto const err = glGetError();
-    if (err != GL_NO_ERROR) {
-        return tl::unexpected{ reinterpret_cast<char const*>(glewGetErrorString(err)) };
-    }
-
-    return {};
-}
