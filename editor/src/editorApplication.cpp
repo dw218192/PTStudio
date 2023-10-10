@@ -1,10 +1,7 @@
 #include "include/editorApplication.h"
 
-EditorApplication::EditorApplication(Renderer& renderer, std::string_view const& name)
-	: Application{ renderer, name } {
-    auto&& scene = check_error(Scene::from_obj_file("C:/Users/tongw/Dropbox/repos/PTStudio/_files/ada.obj"));
-    check_error(get_renderer().open_scene(scene));
-}
+EditorApplication::EditorApplication(Renderer& renderer, Scene& scene, std::string_view name)
+	: Application{ renderer, scene, name } {}
 
 void EditorApplication::cursor_moved(double x, double y) {
     if (cur_button_down == -1) {

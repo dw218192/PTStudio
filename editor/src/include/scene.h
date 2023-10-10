@@ -4,8 +4,10 @@
 #include <string_view>
 #include <vector>
 
+#include "camera.h"
+
 struct Scene {
-    Scene() = default;
+    Scene();
 
     /**
      * \brief Creates a scene from an obj file.
@@ -17,14 +19,14 @@ struct Scene {
     [[nodiscard]] static auto make_triangle_scene() noexcept -> tl::expected<Scene, std::string>;
 
 
-    [[nodiscard]] auto objects() const noexcept -> std::vector<Object> const& { return m_objects; }
+    [[nodiscard]] auto get_objects() const noexcept -> std::vector<Object> const& { return m_objects; }
 
 	// compute good positions to place light and camera
 	[[nodiscard]] auto get_good_cam_start() const noexcept -> Transform;
     [[nodiscard]] auto get_good_light_pos() const noexcept -> glm::vec3;
 
 private:
-    auto compute_scene_bound() const noexcept -> BoundingBox;
+    [[nodiscard]] auto compute_scene_bound() const noexcept -> BoundingBox;
 
     // for now all objects use this shader
     static inline ShaderProgram s_default_shader;

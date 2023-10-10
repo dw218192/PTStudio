@@ -1,7 +1,9 @@
 #include "include/editorRenderer.h"
+#include "include/application.h"
 
 #include <cassert>
 #include <algorithm>
+
 
 constexpr char const* ps_unicolor_src =
 "\
@@ -117,13 +119,13 @@ auto EditorRenderer::exec(Cmd const& cmd) noexcept -> tl::expected<void, std::st
     struct Handler {
         Handler(EditorRenderer& rend) : rend(rend) { }
         void operator()(Cmd_CameraRot const& rot) const {
-            rend.get_cam().set_rotation(TransformSpace::LOCAL, rot.angles_deg);
+            Application::get_cam().set_rotation(TransformSpace::LOCAL, rot.angles_deg);
         }
         void operator()(Cmd_CameraMove const& rot) const {
-            rend.get_cam().set_position(TransformSpace::LOCAL, rot.delta);
+			Application::get_cam().set_position(TransformSpace::LOCAL, rot.delta);
         }
         void operator()(Cmd_CameraZoom const& zoom) const {
-            rend.get_cam().set_position(TransformSpace::LOCAL, { 0, 0, zoom.delta });
+            Application::get_cam().set_position(TransformSpace::LOCAL, { 0, 0, zoom.delta });
         }
         void operator()(Cmd_ChangeRenderConfig const& new_config) const {
             
@@ -138,7 +140,7 @@ auto EditorRenderer::exec(Cmd const& cmd) noexcept -> tl::expected<void, std::st
     return {};
 }
 
-auto EditorRenderer::open_scene(Scene scene) noexcept -> tl::expected<void, std::string> {
+auto EditorRenderer::open_scene(Scene const& scene) noexcept -> tl::expected<void, std::string> {
     auto create_grid = [this](float grid_dim, float spacing) -> tl::expected<void, std::string> {
         std::vector<glm::vec3> vertices;
         std::vector<unsigned> indices;
@@ -268,7 +270,7 @@ auto EditorRenderer::open_scene(Scene scene) noexcept -> tl::expected<void, std:
         {
             // gather all vertices from all objects in the scene
             std::vector<Vertex> all_vertices;
-            for (auto&& obj : scene.objects()) {
+            for (auto&& obj : scene.get_objects()) {
                 all_vertices.insert(all_vertices.end(), obj.get_vertices().begin(), obj.get_vertices().end());
             }
 
@@ -307,8 +309,6 @@ auto EditorRenderer::open_scene(Scene scene) noexcept -> tl::expected<void, std:
         return unexpected_gl_error(err);
     }
 
-    m_scene = std::move(scene);
-
     // Set a few settings/modes in OpenGL rendering
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_POLYGON_SMOOTH);
@@ -321,9 +321,6 @@ auto EditorRenderer::open_scene(Scene scene) noexcept -> tl::expected<void, std:
     if (err != GL_NO_ERROR) {
         return unexpected_gl_error(err);
     }
-
-    // Set up camera position so it has a good view of the object
-    get_cam().set_transform(m_scene.get_good_cam_start());
 
     return {};
 
@@ -367,6 +364,9 @@ auto EditorRenderer::render_internal(GLuint fbo) noexcept -> tl::expected<void, 
         return tl::unexpected{ "render_internal() called on EditorRenderer with invalid editor shader" };
     }
 
+    auto&& cam = Application::get_cam();
+    auto&& scene = Application::get_scene();
+
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
     glViewport(0, 0, get_config().width, get_config().height);
 
@@ -374,21 +374,21 @@ auto EditorRenderer::render_internal(GLuint fbo) noexcept -> tl::expected<void, 
     // render objects
     m_editor_shader.use();
     {
-        auto res = m_editor_shader.set_uniform(k_uniform_light_pos, m_scene.get_good_light_pos());
+        auto res = m_editor_shader.set_uniform(k_uniform_light_pos, scene.get_good_light_pos());
         if (!res) {
             return res;
         }
-        res = m_editor_shader.set_uniform(k_uniform_view, get_cam().get_transform().get_matrix());
+        res = m_editor_shader.set_uniform(k_uniform_view, cam.get_transform().get_matrix());
         if (!res) {
             return res;
         }
-        res = m_editor_shader.set_uniform(k_uniform_projection, get_cam().get_projection());
+        res = m_editor_shader.set_uniform(k_uniform_projection, cam.get_projection());
         if (!res) {
             return res;
         }
 
         size_t vbo_offset = 0;
-        for (const auto& obj : m_scene.objects()) {
+        for (const auto& obj : scene.get_objects()) {
             res = m_editor_shader.set_uniform(k_uniform_model, obj.get_transform().get_matrix());
             if (!res) {
                 return res;
@@ -414,11 +414,11 @@ auto EditorRenderer::render_internal(GLuint fbo) noexcept -> tl::expected<void, 
 
     m_grid_shader.use();
     {
-        auto res = m_grid_shader.set_uniform(k_uniform_view, get_cam().get_transform().get_matrix());
+        auto res = m_grid_shader.set_uniform(k_uniform_view, cam.get_transform().get_matrix());
         if (!res) {
             return res;
         }
-        res = m_grid_shader.set_uniform(k_uniform_projection, get_cam().get_projection());
+        res = m_grid_shader.set_uniform(k_uniform_projection, cam.get_projection());
         if (!res) {
             return res;
         }

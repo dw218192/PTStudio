@@ -1,18 +1,17 @@
 #pragma once
-#include <GL/glew.h>
-#include <GLFW/glfw3.h>
-#include <iostream>
 
 #include "scene.h"
 #include "renderer.h"
-#include "ext.h"
+
+#include <iostream>
+#include <GLFW/glfw3.h>
 
 /**
  * \brief simple wrapper to make it easier to create an application\n
  * There can only be one application at a time. Be sure not to create multiple applications.
 */
 struct Application {
-    Application(Renderer& renderer, std::string_view name);
+    Application(Renderer& renderer, Scene& scene, std::string_view name);
     Application(Application const&) = delete;
     Application(Application&&) = delete;
     Application& operator=(Application const&) = delete;
@@ -61,6 +60,21 @@ struct Application {
     virtual void loop() = 0;
 
     /**
+     * \brief Sets a new scene for the application
+     * \param new_scene the new scene to use
+     */
+    static void set_scene(Scene const& new_scene) {
+	    get_application().m_scene = new_scene;
+    }
+
+    [[nodiscard]] static auto get_scene() -> Scene& {
+	    return get_application().m_scene;
+    }
+    [[nodiscard]] static auto get_cam() -> Camera& {
+	    return get_application().m_cam;
+    }
+
+    /**
      * \brief Checks a result returned from some function. Prints the error and Terminates the program on error.
      * \tparam T Type of the real return value
      * \tparam E Type of the error return value
@@ -70,7 +84,7 @@ struct Application {
     template<typename T, typename E>
     static constexpr decltype(auto) check_error(tl::expected<T, E> const& res);
     template<typename T, typename E>
-    constexpr T check_error(tl::expected<T, E>&& res);
+    static constexpr T check_error(tl::expected<T, E>&& res);
     /**
      * \brief Terminates the program with the given exit code
      * \param code the exit code
@@ -83,7 +97,6 @@ struct Application {
      * \note This function is only valid after the application has been created
     */
     [[nodiscard]] static auto get_application() noexcept -> Application& {
-        assert(s_app);
     	return *s_app;
     }
 
@@ -96,7 +109,11 @@ protected:
 private:
     static inline Application* s_app = nullptr;
     GLFWwindow* m_window;
+
+    Scene& m_scene;
     Renderer& m_renderer;
+
+    Camera m_cam;
 };
 
 template <typename T, typename E>
@@ -105,7 +122,6 @@ constexpr decltype(auto) Application::check_error(tl::expected<T, E> const& res)
         std::cerr << res.error() << std::endl;
         Application::quit(-1);
     }
-
     if constexpr (!std::is_void_v<T>) {
         return res.value();
     }
@@ -116,7 +132,6 @@ constexpr T Application::check_error(tl::expected<T, E>&& res) {
         std::cerr << res.error() << std::endl;
         Application::quit(-1);
     }
-
 	if constexpr (!std::is_void_v<T>) {
         return std::move(res).value();
     }

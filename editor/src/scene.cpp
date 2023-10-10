@@ -1,12 +1,14 @@
 #include "include/scene.h"
 
+Scene::Scene() = default;
+
 auto Scene::from_obj_file(std::string_view filename) noexcept -> tl::expected<Scene, std::string> {
     auto ores = Object::from_obj(Material{}, filename);
     if(!ores) {
         return tl::unexpected{ ores.error() };
     }
 
-    Scene ret;
+    Scene ret{  };
     ret.m_objects.emplace_back(ores.value());
     return ret;
 }
@@ -14,6 +16,10 @@ auto Scene::from_obj_file(std::string_view filename) noexcept -> tl::expected<Sc
 // here we assume +y is up
 auto Scene::get_good_cam_start() const noexcept -> Transform {
     constexpr float tan_alpha = 0.4663f;
+
+    if (get_objects().empty()) {
+        return Transform::look_at(glm::vec3{ 0, 2, 2 }, glm::vec3{ 0 }, glm::vec3{ 0,1,0 });
+    }
 
     auto const bound = compute_scene_bound();
     auto const center = bound.get_center();
@@ -38,7 +44,7 @@ auto Scene::get_good_light_pos() const noexcept -> glm::vec3 {
 }
 
 auto Scene::make_triangle_scene() noexcept -> tl::expected<Scene, std::string> {
-    Scene scene;
+    Scene scene { };
     scene.m_objects.emplace_back(Object::make_triangle_obj(Material{}, 
         Transform{  }));
     scene.m_objects.emplace_back(Object::make_triangle_obj(Material{}, 

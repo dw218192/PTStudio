@@ -26,7 +26,7 @@ struct Renderer {
 	 * \return on failure, a Result object that contains an error message\n
 	 * on success, an empty Result object.
 	 */
-    [[nodiscard]] virtual auto open_scene(Scene scene) noexcept -> tl::expected<void, std::string> = 0;
+    [[nodiscard]] virtual auto open_scene(Scene const& scene) noexcept -> tl::expected<void, std::string> = 0;
 
 	/**
      * \brief Executes a command.
@@ -59,10 +59,6 @@ struct Renderer {
     [[nodiscard]] virtual auto valid() const noexcept -> bool = 0;
     [[nodiscard]] auto get_config() const noexcept -> RenderConfig const& { return m_config; }
 
-protected:
-    [[nodiscard]] auto get_cam() noexcept -> Camera& { return m_cam; }
-
 private:
     RenderConfig m_config;
-    Camera m_cam;
 };

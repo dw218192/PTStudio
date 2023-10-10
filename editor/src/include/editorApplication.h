@@ -9,7 +9,7 @@ constexpr float k_init_rot_sensitivity = 40.0;
 constexpr float k_init_zoom_sensitivity = 10.0;
 
 struct EditorApplication : Application {
-    EditorApplication(Renderer& config, std::string_view const& name);
+    EditorApplication(Renderer& config, Scene& scene, std::string_view name);
 
     void cursor_moved(double x, double y) override;
     void mouse_clicked(int button, int action, int mods) override;

@@ -3,12 +3,14 @@
 #include "include/editorRenderer.h"
 
 int main() {
-    RenderConfig const config{
+    auto config = RenderConfig {
         1280, 720,
         60.0, 120.0
     };
-    EditorRenderer renderer{ config };
-
-    EditorApplication app{ renderer, "PT Editor" };
+    auto renderer = EditorRenderer{ config };
+    auto scene = Application::check_error(
+        Scene::from_obj_file("C:/Users/admin/Dropbox/repos/PTStudio/_files/ada.obj")
+    );
+    auto app = EditorApplication { renderer, scene, "PT Editor" };
     app.run();
 }

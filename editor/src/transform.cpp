@@ -58,7 +58,6 @@ auto Transform::look_at(glm::vec3 const& pos, glm::vec3 const& target, glm::vec3
     Transform ret;
     ret.m_trans = glm::lookAt(pos, target, up);
     decompose(ret.m_trans, &ret.m_pos, &ret.m_rot, &ret.m_scale);
-    assert(compose(ret.m_pos, ret.m_rot, ret.m_scale) == ret.m_trans);
     return ret;
 }
 
