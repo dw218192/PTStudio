@@ -23,9 +23,17 @@ struct Transform {
     void set_position(TransformSpace space, glm::vec3 const& pos) noexcept;
     void set_scale(TransformSpace space, glm::vec3 const& scale) noexcept;
 
+    auto local_to_world_pos(glm::vec3 local) const noexcept -> glm::vec3;
+    auto world_to_local_pos(glm::vec3 world) const noexcept -> glm::vec3;
+    auto local_to_world_dir(glm::vec3 local) const noexcept -> glm::vec3;
+    auto world_to_local_dir(glm::vec3 world) const noexcept -> glm::vec3;
+    auto local_to_world_len(float len) const noexcept -> float;
+    auto world_to_local_len(float len) const noexcept -> float;
+
 private:
+    void update_matrix() noexcept;
     glm::vec3 m_pos;
     glm::vec3 m_rot;
     glm::vec3 m_scale;
-    glm::mat4 m_trans;
+    glm::mat4 m_trans, m_inv_trans;
 };

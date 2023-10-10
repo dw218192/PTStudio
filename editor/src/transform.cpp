@@ -45,13 +45,13 @@ static glm::mat4 compose(glm::vec3 const& pos, glm::vec3 const& rot, glm::vec3 c
 }
 
 Transform::Transform() noexcept 
-    : m_pos{0,0,0}, m_rot{0,0,0}, m_scale{1,1,1}, m_trans(1.0)
+    : m_pos{0,0,0}, m_rot{0,0,0}, m_scale{1,1,1}, m_trans(1.0), m_inv_trans(1.0)
 { }
 
 Transform::Transform(glm::vec3 const& pos, glm::vec3 const& rot, glm::vec3 const& scale) noexcept
     : m_pos{ pos }, m_rot{ rot }, m_scale{ scale }
 {
-    m_trans = compose(pos, rot, scale);
+    update_matrix();
 }
 
 auto Transform::look_at(glm::vec3 const& pos, glm::vec3 const& target, glm::vec3 const& up) noexcept -> Transform {
@@ -67,7 +67,7 @@ void Transform::set_rotation(TransformSpace space, glm::vec3 const& rot) noexcep
     } else {
         m_rot += rot;
     }
-    m_trans = compose(m_pos, m_rot, m_scale);
+    update_matrix();
 }
 
 void Transform::set_position(TransformSpace space, glm::vec3 const& pos) noexcept {
@@ -76,7 +76,7 @@ void Transform::set_position(TransformSpace space, glm::vec3 const& pos) noexcep
     } else {
         m_pos += pos * m_scale;
     }
-    m_trans = compose(m_pos, m_rot, m_scale);
+    update_matrix();
 }
 
 void Transform::set_scale(TransformSpace space, glm::vec3 const& scale) noexcept {
@@ -85,5 +85,34 @@ void Transform::set_scale(TransformSpace space, glm::vec3 const& scale) noexcept
     } else {
         m_scale *= scale;
     }
+    update_matrix();
+}
+
+void Transform::update_matrix() noexcept {
     m_trans = compose(m_pos, m_rot, m_scale);
+    m_inv_trans = glm::inverse(m_trans);
+}
+
+auto Transform::local_to_world_pos(glm::vec3 local) const noexcept -> glm::vec3 {
+    return m_trans * glm::vec4(local, 1.0f);
+}
+
+auto Transform::world_to_local_pos(glm::vec3 world) const noexcept -> glm::vec3 {
+    return m_inv_trans * glm::vec4(world, 1.0f);
+}
+
+auto Transform::local_to_world_dir(glm::vec3 local) const noexcept -> glm::vec3 {
+    return m_trans * glm::vec4(local, 0.0f);
+}
+
+auto Transform::world_to_local_dir(glm::vec3 world) const noexcept -> glm::vec3 {
+    return m_inv_trans * glm::vec4(world, 0.0f);
+}
+
+auto Transform::local_to_world_len(float len) const noexcept -> float {
+    return len * glm::length(m_scale);
+}
+
+auto Transform::world_to_local_len(float len) const noexcept -> float {
+    return len / glm::length(m_scale);
 }

@@ -38,9 +38,9 @@ auto Camera::viewport_to_world(glm::vec2 screen, float z) const noexcept -> glm:
     auto ndc = glm::vec2{
         screen.x / m_px_width, screen.y / m_px_height
     };
-    // convert to (-1, 1) and invert y
-    ndc = ndc * 2.0f - 1.0f;
+    // invert y and convert to (-1, 1) 
     ndc.y = 1 - ndc.y;
+    ndc = ndc * 2.0f - 1.0f;
     return ndc_to_wrold(ndc, z);
 }
 

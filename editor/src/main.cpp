@@ -9,7 +9,7 @@ int main() {
     };
     auto renderer = EditorRenderer{ config };
     auto scene = Application::check_error(
-        Scene::from_obj_file("C:/Users/admin/Dropbox/repos/PTStudio/_files/ada.obj")
+        Scene::from_obj_file("D:/Repos/PTStudio/_files/ada.obj")
     );
     auto app = EditorApplication { renderer, scene, "PT Editor" };
     app.run();

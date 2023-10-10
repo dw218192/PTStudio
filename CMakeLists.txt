@@ -72,6 +72,8 @@ add_subdirectory(${EXT_DIR}/glew-cmake EXCLUDE_FROM_ALL)
 add_subdirectory(${EXT_DIR}/glm EXCLUDE_FROM_ALL)
 add_subdirectory(${EXT_DIR}/tinyobjloader EXCLUDE_FROM_ALL)
 add_subdirectory(${EXT_DIR}/stb EXCLUDE_FROM_ALL)
+
+set(EXPECTED_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 add_subdirectory(${EXT_DIR}/expected EXCLUDE_FROM_ALL)
 
 # Manually add imgui

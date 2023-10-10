@@ -78,10 +78,11 @@ void EditorApplication::draw_imgui() {
     ImGui::End();
 
     // draw x,y,z axis ref
-    // DebugDrawer::draw_line({ 0,0 }, { 26,26 }, { 1,0,0 });
-    DebugDrawer::draw_line_3d({ 0,0,0 }, { 5,0,0 }, { 1, 0, 0 });
-    DebugDrawer::draw_line_3d({ 0,0,0 }, { 0,5,0 }, { 0, 1, 0 });
-    DebugDrawer::draw_line_3d({ 0,0,0 }, { 0,0,5 }, { 0, 0, 1 });
+    auto axis_origin = get_cam().viewport_to_world({ 30, 50 });
+    constexpr float axis_len = 0.01f;
+    DebugDrawer::draw_line_3d(axis_origin, axis_origin + glm::vec3{ axis_len, 0, 0 }, { 1, 0, 0 });
+    DebugDrawer::draw_line_3d(axis_origin, axis_origin + glm::vec3{ 0, axis_len, 0 }, { 0, 1, 0 });
+    DebugDrawer::draw_line_3d(axis_origin, axis_origin + glm::vec3{ 0, 0, axis_len }, { 0, 0, 1 });
 }
 
 void EditorApplication::loop() {
