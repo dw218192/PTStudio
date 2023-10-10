@@ -209,6 +209,7 @@ auto EditorRenderer::open_scene(Scene scene) noexcept -> tl::expected<void, std:
         if (!res) {
             return res;
         }
+        m_grid_shader.unuse();
 
         return {};
     };
@@ -372,38 +373,39 @@ auto EditorRenderer::render_internal(GLuint fbo) noexcept -> tl::expected<void, 
     glBindVertexArray(get_vao(VAOIndex::OBJ_VAO));
     // render objects
     m_editor_shader.use();
-    auto res = m_editor_shader.set_uniform(k_uniform_light_pos, m_scene.get_good_light_pos());
-    if (!res) {
-        return res;
-    }
-    res = m_editor_shader.set_uniform(k_uniform_view, get_cam().get_transform().get_matrix());
-    if (!res) {
-        return res;
-    }
-    res = m_editor_shader.set_uniform(k_uniform_projection, get_cam().get_projection());
-    if (!res) {
-        return res;
-    }
-
-    size_t vbo_offset = 0;
-	for (size_t i = 0; i < m_scene.objects().size(); ++i) {
-        auto&& obj = m_scene.objects()[i];
-
-        res = m_editor_shader.set_uniform(k_uniform_model, obj.get_transform().get_matrix());
+    {
+        auto res = m_editor_shader.set_uniform(k_uniform_light_pos, m_scene.get_good_light_pos());
+        if (!res) {
+            return res;
+        }
+        res = m_editor_shader.set_uniform(k_uniform_view, get_cam().get_transform().get_matrix());
+        if (!res) {
+            return res;
+        }
+        res = m_editor_shader.set_uniform(k_uniform_projection, get_cam().get_projection());
         if (!res) {
             return res;
         }
 
-        glDrawArrays(GL_TRIANGLES,
-            static_cast<GLint>(vbo_offset),
-            static_cast<GLsizei>(obj.get_vertices().size()));
-        vbo_offset += obj.get_vertices().size();
+        size_t vbo_offset = 0;
+        for (const auto& obj : m_scene.objects()) {
+            res = m_editor_shader.set_uniform(k_uniform_model, obj.get_transform().get_matrix());
+            if (!res) {
+                return res;
+            }
 
-        auto err = glGetError();
-        if (err != GL_NO_ERROR) {
-            return unexpected_gl_error(err);
+            glDrawArrays(GL_TRIANGLES,
+                static_cast<GLint>(vbo_offset),
+                static_cast<GLsizei>(obj.get_vertices().size()));
+            vbo_offset += obj.get_vertices().size();
+
+            auto err = glGetError();
+            if (err != GL_NO_ERROR) {
+                return unexpected_gl_error(err);
+            }
         }
     }
+    m_editor_shader.unuse();
 
     // render grid
     glEnable(GL_BLEND);
@@ -411,17 +413,20 @@ auto EditorRenderer::render_internal(GLuint fbo) noexcept -> tl::expected<void, 
     glBindVertexArray(get_vao(VAOIndex::GRID_VAO));
 
     m_grid_shader.use();
-    res = m_grid_shader.set_uniform(k_uniform_view, get_cam().get_transform().get_matrix());
-    if (!res) {
-        return res;
-    }
-    res = m_grid_shader.set_uniform(k_uniform_projection, get_cam().get_projection());
-    if (!res) {
-        return res;
-    }
+    {
+        auto res = m_grid_shader.set_uniform(k_uniform_view, get_cam().get_transform().get_matrix());
+        if (!res) {
+            return res;
+        }
+        res = m_grid_shader.set_uniform(k_uniform_projection, get_cam().get_projection());
+        if (!res) {
+            return res;
+        }
 
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, get_buf(BufIndex::GRID_EBO));
-    glDrawElements(GL_LINES, m_grid_ebo_count, GL_UNSIGNED_INT, nullptr);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, get_buf(BufIndex::GRID_EBO));
+        glDrawElements(GL_LINES, m_grid_ebo_count, GL_UNSIGNED_INT, nullptr);
+    }
+    m_grid_shader.unuse();
 
     auto err = glGetError();
     if (err != GL_NO_ERROR) {
@@ -493,4 +498,6 @@ auto EditorRenderer::create_frame_buf() noexcept -> tl::expected<void, std::stri
     m_render_buf.fbo = fbo;
     m_render_buf.rbo = rbo;
     m_render_buf.tex = tex;
+
+    return {};
 }

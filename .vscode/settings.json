@@ -86,6 +86,7 @@
         "xutility": "cpp",
         "__nullptr": "cpp",
         "string_view": "cpp",
-        "__locale": "cpp"
+        "__locale": "cpp",
+        "__config": "cpp"
     }
 }

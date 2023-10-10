@@ -68,8 +68,9 @@ struct Application {
      * \return The real return value if no error
      */
     template<typename T, typename E>
-    static constexpr T check_error(tl::expected<T, E> const& res);
-
+    static constexpr decltype(auto) check_error(tl::expected<T, E> const& res);
+    template<typename T, typename E>
+    constexpr T check_error(tl::expected<T, E>&& res);
     /**
      * \brief Terminates the program with the given exit code
      * \param code the exit code
@@ -91,7 +92,7 @@ protected:
      * \brief Gets the renderer for the application.
      * \return the renderer
     */
-    [[nodiscard]] auto get_renderer() -> Renderer& { return m_renderer; }
+    [[nodiscard]] auto get_renderer() const -> Renderer& { return m_renderer; }
 private:
     static inline Application* s_app = nullptr;
     GLFWwindow* m_window;
@@ -99,15 +100,24 @@ private:
 };
 
 template <typename T, typename E>
-constexpr T Application::check_error(tl::expected<T, E> const& res) {
+constexpr decltype(auto) Application::check_error(tl::expected<T, E> const& res) {
     if(!res) {
         std::cerr << res.error() << std::endl;
         Application::quit(-1);
     }
 
-    if constexpr (std::is_void_v<T>) {
-        return;
-    } else {
+    if constexpr (!std::is_void_v<T>) {
         return res.value();
+    }
+}
+template <typename T, typename E>
+constexpr T Application::check_error(tl::expected<T, E>&& res) {
+    if (!res) {
+        std::cerr << res.error() << std::endl;
+        Application::quit(-1);
+    }
+
+	if constexpr (!std::is_void_v<T>) {
+        return std::move(res).value();
     }
 }

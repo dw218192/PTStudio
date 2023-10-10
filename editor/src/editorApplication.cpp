@@ -2,7 +2,7 @@
 
 EditorApplication::EditorApplication(Renderer& renderer, std::string_view const& name)
 	: Application{ renderer, name } {
-    auto scene = check_error(Scene::from_obj_file("C:/Users/tongw/Dropbox/repos/PTStudio/_files/ada.obj"));
+    auto&& scene = check_error(Scene::from_obj_file("C:/Users/tongw/Dropbox/repos/PTStudio/_files/ada.obj"));
     check_error(get_renderer().open_scene(scene));
 }
 
