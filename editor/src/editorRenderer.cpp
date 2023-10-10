@@ -378,7 +378,7 @@ auto EditorRenderer::render_internal(GLuint fbo) noexcept -> tl::expected<void, 
         if (!res) {
             return res;
         }
-        res = m_editor_shader.set_uniform(k_uniform_view, cam.get_transform().get_matrix());
+        res = m_editor_shader.set_uniform(k_uniform_view, cam.get_view());
         if (!res) {
             return res;
         }
@@ -414,7 +414,7 @@ auto EditorRenderer::render_internal(GLuint fbo) noexcept -> tl::expected<void, 
 
     m_grid_shader.use();
     {
-        auto res = m_grid_shader.set_uniform(k_uniform_view, cam.get_transform().get_matrix());
+        auto res = m_grid_shader.set_uniform(k_uniform_view, cam.get_view());
         if (!res) {
             return res;
         }

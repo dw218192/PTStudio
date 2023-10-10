@@ -30,7 +30,7 @@ static void errorFunc(int error, const char* description) {
 
 Application::Application(Renderer& renderer, Scene& scene, std::string_view name)
     : m_scene { scene }, m_renderer{ renderer },
-      m_cam{ renderer.get_config().fovy, renderer.get_config().width / static_cast<float>(renderer.get_config().height), Transform {} }
+      m_cam{ renderer.get_config().fovy, renderer.get_config().width, renderer.get_config().height, Transform {} }
 {
     if (s_app) {
         std::cerr << "There can only be one instance of application" << std::endl;
@@ -90,7 +90,7 @@ Application::Application(Renderer& renderer, Scene& scene, std::string_view name
     // ImGui::GetIO().IniFilename = nullptr;
 
     // config camera and initialize renderer
-    get_cam().set_transform(scene.get_good_cam_start());
+    get_cam().set_view_transform(scene.get_good_cam_start());
     check_error(get_renderer().open_scene(scene));
 }
 

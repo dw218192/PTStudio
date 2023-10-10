@@ -1,4 +1,5 @@
 #include "include/editorApplication.h"
+#include "include/debugDrawer.h"
 
 EditorApplication::EditorApplication(Renderer& renderer, Scene& scene, std::string_view name)
 	: Application{ renderer, scene, name } {}
@@ -74,8 +75,13 @@ void EditorApplication::draw_imgui() {
         ImGui::SliderFloat("Rotate Sensitivity", &m_control_state.rot_sensitivity, 2.0f, 100.0f);
         ImGui::SliderFloat("Zoom Sensitivity", &m_control_state.zoom_sensitivity, 1.0f, 20.0f);
     }
-
     ImGui::End();
+
+    // draw x,y,z axis ref
+    // DebugDrawer::draw_line({ 0,0 }, { 26,26 }, { 1,0,0 });
+    DebugDrawer::draw_line_3d({ 0,0,0 }, { 5,0,0 }, { 1, 0, 0 });
+    DebugDrawer::draw_line_3d({ 0,0,0 }, { 0,5,0 }, { 0, 1, 0 });
+    DebugDrawer::draw_line_3d({ 0,0,0 }, { 0,0,5 }, { 0, 0, 1 });
 }
 
 void EditorApplication::loop() {
