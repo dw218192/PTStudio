@@ -77,12 +77,12 @@ constexpr char const* vs_grid_src =
 constexpr char const* ps_grid_src = 
 "\
     #version 330 core\n\
-    uniform float grid_dim;\n\
+    uniform float half_grid_dim;\n\
     in vec2 grid_coords;\n\
     out vec4 FragColor;\n\
     void main() {\n\
-        float dist = max(abs(grid_coords.x), abs(grid_coords.y)) / grid_dim;\n\
-        float alpha = 1.0 - pow(dist, 0.55);\n\
+        float dist = max(abs(grid_coords.x), abs(grid_coords.y)) / half_grid_dim;\n\
+        float alpha = 1.0 - pow(dist, 0.25);\n\
         FragColor = vec4(0.7, 0.7, 0.7, alpha);\n\
     }\n\
 ";
@@ -93,7 +93,7 @@ constexpr char const* k_uniform_projection = "projection";
 constexpr char const* k_uniform_light_pos = "lightPos";
 constexpr char const* k_uniform_light_color = "lightColor";
 constexpr char const* k_uniform_object_color = "objectColor";
-constexpr char const* k_uniform_grid_dim = "grid_dim";
+constexpr char const* k_uniform_half_grid_dim = "half_grid_dim";
 
 constexpr float k_grid_dim = 100.0f;
 constexpr float k_grid_spacing = 1.0f;
@@ -205,7 +205,7 @@ auto EditorRenderer::open_scene(Scene scene) noexcept -> tl::expected<void, std:
 
         // set invariant uniforms
         m_grid_shader.use();
-        auto res = m_grid_shader.set_uniform(k_uniform_grid_dim, half_dim);
+        auto res = m_grid_shader.set_uniform(k_uniform_half_grid_dim, half_dim);
         if (!res) {
             return res;
         }

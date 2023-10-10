@@ -43,10 +43,10 @@ private:
         GLuint rbo;
     } m_render_buf;
 
-    // shader
+    // shader for all objects in the editor
     bool m_valid = false;
     ShaderProgram m_editor_shader;
-
+    // stuff for the grid
     unsigned m_grid_ebo_count = 0;
     ShaderProgram m_grid_shader;
 };
