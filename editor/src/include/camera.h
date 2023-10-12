@@ -1,6 +1,7 @@
 #pragma once
 #include "ext.h"
 #include "transform.h"
+#include "ray.h"
 
 struct Camera {
     Camera(float fovy, unsigned px_width, unsigned px_height, Transform const& view) noexcept;
@@ -15,6 +16,8 @@ struct Camera {
     [[nodiscard]] auto world_to_ndc(glm::vec3 world) const noexcept -> glm::vec3;
     [[nodiscard]] auto world_to_viewport(glm::vec3 world) const noexcept -> glm::vec2;
     [[nodiscard]] auto viewport_to_world(glm::vec2 screen, float z = k_near) const noexcept -> glm::vec3;
+
+    [[nodiscard]] auto viewport_to_ray(glm::vec2 screen) const noexcept -> Ray;
 
     void set_rotation(TransformSpace space, glm::vec3 const& rot) noexcept;
     void set_position(TransformSpace space, glm::vec3 const& pos) noexcept;

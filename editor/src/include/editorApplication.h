@@ -22,7 +22,11 @@ private:
     double prev_x = 0, prev_y = 0;
     std::string cur_obj_file;
 
-    void draw_imgui();
+    void draw_scene_panel() noexcept;
+    void draw_object_panel() noexcept;
+    void draw_scene_viewport(TextureRef render_buf) noexcept;
+    void draw_console_panel() noexcept;
+
     struct {
         float move_sensitivity = k_init_move_sensitivity;
         float rot_sensitivity = k_init_rot_sensitivity;

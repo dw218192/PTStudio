@@ -154,8 +154,10 @@ auto Application::get_window_width() const noexcept->int {
 }
 
 void Application::begin_imgui_window(std::string_view name, bool recv_mouse_event, ImGuiWindowFlags flags) {
-    if (recv_mouse_event && !m_can_recv_mouse_event.count(name)) {
-        m_can_recv_mouse_event.insert(name);
+    if (recv_mouse_event) {
+        if(!m_can_recv_mouse_event.count(name)) {
+            m_can_recv_mouse_event.insert(name);
+        }
     }
     ImGui::Begin(name.data(), nullptr, flags);
     if (ImGui::IsWindowHovered()) {

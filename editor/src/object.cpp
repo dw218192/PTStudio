@@ -4,11 +4,11 @@
 #include <iostream>
 
 Object::Object() = default;
-Object::Object(Material mat) : m_bound{}, m_material{mat} { }
+Object::Object(Material mat) : material{mat} { }
 
 auto Object::from_obj(Material mat, std::string_view filename) noexcept -> tl::expected<Object, std::string> {
     Object ret{ mat };
-	ret.m_vertices.clear();
+	ret.vertices.clear();
 
     tinyobj::ObjReaderConfig config;
     config.mtl_search_path = "./";
@@ -69,7 +69,7 @@ auto Object::from_obj(Material mat, std::string_view filename) noexcept -> tl::e
                 }
 
 
-                ret.m_vertices.emplace_back(vertex);
+                ret.vertices.emplace_back(vertex);
                 min_pos = glm::min(vertex.position, min_pos);
                 max_pos = glm::max(vertex.position, max_pos);
             }
@@ -78,46 +78,46 @@ auto Object::from_obj(Material mat, std::string_view filename) noexcept -> tl::e
 
     if(infer_normal) {
         // clear all normals
-        for (auto& v : ret.m_vertices) {
+        for (auto& v : ret.vertices) {
             v.normal = glm::vec3{ 0 };
         }
-        for (size_t i = 2; i < ret.m_vertices.size(); i += 3) {
+        for (size_t i = 2; i < ret.vertices.size(); i += 3) {
             glm::vec3 normal = glm::cross(
-                ret.m_vertices[i - 1].position - ret.m_vertices[i - 2].position,
-                ret.m_vertices[i - 0].position - ret.m_vertices[i - 2].position
+                ret.vertices[i - 1].position - ret.vertices[i - 2].position,
+                ret.vertices[i - 0].position - ret.vertices[i - 2].position
             );
-            ret.m_vertices[i - 2].normal += normal;
-            ret.m_vertices[i - 1].normal += normal;
-            ret.m_vertices[i].normal += normal;
+            ret.vertices[i - 2].normal += normal;
+            ret.vertices[i - 1].normal += normal;
+            ret.vertices[i].normal += normal;
         }
-        for (auto& v : ret.m_vertices) {
+        for (auto& v : ret.vertices) {
             v.normal = glm::normalize(v.normal);
         }
     }
 
-    ret.m_bound = { min_pos, max_pos };
+    ret.bound = { min_pos, max_pos };
     return ret;
 }
 
 auto Object::make_triangle_obj(Material mat, Transform const& trans) noexcept -> Object {
     Object obj{ mat };
-    obj.m_transform = trans;
+    obj.transform = trans;
 
-	obj.m_vertices = {
+	obj.vertices = {
 	    Vertex{ glm::vec3{ -0.5, -0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 0, 0 } },
 	    Vertex{ glm::vec3{ 0.5, -0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 1, 0 } },
 	    Vertex{ glm::vec3{ 0, 0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 0.5, 1 } }
     };
-    obj.m_bound = { glm::vec3{ -0.5, -0.5, 0 }, glm::vec3{ 0.5, 0.5, 0 } };
+    obj.bound = { glm::vec3{ -0.5, -0.5, 0 }, glm::vec3{ 0.5, 0.5, 0 } };
     
     return obj;
 }
 
 auto Object::make_quad_obj(Material mat, Transform const& trans) noexcept -> Object {
     Object obj{ mat };
-    obj.m_transform = trans;
+    obj.transform = trans;
 
-    obj.m_vertices = {
+    obj.vertices = {
         Vertex{ glm::vec3{ -0.5, -0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 0, 0 } },
         Vertex{ glm::vec3{ 0.5, -0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 1, 0 } },
         Vertex{ glm::vec3{ -0.5, 0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 0, 1 } },
@@ -126,7 +126,7 @@ auto Object::make_quad_obj(Material mat, Transform const& trans) noexcept -> Obj
         Vertex{ glm::vec3{ 0.5, -0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 1, 0 } },
         Vertex{ glm::vec3{ 0.5, 0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 1, 1 } }
     };
-    obj.m_bound = { glm::vec3{ -0.5, -0.5, 0 }, glm::vec3{ 0.5, 0.5, 0 } };
+    obj.bound = { glm::vec3{ -0.5, -0.5, 0 }, glm::vec3{ 0.5, 0.5, 0 } };
 
     return obj;
 }

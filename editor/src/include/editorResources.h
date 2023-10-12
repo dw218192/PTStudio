@@ -8,7 +8,7 @@ ViewportId=0x9F5F46A1\n\
 Size=400,400\n\
 Collapsed=0\n\
 \n\
-[Window][Renderer]\n\
+[Window][Scene Settings]\n\
 Pos=0,0\n\
 Size=187,542\n\
 Collapsed=0\n\

@@ -44,6 +44,12 @@ auto Camera::viewport_to_world(glm::vec2 screen, float z) const noexcept -> glm:
     return ndc_to_wrold(ndc, z);
 }
 
+auto Camera::viewport_to_ray(glm::vec2 screen) const noexcept -> Ray {
+    auto world = viewport_to_world(screen);
+    auto origin = m_view.get_position();
+    return Ray{ origin, glm::normalize(world - origin) };
+}
+
 void Camera::set_rotation(TransformSpace space, glm::vec3 const& rot) noexcept {
     m_view.set_rotation(space, rot);
     update_matrices();
