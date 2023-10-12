@@ -140,8 +140,7 @@ void EditorApplication::draw_object_panel() noexcept {
             auto& obj = *m_control_state.cur_obj;
             ImGui::Text("Name: %s", obj.name.c_str());
             ImGui::TransformField("Transform", obj.transform);
-        }
-        else {
+        } else {
             ImGui::Text("No object selected");
         }
     }
