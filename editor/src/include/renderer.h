@@ -1,6 +1,6 @@
 #pragma once
 #include "commands.h"
-#include "renderResult.h"
+#include "texture.h"
 #include "scene.h"
 #include "camera.h"
 #include "renderConfig.h"
@@ -50,7 +50,7 @@ struct Renderer {
 	 * \return on failure, a Result object that contains an error message\n
 	 * on success, a Result object that contains a handle to the rendered image.
 	 */
-    [[nodiscard]] virtual auto render_buffered() noexcept -> tl::expected<RenderResultRef, std::string> = 0;
+    [[nodiscard]] virtual auto render_buffered() noexcept -> tl::expected<TextureRef, std::string> = 0;
 
     /**
      * \brief Checks if the renderer has a valid scene opened.
@@ -59,6 +59,6 @@ struct Renderer {
     [[nodiscard]] virtual auto valid() const noexcept -> bool = 0;
     [[nodiscard]] auto get_config() const noexcept -> RenderConfig const& { return m_config; }
 
-private:
+protected:
     RenderConfig m_config;
 };

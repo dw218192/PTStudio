@@ -3,6 +3,7 @@
 #include "scene.h"
 #include "renderer.h"
 
+#include <unordered_set>
 #include <iostream>
 #include <GLFW/glfw3.h>
 
@@ -84,7 +85,7 @@ struct Application {
     template<typename T, typename E>
     static constexpr decltype(auto) check_error(tl::expected<T, E> const& res);
     template<typename T, typename E>
-    static constexpr T check_error(tl::expected<T, E>&& res);
+    static constexpr decltype(auto) check_error(tl::expected<T, E>&& res);
     /**
      * \brief Terminates the program with the given exit code
      * \param code the exit code
@@ -99,13 +100,19 @@ struct Application {
     [[nodiscard]] static auto get_application() noexcept -> Application& {
     	return *s_app;
     }
-
+    [[nodiscard]] bool mouse_over_any_event_region() const noexcept {
+        return m_can_recv_mouse_event.count(m_cur_hovered_widget);
+    }
 protected:
     /**
      * \brief Gets the renderer for the application.
      * \return the renderer
     */
     [[nodiscard]] auto get_renderer() const -> Renderer& { return m_renderer; }
+
+    void begin_imgui_window(std::string_view name, bool recv_mouse_event = false, ImGuiWindowFlags flags = 0);
+    void end_imgui_window();
+
 private:
     static inline Application* s_app = nullptr;
     GLFWwindow* m_window;
@@ -114,6 +121,10 @@ private:
     Renderer& m_renderer;
 
     Camera m_cam;
+
+    // these are used to check if the mouse is over any mouse event region
+    std::unordered_set<std::string_view> m_can_recv_mouse_event;
+    std::string_view m_cur_hovered_widget;
 };
 
 template <typename T, typename E>
@@ -127,7 +138,7 @@ constexpr decltype(auto) Application::check_error(tl::expected<T, E> const& res)
     }
 }
 template <typename T, typename E>
-constexpr T Application::check_error(tl::expected<T, E>&& res) {
+constexpr decltype(auto) Application::check_error(tl::expected<T, E>&& res) {
     if (!res) {
         std::cerr << res.error() << std::endl;
         Application::quit(-1);

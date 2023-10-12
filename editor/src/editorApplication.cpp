@@ -1,8 +1,15 @@
 #include "include/editorApplication.h"
 #include "include/debugDrawer.h"
+#include "include/editorResources.h"
 
 EditorApplication::EditorApplication(Renderer& renderer, Scene& scene, std::string_view name)
-	: Application{ renderer, scene, name } {}
+	: Application{ renderer, scene, name } 
+{
+#ifndef EDITOR_APP_IMGUI_LOAD_INI
+    ImGui::GetIO().IniFilename = nullptr;
+    ImGui::LoadIniSettingsFromMemory(k_imgui_ini, std::strlen(k_imgui_ini));
+#endif
+}
 
 void EditorApplication::cursor_moved(double x, double y) {
     if (cur_button_down == -1) {
@@ -63,19 +70,71 @@ void EditorApplication::mouse_scroll(double x, double y) {
     check_error(get_renderer().exec(Cmd_CameraZoom{ delta }));
 }
 
-
 void EditorApplication::draw_imgui() {
-    ImGui::Begin("Renderer");
+    // create an UI that covers the whole window, for docking
+    ImGui::DockSpaceOverViewport(ImGui::GetMainViewport());
+    auto&& render_tex = check_error(get_renderer().render_buffered()).get();
 
-    ImGui::Spacing();
-    if (ImGui::CollapsingHeader("Control Settings", ImGuiTreeNodeFlags_DefaultOpen))
+    // draw left panel
+    begin_imgui_window("Renderer");
     {
-        ImGui::Text("Camera Control");
-        ImGui::SliderFloat("Move Sensitivity", &m_control_state.move_sensitivity, 1.0f, 10.0f);
-        ImGui::SliderFloat("Rotate Sensitivity", &m_control_state.rot_sensitivity, 2.0f, 100.0f);
-        ImGui::SliderFloat("Zoom Sensitivity", &m_control_state.zoom_sensitivity, 1.0f, 20.0f);
+        ImGui::Spacing();
+        if (ImGui::CollapsingHeader("Control Settings", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            ImGui::Text("Camera Control");
+            ImGui::SliderFloat("Move Sensitivity", &m_control_state.move_sensitivity, 1.0f, 10.0f);
+            ImGui::SliderFloat("Rotate Sensitivity", &m_control_state.rot_sensitivity, 2.0f, 100.0f);
+            ImGui::SliderFloat("Zoom Sensitivity", &m_control_state.zoom_sensitivity, 1.0f, 20.0f);
+        }
     }
-    ImGui::End();
+    end_imgui_window();
+
+    // draw right panel
+    begin_imgui_window("Inspector");
+    {
+        ImGui::Spacing();
+        ImGui::Text("not implemented");
+    }
+    end_imgui_window();
+    
+    // draw bottom panel
+    begin_imgui_window("Console");
+    {
+        ImGui::Spacing();
+        ImGui::Text("not implemented");
+    }
+    end_imgui_window();
+
+    // draw the scene view
+    begin_imgui_window("Scene", true, ImGuiWindowFlags_NoScrollWithMouse);
+    {
+        if(get_renderer().valid()) {
+            static auto last_size = ImVec2 { 0, 0 };
+            auto view_size = ImGui::GetContentRegionAvail();
+
+        	if (std::abs(view_size.x - last_size.x) >= 0.01f || std::abs(view_size.y - last_size.y) >= 0.01f) {
+                auto conf = get_renderer().get_config();
+                conf.width = static_cast<unsigned>(view_size.x);
+                conf.height = static_cast<unsigned>(view_size.y);
+
+                check_error(get_renderer().exec(Cmd_ChangeRenderConfig{ conf }));
+                last_size = view_size;
+            }
+
+        	try {
+                auto id = std::any_cast<GLuint>(render_tex.get_handle());
+
+                glBindTexture(GL_TEXTURE_2D, id);
+                ImGui::Image(reinterpret_cast<ImTextureID>(id), view_size, { 0, 1 }, { 1, 0 });
+                glBindTexture(GL_TEXTURE_2D, 0);
+
+            } catch (std::bad_any_cast const& e) {
+                std::cerr << e.what() << '\n';
+                Application::quit(-1);
+            }
+        }
+    }
+    end_imgui_window();
 
     // draw x,y,z axis ref
     auto axis_origin = get_cam().viewport_to_world({ 30, 50 });
@@ -87,9 +146,4 @@ void EditorApplication::draw_imgui() {
 
 void EditorApplication::loop() {
     draw_imgui();
-
-    if (!get_renderer().valid()) {
-        return;
-    }
-    check_error(get_renderer().render());
 }

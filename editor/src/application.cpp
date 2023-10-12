@@ -4,21 +4,21 @@
 static void clickFunc(GLFWwindow* window, int button, int action, int mods) {
     auto const app = static_cast<Application*>(glfwGetWindowUserPointer(window));
     // check if ImGui is using the mouse
-    if (ImGui::GetIO().WantCaptureMouse) {
+    if (ImGui::GetIO().WantCaptureMouse && !app->mouse_over_any_event_region()) {
         return;
     }
     app->mouse_clicked(button, action, mods);
 }
 static void motionFunc(GLFWwindow* window, double x, double y) {
     auto const app = static_cast<Application*>(glfwGetWindowUserPointer(window));
-    if (ImGui::GetIO().WantCaptureMouse) {
+    if (ImGui::GetIO().WantCaptureMouse && !app->mouse_over_any_event_region()) {
         return;
     }
     app->cursor_moved(x, y);
 }
 static void scrollFunc(GLFWwindow* window, double x, double y) {
     auto const app = static_cast<Application*>(glfwGetWindowUserPointer(window));
-    if (ImGui::GetIO().WantCaptureMouse) {
+    if (ImGui::GetIO().WantCaptureMouse && !app->mouse_over_any_event_region()) {
         return;
     }
     app->mouse_scroll(x, y);
@@ -77,7 +77,9 @@ Application::Application(Renderer& renderer, Scene& scene, std::string_view name
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
-
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
+    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;       // Enable Multi-Viewport / Platform Windows
+    
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
 
@@ -106,8 +108,7 @@ void Application::run() {
         glfwPollEvents();
 
         if (now - last_frame_time >= m_renderer.get_config().min_frame_time) {
-            // Do Rendering
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            m_cur_hovered_widget = "";
 
             // Start the Dear ImGui frame
             ImGui_ImplOpenGL3_NewFrame();
@@ -119,6 +120,10 @@ void Application::run() {
 
             ImGui::Render();
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+        	ImGui::UpdatePlatformWindows();
+            ImGui::RenderPlatformWindowsDefault();
+            glfwMakeContextCurrent(m_window);
 
             glfwSwapBuffers(m_window);
             last_frame_time = now;
@@ -140,6 +145,20 @@ auto Application::get_window_width() const noexcept->int {
     int display_w;
     glfwGetFramebufferSize(m_window, &display_w, nullptr);
     return display_w;
+}
+
+void Application::begin_imgui_window(std::string_view name, bool recv_mouse_event, ImGuiWindowFlags flags) {
+    if (recv_mouse_event && !m_can_recv_mouse_event.count(name)) {
+        m_can_recv_mouse_event.insert(name);
+    }
+    ImGui::Begin(name.data(), nullptr, flags);
+    if (ImGui::IsWindowHovered()) {
+        m_cur_hovered_widget = name;
+    }
+}
+
+void Application::end_imgui_window() {
+    ImGui::End();
 }
 
 void Application::quit(int code) {

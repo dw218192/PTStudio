@@ -21,7 +21,7 @@ struct Camera {
     void set_view_transform(Transform const& transform) noexcept;
 
 	void set_fov(float fov) noexcept;
-
+    void set_viewport(unsigned px_width, unsigned px_height) noexcept;
 private:
     void update_matrices() noexcept;
 

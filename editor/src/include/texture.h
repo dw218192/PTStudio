@@ -1,10 +1,12 @@
 #pragma once
 #include <string>
-#include <GL/glew.h>
 #include <vector>
+#include <any>
+
+#include <GL/glew.h>
 #include <tl/expected.hpp>
 
-struct RenderResult;
+struct Texture;
 
 enum class FileFormat {
     PNG,
@@ -13,18 +15,11 @@ enum class FileFormat {
     TGA
 };
 
-using RenderResultRef = std::reference_wrapper<RenderResult const>;
+using TextureRef = std::reference_wrapper<Texture const>;
 
-/** \brief Represents the result of a render operation\n
- * This class is not meant to be created directly. Instead, use Renderer::render() to get a RenderResult object.
-*/
-struct RenderResult {
-    RenderResult(unsigned width, unsigned height) noexcept;
-    ~RenderResult() noexcept;
-	RenderResult(RenderResult&) = delete;
-    RenderResult(RenderResult&&) = delete;
-    RenderResult& operator=(RenderResult&) = delete;
-    RenderResult& operator=(RenderResult&&) = delete;
+struct Texture {
+    Texture(unsigned width, unsigned height, std::any handle) noexcept;
+    ~Texture() noexcept = default;
 
     [[nodiscard]] auto get_pixels() const noexcept -> std::vector<unsigned char> const& {
         return m_pixels;
@@ -43,6 +38,8 @@ struct RenderResult {
     */
     [[nodiscard]] auto get_height() const noexcept { return m_height; }
 
+    [[nodiscard]] auto get_handle() const noexcept -> std::any const& { return m_handle; }
+
     /**
      * \brief Saves the render result to a file
      * \param fmt The file format to be used
@@ -50,9 +47,10 @@ struct RenderResult {
      * \return on failure, a Result object that contains an error message\n
      * on success, an empty Result object.
     */
-    void save(FileFormat fmt, std::string_view file_path) const noexcept;
+    auto save(FileFormat fmt, std::string_view file_path) const noexcept -> tl::expected<void, std::string>;
 
 private:
-    std::vector<unsigned char> m_pixels;
+    mutable std::vector<unsigned char> m_pixels;
     unsigned m_width, m_height, m_linear_sz;
+    std::any m_handle;
 };

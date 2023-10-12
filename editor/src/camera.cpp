@@ -65,6 +65,14 @@ void Camera::set_fov(float fov) noexcept {
     update_matrices();
 }
 
+void Camera::set_viewport(unsigned px_width, unsigned px_height) noexcept {
+    m_px_width = px_width;
+    m_px_height = px_height;
+    m_aspect = px_width / static_cast<float>(px_height);
+    m_projection = glm::perspective(glm::radians(m_fov), m_aspect, k_near, k_far);
+    update_matrices();
+}
+
 void Camera::update_matrices() noexcept {
     m_view_proj = m_projection * m_view.get_matrix();
     m_inv_view_proj = glm::inverse(m_view_proj);

@@ -2,6 +2,7 @@
 
 #include "renderer.h"
 #include <array>
+#include <optional>
 
 struct EditorRenderer : Renderer {
     EditorRenderer(RenderConfig const& config) noexcept;
@@ -10,7 +11,7 @@ struct EditorRenderer : Renderer {
     [[nodiscard]] auto open_scene(Scene const& scene) noexcept -> tl::expected<void, std::string> override;
     [[nodiscard]] auto exec(Cmd const& cmd) noexcept -> tl::expected<void, std::string> override;
     [[nodiscard]] auto render() noexcept -> tl::expected<void, std::string> override;
-    [[nodiscard]] auto render_buffered() noexcept -> tl::expected<RenderResultRef, std::string> override;
+    [[nodiscard]] auto render_buffered() noexcept -> tl::expected<TextureRef, std::string> override;
 	[[nodiscard]] auto valid() const noexcept -> bool override { return m_valid; }
 
 private:
@@ -27,7 +28,7 @@ private:
     };
 
     [[nodiscard]] auto render_internal(GLuint fbo) noexcept -> tl::expected<void, std::string>;
-    [[nodiscard]] auto create_frame_buf() noexcept -> tl::expected<void, std::string>;
+    [[nodiscard]] auto create_render_buf() noexcept -> tl::expected<void, std::string>;
     [[nodiscard]] auto get_buf(BufIndex idx) noexcept -> GLuint& { return m_buffer_handles[idx]; }
     [[nodiscard]] auto get_vao(VAOIndex idx) noexcept -> GLuint& { return m_vao_handles[idx]; }
     [[nodiscard]] auto get_bufs() const noexcept { return m_buffer_handles.data(); }
@@ -37,12 +38,16 @@ private:
     std::array<GLuint, BUF_COUNT> m_buffer_handles;
 
     // use 1 vao, 1 vbo for all meshes (objects)
-    RenderResult m_res;
-    struct {
+    struct RenderBufferData {
         GLuint fbo;
         GLuint tex;
         GLuint rbo;
-    } m_render_buf;
+        Texture tex_data;
+        RenderBufferData(GLuint fbo, GLuint tex, GLuint rbo, Texture tex_data) noexcept
+            : fbo{fbo}, tex{tex}, rbo{rbo}, tex_data{std::move(tex_data)} {}
+    };
+    
+    std::optional<RenderBufferData> m_render_buf;
 
     // shader for all objects in the editor
     bool m_valid = false;

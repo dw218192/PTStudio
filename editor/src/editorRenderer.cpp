@@ -1,141 +1,65 @@
 #include "include/editorRenderer.h"
 #include "include/application.h"
+#include "include/editorResources.h"
 
 #include <cassert>
 #include <algorithm>
 
-
-constexpr char const* ps_unicolor_src =
-"\
-	#version 330 core\n\
-	layout(location = 0) out vec3 FragColor; \n\
-	void main() {\n\
-        FragColor = vec3(1.0f, 0.5f, 0.2f); \n\
-	}\n\
-";
-
-constexpr char const* vs_obj_src =
-"\
-    #version 330 core\n\
-    layout (location = 0) in vec3 aPos;\n\
-    layout (location = 1) in vec3 aNormal;\n\
-    layout (location = 2) in vec2 aTexCoords;\n\
-    out vec2 TexCoords;\n\
-    out vec3 Normal;\n\
-    out vec3 FragPos;\n\
-    uniform mat4 model;\n\
-    uniform mat4 view;\n\
-    uniform mat4 projection;\n\
-    void main() {\n\
-        TexCoords = aTexCoords;\n\
-        Normal = mat3(transpose(inverse(model))) * aNormal;\n\
-        FragPos = vec3(model * vec4(aPos, 1.0));\n\
-        gl_Position = projection * view * vec4(FragPos, 1.0);\n\
-    }\n\
-";
-
-constexpr char const* ps_obj_src =
-"\
-    #version 330 core\n\
-    out vec4 FragColor;\n\
-    in vec2 TexCoords;\n\
-    in vec3 Normal;\n\
-    in vec3 FragPos;\n\
-	uniform vec3 lightPos;\n\
-    uniform mat4 view;\n\
-    void main() {\n\
-        const vec3 objectColor = vec3(178.0/255.0, 190.0/255.0, 181.0/255.0);\n\
-        const vec3 lightColor = vec3(1.0, 1.0, 1.0);\n\
-		vec3 camPos = view[3].xyz;\n\
-        float ambientStrength = 0.2;\n\
-        vec3 ambient = ambientStrength * lightColor;\n\
-        vec3 norm = normalize(Normal);\n\
-        vec3 lightDir = normalize(lightPos - FragPos);\n\
-        float diff = max(dot(norm, lightDir), 0.0);\n\
-        vec3 diffuse = diff * lightColor;\n\
-        float specularStrength = 0.5;\n\
-        vec3 viewDir = normalize(camPos - FragPos);\n\
-        vec3 reflectDir = reflect(-lightDir, norm);\n\
-        float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32);\n\
-        vec3 specular = specularStrength * spec * lightColor;\n\
-        vec3 result = (ambient + diffuse + specular) * objectColor;\n\
-        FragColor = vec4(result, 1.0);\n\
-    }\n\
-";
-
-constexpr char const* vs_grid_src = 
-"\
-    #version 330 core\n\
-    layout (location = 0) in vec3 aPos;\n\
-    uniform mat4 view;\n\
-    uniform mat4 projection;\n\
-    out vec2 grid_coords;\n\
-    void main() {\n\
-        grid_coords = aPos.xz;\n\
-        gl_Position = projection * view * vec4(aPos, 1.0);\n\
-    }\n\
-";
-
-constexpr char const* ps_grid_src = 
-"\
-    #version 330 core\n\
-    uniform float half_grid_dim;\n\
-    in vec2 grid_coords;\n\
-    out vec4 FragColor;\n\
-    void main() {\n\
-        float dist = max(abs(grid_coords.x), abs(grid_coords.y)) / half_grid_dim;\n\
-        float alpha = 1.0 - pow(dist, 0.25);\n\
-        FragColor = vec4(0.7, 0.7, 0.7, alpha);\n\
-    }\n\
-";
-
-constexpr char const* k_uniform_model = "model";
-constexpr char const* k_uniform_view = "view";
-constexpr char const* k_uniform_projection = "projection";
-constexpr char const* k_uniform_light_pos = "lightPos";
-constexpr char const* k_uniform_light_color = "lightColor";
-constexpr char const* k_uniform_object_color = "objectColor";
-constexpr char const* k_uniform_half_grid_dim = "half_grid_dim";
-
 constexpr float k_grid_dim = 100.0f;
 constexpr float k_grid_spacing = 1.0f;
-
+constexpr glm::vec3 k_clear_color = glm::vec3{ 0 };
 
 EditorRenderer::EditorRenderer(RenderConfig const& config) noexcept
-	: Renderer{config}, m_res{config.width, config.height} {}
+	: Renderer{config} {}
 
 EditorRenderer::~EditorRenderer() {
     if (EditorRenderer::valid()) {
         glDeleteBuffers(BufIndex::BUF_COUNT, get_bufs());
         glDeleteVertexArrays(VAOIndex::VAO_COUNT, get_vaos());
 
-        glDeleteFramebuffers(1, &m_render_buf.fbo);
-        glDeleteRenderbuffers(1, &m_render_buf.rbo);
-        glDeleteTextures(1, &m_render_buf.tex);
+        if(m_render_buf) {
+            glDeleteFramebuffers(1, &m_render_buf->fbo);
+            glDeleteRenderbuffers(1, &m_render_buf->rbo);
+            glDeleteTextures(1, &m_render_buf->tex);
+        }
     }
 }
 
 auto EditorRenderer::exec(Cmd const& cmd) noexcept -> tl::expected<void, std::string> {
     struct Handler {
         Handler(EditorRenderer& rend) : rend(rend) { }
-        void operator()(Cmd_CameraRot const& rot) const {
-            Application::get_cam().set_rotation(TransformSpace::LOCAL, rot.angles_deg);
+        void operator()(Cmd_CameraRot const& cmd) const {
+            Application::get_cam().set_rotation(TransformSpace::LOCAL, cmd.angles_deg);
         }
-        void operator()(Cmd_CameraMove const& rot) const {
-			Application::get_cam().set_position(TransformSpace::LOCAL, rot.delta);
+        void operator()(Cmd_CameraMove const& cmd) const {
+			Application::get_cam().set_position(TransformSpace::LOCAL, cmd.delta);
         }
-        void operator()(Cmd_CameraZoom const& zoom) const {
-            Application::get_cam().set_position(TransformSpace::LOCAL, { 0, 0, zoom.delta });
+        void operator()(Cmd_CameraZoom const& cmd) const {
+            Application::get_cam().set_position(TransformSpace::LOCAL, { 0, 0, cmd.delta });
         }
-        void operator()(Cmd_ChangeRenderConfig const& new_config) const {
-            
+        void operator()(Cmd_ChangeRenderConfig const& cmd) {
+            if (!cmd.config.is_valid() || cmd.config == rend.m_config) {
+                return;
+            }
+            rend.m_config = cmd.config;
+            auto res = rend.create_render_buf();
+            if (!res) {
+                err = res.error();
+            }
+
+            Application::get_cam().set_viewport(cmd.config.width, cmd.config.height);
+            Application::get_cam().set_fov(rend.m_config.fovy);
         }
 
         EditorRenderer& rend;
+        std::string err;
     } handler{ *this };
 
     if (valid()) {
         std::visit(handler, cmd);
+        if (!handler.err.empty()) {
+            return tl::unexpected{ handler.err };
+        }
     }
     return {};
 }
@@ -225,13 +149,6 @@ auto EditorRenderer::open_scene(Scene const& scene) noexcept -> tl::expected<voi
         if (err != GL_NO_ERROR) {
             return unexpected_gl_error(err);
         }
-
-        // set up render buffer
-        auto res = create_frame_buf();
-        if (!res) {
-            return tl::unexpected{ res.error() };
-        }
-
         // set up shader
         auto shader_res = ShaderProgram::from_srcs(vs_obj_src, ps_obj_src);
         if (!shader_res) {
@@ -247,7 +164,7 @@ auto EditorRenderer::open_scene(Scene const& scene) noexcept -> tl::expected<voi
             m_grid_shader = std::move(shader_res.value());
         }
 
-        res = create_grid(k_grid_dim, k_grid_spacing);
+        auto res = create_grid(k_grid_dim, k_grid_spacing);
         if (!res) {
             return res;
         }
@@ -331,28 +248,20 @@ auto EditorRenderer::render() noexcept -> tl::expected<void, std::string> {
     return render_internal(0);
 }
 
-auto EditorRenderer::render_buffered() noexcept -> tl::expected<RenderResultRef, std::string> {
-    auto res = render_internal(m_render_buf.fbo);
+auto EditorRenderer::render_buffered() noexcept -> tl::expected<TextureRef, std::string> {
+    if (!m_render_buf) {
+        auto res = create_render_buf();
+        if (!res) {
+            return tl::unexpected{ res.error() };
+        }
+    }
+
+    auto res = render_internal(m_render_buf->fbo);
     if (!res) {
         return tl::unexpected{ res.error() };
     }
 
-    auto& pixels = m_res.get_pixels();
-    auto w = m_res.get_width(), h = m_res.get_height();
-
-    glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
-    // flip vertically
-    for (decltype(w) y = 0; y < h / 2; ++y) {
-        for (decltype(w) x = 0; x < w; ++x) {
-            int const frm = y * w + x;
-            int const to = (h - y - 1) * w + x;
-            for (int k = 0; k < 3; ++k) {
-                std::swap(pixels[3 * frm + k], pixels[3 * to + k]);
-            }
-        }
-    }
-
-    return m_res;
+    return std::cref(m_render_buf->tex_data);
 }
 
 auto EditorRenderer::render_internal(GLuint fbo) noexcept -> tl::expected<void, std::string> {
@@ -368,6 +277,11 @@ auto EditorRenderer::render_internal(GLuint fbo) noexcept -> tl::expected<void, 
     auto&& scene = Application::get_scene();
 
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+
+    glClearColor(k_clear_color.x, k_clear_color.y, k_clear_color.z, 1.0f);
+    glClearDepth(1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    
     glViewport(0, 0, get_config().width, get_config().height);
 
     glBindVertexArray(get_vao(VAOIndex::OBJ_VAO));
@@ -434,10 +348,19 @@ auto EditorRenderer::render_internal(GLuint fbo) noexcept -> tl::expected<void, 
     }
     glDisable(GL_BLEND);
 
+    glBindVertexArray(0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
     return {};
 }
 
-auto EditorRenderer::create_frame_buf() noexcept -> tl::expected<void, std::string> {
+auto EditorRenderer::create_render_buf() noexcept -> tl::expected<void, std::string> {
+    if (m_render_buf) {
+        glDeleteFramebuffers(1, &m_render_buf->fbo);
+        glDeleteRenderbuffers(1, &m_render_buf->rbo);
+        glDeleteTextures(1, &m_render_buf->tex);
+    }
+
     GLuint fbo, rbo, tex;
     GLsizei const w = get_config().width;
     GLsizei const h = get_config().height;
@@ -467,7 +390,7 @@ auto EditorRenderer::create_frame_buf() noexcept -> tl::expected<void, std::stri
             glTexImage2D(
                 GL_TEXTURE_2D, 0, GL_RGB, // RGB color format
                 w, h,
-                0, GL_RGB, GL_UNSIGNED_BYTE, 0
+                0, GL_RGB, GL_UNSIGNED_BYTE, nullptr
             );
 
             err = glGetError();
@@ -488,16 +411,14 @@ auto EditorRenderer::create_frame_buf() noexcept -> tl::expected<void, std::stri
             }
 
             if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-                return tl::unexpected{ "frame buffer is not valid" };
+                return tl::unexpected{ std::string { "frame buffer is not valid, status = " } + 
+                    std::to_string(glCheckFramebufferStatus(GL_FRAMEBUFFER)) };
             }
         }
         glBindTexture(GL_TEXTURE_2D, 0);
     }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-    m_render_buf.fbo = fbo;
-    m_render_buf.rbo = rbo;
-    m_render_buf.tex = tex;
-
+    m_render_buf = RenderBufferData{ fbo, tex, rbo, Texture{ static_cast<unsigned>(w), static_cast<unsigned>(h), tex } };
     return {};
 }

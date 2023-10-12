@@ -8,6 +8,7 @@ struct Material {
     float metallic { 0.0f };
     float ior { 1.0f };
     float ao { 1.0f };
+    float transmission { 0.0f };
 
     struct {
         glm::vec3 color { 0.0f };
