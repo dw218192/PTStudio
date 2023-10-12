@@ -72,7 +72,7 @@ void EditorApplication::mouse_scroll(double x, double y) {
 
 void EditorApplication::draw_imgui() {
     // create an UI that covers the whole window, for docking
-    ImGui::DockSpaceOverViewport(ImGui::GetMainViewport());
+    ImGui::DockSpaceOverViewport(ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
     auto&& render_tex = check_error(get_renderer().render_buffered()).get();
 
     // draw left panel
@@ -108,11 +108,11 @@ void EditorApplication::draw_imgui() {
     // draw the scene view
     begin_imgui_window("Scene", true, ImGuiWindowFlags_NoScrollWithMouse);
     {
-        if(get_renderer().valid()) {
-            static auto last_size = ImVec2 { 0, 0 };
+        if (get_renderer().valid()) {
+            static auto last_size = ImVec2{ 0, 0 };
             auto view_size = ImGui::GetContentRegionAvail();
 
-        	if (std::abs(view_size.x - last_size.x) >= 0.01f || std::abs(view_size.y - last_size.y) >= 0.01f) {
+            if (std::abs(view_size.x - last_size.x) >= 0.01f || std::abs(view_size.y - last_size.y) >= 0.01f) {
                 auto conf = get_renderer().get_config();
                 conf.width = static_cast<unsigned>(view_size.x);
                 conf.height = static_cast<unsigned>(view_size.y);
@@ -121,27 +121,32 @@ void EditorApplication::draw_imgui() {
                 last_size = view_size;
             }
 
-        	try {
+            try {
                 auto id = std::any_cast<GLuint>(render_tex.get_handle());
 
                 glBindTexture(GL_TEXTURE_2D, id);
                 ImGui::Image(reinterpret_cast<ImTextureID>(id), view_size, { 0, 1 }, { 1, 0 });
                 glBindTexture(GL_TEXTURE_2D, 0);
 
-            } catch (std::bad_any_cast const& e) {
+            }
+            catch (std::bad_any_cast const& e) {
                 std::cerr << e.what() << '\n';
                 Application::quit(-1);
             }
+
+            auto pos = ImGui::GetWindowPos();
+        	DebugDrawer::set_draw_list(ImGui::GetWindowDrawList());
+
+            // draw x,y,z axis ref
+            auto axis_origin = get_cam().viewport_to_world(glm::vec2 { pos.x + 30, pos.y + 50 });
+            constexpr float axis_len = 0.01f;
+            DebugDrawer::draw_line_3d(axis_origin, axis_origin + glm::vec3{ axis_len, 0, 0 }, { 1, 0, 0 });
+            DebugDrawer::draw_line_3d(axis_origin, axis_origin + glm::vec3{ 0, axis_len, 0 }, { 0, 1, 0 });
+            DebugDrawer::draw_line_3d(axis_origin, axis_origin + glm::vec3{ 0, 0, axis_len }, { 0, 0, 1 });
+            DebugDrawer::set_draw_list(nullptr);
         }
     }
     end_imgui_window();
-
-    // draw x,y,z axis ref
-    auto axis_origin = get_cam().viewport_to_world({ 30, 50 });
-    constexpr float axis_len = 0.01f;
-    DebugDrawer::draw_line_3d(axis_origin, axis_origin + glm::vec3{ axis_len, 0, 0 }, { 1, 0, 0 });
-    DebugDrawer::draw_line_3d(axis_origin, axis_origin + glm::vec3{ 0, axis_len, 0 }, { 0, 1, 0 });
-    DebugDrawer::draw_line_3d(axis_origin, axis_origin + glm::vec3{ 0, 0, axis_len }, { 0, 0, 1 });
 }
 
 void EditorApplication::loop() {

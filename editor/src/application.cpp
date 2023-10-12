@@ -78,7 +78,6 @@ Application::Application(Renderer& renderer, Scene& scene, std::string_view name
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
-    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;       // Enable Multi-Viewport / Platform Windows
     
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
@@ -96,6 +95,10 @@ Application::Application(Renderer& renderer, Scene& scene, std::string_view name
 }
 
 Application::~Application() {
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+
     glfwTerminate();
 }
 
@@ -109,6 +112,9 @@ void Application::run() {
 
         if (now - last_frame_time >= m_renderer.get_config().min_frame_time) {
             m_cur_hovered_widget = "";
+
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 
             // Start the Dear ImGui frame
             ImGui_ImplOpenGL3_NewFrame();
@@ -162,5 +168,6 @@ void Application::end_imgui_window() {
 }
 
 void Application::quit(int code) {
+    s_app->~Application();
     exit(code);
 }
