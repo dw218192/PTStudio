@@ -8,9 +8,7 @@ int main() {
         60.0, 120.0
     };
     auto renderer = EditorRenderer{ config };
-    auto scene = Application::check_error(
-        Scene::from_obj_file("D:/Repos/PTStudio/_files/ada.obj")
-    );
+    auto scene = Application::check_error(Scene::make_triangle_scene());
     auto app = EditorApplication { renderer, scene, "PT Editor" };
     app.run();
 }

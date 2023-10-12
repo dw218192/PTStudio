@@ -1,6 +1,8 @@
 #include "include/editorApplication.h"
 #include "include/debugDrawer.h"
 #include "include/editorResources.h"
+#include "include/imgui/editorFields.h"
+#include "include/imgui/fileDialogue.h"
 
 EditorApplication::EditorApplication(Renderer& renderer, Scene& scene, std::string_view name)
 	: Application{ renderer, scene, name } 
@@ -106,30 +108,43 @@ void EditorApplication::loop() {
 }
 
 void EditorApplication::draw_scene_panel() noexcept {
-    ImGui::Spacing();
-    if (ImGui::CollapsingHeader("Control Settings", ImGuiTreeNodeFlags_DefaultOpen))
+    if (ImGui::CollapsingHeader("Camera Control", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        ImGui::Text("Camera Control");
-        ImGui::SliderFloat("Move Sensitivity", &m_control_state.move_sensitivity, 1.0f, 10.0f);
-        ImGui::SliderFloat("Rotate Sensitivity", &m_control_state.rot_sensitivity, 2.0f, 100.0f);
-        ImGui::SliderFloat("Zoom Sensitivity", &m_control_state.zoom_sensitivity, 1.0f, 20.0f);
+        ImGui::Text("Move Sensitivity");
+        ImGui::SliderFloat("##Move Sensitivity", &m_control_state.move_sensitivity, 1.0f, 10.0f);
+        ImGui::Text("Rotate Sensitivity");
+        ImGui::SliderFloat("##Rotate Sensitivity", &m_control_state.rot_sensitivity, 2.0f, 100.0f);
+        ImGui::Text("Zoom Sensitivity");
+        ImGui::SliderFloat("##Zoom Sensitivity", &m_control_state.zoom_sensitivity, 1.0f, 20.0f);
     }
 
-    ImGui::Spacing();
     // draw scene object list
+    ImGui::Spacing();
     if (ImGui::CollapsingHeader("Scene Objects", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        auto const& objects = get_scene().get_objects();
-
-        for (auto&& obj : objects) {
-            // TODO
+        ImGui::BeginListBox("##Scene Objects", { 0, 200 });
+        {
+            for (auto&& obj : get_scene()) {
+                if (ImGui::Selectable(obj.name.c_str(), m_control_state.cur_obj == &obj)) {
+                    m_control_state.cur_obj = &obj;
+                }
+            }
         }
+        ImGui::EndListBox();
     }
 }
 
 void EditorApplication::draw_object_panel() noexcept {
-    ImGui::Spacing();
-    ImGui::Text("not implemented");
+    if (ImGui::CollapsingHeader("Object Properties", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (m_control_state.cur_obj) {
+            auto& obj = *m_control_state.cur_obj;
+            ImGui::Text("Name: %s", obj.name.c_str());
+            ImGui::TransformField("Transform", obj.transform);
+        }
+        else {
+            ImGui::Text("No object selected");
+        }
+    }
 }
 
 void EditorApplication::draw_scene_viewport(TextureRef render_buf) noexcept {

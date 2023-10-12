@@ -15,12 +15,13 @@ struct Vertex {
 };
 
 struct Object {
-    Object();
-    Object(Material mat);
+    Object(struct Scene const& scene);
+    Object(Scene const& scene, BoundingBox bound, Transform transform, Material mat, std::vector<Vertex> vertices, std::string name);
+    Object(Scene const& scene, BoundingBox bound, Transform transform, Material mat, std::vector<Vertex> vertices);
 
-    [[nodiscard]] static auto from_obj(Material mat, std::string_view filename) noexcept -> tl::expected<Object, std::string>;
-    [[nodiscard]] static auto make_triangle_obj(Material mat, Transform const& trans) noexcept -> Object;
-    [[nodiscard]] static auto make_quad_obj(Material mat, Transform const& trans) noexcept -> Object;
+    [[nodiscard]] static auto from_obj(Scene const& scene, Material mat, std::string_view filename) noexcept -> tl::expected<Object, std::string>;
+    [[nodiscard]] static auto make_triangle_obj(Scene const& scene, Material mat, Transform const& trans) noexcept -> Object;
+    [[nodiscard]] static auto make_quad_obj(Scene const& scene, Material mat, Transform const& trans) noexcept -> Object;
 
     BoundingBox bound;
     Transform transform;

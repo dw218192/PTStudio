@@ -23,6 +23,7 @@
 #error "Unsupported platform"
 #endif
 
+// c++23 expected
 #include <tl/expected.hpp>
 
 inline tl::unexpected<char const*> unexpected_gl_error(GLenum err) {

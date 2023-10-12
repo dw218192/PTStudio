@@ -1,18 +1,18 @@
 #pragma once
 
-#include "device_launch_parameters.h"
-
 #ifdef __CUDACC__
+#include <device_launch_parameters.h>
 #define DEVICE __device__
 #define HOST __host__
 #define INLINE __forceinline__
 #define GLOBAL __global__
-
+#define NODISCARD
 #else
 #define DEVICE
 #define HOST
 #define INLINE
 #define GLOBAL
+#define NODISCARD [[nodiscard]]
 #endif
 
 #ifdef __INTELLISENSE__

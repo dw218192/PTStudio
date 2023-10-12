@@ -20,3 +20,4 @@
 [submodule "ext/nativefiledialog"]
 	path = ext/nativefiledialog
 	url = https://github.com/AlvaroBarua/nativefiledialog.git
+	branch = CMakeLists

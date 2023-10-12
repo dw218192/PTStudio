@@ -187,7 +187,7 @@ auto EditorRenderer::open_scene(Scene const& scene) noexcept -> tl::expected<voi
         {
             // gather all vertices from all objects in the scene
             std::vector<Vertex> all_vertices;
-            for (auto&& obj : scene.get_objects()) {
+            for (auto&& obj : scene) {
                 all_vertices.insert(all_vertices.end(), obj.vertices.begin(), obj.vertices.end());
             }
 
@@ -302,7 +302,7 @@ auto EditorRenderer::render_internal(GLuint fbo) noexcept -> tl::expected<void, 
         }
 
         size_t vbo_offset = 0;
-        for (const auto& obj : scene.get_objects()) {
+        for (const auto& obj : scene) {
             res = m_editor_shader.set_uniform(k_uniform_model, obj.transform.get_matrix());
             if (!res) {
                 return res;

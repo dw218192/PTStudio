@@ -170,6 +170,8 @@ void Application::end_imgui_window() {
 }
 
 void Application::quit(int code) {
-    s_app->~Application();
-    exit(code);
+    if (s_app) {
+        s_app->~Application();
+    }
+	exit(code);
 }

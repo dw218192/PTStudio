@@ -31,6 +31,8 @@ private:
         float move_sensitivity = k_init_move_sensitivity;
         float rot_sensitivity = k_init_rot_sensitivity;
         float zoom_sensitivity = k_init_zoom_sensitivity;
+
+        Object* cur_obj = nullptr;
     } m_control_state;
 };
 

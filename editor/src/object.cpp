@@ -3,11 +3,24 @@
 
 #include <iostream>
 
-Object::Object() = default;
-Object::Object(Material mat) : material{mat} { }
+#include "include/scene.h"
 
-auto Object::from_obj(Material mat, std::string_view filename) noexcept -> tl::expected<Object, std::string> {
-    Object ret{ mat };
+
+Object::Object(Scene const& scene) : name{ scene.next_obj_name() } {}
+
+Object::Object(Scene const& scene, BoundingBox bound, Transform transform, Material mat, std::vector<Vertex> vertices, std::string name)
+	: bound{ std::move(bound) }, transform{ std::move(transform) },
+	  material{ std::move(mat) }, vertices {std::move(vertices) }, name { std::move(name) }
+{}
+
+Object::Object(Scene const& scene, BoundingBox bound, Transform transform, Material mat, std::vector<Vertex> vertices)
+    : bound{ std::move(bound) }, transform{ std::move(transform) },
+	  material{ std::move(mat) }, vertices{ std::move(vertices) }, name{ scene.next_obj_name() }
+{}
+
+
+auto Object::from_obj(Scene const& scene, Material mat, std::string_view filename) noexcept -> tl::expected<Object, std::string> {
+    Object ret{ scene };
 	ret.vertices.clear();
 
     tinyobj::ObjReaderConfig config;
@@ -99,8 +112,8 @@ auto Object::from_obj(Material mat, std::string_view filename) noexcept -> tl::e
     return ret;
 }
 
-auto Object::make_triangle_obj(Material mat, Transform const& trans) noexcept -> Object {
-    Object obj{ mat };
+auto Object::make_triangle_obj(Scene const& scene, Material mat, Transform const& trans) noexcept -> Object {
+    Object obj{ scene };
     obj.transform = trans;
 
 	obj.vertices = {
@@ -113,8 +126,8 @@ auto Object::make_triangle_obj(Material mat, Transform const& trans) noexcept ->
     return obj;
 }
 
-auto Object::make_quad_obj(Material mat, Transform const& trans) noexcept -> Object {
-    Object obj{ mat };
+auto Object::make_quad_obj(Scene const& scene, Material mat, Transform const& trans) noexcept -> Object {
+    Object obj{ scene };
     obj.transform = trans;
 
     obj.vertices = {

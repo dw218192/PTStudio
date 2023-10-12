@@ -5,12 +5,12 @@
 Scene::Scene() = default;
 
 auto Scene::from_obj_file(std::string_view filename) noexcept -> tl::expected<Scene, std::string> {
-    auto ores = Object::from_obj(Material{}, filename);
-    if(!ores) {
+    Scene ret{  };
+    auto ores = Object::from_obj(ret, Material{}, filename);
+    if (!ores) {
         return tl::unexpected{ ores.error() };
     }
 
-    Scene ret{  };
     ret.m_objects.emplace_back(ores.value());
     return ret;
 }
@@ -19,7 +19,7 @@ auto Scene::from_obj_file(std::string_view filename) noexcept -> tl::expected<Sc
 auto Scene::get_good_cam_start() const noexcept -> Transform {
     constexpr float tan_alpha = 0.4663f;
 
-    if (get_objects().empty()) {
+    if (m_objects.empty()) {
         return Transform::look_at(glm::vec3{ 0, 2, 2 }, glm::vec3{ 0 }, glm::vec3{ 0,1,0 });
     }
 
@@ -48,17 +48,17 @@ auto Scene::get_good_light_pos() const noexcept -> glm::vec3 {
 auto Scene::ray_cast(Ray const& ray, float t_min, float t_max) const noexcept -> std::optional<Object> {
     std::optional<Object> ret;
     float closest_t = t_max;
-    for (auto&& obj : get_objects()) {
-        // TODO
+    for (auto&& obj : m_objects) {
+	    // TODO
     }
     return ret;
 }
 
 auto Scene::make_triangle_scene() noexcept -> tl::expected<Scene, std::string> {
     Scene scene { };
-    scene.m_objects.emplace_back(Object::make_triangle_obj(Material{}, 
+    scene.m_objects.emplace_back(Object::make_triangle_obj(scene, Material{},
         Transform{  }));
-    scene.m_objects.emplace_back(Object::make_triangle_obj(Material{}, 
+    scene.m_objects.emplace_back(Object::make_triangle_obj(scene, Material{},
         Transform{ glm::vec3{0.2,0.2,0}, glm::vec3{0,0,0}, glm::vec3{1,1,1} }));
     return scene;
 }
