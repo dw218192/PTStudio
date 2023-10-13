@@ -1,4 +1,5 @@
 #include "include/application.h"
+#include <imgui_internal.h>
 
 // stubs for callbacks
 static void clickFunc(GLFWwindow* window, int button, int action, int mods) {
@@ -111,7 +112,7 @@ void Application::run() {
         glfwPollEvents();
 
         if (now - last_frame_time >= m_renderer.get_config().min_frame_time) {
-            m_cur_hovered_widget = "";
+            m_prev_hovered_widget = m_cur_hovered_widget;
 
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
@@ -133,6 +134,16 @@ void Application::run() {
 
             glfwSwapBuffers(m_window);
             last_frame_time = now;
+
+            // process hover change events
+            if (m_prev_hovered_widget != m_cur_hovered_widget) {
+                if (m_prev_hovered_widget != k_no_hovered_widget) {
+                    auto it = m_imgui_window_info.find(m_prev_hovered_widget);
+                    if (it != m_imgui_window_info.end() && it->second.on_leave_region) {
+                        it->second.on_leave_region.value()();
+                    }
+                }
+            }
         }
 
         if (glfwGetKey(m_window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
@@ -153,13 +164,32 @@ auto Application::get_window_width() const noexcept->int {
     return display_w;
 }
 
-void Application::begin_imgui_window(std::string_view name, bool recv_mouse_event, ImGuiWindowFlags flags) {
-    if (recv_mouse_event) {
-        if(!m_can_recv_mouse_event.count(name)) {
-            m_can_recv_mouse_event.insert(name);
-        }
+void Application::begin_imgui_window(
+    std::string_view name, 
+    bool recv_mouse_event,
+    ImGuiWindowFlags flags,
+    std::optional<std::function<void()>> const& on_leave_region
+) {
+    // NOTE: here we assume that recv_mouse_event will not change
+    // in the lifetime of the application
+    // i.e., the following code pattern will not happen:
+    // if (cond) begin_imgui_window("window1", true);
+    // else begin_imgui_window("window1", false);
+
+    if (!m_imgui_window_info.count(name)) {
+        m_imgui_window_info[name] = ImGuiWindowInfo {
+            recv_mouse_event,
+            on_leave_region
+        };
     }
+
     ImGui::Begin(name.data(), nullptr, flags);
+
+    // NOTE: for some reason, ImGui::IsWindowHovered() returns false every other frame
+    // (probably because of the ImGui::DockSpaceOverViewport call in loop())
+    // see EditorApplication::loop() for more details
+
+    // so we use this instead (a bit hacky)
     if (ImGui::IsWindowHovered()) {
         m_cur_hovered_widget = name;
     }
@@ -169,9 +199,16 @@ void Application::end_imgui_window() {
     ImGui::End();
 }
 
+bool Application::mouse_over_any_event_region() const noexcept {
+    auto it = m_imgui_window_info.find(m_cur_hovered_widget);
+    auto ret = it != m_imgui_window_info.end() && it->second.can_recv_mouse_event;
+    return ret;
+}
+
 void Application::quit(int code) {
     if (s_app) {
         s_app->~Application();
     }
 	exit(code);
 }
+

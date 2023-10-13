@@ -3,7 +3,6 @@
 #include <tl/expected.hpp>
 #include <string_view>
 #include <vector>
-#include <optional>
 
 #include "camera.h"
 
@@ -23,7 +22,7 @@ struct Scene {
 	[[nodiscard]] auto get_good_cam_start() const noexcept -> Transform;
     [[nodiscard]] auto get_good_light_pos() const noexcept -> glm::vec3;
 
-    [[nodiscard]] auto ray_cast(Ray const& ray, float t_min = 0.0f, float t_max = 1e5f) const noexcept -> std::optional<Object>;
+    [[nodiscard]] auto ray_cast(Ray const& ray, float t_min = 0.0f, float t_max = 1e5f) noexcept -> Object*;
     [[nodiscard]] auto begin() noexcept -> decltype(auto) { return m_objects.begin(); }
     [[nodiscard]] auto end() noexcept -> decltype(auto) { return m_objects.end(); }
     [[nodiscard]] auto begin() const noexcept -> decltype(auto) { return m_objects.cbegin(); }

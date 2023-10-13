@@ -12,37 +12,38 @@ EditorApplication::EditorApplication(Renderer& renderer, Scene& scene, std::stri
     ImGui::GetIO().IniFilename = nullptr;
     ImGui::LoadIniSettingsFromMemory(k_imgui_ini, std::strlen(k_imgui_ini));
 #endif
+
+    m_control_state.register_on_obj_change(&EditorApplication::on_obj_change);
+    m_on_mouse_leave_scene_viewport_cb = std::bind(&EditorApplication::on_mouse_leave_scene_viewport, this);
 }
 
 void EditorApplication::cursor_moved(double x, double y) {
-    if (cur_button_down == -1) {
+    if (m_control_state.cur_button_down == -1) {
         return;
     }
 
-    if (!first_time_motion) {
-        auto px = (x - prev_x) / get_window_width();
-        auto py = (y - prev_y) / get_window_height();
+    if (!m_control_state.first_time_motion) {
+        auto px = (x - m_control_state.prev_x) / get_window_width();
+        auto py = (y - m_control_state.prev_y) / get_window_height();
 
         Cmd cmd;
         auto move_sensitivity = m_control_state.move_sensitivity;
         auto rot_sensitivity = m_control_state.rot_sensitivity;
         auto zoom_sensitivity = m_control_state.zoom_sensitivity;
 
-        if (cur_button_down == GLFW_MOUSE_BUTTON_LEFT) {
+        if (m_control_state.cur_button_down == GLFW_MOUSE_BUTTON_LEFT) {
             cmd = Cmd_CameraMove{
                 {
                     move_sensitivity * px, -move_sensitivity * py, 0
                 }
             };
-        }
-        else if (cur_button_down == GLFW_MOUSE_BUTTON_RIGHT) {
+        } else if (m_control_state.cur_button_down == GLFW_MOUSE_BUTTON_RIGHT) {
             cmd = Cmd_CameraRot{
                 {
                     rot_sensitivity * py, rot_sensitivity * px, 0
                 }
             };
-        }
-        else if (cur_button_down == GLFW_MOUSE_BUTTON_MIDDLE) {
+        } else if (m_control_state.cur_button_down == GLFW_MOUSE_BUTTON_MIDDLE) {
             cmd = Cmd_CameraZoom{
                 static_cast<float>(py * zoom_sensitivity)
             };
@@ -51,19 +52,18 @@ void EditorApplication::cursor_moved(double x, double y) {
         check_error(get_renderer().exec(cmd));
     }
     else {
-        first_time_motion = false;
+        m_control_state.first_time_motion = false;
     }
-    prev_x = x;
-    prev_y = y;
+    m_control_state.prev_x = x;
+    m_control_state.prev_y = y;
 }
 
 void EditorApplication::mouse_clicked(int button, int action, int mods) {
-    cur_button_down = button;
+    m_control_state.cur_button_down = button;
     if (action == GLFW_PRESS) {
-        first_time_motion = true;
-    }
-    else if (action == GLFW_RELEASE) {
-        cur_button_down = -1;
+        m_control_state.first_time_motion = true;
+    } else if (action == GLFW_RELEASE) {
+        m_control_state.cur_button_down = -1;
     }
 }
 
@@ -100,7 +100,7 @@ void EditorApplication::loop() {
     end_imgui_window();
 
     // draw the scene view
-    begin_imgui_window("Scene", true, ImGuiWindowFlags_NoScrollWithMouse);
+    begin_imgui_window("Scene", true, ImGuiWindowFlags_NoScrollWithMouse, m_on_mouse_leave_scene_viewport_cb);
     {
         draw_scene_viewport(render_tex);
     }
@@ -125,8 +125,8 @@ void EditorApplication::draw_scene_panel() noexcept {
         ImGui::BeginListBox("##Scene Objects", { 0, 200 });
         {
             for (auto&& obj : get_scene()) {
-                if (ImGui::Selectable(obj.name.c_str(), m_control_state.cur_obj == &obj)) {
-                    m_control_state.cur_obj = &obj;
+                if (ImGui::Selectable(obj.name.c_str(), m_control_state.get_cur_obj() == &obj)) {
+                    m_control_state.set_cur_obj(&obj);
                 }
             }
         }
@@ -136,9 +136,16 @@ void EditorApplication::draw_scene_panel() noexcept {
 
 void EditorApplication::draw_object_panel() noexcept {
     if (ImGui::CollapsingHeader("Object Properties", ImGuiTreeNodeFlags_DefaultOpen)) {
-        if (m_control_state.cur_obj) {
-            auto& obj = *m_control_state.cur_obj;
-            ImGui::Text("Name: %s", obj.name.c_str());
+        if (m_control_state.get_cur_obj()) {
+            auto& obj = *m_control_state.get_cur_obj();
+
+            // NOTE: no safety check here, cuz I'm lazy
+            if (ImGui::InputText("Name", m_control_state.obj_name_buf.data(), m_control_state.obj_name_buf.size(),
+                ImGuiInputTextFlags_EnterReturnsTrue)) 
+            {
+                obj.name.assign(m_control_state.obj_name_buf.data());
+            }
+
             ImGui::TransformField("Transform", obj.transform);
         } else {
             ImGui::Text("No object selected");
@@ -191,4 +198,28 @@ void EditorApplication::draw_scene_viewport(TextureRef render_buf) noexcept {
 void EditorApplication::draw_console_panel() noexcept {
     ImGui::Spacing();
     ImGui::Text("not implemented");
+}
+
+void EditorApplication::on_mouse_leave_scene_viewport() noexcept {
+    m_control_state.cur_button_down = -1;
+    m_control_state.first_time_motion = false;
+}
+
+void EditorApplication::on_obj_change(Object* obj) noexcept { }
+
+void EditorApplication::ControlState::set_cur_obj(Object* obj) noexcept {
+    if (obj == m_cur_obj) {
+        return;
+    }
+
+    m_cur_obj = obj;
+    for (auto&& callback : m_obj_change_callbacks) {
+        (dynamic_cast<EditorApplication*>(&Application::get_application())->*callback)(obj);
+    }
+
+    std::copy(obj->name.begin(), obj->name.end(), obj_name_buf.begin());
+}
+
+void EditorApplication::ControlState::register_on_obj_change(ObjChangeCallback callback) noexcept {
+    m_obj_change_callbacks.emplace_back(callback);
 }

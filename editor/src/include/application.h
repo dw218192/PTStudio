@@ -6,6 +6,8 @@
 #include <unordered_set>
 #include <iostream>
 #include <GLFW/glfw3.h>
+#include <functional>
+#include <optional>
 
 /**
  * \brief simple wrapper to make it easier to create an application\n
@@ -100,31 +102,38 @@ struct Application {
     [[nodiscard]] static auto get_application() noexcept -> Application& {
     	return *s_app;
     }
-    [[nodiscard]] bool mouse_over_any_event_region() const noexcept {
-        return m_can_recv_mouse_event.count(m_cur_hovered_widget);
-    }
-protected:
+    [[nodiscard]] bool mouse_over_any_event_region() const noexcept;
+protected:   
     /**
      * \brief Gets the renderer for the application.
      * \return the renderer
     */
     [[nodiscard]] auto get_renderer() const -> Renderer& { return m_renderer; }
 
-    void begin_imgui_window(std::string_view name, bool recv_mouse_event = false, ImGuiWindowFlags flags = 0);
+    void begin_imgui_window(
+        std::string_view name, 
+        bool recv_mouse_event = false,
+        ImGuiWindowFlags flags = 0,
+        std::optional<std::function<void()>> const& on_leave_region = std::nullopt
+    );
+
     void end_imgui_window();
 
 private:
     static inline Application* s_app = nullptr;
     GLFWwindow* m_window;
-
     Scene& m_scene;
     Renderer& m_renderer;
-
     Camera m_cam;
 
     // these are used to check if the mouse is over any mouse event region
-    std::unordered_set<std::string_view> m_can_recv_mouse_event;
-    std::string_view m_cur_hovered_widget;
+    struct ImGuiWindowInfo {
+        bool can_recv_mouse_event;
+        std::optional<std::function<void()>> on_leave_region;
+    };
+    std::unordered_map<std::string_view, ImGuiWindowInfo> m_imgui_window_info;
+    std::string_view m_cur_hovered_widget, m_prev_hovered_widget;
+    static constexpr auto k_no_hovered_widget = "";
 };
 
 template <typename T, typename E>

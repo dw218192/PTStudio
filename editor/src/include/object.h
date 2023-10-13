@@ -15,7 +15,7 @@ struct Vertex {
 };
 
 struct Object {
-    Object(struct Scene const& scene);
+    explicit Object(struct Scene const& scene);
     Object(Scene const& scene, BoundingBox bound, Transform transform, Material mat, std::vector<Vertex> vertices, std::string name);
     Object(Scene const& scene, BoundingBox bound, Transform transform, Material mat, std::vector<Vertex> vertices);
 

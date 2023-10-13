@@ -1,6 +1,6 @@
 #include "include/scene.h"
 #include "include/ray.h"
-#include <glm/gtx/intersect.hpp>
+#include "include/intersection.h"
 
 Scene::Scene() = default;
 
@@ -45,11 +45,15 @@ auto Scene::get_good_light_pos() const noexcept -> glm::vec3 {
     return center + glm::vec3{ 0, y_extent + 3, 0 };
 }
 
-auto Scene::ray_cast(Ray const& ray, float t_min, float t_max) const noexcept -> std::optional<Object> {
-    std::optional<Object> ret;
+auto Scene::ray_cast(Ray const& ray, float t_min, float t_max) noexcept -> Object* {
+    Object* ret = nullptr;
     float closest_t = t_max;
     for (auto&& obj : m_objects) {
-	    // TODO
+        auto res = Intersection::ray_box(obj.bound, ray);
+        if (res.hit && res.t < closest_t && res.t >= t_min) {
+            closest_t = res.t;
+            ret = &obj;
+        }
     }
     return ret;
 }
