@@ -27,30 +27,23 @@ void EditorApplication::cursor_moved(double x, double y) {
         auto px = (x - m_control_state.prev_x) / get_window_width();
         auto py = (y - m_control_state.prev_y) / get_window_height();
 
-        Cmd cmd;
         auto move_sensitivity = m_control_state.move_sensitivity;
         auto rot_sensitivity = m_control_state.rot_sensitivity;
         auto zoom_sensitivity = m_control_state.zoom_sensitivity;
 
         if (can_move()) {
-            cmd = Cmd_CameraMove{
-                {
-                    move_sensitivity * px, -move_sensitivity * py, 0
-                }
-            };
+            get_cam().set_position(TransformSpace::LOCAL, {
+                move_sensitivity * px, -move_sensitivity * py, 0
+            });
         } else if (can_rotate()) {
-            cmd = Cmd_CameraRot{
-                {
-                    rot_sensitivity * py, rot_sensitivity * px, 0
-                }
-            };
+            get_cam().set_rotation(TransformSpace::LOCAL, {
+                rot_sensitivity * py, rot_sensitivity * px, 0
+            });
         } else if (can_zoom()) {
-            cmd = Cmd_CameraZoom{
-                static_cast<float>(py * zoom_sensitivity)
-            };
+            get_cam().set_position(TransformSpace::LOCAL, {
+                0, 0, py* zoom_sensitivity
+            });
         }
-
-        check_error(get_renderer().exec(cmd));
     }
     else {
         m_control_state.first_time_motion = false;
@@ -72,7 +65,9 @@ void EditorApplication::mouse_clicked(int button, int action, int mods) {
 void EditorApplication::mouse_scroll(double x, double y) {
     (void)x;
     float const delta = y < 0 ? -1.0f : 1.0f;
-    check_error(get_renderer().exec(Cmd_CameraZoom{ delta }));
+    get_cam().set_position(TransformSpace::LOCAL, {
+        0, 0, delta
+    });
 }
 
 void EditorApplication::key_pressed(int key, int scancode, int action, int mods) {
@@ -88,7 +83,7 @@ void EditorApplication::key_pressed(int key, int scancode, int action, int mods)
 void EditorApplication::loop(float dt) {
     // create an UI that covers the whole window, for docking
     ImGui::DockSpaceOverViewport(ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
-    auto render_tex = check_error(get_renderer().render_buffered());
+    auto render_tex = check_error(get_renderer().render_buffered(get_cam()));
 
     // draw left panel
     begin_imgui_window("Scene Settings");
@@ -185,11 +180,12 @@ void EditorApplication::draw_scene_viewport(TextureRef render_buf) noexcept {
         }
 
         try {
-            auto id = std::any_cast<GLuint>(render_buf.get().get_handle());
-
-            glBindTexture(GL_TEXTURE_2D, id);
-            ImGui::Image(reinterpret_cast<ImTextureID>(id), view_size, { 0, 1 }, { 1, 0 });
-            glBindTexture(GL_TEXTURE_2D, 0);
+            render_buf.get().bind();
+            ImGui::Image(
+	            reinterpret_cast<ImTextureID>(std::any_cast<GLuint>(render_buf.get().get_handle())),
+                view_size, { 0, 1 }, { 1, 0 }
+            );
+            render_buf.get().unbind();
 
         }
         catch (std::bad_any_cast const& e) {

@@ -5,14 +5,16 @@
 #include <array>
 #include <optional>
 
+#include "glTexture.h"
+
 struct EditorRenderer : Renderer {
     EditorRenderer(RenderConfig const& config) noexcept;
     ~EditorRenderer() override;
 
     [[nodiscard]] auto open_scene(Scene const& scene) noexcept -> tl::expected<void, std::string> override;
     [[nodiscard]] auto exec(Cmd const& cmd) noexcept -> tl::expected<void, std::string> override;
-    [[nodiscard]] auto render() noexcept -> tl::expected<void, std::string> override;
-    [[nodiscard]] auto render_buffered() noexcept -> tl::expected<TextureRef, std::string> override;
+    [[nodiscard]] auto render(Camera const& cam) noexcept -> tl::expected<void, std::string> override;
+    [[nodiscard]] auto render_buffered(Camera const& cam) noexcept -> tl::expected<TextureRef, std::string> override;
 	[[nodiscard]] auto valid() const noexcept -> bool override { return m_valid; }
 
 private:
@@ -28,7 +30,7 @@ private:
         VAO_COUNT
     };
 
-    [[nodiscard]] auto render_internal(GLuint fbo) noexcept -> tl::expected<void, std::string>;
+    [[nodiscard]] auto render_internal(Camera const& cam, GLuint fbo) noexcept -> tl::expected<void, std::string>;
     [[nodiscard]] auto create_render_buf() noexcept -> tl::expected<void, std::string>;
     [[nodiscard]] auto get_buf(BufIndex idx) noexcept -> GLuint& { return m_buffer_handles[idx]; }
     [[nodiscard]] auto get_vao(VAOIndex idx) noexcept -> GLuint& { return m_vao_handles[idx]; }
@@ -43,8 +45,8 @@ private:
         GLuint fbo;
         GLuint tex;
         GLuint rbo;
-        Texture tex_data;
-        RenderBufferData(GLuint fbo, GLuint tex, GLuint rbo, Texture tex_data) noexcept
+        GLTexture tex_data;
+        RenderBufferData(GLuint fbo, GLuint tex, GLuint rbo, GLTexture tex_data) noexcept
             : fbo{fbo}, tex{tex}, rbo{rbo}, tex_data{std::move(tex_data)} {}
     };
     

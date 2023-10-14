@@ -1,4 +1,4 @@
-#include "include/intersection.h"
+#include "intersection.h"
 #include <cmath>
 
 #define SMALL_FLOAT 1e-6f

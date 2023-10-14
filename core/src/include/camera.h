@@ -1,5 +1,4 @@
 #pragma once
-#include "ext.h"
 #include "transform.h"
 #include "ray.h"
 

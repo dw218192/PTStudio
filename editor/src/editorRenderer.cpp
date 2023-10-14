@@ -28,15 +28,6 @@ EditorRenderer::~EditorRenderer() {
 auto EditorRenderer::exec(Cmd const& cmd) noexcept -> tl::expected<void, std::string> {
     struct Handler {
         Handler(EditorRenderer& rend) : rend(rend) { }
-        void operator()(Cmd_CameraRot const& cmd) const {
-            Application::get_cam().set_rotation(TransformSpace::LOCAL, cmd.angles_deg);
-        }
-        void operator()(Cmd_CameraMove const& cmd) const {
-			Application::get_cam().set_position(TransformSpace::LOCAL, cmd.delta);
-        }
-        void operator()(Cmd_CameraZoom const& cmd) const {
-            Application::get_cam().set_position(TransformSpace::LOCAL, { 0, 0, cmd.delta });
-        }
         void operator()(Cmd_ChangeRenderConfig const& cmd) {
             if (!cmd.config.is_valid() || cmd.config == rend.m_config) {
                 return;
@@ -244,11 +235,11 @@ auto EditorRenderer::open_scene(Scene const& scene) noexcept -> tl::expected<voi
 #undef CHECK_GL
 }
 
-auto EditorRenderer::render() noexcept -> tl::expected<void, std::string> {
-    return render_internal(0);
+auto EditorRenderer::render(Camera const& cam) noexcept -> tl::expected<void, std::string> {
+    return render_internal(cam, 0);
 }
 
-auto EditorRenderer::render_buffered() noexcept -> tl::expected<TextureRef, std::string> {
+auto EditorRenderer::render_buffered(Camera const& cam) noexcept -> tl::expected<TextureRef, std::string> {
     if (!m_render_buf) {
         auto res = create_render_buf();
         if (!res) {
@@ -256,7 +247,7 @@ auto EditorRenderer::render_buffered() noexcept -> tl::expected<TextureRef, std:
         }
     }
 
-    auto res = render_internal(m_render_buf->fbo);
+    auto res = render_internal(cam, m_render_buf->fbo);
     if (!res) {
         return tl::unexpected{ res.error() };
     }
@@ -264,7 +255,7 @@ auto EditorRenderer::render_buffered() noexcept -> tl::expected<TextureRef, std:
     return std::cref(m_render_buf->tex_data);
 }
 
-auto EditorRenderer::render_internal(GLuint fbo) noexcept -> tl::expected<void, std::string> {
+auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> tl::expected<void, std::string> {
     if (!valid()) {
         return tl::unexpected{ "render_internal() called on invalid EditorRenderer" };
     } else if (!m_grid_shader.valid()) {
@@ -273,7 +264,6 @@ auto EditorRenderer::render_internal(GLuint fbo) noexcept -> tl::expected<void, 
         return tl::unexpected{ "render_internal() called on EditorRenderer with invalid editor shader" };
     }
 
-    auto&& cam = Application::get_cam();
     auto&& scene = Application::get_scene();
 
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
@@ -419,6 +409,6 @@ auto EditorRenderer::create_render_buf() noexcept -> tl::expected<void, std::str
     }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-    m_render_buf = RenderBufferData{ fbo, tex, rbo, Texture{ static_cast<unsigned>(w), static_cast<unsigned>(h), tex } };
+    m_render_buf = RenderBufferData{ fbo, tex, rbo, GLTexture{ static_cast<unsigned>(w), static_cast<unsigned>(h), tex } };
     return {};
 }

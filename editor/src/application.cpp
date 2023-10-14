@@ -1,6 +1,5 @@
 #include "include/application.h"
 #include "include/imgui/imhelper.h"
-
 #include <imgui_internal.h>
 
 // stubs for callbacks

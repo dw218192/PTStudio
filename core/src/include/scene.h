@@ -1,11 +1,13 @@
 #pragma once
+
 #include "object.h"
+
+#include <string>
 #include <tl/expected.hpp>
-#include <string_view>
 #include <vector>
 
 #include "camera.h"
-#include "shader.h"
+#include "boundingBox.h"
 
 struct Scene {
     Scene();
@@ -37,8 +39,6 @@ struct Scene {
 private:
     [[nodiscard]] auto compute_scene_bound() const noexcept -> BoundingBox;
 
-    // for now all objects use this shader
-    static inline ShaderProgram s_default_shader;
     // these are initialized when the scene is loaded
 	std::vector<Object> m_objects;
 };

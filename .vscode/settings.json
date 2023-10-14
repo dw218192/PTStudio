@@ -87,6 +87,9 @@
         "__node_handle": "cpp",
         "__locale": "cpp",
         "unordered_set": "cpp",
-        "queue": "cpp"
+        "queue": "cpp",
+        "__debug": "cpp",
+        "__functional_base": "cpp",
+        "target": "cpp"
     }
 }

@@ -1,9 +1,10 @@
 #pragma once
+#include "utils.h"
+
 #include <string>
 #include <vector>
 #include <any>
 
-#include <GL/glew.h>
 #include <tl/expected.hpp>
 
 struct Texture;
@@ -19,26 +20,26 @@ using TextureRef = std::reference_wrapper<Texture const>;
 
 struct Texture {
     Texture(unsigned width, unsigned height, std::any handle) noexcept;
-    ~Texture() noexcept = default;
+    virtual ~Texture() noexcept = default;
 
-    [[nodiscard]] auto get_pixels() const noexcept -> std::vector<unsigned char> const& {
+    NODISCARD auto get_pixels() const noexcept -> std::vector<unsigned char> const& {
         return m_pixels;
     }
-    [[nodiscard]] auto get_pixels() noexcept -> std::vector<unsigned char>& {
+    NODISCARD auto get_pixels() noexcept -> std::vector<unsigned char>& {
         return m_pixels;
     }
     /**
      * \brief Gets the width of the render result, in num of pixels.
      * \return The width of the render result, in num of pixels.
     */
-    [[nodiscard]] auto get_width() const noexcept { return m_width; }
+    NODISCARD auto get_width() const noexcept { return m_width; }
     /**
      * \brief Gets the height of the render result, in num of pixels.
      * \return The height of the render result, in num of pixels.
     */
-    [[nodiscard]] auto get_height() const noexcept { return m_height; }
+    NODISCARD auto get_height() const noexcept { return m_height; }
 
-    [[nodiscard]] auto get_handle() const noexcept -> std::any const& { return m_handle; }
+    NODISCARD auto get_handle() const noexcept -> std::any const& { return m_handle; }
 
     /**
      * \brief Saves the render result to a file
@@ -49,8 +50,12 @@ struct Texture {
     */
     auto save(FileFormat fmt, std::string_view file_path) const noexcept -> tl::expected<void, std::string>;
 
-private:
-    mutable std::vector<unsigned char> m_pixels;
+    virtual void bind() const noexcept = 0;
+    virtual void unbind() const noexcept = 0;
+protected:
+    NODISCARD virtual auto fetch_pixels() const noexcept -> tl::expected<void, std::string> = 0;
+
+	mutable std::vector<unsigned char> m_pixels;
     unsigned m_width, m_height, m_linear_sz;
     std::any m_handle;
 };

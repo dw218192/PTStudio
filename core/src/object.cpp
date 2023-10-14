@@ -1,22 +1,22 @@
-#include "include/object.h"
-#include "include/camera.h"
+#include "object.h"
+#include "camera.h"
+#include "scene.h"
 
 #include <iostream>
-
-#include "include/scene.h"
+#include <tiny_obj_loader.h>
 
 
 Object::Object(Scene const& scene, Transform transform, Material mat, std::vector<Vertex> vertices, std::string name) 
     : m_mat { std::move(mat) },  m_vertices { std::move(vertices) }, m_name { std::move(name) } 
 {
-    m_bound = BoundingBox::from_vertices(m_vertices);
+    m_local_bound = BoundingBox::from_vertices(m_vertices);
     set_transform(transform);
 }
 
 Object::Object(Scene const& scene, Transform transform, Material mat, std::vector<Vertex> vertices)
     : m_mat { std::move(mat) }, m_vertices { std::move(vertices) }, m_name { scene.next_obj_name() } 
 {
-    m_bound = BoundingBox::from_vertices(m_vertices);
+    m_local_bound = BoundingBox::from_vertices(m_vertices);
     set_transform(transform);
 }
 
@@ -127,8 +127,8 @@ auto Object::make_quad_obj(Scene const& scene, Material mat, Transform const& tr
 
 void Object::set_transform(Transform const& transform) noexcept {
     m_transform = transform;
-    m_bound.min_pos = m_transform.local_to_world_pos(m_bound.min_pos);
-    m_bound.max_pos = m_transform.local_to_world_pos(m_bound.max_pos);
+    m_bound.min_pos = m_transform.local_to_world_pos(m_local_bound.min_pos);
+    m_bound.max_pos = m_transform.local_to_world_pos(m_local_bound.max_pos);
 }
 
 auto Object::get_transform() const noexcept -> Transform const& {

@@ -7,12 +7,14 @@
 #define INLINE __forceinline__
 #define GLOBAL __global__
 #define NODISCARD
+#define HOST_DEVICE __host__ __device__
 #else
 #define DEVICE
 #define HOST
 #define INLINE
 #define GLOBAL
 #define NODISCARD [[nodiscard]]
+#define HOST_DEVICE
 #endif
 
 #ifdef __INTELLISENSE__

@@ -21,5 +21,6 @@ set_property(TARGET ${exec_name} PROPERTY
 #Libs linked to the executable
 target_link_libraries( ${exec_name}   
 	$<BUILD_INTERFACE:developer_flags>
+	core
 	Thrust
 )

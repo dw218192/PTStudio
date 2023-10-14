@@ -1,11 +1,10 @@
 #pragma once
 
+#include "ext.h"
 #include "scene.h"
 #include "renderer.h"
 
-#include <unordered_set>
 #include <iostream>
-#include <GLFW/glfw3.h>
 #include <functional>
 #include <optional>
 

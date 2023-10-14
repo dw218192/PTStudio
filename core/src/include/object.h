@@ -1,6 +1,5 @@
 #pragma once
 
-#include "ext.h"
 #include "transform.h"
 #include "boundingBox.h"
 #include "material.h"
@@ -29,6 +28,7 @@ struct Object {
 
 private:
     BoundingBox m_bound;
+    BoundingBox m_local_bound;
     Transform m_transform;
     Material m_mat;
     std::vector<Vertex> m_vertices;

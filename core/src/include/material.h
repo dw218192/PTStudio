@@ -1,5 +1,5 @@
 #pragma once
-#include "ext.h"
+#include <glm/glm.hpp>
 
 struct Material {
     // metallic-roughness workflow

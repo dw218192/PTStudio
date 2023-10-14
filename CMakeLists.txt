@@ -107,6 +107,7 @@ target_link_libraries(imgui
 )
 
 # add subprojects
+add_subdirectory(core)
 add_subdirectory(editor)
 add_subdirectory(pathtracer)
 

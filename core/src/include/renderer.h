@@ -42,7 +42,7 @@ struct Renderer {
      * \return on failure, a Result object that contains an error message\n
      * on success, a Result object that contains a handle to the rendered image.
      */
-    [[nodiscard]] virtual auto render() noexcept -> tl::expected<void, std::string> = 0;
+    [[nodiscard]] virtual auto render(Camera const& camera) noexcept -> tl::expected<void, std::string> = 0;
 
 	/**
 	 * \brief Renders the scene to an internal buffer. Note that if you call this function outside of Application::loop(),\n
@@ -50,7 +50,7 @@ struct Renderer {
 	 * \return on failure, a Result object that contains an error message\n
 	 * on success, a Result object that contains a handle to the rendered image.
 	 */
-    [[nodiscard]] virtual auto render_buffered() noexcept -> tl::expected<TextureRef, std::string> = 0;
+    [[nodiscard]] virtual auto render_buffered(Camera const& camera) noexcept -> tl::expected<TextureRef, std::string> = 0;
 
     /**
      * \brief Checks if the renderer has a valid scene opened.

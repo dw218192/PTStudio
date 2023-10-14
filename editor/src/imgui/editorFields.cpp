@@ -1,6 +1,7 @@
 #include "../include/imgui/editorFields.h"
 
 #include <imgui.h>
+#include <glm/gtc/type_ptr.hpp>
 
 bool ImGui::TransformField(const char* label, Transform& transform) {
     bool changed = false;
