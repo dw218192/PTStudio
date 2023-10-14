@@ -1,8 +1,9 @@
 #include "include/application.h"
+
 #include <imgui_internal.h>
 
 // stubs for callbacks
-static void clickFunc(GLFWwindow* window, int button, int action, int mods) {
+static void click_func(GLFWwindow* window, int button, int action, int mods) {
     auto const app = static_cast<Application*>(glfwGetWindowUserPointer(window));
     // check if ImGui is using the mouse
     if (ImGui::GetIO().WantCaptureMouse && !app->mouse_over_any_event_region()) {
@@ -10,21 +11,29 @@ static void clickFunc(GLFWwindow* window, int button, int action, int mods) {
     }
     app->mouse_clicked(button, action, mods);
 }
-static void motionFunc(GLFWwindow* window, double x, double y) {
+static void motion_func(GLFWwindow* window, double x, double y) {
     auto const app = static_cast<Application*>(glfwGetWindowUserPointer(window));
     if (ImGui::GetIO().WantCaptureMouse && !app->mouse_over_any_event_region()) {
         return;
     }
     app->cursor_moved(x, y);
 }
-static void scrollFunc(GLFWwindow* window, double x, double y) {
+static void scroll_func(GLFWwindow* window, double x, double y) {
     auto const app = static_cast<Application*>(glfwGetWindowUserPointer(window));
     if (ImGui::GetIO().WantCaptureMouse && !app->mouse_over_any_event_region()) {
         return;
     }
     app->mouse_scroll(x, y);
 }
-static void errorFunc(int error, const char* description) {
+static void key_func(GLFWwindow* window, int key, int scancode, int action, int mods) {
+    auto const app = static_cast<Application*>(glfwGetWindowUserPointer(window));
+    if (ImGui::GetIO().WantCaptureKeyboard && !app->mouse_over_any_event_region()) {
+        return;
+    }
+    app->key_pressed(key, scancode, action, mods);
+}
+
+static void error_func(int error, const char* description) {
     std::cerr << "GLFW error: " << error << ": " << description << std::endl;
     Application::quit(-1);
 }
@@ -40,7 +49,7 @@ Application::Application(Renderer& renderer, Scene& scene, std::string_view name
         s_app = this;
     }
 
-    glfwSetErrorCallback(errorFunc);
+    glfwSetErrorCallback(error_func);
 
     if (!glfwInit()) {
         std::cerr << "Failed to initialize GLFW" << std::endl;
@@ -62,9 +71,10 @@ Application::Application(Renderer& renderer, Scene& scene, std::string_view name
 
     // set callbacks
     glfwSetWindowUserPointer(m_window, this);
-    glfwSetMouseButtonCallback(m_window, clickFunc);
-    glfwSetCursorPosCallback(m_window, motionFunc);
-    glfwSetScrollCallback(m_window, scrollFunc);
+    glfwSetMouseButtonCallback(m_window, click_func);
+    glfwSetCursorPosCallback(m_window, motion_func);
+    glfwSetScrollCallback(m_window, scroll_func);
+    glfwSetKeyCallback(m_window, key_func);
 
     // initialize GLEW
     if (glewInit() != GLEW_OK) {
@@ -89,7 +99,6 @@ Application::Application(Renderer& renderer, Scene& scene, std::string_view name
 
     ImGui::SetNextWindowPos({ 10, 10 });
     ImGui::SetNextWindowSize({ 0, static_cast<float>(renderer.get_config().height) / 5.0f });
-    // ImGui::GetIO().IniFilename = nullptr;
 
     // config camera and initialize renderer
     check_error(get_renderer().open_scene(scene));
@@ -111,7 +120,8 @@ void Application::run() {
         // Poll and handle events (inputs, window resize, etc.)
         glfwPollEvents();
 
-        if (now - last_frame_time >= m_renderer.get_config().min_frame_time) {
+        double dt = now - last_frame_time;
+        if (dt >= m_renderer.get_config().min_frame_time) {
             m_prev_hovered_widget = m_cur_hovered_widget;
 
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -123,7 +133,10 @@ void Application::run() {
             ImGui::NewFrame();
 
             // User Rendering
-            loop();
+            loop(dt);
+
+            // Process debug drawing events
+            get_debug_drawer().loop(dt);
 
             ImGui::Render();
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -169,7 +182,7 @@ void Application::begin_imgui_window(
     bool recv_mouse_event,
     ImGuiWindowFlags flags,
     std::optional<std::function<void()>> const& on_leave_region
-) {
+) noexcept {
     // NOTE: here we assume that recv_mouse_event will not change
     // in the lifetime of the application
     // i.e., the following code pattern will not happen:
@@ -184,19 +197,24 @@ void Application::begin_imgui_window(
     }
 
     ImGui::Begin(name.data(), nullptr, flags);
-
-    // NOTE: for some reason, ImGui::IsWindowHovered() returns false every other frame
-    // (probably because of the ImGui::DockSpaceOverViewport call in loop())
-    // see EditorApplication::loop() for more details
-
-    // so we use this instead (a bit hacky)
     if (ImGui::IsWindowHovered()) {
         m_cur_hovered_widget = name;
     }
+
+    // disable alt key for imgui
+    ImGui::SetKeyOwner(ImGuiMod_Alt, ImGui::GetCurrentWindow()->ID);
 }
 
-void Application::end_imgui_window() {
+void Application::end_imgui_window() noexcept {
     ImGui::End();
+}
+
+auto Application::get_window_pos(std::string_view name) const noexcept -> std::optional<ImVec2> {
+    auto win = ImGui::FindWindowByName(name.data());
+    if (!win) {
+        return std::nullopt;
+    }
+    return win->Pos;
 }
 
 bool Application::mouse_over_any_event_region() const noexcept {
