@@ -26,6 +26,7 @@
 // c++23 expected
 #include <tl/expected.hpp>
 
+// convenience helpers
 inline tl::unexpected<char const*> unexpected_gl_error(GLenum err) {
 	return tl::unexpected{ reinterpret_cast<char const*>(glewGetErrorString(err)) };
 }

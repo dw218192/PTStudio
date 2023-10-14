@@ -49,7 +49,7 @@ auto Scene::ray_cast(Ray const& ray, float t_min, float t_max) noexcept -> Objec
     Object* ret = nullptr;
     float closest_t = t_max;
     for (auto&& obj : m_objects) {
-        auto res = Intersection::ray_box(obj.bound, ray);
+        auto res = Intersection::ray_box(obj.get_bound(), ray);
         if (res.hit && res.t < closest_t && res.t >= t_min) {
             closest_t = res.t;
             ret = &obj;
@@ -73,7 +73,7 @@ auto Scene::compute_scene_bound() const noexcept -> BoundingBox {
         glm::vec3 { std::numeric_limits<float>::lowest() }
     };
     for (auto&& obj : m_objects) {
-        scene_bound += obj.bound;
+        scene_bound += obj.get_bound();
     }
     return scene_bound;
 }

@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "camera.h"
+#include "shader.h"
 
 struct Scene {
     Scene();

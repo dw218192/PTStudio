@@ -9,6 +9,8 @@
 #include <functional>
 #include <optional>
 
+#include "debugDrawer.h"
+
 /**
  * \brief simple wrapper to make it easier to create an application\n
  * There can only be one application at a time. Be sure not to create multiple applications.
@@ -35,7 +37,7 @@ struct Application {
      * \param y the y position of the cursor
      * \see https://www.glfw.org/docs/latest/input_guide.html
     */
-	virtual void cursor_moved([[maybe_unused]] double x, [[maybe_unused]] double y) { }
+	virtual void cursor_moved(double x, double y) { }
 
     /**
      * \brief Called when the mouse is clicked. Override to handle mouse clicks.
@@ -44,7 +46,7 @@ struct Application {
      * \param mods the modifiers that were pressed
      * \see https://www.glfw.org/docs/latest/input_guide.html
     */
-    virtual void mouse_clicked([[maybe_unused]] int button, [[maybe_unused]] int action, [[maybe_unused]] int mods) { }
+    virtual void mouse_clicked(int button, int action, int mods) { }
     
     /**
      * \brief Called when the user scrolls. Override to handle mouse scrolling.
@@ -52,15 +54,23 @@ struct Application {
      * \param y the y offset of the scroll
      * \see https://www.glfw.org/docs/latest/input_guide.html
     */
-    virtual void mouse_scroll([[maybe_unused]] double x, [[maybe_unused]] double y) { }
+    virtual void mouse_scroll(double x, double y) { }
 
     /**
-     * \brief Called every frame. This function has to be implemented.\n
-     * Typically this involves updating the scene and rendering it by calling Renderer::render().\n
-     * You may also render imgui here.
-     * \see Renderer::render()
+     * \brief Called when a key is pressed. Override to handle key presses.
+     * \param key the key that was pressed
+     * \param scancode the scancode of the key
+     * \param action the action that was performed
+     * \param mods the modifiers that were pressed
+     * \see https://www.glfw.org/docs/latest/input_guide.html
     */
-    virtual void loop() = 0;
+    virtual void key_pressed(int key, int scancode, int action, int mods) { }
+
+    /**
+     * \brief Called every frame. Override to handle the main loop.
+     * \param dt the time since the last frame
+    */
+    virtual void loop(float dt) = 0;
 
     /**
      * \brief Sets a new scene for the application
@@ -109,15 +119,21 @@ protected:
      * \return the renderer
     */
     [[nodiscard]] auto get_renderer() const -> Renderer& { return m_renderer; }
+    [[nodiscard]] auto get_debug_drawer() -> DebugDrawer& { return m_debug_drawer; }
+    
+    [[nodiscard]] auto get_cur_hovered_widget() const noexcept -> std::string_view { return m_cur_hovered_widget; }
+    
 
+    // imgui helpers
     void begin_imgui_window(
         std::string_view name, 
         bool recv_mouse_event = false,
         ImGuiWindowFlags flags = 0,
         std::optional<std::function<void()>> const& on_leave_region = std::nullopt
-    );
+    ) noexcept;
 
-    void end_imgui_window();
+    void end_imgui_window() noexcept;
+    auto get_window_content_pos(std::string_view name) const noexcept -> std::optional<ImVec2>;
 
 private:
     static inline Application* s_app = nullptr;
@@ -125,6 +141,7 @@ private:
     Scene& m_scene;
     Renderer& m_renderer;
     Camera m_cam;
+    DebugDrawer m_debug_drawer;
 
     // these are used to check if the mouse is over any mouse event region
     struct ImGuiWindowInfo {

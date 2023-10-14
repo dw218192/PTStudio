@@ -43,11 +43,11 @@ auto Camera::viewport_to_world(glm::vec2 screen, float z) const noexcept -> glm:
     ndc = ndc * 2.0f - 1.0f;
     return ndc_to_wrold(ndc, z);
 }
-
 auto Camera::viewport_to_ray(glm::vec2 screen) const noexcept -> Ray {
-    auto world = viewport_to_world(screen);
-    auto origin = m_view.get_position();
-    return Ray{ origin, glm::normalize(world - origin) };
+    auto world = viewport_to_world(screen, 1.0f);
+    // note the negation; view is the inverse of camera transform
+    auto origin = -m_view.get_position();
+    return Ray{ origin, world - origin };
 }
 
 void Camera::set_rotation(TransformSpace space, glm::vec3 const& rot) noexcept {

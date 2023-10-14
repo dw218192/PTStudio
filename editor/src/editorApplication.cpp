@@ -3,6 +3,7 @@
 #include "include/editorResources.h"
 #include "include/imgui/editorFields.h"
 #include "include/imgui/fileDialogue.h"
+#include "include/imgui/imhelper.h"
 
 EditorApplication::EditorApplication(Renderer& renderer, Scene& scene, std::string_view name)
 	: Application{ renderer, scene, name } 
@@ -14,11 +15,11 @@ EditorApplication::EditorApplication(Renderer& renderer, Scene& scene, std::stri
 #endif
 
     m_control_state.register_on_obj_change(&EditorApplication::on_obj_change);
-    m_on_mouse_leave_scene_viewport_cb = std::bind(&EditorApplication::on_mouse_leave_scene_viewport, this);
+    m_on_mouse_leave_scene_viewport_cb = [this] { on_mouse_leave_scene_viewport(); };
 }
 
 void EditorApplication::cursor_moved(double x, double y) {
-    if (m_control_state.cur_button_down == -1) {
+    if (m_control_state.cur_mouse_down == -1) {
         return;
     }
 
@@ -31,19 +32,19 @@ void EditorApplication::cursor_moved(double x, double y) {
         auto rot_sensitivity = m_control_state.rot_sensitivity;
         auto zoom_sensitivity = m_control_state.zoom_sensitivity;
 
-        if (m_control_state.cur_button_down == GLFW_MOUSE_BUTTON_LEFT) {
+        if (can_move()) {
             cmd = Cmd_CameraMove{
                 {
                     move_sensitivity * px, -move_sensitivity * py, 0
                 }
             };
-        } else if (m_control_state.cur_button_down == GLFW_MOUSE_BUTTON_RIGHT) {
+        } else if (can_rotate()) {
             cmd = Cmd_CameraRot{
                 {
                     rot_sensitivity * py, rot_sensitivity * px, 0
                 }
             };
-        } else if (m_control_state.cur_button_down == GLFW_MOUSE_BUTTON_MIDDLE) {
+        } else if (can_zoom()) {
             cmd = Cmd_CameraZoom{
                 static_cast<float>(py * zoom_sensitivity)
             };
@@ -59,11 +60,12 @@ void EditorApplication::cursor_moved(double x, double y) {
 }
 
 void EditorApplication::mouse_clicked(int button, int action, int mods) {
-    m_control_state.cur_button_down = button;
     if (action == GLFW_PRESS) {
+        m_control_state.cur_mouse_down = button;
         m_control_state.first_time_motion = true;
     } else if (action == GLFW_RELEASE) {
-        m_control_state.cur_button_down = -1;
+        m_control_state.cur_mouse_down = -1;
+        try_select_object();
     }
 }
 
@@ -73,7 +75,17 @@ void EditorApplication::mouse_scroll(double x, double y) {
     check_error(get_renderer().exec(Cmd_CameraZoom{ delta }));
 }
 
-void EditorApplication::loop() {
+void EditorApplication::key_pressed(int key, int scancode, int action, int mods) {
+    (void)scancode;
+    (void)mods;
+    if (action == GLFW_PRESS) {
+        m_control_state.cur_button_down = key;
+    } else if (action == GLFW_RELEASE) {
+        m_control_state.cur_button_down = -1;
+    }
+}
+
+void EditorApplication::loop(float dt) {
     // create an UI that covers the whole window, for docking
     ImGui::DockSpaceOverViewport(ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
     auto render_tex = check_error(get_renderer().render_buffered());
@@ -125,7 +137,7 @@ void EditorApplication::draw_scene_panel() noexcept {
         ImGui::BeginListBox("##Scene Objects", { 0, 200 });
         {
             for (auto&& obj : get_scene()) {
-                if (ImGui::Selectable(obj.name.c_str(), m_control_state.get_cur_obj() == &obj)) {
+                if (ImGui::Selectable(obj.get_name().data(), m_control_state.get_cur_obj() == &obj)) {
                     m_control_state.set_cur_obj(&obj);
                 }
             }
@@ -143,10 +155,12 @@ void EditorApplication::draw_object_panel() noexcept {
             if (ImGui::InputText("Name", m_control_state.obj_name_buf.data(), m_control_state.obj_name_buf.size(),
                 ImGuiInputTextFlags_EnterReturnsTrue)) 
             {
-                obj.name.assign(m_control_state.obj_name_buf.data());
+                obj.set_name(m_control_state.obj_name_buf.data());
             }
-
-            ImGui::TransformField("Transform", obj.transform);
+            auto trans = obj.get_transform();
+            if (ImGui::TransformField("Transform", trans)) {
+                obj.set_transform(trans);
+            }
         } else {
             ImGui::Text("No object selected");
         }
@@ -156,7 +170,10 @@ void EditorApplication::draw_object_panel() noexcept {
 void EditorApplication::draw_scene_viewport(TextureRef render_buf) noexcept {
     if (get_renderer().valid()) {
         static auto last_size = ImVec2{ 0, 0 };
-        auto view_size = ImGui::GetContentRegionAvail();
+
+        auto v_min = ImGui::GetWindowContentRegionMin();
+        auto v_max = ImGui::GetWindowContentRegionMax();
+        auto view_size = v_max - v_min;
 
         if (std::abs(view_size.x - last_size.x) >= 0.01f || std::abs(view_size.y - last_size.y) >= 0.01f) {
             auto conf = get_renderer().get_config();
@@ -180,16 +197,15 @@ void EditorApplication::draw_scene_viewport(TextureRef render_buf) noexcept {
             Application::quit(-1);
         }
 
-        auto pos = ImGui::GetWindowPos();
-        DebugDrawer::set_draw_list(ImGui::GetWindowDrawList());
-
         // draw x,y,z axis ref
-        auto axis_origin = get_cam().viewport_to_world(glm::vec2 { pos.x + 30, pos.y + 50 });
+        auto axis_origin = get_cam().viewport_to_world(glm::vec2 {30, 30}, 0.0f);
         constexpr float axis_len = 0.01f;
-        DebugDrawer::draw_line_3d(axis_origin, axis_origin + glm::vec3{ axis_len, 0, 0 }, { 1, 0, 0 });
-        DebugDrawer::draw_line_3d(axis_origin, axis_origin + glm::vec3{ 0, axis_len, 0 }, { 0, 1, 0 });
-        DebugDrawer::draw_line_3d(axis_origin, axis_origin + glm::vec3{ 0, 0, axis_len }, { 0, 0, 1 });
-        DebugDrawer::set_draw_list(nullptr);
+
+        get_debug_drawer().begin_relative(to_glm(ImGui::GetWindowPos() + v_min));
+        get_debug_drawer().draw_line_3d(axis_origin, axis_origin + glm::vec3{ axis_len, 0, 0 }, { 1, 0, 0 }, 2.0f, 0.0f);
+        get_debug_drawer().draw_line_3d(axis_origin, axis_origin + glm::vec3{ 0, axis_len, 0 }, { 0, 1, 0 }, 2.0f, 0.0f);
+        get_debug_drawer().draw_line_3d(axis_origin, axis_origin + glm::vec3{ 0, 0, axis_len }, { 0, 0, 1 }, 2.0f, 0.0f);
+        get_debug_drawer().end_relative();
     } else {
         ImGui::Text("Renderer not found");
     }
@@ -200,24 +216,67 @@ void EditorApplication::draw_console_panel() noexcept {
     ImGui::Text("not implemented");
 }
 
+bool EditorApplication::can_rotate() const noexcept {
+    return m_control_state.cur_mouse_down == GLFW_MOUSE_BUTTON_RIGHT;
+}
+
+bool EditorApplication::can_move() const noexcept {
+    return m_control_state.cur_mouse_down == GLFW_MOUSE_BUTTON_LEFT;
+}
+
+bool EditorApplication::can_zoom() const noexcept {
+    return m_control_state.cur_mouse_down == GLFW_MOUSE_BUTTON_MIDDLE;
+}
+
 void EditorApplication::on_mouse_leave_scene_viewport() noexcept {
+    m_control_state.cur_mouse_down = -1;
     m_control_state.cur_button_down = -1;
-    m_control_state.first_time_motion = false;
+    m_control_state.first_time_motion = true;
 }
 
 void EditorApplication::on_obj_change(Object* obj) noexcept { }
+
+void EditorApplication::try_select_object() noexcept {
+    if (get_cur_hovered_widget() != "Scene") {
+        return;
+    }
+    auto pos = ImGui::GetMousePos();
+    auto win_pos = get_window_content_pos("Scene");
+    if (!win_pos) {
+        std::cerr << "Scene view not found" << std::endl;
+        return;
+    }
+
+    // convert to viewport space
+    pos = pos - win_pos.value();
+
+
+    auto ray = get_cam().viewport_to_ray(to_glm(pos));
+    auto res = get_scene().ray_cast(ray);
+
+    get_debug_drawer().begin_relative(to_glm(win_pos.value()));
+    get_debug_drawer().draw_ray_3d(ray, { 1, 0, 0 });
+    for (auto&& obj : get_scene()) {
+        get_debug_drawer().draw_box(obj.get_bound(), { 0, 1, 0 });
+    }
+    get_debug_drawer().end_relative();
+    
+    if (res) {
+        std::cout << "Found object: " << res->get_name() << std::endl;
+    } else {
+        std::cout << "No object Found" << std::endl;
+    }
+}
 
 void EditorApplication::ControlState::set_cur_obj(Object* obj) noexcept {
     if (obj == m_cur_obj) {
         return;
     }
-
     m_cur_obj = obj;
     for (auto&& callback : m_obj_change_callbacks) {
         (dynamic_cast<EditorApplication*>(&Application::get_application())->*callback)(obj);
     }
-
-    std::copy(obj->name.begin(), obj->name.end(), obj_name_buf.begin());
+    std::copy(obj->get_name().begin(), obj->get_name().end(), obj_name_buf.begin());
 }
 
 void EditorApplication::ControlState::register_on_obj_change(ObjChangeCallback callback) noexcept {

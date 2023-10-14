@@ -6,22 +6,22 @@
 #include "include/scene.h"
 
 
-Object::Object(Scene const& scene) : name{ scene.next_obj_name() } {}
+Object::Object(Scene const& scene, Transform transform, Material mat, std::vector<Vertex> vertices, std::string name) 
+    : m_mat { std::move(mat) },  m_vertices { std::move(vertices) }, m_name { std::move(name) } 
+{
+    m_bound = BoundingBox::from_vertices(m_vertices);
+    set_transform(transform);
+}
 
-Object::Object(Scene const& scene, BoundingBox bound, Transform transform, Material mat, std::vector<Vertex> vertices, std::string name)
-	: bound{ std::move(bound) }, transform{ std::move(transform) },
-	  material{ std::move(mat) }, vertices {std::move(vertices) }, name { std::move(name) }
-{}
-
-Object::Object(Scene const& scene, BoundingBox bound, Transform transform, Material mat, std::vector<Vertex> vertices)
-    : bound{ std::move(bound) }, transform{ std::move(transform) },
-	  material{ std::move(mat) }, vertices{ std::move(vertices) }, name{ scene.next_obj_name() }
-{}
-
+Object::Object(Scene const& scene, Transform transform, Material mat, std::vector<Vertex> vertices)
+    : m_mat { std::move(mat) }, m_vertices { std::move(vertices) }, m_name { scene.next_obj_name() } 
+{
+    m_bound = BoundingBox::from_vertices(m_vertices);
+    set_transform(transform);
+}
 
 auto Object::from_obj(Scene const& scene, Material mat, std::string_view filename) noexcept -> tl::expected<Object, std::string> {
-    Object ret{ scene };
-	ret.vertices.clear();
+    std::vector<Vertex> vertices;
 
     tinyobj::ObjReaderConfig config;
     config.mtl_search_path = "./";
@@ -41,13 +41,6 @@ auto Object::from_obj(Scene const& scene, Material mat, std::string_view filenam
     }
 
     auto const& attrib = reader.GetAttrib();
-    glm::vec3 min_pos{
-        std::numeric_limits<float>::max()
-    };
-    glm::vec3 max_pos{
-        std::numeric_limits<float>::lowest()
-    };
-
     bool infer_normal = false;
     for (auto const& s : reader.GetShapes()) {
         auto const& indices = s.mesh.indices;
@@ -82,55 +75,45 @@ auto Object::from_obj(Scene const& scene, Material mat, std::string_view filenam
                 }
 
 
-                ret.vertices.emplace_back(vertex);
-                min_pos = glm::min(vertex.position, min_pos);
-                max_pos = glm::max(vertex.position, max_pos);
+                vertices.emplace_back(vertex);
             }
         }
     }
 
     if(infer_normal) {
         // clear all normals
-        for (auto& v : ret.vertices) {
+        for (auto& v : vertices) {
             v.normal = glm::vec3{ 0 };
         }
-        for (size_t i = 2; i < ret.vertices.size(); i += 3) {
+        for (size_t i = 2; i < vertices.size(); i += 3) {
             glm::vec3 normal = glm::cross(
-                ret.vertices[i - 1].position - ret.vertices[i - 2].position,
-                ret.vertices[i - 0].position - ret.vertices[i - 2].position
+                vertices[i - 1].position - vertices[i - 2].position,
+                vertices[i - 0].position - vertices[i - 2].position
             );
-            ret.vertices[i - 2].normal += normal;
-            ret.vertices[i - 1].normal += normal;
-            ret.vertices[i].normal += normal;
+            vertices[i - 2].normal += normal;
+            vertices[i - 1].normal += normal;
+            vertices[i].normal += normal;
         }
-        for (auto& v : ret.vertices) {
+        for (auto& v : vertices) {
             v.normal = glm::normalize(v.normal);
         }
     }
 
-    ret.bound = { min_pos, max_pos };
+    Object ret{ scene, Transform{}, std::move(mat), std::move(vertices) };
     return ret;
 }
 
 auto Object::make_triangle_obj(Scene const& scene, Material mat, Transform const& trans) noexcept -> Object {
-    Object obj{ scene };
-    obj.transform = trans;
-
-	obj.vertices = {
+	std::vector<Vertex> vertices = {
 	    Vertex{ glm::vec3{ -0.5, -0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 0, 0 } },
 	    Vertex{ glm::vec3{ 0.5, -0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 1, 0 } },
 	    Vertex{ glm::vec3{ 0, 0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 0.5, 1 } }
     };
-    obj.bound = { glm::vec3{ -0.5, -0.5, 0 }, glm::vec3{ 0.5, 0.5, 0 } };
-    
-    return obj;
+    return Object { scene, trans, std::move(mat), std::move(vertices) };
 }
 
 auto Object::make_quad_obj(Scene const& scene, Material mat, Transform const& trans) noexcept -> Object {
-    Object obj{ scene };
-    obj.transform = trans;
-
-    obj.vertices = {
+    std::vector<Vertex> vertices = {
         Vertex{ glm::vec3{ -0.5, -0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 0, 0 } },
         Vertex{ glm::vec3{ 0.5, -0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 1, 0 } },
         Vertex{ glm::vec3{ -0.5, 0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 0, 1 } },
@@ -139,7 +122,35 @@ auto Object::make_quad_obj(Scene const& scene, Material mat, Transform const& tr
         Vertex{ glm::vec3{ 0.5, -0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 1, 0 } },
         Vertex{ glm::vec3{ 0.5, 0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 1, 1 } }
     };
-    obj.bound = { glm::vec3{ -0.5, -0.5, 0 }, glm::vec3{ 0.5, 0.5, 0 } };
+    return Object { scene, trans, std::move(mat), std::move(vertices) };
+}
 
-    return obj;
+void Object::set_transform(Transform const& transform) noexcept {
+    m_transform = transform;
+    m_bound.min_pos = m_transform.local_to_world_pos(m_bound.min_pos);
+    m_bound.max_pos = m_transform.local_to_world_pos(m_bound.max_pos);
+}
+
+auto Object::get_transform() const noexcept -> Transform const& {
+    return m_transform;
+}
+
+void Object::set_name(std::string_view name) noexcept {
+    m_name = name;
+}
+
+auto Object::get_name() const noexcept -> std::string_view {
+    return m_name;
+}
+
+auto Object::get_bound() const noexcept -> BoundingBox const& {
+    return m_bound;
+}
+
+auto Object::get_vertices() const noexcept -> std::vector<Vertex> const& {
+    return m_vertices;
+}
+
+auto Object::get_material() const noexcept -> Material const& {
+    return m_mat;
 }

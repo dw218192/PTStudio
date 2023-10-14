@@ -1,6 +1,5 @@
 #pragma once
 
-#include <string>
 #include <array>
 
 #include "scene.h"
@@ -16,17 +15,28 @@ struct EditorApplication : Application {
     void cursor_moved(double x, double y) override;
     void mouse_clicked(int button, int action, int mods) override;
     void mouse_scroll(double x, double y) override;
-    void loop() override;
+    void key_pressed(int key, int scancode, int action, int mods) override;
+
+    void loop(float dt) override;
 
 private:
+    // imgui rendering
     void draw_scene_panel() noexcept;
     void draw_object_panel() noexcept;
     void draw_scene_viewport(TextureRef render_buf) noexcept;
     void draw_console_panel() noexcept;
 
+    // control conditions
+    bool can_rotate() const noexcept;
+    bool can_move() const noexcept;
+    bool can_zoom() const noexcept;
+
     // events
     void on_mouse_leave_scene_viewport() noexcept;
     void on_obj_change(Object* obj) noexcept;
+
+    // other helpers
+    void try_select_object() noexcept;
 
     std::function<void()> m_on_mouse_leave_scene_viewport_cb;
     
@@ -43,6 +53,7 @@ private:
         std::array<char, 1024> obj_name_buf {};
 
         bool first_time_motion = true;
+        int cur_mouse_down = -1;
         int cur_button_down = -1;
         double prev_x = 0, prev_y = 0;
     private:

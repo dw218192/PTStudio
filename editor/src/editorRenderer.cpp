@@ -188,7 +188,7 @@ auto EditorRenderer::open_scene(Scene const& scene) noexcept -> tl::expected<voi
             // gather all vertices from all objects in the scene
             std::vector<Vertex> all_vertices;
             for (auto&& obj : scene) {
-                all_vertices.insert(all_vertices.end(), obj.vertices.begin(), obj.vertices.end());
+                all_vertices.insert(all_vertices.end(), obj.get_vertices().begin(), obj.get_vertices().end());
             }
 
             glBufferData(
@@ -303,15 +303,15 @@ auto EditorRenderer::render_internal(GLuint fbo) noexcept -> tl::expected<void, 
 
         size_t vbo_offset = 0;
         for (const auto& obj : scene) {
-            res = m_editor_shader.set_uniform(k_uniform_model, obj.transform.get_matrix());
+            res = m_editor_shader.set_uniform(k_uniform_model, obj.get_transform().get_matrix());
             if (!res) {
                 return res;
             }
 
             glDrawArrays(GL_TRIANGLES,
                 static_cast<GLint>(vbo_offset),
-                static_cast<GLsizei>(obj.vertices.size()));
-            vbo_offset += obj.vertices.size();
+                static_cast<GLsizei>(obj.get_vertices().size()));
+            vbo_offset += obj.get_vertices().size();
 
             auto err = glGetError();
             if (err != GL_NO_ERROR) {
