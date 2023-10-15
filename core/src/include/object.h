@@ -6,7 +6,7 @@
 #include "vertex.h"
 
 #include <tl/expected.hpp>
-#include <string_view>
+#include <string>
 
 struct Scene;
 
@@ -14,7 +14,7 @@ struct Object {
     Object(Scene const& scene, Transform transform, Material mat, std::vector<Vertex> vertices, std::string name);
     Object(Scene const& scene, Transform transform, Material mat, std::vector<Vertex> vertices);
 
-    [[nodiscard]] static auto from_obj(Scene const& scene, Material mat, std::string_view filename) noexcept -> tl::expected<Object, std::string>;
+    [[nodiscard]] static auto from_obj(Scene const& scene, Material mat, std::string_view filename, std::string* warning = nullptr) noexcept -> tl::expected<Object, std::string>;
     [[nodiscard]] static auto make_triangle_obj(Scene const& scene, Material mat, Transform const& trans) noexcept -> Object;
     [[nodiscard]] static auto make_quad_obj(Scene const& scene, Material mat, Transform const& trans) noexcept -> Object;
 

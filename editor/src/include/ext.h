@@ -22,15 +22,3 @@
 #else
 #error "Unsupported platform"
 #endif
-
-// c++23 expected
-#include <tl/expected.hpp>
-
-// convenience helpers
-#define TL_ERROR(msg) tl::unexpected { std::string{__FILE__} + ":" + std::to_string(__LINE__) + ": " + (msg) }
-#define CHECK_GL_ERROR() do { \
-	auto err = glGetError(); \
-	if (err != GL_NO_ERROR) { \
-		return TL_ERROR(reinterpret_cast<char const*>(glewGetErrorString(err))); \
-	} \
-} while (0)

@@ -4,6 +4,7 @@
 #include "include/imgui/editorFields.h"
 #include "include/imgui/fileDialogue.h"
 #include "include/imgui/imhelper.h"
+#include "include/editorConsole.h"
 
 EditorApplication::EditorApplication(Renderer& renderer, Scene& scene, std::string_view name)
 	: Application{ renderer, scene, name } 
@@ -148,8 +149,11 @@ void EditorApplication::draw_scene_panel() noexcept {
             if (ImGui::MenuItem("Import .obj File")) {
                 auto path = ImGui::FileDialogue("obj");
                 if(!path.empty()) {
-                    auto obj = check_error(Object::from_obj(get_scene(), Material{}, path));
+                    std::string warning;
+                    auto obj = check_error(Object::from_obj(get_scene(), Material{}, path, &warning));
                     add_object(obj);
+
+                    m_console.log(warning);
                 }
             }
             ImGui::EndMenu();
@@ -224,8 +228,11 @@ void EditorApplication::draw_scene_viewport(TextureRef render_buf) noexcept {
 }
 
 void EditorApplication::draw_console_panel() noexcept {
-    ImGui::Spacing();
-    ImGui::Text("not implemented");
+    ImGui::BeginChild("##scroll");
+    {
+        ImGui::TextUnformatted(m_console.str().data());
+    }
+    ImGui::EndChild();
 }
 
 bool EditorApplication::can_rotate() const noexcept {
@@ -260,6 +267,8 @@ void EditorApplication::try_select_object() noexcept {
     auto ray = get_cam().viewport_to_ray(to_glm(pos));
     auto res = get_scene().ray_cast(ray);
     m_control_state.set_cur_obj(res);
+
+    // m_console.log("Selected object: ", res ? res->get_name() : "None");
 }
 
 void EditorApplication::handle_key_release() noexcept {

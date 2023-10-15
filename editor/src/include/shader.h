@@ -4,8 +4,7 @@
 #include <string>
 #include <string_view>
 #include <tl/expected.hpp>
-
-#include "ext.h"
+#include "utils.h"
 
 enum class ShaderType {
     Vertex,
@@ -72,11 +71,11 @@ private:
 template<typename UniformType>
 auto ShaderProgram::set_uniform(std::string_view name, UniformType const& value) const noexcept -> tl::expected<void, std::string> {
     if (!valid()) {
-        return tl::unexpected{ "Invalid shader program" };
+        return TL_ERROR( "Invalid shader program" );
     }
     GLint loc = glGetUniformLocation(m_handle, name.data());
     if (loc == -1) {
-        return tl::unexpected{ "Failed to get uniform location" };
+        return TL_ERROR( "Failed to get uniform location" );
     }
     if constexpr (std::is_same_v<UniformType, glm::mat4>) {
         glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(value));

@@ -66,14 +66,20 @@ struct Camera {
     void set_delta_zoom(float delta) noexcept;
 
 private:
-    void update_matrices() noexcept;
+    void on_view_changed() noexcept;
+    void on_proj_changed() noexcept;
 
     static constexpr float k_near = 0.1f, k_far = 100.0f;
     static constexpr float k_min_fov = 20.0f, k_max_fov = 120.0f;
 
     float m_fov, m_aspect, m_px_width, m_px_height;
 
-    glm::vec3 m_eye, m_center, m_up;
+    // m_eye is the position of the camera
+    // m_center is the point the camera is looking at
+    // m_up is the up vector of the camera
+    // m_arm_dir is the direction from m_eye to m_center
+
+    glm::vec3 m_eye, m_center, m_up, m_arm_dir;
     glm::mat4 m_cam_transform;
     glm::mat4 m_view;
     glm::mat4 m_projection;

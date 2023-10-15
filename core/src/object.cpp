@@ -2,7 +2,6 @@
 #include "camera.h"
 #include "scene.h"
 
-#include <iostream>
 #include <tiny_obj_loader.h>
 
 
@@ -20,7 +19,8 @@ Object::Object(Scene const& scene, Transform transform, Material mat, std::vecto
     set_transform(transform);
 }
 
-auto Object::from_obj(Scene const& scene, Material mat, std::string_view filename) noexcept -> tl::expected<Object, std::string> {
+auto Object::from_obj(Scene const& scene, Material mat, std::string_view filename, std::string* warning) noexcept 
+-> tl::expected<Object, std::string> {
     std::vector<Vertex> vertices;
 
     tinyobj::ObjReaderConfig config;
@@ -29,15 +29,15 @@ auto Object::from_obj(Scene const& scene, Material mat, std::string_view filenam
     tinyobj::ObjReader reader;
     if (!reader.ParseFromFile(filename.data(), config)) {
         if (!reader.Error().empty()) {
-            return tl::unexpected{ "Tiny Obj Error:\n" + reader.Error() };
+            return TL_ERROR( "Tiny Obj Error:\n" + reader.Error() );
         }
         else {
-            return tl::unexpected{ "Unknown Tiny Obj Error" };
+            return TL_ERROR("Unknown Tiny Obj Error" );
         }
     }
 
-    if (!reader.Warning().empty()) {
-        std::cout << "TinyObjReader:\n" << reader.Warning();
+    if (!reader.Warning().empty() && warning) {
+        *warning = reader.Warning();
     }
 
     auto const& attrib = reader.GetAttrib();

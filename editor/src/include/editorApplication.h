@@ -4,6 +4,7 @@
 
 #include "scene.h"
 #include "application.h"
+#include "editorConsole.h"
 
 constexpr float k_init_move_sensitivity = 2.0;
 constexpr float k_init_rot_sensitivity = 40.0;
@@ -41,6 +42,7 @@ private:
     void remove_object(ObjectHandle obj) noexcept;
 
     std::function<void()> m_on_mouse_leave_scene_viewport_cb;
+    EditorConsole<5> m_console;
     
     struct ControlState {
         using ObjChangeCallback = void(EditorApplication::*)(ObjectHandle);

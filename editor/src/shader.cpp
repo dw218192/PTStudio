@@ -1,7 +1,5 @@
 #include "include/shader.h"
-
 #include <fstream>
-#include <glm/gtc/type_ptr.hpp>
 
 Shader::Shader(ShaderType type) noexcept : m_handle(0) {
     switch (type) {

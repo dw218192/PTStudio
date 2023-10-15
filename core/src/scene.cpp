@@ -10,7 +10,7 @@ auto Scene::from_obj_file(std::string_view filename) noexcept -> tl::expected<Sc
     Scene ret{  };
     auto ores = Object::from_obj(ret, Material{}, filename);
     if (!ores) {
-        return tl::unexpected{ ores.error() };
+        return TL_ERROR( ores.error() );
     }
 
     ret.m_objects.emplace_back(ores.value());
