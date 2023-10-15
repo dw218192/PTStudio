@@ -70,6 +70,7 @@ void EditorApplication::key_pressed(int key, int scancode, int action, int mods)
     if (action == GLFW_PRESS) {
         m_control_state.cur_button_down = key;
     } else if (action == GLFW_RELEASE) {
+        handle_key_release();
         m_control_state.cur_button_down = -1;
     }
 }
@@ -125,13 +126,34 @@ void EditorApplication::draw_scene_panel() noexcept {
     {
         ImGui::BeginListBox("##Scene Objects", { 0, 200 });
         {
-            for (auto&& obj : get_scene()) {
-                if (ImGui::Selectable(obj.get_name().data(), m_control_state.get_cur_obj() == &obj)) {
-                    m_control_state.set_cur_obj(&obj);
+            for (auto obj : get_scene()) {
+                if (ImGui::Selectable(obj->get_name().data(), m_control_state.get_cur_obj() == obj)) {
+                    m_control_state.set_cur_obj(obj);
                 }
             }
         }
         ImGui::EndListBox();
+        ImGui::Spacing();
+
+        if (ImGui::BeginMenu("Add Object")) {
+            if (ImGui::MenuItem("Triangle")) {
+                add_object(Object::make_triangle_obj(get_scene(), Material{}, Transform{}));
+            }
+            if (ImGui::MenuItem("Cube")) {
+
+            }
+            if (ImGui::MenuItem("Sphere")) {
+
+            }
+            if (ImGui::MenuItem("Import .obj File")) {
+                auto path = ImGui::FileDialogue("obj");
+                if(!path.empty()) {
+                    auto obj = check_error(Object::from_obj(get_scene(), Material{}, path));
+                    add_object(obj);
+                }
+            }
+            ImGui::EndMenu();
+        }
     }
 }
 
@@ -168,8 +190,9 @@ void EditorApplication::draw_scene_viewport(TextureRef render_buf) noexcept {
             auto conf = get_renderer().get_config();
             conf.width = static_cast<unsigned>(view_size.x);
             conf.height = static_cast<unsigned>(view_size.y);
-
-            check_error(get_renderer().exec(Cmd_ChangeRenderConfig{ conf }));
+            get_cam().set_viewport(conf.width, conf.height);
+            get_cam().set_fov(conf.fovy);
+            check_error(get_renderer().on_change_render_config(conf));
             last_size = view_size;
         }
 
@@ -239,7 +262,27 @@ void EditorApplication::try_select_object() noexcept {
     m_control_state.set_cur_obj(res);
 }
 
-void EditorApplication::ControlState::set_cur_obj(Object* obj) noexcept {
+void EditorApplication::handle_key_release() noexcept {
+    if (m_control_state.cur_button_down == GLFW_KEY_DELETE) {
+        if (m_control_state.get_cur_obj()) {
+            remove_object(m_control_state.get_cur_obj());
+        }
+    }
+}
+
+void EditorApplication::add_object(Object const& obj) noexcept {
+    auto hobj = get_scene().add_object(obj);
+    check_error(get_renderer().on_add_object(hobj));
+    m_control_state.set_cur_obj(hobj);
+}
+
+void EditorApplication::remove_object(ObjectHandle obj) noexcept {
+    check_error(get_renderer().on_remove_object(obj));
+    get_scene().remove_object(m_control_state.get_cur_obj());
+	m_control_state.set_cur_obj(nullptr);
+}
+
+void EditorApplication::ControlState::set_cur_obj(ObjectHandle obj) noexcept {
     if (obj == m_cur_obj) {
         return;
     }
@@ -247,7 +290,6 @@ void EditorApplication::ControlState::set_cur_obj(Object* obj) noexcept {
     for (auto&& callback : m_obj_change_callbacks) {
         (dynamic_cast<EditorApplication*>(&Application::get_application())->*callback)(obj);
     }
-
     if (obj) {
         std::copy(obj->get_name().begin(), obj->get_name().end(), obj_name_buf.begin());
     }

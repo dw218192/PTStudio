@@ -1,9 +1,9 @@
 #pragma once
-#include "commands.h"
 #include "texture.h"
 #include "scene.h"
 #include "camera.h"
 #include "renderConfig.h"
+#include "utils.h"
 
 #include <tl/expected.hpp>
 
@@ -20,44 +20,63 @@ struct Renderer {
     Renderer(Renderer&&) = delete;
     Renderer& operator=(Renderer&&) = delete;
 
+    NODISCARD virtual auto init() noexcept -> tl::expected<void, std::string> = 0;
+
 	/**
-	 * \brief Opens a scene and initializes the renderer
+	 * \brief Opens a new scene
 	 * \param scene The scene to be opened
-	 * \return on failure, a Result object that contains an error message\n
-	 * on success, an empty Result object.
+	 * \return on failure, an error message
 	 */
-    [[nodiscard]] virtual auto open_scene(Scene const& scene) noexcept -> tl::expected<void, std::string> = 0;
-
-	/**
-     * \brief Executes a command.
-     * \param cmd The command to be executed
-     * \return on failure, a Result object that contains an error message\n
-     * on success, an empty Result object.
-     */
-    [[nodiscard]] virtual auto exec(Cmd const& cmd) noexcept -> tl::expected<void, std::string> = 0;
-
-	/**
-     * \brief Renders the scene. Note that if you call this function outside of Application::loop(),\n
-     * you will need to poll events, call glClear(), and swap buffers yourself.
-     * \return on failure, a Result object that contains an error message\n
-     * on success, a Result object that contains a handle to the rendered image.
-     */
-    [[nodiscard]] virtual auto render(Camera const& camera) noexcept -> tl::expected<void, std::string> = 0;
-
-	/**
-	 * \brief Renders the scene to an internal buffer. Note that if you call this function outside of Application::loop(),\n
-	 * you will need to poll events, call glClear(), and swap buffers yourself.
-	 * \return on failure, a Result object that contains an error message\n
-	 * on success, a Result object that contains a handle to the rendered image.
-	 */
-    [[nodiscard]] virtual auto render_buffered(Camera const& camera) noexcept -> tl::expected<TextureRef, std::string> = 0;
+    NODISCARD virtual auto open_scene(Scene const& scene) noexcept -> tl::expected<void, std::string> = 0;
 
     /**
-     * \brief Checks if the renderer has a valid scene opened.
-     * \return true if the renderer has a valid scene opened, false otherwise.
+     * \brief Changes the render configuration
+     * \param config The new render configuration
+     * \return on failure, an error message
+    */
+    NODISCARD virtual auto on_change_render_config(RenderConfig const& config) noexcept -> tl::expected<void, std::string> = 0;
+
+    /**
+     * \brief Called when an object is added to the scene
+     * \param obj The object that was added
+     * \return on failure, an error message
+    */
+    NODISCARD virtual auto on_add_object(ConstObjectHandle obj) noexcept -> tl::expected<void, std::string> = 0;
+
+    /**
+     * \brief Called when an object is removed from the scene
+     * \param obj The object that was removed
+     * \return on failure, an error message
+    */
+    NODISCARD virtual auto on_remove_object(ConstObjectHandle obj) noexcept -> tl::expected<void, std::string> = 0;
+
+	/**
+     * \brief Renders the scene directly in the window
+     * \param camera The camera to view the scene from
+     * \return on failure, an error message
      */
-    [[nodiscard]] virtual auto valid() const noexcept -> bool = 0;
-    [[nodiscard]] auto get_config() const noexcept -> RenderConfig const& { return m_config; }
+    NODISCARD virtual auto render(Camera const& camera) noexcept -> tl::expected<void, std::string> = 0;
+
+	/**
+	 * \brief Renders the scene to a texture
+     * \param camera The camera to view the scene from
+     * \return on failure, an error message\n
+     * on success, a handle to the texture containing the rendered scene
+     * \note The texture is owned by the renderer and will be deleted when the renderer is destroyed
+     */
+    NODISCARD virtual auto render_buffered(Camera const& camera) noexcept -> tl::expected<TextureRef, std::string> = 0;
+
+    /**
+     * \brief Checks if the renderer is initialized and valid.
+     * \return true if the renderer is initialized and valid, false otherwise.
+     */
+    NODISCARD virtual auto valid() const noexcept -> bool = 0;
+
+    /**
+     * \brief Gets the current render configuration
+     * \return The current render configuration
+     */
+    NODISCARD auto get_config() const noexcept -> RenderConfig const& { return m_config; }
 
 protected:
     RenderConfig m_config;

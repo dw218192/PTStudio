@@ -5,15 +5,13 @@ auto GLTexture::fetch_pixels() const noexcept -> tl::expected<void, std::string>
     try {
         bind();
     } catch (std::bad_any_cast const&) {
-        return tl::unexpected { "invalid handle" };
+        return TL_ERROR("invalid handle");
     }
 
     glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_UNSIGNED_BYTE, m_pixels.data());
     glBindTexture(GL_TEXTURE_2D, 0);
 
-    if (auto err = glGetError(); err != GL_NO_ERROR) {
-        return unexpected_gl_error(err);
-    }
+    CHECK_GL_ERROR();
 
     auto w = m_width, h = m_height;
     // flip vertically

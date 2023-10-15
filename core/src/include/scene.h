@@ -4,12 +4,60 @@
 
 #include <string>
 #include <tl/expected.hpp>
-#include <vector>
+#include <list>
 
 #include "camera.h"
 #include "boundingBox.h"
+#include "utils.h"
+
+using ObjectHandle = Object*;
+using ConstObjectHandle = Object const*;
 
 struct Scene {
+
+    template<typename T>
+    struct Iterator {
+        static_assert(!std::is_same_v<typename std::iterator_traits<T>::iterator_category, void>,
+            "T must be an iterator type");
+
+        using value_type = typename T::pointer;
+        using reference = value_type;
+        using pointer = value_type;
+        using iterator_category = std::bidirectional_iterator_tag;
+
+        Iterator(T it) : m_it{ it } {}
+
+        auto operator*() const -> reference { 
+            return &*m_it;
+        }
+        auto operator++() -> Iterator& {
+            ++m_it;
+            return *this;
+        }
+        auto operator++(int) -> Iterator {
+            auto ret = *this;
+            ++m_it;
+            return ret;
+        }
+        auto operator--() -> Iterator& {
+            --m_it;
+            return *this;
+        }
+        auto operator--(int) -> Iterator {
+            auto ret = *this;
+            --m_it;
+            return ret;
+        }
+        auto operator==(const Iterator& other) const -> bool {
+            return m_it == other.m_it;
+        }
+        auto operator!=(const Iterator& other) const -> bool {
+            return m_it != other.m_it;
+        }
+    private:
+        T m_it;
+    };
+
     Scene();
 
     /**
@@ -17,28 +65,34 @@ struct Scene {
      * \param filename the path to the obj file
      * \return nothing if the file was loaded successfully, an error otherwise
     */
-    [[nodiscard]] static auto from_obj_file(std::string_view filename) noexcept -> tl::expected<Scene, std::string>;
+    NODISCARD static auto from_obj_file(std::string_view filename) noexcept -> tl::expected<Scene, std::string>;
     // for test only
-    [[nodiscard]] static auto make_triangle_scene() noexcept -> tl::expected<Scene, std::string>;
+    NODISCARD static auto make_triangle_scene() noexcept -> tl::expected<Scene, std::string>;
 
 	// compute good positions to place light and camera
-	[[nodiscard]] auto get_good_cam_start() const noexcept -> LookAtParams;
-    [[nodiscard]] auto get_good_light_pos() const noexcept -> glm::vec3;
+	NODISCARD auto get_good_cam_start() const noexcept -> LookAtParams;
+    NODISCARD auto get_good_light_pos() const noexcept -> glm::vec3;
 
-    [[nodiscard]] auto ray_cast(Ray const& ray, float t_min = 0.0f, float t_max = 1e5f) noexcept -> Object*;
-    [[nodiscard]] auto begin() noexcept -> decltype(auto) { return m_objects.begin(); }
-    [[nodiscard]] auto end() noexcept -> decltype(auto) { return m_objects.end(); }
-    [[nodiscard]] auto begin() const noexcept -> decltype(auto) { return m_objects.cbegin(); }
-    [[nodiscard]] auto end() const noexcept -> decltype(auto) { return m_objects.cend(); }
+    NODISCARD auto ray_cast(Ray const& ray, float t_min = 0.0f, float t_max = 1e5f) noexcept -> ObjectHandle;
+
+    NODISCARD auto begin() const noexcept { return Iterator{ m_objects.begin() }; }
+    NODISCARD auto end() const noexcept { return Iterator{ m_objects.end() }; }
+    NODISCARD auto begin() noexcept { return Iterator{ m_objects.begin() }; }
+    NODISCARD auto end() noexcept { return Iterator{ m_objects.end() }; }
+
+    NODISCARD auto size() const noexcept { return m_objects.size(); }
+
+    auto add_object(Object obj) noexcept -> ObjectHandle;
+    void remove_object(ObjectHandle obj) noexcept;
     
-    [[nodiscard]] auto next_obj_name() const noexcept -> std::string {
+    NODISCARD auto next_obj_name() const noexcept -> std::string {
         static int counter = 0;
         return "Object " + std::to_string(counter++);
     }
 
 private:
-    [[nodiscard]] auto compute_scene_bound() const noexcept -> BoundingBox;
+    NODISCARD auto compute_scene_bound() const noexcept -> BoundingBox;
 
     // these are initialized when the scene is loaded
-	std::vector<Object> m_objects;
+	std::list<Object> m_objects;
 };

@@ -36,14 +36,17 @@ private:
 
     // other helpers
     void try_select_object() noexcept;
+    void handle_key_release() noexcept;
+    void add_object(Object const& obj) noexcept;
+    void remove_object(ObjectHandle obj) noexcept;
 
     std::function<void()> m_on_mouse_leave_scene_viewport_cb;
     
     struct ControlState {
-        using ObjChangeCallback = void(EditorApplication::*)(Object*);
+        using ObjChangeCallback = void(EditorApplication::*)(ObjectHandle);
 
-        void set_cur_obj(Object* obj) noexcept;
-        auto get_cur_obj() const noexcept -> Object* { return m_cur_obj; }
+        void set_cur_obj(ObjectHandle obj) noexcept;
+        auto get_cur_obj() const noexcept { return m_cur_obj; }
         void register_on_obj_change(ObjChangeCallback callback) noexcept;
 
         float move_sensitivity = k_init_move_sensitivity;
@@ -56,7 +59,7 @@ private:
         int cur_button_down = -1;
         double prev_x = 0, prev_y = 0;
     private:
-        Object* m_cur_obj = nullptr;
+        ObjectHandle m_cur_obj = nullptr;
         std::vector<ObjChangeCallback> m_obj_change_callbacks;
     } m_control_state;
 };

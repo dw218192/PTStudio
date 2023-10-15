@@ -34,7 +34,7 @@ Shader& Shader::operator=(Shader&& other) noexcept {
 auto Shader::from_file(ShaderType type, std::string_view file) noexcept -> tl::expected<Shader, std::string> {
     std::ifstream stream(file.data());
     if (!stream.is_open()) {
-        return tl::unexpected{ "Failed to open vertex shader file" };
+        return TL_ERROR( "Failed to open vetex shader file" );
     }
 
     std::string src{std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};    
@@ -46,9 +46,9 @@ auto Shader::from_src(ShaderType type, std::string_view src) noexcept -> tl::exp
     GLuint handle = glCreateShader(ret.m_type);
     if (!handle) {
         if (ret.m_type == GL_VERTEX_SHADER) {
-            return tl::unexpected{ "Failed to create vertex shader" };
+            return TL_ERROR( "Failed to create ertex shader" );
         } else {
-            return tl::unexpected{ "Failed to create pixel shader" };
+            return TL_ERROR( "Failed to create ixel shader" );
         }
     }
 
@@ -66,10 +66,10 @@ auto Shader::from_src(ShaderType type, std::string_view src) noexcept -> tl::exp
         glGetShaderInfoLog(handle, maxLength, &maxLength, infoLog.data());
 
         infoLog = "Failed to compile shader:\n" + infoLog;
-        return tl::unexpected{ infoLog };
+        return TL_ERROR( infoLog );
     }
 
-    ret.m_handle = handle;
+   ret.m_handle = handle;
     return ret;
 }
 
@@ -104,15 +104,15 @@ void ShaderProgram::unuse() const noexcept {
 
 auto ShaderProgram::from_shaders(Shader&& vs, Shader&& ps) noexcept -> tl::expected<ShaderProgram, std::string> {
     if(!vs.valid()) {
-        return tl::unexpected{ "Invalid vertex shader" };
+        return TL_ERROR( "Invalid vertex shder" );
     }
     if(!ps.valid()) {
-        return tl::unexpected{ "Invalid pixel shader" };
+        return TL_ERROR( "Invalid pixel shaer" );
     }
 
     GLuint program = glCreateProgram();
     if (!program) {
-        return tl::unexpected{ "Failed to create shader program" };
+        return TL_ERROR( "Failed to create hader program" );
     }
     glAttachShader(program, vs.m_handle);
     glAttachShader(program, ps.m_handle);
@@ -127,9 +127,9 @@ auto ShaderProgram::from_shaders(Shader&& vs, Shader&& ps) noexcept -> tl::expec
         glGetProgramInfoLog(program, maxLength, &maxLength, infoLog.data());
 
         infoLog = "Failed to compile shader:\n" + infoLog;
-        return tl::unexpected{ infoLog };
+        return TL_ERROR( infoLog );
     }
-    ShaderProgram ret{ std::move(vs), std::move(ps) };
+  ShaderProgram ret{ std::move(vs), std::move(ps) };
     ret.m_handle = program;
     return ret;
 }
@@ -137,11 +137,11 @@ auto ShaderProgram::from_shaders(Shader&& vs, Shader&& ps) noexcept -> tl::expec
 auto ShaderProgram::from_files(std::string_view vs, std::string_view ps) noexcept -> tl::expected<ShaderProgram, std::string> {
     auto vs_shader = Shader::from_file(ShaderType::Vertex, vs);
     if (!vs_shader) {
-        return tl::unexpected{ vs_shader.error() };
+        return TL_ERROR( vs_shader.error() );
     }
     auto ps_shader = Shader::from_file(ShaderType::Fragment, ps);
     if (!ps_shader) {
-        return tl::unexpected{ ps_shader.error() };
+        return TL_ERROR( ps_shader.error() );
     }
     return from_shaders(std::move(vs_shader.value()), std::move(ps_shader.value()));
 }
@@ -149,11 +149,11 @@ auto ShaderProgram::from_files(std::string_view vs, std::string_view ps) noexcep
 auto ShaderProgram::from_srcs(std::string_view vs, std::string_view ps) noexcept -> tl::expected<ShaderProgram, std::string> {
     auto vs_shader = Shader::from_src(ShaderType::Vertex, vs);
     if (!vs_shader) {
-        return tl::unexpected{ vs_shader.error() };
+        return TL_ERROR( vs_shader.error() );
     }
     auto ps_shader = Shader::from_src(ShaderType::Fragment, ps);
     if (!ps_shader) {
-        return tl::unexpected{ ps_shader.error() };
+        return TL_ERROR( ps_shader.error() );
     }
     return from_shaders(std::move(vs_shader.value()), std::move(ps_shader.value()));
 }

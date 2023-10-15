@@ -51,12 +51,11 @@ Transform::Transform() noexcept
 Transform::Transform(glm::vec3 const& pos, glm::vec3 const& rot, glm::vec3 const& scale) noexcept
     : m_pos{ pos }, m_rot{ rot }, m_scale{ scale }
 {
-    m_trans = compose(m_pos, m_rot, m_scale);
-    m_inv_trans = glm::inverse(m_trans);
+    on_component_update();
 }
 
 Transform::Transform(glm::mat4 const& matrix) noexcept : m_trans{matrix}  {
-    update_matrix();
+    on_trans_matrix_update();
 }
 
 auto Transform::look_at(glm::vec3 const& pos, glm::vec3 const& target, glm::vec3 const& up) noexcept -> Transform {
@@ -70,32 +69,44 @@ auto Transform::inverse() const noexcept -> Transform {
     return Transform{ glm::inverse(get_matrix()) };
 }
 
-void Transform::multiply(TransformSpace space, glm::mat4 const& transform) noexcept {
+void Transform::set_rotation(TransformSpace space, glm::vec3 const& rot) noexcept {
     if (space == TransformSpace::WORLD) {
-        m_trans = transform * m_trans;
+        m_rot = rot;
+        on_component_update();
     } else {
-        m_trans *= transform;
+        m_trans *= glm::eulerAngleXYZ(glm::radians(rot.x), glm::radians(rot.y), glm::radians(rot.z));
+        on_trans_matrix_update();
     }
 }
 
-void Transform::set_rotation(TransformSpace space, glm::vec3 const& rot) noexcept {
-    multiply(space, glm::eulerAngleXYZ(glm::radians(rot.x), glm::radians(rot.y), glm::radians(rot.z)));
-    update_matrix();
-}
-
 void Transform::set_position(TransformSpace space, glm::vec3 const& pos) noexcept {
-    multiply(space, glm::translate(pos));
-    update_matrix();
+    if (space == TransformSpace::WORLD) {
+        m_pos = pos;
+        on_component_update();
+    } else {
+        m_trans *= glm::translate(pos);
+        on_trans_matrix_update();
+    }
 }
 
 void Transform::set_scale(TransformSpace space, glm::vec3 const& scale) noexcept {
-    multiply(space, glm::scale(scale));
-    update_matrix();
+    if (space == TransformSpace::WORLD) {
+        m_scale = scale;
+        on_component_update();
+    } else {
+        m_trans *= glm::scale(scale);
+        on_trans_matrix_update();
+    }
 }
 
-void Transform::update_matrix() noexcept {
+void Transform::on_trans_matrix_update() noexcept {
     m_inv_trans = glm::inverse(m_trans);
     decompose(m_trans, &m_pos, &m_rot, &m_scale);
+}
+
+void Transform::on_component_update() noexcept {
+    m_trans = compose(m_pos, m_rot, m_scale);
+    m_inv_trans = glm::inverse(m_trans);
 }
 
 auto Transform::local_to_world_pos(glm::vec3 local) const noexcept -> glm::vec3 {

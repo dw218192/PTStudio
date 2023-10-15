@@ -35,8 +35,9 @@ struct Transform {
     auto world_to_local_len(float len) const noexcept -> float;
 
 private:
-    void update_matrix() noexcept;
-    void multiply(TransformSpace space, glm::mat4 const& transform) noexcept;
+    void on_trans_matrix_update() noexcept;
+    void on_component_update() noexcept;
+    
     glm::vec3 m_pos;
     glm::vec3 m_rot;
     glm::vec3 m_scale;

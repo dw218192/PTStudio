@@ -1,9 +1,8 @@
-#include "include/scene.h"
+#include "scene.h"
+#include "ray.h"
+#include "intersection.h"
 
 #include <glm/ext/matrix_transform.hpp>
-
-#include "include/ray.h"
-#include "include/intersection.h"
 
 Scene::Scene() = default;
 
@@ -48,8 +47,8 @@ auto Scene::get_good_light_pos() const noexcept -> glm::vec3 {
     return center + glm::vec3{ 0, y_extent + 3, 0 };
 }
 
-auto Scene::ray_cast(Ray const& ray, float t_min, float t_max) noexcept -> Object* {
-    Object* ret = nullptr;
+auto Scene::ray_cast(Ray const& ray, float t_min, float t_max) noexcept -> ObjectHandle {
+    ObjectHandle ret = nullptr;
     float closest_t = t_max;
     for (auto&& obj : m_objects) {
         auto res = Intersection::ray_box(obj.get_bound(), ray);
@@ -68,6 +67,14 @@ auto Scene::make_triangle_scene() noexcept -> tl::expected<Scene, std::string> {
     scene.m_objects.emplace_back(Object::make_triangle_obj(scene, Material{},
         Transform{ glm::vec3{0.2,0.2,0}, glm::vec3{0,0,0}, glm::vec3{1,1,1} }));
     return scene;
+}
+
+auto Scene::add_object(Object obj) noexcept -> ObjectHandle{
+    return &(m_objects.emplace_back(std::move(obj)));
+}
+
+void Scene::remove_object(ObjectHandle obj) noexcept {
+    m_objects.remove_if([&](auto&& o) { return &o == obj; });
 }
 
 auto Scene::compute_scene_bound() const noexcept -> BoundingBox {

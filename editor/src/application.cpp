@@ -100,8 +100,9 @@ Application::Application(Renderer& renderer, Scene& scene, std::string_view name
     ImGui::SetNextWindowPos({ 10, 10 });
     ImGui::SetNextWindowSize({ 0, static_cast<float>(renderer.get_config().height) / 5.0f });
 
-    // config camera and initialize renderer
-    check_error(get_renderer().open_scene(scene));
+    // initialize renderer
+    check_error(get_renderer().init());
+	check_error(get_renderer().open_scene(scene));
 }
 
 Application::~Application() {

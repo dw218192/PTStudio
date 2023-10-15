@@ -97,10 +97,7 @@ auto ShaderProgram::set_uniform(std::string_view name, UniformType const& value)
         static_assert(false, "Unsupported uniform type");
     }
 
-    auto const err = glGetError();
-    if (err != GL_NO_ERROR) {
-        return unexpected_gl_error(err);
-    }
+    CHECK_GL_ERROR();
 
     return {};
 }
