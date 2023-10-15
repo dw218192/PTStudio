@@ -51,6 +51,11 @@ Transform::Transform() noexcept
 Transform::Transform(glm::vec3 const& pos, glm::vec3 const& rot, glm::vec3 const& scale) noexcept
     : m_pos{ pos }, m_rot{ rot }, m_scale{ scale }
 {
+    m_trans = compose(m_pos, m_rot, m_scale);
+    m_inv_trans = glm::inverse(m_trans);
+}
+
+Transform::Transform(glm::mat4 const& matrix) noexcept : m_trans{matrix}  {
     update_matrix();
 }
 
@@ -61,36 +66,36 @@ auto Transform::look_at(glm::vec3 const& pos, glm::vec3 const& target, glm::vec3
     return ret;
 }
 
-void Transform::set_rotation(TransformSpace space, glm::vec3 const& rot) noexcept {
-    if(space == TransformSpace::GLOBAL) {
-        m_rot = rot;
+auto Transform::inverse() const noexcept -> Transform {
+    return Transform{ glm::inverse(get_matrix()) };
+}
+
+void Transform::multiply(TransformSpace space, glm::mat4 const& transform) noexcept {
+    if (space == TransformSpace::WORLD) {
+        m_trans = transform * m_trans;
     } else {
-        m_rot += rot;
+        m_trans *= transform;
     }
+}
+
+void Transform::set_rotation(TransformSpace space, glm::vec3 const& rot) noexcept {
+    multiply(space, glm::eulerAngleXYZ(glm::radians(rot.x), glm::radians(rot.y), glm::radians(rot.z)));
     update_matrix();
 }
 
 void Transform::set_position(TransformSpace space, glm::vec3 const& pos) noexcept {
-    if (space == TransformSpace::GLOBAL) {
-        m_pos = pos;
-    } else {
-        m_pos += pos * m_scale;
-    }
+    multiply(space, glm::translate(pos));
     update_matrix();
 }
 
 void Transform::set_scale(TransformSpace space, glm::vec3 const& scale) noexcept {
-    if (space == TransformSpace::GLOBAL) {
-        m_scale = scale;
-    } else {
-        m_scale *= scale;
-    }
+    multiply(space, glm::scale(scale));
     update_matrix();
 }
 
 void Transform::update_matrix() noexcept {
-    m_trans = compose(m_pos, m_rot, m_scale);
     m_inv_trans = glm::inverse(m_trans);
+    decompose(m_trans, &m_pos, &m_rot, &m_scale);
 }
 
 auto Transform::local_to_world_pos(glm::vec3 local) const noexcept -> glm::vec3 {

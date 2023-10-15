@@ -22,7 +22,7 @@ struct Scene {
     [[nodiscard]] static auto make_triangle_scene() noexcept -> tl::expected<Scene, std::string>;
 
 	// compute good positions to place light and camera
-	[[nodiscard]] auto get_good_cam_start() const noexcept -> Transform;
+	[[nodiscard]] auto get_good_cam_start() const noexcept -> LookAtParams;
     [[nodiscard]] auto get_good_light_pos() const noexcept -> glm::vec3;
 
     [[nodiscard]] auto ray_cast(Ray const& ray, float t_min = 0.0f, float t_max = 1e5f) noexcept -> Object*;

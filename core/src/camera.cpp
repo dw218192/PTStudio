@@ -1,16 +1,20 @@
 #include "include/camera.h"
 
-#include <glm/gtc/matrix_transform.hpp>
-#include <imgui.h>
+#include <glm/gtx/euler_angles.hpp>
+#include <glm/gtx/transform.hpp>
 
-Camera::Camera(float fovy, unsigned px_width, unsigned px_height, Transform const& view) noexcept
-    : m_view(view), m_fov(fovy),
-		m_px_width(px_width), m_px_height(px_height),
-		m_aspect(px_width / static_cast<float>(px_height))
+Camera::Camera(float fovy, unsigned px_width, unsigned px_height, glm::vec3 eye, glm::vec3 center, glm::vec3 up) noexcept
+    : m_fov(fovy), m_aspect(px_width / static_cast<float>(px_height)),
+		m_px_width(px_width), m_px_height(px_height), m_eye{eye}, m_center{center}, m_up{up}
 {
+    m_view = glm::lookAt(eye, center, up);
+    m_cam_transform = glm::inverse(m_view);
     m_projection = glm::perspective(glm::radians(fovy), m_aspect, k_near, k_far);
     update_matrices();
 }
+
+Camera::Camera(float fovy, unsigned px_width, unsigned px_height, LookAtParams const& params) noexcept
+    : Camera{ fovy, px_width, px_height,params.eye, params.center, params.up } { }
 
 auto Camera::ndc_to_wrold(glm::vec2 ndc, float z) const noexcept -> glm::vec3 {
     auto ret = m_inv_view_proj * glm::vec4{ ndc, z, 1.0f };
@@ -45,28 +49,40 @@ auto Camera::viewport_to_world(glm::vec2 screen, float z) const noexcept -> glm:
 }
 auto Camera::viewport_to_ray(glm::vec2 screen) const noexcept -> Ray {
     auto world = viewport_to_world(screen, 1.0f);
-    // note the negation; view is the inverse of camera transform
-    auto origin = -m_view.get_position();
-    return Ray{ origin, world - origin };
+    return Ray{ m_eye, world - m_eye };
 }
 
-void Camera::set_rotation(TransformSpace space, glm::vec3 const& rot) noexcept {
-    m_view.set_rotation(space, rot);
+void Camera::set_delta_rotation(glm::vec3 const& delta) noexcept {
+    auto rot_mat = glm::eulerAngleXYZ(glm::radians(delta.x), glm::radians(delta.y), glm::radians(delta.z));
+    m_eye = rot_mat * glm::vec4{ m_eye, 1.0f };
+    m_view = glm::lookAt(m_eye, m_center, m_up);
+    m_cam_transform = glm::inverse(m_view);
     update_matrices();
 }
 
-void Camera::set_position(TransformSpace space, glm::vec3 const& pos) noexcept {
-    m_view.set_position(space, pos);
+void Camera::set_delta_dolly(glm::vec3 const& delta) noexcept {
+    m_center += delta;
+    m_eye += delta;
+
+    m_view = glm::lookAt(m_eye, m_center, m_up);
+    m_cam_transform = glm::inverse(m_view);
     update_matrices();
 }
 
-void Camera::set_view_transform(Transform const& transform) noexcept {
-    m_view = transform;
+void Camera::set_delta_zoom(float delta) noexcept {
+    if (glm::sign(delta) > 0) {
+        m_eye *= 1.1f;
+    } else {
+        m_eye *= 0.9f;
+    }
+
+    m_view = glm::lookAt(m_eye, m_center, m_up);
+    m_cam_transform = glm::inverse(m_view);
     update_matrices();
 }
 
 void Camera::set_fov(float fov) noexcept {
-    m_fov = fov;
+    m_fov = glm::clamp(fov, k_min_fov, k_max_fov);
     m_projection = glm::perspective(glm::radians(m_fov), m_aspect, k_near, k_far);
     update_matrices();
 }
@@ -80,6 +96,6 @@ void Camera::set_viewport(unsigned px_width, unsigned px_height) noexcept {
 }
 
 void Camera::update_matrices() noexcept {
-    m_view_proj = m_projection * m_view.get_matrix();
+    m_view_proj = m_projection * m_view;
     m_inv_view_proj = glm::inverse(m_view_proj);
 }

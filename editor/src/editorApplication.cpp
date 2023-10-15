@@ -32,16 +32,12 @@ void EditorApplication::cursor_moved(double x, double y) {
         auto zoom_sensitivity = m_control_state.zoom_sensitivity;
 
         if (can_move()) {
-            get_cam().set_position(TransformSpace::LOCAL, {
-                move_sensitivity * px, -move_sensitivity * py, 0
+            get_cam().set_delta_dolly({
+                move_sensitivity * px, 0, move_sensitivity* py
             });
         } else if (can_rotate()) {
-            get_cam().set_rotation(TransformSpace::LOCAL, {
+            get_cam().set_delta_rotation({
                 rot_sensitivity * py, rot_sensitivity * px, 0
-            });
-        } else if (can_zoom()) {
-            get_cam().set_position(TransformSpace::LOCAL, {
-                0, 0, py* zoom_sensitivity
             });
         }
     }
@@ -65,9 +61,7 @@ void EditorApplication::mouse_clicked(int button, int action, int mods) {
 void EditorApplication::mouse_scroll(double x, double y) {
     (void)x;
     float const delta = y < 0 ? -1.0f : 1.0f;
-    get_cam().set_position(TransformSpace::LOCAL, {
-        0, 0, delta
-    });
+    get_cam().set_delta_zoom(delta);
 }
 
 void EditorApplication::key_pressed(int key, int scancode, int action, int mods) {
@@ -186,7 +180,6 @@ void EditorApplication::draw_scene_viewport(TextureRef render_buf) noexcept {
                 view_size, { 0, 1 }, { 1, 0 }
             );
             render_buf.get().unbind();
-
         }
         catch (std::bad_any_cast const& e) {
             std::cerr << e.what() << '\n';
@@ -220,10 +213,6 @@ bool EditorApplication::can_move() const noexcept {
     return m_control_state.cur_mouse_down == GLFW_MOUSE_BUTTON_LEFT;
 }
 
-bool EditorApplication::can_zoom() const noexcept {
-    return m_control_state.cur_mouse_down == GLFW_MOUSE_BUTTON_MIDDLE;
-}
-
 void EditorApplication::on_mouse_leave_scene_viewport() noexcept {
     m_control_state.cur_mouse_down = -1;
     m_control_state.cur_button_down = -1;
@@ -245,23 +234,9 @@ void EditorApplication::try_select_object() noexcept {
 
     // convert to viewport space
     pos = pos - win_pos.value();
-
-
     auto ray = get_cam().viewport_to_ray(to_glm(pos));
     auto res = get_scene().ray_cast(ray);
-
-    get_debug_drawer().begin_relative(to_glm(win_pos.value()));
-    get_debug_drawer().draw_ray_3d(ray, { 1, 0, 0 });
-    for (auto&& obj : get_scene()) {
-        get_debug_drawer().draw_box(obj.get_bound(), { 0, 1, 0 });
-    }
-    get_debug_drawer().end_relative();
-    
-    if (res) {
-        std::cout << "Found object: " << res->get_name() << std::endl;
-    } else {
-        std::cout << "No object Found" << std::endl;
-    }
+    m_control_state.set_cur_obj(res);
 }
 
 void EditorApplication::ControlState::set_cur_obj(Object* obj) noexcept {
@@ -272,7 +247,10 @@ void EditorApplication::ControlState::set_cur_obj(Object* obj) noexcept {
     for (auto&& callback : m_obj_change_callbacks) {
         (dynamic_cast<EditorApplication*>(&Application::get_application())->*callback)(obj);
     }
-    std::copy(obj->get_name().begin(), obj->get_name().end(), obj_name_buf.begin());
+
+    if (obj) {
+        std::copy(obj->get_name().begin(), obj->get_name().end(), obj_name_buf.begin());
+    }
 }
 
 void EditorApplication::ControlState::register_on_obj_change(ObjChangeCallback callback) noexcept {

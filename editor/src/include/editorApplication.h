@@ -29,7 +29,6 @@ private:
     // control conditions
     bool can_rotate() const noexcept;
     bool can_move() const noexcept;
-    bool can_zoom() const noexcept;
 
     // events
     void on_mouse_leave_scene_viewport() noexcept;

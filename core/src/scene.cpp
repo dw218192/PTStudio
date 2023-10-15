@@ -1,4 +1,7 @@
 #include "include/scene.h"
+
+#include <glm/ext/matrix_transform.hpp>
+
 #include "include/ray.h"
 #include "include/intersection.h"
 
@@ -16,11 +19,11 @@ auto Scene::from_obj_file(std::string_view filename) noexcept -> tl::expected<Sc
 }
 
 // here we assume +y is up
-auto Scene::get_good_cam_start() const noexcept -> Transform {
+auto Scene::get_good_cam_start() const noexcept -> LookAtParams {
     constexpr float tan_alpha = 0.4663f;
 
     if (m_objects.empty()) {
-        return Transform::look_at(glm::vec3{ 0, 2, 2 }, glm::vec3{ 0 }, glm::vec3{ 0,1,0 });
+        return { glm::vec3{ 0, 2, 2 }, glm::vec3{ 0 }, glm::vec3{ 0,1,0 } };
     }
 
     auto const bound = compute_scene_bound();
@@ -31,11 +34,11 @@ auto Scene::get_good_cam_start() const noexcept -> Transform {
 	float const cam_y_local = extent.y + 2;
     // tan(view_angle) = y_local / (extent.z + z_local)
 
-    return Transform::look_at(
-	    glm::vec3(center.x, center.y + cam_y_local, cam_y_local / tan_alpha),
+    return {
+        glm::vec3(center.x, center.y + cam_y_local, cam_y_local / tan_alpha),
         center,
         glm::vec3(0, 1, 0)
-    );
+    };
 }
 // here we assume +y is up
 auto Scene::get_good_light_pos() const noexcept -> glm::vec3 {

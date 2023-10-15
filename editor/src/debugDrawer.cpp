@@ -1,8 +1,9 @@
 #include "include/debugDrawer.h"
-#include "include/boundingBox.h"
-#include "include/ray.h"
 #include "include/application.h"
 #include "include/imgui/imhelper.h"
+
+#include "boundingBox.h"
+#include "ray.h"
 
 void DebugDrawer::begin_relative(glm::vec2 offset) noexcept {
 	m_offset = offset;
@@ -117,5 +118,5 @@ void DebugDrawer::draw_line_3d(glm::vec3 from, glm::vec3 to, glm::vec3 color, fl
 }
 
 void DebugDrawer::draw_ray_3d(Ray const& ray, glm::vec3 color, float thickness, float time) noexcept {
-	draw_line_3d(ray.origin, ray.origin + ray.direction * 1000.0f, color, thickness, time);
+	draw_line_3d(ray.origin, ray.get_point(100.0f), color, thickness, time);
 }
