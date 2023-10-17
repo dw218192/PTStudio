@@ -1,7 +1,7 @@
 #include "include/shader.h"
 #include <fstream>
 
-Shader::Shader(ShaderType type) noexcept : m_handle(0) {
+Shader::Shader(ShaderType type) noexcept : GLResource{} {
     switch (type) {
     case ShaderType::Vertex:
         m_type = GL_VERTEX_SHADER;
@@ -18,9 +18,7 @@ Shader::~Shader() noexcept {
     }
 }
 
-Shader::Shader(Shader&& other) noexcept : m_type{other.m_type}, m_handle{other.m_handle} {
-    other.m_handle = 0;
-}
+Shader::Shader(Shader&& other) noexcept : GLResource{ std::move(other) }, m_type{ other.m_type } { }
 
 Shader& Shader::operator=(Shader&& other) noexcept {
     m_type = other.m_type;
@@ -78,10 +76,8 @@ ShaderProgram::~ShaderProgram() noexcept {
 }
 
 ShaderProgram::ShaderProgram(ShaderProgram&& other) noexcept
-	: m_handle{other.m_handle}, m_vs{std::move(other.m_vs)}, m_ps{std::move(other.m_ps)}
-{
-    other.m_handle = 0;
-}
+	: GLResource{std::move(other)}, m_vs{std::move(other.m_vs)}, m_ps{std::move(other.m_ps)}
+{ }
 
 ShaderProgram& ShaderProgram::operator=(ShaderProgram&& other) noexcept {
     m_handle = other.m_handle;

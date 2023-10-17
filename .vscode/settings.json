@@ -90,6 +90,9 @@
         "queue": "cpp",
         "__debug": "cpp",
         "__functional_base": "cpp",
-        "target": "cpp"
+        "target": "cpp",
+        "condition_variable": "cpp",
+        "future": "cpp",
+        "regex": "cpp"
     }
 }

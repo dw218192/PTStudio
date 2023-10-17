@@ -24,5 +24,6 @@ target_link_libraries(${exec_name}
 	stb
 	imgui
 	expected
+	span
 	nativefiledialog
 )

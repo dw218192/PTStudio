@@ -6,9 +6,8 @@
 #include "application.h"
 #include "editorConsole.h"
 
-constexpr float k_init_move_sensitivity = 2.0;
-constexpr float k_init_rot_sensitivity = 40.0;
-constexpr float k_init_zoom_sensitivity = 10.0;
+constexpr float k_init_move_sensitivity = 20.0;
+constexpr float k_init_rot_sensitivity = 60.0;
 
 struct EditorApplication : Application {
     EditorApplication(Renderer& config, Scene& scene, std::string_view name);
@@ -45,7 +44,7 @@ private:
     EditorConsole<5> m_console;
     
     struct ControlState {
-        using ObjChangeCallback = void(EditorApplication::*)(ObjectHandle);
+        using ObjChangeCallback = std::function<void(ObjectHandle)>;
 
         void set_cur_obj(ObjectHandle obj) noexcept;
         auto get_cur_obj() const noexcept { return m_cur_obj; }
@@ -53,7 +52,6 @@ private:
 
         float move_sensitivity = k_init_move_sensitivity;
         float rot_sensitivity = k_init_rot_sensitivity;
-        float zoom_sensitivity = k_init_zoom_sensitivity;
         std::array<char, 1024> obj_name_buf {};
 
         bool first_time_motion = true;

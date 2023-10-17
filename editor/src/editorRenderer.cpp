@@ -5,9 +5,11 @@
 #include <cassert>
 #include <algorithm>
 
-constexpr float k_grid_dim = 100.0f;
-constexpr float k_grid_spacing = 1.0f;
-constexpr glm::vec3 k_clear_color = glm::vec3{ 0 };
+constexpr auto k_grid_dim = 100.0f;
+constexpr auto k_grid_spacing = 1.0f;
+constexpr auto k_clear_color = glm::vec3{ 0 };
+constexpr auto k_outline_scale = 1.02f;
+constexpr auto k_outline_color = glm::vec3{ 1, 0, 0 };
 
 EditorRenderer::EditorRenderer(RenderConfig const& config) noexcept
 	: Renderer{config} {}
@@ -74,10 +76,7 @@ auto EditorRenderer::init() noexcept -> tl::expected<void, std::string> {
 
         // set invariant uniforms
         m_grid_shader.use();
-        auto res = m_grid_shader.set_uniform(k_uniform_half_grid_dim, half_dim);
-        if (!res) {
-            return res;
-        }
+        TL_CHECK_FWD(m_grid_shader.set_uniform(k_uniform_half_grid_dim, half_dim));
         m_grid_shader.unuse();
 
         return {};
@@ -86,7 +85,6 @@ auto EditorRenderer::init() noexcept -> tl::expected<void, std::string> {
 	if (valid()) {
         return {};
     }
-
 
 	// set up shaders
     auto shader_res = ShaderProgram::from_srcs(vs_obj_src, ps_obj_src);
@@ -103,14 +101,29 @@ auto EditorRenderer::init() noexcept -> tl::expected<void, std::string> {
         m_grid_shader = std::move(shader_res.value());
     }
 
-	create_grid(k_grid_dim, k_grid_spacing);
-    CHECK_GL_ERROR();
+    shader_res = ShaderProgram::from_srcs(vs_outline_src, ps_outline_src);
+    if (!shader_res) {
+        return TL_ERROR(shader_res.error());
+    } else {
+        m_outline_shader = std::move(shader_res.value());
+    }
+
+	m_outline_shader.use();
+    {
+        TL_CHECK_FWD(m_outline_shader.set_uniform(k_uniform_outline_color, k_outline_color));
+    }
+    m_outline_shader.unuse();
+
+    TL_CHECK_FWD(create_grid(k_grid_dim, k_grid_spacing));
 
     m_valid = true;
     return {};
 }
 
 auto EditorRenderer::open_scene(Scene const& scene) noexcept -> tl::expected<void, std::string> {
+    m_cur_outline_obj = nullptr;
+    clear_render_data();
+
     std::vector<GLuint> vaos(scene.size()), vbos(scene.size());
     // set up object buffers
     glGenVertexArrays(scene.size(), vaos.data());
@@ -133,10 +146,12 @@ auto EditorRenderer::open_scene(Scene const& scene) noexcept -> tl::expected<voi
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_POLYGON_SMOOTH);
     glEnable(GL_LINE_SMOOTH);
-    
+    glEnable(GL_STENCIL_TEST);
+    glClearStencil(0);
+    CHECK_GL_ERROR();
+
     glHint(GL_POLYGON_SMOOTH_HINT, GL_NICEST);
     glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
-
     CHECK_GL_ERROR();
 
     return {};
@@ -206,6 +221,10 @@ auto EditorRenderer::on_remove_object(ConstObjectHandle obj) noexcept -> tl::exp
     return {};
 }
 
+void EditorRenderer::on_object_change(ConstObjectHandle obj) noexcept {
+    m_cur_outline_obj = obj;
+}
+
 auto EditorRenderer::on_add_object_internal(ObjectRenderData& data, ConstObjectHandle obj) noexcept -> tl::expected<void, std::string> {
     glBindVertexArray(data.vao);
     glBindBuffer(GL_ARRAY_BUFFER, data.vbo);
@@ -238,6 +257,19 @@ auto EditorRenderer::on_add_object_internal(ObjectRenderData& data, ConstObjectH
 }
 
 auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> tl::expected<void, std::string> {
+    auto draw_obj = [this](ConstObjectHandle obj) -> tl::expected<void, std::string> {
+        auto it = m_render_data.find(obj);
+        if (it == m_render_data.end()) {
+            return  TL_ERROR("obj not found in render data");
+        }
+        glBindVertexArray(it->second.vao);
+        glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(obj->get_vertices().size()));
+
+        CHECK_GL_ERROR();
+        return {};
+    };
+
+
     if (!valid()) {
         return TL_ERROR( "invalid EditorRenderer");
     } else if (!m_grid_shader.valid()) {
@@ -249,47 +281,57 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
     auto&& scene = Application::get_scene();
 
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-
     glClearColor(k_clear_color.x, k_clear_color.y, k_clear_color.z, 1.0f);
     glClearDepth(1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    
-    glViewport(0, 0, get_config().width, get_config().height);
+
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+    glViewport(0, 0, static_cast<GLsizei>(get_config().width), static_cast<GLsizei>(get_config().height));
 
     // render objects
-    m_editor_shader.use();
+    // disable stencil by default
+    glStencilMask(0);
+	m_editor_shader.use();
     {
-        auto res = m_editor_shader.set_uniform(k_uniform_light_pos, scene.get_good_light_pos());
-        if (!res) {
-            return res;
-        }
-        res = m_editor_shader.set_uniform(k_uniform_view, cam.get_view());
-        if (!res) {
-            return res;
-        }
-        res = m_editor_shader.set_uniform(k_uniform_projection, cam.get_projection());
-        if (!res) {
-            return res;
-        }
+        TL_CHECK_FWD(m_editor_shader.set_uniform(k_uniform_light_pos, scene.get_good_light_pos()));
+        TL_CHECK_FWD(m_editor_shader.set_uniform(k_uniform_view, cam.get_view()));
+        TL_CHECK_FWD(m_editor_shader.set_uniform(k_uniform_projection, cam.get_projection()));
 
         for (auto obj : scene) {
-            res = m_editor_shader.set_uniform(k_uniform_model, obj->get_transform().get_matrix());
-            if (!res) {
-                return res;
-            }
-            auto it = m_render_data.find(obj);
-            if(it == m_render_data.end()) {
-                return  TL_ERROR("render_internal(): obj not found in render data" );
-            }
-
-            glBindVertexArray(it->second.vao);
-            glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(obj->get_vertices().size()));
-
-            CHECK_GL_ERROR();
+            TL_CHECK_FWD(m_editor_shader.set_uniform(k_uniform_model, obj->get_transform().get_matrix()));
+            TL_CHECK_FWD(draw_obj(obj));
         }
-        glBindVertexArray(0);
     }
     m_editor_shader.unuse();
+
+    // draw outlined obj if some obj is selected
+    // this renders that obj 3 times which is bad
+    // TODO: optimize if too slow?
+    if (m_cur_outline_obj) {
+        m_outline_shader.use();
+        {
+            glDisable(GL_DEPTH_TEST);
+            glStencilOp(GL_REPLACE, GL_KEEP, GL_KEEP);
+            glStencilFunc(GL_NEVER, 1, 0xff);
+            glStencilMask(0xff);
+
+            TL_CHECK_FWD(m_outline_shader.set_uniform(k_uniform_model, m_cur_outline_obj->get_transform().get_matrix()));
+            TL_CHECK_FWD(m_outline_shader.set_uniform(k_uniform_view, cam.get_view()));
+            TL_CHECK_FWD(m_outline_shader.set_uniform(k_uniform_projection, cam.get_projection()));
+
+            TL_CHECK_FWD(m_outline_shader.set_uniform(k_uniform_scale_factor, glm::mat4{1}));
+        	TL_CHECK_FWD(draw_obj(m_cur_outline_obj));
+
+            glStencilFunc(GL_NOTEQUAL, 1, 0xff);
+            glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+
+        	TL_CHECK_FWD(m_outline_shader.set_uniform(k_uniform_scale_factor, glm::scale(glm::vec3{ k_outline_scale })));
+            TL_CHECK_FWD(draw_obj(m_cur_outline_obj));
+
+            glStencilFunc(GL_ALWAYS, 1, 0xFF);
+            glEnable(GL_DEPTH_TEST);
+        }
+        m_outline_shader.unuse();
+    }
 
     // render grid
     glEnable(GL_BLEND);
@@ -298,17 +340,10 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
     glBindVertexArray(m_grid_render_data.vao);
     m_grid_shader.use();
     {
-        auto res = m_grid_shader.set_uniform(k_uniform_view, cam.get_view());
-        if (!res) {
-            return res;
-        }
-        res = m_grid_shader.set_uniform(k_uniform_projection, cam.get_projection());
-        if (!res) {
-            return res;
-        }
+        TL_CHECK_FWD(m_grid_shader.set_uniform(k_uniform_view, cam.get_view()));
+        TL_CHECK_FWD(m_grid_shader.set_uniform(k_uniform_projection, cam.get_projection()));
 
     	glDrawArrays(GL_LINES, 0, m_grid_render_data.vertex_count);
-
         CHECK_GL_ERROR();
     }
     m_grid_shader.unuse();
@@ -329,19 +364,20 @@ auto EditorRenderer::create_render_buf() noexcept -> tl::expected<void, std::str
     }
 
     GLuint fbo, rbo, tex;
-    GLsizei const w = get_config().width;
-    GLsizei const h = get_config().height;
+    auto w = static_cast<GLsizei>(get_config().width);
+    auto h = static_cast<GLsizei>(get_config().height);
 
     // create frame buffer
     glGenFramebuffers(1, &fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
     {
-	    // we need depth testing
+	    // create both depth and stencil buffers
         glGenRenderbuffers(1, &rbo);
         glBindRenderbuffer(GL_RENDERBUFFER, rbo);
         {
-            glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, w, h);
+            glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8_OES, w, h);
             glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rbo);
+            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo);
         }
         glBindRenderbuffer(GL_RENDERBUFFER, rbo);
 

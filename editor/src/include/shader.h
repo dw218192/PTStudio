@@ -4,6 +4,11 @@
 #include <string>
 #include <string_view>
 #include <tl/expected.hpp>
+#include <glm/glm.hpp>
+#include <glm/gtc/type_ptr.hpp>
+#include <memory>
+
+#include "glResource.h"
 #include "utils.h"
 
 enum class ShaderType {
@@ -13,7 +18,7 @@ enum class ShaderType {
 
 using ShaderProgramRef = std::reference_wrapper<struct ShaderProgram>;
 
-struct Shader {
+struct Shader : GLResource<Shader> {
     friend struct ShaderProgram;
 
     [[nodiscard]] static auto from_file(ShaderType type, std::string_view file) noexcept -> tl::expected<Shader, std::string>;
@@ -29,16 +34,12 @@ struct Shader {
     Shader(Shader&) = delete;
     Shader& operator=(Shader&) = delete;
 
-
-    [[nodiscard]] auto valid() const noexcept -> bool { return m_handle != 0; }
-
 private:
     Shader(ShaderType type) noexcept;
     GLenum m_type;
-    GLuint m_handle;
 };
 
-struct ShaderProgram {
+struct ShaderProgram : GLResource<ShaderProgram> {
     [[nodiscard]] static auto from_srcs(std::string_view vs, std::string_view ps) noexcept -> tl::expected<ShaderProgram, std::string>;
     [[nodiscard]] static auto from_files(std::string_view vs, std::string_view ps) noexcept -> tl::expected<ShaderProgram, std::string>;
     [[nodiscard]] static auto from_shaders(Shader&& vs, Shader&& ps) noexcept -> tl::expected<ShaderProgram, std::string>;
@@ -61,9 +62,8 @@ struct ShaderProgram {
     void use() const noexcept;
     void unuse() const noexcept;
 private:
-    ShaderProgram(Shader&& vs, Shader&& ps) noexcept : m_handle(0), m_vs{ std::move(vs) }, m_ps{ std::move(ps) } { }
+    ShaderProgram(Shader&& vs, Shader&& ps) noexcept : GLResource{}, m_vs{ std::move(vs) }, m_ps{ std::move(ps) } { }
 
-    GLuint m_handle;
     Shader m_vs;
     Shader m_ps;
 };

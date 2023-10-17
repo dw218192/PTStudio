@@ -20,6 +20,7 @@ target_link_libraries(${lib_name}
 	imgui
 	expected
 	nativefiledialog
+	span
 )
 
 target_include_directories(${lib_name} PUBLIC

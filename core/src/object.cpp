@@ -5,15 +5,15 @@
 #include <tiny_obj_loader.h>
 
 
-Object::Object(Scene const& scene, Transform transform, Material mat, std::vector<Vertex> vertices, std::string name) 
-    : m_mat { std::move(mat) },  m_vertices { std::move(vertices) }, m_name { std::move(name) } 
+Object::Object(Scene const& scene, Transform transform, Material mat, tcb::span<Vertex const> vertices, std::string_view name)
+    : m_mat { std::move(mat) }, m_vertices { vertices.begin(), vertices.end() }, m_name { name }
 {
     m_local_bound = BoundingBox::from_vertices(m_vertices);
     set_transform(transform);
 }
 
-Object::Object(Scene const& scene, Transform transform, Material mat, std::vector<Vertex> vertices)
-    : m_mat { std::move(mat) }, m_vertices { std::move(vertices) }, m_name { scene.next_obj_name() } 
+Object::Object(Scene const& scene, Transform transform, Material mat, tcb::span<Vertex const> vertices)
+    : m_mat { std::move(mat) }, m_vertices{ vertices.begin(), vertices.end() }, m_name { scene.next_obj_name() }
 {
     m_local_bound = BoundingBox::from_vertices(m_vertices);
     set_transform(transform);
@@ -147,7 +147,7 @@ auto Object::get_bound() const noexcept -> BoundingBox const& {
     return m_bound;
 }
 
-auto Object::get_vertices() const noexcept -> std::vector<Vertex> const& {
+auto Object::get_vertices() const noexcept -> tcb::span<Vertex const> {
     return m_vertices;
 }
 

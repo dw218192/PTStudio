@@ -34,9 +34,27 @@ constexpr T div_up(T x, T y) {
 
 // convenience helpers
 #define TL_ERROR(msg) tl::unexpected { std::string{__FILE__} + ":" + std::to_string(__LINE__) + ": " + (msg) }
+#define TL_GL_ERROR(err) TL_ERROR(reinterpret_cast<char const*>(glewGetErrorString(err)))
+
 #define CHECK_GL_ERROR() do { \
 	auto err = glGetError(); \
-	if (err != GL_NO_ERROR) { \
-		return TL_ERROR(reinterpret_cast<char const*>(glewGetErrorString(err))); \
-	} \
+	if (err != GL_NO_ERROR) return TL_ERROR(reinterpret_cast<char const*>(glewGetErrorString(err))); \
 } while (0)
+#define TL_CHECK(func_call) do { \
+	auto res = func_call;\
+	if (!res) return TL_ERROR(res.error()); \
+} while (0)
+#define TL_CHECK_FWD(func_call) do { \
+	auto res = func_call;\
+	if (!res) return res; \
+} while (0)
+#define TL_CHECK_RET(func_call) ({ \
+	auto res = func_call; \
+	if (!res) return TL_ERROR(res.error()); \
+	res.value(); \
+})
+#define TL_CHECK_RET_FWD(func_call) ({ \
+	auto res = func_call; \
+	if (!res) return res; \
+	res.value(); \
+})

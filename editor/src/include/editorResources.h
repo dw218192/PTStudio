@@ -50,15 +50,6 @@ DockSpace       ID=0x8B93E3BD Window=0xA787BDB4 Pos=164,187 Size=1280,720 Split=
 
 // shaders
 
-constexpr char const* ps_unicolor_src =
-"\
-	#version 330 core\n\
-	layout(location = 0) out vec3 FragColor; \n\
-	void main() {\n\
-        FragColor = vec3(1.0f, 0.5f, 0.2f); \n\
-	}\n\
-";
-
 constexpr char const* vs_obj_src =
 "\
     #version 330 core\n\
@@ -108,6 +99,31 @@ constexpr char const* ps_obj_src =
     }\n\
 ";
 
+// outline works by first rendering the object slightly scaled up, with a solid color
+// then rendering the object normally, with the outline color, but with depth testing disabled
+constexpr char const* vs_outline_src =
+"\
+    #version 330 core\n\
+    layout (location = 0) in vec3 aPos;\n\
+    uniform mat4 model;\n\
+    uniform mat4 view;\n\
+    uniform mat4 projection;\n\
+    uniform mat4 scale;\n\
+    void main() {\n\
+        gl_Position = projection * view * model * scale * vec4(aPos, 1.0);\n\
+    }\n\
+";
+
+constexpr char const* ps_outline_src =
+"\
+	#version 330 core\n\
+    uniform vec3 outline_color;\n\
+	layout(location = 0) out vec3 FragColor; \n\
+	void main() {\n\
+        FragColor = outline_color;\n\
+	}\n\
+";
+
 constexpr char const* vs_grid_src = 
 "\
     #version 330 core\n\
@@ -141,3 +157,5 @@ constexpr char const* k_uniform_light_pos = "lightPos";
 constexpr char const* k_uniform_light_color = "lightColor";
 constexpr char const* k_uniform_object_color = "objectColor";
 constexpr char const* k_uniform_half_grid_dim = "half_grid_dim";
+constexpr char const* k_uniform_outline_color = "outline_color";
+constexpr char const* k_uniform_scale_factor = "scale";

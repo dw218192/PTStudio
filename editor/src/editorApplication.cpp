@@ -5,6 +5,7 @@
 #include "include/imgui/fileDialogue.h"
 #include "include/imgui/imhelper.h"
 #include "include/editorConsole.h"
+#include "include/editorRenderer.h"
 
 EditorApplication::EditorApplication(Renderer& renderer, Scene& scene, std::string_view name)
 	: Application{ renderer, scene, name } 
@@ -15,7 +16,14 @@ EditorApplication::EditorApplication(Renderer& renderer, Scene& scene, std::stri
     ImGui::LoadIniSettingsFromMemory(k_imgui_ini, std::strlen(k_imgui_ini));
 #endif
 
-    m_control_state.register_on_obj_change(&EditorApplication::on_obj_change);
+    m_control_state.register_on_obj_change([this] (ObjectHandle obj) {
+	    on_obj_change(obj);
+    });
+    if(auto p_editor_renderer = dynamic_cast<EditorRenderer*>(&renderer); p_editor_renderer) {
+        m_control_state.register_on_obj_change([p_editor_renderer](ObjectHandle obj) {
+            p_editor_renderer->on_object_change(obj);
+        });
+    }
     m_on_mouse_leave_scene_viewport_cb = [this] { on_mouse_leave_scene_viewport(); };
 }
 
@@ -30,7 +38,6 @@ void EditorApplication::cursor_moved(double x, double y) {
 
         auto move_sensitivity = m_control_state.move_sensitivity;
         auto rot_sensitivity = m_control_state.rot_sensitivity;
-        auto zoom_sensitivity = m_control_state.zoom_sensitivity;
 
         if (can_move()) {
             get_cam().set_delta_dolly({
@@ -117,8 +124,6 @@ void EditorApplication::draw_scene_panel() noexcept {
         ImGui::SliderFloat("##Move Sensitivity", &m_control_state.move_sensitivity, 1.0f, 10.0f);
         ImGui::Text("Rotate Sensitivity");
         ImGui::SliderFloat("##Rotate Sensitivity", &m_control_state.rot_sensitivity, 2.0f, 100.0f);
-        ImGui::Text("Zoom Sensitivity");
-        ImGui::SliderFloat("##Zoom Sensitivity", &m_control_state.zoom_sensitivity, 1.0f, 20.0f);
     }
 
     // draw scene object list
@@ -297,7 +302,7 @@ void EditorApplication::ControlState::set_cur_obj(ObjectHandle obj) noexcept {
     }
     m_cur_obj = obj;
     for (auto&& callback : m_obj_change_callbacks) {
-        (dynamic_cast<EditorApplication*>(&Application::get_application())->*callback)(obj);
+        callback(obj);
     }
     if (obj) {
         std::copy(obj->get_name().begin(), obj->get_name().end(), obj_name_buf.begin());
