@@ -356,16 +356,24 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
 }
 
 auto EditorRenderer::create_render_buf() noexcept -> tl::expected<void, std::string> {
+    GLuint fbo, rbo;
+    GLTextureRef tex;
+    auto const w = static_cast<GLsizei>(get_config().width);
+    auto const h = static_cast<GLsizei>(get_config().height);
+
     if (m_render_buf) {
         glDeleteFramebuffers(1, &m_render_buf->fbo);
         glDeleteRenderbuffers(1, &m_render_buf->rbo);
+        tex = std::move(m_render_buf->tex_data);
+        TL_CHECK_FWD(tex->resize(w, h));
+    } else {
+        // create tex to render to
+        auto res = GLTexture::create(w, h);
+        if (!res) {
+            return TL_ERROR(res.error());
+        }
+        tex = std::move(res.value());
     }
-
-    GLuint fbo, rbo;
-    GLTextureRef tex;
-
-    auto w = static_cast<GLsizei>(get_config().width);
-    auto h = static_cast<GLsizei>(get_config().height);
 
     // create frame buffer
     glGenFramebuffers(1, &fbo);
@@ -383,13 +391,6 @@ auto EditorRenderer::create_render_buf() noexcept -> tl::expected<void, std::str
 
         CHECK_GL_ERROR();
 
-        // create tex to render to
-        auto res = GLTexture::create(w, h);
-        if (!res) {
-            return TL_ERROR(res.error());
-        }
-
-    	tex = std::move(res.value());
         tex->bind();
         {
             glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, tex->handle(), 0);

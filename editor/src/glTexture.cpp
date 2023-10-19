@@ -26,28 +26,38 @@ auto GLTexture::fetch_pixels() const noexcept -> tl::expected<void, std::string>
     return {};
 }
 
-auto GLTexture::create(unsigned width, unsigned height) -> tl::expected<GLTextureRef, std::string> {
+auto GLTexture::create_tex(unsigned width, unsigned height) noexcept -> tl::expected<GLuint, std::string> {
     GLuint tex;
     glGenTextures(1, &tex);
+    CHECK_GL_ERROR();
+
     glBindTexture(GL_TEXTURE_2D, tex);
-    {
-        glTexImage2D(
-            GL_TEXTURE_2D, 0, GL_RGB, // RGB color format
-            width, height,
-            0, GL_RGB, GL_UNSIGNED_BYTE, nullptr
-        );
+    glTexImage2D(
+        GL_TEXTURE_2D, 0, GL_RGB, // RGB color format
+        width, height,
+        0, GL_RGB, GL_UNSIGNED_BYTE, nullptr
+    );
 
-        CHECK_GL_ERROR();
+    CHECK_GL_ERROR();
 
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-        CHECK_GL_ERROR();
-    }
+    CHECK_GL_ERROR();
+
     glBindTexture(GL_TEXTURE_2D, 0);
 
+    return tex;
+}
+
+auto GLTexture::create(unsigned width, unsigned height) -> tl::expected<GLTextureRef, std::string> {
+
+    TL_CHECK(create_tex(width, height));
+    auto tex = create_tex(width, height);
+    if (!tex) return TL_ERROR(tex.error());
+
     auto ret = GLTextureRef{ new GLTexture{width, height}, GLResourceDeleter{} };
-    ret->m_handle = tex;
+    ret->m_handle = tex.value();
     return ret;
 }
 
@@ -83,4 +93,13 @@ void GLTexture::unbind() const noexcept {
 
 auto GLTexture::get_handle() const noexcept -> void* {
     return reinterpret_cast<void*>(m_handle);
+}
+
+auto GLTexture::resize(unsigned width, unsigned height) noexcept -> tl::expected<void, std::string> {
+	TL_CHECK_FWD(Texture::resize(width, height));
+    auto tex = create_tex(width, height);
+    if (!tex) return TL_ERROR(tex.error());
+
+    m_handle = tex.value();
+    return {};
 }

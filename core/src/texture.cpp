@@ -2,8 +2,17 @@
 #include "stb_image_write.h"
 
 Texture::Texture(unsigned width, unsigned height) noexcept :
-	m_width{width}, m_height{height}, m_linear_sz{width*height*3} {
+	m_width{width}, m_height{height}, m_linear_sz{ width * height * 3} {
     m_pixels.resize(m_linear_sz);
+}
+
+auto Texture::resize(unsigned width, unsigned height) noexcept -> tl::expected<void, std::string> {
+    m_width = width;
+    m_height = height;
+    m_linear_sz = width * height * 3;
+    m_pixels.resize(m_linear_sz, 0);
+
+    return {};
 }
 
 auto Texture::save(FileFormat fmt, std::string_view file_path) const noexcept -> tl::expected<void, std::string> {

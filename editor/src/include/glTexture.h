@@ -20,8 +20,10 @@ struct GLTexture final : Texture, GLResource {
     void bind() const noexcept override;
     void unbind() const noexcept override;
     auto get_handle() const noexcept -> void* override;
+    [[nodiscard]] auto resize(unsigned width, unsigned height) noexcept -> tl::expected<void, std::string> override;
 
 protected:
+    auto static create_tex(unsigned width, unsigned height) noexcept -> tl::expected<GLuint, std::string>;
     void swap(GLTexture&& other) noexcept;
     ~GLTexture() noexcept override;
     [[nodiscard]] auto fetch_pixels() const noexcept -> tl::expected<void, std::string> override;
