@@ -1,16 +1,7 @@
 #include "include/shader.h"
 #include <fstream>
 
-Shader::Shader(ShaderType type) noexcept : GLResource{} {
-    switch (type) {
-    case ShaderType::Vertex:
-        m_type = GL_VERTEX_SHADER;
-        break;
-    case ShaderType::Fragment:
-        m_type = GL_FRAGMENT_SHADER;
-        break;
-    }
-}
+Shader::Shader(GLenum type, GLuint handle) noexcept : GLResource(handle), m_type(type) {}
 
 Shader::~Shader() noexcept {
     if (m_handle) {
@@ -44,13 +35,22 @@ auto Shader::from_file(ShaderType type, std::string_view file) noexcept -> tl::e
 }
 
 auto Shader::from_src(ShaderType type, std::string_view src) noexcept -> tl::expected<ShaderRef, std::string> {
-    auto ret = ShaderRef{ new Shader { type }, GLResourceDeleter{ } };
-    GLuint handle = glCreateShader(ret->m_type);
+    GLenum gltype {0};
+	switch (type) {
+    case ShaderType::Vertex:
+        gltype = GL_VERTEX_SHADER;
+        break;
+    case ShaderType::Fragment:
+        gltype = GL_FRAGMENT_SHADER;
+        break;
+    }
+
+	GLuint handle = glCreateShader(gltype);
     if (!handle) {
-        if (ret->m_type == GL_VERTEX_SHADER) {
+        if (gltype == GL_VERTEX_SHADER) {
             return TL_ERROR( "Failed to create ertex shader" );
         } else {
-            return TL_ERROR( "Failed to create ixel shader" );
+            return TL_ERROR( "Failed to create pixel shader" );
         }
     }
 
@@ -70,8 +70,7 @@ auto Shader::from_src(ShaderType type, std::string_view src) noexcept -> tl::exp
         infoLog = "Failed to compile shader:\n" + infoLog;
         return TL_ERROR( infoLog );
     }
-
-    ret->m_handle = handle;
+    auto ret = ShaderRef{ new Shader { gltype, handle }, GLResourceDeleter{ } };
 	return ret;
 }
 
@@ -84,6 +83,9 @@ ShaderProgram::~ShaderProgram() noexcept {
     }
 }
 
+ShaderProgram::ShaderProgram(ShaderRef vs, ShaderRef ps, GLuint handle) noexcept
+    : GLResource{ handle }, m_vs{ std::move(vs) }, m_ps{ std::move(ps) } { }
+
 ShaderProgram::ShaderProgram(ShaderProgram&& other) noexcept {
     swap(std::move(other));
 }
@@ -93,12 +95,16 @@ ShaderProgram& ShaderProgram::operator=(ShaderProgram&& other) noexcept {
     return *this;
 }
 
-void ShaderProgram::use() const noexcept {
-    if (m_handle) {
-        glUseProgram(m_handle);
+auto ShaderProgram::bind() const noexcept -> tl::expected<void, std::string> {
+    if (!m_handle) {
+        return TL_ERROR("shader is not valid");
     }
+    glUseProgram(m_handle);
+    CHECK_GL_ERROR();
+    return {};
 }
-void ShaderProgram::unuse() const noexcept {
+
+void ShaderProgram::unbind() noexcept {
     glUseProgram(0);
 }
 
@@ -116,7 +122,7 @@ auto ShaderProgram::from_shaders(ShaderRef vs, ShaderRef ps) noexcept -> tl::exp
         return TL_ERROR( "Invalid pixel shaer" );
     }
 
-    auto program = glCreateProgram();
+    auto const program = glCreateProgram();
     if (!program) {
         return TL_ERROR( "Failed to create hader program" );
     }
@@ -136,9 +142,7 @@ auto ShaderProgram::from_shaders(ShaderRef vs, ShaderRef ps) noexcept -> tl::exp
         infoLog = "Failed to compile shader:\n" + infoLog;
         return TL_ERROR( infoLog );
     }
-    auto ret = ShaderProgramRef{ new ShaderProgram { std::move(vs), std::move(ps) }, GLResourceDeleter{ } };
-    ret->m_handle = program;
-    return ret;
+    return ShaderProgramRef{ new ShaderProgram { std::move(vs), std::move(ps), program }, GLResourceDeleter{ } };
 }
 
 auto ShaderProgram::from_files(std::string_view vs, std::string_view ps) noexcept -> tl::expected<ShaderProgramRef, std::string> {

@@ -48,11 +48,13 @@ constexpr T div_up(T x, T y) {
 	auto res = func_call;\
 	if (!res) return res; \
 } while (0)
-#define TL_CHECK_RET(func_call, res) do { \
-	res = func_call;\
-	if (!res) return res; \
+#define TL_CHECK_RET(func_call, out) do { \
+	auto res = func_call;\
+	if (!res) return TL_ERROR(res.error()); \
+	out = std::move(res.value());\
 } while (0)
-#define TL_CHECK_RET_FWD(func_call, res) do { \
-	res = func_call;\
+#define TL_CHECK_RET_FWD(func_call, out) do { \
+	auto res = func_call;\
 	if (!res) return res; \
+	out = std::move(res.value());\
 } while (0)

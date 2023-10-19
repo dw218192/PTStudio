@@ -4,20 +4,19 @@
 #include "texture.h"
 
 struct GLTexture;
+
 using GLTextureRef = GLResRef<GLTexture>;
 
 struct GLTexture final : Texture, GLResource {
     [[nodiscard]] static auto create(unsigned width, unsigned height) -> tl::expected<GLTextureRef, std::string>;
 
-    GLTexture(unsigned width, unsigned height);
-
     GLTexture(GLTexture const&) = delete;
-    GLTexture& operator=(GLTexture const&) = delete;
+    auto operator=(GLTexture const&) -> GLTexture& = delete;
 
     GLTexture(GLTexture&& other) noexcept;
-    GLTexture& operator=(GLTexture&& other) noexcept;
+    auto operator=(GLTexture&& other) noexcept -> GLTexture&;
 
-    void bind() const noexcept override;
+    auto bind() const noexcept -> tl::expected<void, std::string> override;
     void unbind() const noexcept override;
     auto get_handle() const noexcept -> void* override;
     [[nodiscard]] auto resize(unsigned width, unsigned height) noexcept -> tl::expected<void, std::string> override;
@@ -25,6 +24,8 @@ struct GLTexture final : Texture, GLResource {
 protected:
     auto static create_tex(unsigned width, unsigned height) noexcept -> tl::expected<GLuint, std::string>;
     void swap(GLTexture&& other) noexcept;
+
+    GLTexture(unsigned width, unsigned height, GLuint handle);
     ~GLTexture() noexcept override;
     [[nodiscard]] auto fetch_pixels() const noexcept -> tl::expected<void, std::string> override;
 };

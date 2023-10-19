@@ -27,14 +27,17 @@ struct Shader final : GLResource {
     [[nodiscard]] static auto from_file(ShaderType type, std::string_view file) noexcept -> tl::expected<ShaderRef, std::string>;
     [[nodiscard]] static auto from_src(ShaderType type, std::string_view src) noexcept -> tl::expected<ShaderRef, std::string>;
 
+    Shader(Shader const&) = delete;
+    auto operator=(Shader const&) ->Shader& = delete;
+
     Shader(Shader&& other) noexcept;
-    Shader& operator=(Shader&& other) noexcept;
+    auto operator=(Shader&& other) noexcept -> Shader&;
 
 private:
     void swap(Shader&& other) noexcept;
     ~Shader() noexcept override;
 
-    Shader(ShaderType type) noexcept;
+    Shader(GLenum type, GLuint handle) noexcept;
     GLenum m_type;
 };
 
@@ -43,27 +46,29 @@ struct ShaderProgram final : GLResource {
     [[nodiscard]] static auto from_files(std::string_view vs, std::string_view ps) noexcept -> tl::expected<ShaderProgramRef, std::string>;
     [[nodiscard]] static auto from_shaders(ShaderRef vs, ShaderRef ps) noexcept -> tl::expected<ShaderProgramRef, std::string>;
 
+    ShaderProgram(ShaderProgram const&) = delete;
+    auto operator=(ShaderProgram const&)->ShaderProgram& = delete;
+
     ShaderProgram(ShaderProgram&&) noexcept;
-    ShaderProgram& operator=(ShaderProgram&&) noexcept;
+    auto operator=(ShaderProgram&&) noexcept -> ShaderProgram&;
 
     template<typename UniformType>
     [[nodiscard]] auto set_uniform(std::string_view name, UniformType const& value) const noexcept -> tl::expected<void, std::string>;
     
-    void use() const noexcept;
-    void unuse() const noexcept;
+    [[nodiscard]] auto bind() const noexcept -> tl::expected<void, std::string>;
+    static void unbind() noexcept;
 
 private:
     void swap(ShaderProgram&& other) noexcept;
     ~ShaderProgram() noexcept override;
-    ShaderProgram(ShaderRef vs, ShaderRef ps) noexcept : GLResource{}, m_vs{ std::move(vs) }, m_ps{ std::move(ps) } { }
-
+    ShaderProgram(ShaderRef vs, ShaderRef ps, GLuint handle) noexcept;
     ShaderRef m_vs;
     ShaderRef m_ps;
 };
 
 template<typename UniformType>
 auto ShaderProgram::set_uniform(std::string_view name, UniformType const& value) const noexcept -> tl::expected<void, std::string> {
-    if (!valid()) {
+	if (!valid()) {
         return TL_ERROR( "Invalid shader program" );
     }
     GLint loc = glGetUniformLocation(m_handle, name.data());

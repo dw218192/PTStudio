@@ -54,7 +54,7 @@ struct Texture {
     */
     auto save(FileFormat fmt, std::string_view file_path) const noexcept -> tl::expected<void, std::string>;
 
-    virtual void bind() const noexcept = 0;
+    virtual auto bind() const noexcept -> tl::expected<void, std::string> = 0;
     virtual void unbind() const noexcept = 0;
     virtual auto get_handle() const noexcept -> void* = 0;
 
@@ -65,5 +65,7 @@ protected:
     NODISCARD virtual auto fetch_pixels() const noexcept -> tl::expected<void, std::string> = 0;
 
 	mutable std::vector<unsigned char> m_pixels;
-    unsigned m_width, m_height, m_linear_sz;
+    unsigned m_width{ 0 };
+    unsigned m_height{ 0 };
+	unsigned m_linear_sz{ 0 };
 };

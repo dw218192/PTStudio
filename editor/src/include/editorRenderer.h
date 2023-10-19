@@ -3,9 +3,10 @@
 #include "renderer.h"
 #include "shader.h"
 #include "glTexture.h"
+#include "glFrameBuffer.h"
+#include "glRenderBuffer.h"
 
 #include <optional>
-#include <vector>
 #include <unordered_map>
 
 #include "editorRenderer.h"
@@ -33,11 +34,11 @@ private:
     void clear_render_data();
 
     struct RenderBufferData {
-        GLuint fbo;
-        GLuint rbo;
-        GLTextureRef tex_data;
-        RenderBufferData(GLuint fbo, GLuint rbo, GLTextureRef tex_data) noexcept
-            : fbo{fbo}, rbo{rbo}, tex_data{std::move(tex_data)} {}
+        GLFrameBufferRef fbo;
+        GLRenderBufferRef rbo;
+        GLTextureRef tex;
+        RenderBufferData(GLFrameBufferRef fbo, GLRenderBufferRef rbo, GLTextureRef tex_data) noexcept
+            : fbo{std::move(fbo)}, rbo{std::move(rbo)}, tex{std::move(tex_data)} {}
     };
     struct ObjectRenderData {
         GLuint vao{ 0 };
