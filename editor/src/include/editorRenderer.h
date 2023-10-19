@@ -5,6 +5,7 @@
 #include "glTexture.h"
 #include "glFrameBuffer.h"
 #include "glRenderBuffer.h"
+#include "glBuffer.h"
 
 #include <optional>
 #include <unordered_map>
@@ -13,7 +14,7 @@
 
 struct EditorRenderer : Renderer {
     EditorRenderer(RenderConfig const& config) noexcept;
-    ~EditorRenderer() override;
+    ~EditorRenderer() noexcept override;
     [[nodiscard]] auto init() noexcept -> tl::expected<void, std::string> override;
     [[nodiscard]] auto open_scene(Scene const& scene) noexcept -> tl::expected<void, std::string> override;
     [[nodiscard]] auto render(Camera const& cam) noexcept -> tl::expected<void, std::string> override;
@@ -41,8 +42,8 @@ private:
             : fbo{std::move(fbo)}, rbo{std::move(rbo)}, tex{std::move(tex_data)} {}
     };
     struct ObjectRenderData {
-        GLuint vao{ 0 };
-        GLuint vbo{ 0 };
+        GLBufferRef vao;
+        GLBufferRef vbo;
         GLsizei vertex_count{ 0 };
     };
 

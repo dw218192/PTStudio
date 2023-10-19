@@ -14,20 +14,7 @@ constexpr auto k_outline_color = glm::vec3{ 1, 0, 0 };
 EditorRenderer::EditorRenderer(RenderConfig const& config) noexcept
 	: Renderer{config} {}
 
-EditorRenderer::~EditorRenderer() {
-    if (EditorRenderer::valid()) {
-        std::vector<GLuint> vaos, vbos;
-        vaos.emplace_back(m_grid_render_data.vao);
-        vbos.emplace_back(m_grid_render_data.vbo);
-        for(auto&& [_, data] : m_render_data) {
-            vaos.emplace_back(data.vao);
-            vbos.emplace_back(data.vbo);
-        }
-
-        glDeleteBuffers(vbos.size(), vbos.data());
-        glDeleteVertexArrays(vaos.size(), vaos.data());
-    }
-}
+EditorRenderer::~EditorRenderer() noexcept { }
 
 auto EditorRenderer::init() noexcept -> tl::expected<void, std::string> {
     auto create_grid = [this](float grid_dim, float spacing) -> tl::expected<void, std::string> {
@@ -44,6 +31,7 @@ auto EditorRenderer::init() noexcept -> tl::expected<void, std::string> {
 
         glGenVertexArrays(1, &m_grid_render_data.vao);
         glGenBuffers(1, &m_grid_render_data.vbo);
+
         m_grid_render_data.vertex_count = vertices.size();
 
         glBindVertexArray(m_grid_render_data.vao);
@@ -102,7 +90,7 @@ auto EditorRenderer::init() noexcept -> tl::expected<void, std::string> {
         m_outline_shader = std::move(shader_res.value());
     }
 
-	m_outline_shader->bind();
+    TL_CHECK_FWD(m_outline_shader->bind());
     {
         TL_CHECK_FWD(m_outline_shader->set_uniform(k_uniform_outline_color, k_outline_color));
     }
