@@ -23,7 +23,7 @@ private:
     // imgui rendering
     void draw_scene_panel() noexcept;
     void draw_object_panel() noexcept;
-    void draw_scene_viewport(TextureRef render_buf) noexcept;
+    void draw_scene_viewport(TextureHandle render_buf) noexcept;
     void draw_console_panel() noexcept;
 
     // control conditions

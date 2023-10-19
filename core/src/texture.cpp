@@ -1,8 +1,8 @@
 #include "texture.h"
 #include "stb_image_write.h"
 
-Texture::Texture(unsigned width, unsigned height, std::any handle) noexcept :
-	m_width{width}, m_height{height}, m_linear_sz{width*height*3}, m_handle{handle} {
+Texture::Texture(unsigned width, unsigned height) noexcept :
+	m_width{width}, m_height{height}, m_linear_sz{width*height*3} {
     m_pixels.resize(m_linear_sz);
 }
 
@@ -29,4 +29,11 @@ auto Texture::save(FileFormat fmt, std::string_view file_path) const noexcept ->
     }
 
     return {};
+}
+
+void Texture::swap(Texture&& other) noexcept {
+    m_width = other.m_width;
+    m_height = other.m_height;
+    m_linear_sz = other.m_linear_sz;
+    m_pixels = std::move(other.m_pixels);
 }

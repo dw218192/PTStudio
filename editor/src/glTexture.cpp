@@ -2,11 +2,7 @@
 #include "include/ext.h"
 
 auto GLTexture::fetch_pixels() const noexcept -> tl::expected<void, std::string> {
-    try {
-        bind();
-    } catch (std::bad_any_cast const&) {
-        return TL_ERROR("invalid handle");
-    }
+    bind();
 
     glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_UNSIGNED_BYTE, m_pixels.data());
     glBindTexture(GL_TEXTURE_2D, 0);
@@ -30,10 +26,61 @@ auto GLTexture::fetch_pixels() const noexcept -> tl::expected<void, std::string>
     return {};
 }
 
+auto GLTexture::create(unsigned width, unsigned height) -> tl::expected<GLTextureRef, std::string> {
+    GLuint tex;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    {
+        glTexImage2D(
+            GL_TEXTURE_2D, 0, GL_RGB, // RGB color format
+            width, height,
+            0, GL_RGB, GL_UNSIGNED_BYTE, nullptr
+        );
+
+        CHECK_GL_ERROR();
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+        CHECK_GL_ERROR();
+    }
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    auto ret = GLTextureRef{ new GLTexture{width, height}, GLResourceDeleter{} };
+    ret->m_handle = tex;
+    return ret;
+}
+
+GLTexture::GLTexture(unsigned width, unsigned height) : Texture{ width, height }, GLResource{} {}
+
+GLTexture::~GLTexture() noexcept {
+    if(m_handle) {
+        glDeleteTextures(1, &m_handle);
+    }
+}
+
+GLTexture::GLTexture(GLTexture&& other) noexcept {
+	swap(std::move(other));
+}
+
+GLTexture& GLTexture::operator=(GLTexture&& other) noexcept {
+    swap(std::move(other));
+    return *this;
+}
+
+inline void GLTexture::swap(GLTexture&& other) noexcept {
+    this->Texture::swap(std::move(other));
+    this->GLResource::swap(std::move(other));  // NOLINT(bugprone-use-after-move)
+}
+
 void GLTexture::bind() const noexcept {
-    glBindTexture(GL_TEXTURE_2D, std::any_cast<GLuint>(m_handle));
+    glBindTexture(GL_TEXTURE_2D, m_handle);
 }
 
 void GLTexture::unbind() const noexcept {
     glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+auto GLTexture::get_handle() const noexcept -> void* {
+    return reinterpret_cast<void*>(m_handle);
 }

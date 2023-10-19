@@ -64,7 +64,7 @@ struct Renderer {
      * on success, a handle to the texture containing the rendered scene
      * \note The texture is owned by the renderer and will be deleted when the renderer is destroyed
      */
-    NODISCARD virtual auto render_buffered(Camera const& camera) noexcept -> tl::expected<TextureRef, std::string> = 0;
+    NODISCARD virtual auto render_buffered(Camera const& camera) noexcept -> tl::expected<TextureHandle, std::string> = 0;
 
     /**
      * \brief Checks if the renderer is initialized and valid.

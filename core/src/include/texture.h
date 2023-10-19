@@ -3,7 +3,6 @@
 
 #include <string>
 #include <vector>
-#include <any>
 
 #include <tl/expected.hpp>
 
@@ -16,10 +15,10 @@ enum class FileFormat {
     TGA
 };
 
-using TextureRef = std::reference_wrapper<Texture const>;
+using TextureHandle = Texture const*;
 
 struct Texture {
-    Texture(unsigned width, unsigned height, std::any handle) noexcept;
+    Texture(unsigned width, unsigned height) noexcept;
     virtual ~Texture() noexcept = default;
 
     NODISCARD auto get_pixels() const noexcept -> std::vector<unsigned char> const& {
@@ -39,8 +38,6 @@ struct Texture {
     */
     NODISCARD auto get_height() const noexcept { return m_height; }
 
-    NODISCARD auto get_handle() const noexcept -> std::any const& { return m_handle; }
-
     /**
      * \brief Saves the render result to a file
      * \param fmt The file format to be used
@@ -52,10 +49,14 @@ struct Texture {
 
     virtual void bind() const noexcept = 0;
     virtual void unbind() const noexcept = 0;
+    virtual auto get_handle() const noexcept -> void* = 0;
+
 protected:
+    Texture() noexcept = default;
+    void swap(Texture&& other) noexcept;
+
     NODISCARD virtual auto fetch_pixels() const noexcept -> tl::expected<void, std::string> = 0;
 
 	mutable std::vector<unsigned char> m_pixels;
     unsigned m_width, m_height, m_linear_sz;
-    std::any m_handle;
 };

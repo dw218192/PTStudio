@@ -6,66 +6,59 @@
 #include <tl/expected.hpp>
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
-#include <memory>
 
 #include "glResource.h"
 #include "utils.h"
+
+struct Shader;
+struct ShaderProgram;
 
 enum class ShaderType {
     Vertex,
     Fragment
 };
 
-using ShaderProgramRef = std::reference_wrapper<struct ShaderProgram>;
+using ShaderProgramRef = GLResRef<ShaderProgram>;
+using ShaderRef = GLResRef<Shader>;
 
-struct Shader : GLResource<Shader> {
-    friend struct ShaderProgram;
+struct Shader final : GLResource {
+	friend struct GLResourceDeleter;
 
-    [[nodiscard]] static auto from_file(ShaderType type, std::string_view file) noexcept -> tl::expected<Shader, std::string>;
-    [[nodiscard]] static auto from_src(ShaderType type, std::string_view src) noexcept -> tl::expected<Shader, std::string>;
+    [[nodiscard]] static auto from_file(ShaderType type, std::string_view file) noexcept -> tl::expected<ShaderRef, std::string>;
+    [[nodiscard]] static auto from_src(ShaderType type, std::string_view src) noexcept -> tl::expected<ShaderRef, std::string>;
 
-    Shader() = default;
-	~Shader() noexcept;
-
-    Shader(Shader&&) noexcept;
-    Shader& operator=(Shader&&) noexcept;
-
-    // shouldn't be copied because we have handles to GL resources
-    Shader(Shader&) = delete;
-    Shader& operator=(Shader&) = delete;
+    Shader(Shader&& other) noexcept;
+    Shader& operator=(Shader&& other) noexcept;
 
 private:
+    void swap(Shader&& other) noexcept;
+    ~Shader() noexcept override;
+
     Shader(ShaderType type) noexcept;
     GLenum m_type;
 };
 
-struct ShaderProgram : GLResource<ShaderProgram> {
-    [[nodiscard]] static auto from_srcs(std::string_view vs, std::string_view ps) noexcept -> tl::expected<ShaderProgram, std::string>;
-    [[nodiscard]] static auto from_files(std::string_view vs, std::string_view ps) noexcept -> tl::expected<ShaderProgram, std::string>;
-    [[nodiscard]] static auto from_shaders(Shader&& vs, Shader&& ps) noexcept -> tl::expected<ShaderProgram, std::string>;
-
-    ShaderProgram() = default;
-    ~ShaderProgram() noexcept;
+struct ShaderProgram final : GLResource {
+    [[nodiscard]] static auto from_srcs(std::string_view vs, std::string_view ps) noexcept -> tl::expected<ShaderProgramRef, std::string>;
+    [[nodiscard]] static auto from_files(std::string_view vs, std::string_view ps) noexcept -> tl::expected<ShaderProgramRef, std::string>;
+    [[nodiscard]] static auto from_shaders(ShaderRef vs, ShaderRef ps) noexcept -> tl::expected<ShaderProgramRef, std::string>;
 
     ShaderProgram(ShaderProgram&&) noexcept;
     ShaderProgram& operator=(ShaderProgram&&) noexcept;
 
-	// shouldn't be copied because we have handles to GL resources
-    ShaderProgram(ShaderProgram&) = delete;
-    ShaderProgram& operator=(ShaderProgram&) = delete;
-
     template<typename UniformType>
     [[nodiscard]] auto set_uniform(std::string_view name, UniformType const& value) const noexcept -> tl::expected<void, std::string>;
     
-    [[nodiscard]] auto valid() const noexcept { return m_handle != 0; }
-
     void use() const noexcept;
     void unuse() const noexcept;
-private:
-    ShaderProgram(Shader&& vs, Shader&& ps) noexcept : GLResource{}, m_vs{ std::move(vs) }, m_ps{ std::move(ps) } { }
 
-    Shader m_vs;
-    Shader m_ps;
+private:
+    void swap(ShaderProgram&& other) noexcept;
+    ~ShaderProgram() noexcept override;
+    ShaderProgram(ShaderRef vs, ShaderRef ps) noexcept : GLResource{}, m_vs{ std::move(vs) }, m_ps{ std::move(ps) } { }
+
+    ShaderRef m_vs;
+    ShaderRef m_ps;
 };
 
 template<typename UniformType>

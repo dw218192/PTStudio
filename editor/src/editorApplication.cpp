@@ -187,7 +187,7 @@ void EditorApplication::draw_object_panel() noexcept {
     }
 }
 
-void EditorApplication::draw_scene_viewport(TextureRef render_buf) noexcept {
+void EditorApplication::draw_scene_viewport(TextureHandle render_buf) noexcept {
     if (get_renderer().valid()) {
         static auto last_size = ImVec2{ 0, 0 };
 
@@ -205,18 +205,12 @@ void EditorApplication::draw_scene_viewport(TextureRef render_buf) noexcept {
             last_size = view_size;
         }
 
-        try {
-            render_buf.get().bind();
-            ImGui::Image(
-	            reinterpret_cast<ImTextureID>(std::any_cast<GLuint>(render_buf.get().get_handle())),
-                view_size, { 0, 1 }, { 1, 0 }
-            );
-            render_buf.get().unbind();
-        }
-        catch (std::bad_any_cast const& e) {
-            std::cerr << e.what() << '\n';
-            Application::quit(-1);
-        }
+        render_buf->bind();
+        ImGui::Image(
+            render_buf->get_handle(),
+            view_size, { 0, 1 }, { 1, 0 }
+        );
+        render_buf->unbind();
 
         // draw x,y,z axis ref
         auto axis_origin = get_cam().viewport_to_world(glm::vec2 {30, 30}, 0.0f);

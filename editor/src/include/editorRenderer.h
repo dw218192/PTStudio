@@ -16,7 +16,7 @@ struct EditorRenderer : Renderer {
     [[nodiscard]] auto init() noexcept -> tl::expected<void, std::string> override;
     [[nodiscard]] auto open_scene(Scene const& scene) noexcept -> tl::expected<void, std::string> override;
     [[nodiscard]] auto render(Camera const& cam) noexcept -> tl::expected<void, std::string> override;
-    [[nodiscard]] auto render_buffered(Camera const& cam) noexcept -> tl::expected<TextureRef, std::string> override;
+    [[nodiscard]] auto render_buffered(Camera const& cam) noexcept -> tl::expected<TextureHandle, std::string> override;
 	[[nodiscard]] auto valid() const noexcept -> bool override { return m_valid; }
     [[nodiscard]] auto on_change_render_config(RenderConfig const& config) noexcept -> tl::expected<void, std::string> override;
     [[nodiscard]] auto on_add_object(ConstObjectHandle obj) noexcept -> tl::expected<void, std::string> override;
@@ -34,16 +34,15 @@ private:
 
     struct RenderBufferData {
         GLuint fbo;
-        GLuint tex;
         GLuint rbo;
-        GLTexture tex_data;
-        RenderBufferData(GLuint fbo, GLuint tex, GLuint rbo, GLTexture tex_data) noexcept
-            : fbo{fbo}, tex{tex}, rbo{rbo}, tex_data{std::move(tex_data)} {}
+        GLTextureRef tex_data;
+        RenderBufferData(GLuint fbo, GLuint rbo, GLTextureRef tex_data) noexcept
+            : fbo{fbo}, rbo{rbo}, tex_data{std::move(tex_data)} {}
     };
     struct ObjectRenderData {
-        GLuint vao;
-        GLuint vbo;
-        GLsizei vertex_count;
+        GLuint vao{ 0 };
+        GLuint vbo{ 0 };
+        GLsizei vertex_count{ 0 };
     };
 
     std::optional<RenderBufferData> m_render_buf;
@@ -53,7 +52,9 @@ private:
 
 	ConstObjectHandle m_cur_outline_obj = nullptr;
     bool m_valid = false;
-    ShaderProgram m_editor_shader;
-    ShaderProgram m_grid_shader;
-    ShaderProgram m_outline_shader;
+
+
+    ShaderProgramRef m_editor_shader;
+    ShaderProgramRef m_grid_shader;
+    ShaderProgramRef m_outline_shader;
 };

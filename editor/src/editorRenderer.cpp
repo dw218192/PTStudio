@@ -30,7 +30,6 @@ EditorRenderer::~EditorRenderer() {
         if(m_render_buf) {
             glDeleteFramebuffers(1, &m_render_buf->fbo);
             glDeleteRenderbuffers(1, &m_render_buf->rbo);
-            glDeleteTextures(1, &m_render_buf->tex);
         }
     }
 }
@@ -75,9 +74,9 @@ auto EditorRenderer::init() noexcept -> tl::expected<void, std::string> {
         CHECK_GL_ERROR();
 
         // set invariant uniforms
-        m_grid_shader.use();
-        TL_CHECK_FWD(m_grid_shader.set_uniform(k_uniform_half_grid_dim, half_dim));
-        m_grid_shader.unuse();
+        m_grid_shader->use();
+        TL_CHECK_FWD(m_grid_shader->set_uniform(k_uniform_half_grid_dim, half_dim));
+        m_grid_shader->unuse();
 
         return {};
     };
@@ -108,11 +107,11 @@ auto EditorRenderer::init() noexcept -> tl::expected<void, std::string> {
         m_outline_shader = std::move(shader_res.value());
     }
 
-	m_outline_shader.use();
+	m_outline_shader->use();
     {
-        TL_CHECK_FWD(m_outline_shader.set_uniform(k_uniform_outline_color, k_outline_color));
+        TL_CHECK_FWD(m_outline_shader->set_uniform(k_uniform_outline_color, k_outline_color));
     }
-    m_outline_shader.unuse();
+    m_outline_shader->unuse();
 
     TL_CHECK_FWD(create_grid(k_grid_dim, k_grid_spacing));
 
@@ -161,7 +160,7 @@ auto EditorRenderer::render(Camera const& cam) noexcept -> tl::expected<void, st
     return render_internal(cam, 0);
 }
 
-auto EditorRenderer::render_buffered(Camera const& cam) noexcept -> tl::expected<TextureRef, std::string> {
+auto EditorRenderer::render_buffered(Camera const& cam) noexcept -> tl::expected<TextureHandle, std::string> {
     if (!m_render_buf) {
         auto res = create_render_buf();
         if (!res) {
@@ -174,7 +173,7 @@ auto EditorRenderer::render_buffered(Camera const& cam) noexcept -> tl::expected
         return TL_ERROR(res.error());
     }
 
-    return std::cref(m_render_buf->tex_data);
+    return m_render_buf->tex_data.get();
 }
 
 auto EditorRenderer::on_change_render_config(RenderConfig const& config) noexcept -> tl::expected<void, std::string> {
@@ -272,9 +271,9 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
 
     if (!valid()) {
         return TL_ERROR( "invalid EditorRenderer");
-    } else if (!m_grid_shader.valid()) {
+    } else if (!m_grid_shader->valid()) {
         return TL_ERROR("invalid grid shader");
-    } else if (!m_editor_shader.valid()) {
+    } else if (!m_editor_shader->valid()) {
         return TL_ERROR("invalid editor shader");
     }
 
@@ -290,47 +289,47 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
     // render objects
     // disable stencil by default
     glStencilMask(0);
-	m_editor_shader.use();
+	m_editor_shader->use();
     {
-        TL_CHECK_FWD(m_editor_shader.set_uniform(k_uniform_light_pos, scene.get_good_light_pos()));
-        TL_CHECK_FWD(m_editor_shader.set_uniform(k_uniform_view, cam.get_view()));
-        TL_CHECK_FWD(m_editor_shader.set_uniform(k_uniform_projection, cam.get_projection()));
+        TL_CHECK_FWD(m_editor_shader->set_uniform(k_uniform_light_pos, scene.get_good_light_pos()));
+        TL_CHECK_FWD(m_editor_shader->set_uniform(k_uniform_view, cam.get_view()));
+        TL_CHECK_FWD(m_editor_shader->set_uniform(k_uniform_projection, cam.get_projection()));
 
         for (auto obj : scene) {
-            TL_CHECK_FWD(m_editor_shader.set_uniform(k_uniform_model, obj->get_transform().get_matrix()));
+            TL_CHECK_FWD(m_editor_shader->set_uniform(k_uniform_model, obj->get_transform().get_matrix()));
             TL_CHECK_FWD(draw_obj(obj));
         }
     }
-    m_editor_shader.unuse();
+    m_editor_shader->unuse();
 
     // draw outlined obj if some obj is selected
     // this renders that obj 3 times which is bad
     // TODO: optimize if too slow?
     if (m_cur_outline_obj) {
-        m_outline_shader.use();
+        m_outline_shader->use();
         {
             glDisable(GL_DEPTH_TEST);
             glStencilOp(GL_REPLACE, GL_KEEP, GL_KEEP);
             glStencilFunc(GL_NEVER, 1, 0xff);
             glStencilMask(0xff);
 
-            TL_CHECK_FWD(m_outline_shader.set_uniform(k_uniform_model, m_cur_outline_obj->get_transform().get_matrix()));
-            TL_CHECK_FWD(m_outline_shader.set_uniform(k_uniform_view, cam.get_view()));
-            TL_CHECK_FWD(m_outline_shader.set_uniform(k_uniform_projection, cam.get_projection()));
+            TL_CHECK_FWD(m_outline_shader->set_uniform(k_uniform_model, m_cur_outline_obj->get_transform().get_matrix()));
+            TL_CHECK_FWD(m_outline_shader->set_uniform(k_uniform_view, cam.get_view()));
+            TL_CHECK_FWD(m_outline_shader->set_uniform(k_uniform_projection, cam.get_projection()));
 
-            TL_CHECK_FWD(m_outline_shader.set_uniform(k_uniform_scale_factor, glm::mat4{1}));
+            TL_CHECK_FWD(m_outline_shader->set_uniform(k_uniform_scale_factor, glm::mat4{1}));
         	TL_CHECK_FWD(draw_obj(m_cur_outline_obj));
 
             glStencilFunc(GL_NOTEQUAL, 1, 0xff);
             glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
 
-        	TL_CHECK_FWD(m_outline_shader.set_uniform(k_uniform_scale_factor, glm::scale(glm::vec3{ k_outline_scale })));
+        	TL_CHECK_FWD(m_outline_shader->set_uniform(k_uniform_scale_factor, glm::scale(glm::vec3{ k_outline_scale })));
             TL_CHECK_FWD(draw_obj(m_cur_outline_obj));
 
             glStencilFunc(GL_ALWAYS, 1, 0xFF);
             glEnable(GL_DEPTH_TEST);
         }
-        m_outline_shader.unuse();
+        m_outline_shader->unuse();
     }
 
     // render grid
@@ -338,15 +337,15 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     glBindVertexArray(m_grid_render_data.vao);
-    m_grid_shader.use();
+    m_grid_shader->use();
     {
-        TL_CHECK_FWD(m_grid_shader.set_uniform(k_uniform_view, cam.get_view()));
-        TL_CHECK_FWD(m_grid_shader.set_uniform(k_uniform_projection, cam.get_projection()));
+        TL_CHECK_FWD(m_grid_shader->set_uniform(k_uniform_view, cam.get_view()));
+        TL_CHECK_FWD(m_grid_shader->set_uniform(k_uniform_projection, cam.get_projection()));
 
     	glDrawArrays(GL_LINES, 0, m_grid_render_data.vertex_count);
         CHECK_GL_ERROR();
     }
-    m_grid_shader.unuse();
+    m_grid_shader->unuse();
     glBindVertexArray(0);
 
     glDisable(GL_BLEND);
@@ -360,10 +359,11 @@ auto EditorRenderer::create_render_buf() noexcept -> tl::expected<void, std::str
     if (m_render_buf) {
         glDeleteFramebuffers(1, &m_render_buf->fbo);
         glDeleteRenderbuffers(1, &m_render_buf->rbo);
-        glDeleteTextures(1, &m_render_buf->tex);
     }
 
-    GLuint fbo, rbo, tex;
+    GLuint fbo, rbo;
+    GLTextureRef tex;
+
     auto w = static_cast<GLsizei>(get_config().width);
     auto h = static_cast<GLsizei>(get_config().height);
 
@@ -384,36 +384,30 @@ auto EditorRenderer::create_render_buf() noexcept -> tl::expected<void, std::str
         CHECK_GL_ERROR();
 
         // create tex to render to
-        glGenTextures(1, &tex);
-        glBindTexture(GL_TEXTURE_2D, tex);
+        auto res = GLTexture::create(w, h);
+        if (!res) {
+            return TL_ERROR(res.error());
+        }
+
+    	tex = std::move(res.value());
+        tex->bind();
         {
-            glTexImage2D(
-                GL_TEXTURE_2D, 0, GL_RGB, // RGB color format
-                w, h,
-                0, GL_RGB, GL_UNSIGNED_BYTE, nullptr
-            );
-
-            CHECK_GL_ERROR();
-
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-            glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, tex, 0);
+            glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, tex->handle(), 0);
             GLenum draw_buffer = GL_COLOR_ATTACHMENT0;
             glDrawBuffers(1, &draw_buffer);
 
             CHECK_GL_ERROR();
 
             if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-                return TL_ERROR(std::string { "frame buffer is not valid, status = " } +
-                    std::to_string(glCheckFramebufferStatus(GL_FRAMEBUFFER)) );
+                return TL_ERROR(std::string{ "frame buffer is not valid, status = " } +
+                    std::to_string(glCheckFramebufferStatus(GL_FRAMEBUFFER)));
             }
         }
-        glBindTexture(GL_TEXTURE_2D, 0);
+        tex->unbind();
     }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-    m_render_buf = RenderBufferData{ fbo, tex, rbo, GLTexture{ static_cast<unsigned>(w), static_cast<unsigned>(h), tex } };
+    m_render_buf = RenderBufferData{ fbo, rbo, std::move(tex)};
     return {};
 }
 
