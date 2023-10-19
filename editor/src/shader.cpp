@@ -146,25 +146,19 @@ auto ShaderProgram::from_shaders(ShaderRef vs, ShaderRef ps) noexcept -> tl::exp
 }
 
 auto ShaderProgram::from_files(std::string_view vs, std::string_view ps) noexcept -> tl::expected<ShaderProgramRef, std::string> {
-    auto vs_shader = Shader::from_file(ShaderType::Vertex, vs);
-    if (!vs_shader) {
-        return TL_ERROR( vs_shader.error() );
-    }
-    auto ps_shader = Shader::from_file(ShaderType::Fragment, ps);
-    if (!ps_shader) {
-        return TL_ERROR( ps_shader.error() );
-    }
-    return from_shaders(std::move(vs_shader.value()), std::move(ps_shader.value()));
+    ShaderRef vs_shader, ps_shader;
+
+    TL_ASSIGN(vs_shader, Shader::from_file(ShaderType::Vertex, vs));
+    TL_ASSIGN(ps_shader, Shader::from_file(ShaderType::Fragment, ps));
+
+    return from_shaders(std::move(vs_shader), std::move(ps_shader));
 }
 
 auto ShaderProgram::from_srcs(std::string_view vs, std::string_view ps) noexcept -> tl::expected<ShaderProgramRef, std::string> {
-    auto vs_shader = Shader::from_src(ShaderType::Vertex, vs);
-    if (!vs_shader) {
-        return TL_ERROR( vs_shader.error() );
-    }
-    auto ps_shader = Shader::from_src(ShaderType::Fragment, ps);
-    if (!ps_shader) {
-        return TL_ERROR( ps_shader.error() );
-    }
-    return from_shaders(std::move(vs_shader.value()), std::move(ps_shader.value()));
+    ShaderRef vs_shader, ps_shader;
+
+	TL_ASSIGN(vs_shader, Shader::from_src(ShaderType::Vertex, vs));
+    TL_ASSIGN(ps_shader, Shader::from_src(ShaderType::Fragment, ps));
+
+    return from_shaders(std::move(vs_shader), std::move(ps_shader));
 }

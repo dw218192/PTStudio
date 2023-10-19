@@ -3,7 +3,7 @@
 
 auto GLRenderBuffer::create(unsigned width, unsigned height, GLenum format) -> tl::expected<GLRenderBufferRef, std::string> {
 	GLuint handle;
-	TL_CHECK_RET(create_buf(width, height, format), handle);
+	TL_ASSIGN(handle, create_buf(width, height, format));
 	auto ret = GLRenderBufferRef{ new GLRenderBuffer{width, height, format, handle}, GLResourceDeleter{} };
 	return ret;
 }
@@ -17,7 +17,7 @@ auto GLRenderBuffer::operator=(GLRenderBuffer&& other) noexcept -> GLRenderBuffe
 }
 auto GLRenderBuffer::resize(unsigned width, unsigned height, GLenum format) noexcept -> tl::expected<void, std::string> {
 	GLuint rbo;
-	TL_CHECK_RET(create_buf(width, height, format), rbo);
+	TL_ASSIGN(rbo, create_buf(width, height, format));
 	m_width = width;
 	m_height = height;
 

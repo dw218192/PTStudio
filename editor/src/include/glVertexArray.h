@@ -12,7 +12,7 @@ struct GLVertexArray;
 using GLVertexArrayRef = GLResRef<GLVertexArray>;
 
 struct GLVertexArray final : GLResource {
-	static auto create() -> tl::expected<GLVertexArrayRef, std::string>;
+	static auto create(GLsizei num_vertices) -> tl::expected<GLVertexArrayRef, std::string>;
 
 	GLVertexArray(GLVertexArray const&) = delete;
 	auto operator=(GLVertexArray const&) -> GLVertexArray& = delete;
@@ -22,52 +22,75 @@ struct GLVertexArray final : GLResource {
 	[[nodiscard]] auto bind() const noexcept -> tl::expected<void, std::string>;
 	static void unbind() noexcept;
 
-	template<typename T>
-	[[nodiscard]] auto fill(GLuint slot, tcb::span<T const> data, GLuint stride = 0) noexcept -> tl::expected<void, std::string>;
+	template <typename VertexType, typename... GLAttributeInfos>
+	auto connect(tcb::span<VertexType const> raw_data, GLAttributeInfos... attris) noexcept -> tl::expected<void, std::string>;
+
+	auto draw_array(GLenum mode) const noexcept -> tl::expected<void, std::string>;
 
 private:
 	void swap(GLVertexArray&& other) noexcept;
-	GLVertexArray(GLuint handle) noexcept;
+	GLVertexArray(GLuint handle, GLsizei num_vertices) noexcept;
 	~GLVertexArray() noexcept override;
 
-	std::unordered_map<GLuint, GLBufferRef> m_slots;
+	GLsizei m_num_vertices;
+	std::vector<GLBufferRef> m_buffers;
+};
+
+struct GLAttributeInfoBase {
+	GLuint slot, stride, offset;
+	GLAttributeInfoBase(GLuint slot, GLuint stride, GLuint offset) : slot(slot), stride(stride), offset(offset) {}
 };
 
 template <typename T>
-struct GLAttributeInfo;
+struct GLAttributeInfo {};
 
 template <>
-struct GLAttributeInfo<float> {
+struct GLAttributeInfo<float> : GLAttributeInfoBase {
+	using GLAttributeInfoBase::GLAttributeInfoBase;
+
 	static constexpr GLuint components = 1;
 	static constexpr GLenum type = GL_FLOAT;
 };
 
 template <>
-struct GLAttributeInfo<glm::vec2> {
+struct GLAttributeInfo<glm::vec2> : GLAttributeInfoBase {
+	using GLAttributeInfoBase::GLAttributeInfoBase;
+
 	static constexpr GLuint components = 2;
 	static constexpr GLenum type = GL_FLOAT;
 };
 
 template <>
-struct GLAttributeInfo<glm::vec3> {
+struct GLAttributeInfo<glm::vec3> : GLAttributeInfoBase {
+	using GLAttributeInfoBase::GLAttributeInfoBase;
+
 	static constexpr GLuint components = 3;
 	static constexpr GLenum type = GL_FLOAT;
 };
 
-template <typename T>
-auto GLVertexArray::fill(GLuint slot, tcb::span<T const> data, GLuint stride) noexcept -> tl::expected<void, std::string> {
-	GLBufferRef buf;
-	TL_CHECK_RET(GLBuffer::create(GL_ARRAY_BUFFER), buf);
-	TL_CHECK(buf->bind());
-	{
-		buf->set_data(data);
+template <typename VertexType, typename... GLAttributeInfos>
+auto GLVertexArray::connect(tcb::span<VertexType const> raw_data, GLAttributeInfos... attris) noexcept -> tl::expected<void, std::string> {
+	static_assert(sizeof...(attris) > 0, "must have at least one attribute");
 
-		glEnableVertexAttribArray(slot);
-		glVertexAttribPointer(slot, GLAttributeInfo<T>::components, GLAttributeInfo<T>::type, GL_FALSE, 0, nullptr);
+	GLBufferRef buf;
+	TL_ASSIGN(buf, GLBuffer::create(GL_ARRAY_BUFFER));
+	TL_CHECK_FWD(buf->bind());
+	{
+		TL_CHECK_FWD(buf->set_data(raw_data));
+
+		auto set_attr = [](auto&& info) -> void {
+			glEnableVertexAttribArray(info.slot);
+			glVertexAttribPointer(info.slot, info.components, info.type, GL_FALSE, info.stride, 
+				reinterpret_cast<const void*>(info.offset));
+		};
+		(set_attr(attris), ...);
 
 		CHECK_GL_ERROR();
 	}
 	buf->unbind();
-	m_slots[slot] = std::move(buf);
+	CHECK_GL_ERROR();
+
+	m_buffers.emplace_back(std::move(buf));
+
 	return {};
 }

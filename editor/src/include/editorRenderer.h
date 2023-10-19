@@ -5,7 +5,7 @@
 #include "glTexture.h"
 #include "glFrameBuffer.h"
 #include "glRenderBuffer.h"
-#include "glBuffer.h"
+#include "glVertexArray.h"
 
 #include <optional>
 #include <unordered_map>
@@ -26,9 +26,8 @@ struct EditorRenderer : Renderer {
     void on_object_change(ConstObjectHandle obj) noexcept;
 private:
     struct RenderBufferData;
-    struct ObjectRenderData;
 
-    [[nodiscard]] auto on_add_object_internal(ObjectRenderData& data, ConstObjectHandle obj) noexcept -> tl::expected<void, std::string>;
+    [[nodiscard]] auto on_add_object_internal(GLVertexArrayRef& data, ConstObjectHandle obj) noexcept -> tl::expected<void, std::string>;
     [[nodiscard]] auto render_internal(Camera const& cam, GLuint fbo) noexcept -> tl::expected<void, std::string>;
 	[[nodiscard]] auto create_render_buf() noexcept -> tl::expected<void, std::string>;
 
@@ -41,16 +40,11 @@ private:
         RenderBufferData(GLFrameBufferRef fbo, GLRenderBufferRef rbo, GLTextureRef tex_data) noexcept
             : fbo{std::move(fbo)}, rbo{std::move(rbo)}, tex{std::move(tex_data)} {}
     };
-    struct ObjectRenderData {
-        GLBufferRef vao;
-        GLBufferRef vbo;
-        GLsizei vertex_count{ 0 };
-    };
 
     std::optional<RenderBufferData> m_render_buf;
 
-    ObjectRenderData m_grid_render_data;
-    std::unordered_map<ConstObjectHandle, ObjectRenderData> m_render_data;
+    GLVertexArrayRef m_grid_render_data;
+    std::unordered_map<ConstObjectHandle, GLVertexArrayRef> m_render_data;
 
 	ConstObjectHandle m_cur_outline_obj = nullptr;
     bool m_valid = false;

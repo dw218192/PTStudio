@@ -54,7 +54,7 @@ auto GLTexture::create(unsigned width, unsigned height) -> tl::expected<GLTextur
 
     TL_CHECK(create_tex(width, height));
     GLuint tex;
-    TL_CHECK_RET(create_tex(width, height), tex);
+    TL_ASSIGN(tex, create_tex(width, height));
     auto ret = GLTextureRef{ new GLTexture{width, height, tex}, GLResourceDeleter{} };
     return ret;
 }
@@ -104,7 +104,7 @@ auto GLTexture::resize(unsigned width, unsigned height) noexcept -> tl::expected
 	TL_CHECK_FWD(Texture::resize(width, height));
 
     GLuint tex;
-    TL_CHECK_RET(create_tex(width, height), tex);
+    TL_ASSIGN(tex, create_tex(width, height));
 
 	if (m_handle) {
         glDeleteRenderbuffers(1, &m_handle);

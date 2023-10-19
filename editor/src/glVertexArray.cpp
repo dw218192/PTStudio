@@ -1,11 +1,11 @@
 #include "include/glVertexArray.h"
 #include "utils.h"
 
-auto GLVertexArray::create() -> tl::expected<GLVertexArrayRef, std::string> {
+auto GLVertexArray::create(GLsizei num_vertices) -> tl::expected<GLVertexArrayRef, std::string> {
 	GLuint vao;
 	glGenVertexArrays(1, &vao);
 	CHECK_GL_ERROR();
-	return GLVertexArrayRef{ new GLVertexArray { vao }, GLResourceDeleter{} };
+	return GLVertexArrayRef{ new GLVertexArray { vao, num_vertices }, GLResourceDeleter{} };
 }
 
 GLVertexArray::GLVertexArray(GLVertexArray&& other) noexcept {
@@ -30,11 +30,20 @@ void GLVertexArray::unbind() noexcept {
 	glBindVertexArray(0);
 }
 
+auto GLVertexArray::draw_array(GLenum mode) const noexcept -> tl::expected<void, std::string> {
+	glDrawArrays(mode, 0, m_num_vertices);
+	CHECK_GL_ERROR();
+	return {};
+}
+
 void GLVertexArray::swap(GLVertexArray&& other) noexcept {
+	m_num_vertices = other.m_num_vertices;
+	m_buffers = std::move(other.m_buffers);
+	other.m_num_vertices = 0;
 	this->GLResource::swap(std::move(other));
 }
 
-GLVertexArray::GLVertexArray(GLuint handle) noexcept : GLResource(handle) {}
+GLVertexArray::GLVertexArray(GLuint handle, GLsizei num_vertices) noexcept : GLResource(handle), m_num_vertices{ num_vertices } {}
 
 GLVertexArray::~GLVertexArray() noexcept {
 	if (m_handle) {

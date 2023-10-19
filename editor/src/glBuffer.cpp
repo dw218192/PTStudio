@@ -27,12 +27,14 @@ auto GLBuffer::bind() const noexcept -> tl::expected<void, std::string> {
 }
 
 void GLBuffer::unbind() const noexcept {
-	glBindTexture(m_target, 0);
+	glBindBuffer(m_target, 0);
 }
 
 void GLBuffer::swap(GLBuffer&& other) noexcept {
 	m_target = other.m_target;
 	m_handle = other.m_handle;
+	other.m_target = 0;
+	other.m_handle = 0;
 	this->GLResource::swap(std::move(other));
 }
 GLBuffer::GLBuffer(GLenum target, GLuint handle) noexcept : GLResource{ handle }, m_target { target } { }

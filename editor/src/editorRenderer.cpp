@@ -29,36 +29,21 @@ auto EditorRenderer::init() noexcept -> tl::expected<void, std::string> {
             vertices.emplace_back(half_dim, 0.0f, z);
         }
 
-        glGenVertexArrays(1, &m_grid_render_data.vao);
-        glGenBuffers(1, &m_grid_render_data.vbo);
-
-        m_grid_render_data.vertex_count = vertices.size();
-
-        glBindVertexArray(m_grid_render_data.vao);
-        {
-            glBindBuffer(GL_ARRAY_BUFFER, m_grid_render_data.vbo);
-            {
-                glBufferData(
-                    GL_ARRAY_BUFFER,
-                    vertices.size() * sizeof(glm::vec3),
-                    vertices.data(),
-                    GL_STATIC_DRAW
-                );
-                CHECK_GL_ERROR();
-
-                glEnableVertexAttribArray(0);
-                glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
-                CHECK_GL_ERROR();
-            }
-            glBindBuffer(GL_ARRAY_BUFFER, 0);
+        TL_ASSIGN(m_grid_render_data, GLVertexArray::create(vertices.size()));
+        TL_CHECK_FWD(m_grid_render_data->bind());
+    	{
+            auto const& view = vertices;
+            TL_CHECK_FWD(m_grid_render_data->connect(tcb::make_span(view), GLAttributeInfo<glm::vec3>{0, 0, 0}));
         }
-        glBindVertexArray(0);
+        m_grid_render_data->unbind();
 
         CHECK_GL_ERROR();
 
-        // set invariant uniforms
+    	// set invariant uniforms
         TL_CHECK_FWD(m_grid_shader->bind());
-        TL_CHECK_FWD(m_grid_shader->set_uniform(k_uniform_half_grid_dim, half_dim));
+        {
+            TL_CHECK_FWD(m_grid_shader->set_uniform(k_uniform_half_grid_dim, half_dim));
+        }
         m_grid_shader->unbind();
 
         return {};
@@ -69,27 +54,9 @@ auto EditorRenderer::init() noexcept -> tl::expected<void, std::string> {
     }
 
 	// set up shaders
-    auto shader_res = ShaderProgram::from_srcs(vs_obj_src, ps_obj_src);
-    if (!shader_res) {
-        return TL_ERROR(shader_res.error());
-    } else {
-        m_editor_shader = std::move(shader_res.value());
-    }
-
-    shader_res = ShaderProgram::from_srcs(vs_grid_src, ps_grid_src);
-    if (!shader_res) {
-        return TL_ERROR(shader_res.error());
-    } else {
-        m_grid_shader = std::move(shader_res.value());
-    }
-
-    shader_res = ShaderProgram::from_srcs(vs_outline_src, ps_outline_src);
-    if (!shader_res) {
-        return TL_ERROR(shader_res.error());
-    } else {
-        m_outline_shader = std::move(shader_res.value());
-    }
-
+    TL_ASSIGN(m_editor_shader, ShaderProgram::from_srcs(vs_obj_src, ps_obj_src));
+    TL_ASSIGN(m_grid_shader, ShaderProgram::from_srcs(vs_grid_src, ps_grid_src));
+    TL_ASSIGN(m_outline_shader, ShaderProgram::from_srcs(vs_outline_src, ps_outline_src));
     TL_CHECK_FWD(m_outline_shader->bind());
     {
         TL_CHECK_FWD(m_outline_shader->set_uniform(k_uniform_outline_color, k_outline_color));
@@ -106,22 +73,10 @@ auto EditorRenderer::open_scene(Scene const& scene) noexcept -> tl::expected<voi
     m_cur_outline_obj = nullptr;
     clear_render_data();
 
-    std::vector<GLuint> vaos(scene.size()), vbos(scene.size());
-    // set up object buffers
-    glGenVertexArrays(scene.size(), vaos.data());
-    glGenBuffers(scene.size(), vbos.data());
-
     CHECK_GL_ERROR();
 
-    for (auto [it, i] = std::tuple { scene.begin(), 0 }; it != scene.end(); ++it, ++i) {
-        auto obj = *it;
-        auto&& data = m_render_data[obj];
-        data.vao = vaos[i];
-        data.vbo = vbos[i];
-        data.vertex_count = obj->get_vertices().size();
-
-        auto res = on_add_object_internal(data, obj);
-        if (!res) return res;
+    for (auto const obj : scene) {
+        TL_CHECK_FWD(on_add_object(obj));
     }
 
     // Set a few settings/modes in OpenGL rendering
@@ -166,18 +121,10 @@ auto EditorRenderer::on_change_render_config(RenderConfig const& config) noexcep
 auto EditorRenderer::on_add_object(ConstObjectHandle obj) noexcept -> tl::expected<void, std::string> {
     if (!obj) {
         return {};
+    } else if (m_render_data.count(obj)) {
+        return TL_ERROR("object added twice");
     }
-
-	// fill buffers with data
-    auto&& data = m_render_data[obj];
-    glGenVertexArrays(1, &data.vao);
-    glGenBuffers(1, &data.vbo);
-    data.vertex_count = obj->get_vertices().size();
-
-    auto res = on_add_object_internal(data, obj);
-    if(!res) {
-        return res;
-    }
+    TL_CHECK_FWD(on_add_object_internal(m_render_data[obj], obj));
 
     return {};
 }
@@ -187,9 +134,6 @@ auto EditorRenderer::on_remove_object(ConstObjectHandle obj) noexcept -> tl::exp
     if(it == m_render_data.end()) {
         return TL_ERROR("on_remove_object: obj not found");
     }
-
-    glDeleteBuffers(1, &(it->second.vbo));
-    glDeleteVertexArrays(1, &(it->second.vao));
     m_render_data.erase(obj);
 
     return {};
@@ -199,32 +143,17 @@ void EditorRenderer::on_object_change(ConstObjectHandle obj) noexcept {
     m_cur_outline_obj = obj;
 }
 
-auto EditorRenderer::on_add_object_internal(ObjectRenderData& data, ConstObjectHandle obj) noexcept -> tl::expected<void, std::string> {
-    glBindVertexArray(data.vao);
-    glBindBuffer(GL_ARRAY_BUFFER, data.vbo);
-    glBufferData(
-        GL_ARRAY_BUFFER,
-        obj->get_vertices().size() * sizeof(Vertex),
-        obj->get_vertices().data(),
-        GL_STATIC_DRAW
-    );
-
-    CHECK_GL_ERROR();
-
-    glEnableVertexAttribArray(0);
-    glEnableVertexAttribArray(1);
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex),
-        reinterpret_cast<void*>(offsetof(Vertex, position)));
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex),
-        reinterpret_cast<void*>(offsetof(Vertex, normal)));
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex),
-        reinterpret_cast<void*>(offsetof(Vertex, uv)));
-
-    CHECK_GL_ERROR();
-
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindVertexArray(0);
+auto EditorRenderer::on_add_object_internal(GLVertexArrayRef& data, ConstObjectHandle obj) noexcept -> tl::expected<void, std::string> {
+    TL_ASSIGN(data, GLVertexArray::create(obj->get_vertices().size()));
+    TL_CHECK_FWD(data->bind());
+    {
+        TL_CHECK_FWD(data->connect(obj->get_vertices(),
+            GLAttributeInfo<glm::vec3> { 0, sizeof(Vertex), offsetof(Vertex, position) },
+            GLAttributeInfo<glm::vec3> { 1, sizeof(Vertex), offsetof(Vertex, normal) },
+            GLAttributeInfo<glm::vec3> { 2, sizeof(Vertex), offsetof(Vertex, uv) }
+        ));
+    }
+    data->unbind();
 
     return {};
 
@@ -232,14 +161,13 @@ auto EditorRenderer::on_add_object_internal(ObjectRenderData& data, ConstObjectH
 
 auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> tl::expected<void, std::string> {
     auto draw_obj = [this](ConstObjectHandle obj) -> tl::expected<void, std::string> {
-        auto it = m_render_data.find(obj);
+        auto const it = m_render_data.find(obj);
         if (it == m_render_data.end()) {
             return  TL_ERROR("obj not found in render data");
         }
-        glBindVertexArray(it->second.vao);
-        glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(obj->get_vertices().size()));
-
-        CHECK_GL_ERROR();
+        auto&& [_, vao] = *it;
+        TL_CHECK_FWD(vao->bind());
+        TL_CHECK_FWD(vao->draw_array(GL_TRIANGLES));
         return {};
     };
 
@@ -311,20 +239,17 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    glBindVertexArray(m_grid_render_data.vao);
+    TL_CHECK_FWD(m_grid_render_data->bind());
     TL_CHECK_FWD(m_grid_shader->bind());
     {
         TL_CHECK_FWD(m_grid_shader->set_uniform(k_uniform_view, cam.get_view()));
         TL_CHECK_FWD(m_grid_shader->set_uniform(k_uniform_projection, cam.get_projection()));
-
-    	glDrawArrays(GL_LINES, 0, m_grid_render_data.vertex_count);
-        CHECK_GL_ERROR();
+        TL_CHECK_FWD(m_grid_render_data->draw_array(GL_LINES));
     }
     m_grid_shader->unbind();
-    glBindVertexArray(0);
+    m_grid_render_data->unbind();
 
     glDisable(GL_BLEND);
-
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     return {};
@@ -347,9 +272,9 @@ auto EditorRenderer::create_render_buf() noexcept -> tl::expected<void, std::str
         TL_CHECK_FWD(tex->resize(w, h));
     } else {
         // create tex to render to
-        TL_CHECK_RET(GLTexture::create(w, h), tex);
-        TL_CHECK_RET(GLFrameBuffer::create(), fbo);
-        TL_CHECK_RET(GLRenderBuffer::create(w, h, GL_DEPTH24_STENCIL8_OES), rbo);
+        TL_ASSIGN(tex, GLTexture::create(w, h));
+        TL_ASSIGN(fbo, GLFrameBuffer::create());
+        TL_ASSIGN(rbo, GLRenderBuffer::create(w, h, GL_DEPTH24_STENCIL8_OES));
     }
     
     TL_CHECK_FWD(fbo->bind());
@@ -382,13 +307,5 @@ auto EditorRenderer::create_render_buf() noexcept -> tl::expected<void, std::str
 }
 
 void EditorRenderer::clear_render_data() {
-    std::vector<GLuint> vaos, vbos;
-    for (auto&& [_, data] : m_render_data) {
-        vaos.emplace_back(data.vao);
-        vbos.emplace_back(data.vbo);
-    }
-    glDeleteBuffers(vbos.size(), vbos.data());
-    glDeleteVertexArrays(vaos.size(), vaos.data());
-
     m_render_data.clear();
 }

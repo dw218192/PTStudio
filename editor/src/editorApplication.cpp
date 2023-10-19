@@ -205,7 +205,7 @@ void EditorApplication::draw_scene_viewport(TextureHandle render_buf) noexcept {
             last_size = view_size;
         }
 
-        render_buf->bind();
+        check_error(render_buf->bind());
         ImGui::Image(
             render_buf->get_handle(),
             view_size, { 0, 1 }, { 1, 0 }
