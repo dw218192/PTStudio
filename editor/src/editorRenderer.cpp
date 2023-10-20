@@ -83,8 +83,6 @@ auto EditorRenderer::open_scene(Scene const& scene) noexcept -> tl::expected<voi
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_POLYGON_SMOOTH);
     glEnable(GL_LINE_SMOOTH);
-    glEnable(GL_STENCIL_TEST);
-    glClearStencil(0);
     CHECK_GL_ERROR();
 
     glHint(GL_POLYGON_SMOOTH_HINT, GL_NICEST);
@@ -100,10 +98,10 @@ auto EditorRenderer::render(Camera const& cam) noexcept -> tl::expected<void, st
 
 auto EditorRenderer::render_buffered(Camera const& cam) noexcept -> tl::expected<TextureHandle, std::string> {
     if (!m_render_buf) {
-        TL_CHECK(create_render_buf());
+        TL_CHECK(create_or_resize_render_buf(m_render_buf, m_config.width, m_config.height));
     }
-    TL_CHECK(render_internal(cam, m_render_buf->fbo->handle()));
-    return m_render_buf->tex.get();
+    TL_CHECK(render_internal(cam, m_render_buf->handle()));
+    return m_render_buf->get_texture(GL_COLOR_ATTACHMENT0);
 }
 
 auto EditorRenderer::on_change_render_config(RenderConfig const& config) noexcept -> tl::expected<void, std::string> {
@@ -111,10 +109,7 @@ auto EditorRenderer::on_change_render_config(RenderConfig const& config) noexcep
         return {};
     }
     m_config = config;
-    auto res = create_render_buf();
-    if (!res) {
-        return res;
-    }
+    TL_CHECK_FWD(create_or_resize_render_buf(m_render_buf, m_config.width, m_config.height));
     return {};
 }
 
@@ -130,7 +125,7 @@ auto EditorRenderer::on_add_object(ConstObjectHandle obj) noexcept -> tl::expect
 }
 
 auto EditorRenderer::on_remove_object(ConstObjectHandle obj) noexcept -> tl::expected<void, std::string> {
-    auto it = m_render_data.find(obj);
+    auto const it = m_render_data.find(obj);
     if(it == m_render_data.end()) {
         return TL_ERROR("on_remove_object: obj not found");
     }
@@ -186,12 +181,10 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
     glClearColor(k_clear_color.x, k_clear_color.y, k_clear_color.z, 1.0f);
     glClearDepth(1.0f);
 
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glViewport(0, 0, static_cast<GLsizei>(get_config().width), static_cast<GLsizei>(get_config().height));
 
     // render objects
-    // disable stencil by default
-    glStencilMask(0);
     TL_CHECK_FWD(m_editor_shader->bind());
     {
         TL_CHECK_FWD(m_editor_shader->set_uniform(k_uniform_light_pos, scene.get_good_light_pos()));
@@ -205,34 +198,9 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
     }
     m_editor_shader->unbind();
 
-    // draw outlined obj if some obj is selected
-    // this renders that obj 3 times which is bad
-    // TODO: optimize if too slow?
+    // render outline
     if (m_cur_outline_obj) {
-        TL_CHECK_FWD(m_outline_shader->bind());
-        {
-            glDisable(GL_DEPTH_TEST);
-            glStencilOp(GL_REPLACE, GL_KEEP, GL_KEEP);
-            glStencilFunc(GL_NEVER, 1, 0xff);
-            glStencilMask(0xff);
-
-            TL_CHECK_FWD(m_outline_shader->set_uniform(k_uniform_model, m_cur_outline_obj->get_transform().get_matrix()));
-            TL_CHECK_FWD(m_outline_shader->set_uniform(k_uniform_view, cam.get_view()));
-            TL_CHECK_FWD(m_outline_shader->set_uniform(k_uniform_projection, cam.get_projection()));
-
-            TL_CHECK_FWD(m_outline_shader->set_uniform(k_uniform_scale_factor, glm::mat4{1}));
-        	TL_CHECK_FWD(draw_obj(m_cur_outline_obj));
-
-            glStencilFunc(GL_NOTEQUAL, 1, 0xff);
-            glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
-
-        	TL_CHECK_FWD(m_outline_shader->set_uniform(k_uniform_scale_factor, glm::scale(glm::vec3{ k_outline_scale })));
-            TL_CHECK_FWD(draw_obj(m_cur_outline_obj));
-
-            glStencilFunc(GL_ALWAYS, 1, 0xFF);
-            glEnable(GL_DEPTH_TEST);
-        }
-        m_outline_shader->unbind();
+        TL_CHECK_FWD(draw_outline());
     }
 
     // render grid
@@ -255,54 +223,38 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
     return {};
 }
 
-auto EditorRenderer::create_render_buf() noexcept -> tl::expected<void, std::string> {
-    GLTextureRef tex;
-    GLFrameBufferRef fbo;
-    GLRenderBufferRef rbo;
-
-    auto const w = static_cast<GLsizei>(get_config().width);
-    auto const h = static_cast<GLsizei>(get_config().height);
-
-    if (m_render_buf) {
-        // temporarily move ownership
-        fbo = std::move(m_render_buf->fbo);
-        tex = std::move(m_render_buf->tex);
-        rbo = std::move(m_render_buf->rbo);
-
-        TL_CHECK_FWD(tex->resize(w, h));
+auto EditorRenderer::create_or_resize_render_buf(GLFrameBufferRef& data, unsigned w, unsigned h) noexcept -> tl::expected<void, std::string> {
+    if (data) {
+        TL_CHECK_FWD(data->bind());
+        {
+            TL_CHECK_FWD(data->resize(w, h));
+        }
+        data->unbind();
     } else {
-        // create tex to render to
-        TL_ASSIGN(tex, GLTexture::create(w, h));
-        TL_ASSIGN(fbo, GLFrameBuffer::create());
-        TL_ASSIGN(rbo, GLRenderBuffer::create(w, h, GL_DEPTH24_STENCIL8_OES));
-    }
-    
-    TL_CHECK_FWD(fbo->bind());
-    {
-        TL_CHECK_FWD(rbo->bind());
+        TL_ASSIGN(data, GLFrameBuffer::create());
+        TL_CHECK_FWD(data->bind());
         {
-            TL_CHECK_FWD(fbo->attach(GL_DEPTH_ATTACHMENT, rbo.get()));
-            TL_CHECK_FWD(fbo->attach(GL_STENCIL_ATTACHMENT, rbo.get()));
+            TL_CHECK_FWD(data->attach(w, h, {
+			    { GL_COLOR_ATTACHMENT0, GL_RGB },
+			    { GL_DEPTH_ATTACHMENT, GL_DEPTH_COMPONENT }
+            }));
+            TL_CHECK_FWD(data->set_draw_buffer(GL_COLOR_ATTACHMENT0));
         }
-        rbo->unbind();
-
-        CHECK_GL_ERROR();
-
-        TL_CHECK_FWD(tex->bind());
-        {
-            TL_CHECK_FWD(fbo->attach(GL_COLOR_ATTACHMENT0, tex.get()));
-            TL_CHECK_FWD(fbo->set_draw_buffer(GL_COLOR_ATTACHMENT0));
-
-            if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-                return TL_ERROR(std::string{ "frame buffer is not valid, status = " } +
-                    std::to_string(glCheckFramebufferStatus(GL_FRAMEBUFFER)));
-            }
-        }
-        tex->unbind();
+        data->unbind();
     }
-    fbo->unbind();
 
-    m_render_buf = RenderBufferData{ std::move(fbo), std::move(rbo), std::move(tex)};
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        return TL_ERROR(std::string{ "frame buffer is not valid, status = " } +
+            std::to_string(glCheckFramebufferStatus(GL_FRAMEBUFFER)));
+    }
+    return {};
+}
+
+auto EditorRenderer::draw_outline() noexcept -> tl::expected<void, std::string> {
+    if (!m_outline_render_buf) {
+	    
+    }
+
     return {};
 }
 

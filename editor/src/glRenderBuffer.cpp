@@ -2,9 +2,9 @@
 #include "utils.h"
 
 auto GLRenderBuffer::create(unsigned width, unsigned height, GLenum format) -> tl::expected<GLRenderBufferRef, std::string> {
-	GLuint handle;
-	TL_ASSIGN(handle, create_buf(width, height, format));
-	auto ret = GLRenderBufferRef{ new GLRenderBuffer{width, height, format, handle}, GLResourceDeleter{} };
+	GLuint rbo;
+	TL_ASSIGN(rbo, create_buf(width, height, format));
+	auto ret = GLRenderBufferRef{ new GLRenderBuffer{width, height, format, rbo}, GLResourceDeleter{} };
 	return ret;
 }
 
@@ -15,9 +15,9 @@ auto GLRenderBuffer::operator=(GLRenderBuffer&& other) noexcept -> GLRenderBuffe
 	swap(std::move(other));
 	return *this;
 }
-auto GLRenderBuffer::resize(unsigned width, unsigned height, GLenum format) noexcept -> tl::expected<void, std::string> {
+auto GLRenderBuffer::resize(unsigned width, unsigned height) noexcept -> tl::expected<void, std::string> {
 	GLuint rbo;
-	TL_ASSIGN(rbo, create_buf(width, height, format));
+	TL_ASSIGN(rbo, create_buf(width, height, get_format()));
 	m_width = width;
 	m_height = height;
 
@@ -52,15 +52,18 @@ auto GLRenderBuffer::create_buf(unsigned width, unsigned height, GLenum format) 
 		glRenderbufferStorage(GL_RENDERBUFFER, format, width, height);
 		CHECK_GL_ERROR();
 	}
-	glBindRenderbuffer(GL_RENDERBUFFER, rbo);
+	glBindRenderbuffer(GL_RENDERBUFFER, 0);
 
 	return rbo;
 }
 
 void GLRenderBuffer::swap(GLRenderBuffer&& other) noexcept {
-	m_width = other.m_width;
-	m_height = other.m_height;
-	m_format = other.m_format;
+	if (this == &other) {
+		return;
+	}
+	std::swap(m_width, other.m_width);
+	std::swap(m_height, other.m_height);
+	std::swap(m_format, other.m_format);
 	this->GLResource::swap(std::move(other));
 }
 

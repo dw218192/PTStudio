@@ -6,11 +6,9 @@
 #include "glFrameBuffer.h"
 #include "glRenderBuffer.h"
 #include "glVertexArray.h"
-
-#include <optional>
-#include <unordered_map>
-
 #include "editorRenderer.h"
+
+#include <unordered_map>
 
 struct EditorRenderer : Renderer {
     EditorRenderer(RenderConfig const& config) noexcept;
@@ -25,30 +23,20 @@ struct EditorRenderer : Renderer {
     [[nodiscard]] auto on_remove_object(ConstObjectHandle obj) noexcept -> tl::expected<void, std::string> override;
     void on_object_change(ConstObjectHandle obj) noexcept;
 private:
-    struct RenderBufferData;
-
     [[nodiscard]] auto on_add_object_internal(GLVertexArrayRef& data, ConstObjectHandle obj) noexcept -> tl::expected<void, std::string>;
     [[nodiscard]] auto render_internal(Camera const& cam, GLuint fbo) noexcept -> tl::expected<void, std::string>;
-	[[nodiscard]] auto create_render_buf() noexcept -> tl::expected<void, std::string>;
-
+	[[nodiscard]] static auto create_or_resize_render_buf(GLFrameBufferRef& data, unsigned w, unsigned h) noexcept -> tl::expected<void, std::string>;
+    [[nodiscard]] auto draw_outline() noexcept -> tl::expected<void, std::string>;
     void clear_render_data();
 
-    struct RenderBufferData {
-        GLFrameBufferRef fbo;
-        GLRenderBufferRef rbo;
-        GLTextureRef tex;
-        RenderBufferData(GLFrameBufferRef fbo, GLRenderBufferRef rbo, GLTextureRef tex_data) noexcept
-            : fbo{std::move(fbo)}, rbo{std::move(rbo)}, tex{std::move(tex_data)} {}
-    };
-
-    std::optional<RenderBufferData> m_render_buf;
+    GLFrameBufferRef m_render_buf;
+    GLFrameBufferRef m_outline_render_buf;
 
     GLVertexArrayRef m_grid_render_data;
     std::unordered_map<ConstObjectHandle, GLVertexArrayRef> m_render_data;
 
 	ConstObjectHandle m_cur_outline_obj = nullptr;
     bool m_valid = false;
-
 
     ShaderProgramRef m_editor_shader;
     ShaderProgramRef m_grid_shader;

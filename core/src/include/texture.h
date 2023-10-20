@@ -56,7 +56,7 @@ struct Texture {
 
     virtual auto bind() const noexcept -> tl::expected<void, std::string> = 0;
     virtual void unbind() const noexcept = 0;
-    virtual auto get_handle() const noexcept -> void* = 0;
+    virtual auto get_id() const noexcept -> void* = 0;
 
 protected:
     Texture() noexcept = default;

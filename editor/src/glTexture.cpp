@@ -26,16 +26,16 @@ auto GLTexture::fetch_pixels() const noexcept -> tl::expected<void, std::string>
     return {};
 }
 
-auto GLTexture::create_tex(unsigned width, unsigned height) noexcept -> tl::expected<GLuint, std::string> {
+auto GLTexture::create_tex(unsigned width, unsigned height, GLenum format) noexcept -> tl::expected<GLuint, std::string> {
     GLuint tex;
     glGenTextures(1, &tex);
     CHECK_GL_ERROR();
 
     glBindTexture(GL_TEXTURE_2D, tex);
     glTexImage2D(
-        GL_TEXTURE_2D, 0, GL_RGB, // RGB color format
+        GL_TEXTURE_2D, 0, format, // RGB color format
         width, height,
-        0, GL_RGB, GL_UNSIGNED_BYTE, nullptr
+        0, format, GL_UNSIGNED_BYTE, nullptr
     );
 
     CHECK_GL_ERROR();
@@ -50,17 +50,15 @@ auto GLTexture::create_tex(unsigned width, unsigned height) noexcept -> tl::expe
     return tex;
 }
 
-auto GLTexture::create(unsigned width, unsigned height) -> tl::expected<GLTextureRef, std::string> {
-
-    TL_CHECK(create_tex(width, height));
+auto GLTexture::create(unsigned width, unsigned height, GLenum format) -> tl::expected<GLTextureRef, std::string> {
     GLuint tex;
-    TL_ASSIGN(tex, create_tex(width, height));
-    auto ret = GLTextureRef{ new GLTexture{width, height, tex}, GLResourceDeleter{} };
+    TL_ASSIGN(tex, create_tex(width, height, format));
+    auto ret = GLTextureRef{ new GLTexture{width, height, tex, format}, GLResourceDeleter{} };
     return ret;
 }
 
-GLTexture::GLTexture(unsigned width, unsigned height, GLuint handle)
-	: Texture(width, height), GLResource(handle) {}
+GLTexture::GLTexture(unsigned width, unsigned height, GLuint handle, GLenum format)
+	: Texture(width, height), GLResource(handle), m_format(format) {}
 
 GLTexture::~GLTexture() noexcept {
     if(m_handle) {
@@ -91,12 +89,15 @@ void GLTexture::unbind() const noexcept {
 }
 
 inline void GLTexture::swap(GLTexture&& other) noexcept {
+    if (this == &other) {
+        return;
+    }
+    std::swap(m_format, other.m_format);
     this->Texture::swap(std::move(other));
     this->GLResource::swap(std::move(other));  // NOLINT(bugprone-use-after-move)
 }
 
-
-auto GLTexture::get_handle() const noexcept -> void* {
+auto GLTexture::get_id() const noexcept -> void* {
     return reinterpret_cast<void*>(m_handle);
 }
 
@@ -104,7 +105,7 @@ auto GLTexture::resize(unsigned width, unsigned height) noexcept -> tl::expected
 	TL_CHECK_FWD(Texture::resize(width, height));
 
     GLuint tex;
-    TL_ASSIGN(tex, create_tex(width, height));
+    TL_ASSIGN(tex, create_tex(width, height, format()));
 
 	if (m_handle) {
         glDeleteRenderbuffers(1, &m_handle);
