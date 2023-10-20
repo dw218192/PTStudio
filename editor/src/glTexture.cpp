@@ -103,14 +103,12 @@ auto GLTexture::get_id() const noexcept -> void* {
 
 auto GLTexture::resize(unsigned width, unsigned height) noexcept -> tl::expected<void, std::string> {
 	TL_CHECK_FWD(Texture::resize(width, height));
-
-    GLuint tex;
-    TL_ASSIGN(tex, create_tex(width, height, format()));
-
-	if (m_handle) {
-        glDeleteRenderbuffers(1, &m_handle);
-    }
-    m_handle = tex;
-
+    glTexImage2D(
+        GL_TEXTURE_2D, 0, m_format, // RGB color format
+        width, height,
+        0, m_format, GL_UNSIGNED_BYTE, nullptr
+    );
+    m_width = width;
+    m_height = height;
 	return {};
 }

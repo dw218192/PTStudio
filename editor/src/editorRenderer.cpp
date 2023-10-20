@@ -56,13 +56,6 @@ auto EditorRenderer::init() noexcept -> tl::expected<void, std::string> {
 	// set up shaders
     TL_ASSIGN(m_editor_shader, ShaderProgram::from_srcs(vs_obj_src, ps_obj_src));
     TL_ASSIGN(m_grid_shader, ShaderProgram::from_srcs(vs_grid_src, ps_grid_src));
-    TL_ASSIGN(m_outline_shader, ShaderProgram::from_srcs(vs_outline_src, ps_outline_src));
-    TL_CHECK_FWD(m_outline_shader->bind());
-    {
-        TL_CHECK_FWD(m_outline_shader->set_uniform(k_uniform_outline_color, k_outline_color));
-    }
-    m_outline_shader->unbind();
-
     TL_CHECK_FWD(create_grid(k_grid_dim, k_grid_spacing));
 
     m_valid = true;
@@ -98,7 +91,16 @@ auto EditorRenderer::render(Camera const& cam) noexcept -> tl::expected<void, st
 
 auto EditorRenderer::render_buffered(Camera const& cam) noexcept -> tl::expected<TextureHandle, std::string> {
     if (!m_render_buf) {
-        TL_CHECK(create_or_resize_render_buf(m_render_buf, m_config.width, m_config.height));
+        TL_ASSIGN(m_render_buf, GLFrameBuffer::create());
+        TL_CHECK(m_render_buf->bind());
+        {
+            TL_CHECK(m_render_buf->attach(m_config.width, m_config.height, {
+                { GL_COLOR_ATTACHMENT0, GL_RGB },
+                { GL_DEPTH_ATTACHMENT, GL_DEPTH_COMPONENT }
+            }));
+            TL_CHECK(m_render_buf->set_draw_buffer(GL_COLOR_ATTACHMENT0));
+        }
+        m_render_buf->unbind();
     }
     TL_CHECK(render_internal(cam, m_render_buf->handle()));
     return m_render_buf->get_texture(GL_COLOR_ATTACHMENT0);
@@ -109,7 +111,20 @@ auto EditorRenderer::on_change_render_config(RenderConfig const& config) noexcep
         return {};
     }
     m_config = config;
-    TL_CHECK_FWD(create_or_resize_render_buf(m_render_buf, m_config.width, m_config.height));
+    if (m_render_buf) {
+        TL_CHECK_FWD(m_render_buf->bind());
+        {
+            TL_CHECK_FWD(m_render_buf->resize(m_config.width, m_config.height));
+        }
+        m_render_buf->unbind();
+    }
+    if (m_outline.render_buf) {
+        TL_CHECK_FWD(m_outline.render_buf->bind());
+        {
+            TL_CHECK_FWD(m_outline.render_buf->resize(m_config.width, m_config.height));
+        }
+        m_outline.render_buf->unbind();
+    }
     return {};
 }
 
@@ -155,14 +170,101 @@ auto EditorRenderer::on_add_object_internal(GLVertexArrayRef& data, ConstObjectH
 }
 
 auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> tl::expected<void, std::string> {
-    auto draw_obj = [this](ConstObjectHandle obj) -> tl::expected<void, std::string> {
-        auto const it = m_render_data.find(obj);
-        if (it == m_render_data.end()) {
-            return  TL_ERROR("obj not found in render data");
+    auto draw_outline = [this, cam, fbo](ConstObjectHandle obj)-> tl::expected<void, std::string> {
+        if (!m_outline.render_buf) {
+            // initialize outline states
+
+            // render buffer
+            TL_ASSIGN(m_outline.render_buf, GLFrameBuffer::create());
+            TL_CHECK_FWD(m_outline.render_buf->bind());
+            {
+                TL_CHECK_FWD(m_outline.render_buf->attach(m_config.width, m_config.height, {
+                    { GL_COLOR_ATTACHMENT0, GL_RGB },
+                }));
+                TL_CHECK_FWD(m_outline.render_buf->set_draw_buffer(GL_COLOR_ATTACHMENT0));
+            }
+            m_outline.render_buf->unbind();
+
+            // shaders
+            for (int i = 0; i < m_outline.shaders.size(); ++i) {
+                TL_ASSIGN(m_outline.shaders[i], ShaderProgram::from_srcs(vs_outline_passes[i], ps_outline_passes[i]));
+            }
+
+            // auxiliary texture
+            TL_ASSIGN(m_outline.aux_tex, GLTexture::create(m_config.width, m_config.height, GL_RGB));
+
+            // full screen quad
+            TL_ASSIGN(m_outline.quad_render_data, GLVertexArray::create(6));
+            TL_CHECK_FWD(m_outline.quad_render_data->bind());
+            {
+                static constexpr float data[] = {
+                    // First triangle (positions)
+                    -1.0f, -1.0f, 0.0f,
+                     1.0f, -1.0f, 0.0f,
+                     1.0f,  1.0f, 0.0f,
+                     // Second triangle (positions)
+                     -1.0f, -1.0f, 0.0f,
+                      1.0f,  1.0f, 0.0f,
+                     -1.0f,  1.0f, 0.0f,
+                     // First triangle (UVs)
+                     0.0f, 0.0f,
+                     1.0f, 0.0f,
+                     1.0f, 1.0f,
+                     // Second triangle (UVs)
+                     0.0f, 0.0f,
+                     1.0f, 1.0f,
+                     0.0f, 1.0f
+                };
+                TL_CHECK_FWD(m_outline.quad_render_data->connect(tcb::make_span(data), 
+                    GLAttributeInfo<glm::vec3>{0, 0, 0},
+                    GLAttributeInfo<glm::vec2>{1, 0, 18 * sizeof(float)}
+                ));
+            }
+            m_outline.quad_render_data->unbind();
         }
-        auto&& [_, vao] = *it;
-        TL_CHECK_FWD(vao->bind());
-        TL_CHECK_FWD(vao->draw_array(GL_TRIANGLES));
+
+        TL_CHECK_FWD(m_outline.render_buf->bind());
+        {
+            TL_CHECK_FWD(m_outline.shaders[0]->bind());
+            {
+                TL_CHECK_FWD(m_outline.shaders[0]->set_uniform(k_uniform_view, cam.get_view()));
+                TL_CHECK_FWD(m_outline.shaders[0]->set_uniform(k_uniform_projection, cam.get_projection()));
+                TL_CHECK_FWD(m_outline.shaders[0]->set_uniform(k_uniform_model, obj->get_transform().get_matrix()));
+
+                auto&& vao = m_render_data.at(obj);
+                TL_CHECK_FWD(vao->bind());
+                TL_CHECK_FWD(vao->draw_array(GL_TRIANGLES));
+            }
+            m_outline.shaders[0]->unbind();
+
+            TL_CHECK_FWD(m_outline.shaders[1]->bind());
+            {
+                TL_ASSIGN(
+                    m_outline.aux_tex,
+                    m_outline.render_buf->swap_texture(GL_COLOR_ATTACHMENT0, std::move(m_outline.aux_tex))
+                );
+
+                glActiveTexture(GL_TEXTURE0);
+                TL_CHECK_FWD(m_outline.aux_tex->bind());
+                {
+                    TL_CHECK_FWD(m_outline.shaders[1]->set_uniform(k_uniform_screen_texture, 0));
+                    TL_CHECK_FWD(m_outline.quad_render_data->bind());
+                    {
+                        TL_CHECK_FWD(m_outline.quad_render_data->draw_array(GL_TRIANGLES));
+                    }
+                    m_outline.quad_render_data->unbind();
+                }
+                m_outline.aux_tex->unbind();
+
+                TL_ASSIGN(
+                    m_outline.aux_tex,
+                    m_outline.render_buf->swap_texture(GL_COLOR_ATTACHMENT0, std::move(m_outline.aux_tex))
+                );
+            }
+            m_outline.shaders[1]->unbind();
+        }
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+
         return {};
     };
 
@@ -176,7 +278,6 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
     }
 
     auto&& scene = Application::get_scene();
-
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
     glClearColor(k_clear_color.x, k_clear_color.y, k_clear_color.z, 1.0f);
     glClearDepth(1.0f);
@@ -193,17 +294,23 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
 
         for (auto obj : scene) {
             TL_CHECK_FWD(m_editor_shader->set_uniform(k_uniform_model, obj->get_transform().get_matrix()));
-            TL_CHECK_FWD(draw_obj(obj));
+            auto const it = m_render_data.find(obj);
+            if (it == m_render_data.end()) {
+                return  TL_ERROR("obj not found in render data");
+            }
+            auto&& vao = it->second;
+            TL_CHECK_FWD(vao->bind());
+            TL_CHECK_FWD(vao->draw_array(GL_TRIANGLES));
         }
     }
     m_editor_shader->unbind();
 
     // render outline
     if (m_cur_outline_obj) {
-        TL_CHECK_FWD(draw_outline());
+        TL_CHECK_FWD(draw_outline(m_cur_outline_obj));
     }
 
-    // render grid
+	// render grid
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
@@ -218,42 +325,8 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
     m_grid_render_data->unbind();
 
     glDisable(GL_BLEND);
+
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-    return {};
-}
-
-auto EditorRenderer::create_or_resize_render_buf(GLFrameBufferRef& data, unsigned w, unsigned h) noexcept -> tl::expected<void, std::string> {
-    if (data) {
-        TL_CHECK_FWD(data->bind());
-        {
-            TL_CHECK_FWD(data->resize(w, h));
-        }
-        data->unbind();
-    } else {
-        TL_ASSIGN(data, GLFrameBuffer::create());
-        TL_CHECK_FWD(data->bind());
-        {
-            TL_CHECK_FWD(data->attach(w, h, {
-			    { GL_COLOR_ATTACHMENT0, GL_RGB },
-			    { GL_DEPTH_ATTACHMENT, GL_DEPTH_COMPONENT }
-            }));
-            TL_CHECK_FWD(data->set_draw_buffer(GL_COLOR_ATTACHMENT0));
-        }
-        data->unbind();
-    }
-
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        return TL_ERROR(std::string{ "frame buffer is not valid, status = " } +
-            std::to_string(glCheckFramebufferStatus(GL_FRAMEBUFFER)));
-    }
-    return {};
-}
-
-auto EditorRenderer::draw_outline() noexcept -> tl::expected<void, std::string> {
-    if (!m_outline_render_buf) {
-	    
-    }
 
     return {};
 }

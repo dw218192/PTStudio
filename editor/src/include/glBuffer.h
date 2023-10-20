@@ -18,8 +18,8 @@ struct GLBuffer final : GLResource {
 	GLBuffer(GLBuffer&& other) noexcept;
 	auto operator=(GLBuffer&& other) noexcept -> GLBuffer&;
 
-	template<typename T>
-	[[nodiscard]] auto set_data(tcb::span<T const> data, GLenum usage = GL_STATIC_DRAW) -> tl::expected<void, std::string>;
+	template<typename T, size_t Extent>
+	[[nodiscard]] auto set_data(tcb::span<T const, Extent> data, GLenum usage = GL_STATIC_DRAW) -> tl::expected<void, std::string>;
 
 	[[nodiscard]] auto bind() const noexcept -> tl::expected<void, std::string>;
 	void unbind() const noexcept;
@@ -34,8 +34,8 @@ private:
 	size_t m_size{ 0 };
 };
 
-template <typename T>
-auto GLBuffer::set_data(tcb::span<T const> data, GLenum usage) -> tl::expected<void, std::string> {
+template <typename T, size_t Extent>
+auto GLBuffer::set_data(tcb::span<T const, Extent> data, GLenum usage) -> tl::expected<void, std::string> {
 	if (data.empty()) {
 		return {};
 	}

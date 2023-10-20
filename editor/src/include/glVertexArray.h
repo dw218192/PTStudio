@@ -22,8 +22,8 @@ struct GLVertexArray final : GLResource {
 	[[nodiscard]] auto bind() const noexcept -> tl::expected<void, std::string>;
 	static void unbind() noexcept;
 
-	template <typename VertexType, typename... GLAttributeInfos>
-	auto connect(tcb::span<VertexType const> raw_data, GLAttributeInfos... attris) noexcept -> tl::expected<void, std::string>;
+	template <typename VertexType, std::size_t Extent, typename... GLAttributeInfos>
+	auto connect(tcb::span<VertexType const, Extent> raw_data, GLAttributeInfos... attris) noexcept -> tl::expected<void, std::string>;
 
 	auto draw_array(GLenum mode) const noexcept -> tl::expected<void, std::string>;
 
@@ -68,8 +68,8 @@ struct GLAttributeInfo<glm::vec3> : GLAttributeInfoBase {
 	static constexpr GLenum type = GL_FLOAT;
 };
 
-template <typename VertexType, typename... GLAttributeInfos>
-auto GLVertexArray::connect(tcb::span<VertexType const> raw_data, GLAttributeInfos... attris) noexcept -> tl::expected<void, std::string> {
+template <typename VertexType, std::size_t Extent, typename... GLAttributeInfos>
+auto GLVertexArray::connect(tcb::span<VertexType const, Extent> raw_data, GLAttributeInfos... attris) noexcept -> tl::expected<void, std::string> {
 	static_assert(sizeof...(attris) > 0, "must have at least one attribute");
 
 	GLBufferRef buf;

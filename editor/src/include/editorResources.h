@@ -101,28 +101,48 @@ constexpr char const* ps_obj_src =
 
 // outline works by first rendering the object slightly scaled up, with a solid color
 // then rendering the object normally, with the outline color, but with depth testing disabled
-constexpr char const* vs_outline_src =
-"\
-    #version 330 core\n\
-    layout (location = 0) in vec3 aPos;\n\
-    uniform mat4 model;\n\
-    uniform mat4 view;\n\
-    uniform mat4 projection;\n\
-    uniform mat4 scale;\n\
-    void main() {\n\
-        gl_Position = projection * view * model * scale * vec4(aPos, 1.0);\n\
-    }\n\
-";
-
-constexpr char const* ps_outline_src =
-"\
-	#version 330 core\n\
-    uniform vec3 outline_color;\n\
-	layout(location = 0) out vec3 FragColor; \n\
-	void main() {\n\
-        FragColor = outline_color;\n\
-	}\n\
-";
+constexpr char const* vs_outline_passes[] = {
+    "\
+        #version 330 core\n\
+        layout (location = 0) in vec3 aPos;\n\
+        uniform mat4 model;\n\
+        uniform mat4 view;\n\
+        uniform mat4 projection;\n\
+        void main() {\n\
+            gl_Position = projection * view * model * vec4(aPos, 1.0);\n\
+        }\n\
+    ",
+    // post-process pass
+    "\
+        #version 330 core\n\
+        layout (location = 0) in vec3 aPos;\n\
+        layout (location = 1) in vec2 aTexCoords;\n\
+        out vec2 TexCoords;\n\
+        void main() {\n\
+            TexCoords = aTexCoords;\n\
+            gl_Position = vec4(aPos, 1.0);\n\
+        }\n\
+    ",
+};
+constexpr char const* ps_outline_passes[] = {
+    "\
+        #version 330 core\n\
+        layout(location = 0) out vec3 FragColor; \n\
+        void main() {\n\
+            FragColor = vec3(1.0);\n\
+        }\n\
+    ",
+    // post-process pass
+    "\
+        #version 330 core\n\
+        uniform sampler2D screenTexture;\n\
+        in vec2 TexCoords;\n\
+        out vec4 FragColor;\n\
+        void main() {\n\
+            FragColor = texture(screenTexture, TexCoords);\n\
+        }\n\
+    ",
+};
 
 constexpr char const* vs_grid_src = 
 "\
@@ -157,5 +177,4 @@ constexpr char const* k_uniform_light_pos = "lightPos";
 constexpr char const* k_uniform_light_color = "lightColor";
 constexpr char const* k_uniform_object_color = "objectColor";
 constexpr char const* k_uniform_half_grid_dim = "half_grid_dim";
-constexpr char const* k_uniform_outline_color = "outline_color";
-constexpr char const* k_uniform_scale_factor = "scale";
+constexpr char const* k_uniform_screen_texture = "screenTexture";

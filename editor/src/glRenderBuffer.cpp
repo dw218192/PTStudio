@@ -16,15 +16,11 @@ auto GLRenderBuffer::operator=(GLRenderBuffer&& other) noexcept -> GLRenderBuffe
 	return *this;
 }
 auto GLRenderBuffer::resize(unsigned width, unsigned height) noexcept -> tl::expected<void, std::string> {
-	GLuint rbo;
-	TL_ASSIGN(rbo, create_buf(width, height, get_format()));
 	m_width = width;
 	m_height = height;
+	glRenderbufferStorage(GL_RENDERBUFFER, m_format, width, height);
+	CHECK_GL_ERROR();
 
-	if (m_handle) {
-		glDeleteRenderbuffers(1, &m_handle);
-	}
-	m_handle = rbo;
 	return {};
 }
 

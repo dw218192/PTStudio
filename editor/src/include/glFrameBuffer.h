@@ -28,12 +28,15 @@ struct GLFrameBuffer final : GLResource {
 
 	static void unbind() noexcept;
 
-	[[nodiscard]] auto attach(unsigned width, unsigned height, std::initializer_list<AttachmentDesc> attachments) ->tl::expected<void, std::string>;
+	[[nodiscard]] auto attach(unsigned width, unsigned height, std::initializer_list<AttachmentDesc> descs) ->tl::expected<void, std::string>;
 	[[nodiscard]] auto set_draw_buffer(GLenum attachment) const ->tl::expected<void, std::string>;
 	[[nodiscard]] auto resize(unsigned width, unsigned height) noexcept ->tl::expected<void, std::string>;
 
 	[[nodiscard]] auto get_texture(GLenum attachment) const noexcept -> GLTexture const*;
 	[[nodiscard]] auto get_render_buffer(GLenum attachment) const noexcept -> GLRenderBuffer const*;
+
+	auto swap_render_buffer(GLenum attachment, GLRenderBufferRef buf) noexcept -> tl::expected<GLRenderBufferRef, std::string>;
+	auto swap_texture(GLenum attachment, GLTextureRef tex) noexcept -> tl::expected<GLTextureRef, std::string>;
 
 private:
 	void swap(GLFrameBuffer&& other) noexcept;
