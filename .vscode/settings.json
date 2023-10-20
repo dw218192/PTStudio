@@ -93,6 +93,7 @@
         "target": "cpp",
         "condition_variable": "cpp",
         "future": "cpp",
-        "regex": "cpp"
+        "regex": "cpp",
+        "__functional_03": "cpp"
     }
 }

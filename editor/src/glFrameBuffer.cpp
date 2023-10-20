@@ -3,6 +3,26 @@
 #include "include/glTexture.h"
 #include "utils.h"
 
+auto MainFrameBuffer::bind() noexcept -> tl::expected<void, std::string> {
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	CHECK_GL_ERROR();
+	return {};
+}
+
+auto MainFrameBuffer::clear(glm::vec3 color, float depth) noexcept -> tl::expected<void, std::string> {
+	glClearColor(color.r, color.g, color.b, 1.0f);
+	CHECK_GL_ERROR();
+	glClearDepth(depth);
+	CHECK_GL_ERROR();
+	glClear(s_attachment_flags);
+	CHECK_GL_ERROR();
+	return {};
+}
+
+void MainFrameBuffer::set(GLbitfield mask) {
+	s_attachment_flags = mask;
+}
+
 auto GLFrameBuffer::create() -> tl::expected<GLFrameBufferRef, std::string> {
 	GLuint fbo;
 	glGenFramebuffers(1, &fbo);
@@ -42,7 +62,10 @@ auto GLFrameBuffer::attach(unsigned width, unsigned height, std::initializer_lis
 				CHECK_GL_ERROR();
 			}
 			rbo->unbind();
+
 			m_rbo_attchs[desc.attachment] = std::move(rbo);
+			m_attachment_flags |= GL_DEPTH_BUFFER_BIT;
+
 		} else if (desc.attachment == GL_COLOR_ATTACHMENT0) {
 			GLTextureRef tex;
 			TL_ASSIGN(tex, GLTexture::create(width, height, desc.format));
@@ -52,7 +75,10 @@ auto GLFrameBuffer::attach(unsigned width, unsigned height, std::initializer_lis
 				CHECK_GL_ERROR();
 			}
 			tex->unbind();
+			
 			m_tex_attchs[desc.attachment] = std::move(tex);
+			m_attachment_flags |= GL_COLOR_BUFFER_BIT;
+
 		} else {
 			return TL_ERROR("unsupported attachment");
 		}
@@ -103,17 +129,20 @@ auto GLFrameBuffer::swap_render_buffer(GLenum attachment, GLRenderBufferRef buf)
 		auto old = std::move(it->second);
 		
 		if (buf) {
-			it->second = std::move(buf);
 			TL_CHECK(buf->bind());
 			{
 				glFramebufferRenderbuffer(GL_FRAMEBUFFER, attachment, GL_RENDERBUFFER, buf->handle());
 				CHECK_GL_ERROR();
 			}
 			buf->unbind();
+
+			it->second = std::move(buf);
 		} else {
-			m_rbo_attchs.erase(it);
 			glFramebufferRenderbuffer(GL_FRAMEBUFFER, attachment, GL_RENDERBUFFER, 0);
 			CHECK_GL_ERROR();
+
+			m_rbo_attchs.erase(it);
+			m_attachment_flags &= ~GL_DEPTH_BUFFER_BIT;
 		}
 		
 		return old;
@@ -136,7 +165,9 @@ auto GLFrameBuffer::swap_texture(GLenum attachment, GLTextureRef tex) noexcept -
 		} else {
 			glFramebufferTexture(GL_FRAMEBUFFER, attachment, 0, 0);
 			CHECK_GL_ERROR();
+
 			m_tex_attchs.erase(it);
+			m_attachment_flags &= ~GL_COLOR_BUFFER_BIT;
 		}
 		
 		return old;
@@ -144,11 +175,21 @@ auto GLFrameBuffer::swap_texture(GLenum attachment, GLTextureRef tex) noexcept -
 	return TL_ERROR("attachment not found");
 }
 
+auto GLFrameBuffer::clear(glm::vec3 color, float depth) const noexcept -> tl::expected<void, std::string> {
+	glClearColor(color.r, color.g, color.b, 1.0f);
+	CHECK_GL_ERROR();
+	glClearDepth(depth);
+	CHECK_GL_ERROR();
+	glClear(m_attachment_flags);
+	CHECK_GL_ERROR();
+	return {};
+}
+
 void GLFrameBuffer::swap(GLFrameBuffer&& other) noexcept {
 	if (this == &other) {
 		return;
 	}
-
+	std::swap(m_attachment_flags, other.m_attachment_flags);
 	m_rbo_attchs.swap(other.m_rbo_attchs);
 	m_tex_attchs.swap(other.m_tex_attchs);
 	this->GLResource::swap(std::move(other));

@@ -4,12 +4,13 @@
 #include "shader.h"
 #include "glTexture.h"
 #include "glFrameBuffer.h"
-#include "glRenderBuffer.h"
 #include "glVertexArray.h"
 #include "editorRenderer.h"
 
 #include <unordered_map>
 #include <array>
+
+#include "editorResources.h"
 
 struct EditorRenderer : Renderer {
     EditorRenderer(RenderConfig const& config) noexcept;
@@ -33,7 +34,7 @@ private:
     struct {
         GLFrameBufferRef render_buf{ nullptr };
         GLTextureRef aux_tex{ nullptr };
-        std::array<ShaderProgramRef, 2> shaders{};
+        std::array<ShaderProgramRef, std::size(vs_outline_passes)> shaders{};
         GLVertexArrayRef quad_render_data{ nullptr };
     } m_outline;
 

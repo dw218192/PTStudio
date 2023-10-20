@@ -112,7 +112,17 @@ constexpr char const* vs_outline_passes[] = {
             gl_Position = projection * view * model * vec4(aPos, 1.0);\n\
         }\n\
     ",
-    // post-process pass
+    // post-process pass 1 & 2, draw full screen quad
+    "\
+        #version 330 core\n\
+        layout (location = 0) in vec3 aPos;\n\
+        layout (location = 1) in vec2 aTexCoords;\n\
+        out vec2 TexCoords;\n\
+        void main() {\n\
+            TexCoords = aTexCoords;\n\
+            gl_Position = vec4(aPos, 1.0);\n\
+        }\n\
+    ",
     "\
         #version 330 core\n\
         layout (location = 0) in vec3 aPos;\n\
@@ -132,7 +142,36 @@ constexpr char const* ps_outline_passes[] = {
             FragColor = vec3(1.0);\n\
         }\n\
     ",
-    // post-process pass
+    // post-process pass, screen-space outline from https://www.shadertoy.com/view/sltcRf
+    "\
+        #version 330 core\n\
+        uniform sampler2D screenTexture;\n\
+        uniform float radius;\n\
+        uniform vec3 outlineColor;\n\
+        in vec2 TexCoords;\n\
+        out vec4 FragColor;\n\
+        void main() {\n\
+            const vec3 target = vec3(0.0, 0.0, 0.0); // Find black \n\
+            const float TAU = 6.28318530;\n\
+            const float steps = 32.0;\n\
+            vec2 aspect = 1.0 / vec2(textureSize(screenTexture, 0));\n\
+            for (float i = 0.0; i < TAU; i += TAU / steps) {\n\
+                // Sample image in a circular pattern\n\
+                vec2 offset = vec2(sin(i), cos(i)) * aspect * radius;\n\
+                vec4 col = texture(screenTexture, TexCoords + offset);\n\
+                // Mix outline with background\n\
+                float alpha = smoothstep(0.5, 0.7, distance(col.rgb, target));\n\
+                FragColor = mix(FragColor, vec4(outlineColor, 1.0), alpha);\n\
+            }\n\
+            vec4 mat = texture(screenTexture, TexCoords);\n\
+            float factor = smoothstep(0.5, 0.7, distance(mat.rgb, target));\n\
+            FragColor = mix(FragColor, mat, factor);\n\
+            if (FragColor.rgb != outlineColor) {\n\
+                FragColor.a = 0.0;\n\
+            }\n\
+        }\n\
+    ",
+    // post-process pass 2, copy screen texture to screen
     "\
         #version 330 core\n\
         uniform sampler2D screenTexture;\n\
@@ -177,4 +216,8 @@ constexpr char const* k_uniform_light_pos = "lightPos";
 constexpr char const* k_uniform_light_color = "lightColor";
 constexpr char const* k_uniform_object_color = "objectColor";
 constexpr char const* k_uniform_half_grid_dim = "half_grid_dim";
+
+
 constexpr char const* k_uniform_screen_texture = "screenTexture";
+constexpr char const* k_uniform_radius = "radius";
+constexpr char const* k_uniform_outline_color = "outlineColor";
