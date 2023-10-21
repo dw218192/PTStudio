@@ -4,6 +4,11 @@
 
 struct GLResourceDeleter;
 
+struct GLParam {
+    GLenum param_name;
+    GLint param_val;
+};
+
 template<typename T>
 using GLResRef = std::unique_ptr<T, GLResourceDeleter>;
 

@@ -1,4 +1,5 @@
 #include "include/shader.h"
+#include "include/glTexture.h"
 #include <fstream>
 
 Shader::Shader(GLenum type, GLuint handle) noexcept : GLResource(handle), m_type(type) {}
@@ -93,6 +94,18 @@ ShaderProgram::ShaderProgram(ShaderProgram&& other) noexcept {
 ShaderProgram& ShaderProgram::operator=(ShaderProgram&& other) noexcept {
     swap(std::move(other));
     return *this;
+}
+
+auto ShaderProgram::set_texture(std::string_view name, GLTexture const* tex, GLuint slot) const noexcept -> tl::expected<void, std::string> {
+    if (!valid()) {
+        return TL_ERROR( "Invalid shader program" );
+    }
+
+    glActiveTexture(GL_TEXTURE0 + slot);
+    TL_CHECK_FWD(tex->bind());
+    TL_CHECK_FWD(set_uniform(name, static_cast<int>(slot)));
+
+    return {};
 }
 
 auto ShaderProgram::bind() const noexcept -> tl::expected<void, std::string> {

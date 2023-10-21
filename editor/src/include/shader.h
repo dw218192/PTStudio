@@ -54,6 +54,7 @@ struct ShaderProgram final : GLResource {
 
     template<typename UniformType>
     [[nodiscard]] auto set_uniform(std::string_view name, UniformType const& value) const noexcept -> tl::expected<void, std::string>;
+    [[nodiscard]] auto set_texture(std::string_view name, struct GLTexture const* tex, GLuint slot) const noexcept -> tl::expected<void, std::string>;
     
     [[nodiscard]] auto bind() const noexcept -> tl::expected<void, std::string>;
     static void unbind() noexcept;
@@ -77,6 +78,9 @@ auto ShaderProgram::set_uniform(std::string_view name, UniformType const& value)
     }
     if constexpr (std::is_same_v<UniformType, glm::mat4>) {
         glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(value));
+    }
+    else if constexpr (std::is_same_v<UniformType, glm::vec2>) {
+        glUniform2fv(loc, 1, glm::value_ptr(value));
     }
     else if constexpr (std::is_same_v<UniformType, glm::vec3>) {
         glUniform3fv(loc, 1, glm::value_ptr(value));

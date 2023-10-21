@@ -96,10 +96,22 @@ auto EditorRenderer::render_buffered(Camera const& cam) noexcept -> tl::expected
         TL_ASSIGN(m_render_buf, GLFrameBuffer::create());
         TL_CHECK(m_render_buf->bind());
         {
-            TL_CHECK(m_render_buf->attach(m_config.width, m_config.height, {
-                { GL_COLOR_ATTACHMENT0, GL_RGB },
-                { GL_DEPTH_ATTACHMENT, GL_DEPTH_COMPONENT }
-            }));
+	        TL_CHECK(m_render_buf->attach(m_config.width, m_config.height, {
+		        {
+					GL_COLOR_ATTACHMENT0, GL_RGB,
+			        {
+				        { GL_TEXTURE_MIN_FILTER, GL_LINEAR },
+				        { GL_TEXTURE_MAG_FILTER, GL_LINEAR },
+			        }
+		        },
+		        {
+		        	GL_DEPTH_ATTACHMENT, GL_DEPTH_COMPONENT,
+		        	{
+				        { GL_TEXTURE_MIN_FILTER, GL_LINEAR },
+				        { GL_TEXTURE_MAG_FILTER, GL_LINEAR },
+		        	}
+		        }
+		    }));
             TL_CHECK(m_render_buf->set_draw_buffer(GL_COLOR_ATTACHMENT0));
         }
         m_render_buf->unbind();
@@ -181,7 +193,24 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
             TL_CHECK_FWD(m_outline.render_buf->bind());
             {
                 TL_CHECK_FWD(m_outline.render_buf->attach(m_config.width, m_config.height, {
-                    { GL_COLOR_ATTACHMENT0, GL_RGBA },
+                    {
+                    	GL_COLOR_ATTACHMENT0, GL_RGBA,
+                    	{
+                            { GL_TEXTURE_MIN_FILTER, GL_LINEAR },
+							{ GL_TEXTURE_MAG_FILTER, GL_LINEAR },
+                            { GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE },
+                    		{ GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE },
+                    	}
+                    },
+                    {
+                    	GL_COLOR_ATTACHMENT1, GL_RGBA,
+                    	{
+                            { GL_TEXTURE_MIN_FILTER, GL_LINEAR },
+                            { GL_TEXTURE_MAG_FILTER, GL_LINEAR },
+                            { GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE },
+                            { GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE },
+                        }
+                    }
                 }));
                 TL_CHECK_FWD(m_outline.render_buf->set_draw_buffer(GL_COLOR_ATTACHMENT0));
             }
@@ -191,9 +220,6 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
             for (int i = 0; i < m_outline.shaders.size(); ++i) {
                 TL_ASSIGN(m_outline.shaders[i], ShaderProgram::from_srcs(vs_outline_passes[i], ps_outline_passes[i]));
             }
-
-            // auxiliary texture
-            TL_ASSIGN(m_outline.aux_tex, GLTexture::create(m_config.width, m_config.height, GL_RGBA));
 
             // full screen quad
             TL_ASSIGN(m_outline.quad_render_data, GLVertexArray::create(6));
@@ -227,17 +253,10 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
 
         TL_CHECK_FWD(m_outline.render_buf->bind());
         {
-            // clear both aux_tex and tex in the render_buf
             TL_CHECK_FWD(m_outline.render_buf->clear(glm::vec3(0), 1.0f));
-            TL_ASSIGN(
-                m_outline.aux_tex,
-                m_outline.render_buf->swap_texture(GL_COLOR_ATTACHMENT0, std::move(m_outline.aux_tex))
-            );
-            TL_CHECK_FWD(m_outline.render_buf->clear(glm::vec3(0), 1.0f));
-            TL_ASSIGN(
-                m_outline.aux_tex,
-                m_outline.render_buf->swap_texture(GL_COLOR_ATTACHMENT0, std::move(m_outline.aux_tex))
-            );
+
+            // draw to attachment 0
+            TL_CHECK(m_outline.render_buf->set_draw_buffer(GL_COLOR_ATTACHMENT0));
 
             TL_CHECK_FWD(m_outline.shaders[0]->bind());
             {
@@ -249,40 +268,22 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
                 TL_CHECK_FWD(vao->bind());
                 TL_CHECK_FWD(vao->draw_array(GL_TRIANGLES));
             }
-            m_outline.shaders[0]->unbind();
-
+            // draw to attachment 1 based on attachment 0
+            TL_CHECK(m_outline.render_buf->set_draw_buffer(GL_COLOR_ATTACHMENT1));
             TL_CHECK_FWD(m_outline.shaders[1]->bind());
             {
-                TL_ASSIGN(
-                    m_outline.aux_tex,
-                    m_outline.render_buf->swap_texture(GL_COLOR_ATTACHMENT0, std::move(m_outline.aux_tex))
-                );
-
-                glActiveTexture(GL_TEXTURE0);
-                TL_CHECK_FWD(m_outline.aux_tex->bind());
-                {
-                    TL_CHECK_FWD(m_outline.shaders[1]->set_uniform(k_uniform_screen_texture, 0));
-                    TL_CHECK_FWD(m_outline.shaders[1]->set_uniform(k_uniform_outline_color, glm::vec3(1, 0, 0)));
-                    TL_CHECK_FWD(m_outline.shaders[1]->set_uniform(k_uniform_radius, 1.5f));
-
-                    TL_CHECK_FWD(m_outline.quad_render_data->bind());
-                    {
-                        TL_CHECK_FWD(m_outline.quad_render_data->draw_array(GL_TRIANGLES));
-                    }
-                    m_outline.quad_render_data->unbind();
-                }
-                m_outline.aux_tex->unbind();
-
-                TL_ASSIGN(
-                    m_outline.aux_tex,
-                    m_outline.render_buf->swap_texture(GL_COLOR_ATTACHMENT0, std::move(m_outline.aux_tex))
-                );
+                TL_CHECK_FWD(m_outline.shaders[1]->set_texture(k_uniform_screen_texture, m_outline.render_buf->get_texture(GL_COLOR_ATTACHMENT0), 0));
+                TL_CHECK_FWD(m_outline.shaders[1]->set_uniform(k_uniform_outline_color, glm::vec3(1, 0, 0)));
+                TL_CHECK_FWD(m_outline.shaders[1]->set_uniform(k_uniform_thickness, 0.9f));
+                TL_CHECK_FWD(m_outline.shaders[1]->set_uniform(k_uniform_texel_size, 1.0f / glm::vec2(m_config.width, m_config.height)));
+                TL_CHECK_FWD(m_outline.quad_render_data->bind());
+                TL_CHECK_FWD(m_outline.quad_render_data->draw_array(GL_TRIANGLES));
+                m_outline.quad_render_data->unbind();
             }
-            m_outline.shaders[1]->unbind();
         }
         m_outline.render_buf->unbind();
 
-        // aux_tex now contains the outline
+        // attachment 1 now contains the outline
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
@@ -296,13 +297,8 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
         {
             TL_CHECK_FWD(m_outline.quad_render_data->bind());
             {
-                glActiveTexture(GL_TEXTURE0);
-                TL_CHECK_FWD(m_outline.aux_tex->bind());
-                {
-                    TL_CHECK_FWD(m_outline.shaders[2]->set_uniform(k_uniform_screen_texture, 0));
-                    TL_CHECK_FWD(m_outline.quad_render_data->draw_array(GL_TRIANGLES));
-                }
-                m_outline.aux_tex->unbind();
+                TL_CHECK_FWD(m_outline.shaders[2]->set_texture(k_uniform_screen_texture, m_outline.render_buf->get_texture(GL_COLOR_ATTACHMENT1), 0));
+                TL_CHECK_FWD(m_outline.quad_render_data->draw_array(GL_TRIANGLES));
             }
             m_outline.quad_render_data->unbind();
         }

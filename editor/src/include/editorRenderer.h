@@ -33,7 +33,6 @@ private:
 
     struct {
         GLFrameBufferRef render_buf{ nullptr };
-        GLTextureRef aux_tex{ nullptr };
         std::array<ShaderProgramRef, std::size(vs_outline_passes)> shaders{};
         GLVertexArrayRef quad_render_data{ nullptr };
     } m_outline;

@@ -39,12 +39,12 @@ DockId=0x00000006,0\n\
 \n\
 [Docking][Data]\n\
 DockSpace       ID=0x8B93E3BD Window=0xA787BDB4 Pos=164,187 Size=1280,720 Split=Y Selected=0xE192E354\n\
-  DockNode      ID=0x00000005 Parent=0x8B93E3BD SizeRef=1280,542 Split=X\n\
+DockNode      ID=0x00000005 Parent=0x8B93E3BD SizeRef=1280,542 Split=X\n\
     DockNode    ID=0x00000001 Parent=0x00000005 SizeRef=1069,720 Split=X\n\
-      DockNode  ID=0x00000002 Parent=0x00000001 SizeRef=187,720 Selected=0xD4E24632\n\
-      DockNode  ID=0x00000003 Parent=0x00000001 SizeRef=880,720 CentralNode=1 Selected=0xE192E354\n\
+    DockNode  ID=0x00000002 Parent=0x00000001 SizeRef=187,720 Selected=0xD4E24632\n\
+    DockNode  ID=0x00000003 Parent=0x00000001 SizeRef=880,720 CentralNode=1 Selected=0xE192E354\n\
     DockNode    ID=0x00000004 Parent=0x00000005 SizeRef=209,720 Selected=0xE7039252\n\
-  DockNode      ID=0x00000006 Parent=0x8B93E3BD SizeRef=1280,176 Selected=0x49278EEE\n\
+DockNode      ID=0x00000006 Parent=0x8B93E3BD SizeRef=1280,176 Selected=0x49278EEE\n\
 \n\
 ";
 
@@ -112,7 +112,7 @@ constexpr char const* vs_outline_passes[] = {
             gl_Position = projection * view * model * vec4(aPos, 1.0);\n\
         }\n\
     ",
-    // post-process pass 1 & 2, draw full screen quad
+    // post-process pass 1 & 2 & 3, draw full screen quad
     "\
         #version 330 core\n\
         layout (location = 0) in vec3 aPos;\n\
@@ -142,36 +142,36 @@ constexpr char const* ps_outline_passes[] = {
             FragColor = vec3(1.0);\n\
         }\n\
     ",
-    // post-process pass, screen-space outline from https://www.shadertoy.com/view/sltcRf
+    // post-process pass, screen-space outline from shadertoy
     "\
         #version 330 core\n\
         uniform sampler2D screenTexture;\n\
-        uniform float radius;\n\
+        uniform float thickness;\n\
         uniform vec3 outlineColor;\n\
+        uniform vec2 texelSize;\n\
         in vec2 TexCoords;\n\
         out vec4 FragColor;\n\
         void main() {\n\
             const vec3 target = vec3(0.0, 0.0, 0.0); // Find black \n\
             const float TAU = 6.28318530;\n\
             const float steps = 32.0;\n\
-            vec2 aspect = 1.0 / vec2(textureSize(screenTexture, 0));\n\
+            if (texture(screenTexture, TexCoords).r > 0) {\n\
+                FragColor.a = 0.0;\n\
+                return;\n\
+            }\n\
             for (float i = 0.0; i < TAU; i += TAU / steps) {\n\
                 // Sample image in a circular pattern\n\
-                vec2 offset = vec2(sin(i), cos(i)) * aspect * radius;\n\
+                vec2 offset = vec2(sin(i), cos(i)) * texelSize * thickness;\n\
                 vec4 col = texture(screenTexture, TexCoords + offset);\n\
-                // Mix outline with background\n\
                 float alpha = smoothstep(0.5, 0.7, distance(col.rgb, target));\n\
                 FragColor = mix(FragColor, vec4(outlineColor, 1.0), alpha);\n\
             }\n\
             vec4 mat = texture(screenTexture, TexCoords);\n\
             float factor = smoothstep(0.5, 0.7, distance(mat.rgb, target));\n\
             FragColor = mix(FragColor, mat, factor);\n\
-            if (FragColor.rgb != outlineColor) {\n\
-                FragColor.a = 0.0;\n\
-            }\n\
         }\n\
     ",
-    // post-process pass 2, copy screen texture to screen
+    // copy screen texture to screen
     "\
         #version 330 core\n\
         uniform sampler2D screenTexture;\n\
@@ -219,5 +219,6 @@ constexpr char const* k_uniform_half_grid_dim = "half_grid_dim";
 
 
 constexpr char const* k_uniform_screen_texture = "screenTexture";
-constexpr char const* k_uniform_radius = "radius";
 constexpr char const* k_uniform_outline_color = "outlineColor";
+constexpr char const* k_uniform_texel_size = "texelSize";
+constexpr char const* k_uniform_thickness = "thickness";

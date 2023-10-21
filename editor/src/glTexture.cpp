@@ -2,7 +2,7 @@
 #include "include/ext.h"
 
 auto GLTexture::fetch_pixels() const noexcept -> tl::expected<void, std::string> {
-    bind();
+    TL_CHECK_FWD(bind());
 
     glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_UNSIGNED_BYTE, m_pixels.data());
     glBindTexture(GL_TEXTURE_2D, 0);
@@ -26,7 +26,7 @@ auto GLTexture::fetch_pixels() const noexcept -> tl::expected<void, std::string>
     return {};
 }
 
-auto GLTexture::create_tex(unsigned width, unsigned height, GLenum format) noexcept -> tl::expected<GLuint, std::string> {
+auto GLTexture::create_tex(unsigned width, unsigned height, GLenum format, std::initializer_list<GLParam> params) noexcept -> tl::expected<GLuint, std::string> {
     GLuint tex;
     glGenTextures(1, &tex);
     CHECK_GL_ERROR();
@@ -37,27 +37,25 @@ auto GLTexture::create_tex(unsigned width, unsigned height, GLenum format) noexc
         width, height,
         0, format, GL_UNSIGNED_BYTE, nullptr
     );
-
     CHECK_GL_ERROR();
 
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-    CHECK_GL_ERROR();
-
+    for (auto&& [pname, param] : params) {
+        glTexParameteri(GL_TEXTURE_2D, pname, param);
+        CHECK_GL_ERROR();
+	}
     glBindTexture(GL_TEXTURE_2D, 0);
 
     return tex;
 }
 
-auto GLTexture::create(unsigned width, unsigned height, GLenum format) -> tl::expected<GLTextureRef, std::string> {
+auto GLTexture::create(unsigned width, unsigned height, GLenum format, std::initializer_list<GLParam> params) noexcept -> tl::expected<GLTextureRef, std::string> {
     GLuint tex;
-    TL_ASSIGN(tex, create_tex(width, height, format));
-    auto ret = GLTextureRef{ new GLTexture{width, height, tex, format}, GLResourceDeleter{} };
+    TL_ASSIGN(tex, create_tex(width, height, format, params));
+    auto ret = GLTextureRef{ new GLTexture{width, height, format, tex }, GLResourceDeleter{} };
     return ret;
 }
 
-GLTexture::GLTexture(unsigned width, unsigned height, GLuint handle, GLenum format)
+GLTexture::GLTexture(unsigned width, unsigned height, GLenum format, GLuint handle)
 	: Texture(width, height), GLResource(handle), m_format(format) {}
 
 GLTexture::~GLTexture() noexcept {

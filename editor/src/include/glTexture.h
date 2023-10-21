@@ -8,7 +8,10 @@ struct GLTexture;
 using GLTextureRef = GLResRef<GLTexture>;
 
 struct GLTexture final : Texture, GLResource {
-    [[nodiscard]] static auto create(unsigned width, unsigned height, GLenum format) -> tl::expected<GLTextureRef, std::string>;
+    [[nodiscard]] static auto create(unsigned width, unsigned height, GLenum format, std::initializer_list<GLParam> params = {
+        { GL_TEXTURE_MIN_FILTER, GL_LINEAR },
+        { GL_TEXTURE_MAG_FILTER, GL_LINEAR }
+    }) noexcept-> tl::expected<GLTextureRef, std::string>;
 
     GLTexture(GLTexture const&) = delete;
     auto operator=(GLTexture const&) -> GLTexture& = delete;
@@ -23,7 +26,8 @@ struct GLTexture final : Texture, GLResource {
     [[nodiscard]] auto resize(unsigned width, unsigned height) noexcept -> tl::expected<void, std::string> override;
 
 private:
-    [[nodiscard]] static auto create_tex(unsigned width, unsigned height, GLenum format) noexcept -> tl::expected<GLuint, std::string>;
+    [[nodiscard]] static auto create_tex(unsigned width, unsigned height, GLenum format, std::initializer_list<GLParam> params) noexcept
+		-> tl::expected<GLuint, std::string>;
     void swap(GLTexture&& other) noexcept;
 
     GLTexture(unsigned width, unsigned height, GLenum format, GLuint handle);

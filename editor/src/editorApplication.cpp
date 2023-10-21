@@ -130,15 +130,16 @@ void EditorApplication::draw_scene_panel() noexcept {
     ImGui::Spacing();
     if (ImGui::CollapsingHeader("Scene Objects", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        ImGui::BeginListBox("##Scene Objects", { 0, 200 });
+        if (ImGui::BeginListBox("##Scene Objects", { 0, 200 }))
         {
             for (auto obj : get_scene()) {
                 if (ImGui::Selectable(obj->get_name().data(), m_control_state.get_cur_obj() == obj)) {
                     m_control_state.set_cur_obj(obj);
                 }
             }
+
+            ImGui::EndListBox();
         }
-        ImGui::EndListBox();
         ImGui::Spacing();
 
         if (ImGui::BeginMenu("Add Object")) {

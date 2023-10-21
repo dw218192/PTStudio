@@ -15,6 +15,7 @@ using GLFrameBufferRef = GLResRef<GLFrameBuffer>;
 struct AttachmentDesc {
 	GLenum attachment;
 	GLenum format;
+	std::initializer_list<GLParam> params;
 };
 
 /**
@@ -34,7 +35,6 @@ namespace MainFrameBuffer {
 	void set(GLbitfield mask);
 
 	static inline GLbitfield s_attachment_flags{ 0 };
-	static inline GLuint s_prev_fbo{ 0 };
 }
 
 /**
@@ -76,7 +76,7 @@ struct GLFrameBuffer final : GLResource {
 	auto swap_render_buffer(GLenum attachment, GLRenderBufferRef buf) noexcept -> tl::expected<GLRenderBufferRef, std::string>;
 
 	/**
-	 * @brief swap the texture attached to the given attachment point
+	 * @brief swap the texture attached to the given attachment point with the given texture
 	 * @param attachment the attachment point
 	 * @param tex the new texture; if nullptr, the attachment point will be cleared
 	 * @return the old texture
@@ -84,13 +84,27 @@ struct GLFrameBuffer final : GLResource {
 	auto swap_texture(GLenum attachment, GLTextureRef tex) noexcept -> tl::expected<GLTextureRef, std::string>;
 
 	/**
-	 * @brief clear the frame buffer
+	 * @brief swap the textures attached to the given attachment points
+	 * @param attachment1 the first attachment point
+	 * @param attachment2 the second attachment point
+	 * @return error message on failure
+	 */
+	auto swap_texture(GLenum attachment1, GLenum attachment2) noexcept -> tl::expected<void, std::string>;
+
+	/**
+	 * @brief clear the frame buffer, including all attachments
 	 * @param color the color to clear to
 	 * @param depth the depth to clear to
 	 * @return error message on failure
 	 */
 	auto clear(glm::vec3 color, float depth) const noexcept -> tl::expected<void, std::string>;
-
+	/**
+	 * @brief clear the given color attachment
+	 * @param color the color to clear to
+	 * @param depth the depth to clear to
+	 * @return error message on failure
+	 */
+	auto clear_color(GLenum attachment, glm::vec3 color) const noexcept -> tl::expected<void, std::string>;
 private:
 	void swap(GLFrameBuffer&& other) noexcept;
 	GLFrameBuffer(GLuint handle) noexcept;
@@ -98,6 +112,4 @@ private:
 
 	std::unordered_map<GLenum, GLRenderBufferRef> m_rbo_attchs;
 	std::unordered_map<GLenum, GLTextureRef> m_tex_attchs;
-
-	GLbitfield m_attachment_flags{ 0 };
 };
