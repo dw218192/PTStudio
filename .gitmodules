@@ -24,3 +24,6 @@
 [submodule "ext/span"]
 	path = ext/span
 	url = https://github.com/tcbrindle/span.git
+[submodule "ext/ImGuizmo"]
+	path = ext/ImGuizmo
+	url = https://github.com/aniongithub/ImGuizmo.git
