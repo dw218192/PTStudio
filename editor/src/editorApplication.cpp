@@ -190,7 +190,7 @@ void EditorApplication::draw_object_panel() noexcept {
 
             auto&& gizmo_state = m_control_state.gizmo_state;
             auto trans = obj.get_transform();
-            if (ImGui::TransformField("Transform", trans, gizmo_state.op, gizmo_state.mode, gizmo_state.snap)) {
+            if (ImGui::TransformField("Transform", trans, gizmo_state.op, gizmo_state.mode, gizmo_state.snap, gizmo_state.snap_scale)) {
                 obj.set_transform(trans);
             }
         } else {

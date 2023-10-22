@@ -127,8 +127,6 @@ auto Object::make_quad_obj(Scene const& scene, Material mat, Transform const& tr
 
 void Object::set_transform(Transform const& transform) noexcept {
     m_transform = transform;
-    m_bound.min_pos = m_transform.local_to_world_pos(m_local_bound.min_pos);
-    m_bound.max_pos = m_transform.local_to_world_pos(m_local_bound.max_pos);
 }
 
 auto Object::get_transform() const noexcept -> Transform const& {
@@ -144,7 +142,7 @@ auto Object::get_name() const noexcept -> std::string_view {
 }
 
 auto Object::get_bound() const noexcept -> BoundingBox const& {
-    return m_bound;
+    return m_local_bound;
 }
 
 auto Object::get_vertices() const noexcept -> tcb::span<Vertex const> {

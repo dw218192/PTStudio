@@ -51,10 +51,28 @@ auto Scene::ray_cast(Ray const& ray, float t_min, float t_max) noexcept -> Objec
     ObjectHandle ret = nullptr;
     float closest_t = t_max;
     for (auto&& obj : m_objects) {
-        auto res = Intersection::ray_box(obj.get_bound(), ray);
+        // transform ray to object space
+        Ray local_ray {
+            obj.get_transform().world_to_local_pos(ray.origin),
+            obj.get_transform().world_to_local_dir(ray.direction)
+        };
+        auto res = Intersection::ray_box(obj.get_bound(), local_ray);
         if (res.hit && res.t < closest_t && res.t >= t_min) {
-            closest_t = res.t;
-            ret = &obj;
+            auto&& triangles = obj.get_vertices();
+            for (int i=0; i<triangles.size(); i+=3) {
+                auto triangle = {
+                    triangles[i].position,
+                    triangles[i + 1].position,
+                    triangles[i + 2].position
+                };
+
+            	res = Intersection::ray_triangle(tcb::make_span(triangle), local_ray);
+                if (res.hit && res.t < closest_t && res.t >= t_min) {
+                    closest_t = res.t;
+                    ret = &obj;
+                    break;
+                }
+            }
         }
     }
     return ret;

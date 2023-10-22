@@ -1,5 +1,6 @@
 #include "intersection.h"
 #include <cmath>
+#include <glm/gtx/intersect.hpp>
 
 #define SMALL_FLOAT 1e-6f
 #define LARGE_FLOAT 1e6f
@@ -45,4 +46,11 @@ auto Intersection::ray_box(BoundingBox const& box, Ray const& r) -> Result {
         true,
         tmin < 0 ? tmax : tmin 
     };
+}
+
+auto Intersection::ray_triangle(tcb::span<glm::vec3 const, 3> triangle, Ray const& r) -> Result {
+    glm::vec2 bary_pos;
+    float dist = 0;
+    auto const hit = glm::intersectRayTriangle(r.origin, r.direction, triangle[0], triangle[1], triangle[2], bary_pos, dist);
+    return Result{ hit, dist };
 }

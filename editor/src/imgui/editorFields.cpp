@@ -3,7 +3,7 @@
 #include <imgui.h>
 #include <glm/gtc/type_ptr.hpp>
 
-bool ImGui::TransformField(const char* label, Transform& transform, ImGuizmo::OPERATION& op, ImGuizmo::MODE& mode, bool& snap) {
+bool ImGui::TransformField(const char* label, Transform& transform, ImGuizmo::OPERATION& op, ImGuizmo::MODE& mode, bool& snap, glm::vec3& snap_scale) {
     bool changed = false;
     if(ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto pos = transform.get_position();
@@ -33,10 +33,21 @@ bool ImGui::TransformField(const char* label, Transform& transform, ImGuizmo::OP
             op = ImGuizmo::ROTATE;
         }
         if (ImGui::RadioButton("Scale", op == ImGuizmo::SCALE)) {
-            changed = true;
-        	op = ImGuizmo::SCALE;
+        	changed = true;
+            op = ImGuizmo::SCALE;
         }
         
+        if(ImGui::Checkbox("snap to grid", &snap)) {
+            changed = true;
+        }
+
+        if (snap) {
+            if(ImGui::InputFloat3("snap distance", glm::value_ptr(snap_scale))) {
+                changed = true;
+                snap_scale = glm::clamp(snap_scale, glm::vec3(0.02f), glm::vec3(100.0f));
+            }
+        }
+
         ImGui::SeparatorText("Transform Space");
         if (op != ImGuizmo::SCALE) {
             if (ImGui::RadioButton("Local", mode == ImGuizmo::LOCAL)) {
@@ -49,8 +60,6 @@ bool ImGui::TransformField(const char* label, Transform& transform, ImGuizmo::OP
                 mode = ImGuizmo::WORLD;
             }
         }
-        
-        changed |= ImGui::Checkbox("snap to grid", &snap);
     }
     return changed;
 }
