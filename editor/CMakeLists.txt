@@ -28,3 +28,7 @@ target_link_libraries(${exec_name}
 	span
 	nativefiledialog
 )
+
+install(TARGETS ${exec_name}
+	RUNTIME DESTINATION ${PROJECT_BINARY_DIR}
+)

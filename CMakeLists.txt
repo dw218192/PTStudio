@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.19 FATAL_ERROR)
 
 #Project name 
 set(project_name "PTStudio")
-project(${project_name} LANGUAGES CXX C CUDA)  
+project(${project_name} LANGUAGES CXX C CUDA)
 
 #default build type is Debug
 if (CMAKE_BUILD_TYPE STREQUAL "")
