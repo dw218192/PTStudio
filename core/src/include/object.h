@@ -17,10 +17,10 @@ struct Object {
     Object(Scene const& scene, Transform transform, Material mat, tcb::span<Vertex const> vertices);
 
     NODISCARD static auto from_obj(Scene const& scene, Material mat, std::string_view filename, std::string* warning = nullptr) noexcept -> tl::expected<Object, std::string>;
-    NODISCARD static auto make_triangle_obj(Scene const& scene, Material mat, Transform const& trans) noexcept -> Object;
-    NODISCARD static auto make_quad_obj(Scene const& scene, Material mat, Transform const& trans) noexcept -> Object;
+    NODISCARD static auto make_triangle_obj(Scene const& scene, Material mat, Transform trans) noexcept -> Object;
+    NODISCARD static auto make_quad_obj(Scene const& scene, Material mat, Transform trans) noexcept -> Object;
 
-    void set_transform(Transform const& transform) noexcept;
+    void set_transform(Transform transform) noexcept;
     NODISCARD auto get_transform() const noexcept -> Transform const&;
     void set_name(std::string_view name) noexcept;
     NODISCARD auto get_name() const noexcept -> std::string_view;
@@ -29,7 +29,6 @@ struct Object {
     NODISCARD auto get_material() const noexcept -> Material const&;
 
 private:
-    BoundingBox m_bound;
     BoundingBox m_local_bound;
     Transform m_transform;
     Material m_mat;

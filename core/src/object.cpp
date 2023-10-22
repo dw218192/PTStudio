@@ -103,16 +103,16 @@ auto Object::from_obj(Scene const& scene, Material mat, std::string_view filenam
     return ret;
 }
 
-auto Object::make_triangle_obj(Scene const& scene, Material mat, Transform const& trans) noexcept -> Object {
+auto Object::make_triangle_obj(Scene const& scene, Material mat, Transform trans) noexcept -> Object {
 	std::vector<Vertex> vertices = {
 	    Vertex{ glm::vec3{ -0.5, -0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 0, 0 } },
 	    Vertex{ glm::vec3{ 0.5, -0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 1, 0 } },
 	    Vertex{ glm::vec3{ 0, 0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 0.5, 1 } }
     };
-    return Object { scene, trans, std::move(mat), std::move(vertices) };
+    return Object { scene, std::move(trans), std::move(mat), std::move(vertices) };
 }
 
-auto Object::make_quad_obj(Scene const& scene, Material mat, Transform const& trans) noexcept -> Object {
+auto Object::make_quad_obj(Scene const& scene, Material mat, Transform trans) noexcept -> Object {
     std::vector<Vertex> vertices = {
         Vertex{ glm::vec3{ -0.5, -0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 0, 0 } },
         Vertex{ glm::vec3{ 0.5, -0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 1, 0 } },
@@ -122,11 +122,11 @@ auto Object::make_quad_obj(Scene const& scene, Material mat, Transform const& tr
         Vertex{ glm::vec3{ 0.5, -0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 1, 0 } },
         Vertex{ glm::vec3{ 0.5, 0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 1, 1 } }
     };
-    return Object { scene, trans, std::move(mat), std::move(vertices) };
+    return Object { scene, std::move(trans), std::move(mat), std::move(vertices) };
 }
 
-void Object::set_transform(Transform const& transform) noexcept {
-    m_transform = transform;
+void Object::set_transform(Transform transform) noexcept {
+    m_transform = std::move(transform);
 }
 
 auto Object::get_transform() const noexcept -> Transform const& {
