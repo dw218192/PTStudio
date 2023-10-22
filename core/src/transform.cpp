@@ -4,37 +4,29 @@
 #include <glm/gtx/euler_angles.hpp>
 #include <glm/gtx/transform.hpp>
 
-static void decompose(glm::mat4 const& mat, glm::vec3* ppos, glm::vec3* prot, glm::vec3* pscale) {
-    if (ppos) {
-        *ppos = glm::column(mat, 3);
-    }
+static void decompose(glm::mat4 const& mat, glm::vec3& ppos, glm::vec3& prot, glm::vec3& pscale) {
+    ppos = glm::column(mat, 3);
+    glm::vec3 r1 = glm::row(mat, 0),
+        r2 = glm::row(mat, 1),
+        r3 = glm::row(mat, 2);
 
-    if(prot || pscale) {
-        glm::vec3 r1 = glm::row(mat, 0),
-            r2 = glm::row(mat, 1),
-            r3 = glm::row(mat, 2);
+    glm::vec3 const scale = glm::vec3{
+        glm::length(r1),
+        glm::length(r2),
+        glm::length(r3)
+    };
+    assert(glm::length(r1) > 0.0 && glm::length(r2) > 0.0 && glm::length(r3) > 0.0);
 
-    	glm::vec3 const scale = glm::vec3{
-            glm::length(r1),
-            glm::length(r2),
-            glm::length(r3)
-        };
-        assert(glm::length(r1) > 0.0 && glm::length(r2) > 0.0 && glm::length(r3) > 0.0);
+    pscale = scale;
+    r1 /= scale.x;
+    r2 /= scale.y;
+    r3 /= scale.z;
 
-        if (pscale) {
-            *pscale = scale;
-        }
-        if (prot) {
-            r1 /= scale.x;
-            r2 /= scale.y;
-            r3 /= scale.z;
-            *prot = glm::vec3{
-                glm::degrees(atan2(r3.y, r3.z)),
-                glm::degrees(atan2(-r3.x, sqrt(r3.y * r3.y + r3.z * r3.z))),
-                glm::degrees(atan2(r2.x, r1.x))
-            };
-        }
-    }
+    prot = glm::vec3{
+        glm::degrees(atan2(r3.y, r3.z)),
+        glm::degrees(atan2(-r3.x, sqrt(r3.y * r3.y + r3.z * r3.z))),
+        glm::degrees(atan2(r2.x, r1.x))
+    };
 }
 
 static glm::mat4 compose(glm::vec3 const& pos, glm::vec3 const& rot, glm::vec3 const& scale) {
@@ -61,7 +53,7 @@ Transform::Transform(glm::mat4 const& matrix) noexcept : m_trans{matrix}  {
 auto Transform::look_at(glm::vec3 const& pos, glm::vec3 const& target, glm::vec3 const& up) noexcept -> Transform {
     Transform ret;
     ret.m_trans = glm::lookAt(pos, target, up);
-    decompose(ret.m_trans, &ret.m_pos, &ret.m_rot, &ret.m_scale);
+    decompose(ret.m_trans, ret.m_pos, ret.m_rot, ret.m_scale);
     return ret;
 }
 
@@ -101,7 +93,7 @@ void Transform::set_scale(TransformSpace space, glm::vec3 const& scale) noexcept
 
 void Transform::on_trans_matrix_update() noexcept {
     m_inv_trans = glm::inverse(m_trans);
-    decompose(m_trans, &m_pos, &m_rot, &m_scale);
+    decompose(m_trans, m_pos, m_rot, m_scale);
 }
 
 void Transform::on_component_update() noexcept {

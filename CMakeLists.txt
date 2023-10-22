@@ -78,34 +78,8 @@ add_subdirectory(${EXT_DIR}/span EXCLUDE_FROM_ALL)
 set(EXPECTED_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 add_subdirectory(${EXT_DIR}/expected EXCLUDE_FROM_ALL)
 
-# Manually add imgui
-add_library(imgui STATIC
-    ${EXT_DIR}/imgui/imgui.cpp
-    ${EXT_DIR}/imgui/imgui_draw.cpp
-    ${EXT_DIR}/imgui/imgui_widgets.cpp
-    ${EXT_DIR}/imgui/imgui_demo.cpp
-    ${EXT_DIR}/imgui/imgui_tables.cpp
-)
-# add windows, linux and mac specific files
-# use glfw as backend
-file(GLOB IMGUI_BACKEND_SOURCES
-    ${EXT_DIR}/imgui/backends/imgui_impl_glfw.*
-    ${EXT_DIR}/imgui/backends/imgui_impl_opengl3.*
-    ${EXT_DIR}/imgui/backends/imgui_impl_win32.*
-)
-target_sources(imgui 
-    PRIVATE
-        ${IMGUI_BACKEND_SOURCES}
-)
-target_include_directories(imgui
-    PUBLIC
-        ${EXT_DIR}/imgui
-        ${EXT_DIR}/imgui/backends
-)
-target_link_libraries(imgui
-    PRIVATE
-        glfw
-)
+# some manual configuration for imgui and imguizmo
+add_subdirectory(${EXT_DIR})
 
 # add subprojects
 add_subdirectory(core)

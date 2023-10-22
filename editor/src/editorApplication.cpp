@@ -7,6 +7,8 @@
 #include "include/editorConsole.h"
 #include "include/editorRenderer.h"
 
+#include <imgui_internal.h>
+
 EditorApplication::EditorApplication(Renderer& renderer, Scene& scene, std::string_view name)
 	: Application{ renderer, scene, name } 
 {
@@ -25,19 +27,21 @@ EditorApplication::EditorApplication(Renderer& renderer, Scene& scene, std::stri
         });
     }
     m_on_mouse_leave_scene_viewport_cb = [this] { on_mouse_leave_scene_viewport(); };
+    m_on_mouse_enter_scene_viewport_cb = [this] { on_mouse_enter_scene_viewport(); };
 }
 
 void EditorApplication::cursor_moved(double x, double y) {
-    if (m_control_state.cur_mouse_down == -1) {
+    auto& input_state = m_control_state.input_state;
+    if (input_state.cur_mouse_down == -1) {
         return;
     }
 
-    if (!m_control_state.first_time_motion) {
-        auto px = (x - m_control_state.prev_x) / get_window_width();
-        auto py = (y - m_control_state.prev_y) / get_window_height();
+    if (!input_state.first_time_motion) {
+        auto const px = (x - input_state.prev_x) / get_window_width();
+        auto const py = (y - input_state.prev_y) / get_window_height();
 
-        auto move_sensitivity = m_control_state.move_sensitivity;
-        auto rot_sensitivity = m_control_state.rot_sensitivity;
+        auto const move_sensitivity = m_control_state.move_sensitivity;
+        auto const rot_sensitivity = m_control_state.rot_sensitivity;
 
         if (can_move()) {
             get_cam().set_delta_dolly({
@@ -50,19 +54,17 @@ void EditorApplication::cursor_moved(double x, double y) {
         }
     }
     else {
-        m_control_state.first_time_motion = false;
+        input_state.first_time_motion = false;
     }
-    m_control_state.prev_x = x;
-    m_control_state.prev_y = y;
+    input_state.prev_x = x;
+    input_state.prev_y = y;
 }
 
 void EditorApplication::mouse_clicked(int button, int action, int mods) {
     if (action == GLFW_PRESS) {
-        m_control_state.cur_mouse_down = button;
-        m_control_state.first_time_motion = true;
+        handle_mouse_press(button);
     } else if (action == GLFW_RELEASE) {
-        m_control_state.cur_mouse_down = -1;
-        try_select_object();
+        handle_mouse_release();
     }
 }
 
@@ -75,42 +77,49 @@ void EditorApplication::mouse_scroll(double x, double y) {
 void EditorApplication::key_pressed(int key, int scancode, int action, int mods) {
     (void)scancode;
     (void)mods;
+
+    auto& input_state = m_control_state.input_state;
     if (action == GLFW_PRESS) {
-        m_control_state.cur_button_down = key;
+        input_state.cur_button_down = key;
     } else if (action == GLFW_RELEASE) {
         handle_key_release();
-        m_control_state.cur_button_down = -1;
     }
 }
 
 void EditorApplication::loop(float dt) {
+    // ImGuizmo
+    ImGuizmo::BeginFrame();
+
     // create an UI that covers the whole window, for docking
     ImGui::DockSpaceOverViewport(ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
     auto render_tex = check_error(get_renderer().render_buffered(get_cam()));
 
     // draw left panel
-    begin_imgui_window("Scene Settings");
+    begin_imgui_window("Scene Settings", ImGuiWindowFlags_NoMove);
     {
         draw_scene_panel();
     }
     end_imgui_window();
 
     // draw right panel
-    begin_imgui_window("Inspector");
+    begin_imgui_window("Inspector", ImGuiWindowFlags_NoMove);
     {
         draw_object_panel();
     }
     end_imgui_window();
     
     // draw bottom panel
-    begin_imgui_window("Console");
+    begin_imgui_window("Console", ImGuiWindowFlags_NoMove);
     {
         draw_console_panel();
     }
     end_imgui_window();
 
     // draw the scene view
-    begin_imgui_window("Scene", true, ImGuiWindowFlags_NoScrollWithMouse, m_on_mouse_leave_scene_viewport_cb);
+    begin_imgui_window("Scene", 
+        ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoMove,
+        m_on_mouse_leave_scene_viewport_cb,
+        m_on_mouse_enter_scene_viewport_cb);
     {
         draw_scene_viewport(render_tex);
     }
@@ -178,8 +187,10 @@ void EditorApplication::draw_object_panel() noexcept {
             {
                 obj.set_name(m_control_state.obj_name_buf.data());
             }
+
+            auto&& gizmo_state = m_control_state.gizmo_state;
             auto trans = obj.get_transform();
-            if (ImGui::TransformField("Transform", trans)) {
+            if (ImGui::TransformField("Transform", trans, gizmo_state.op, gizmo_state.mode, gizmo_state.snap)) {
                 obj.set_transform(trans);
             }
         } else {
@@ -192,9 +203,9 @@ void EditorApplication::draw_scene_viewport(TextureHandle render_buf) noexcept {
     if (get_renderer().valid()) {
         static auto last_size = ImVec2{ 0, 0 };
 
-        auto v_min = ImGui::GetWindowContentRegionMin();
-        auto v_max = ImGui::GetWindowContentRegionMax();
-        auto view_size = v_max - v_min;
+        auto const v_min = ImGui::GetWindowContentRegionMin();
+        auto const v_max = ImGui::GetWindowContentRegionMax();
+        auto const view_size = v_max - v_min;
 
         if (std::abs(view_size.x - last_size.x) >= 0.01f || std::abs(view_size.y - last_size.y) >= 0.01f) {
             auto conf = get_renderer().get_config();
@@ -214,7 +225,7 @@ void EditorApplication::draw_scene_viewport(TextureHandle render_buf) noexcept {
         render_buf->unbind();
 
         // draw x,y,z axis ref
-        auto axis_origin = get_cam().viewport_to_world(glm::vec2 {30, 30}, 0.0f);
+        auto const axis_origin = get_cam().viewport_to_world(glm::vec2 {30, 30}, 0.0f);
         constexpr float axis_len = 0.01f;
 
         get_debug_drawer().begin_relative(to_glm(ImGui::GetWindowPos() + v_min));
@@ -222,6 +233,28 @@ void EditorApplication::draw_scene_viewport(TextureHandle render_buf) noexcept {
         get_debug_drawer().draw_line_3d(axis_origin, axis_origin + glm::vec3{ 0, axis_len, 0 }, { 0, 1, 0 }, 2.0f, 0.0f);
         get_debug_drawer().draw_line_3d(axis_origin, axis_origin + glm::vec3{ 0, 0, axis_len }, { 0, 0, 1 }, 2.0f, 0.0f);
         get_debug_drawer().end_relative();
+
+        // draw gizmos
+        if (m_control_state.get_cur_obj()) {
+            auto const win = ImGui::GetCurrentWindow();
+            auto const& gizmo_state = m_control_state.gizmo_state;
+
+            ImGuizmo::SetDrawlist(win->DrawList);
+            ImGuizmo::SetRect(win->Pos.x, win->Pos.y, win->Size.x, win->Size.y);
+
+            auto mat = m_control_state.get_cur_obj()->get_transform().get_matrix();
+            if (ImGuizmo::Manipulate(
+                glm::value_ptr(get_cam().get_view()),
+                glm::value_ptr(get_cam().get_projection()),
+                gizmo_state.op,
+                gizmo_state.mode,
+                glm::value_ptr(mat),
+                nullptr,
+                gizmo_state.snap ? glm::value_ptr(gizmo_state.snap_scale) : nullptr
+            )) {
+                m_control_state.get_cur_obj()->set_transform(Transform{ mat });
+            }
+        }
     } else {
         ImGui::Text("Renderer not found");
     }
@@ -236,27 +269,30 @@ void EditorApplication::draw_console_panel() noexcept {
 }
 
 bool EditorApplication::can_rotate() const noexcept {
-    return m_control_state.cur_mouse_down == GLFW_MOUSE_BUTTON_RIGHT;
+    return
+        !ImGuizmo::IsUsing() &&
+        m_control_state.input_state.cur_mouse_down == GLFW_MOUSE_BUTTON_RIGHT;
 }
 
 bool EditorApplication::can_move() const noexcept {
-    return m_control_state.cur_mouse_down == GLFW_MOUSE_BUTTON_LEFT;
+    return
+        !ImGuizmo::IsUsing() &&
+        m_control_state.input_state.cur_mouse_down == GLFW_MOUSE_BUTTON_LEFT;
 }
 
 void EditorApplication::on_mouse_leave_scene_viewport() noexcept {
-    m_control_state.cur_mouse_down = -1;
-    m_control_state.cur_button_down = -1;
-    m_control_state.first_time_motion = true;
+    m_control_state.is_outside_view = true;
 }
 
-void EditorApplication::on_obj_change(Object* obj) noexcept { }
+void EditorApplication::on_mouse_enter_scene_viewport() noexcept {
+    m_control_state.is_outside_view = false;
+}
+
+void EditorApplication::on_obj_change(Object* obj) noexcept {}
 
 void EditorApplication::try_select_object() noexcept {
-    if (get_cur_hovered_widget() != "Scene") {
-        return;
-    }
     auto pos = ImGui::GetMousePos();
-    auto win_pos = get_window_content_pos("Scene");
+    auto const win_pos = get_window_content_pos("Scene");
     if (!win_pos) {
         std::cerr << "Scene view not found" << std::endl;
         return;
@@ -264,19 +300,59 @@ void EditorApplication::try_select_object() noexcept {
 
     // convert to viewport space
     pos = pos - win_pos.value();
-    auto ray = get_cam().viewport_to_ray(to_glm(pos));
-    auto res = get_scene().ray_cast(ray);
+    auto const ray = get_cam().viewport_to_ray(to_glm(pos));
+    auto const res = get_scene().ray_cast(ray);
     m_control_state.set_cur_obj(res);
 
     // m_console.log("Selected object: ", res ? res->get_name() : "None");
 }
 
 void EditorApplication::handle_key_release() noexcept {
-    if (m_control_state.cur_button_down == GLFW_KEY_DELETE) {
-        if (m_control_state.get_cur_obj()) {
-            remove_object(m_control_state.get_cur_obj());
-        }
+    auto& gizmo_state = m_control_state.gizmo_state;
+    auto& input_state = m_control_state.input_state;
+    if (!m_control_state.get_cur_obj() || ImGuizmo::IsUsing()) {
+        input_state.cur_button_down = -1;
+        return;
     }
+    switch(input_state.cur_button_down) {
+    case GLFW_KEY_DELETE:
+        remove_object(m_control_state.get_cur_obj());
+        break;
+    case GLFW_KEY_W:
+        gizmo_state.op = ImGuizmo::TRANSLATE;
+        break;
+    case GLFW_KEY_E:
+        gizmo_state.op = ImGuizmo::ROTATE;
+        break;
+    case GLFW_KEY_R:
+        gizmo_state.op = ImGuizmo::SCALE;
+        break;
+    case GLFW_KEY_X:
+        gizmo_state.snap = !gizmo_state.snap;
+        break;
+    default:
+        break;
+    }
+
+    input_state.cur_button_down = -1;
+}
+
+void EditorApplication::handle_mouse_press(int button) noexcept {
+    auto& input_state = m_control_state.input_state;
+    if (!m_control_state.is_outside_view) {
+        // only initiate mouse input in the scene view window
+        input_state.mouse_down_time = glfwGetTime();
+        input_state.cur_mouse_down = button;
+        input_state.first_time_motion = true;
+    }
+}
+
+void EditorApplication::handle_mouse_release() noexcept {
+    auto& input_state = m_control_state.input_state;
+    if (!m_control_state.is_outside_view && (glfwGetTime() - input_state.mouse_down_time) <= k_object_select_mouse_time) {
+        try_select_object();
+    }
+    input_state = {};
 }
 
 void EditorApplication::add_object(Object const& obj) noexcept {
@@ -295,6 +371,12 @@ void EditorApplication::ControlState::set_cur_obj(ObjectHandle obj) noexcept {
     if (obj == m_cur_obj) {
         return;
     }
+
+    if (ImGuizmo::IsUsing()) {
+        // let gizmos finish
+    	return;
+    }
+
     m_cur_obj = obj;
     for (auto&& callback : m_obj_change_callbacks) {
         callback(obj);

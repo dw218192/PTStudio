@@ -11,7 +11,7 @@ constexpr auto k_outline_scale = 1.02f;
 constexpr auto k_outline_color = glm::vec3{ 1, 0, 0 };
 
 EditorRenderer::EditorRenderer(RenderConfig const& config) noexcept
-	: Renderer{config} {}
+	: Renderer{config} { }
 
 EditorRenderer::~EditorRenderer() noexcept { }
 
@@ -308,7 +308,6 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
 
         return {};
     };
-
 
     if (!valid()) {
         return TL_ERROR( "invalid EditorRenderer");

@@ -1,16 +1,19 @@
 #pragma once
 
+#include <imgui.h>
+#include <ImGuizmo.h>
 #include <array>
 
 #include "scene.h"
 #include "application.h"
 #include "editorConsole.h"
 
-constexpr float k_init_move_sensitivity = 20.0;
+constexpr float k_init_move_sensitivity = 5.0;
 constexpr float k_init_rot_sensitivity = 60.0;
+constexpr float k_object_select_mouse_time = 1.0f;
 
 struct EditorApplication : Application {
-    EditorApplication(Renderer& config, Scene& scene, std::string_view name);
+    EditorApplication(Renderer& renderer, Scene& scene, std::string_view name);
 
     void cursor_moved(double x, double y) override;
     void mouse_clicked(int button, int action, int mods) override;
@@ -32,15 +35,20 @@ private:
 
     // events
     void on_mouse_leave_scene_viewport() noexcept;
+    void on_mouse_enter_scene_viewport() noexcept;
     void on_obj_change(Object* obj) noexcept;
 
     // other helpers
     void try_select_object() noexcept;
     void handle_key_release() noexcept;
+    void handle_mouse_press(int button) noexcept;
+    void handle_mouse_release() noexcept;
     void add_object(Object const& obj) noexcept;
     void remove_object(ObjectHandle obj) noexcept;
 
     std::function<void()> m_on_mouse_leave_scene_viewport_cb;
+    std::function<void()> m_on_mouse_enter_scene_viewport_cb;
+
     EditorConsole<5> m_console;
     
     struct ControlState {
@@ -54,10 +62,22 @@ private:
         float rot_sensitivity = k_init_rot_sensitivity;
         std::array<char, 1024> obj_name_buf {};
 
-        bool first_time_motion = true;
-        int cur_mouse_down = -1;
-        int cur_button_down = -1;
-        double prev_x = 0, prev_y = 0;
+        bool is_outside_view{ false };
+
+        struct InputState {
+            bool first_time_motion{ true };
+            int cur_mouse_down{ -1 };
+            int cur_button_down{ -1 };
+            double mouse_down_time { glfwGetTime() };
+            double prev_x{ 0 }, prev_y{ 0 };
+        } input_state { };
+
+        struct GizmoState {
+            ImGuizmo::OPERATION op{ ImGuizmo::OPERATION::TRANSLATE };
+            ImGuizmo::MODE mode{ ImGuizmo::MODE::WORLD };
+            bool snap{ false };
+            glm::vec3 snap_scale{ 1.0 };
+        } gizmo_state{ };
     private:
         ObjectHandle m_cur_obj = nullptr;
         std::vector<ObjChangeCallback> m_obj_change_callbacks;

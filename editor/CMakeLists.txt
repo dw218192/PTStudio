@@ -23,6 +23,7 @@ target_link_libraries(${exec_name}
 	tinyobjloader
 	stb
 	imgui
+	imguizmo
 	expected
 	span
 	nativefiledialog

@@ -15,7 +15,7 @@ struct Transform {
     Transform(glm::vec3 const& pos, glm::vec3 const& rot, glm::vec3 const& scale = glm::vec3(1,1,1)) noexcept;
     Transform(glm::mat4 const& matrix) noexcept;
     
-    static auto look_at(glm::vec3 const& pos, glm::vec3 const& target, glm::vec3 const& up) noexcept -> Transform;
+    NODISCARD static auto look_at(glm::vec3 const& pos, glm::vec3 const& target, glm::vec3 const& up) noexcept -> Transform;
 
     NODISCARD auto inverse() const noexcept -> Transform;
     NODISCARD auto get_position() const noexcept -> glm::vec3 const& { return m_pos; }
@@ -27,12 +27,12 @@ struct Transform {
     void set_position(TransformSpace space, glm::vec3 const& pos) noexcept;
     void set_scale(TransformSpace space, glm::vec3 const& scale) noexcept;
 
-    auto local_to_world_pos(glm::vec3 local) const noexcept -> glm::vec3;
-    auto world_to_local_pos(glm::vec3 world) const noexcept -> glm::vec3;
-    auto local_to_world_dir(glm::vec3 local) const noexcept -> glm::vec3;
-    auto world_to_local_dir(glm::vec3 world) const noexcept -> glm::vec3;
-    auto local_to_world_len(float len) const noexcept -> float;
-    auto world_to_local_len(float len) const noexcept -> float;
+    NODISCARD auto local_to_world_pos(glm::vec3 local) const noexcept -> glm::vec3;
+    NODISCARD auto world_to_local_pos(glm::vec3 world) const noexcept -> glm::vec3;
+    NODISCARD auto local_to_world_dir(glm::vec3 local) const noexcept -> glm::vec3;
+    NODISCARD auto world_to_local_dir(glm::vec3 world) const noexcept -> glm::vec3;
+    NODISCARD auto local_to_world_len(float len) const noexcept -> float;
+    NODISCARD auto world_to_local_len(float len) const noexcept -> float;
 
 private:
     void on_trans_matrix_update() noexcept;

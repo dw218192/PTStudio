@@ -152,9 +152,17 @@ void Application::run() {
             // process hover change events
             if (m_prev_hovered_widget != m_cur_hovered_widget) {
                 if (m_prev_hovered_widget != k_no_hovered_widget) {
+
+                    // call on_leave_region on the previous widget
                     auto it = m_imgui_window_info.find(m_prev_hovered_widget);
-                    if (it != m_imgui_window_info.end() && it->second.on_leave_region) {
+                    if (it != m_imgui_window_info.end() && it->second.on_leave_region.has_value()) {
                         it->second.on_leave_region.value()();
+                    }
+
+                    // call on_enter_region on the current widget
+                    it = m_imgui_window_info.find(m_cur_hovered_widget);
+                    if (it != m_imgui_window_info.end() && it->second.on_enter_region.has_value()) {
+                        it->second.on_enter_region.value()();
                     }
                 }
             }
@@ -180,9 +188,9 @@ auto Application::get_window_width() const noexcept->int {
 
 void Application::begin_imgui_window(
     std::string_view name, 
-    bool recv_mouse_event,
     ImGuiWindowFlags flags,
-    std::optional<std::function<void()>> const& on_leave_region
+    std::optional<std::function<void()>> const& on_leave_region,
+    std::optional<std::function<void()>> const& on_enter_region
 ) noexcept {
     // NOTE: here we assume that recv_mouse_event will not change
     // in the lifetime of the application
@@ -192,14 +200,16 @@ void Application::begin_imgui_window(
 
     if (!m_imgui_window_info.count(name)) {
         m_imgui_window_info[name] = ImGuiWindowInfo {
-            recv_mouse_event,
-            on_leave_region
+            on_leave_region,
+            on_enter_region
         };
     }
 
     ImGui::Begin(name.data(), nullptr, flags);
     if (ImGui::IsWindowHovered()) {
-        m_cur_hovered_widget = name;
+        if (ImGui::GetMousePos() >= ImGui::GetWindowPos() && ImGui::GetMousePos() <= ImGui::GetWindowPos() + ImGui::GetWindowSize()) {
+            m_cur_hovered_widget = name;
+        }
     }
 
     // disable alt key for imgui
@@ -220,7 +230,7 @@ auto Application::get_window_content_pos(std::string_view name) const noexcept -
 
 bool Application::mouse_over_any_event_region() const noexcept {
     auto it = m_imgui_window_info.find(m_cur_hovered_widget);
-    auto ret = it != m_imgui_window_info.end() && it->second.can_recv_mouse_event;
+    auto ret = it != m_imgui_window_info.end();
     return ret;
 }
 

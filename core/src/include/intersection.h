@@ -3,6 +3,7 @@
 #include <glm/glm.hpp>
 #include "ray.h"
 #include "boundingBox.h"
+#include "tcb/span.hpp"
 
 namespace Intersection {
     struct Result {
@@ -15,4 +16,6 @@ namespace Intersection {
     };
 
     auto ray_box(BoundingBox const& box, Ray const& r) -> Result;
+    auto ray_triangle(tcb::span<glm::vec3 const, 3> triangle, Ray const& r) -> Result;
+
 }

@@ -26,4 +26,4 @@
 	url = https://github.com/tcbrindle/span.git
 [submodule "ext/ImGuizmo"]
 	path = ext/ImGuizmo
-	url = https://github.com/aniongithub/ImGuizmo.git
+	url = https://github.com/CedricGuillemet/ImGuizmo.git

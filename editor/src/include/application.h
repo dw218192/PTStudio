@@ -126,9 +126,9 @@ protected:
     // imgui helpers
     void begin_imgui_window(
         std::string_view name, 
-        bool recv_mouse_event = false,
         ImGuiWindowFlags flags = 0,
-        std::optional<std::function<void()>> const& on_leave_region = std::nullopt
+        std::optional<std::function<void()>> const& on_leave_region = std::nullopt,
+        std::optional<std::function<void()>> const& on_enter_region = std::nullopt
     ) noexcept;
 
     void end_imgui_window() noexcept;
@@ -142,10 +142,9 @@ private:
     Camera m_cam;
     DebugDrawer m_debug_drawer;
 
-    // these are used to check if the mouse is over any mouse event region
+    // used to help detect if the mouse enters/leaves certain imgui windows
     struct ImGuiWindowInfo {
-        bool can_recv_mouse_event;
-        std::optional<std::function<void()>> on_leave_region;
+        std::optional<std::function<void()>> on_leave_region, on_enter_region;
     };
     std::unordered_map<std::string_view, ImGuiWindowInfo> m_imgui_window_info;
     std::string_view m_cur_hovered_widget, m_prev_hovered_widget;
