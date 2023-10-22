@@ -31,18 +31,25 @@ private:
 
     GLFrameBufferRef m_render_buf;
 
+    // outline drawing states
     struct {
         GLFrameBufferRef render_buf{ nullptr };
         std::array<ShaderProgramRef, std::size(vs_outline_passes)> shaders{};
         GLVertexArrayRef quad_render_data{ nullptr };
     } m_outline;
 
+    // grid drawing states
     GLVertexArrayRef m_grid_render_data;
+    ShaderProgramRef m_grid_shader;
+
+    // extra object data
+    struct ObjectData {
+        ShaderProgramRef shader;
+    };
     std::unordered_map<ConstObjectHandle, GLVertexArrayRef> m_render_data;
 
 	ConstObjectHandle m_cur_outline_obj{ nullptr };
     bool m_valid{ false };
 
     ShaderProgramRef m_editor_shader;
-    ShaderProgramRef m_grid_shader;
 };
