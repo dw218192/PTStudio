@@ -10,7 +10,7 @@
 
 struct GLFrameBuffer;
 
-using GLFrameBufferRef = GLResRef<GLFrameBuffer>;
+using GLFrameBufferRef = UniqueGLResRef<GLFrameBuffer>;
 
 struct AttachmentDesc {
 	GLenum attachment;

@@ -25,7 +25,8 @@ struct EditorRenderer : Renderer {
     [[nodiscard]] auto on_remove_object(ConstObjectHandle obj) noexcept -> tl::expected<void, std::string> override;
     void on_object_change(ConstObjectHandle obj) noexcept;
 private:
-    [[nodiscard]] auto on_add_object_internal(GLVertexArrayRef& data, ConstObjectHandle obj) noexcept -> tl::expected<void, std::string>;
+    struct PerObjectData;
+    [[nodiscard]] auto on_add_object_internal(PerObjectData& data, ConstObjectHandle obj) noexcept -> tl::expected<void, std::string>;
     [[nodiscard]] auto render_internal(Camera const& cam, GLuint fbo) noexcept -> tl::expected<void, std::string>;
     void clear_render_data();
 
@@ -42,14 +43,16 @@ private:
     GLVertexArrayRef m_grid_render_data;
     ShaderProgramRef m_grid_shader;
 
+    // default shader
+    ShaderProgramRef m_default_shader;
+
     // extra object data
-    struct ObjectData {
-        ShaderProgramRef shader;
+    struct PerObjectData {
+        ShaderProgramRef shader{ nullptr };
+        GLVertexArrayRef render_data{ nullptr };
     };
-    std::unordered_map<ConstObjectHandle, GLVertexArrayRef> m_render_data;
+    std::unordered_map<ConstObjectHandle, PerObjectData> m_render_data;
 
 	ConstObjectHandle m_cur_outline_obj{ nullptr };
     bool m_valid{ false };
-
-    ShaderProgramRef m_editor_shader;
 };

@@ -5,7 +5,7 @@
 
 struct GLTexture;
 
-using GLTextureRef = GLResRef<GLTexture>;
+using GLTextureRef = UniqueGLResRef<GLTexture>;
 
 struct GLTexture final : Texture, GLResource {
     [[nodiscard]] static auto create(unsigned width, unsigned height, GLenum format, std::initializer_list<GLParam> params = {

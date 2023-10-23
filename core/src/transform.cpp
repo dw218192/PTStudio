@@ -4,36 +4,38 @@
 #include <glm/gtx/euler_angles.hpp>
 #include <glm/gtx/transform.hpp>
 
-static void decompose(glm::mat4 const& mat, glm::vec3& ppos, glm::vec3& prot, glm::vec3& pscale) {
-    ppos = glm::column(mat, 3);
-    glm::vec3 r1 = glm::row(mat, 0),
-        r2 = glm::row(mat, 1),
-        r3 = glm::row(mat, 2);
+namespace {
+    void decompose(glm::mat4 const& mat, glm::vec3& ppos, glm::vec3& prot, glm::vec3& pscale) {
+        ppos = glm::column(mat, 3);
+        glm::vec3 r1 = glm::row(mat, 0),
+            r2 = glm::row(mat, 1),
+            r3 = glm::row(mat, 2);
 
-    glm::vec3 const scale = glm::vec3{
-        glm::length(r1),
-        glm::length(r2),
-        glm::length(r3)
-    };
-    assert(glm::length(r1) > 0.0 && glm::length(r2) > 0.0 && glm::length(r3) > 0.0);
+        glm::vec3 const scale = glm::vec3{
+            glm::length(r1),
+            glm::length(r2),
+            glm::length(r3)
+        };
+        assert(glm::length(r1) > 0.0 && glm::length(r2) > 0.0 && glm::length(r3) > 0.0);
 
-    pscale = scale;
-    r1 /= scale.x;
-    r2 /= scale.y;
-    r3 /= scale.z;
+        pscale = scale;
+        r1 /= scale.x;
+        r2 /= scale.y;
+        r3 /= scale.z;
 
-    prot = glm::vec3{
-        glm::degrees(atan2(r3.y, r3.z)),
-        glm::degrees(atan2(-r3.x, sqrt(r3.y * r3.y + r3.z * r3.z))),
-        glm::degrees(atan2(r2.x, r1.x))
-    };
-}
+        prot = glm::vec3{
+            glm::degrees(atan2(r3.y, r3.z)),
+            glm::degrees(atan2(-r3.x, sqrt(r3.y * r3.y + r3.z * r3.z))),
+            glm::degrees(atan2(r2.x, r1.x))
+        };
+    }
 
-static glm::mat4 compose(glm::vec3 const& pos, glm::vec3 const& rot, glm::vec3 const& scale) {
-    glm::mat4 const t = glm::translate(pos);
-    glm::mat4 const r = glm::eulerAngleXYZ(glm::radians(rot.x), glm::radians(rot.y), glm::radians(rot.z));
-    glm::mat4 const s = glm::scale(scale);
-    return t * r * s;
+    glm::mat4 compose(glm::vec3 const& pos, glm::vec3 const& rot, glm::vec3 const& scale) {
+        glm::mat4 const t = glm::translate(pos);
+        glm::mat4 const r = glm::eulerAngleXYZ(glm::radians(rot.x), glm::radians(rot.y), glm::radians(rot.z));
+        glm::mat4 const s = glm::scale(scale);
+        return t * r * s;
+    }
 }
 
 Transform::Transform() noexcept 

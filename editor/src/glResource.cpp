@@ -9,6 +9,9 @@ GLResource& GLResource::operator=(GLResource&& other) noexcept {
     return *this;
 }
 
+GLResource::GLResource(GLResource& other) noexcept {
+}
+
 void GLResource::swap(GLResource&& other) noexcept {
     m_handle = other.m_handle;
     other.m_handle = 0;

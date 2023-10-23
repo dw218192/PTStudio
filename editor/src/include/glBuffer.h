@@ -8,7 +8,7 @@
 #include "utils.h"
 
 struct GLBuffer;
-using GLBufferRef = GLResRef<GLBuffer>;
+using GLBufferRef = UniqueGLResRef<GLBuffer>;
 
 struct GLBuffer final : GLResource {
 	static auto create(GLenum target)-> tl::expected<GLBufferRef, std::string>;

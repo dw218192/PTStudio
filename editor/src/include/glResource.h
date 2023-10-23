@@ -10,7 +10,10 @@ struct GLParam {
 };
 
 template<typename T>
-using GLResRef = std::unique_ptr<T, GLResourceDeleter>;
+using UniqueGLResRef = std::unique_ptr<T, GLResourceDeleter>;
+
+template<typename T>
+using GLResRef = std::shared_ptr<T>;
 
 struct GLResource {
     friend struct GLResourceDeleter;
@@ -19,11 +22,9 @@ struct GLResource {
     [[nodiscard]] auto handle() const noexcept -> GLuint { return m_handle; }
 
     GLResource(GLResource&& other) noexcept;
-    GLResource(GLResource const&) = delete;
-
     GLResource& operator=(GLResource&& other) noexcept;
-    GLResource& operator=(GLResource const&) = delete;
-
+    GLResource(GLResource& other) noexcept;
+    GLResource& operator=(GLResource const& other) noexcept;
 protected:
     void swap(GLResource&& other) noexcept;
     GLResource(GLuint handle) noexcept { m_handle = handle; }

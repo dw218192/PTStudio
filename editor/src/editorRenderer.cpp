@@ -56,10 +56,16 @@ auto EditorRenderer::init() noexcept -> tl::expected<void, std::string> {
     MainFrameBuffer::set(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
 
 	// set up shaders
-    TL_ASSIGN(m_editor_shader, ShaderProgram::from_srcs(vs_obj_src, ps_obj_src));
+    TL_ASSIGN(m_default_shader, ShaderProgram::from_srcs(vs_obj_src, ps_obj_src));
     TL_ASSIGN(m_grid_shader, ShaderProgram::from_srcs(vs_grid_src, ps_grid_src));
     TL_CHECK_FWD(create_grid(k_grid_dim, k_grid_spacing));
 
+
+    if (!m_grid_shader->valid()) {
+        return TL_ERROR("invalid grid shader");
+    } else if (!m_default_shader->valid()) {
+        return TL_ERROR("invalid editor shader");
+    }
     m_valid = true;
     return {};
 }
@@ -167,24 +173,34 @@ void EditorRenderer::on_object_change(ConstObjectHandle obj) noexcept {
     m_cur_outline_obj = obj;
 }
 
-auto EditorRenderer::on_add_object_internal(GLVertexArrayRef& data, ConstObjectHandle obj) noexcept -> tl::expected<void, std::string> {
-    TL_ASSIGN(data, GLVertexArray::create(obj->get_vertices().size()));
-    TL_CHECK_FWD(data->bind());
+auto EditorRenderer::on_add_object_internal(PerObjectData& data, ConstObjectHandle obj) noexcept -> tl::expected<void, std::string> {
+    TL_ASSIGN(data.shader, ShaderProgram::clone(m_default_shader.get()));
+	TL_ASSIGN(data.render_data, GLVertexArray::create(obj->get_vertices().size()));
+
+    TL_CHECK_FWD(data.render_data->bind());
     {
-        TL_CHECK_FWD(data->connect(obj->get_vertices(),
+        TL_CHECK_FWD(data.render_data->connect(obj->get_vertices(),
             GLAttributeInfo<glm::vec3> { 0, sizeof(Vertex), offsetof(Vertex, position) },
             GLAttributeInfo<glm::vec3> { 1, sizeof(Vertex), offsetof(Vertex, normal) },
             GLAttributeInfo<glm::vec3> { 2, sizeof(Vertex), offsetof(Vertex, uv) }
         ));
     }
-    data->unbind();
+    data.render_data->unbind();
 
     return {};
 
 }
 
 auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> tl::expected<void, std::string> {
-    auto draw_outline = [this, cam, fbo](ConstObjectHandle obj)-> tl::expected<void, std::string> {
+    auto get_obj_data = [this](ConstObjectHandle obj)->tl::expected<PerObjectData*, std::string> {
+        auto const it = m_render_data.find(obj);
+        if (it == m_render_data.end()) {
+            return  TL_ERROR("obj not found in render data");
+        }
+        return &it->second;
+    };
+
+    auto draw_outline = [this, cam, fbo, &get_obj_data](ConstObjectHandle obj)-> tl::expected<void, std::string> {
         if (!m_outline.render_buf) {
             // initialize outline states
 
@@ -264,7 +280,9 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
                 TL_CHECK_FWD(m_outline.shaders[0]->set_uniform(k_uniform_projection, cam.get_projection()));
                 TL_CHECK_FWD(m_outline.shaders[0]->set_uniform(k_uniform_model, obj->get_transform().get_matrix()));
 
-                auto&& vao = m_render_data.at(obj);
+            	PerObjectData* data;
+                TL_ASSIGN(data, get_obj_data(obj));
+                auto&& vao = data->render_data;
                 TL_CHECK_FWD(vao->bind());
                 TL_CHECK_FWD(vao->draw_array(GL_TRIANGLES));
             }
@@ -311,10 +329,6 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
 
     if (!valid()) {
         return TL_ERROR( "invalid EditorRenderer");
-    } else if (!m_grid_shader->valid()) {
-        return TL_ERROR("invalid grid shader");
-    } else if (!m_editor_shader->valid()) {
-        return TL_ERROR("invalid editor shader");
     }
 
     auto&& scene = Application::get_scene();
@@ -329,26 +343,27 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
     glViewport(0, 0, static_cast<GLsizei>(get_config().width), static_cast<GLsizei>(get_config().height));
 
     // render objects
-    TL_CHECK_FWD(m_editor_shader->bind());
-    {
-        TL_CHECK_FWD(m_editor_shader->set_uniform(k_uniform_light_pos, scene.get_good_light_pos()));
-        TL_CHECK_FWD(m_editor_shader->set_uniform(k_uniform_view, cam.get_view()));
-        TL_CHECK_FWD(m_editor_shader->set_uniform(k_uniform_projection, cam.get_projection()));
+    for (auto [it, i] = std::tuple{ scene.begin(), 0 }; it != scene.end(); ++it) {
+        auto obj = *it;
+        PerObjectData* data;
+        TL_ASSIGN(data, get_obj_data(obj));
 
-        for (auto obj : scene) {
-            TL_CHECK_FWD(m_editor_shader->set_uniform(k_uniform_model, obj->get_transform().get_matrix()));
-            auto const it = m_render_data.find(obj);
-            if (it == m_render_data.end()) {
-                return  TL_ERROR("obj not found in render data");
-            }
-            auto&& vao = it->second;
-            TL_CHECK_FWD(vao->bind());
-            TL_CHECK_FWD(vao->draw_array(GL_TRIANGLES));
+        auto&& shader = data->shader;
+        auto&& vao = data->render_data;
+
+        TL_CHECK_FWD(shader->bind());
+        TL_CHECK_FWD(shader->set_uniform(k_uniform_light_pos, scene.get_good_light_pos()));
+        TL_CHECK_FWD(shader->set_uniform(k_uniform_view, cam.get_view()));
+        TL_CHECK_FWD(shader->set_uniform(k_uniform_projection, cam.get_projection()));
+        TL_CHECK_FWD(shader->set_uniform(k_uniform_model, obj->get_transform().get_matrix()));
+
+        TL_CHECK_FWD(vao->bind());
+        TL_CHECK_FWD(vao->draw_array(GL_TRIANGLES));
+
+        if (i == scene.size() - 1) {
+            shader->unbind();
         }
     }
-    m_editor_shader->unbind();
-
-
 
 	// render grid
     glEnable(GL_BLEND);

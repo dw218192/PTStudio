@@ -4,7 +4,7 @@
 #include <tl/expected.hpp>
 
 struct GLRenderBuffer;
-using GLRenderBufferRef = GLResRef<GLRenderBuffer>;
+using GLRenderBufferRef = UniqueGLResRef<GLRenderBuffer>;
 
 struct GLRenderBuffer final : GLResource {
 	[[nodiscard]] static auto create(unsigned width, unsigned height, GLenum format) -> tl::expected<GLRenderBufferRef, std::string>;
