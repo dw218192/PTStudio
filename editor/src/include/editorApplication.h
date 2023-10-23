@@ -3,31 +3,48 @@
 #include <imgui.h>
 #include <ImGuizmo.h>
 #include <array>
+#include <iostream>
 
+#include "editorRenderer.h"
 #include "scene.h"
-#include "application.h"
-#include "editorConsole.h"
+
+#include "glfwApplication.h"
+#include "glTexture.h"
+#include "singleton.h"
 
 constexpr float k_init_move_sensitivity = 5.0;
 constexpr float k_init_rot_sensitivity = 60.0;
 constexpr float k_object_select_mouse_time = 1.0f;
 
-struct EditorApplication : Application {
-    EditorApplication(Renderer& renderer, Scene& scene, std::string_view name);
-
+struct EditorApplication final : GLFWApplication, Singleton<EditorApplication> {
+friend Singleton;
     void cursor_moved(double x, double y) override;
     void mouse_clicked(int button, int action, int mods) override;
     void mouse_scroll(double x, double y) override;
     void key_pressed(int key, int scancode, int action, int mods) override;
 
     void loop(float dt) override;
+    void quit(int code) override;
+    /**
+	 * \brief Checks a result returned from some function. Prints the error and Terminates the program on error.
+	 * \tparam T Type of the real return value
+	 * \tparam E Type of the error return value
+	 * \param res the result
+	 * \return The real return value if no error
+	 */
+    template<typename T, typename E>
+    static constexpr decltype(auto) check_error(tl::expected<T, E> const& res);
+    template<typename T, typename E>
+    static constexpr decltype(auto) check_error(tl::expected<T, E>&& res);
 
 private:
+    EditorApplication(Renderer& renderer, Scene& scene, std::string_view name);
+
     // imgui rendering
     void draw_scene_panel() noexcept;
     void draw_object_panel() noexcept;
     void draw_scene_viewport(TextureHandle render_buf) noexcept;
-    void draw_console_panel() noexcept;
+    void draw_console_panel() const noexcept;
 
     // control conditions
     bool can_rotate() const noexcept;
@@ -44,17 +61,24 @@ private:
     void handle_mouse_press(int button) noexcept;
     void handle_mouse_release() noexcept;
     void add_object(Object const& obj) noexcept;
-    void remove_object(ObjectHandle obj) noexcept;
+    void remove_object(ObserverPtr<Object> obj) noexcept;
+
+private:
+    void print(std::string_view msg) override;
+
+    std::string m_console_text;
 
     std::function<void()> m_on_mouse_leave_scene_viewport_cb;
     std::function<void()> m_on_mouse_enter_scene_viewport_cb;
-
-    EditorConsole<5> m_console;
     
-    struct ControlState {
-        using ObjChangeCallback = std::function<void(ObjectHandle)>;
+    Scene& m_scene;
+    Renderer& m_renderer;
+    Camera m_cam;
 
-        void set_cur_obj(ObjectHandle obj) noexcept;
+    struct ControlState {
+        using ObjChangeCallback = std::function<void(ObserverPtr<Object>)>;
+
+        void set_cur_obj(ObserverPtr<Object> obj) noexcept;
         auto get_cur_obj() const noexcept { return m_cur_obj; }
         void register_on_obj_change(ObjChangeCallback callback) noexcept;
 
@@ -79,8 +103,28 @@ private:
             glm::vec3 snap_scale{ 1.0 };
         } gizmo_state{ };
     private:
-        ObjectHandle m_cur_obj = nullptr;
+        ObserverPtr<Object> m_cur_obj = nullptr;
         std::vector<ObjChangeCallback> m_obj_change_callbacks;
     } m_control_state;
 };
 
+template <typename T, typename E>
+constexpr decltype(auto) EditorApplication::check_error(tl::expected<T, E> const& res) {
+    if(!res) {
+        std::cerr << res.error() << std::endl;
+        EditorApplication::get().quit(-1);
+    }
+    if constexpr (!std::is_void_v<T>) {
+        return res.value();
+    }
+}
+template <typename T, typename E>
+constexpr decltype(auto) EditorApplication::check_error(tl::expected<T, E>&& res) {
+    if (!res) {
+        std::cerr << res.error() << std::endl;
+        EditorApplication::get().quit(-1);
+    }
+	if constexpr (!std::is_void_v<T>) {
+        return std::move(res).value();
+    }
+}

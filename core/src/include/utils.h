@@ -58,3 +58,11 @@ constexpr T div_up(T x, T y) {
 	if (!res) return res; \
 	out = std::move(res.value());\
 } while (0)
+
+// useful typedefs
+// non-owning ptr
+template<typename T> using ObserverPtr = T*;
+// non-owning ptr to a const, essentially a view
+template<typename T> using ViewPtr = T const*;
+// non-owing view
+template<typename T> using View = T const&;

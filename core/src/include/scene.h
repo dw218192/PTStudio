@@ -10,11 +10,7 @@
 #include "boundingBox.h"
 #include "utils.h"
 
-using ObjectHandle = Object*;
-using ConstObjectHandle = Object const*;
-
 struct Scene {
-
     template<typename T>
     struct Iterator {
         static_assert(!std::is_same_v<typename std::iterator_traits<T>::iterator_category, void>,
@@ -73,7 +69,7 @@ struct Scene {
 	NODISCARD auto get_good_cam_start() const noexcept -> LookAtParams;
     NODISCARD auto get_good_light_pos() const noexcept -> glm::vec3;
 
-    NODISCARD auto ray_cast(Ray const& ray, float t_min = 0.0f, float t_max = 1e5f) noexcept -> ObjectHandle;
+    NODISCARD auto ray_cast(Ray const& ray, float t_min = 0.0f, float t_max = 1e5f) noexcept -> ObserverPtr<Object>;
 
     NODISCARD auto begin() const noexcept { return Iterator{ m_objects.begin() }; }
     NODISCARD auto end() const noexcept { return Iterator{ m_objects.end() }; }
@@ -82,8 +78,8 @@ struct Scene {
 
     NODISCARD auto size() const noexcept { return m_objects.size(); }
 
-    auto add_object(Object obj) noexcept -> ObjectHandle;
-    void remove_object(ObjectHandle obj) noexcept;
+    auto add_object(Object obj) noexcept -> ObserverPtr<Object>;
+    void remove_object(ObserverPtr<Object> obj) noexcept;
     
     NODISCARD auto next_obj_name() const noexcept -> std::string {
         static int counter = 0;

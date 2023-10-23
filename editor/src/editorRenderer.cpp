@@ -1,5 +1,4 @@
 #include "include/editorRenderer.h"
-#include "include/application.h"
 
 #include <cassert>
 #include <algorithm>
@@ -72,6 +71,7 @@ auto EditorRenderer::init() noexcept -> tl::expected<void, std::string> {
 
 auto EditorRenderer::open_scene(Scene const& scene) noexcept -> tl::expected<void, std::string> {
     m_cur_outline_obj = nullptr;
+    m_scene = &scene;
     clear_render_data();
 
     CHECK_GL_ERROR();
@@ -148,7 +148,7 @@ auto EditorRenderer::on_change_render_config(RenderConfig const& config) noexcep
     return {};
 }
 
-auto EditorRenderer::on_add_object(ConstObjectHandle obj) noexcept -> tl::expected<void, std::string> {
+auto EditorRenderer::on_add_object(ViewPtr<Object> obj) noexcept -> tl::expected<void, std::string> {
     if (!obj) {
         return {};
     } else if (m_render_data.count(obj)) {
@@ -159,7 +159,7 @@ auto EditorRenderer::on_add_object(ConstObjectHandle obj) noexcept -> tl::expect
     return {};
 }
 
-auto EditorRenderer::on_remove_object(ConstObjectHandle obj) noexcept -> tl::expected<void, std::string> {
+auto EditorRenderer::on_remove_object(ViewPtr<Object> obj) noexcept -> tl::expected<void, std::string> {
     auto const it = m_render_data.find(obj);
     if(it == m_render_data.end()) {
         return TL_ERROR("on_remove_object: obj not found");
@@ -169,11 +169,16 @@ auto EditorRenderer::on_remove_object(ConstObjectHandle obj) noexcept -> tl::exp
     return {};
 }
 
-void EditorRenderer::on_object_change(ConstObjectHandle obj) noexcept {
+auto EditorRenderer::draw_imgui() noexcept -> tl::expected<void, std::string> {
+    TL_CHECK_FWD(Renderer::draw_imgui());
+
+}
+
+void EditorRenderer::on_object_change(ViewPtr<Object> obj) noexcept {
     m_cur_outline_obj = obj;
 }
 
-auto EditorRenderer::on_add_object_internal(PerObjectData& data, ConstObjectHandle obj) noexcept -> tl::expected<void, std::string> {
+auto EditorRenderer::on_add_object_internal(PerObjectData& data, ViewPtr<Object> obj) noexcept -> tl::expected<void, std::string> {
     TL_ASSIGN(data.shader, ShaderProgram::clone(m_default_shader.get()));
 	TL_ASSIGN(data.render_data, GLVertexArray::create(obj->get_vertices().size()));
 
@@ -192,7 +197,7 @@ auto EditorRenderer::on_add_object_internal(PerObjectData& data, ConstObjectHand
 }
 
 auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> tl::expected<void, std::string> {
-    auto get_obj_data = [this](ConstObjectHandle obj)->tl::expected<PerObjectData*, std::string> {
+    auto get_obj_data = [this](ViewPtr<Object> obj)->tl::expected<PerObjectData*, std::string> {
         auto const it = m_render_data.find(obj);
         if (it == m_render_data.end()) {
             return  TL_ERROR("obj not found in render data");
@@ -200,7 +205,7 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
         return &it->second;
     };
 
-    auto draw_outline = [this, cam, fbo, &get_obj_data](ConstObjectHandle obj)-> tl::expected<void, std::string> {
+    auto draw_outline = [this, cam, fbo, &get_obj_data](ViewPtr<Object> obj)-> tl::expected<void, std::string> {
         if (!m_outline.render_buf) {
             // initialize outline states
 
@@ -331,7 +336,6 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
         return TL_ERROR( "invalid EditorRenderer");
     }
 
-    auto&& scene = Application::get_scene();
     if (!fbo) {
         TL_CHECK_FWD(MainFrameBuffer::bind());
         TL_CHECK_FWD(MainFrameBuffer::clear(k_clear_color, 1.0f));
@@ -343,7 +347,7 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
     glViewport(0, 0, static_cast<GLsizei>(get_config().width), static_cast<GLsizei>(get_config().height));
 
     // render objects
-    for (auto [it, i] = std::tuple{ scene.begin(), 0 }; it != scene.end(); ++it) {
+    for (auto [it, i] = std::tuple{ m_scene->begin(), 0 }; it != m_scene->end(); ++it) {
         auto obj = *it;
         PerObjectData* data;
         TL_ASSIGN(data, get_obj_data(obj));
@@ -352,7 +356,7 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
         auto&& vao = data->render_data;
 
         TL_CHECK_FWD(shader->bind());
-        TL_CHECK_FWD(shader->set_uniform(k_uniform_light_pos, scene.get_good_light_pos()));
+        TL_CHECK_FWD(shader->set_uniform(k_uniform_light_pos, m_scene->get_good_light_pos()));
         TL_CHECK_FWD(shader->set_uniform(k_uniform_view, cam.get_view()));
         TL_CHECK_FWD(shader->set_uniform(k_uniform_projection, cam.get_projection()));
         TL_CHECK_FWD(shader->set_uniform(k_uniform_model, obj->get_transform().get_matrix()));
@@ -360,7 +364,7 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
         TL_CHECK_FWD(vao->bind());
         TL_CHECK_FWD(vao->draw_array(GL_TRIANGLES));
 
-        if (i == scene.size() - 1) {
+        if (i == m_scene->size() - 1) {
             shader->unbind();
         }
     }

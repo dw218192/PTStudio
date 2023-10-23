@@ -47,8 +47,8 @@ auto Scene::get_good_light_pos() const noexcept -> glm::vec3 {
     return center + glm::vec3{ 0, y_extent + 3, 0 };
 }
 
-auto Scene::ray_cast(Ray const& ray, float t_min, float t_max) noexcept -> ObjectHandle {
-    ObjectHandle ret = nullptr;
+auto Scene::ray_cast(Ray const& ray, float t_min, float t_max) noexcept -> ObserverPtr<Object> {
+    ObserverPtr<Object> ret = nullptr;
     float closest_t = t_max;
     for (auto&& obj : m_objects) {
         // transform ray to object space
@@ -87,11 +87,11 @@ auto Scene::make_triangle_scene() noexcept -> tl::expected<Scene, std::string> {
     return scene;
 }
 
-auto Scene::add_object(Object obj) noexcept -> ObjectHandle{
+auto Scene::add_object(Object obj) noexcept -> ObserverPtr<Object> {
     return &(m_objects.emplace_back(std::move(obj)));
 }
 
-void Scene::remove_object(ObjectHandle obj) noexcept {
+void Scene::remove_object(ObserverPtr<Object> obj) noexcept {
     m_objects.remove_if([&](auto&& o) { return &o == obj; });
 }
 

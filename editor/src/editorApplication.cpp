@@ -4,25 +4,30 @@
 #include "include/imgui/editorFields.h"
 #include "include/imgui/fileDialogue.h"
 #include "include/imgui/imhelper.h"
-#include "include/editorConsole.h"
 #include "include/editorRenderer.h"
 
 #include <imgui_internal.h>
 
 EditorApplication::EditorApplication(Renderer& renderer, Scene& scene, std::string_view name)
-	: Application{ renderer, scene, name } 
+    : GLFWApplication { name, renderer.get_config().width, renderer.get_config().height, renderer.get_config().min_frame_time },
+	  m_scene { scene }, m_renderer{ renderer },
+      m_cam{ renderer.get_config().fovy, renderer.get_config().width, renderer.get_config().height, scene.get_good_cam_start() }
 {
+    // initialize renderer
+    check_error(m_renderer.init());
+	check_error(m_renderer.open_scene(scene));
+
 // #define EDITOR_APP_IMGUI_LOAD_INI
 #ifndef EDITOR_APP_IMGUI_LOAD_INI
     ImGui::GetIO().IniFilename = nullptr;
     ImGui::LoadIniSettingsFromMemory(k_imgui_ini, std::strlen(k_imgui_ini));
 #endif
 
-    m_control_state.register_on_obj_change([this] (ObjectHandle obj) {
+    m_control_state.register_on_obj_change([this] (ObserverPtr<Object> obj) {
 	    on_obj_change(obj);
     });
     if(auto p_editor_renderer = dynamic_cast<EditorRenderer*>(&renderer); p_editor_renderer) {
-        m_control_state.register_on_obj_change([p_editor_renderer](ObjectHandle obj) {
+        m_control_state.register_on_obj_change([p_editor_renderer](ObserverPtr<Object> obj) {
             p_editor_renderer->on_object_change(obj);
         });
     }
@@ -44,11 +49,11 @@ void EditorApplication::cursor_moved(double x, double y) {
         auto const rot_sensitivity = m_control_state.rot_sensitivity;
 
         if (can_move()) {
-            get_cam().set_delta_dolly({
+            m_cam.set_delta_dolly({
                 move_sensitivity * px, 0, move_sensitivity* py
             });
         } else if (can_rotate()) {
-            get_cam().set_delta_rotation({
+            m_cam.set_delta_rotation({
                 rot_sensitivity * py, rot_sensitivity * px, 0
             });
         }
@@ -71,7 +76,7 @@ void EditorApplication::mouse_clicked(int button, int action, int mods) {
 void EditorApplication::mouse_scroll(double x, double y) {
     (void)x;
     float const delta = y < 0 ? -1.0f : 1.0f;
-    get_cam().set_delta_zoom(delta);
+    m_cam.set_delta_zoom(delta);
 }
 
 void EditorApplication::key_pressed(int key, int scancode, int action, int mods) {
@@ -92,7 +97,7 @@ void EditorApplication::loop(float dt) {
 
     // create an UI that covers the whole window, for docking
     ImGui::DockSpaceOverViewport(ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
-    auto render_tex = check_error(get_renderer().render_buffered(get_cam()));
+    auto render_tex = check_error(m_renderer.render_buffered(m_cam));
 
     // draw left panel
     begin_imgui_window("Scene Settings", ImGuiWindowFlags_NoMove);
@@ -126,6 +131,11 @@ void EditorApplication::loop(float dt) {
     end_imgui_window();
 }
 
+void EditorApplication::quit(int code) {
+    get().~EditorApplication();
+	std::exit(code);
+}
+
 void EditorApplication::draw_scene_panel() noexcept {
     if (ImGui::CollapsingHeader("Camera Control", ImGuiTreeNodeFlags_DefaultOpen))
     {
@@ -141,7 +151,7 @@ void EditorApplication::draw_scene_panel() noexcept {
     {
         if (ImGui::BeginListBox("##Scene Objects", { 0, 200 }))
         {
-            for (auto obj : get_scene()) {
+            for (auto obj : m_scene) {
                 if (ImGui::Selectable(obj->get_name().data(), m_control_state.get_cur_obj() == obj)) {
                     m_control_state.set_cur_obj(obj);
                 }
@@ -153,7 +163,7 @@ void EditorApplication::draw_scene_panel() noexcept {
 
         if (ImGui::BeginMenu("Add Object")) {
             if (ImGui::MenuItem("Triangle")) {
-                add_object(Object::make_triangle_obj(get_scene(), Material{}, Transform{}));
+                add_object(Object::make_triangle_obj(m_scene, Material{}, Transform{}));
             }
             if (ImGui::MenuItem("Cube")) {
 
@@ -165,10 +175,10 @@ void EditorApplication::draw_scene_panel() noexcept {
                 auto path = ImGui::FileDialogue("obj");
                 if(!path.empty()) {
                     std::string warning;
-                    auto obj = check_error(Object::from_obj(get_scene(), Material{}, path, &warning));
+                    auto obj = check_error(Object::from_obj(m_scene, Material{}, path, &warning));
                     add_object(obj);
 
-                    m_console.log(warning);
+                    this->log(warning);
                 }
             }
             ImGui::EndMenu();
@@ -200,7 +210,7 @@ void EditorApplication::draw_object_panel() noexcept {
 }
 
 void EditorApplication::draw_scene_viewport(TextureHandle render_buf) noexcept {
-    if (get_renderer().valid()) {
+    if (m_renderer.valid()) {
         static auto last_size = ImVec2{ 0, 0 };
 
         auto const v_min = ImGui::GetWindowContentRegionMin();
@@ -208,12 +218,12 @@ void EditorApplication::draw_scene_viewport(TextureHandle render_buf) noexcept {
         auto const view_size = v_max - v_min;
 
         if (std::abs(view_size.x - last_size.x) >= 0.01f || std::abs(view_size.y - last_size.y) >= 0.01f) {
-            auto conf = get_renderer().get_config();
+            auto conf = m_renderer.get_config();
             conf.width = static_cast<unsigned>(view_size.x);
             conf.height = static_cast<unsigned>(view_size.y);
-            get_cam().set_viewport(conf.width, conf.height);
-            get_cam().set_fov(conf.fovy);
-            check_error(get_renderer().on_change_render_config(conf));
+            m_cam.set_viewport(conf.width, conf.height);
+            m_cam.set_fov(conf.fovy);
+            check_error(m_renderer.on_change_render_config(conf));
             last_size = view_size;
         }
 
@@ -225,13 +235,13 @@ void EditorApplication::draw_scene_viewport(TextureHandle render_buf) noexcept {
         render_buf->unbind();
 
         // draw x,y,z axis ref
-        auto const axis_origin = get_cam().viewport_to_world(glm::vec2 {30, 30}, 0.0f);
+        auto const axis_origin = m_cam.viewport_to_world(glm::vec2 {30, 30}, 0.0f);
         constexpr float axis_len = 0.01f;
 
         get_debug_drawer().begin_relative(to_glm(ImGui::GetWindowPos() + v_min));
-        get_debug_drawer().draw_line_3d(axis_origin, axis_origin + glm::vec3{ axis_len, 0, 0 }, { 1, 0, 0 }, 2.0f, 0.0f);
-        get_debug_drawer().draw_line_3d(axis_origin, axis_origin + glm::vec3{ 0, axis_len, 0 }, { 0, 1, 0 }, 2.0f, 0.0f);
-        get_debug_drawer().draw_line_3d(axis_origin, axis_origin + glm::vec3{ 0, 0, axis_len }, { 0, 0, 1 }, 2.0f, 0.0f);
+        get_debug_drawer().draw_line_3d(m_cam, axis_origin, axis_origin + glm::vec3{ axis_len, 0, 0 }, { 1, 0, 0 }, 2.0f, 0.0f);
+        get_debug_drawer().draw_line_3d(m_cam, axis_origin, axis_origin + glm::vec3{ 0, axis_len, 0 }, { 0, 1, 0 }, 2.0f, 0.0f);
+        get_debug_drawer().draw_line_3d(m_cam, axis_origin, axis_origin + glm::vec3{ 0, 0, axis_len }, { 0, 0, 1 }, 2.0f, 0.0f);
         get_debug_drawer().end_relative();
 
         // draw gizmos
@@ -244,8 +254,8 @@ void EditorApplication::draw_scene_viewport(TextureHandle render_buf) noexcept {
 
             auto mat = m_control_state.get_cur_obj()->get_transform().get_matrix();
             if (ImGuizmo::Manipulate(
-                glm::value_ptr(get_cam().get_view()),
-                glm::value_ptr(get_cam().get_projection()),
+                glm::value_ptr(m_cam.get_view()),
+                glm::value_ptr(m_cam.get_projection()),
                 gizmo_state.op,
                 gizmo_state.mode,
                 glm::value_ptr(mat),
@@ -260,10 +270,10 @@ void EditorApplication::draw_scene_viewport(TextureHandle render_buf) noexcept {
     }
 }
 
-void EditorApplication::draw_console_panel() noexcept {
+void EditorApplication::draw_console_panel() const noexcept {
     ImGui::BeginChild("##scroll");
     {
-        ImGui::TextUnformatted(m_console.str().data());
+        ImGui::TextUnformatted(m_console_text.data());
     }
     ImGui::EndChild();
 }
@@ -294,14 +304,14 @@ void EditorApplication::try_select_object() noexcept {
     auto pos = ImGui::GetMousePos();
     auto const win_pos = get_window_content_pos("Scene");
     if (!win_pos) {
-        std::cerr << "Scene view not found" << std::endl;
+        this->log("scene view not found");
         return;
     }
 
     // convert to viewport space
     pos = pos - win_pos.value();
-    auto const ray = get_cam().viewport_to_ray(to_glm(pos));
-    auto const res = get_scene().ray_cast(ray);
+    auto const ray = m_cam.viewport_to_ray(to_glm(pos));
+    auto const res = m_scene.ray_cast(ray);
     m_control_state.set_cur_obj(res);
 
     // m_console.log("Selected object: ", res ? res->get_name() : "None");
@@ -356,18 +366,22 @@ void EditorApplication::handle_mouse_release() noexcept {
 }
 
 void EditorApplication::add_object(Object const& obj) noexcept {
-    auto hobj = get_scene().add_object(obj);
-    check_error(get_renderer().on_add_object(hobj));
+    auto hobj = m_scene.add_object(obj);
+    check_error(m_renderer.on_add_object(hobj));
     m_control_state.set_cur_obj(hobj);
 }
 
-void EditorApplication::remove_object(ObjectHandle obj) noexcept {
-    check_error(get_renderer().on_remove_object(obj));
-    get_scene().remove_object(m_control_state.get_cur_obj());
+void EditorApplication::remove_object(ObserverPtr<Object> obj) noexcept {
+    check_error(m_renderer.on_remove_object(obj));
+    m_scene.remove_object(m_control_state.get_cur_obj());
 	m_control_state.set_cur_obj(nullptr);
 }
 
-void EditorApplication::ControlState::set_cur_obj(ObjectHandle obj) noexcept {
+void EditorApplication::print(std::string_view msg) {
+    m_console_text = msg;
+}
+
+void EditorApplication::ControlState::set_cur_obj(ObserverPtr<Object> obj) noexcept {
     if (obj == m_cur_obj) {
         return;
     }

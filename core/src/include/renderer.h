@@ -41,14 +41,14 @@ struct Renderer {
      * \param obj The object that was added
      * \return on failure, an error message
     */
-    NODISCARD virtual auto on_add_object(ConstObjectHandle obj) noexcept -> tl::expected<void, std::string> = 0;
+    NODISCARD virtual auto on_add_object(ViewPtr<Object> obj) noexcept -> tl::expected<void, std::string> = 0;
 
     /**
      * \brief Called when an object is removed from the scene
      * \param obj The object that was removed
      * \return on failure, an error message
     */
-    NODISCARD virtual auto on_remove_object(ConstObjectHandle obj) noexcept -> tl::expected<void, std::string> = 0;
+    NODISCARD virtual auto on_remove_object(ViewPtr<Object> obj) noexcept -> tl::expected<void, std::string> = 0;
 
 	/**
      * \brief Renders the scene directly in the window
@@ -78,6 +78,13 @@ struct Renderer {
      */
     NODISCARD auto get_config() const noexcept -> RenderConfig const& { return m_config; }
 
+    /**
+	 * \brief Draws any custom UI that might help editing that is specific to a renderer
+	 * \return on failure, an error message
+	 */
+    NODISCARD virtual auto draw_imgui() noexcept -> tl::expected<void, std::string> {
+        return {};
+    }
 protected:
     RenderConfig m_config;
 };

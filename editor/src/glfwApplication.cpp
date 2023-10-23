@@ -1,10 +1,11 @@
-#include "include/application.h"
+#include "include/glfwApplication.h"
 #include "include/imgui/imhelper.h"
 #include <imgui_internal.h>
+#include <iostream>
 
 // stubs for callbacks
 static void click_func(GLFWwindow* window, int button, int action, int mods) {
-    auto const app = static_cast<Application*>(glfwGetWindowUserPointer(window));
+    auto const app = static_cast<GLFWApplication*>(glfwGetWindowUserPointer(window));
     // check if ImGui is using the mouse
     if (ImGui::GetIO().WantCaptureMouse && !app->mouse_over_any_event_region()) {
         return;
@@ -12,21 +13,21 @@ static void click_func(GLFWwindow* window, int button, int action, int mods) {
     app->mouse_clicked(button, action, mods);
 }
 static void motion_func(GLFWwindow* window, double x, double y) {
-    auto const app = static_cast<Application*>(glfwGetWindowUserPointer(window));
+    auto const app = static_cast<GLFWApplication*>(glfwGetWindowUserPointer(window));
     if (ImGui::GetIO().WantCaptureMouse && !app->mouse_over_any_event_region()) {
         return;
     }
     app->cursor_moved(x, y);
 }
 static void scroll_func(GLFWwindow* window, double x, double y) {
-    auto const app = static_cast<Application*>(glfwGetWindowUserPointer(window));
+    auto const app = static_cast<GLFWApplication*>(glfwGetWindowUserPointer(window));
     if (ImGui::GetIO().WantCaptureMouse && !app->mouse_over_any_event_region()) {
         return;
     }
     app->mouse_scroll(x, y);
 }
 static void key_func(GLFWwindow* window, int key, int scancode, int action, int mods) {
-    auto const app = static_cast<Application*>(glfwGetWindowUserPointer(window));
+    auto const app = static_cast<GLFWApplication*>(glfwGetWindowUserPointer(window));
     if (ImGui::GetIO().WantCaptureKeyboard && !app->mouse_over_any_event_region()) {
         return;
     }
@@ -35,35 +36,27 @@ static void key_func(GLFWwindow* window, int key, int scancode, int action, int 
 
 static void error_func(int error, const char* description) {
     std::cerr << "GLFW error: " << error << ": " << description << std::endl;
-    Application::quit(-1);
+    std::exit(-1);
 }
 
-Application::Application(Renderer& renderer, Scene& scene, std::string_view name)
-    : m_scene { scene }, m_renderer{ renderer },
-      m_cam{ renderer.get_config().fovy, renderer.get_config().width, renderer.get_config().height, scene.get_good_cam_start() }
+GLFWApplication::GLFWApplication(std::string_view name, unsigned width, unsigned height, float min_frame_time)
+    : m_min_frame_time (min_frame_time) 
 {
-    if (s_app) {
-        std::cerr << "There can only be one instance of application" << std::endl;
-        Application::quit(-1);
-    } else {
-        s_app = this;
-    }
-
     glfwSetErrorCallback(error_func);
 
     if (!glfwInit()) {
         std::cerr << "Failed to initialize GLFW" << std::endl;
-        quit(-1);
+        std::exit(-1);
     }
 
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    m_window = glfwCreateWindow(renderer.get_config().width, renderer.get_config().height, name.data(), nullptr, nullptr);
+    m_window = glfwCreateWindow(width, height, name.data(), nullptr, nullptr);
     if (!m_window) {
         std::cerr << "Failed to create window" << std::endl;
-        quit(-1);
+        std::exit(-1);
     }
     
     glfwMakeContextCurrent(m_window);
@@ -79,7 +72,7 @@ Application::Application(Renderer& renderer, Scene& scene, std::string_view name
     // initialize GLEW
     if (glewInit() != GLEW_OK) {
         std::cerr << "Failed to initialize GLEW" << std::endl;
-        quit(-1);
+        std::exit(-1);
     }
 
     // Setup Dear ImGui context
@@ -98,14 +91,10 @@ Application::Application(Renderer& renderer, Scene& scene, std::string_view name
     ImGui_ImplOpenGL3_Init("#version 130");
 
     ImGui::SetNextWindowPos({ 10, 10 });
-    ImGui::SetNextWindowSize({ 0, static_cast<float>(renderer.get_config().height) / 5.0f });
-
-    // initialize renderer
-    check_error(get_renderer().init());
-	check_error(get_renderer().open_scene(scene));
+    ImGui::SetNextWindowSize({ 0, static_cast<float>(height) / 5.0f });
 }
 
-Application::~Application() {
+GLFWApplication::~GLFWApplication() {
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
@@ -113,7 +102,7 @@ Application::~Application() {
     glfwTerminate();
 }
 
-void Application::run() {
+void GLFWApplication::run() {
     double last_frame_time = 0;
     while (!glfwWindowShouldClose(m_window)) {
         double now = glfwGetTime();
@@ -122,7 +111,7 @@ void Application::run() {
         glfwPollEvents();
 
         double dt = now - last_frame_time;
-        if (dt >= m_renderer.get_config().min_frame_time) {
+        if (dt >= m_min_frame_time) {
             m_prev_hovered_widget = m_cur_hovered_widget;
 
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -174,19 +163,19 @@ void Application::run() {
     }
 }
 
-auto Application::get_window_height() const noexcept->int {
+auto GLFWApplication::get_window_height() const noexcept->int {
     int display_h;
     glfwGetFramebufferSize(m_window, nullptr, &display_h);
     return display_h;
 }
 
-auto Application::get_window_width() const noexcept->int {
+auto GLFWApplication::get_window_width() const noexcept->int {
     int display_w;
     glfwGetFramebufferSize(m_window, &display_w, nullptr);
     return display_w;
 }
 
-void Application::begin_imgui_window(
+void GLFWApplication::begin_imgui_window(
     std::string_view name, 
     ImGuiWindowFlags flags,
     std::optional<std::function<void()>> const& on_leave_region,
@@ -216,11 +205,11 @@ void Application::begin_imgui_window(
     ImGui::SetKeyOwner(ImGuiMod_Alt, ImGui::GetCurrentWindow()->ID);
 }
 
-void Application::end_imgui_window() noexcept {
+void GLFWApplication::end_imgui_window() noexcept {
     ImGui::End();
 }
 
-auto Application::get_window_content_pos(std::string_view name) const noexcept -> std::optional<ImVec2> {
+auto GLFWApplication::get_window_content_pos(std::string_view name) const noexcept -> std::optional<ImVec2> {
     auto win = ImGui::FindWindowByName(name.data());
     if (!win) {
         return std::nullopt;
@@ -228,16 +217,8 @@ auto Application::get_window_content_pos(std::string_view name) const noexcept -
     return win->ContentRegionRect.Min;
 }
 
-bool Application::mouse_over_any_event_region() const noexcept {
+bool GLFWApplication::mouse_over_any_event_region() const noexcept {
     auto it = m_imgui_window_info.find(m_cur_hovered_widget);
     auto ret = it != m_imgui_window_info.end();
     return ret;
 }
-
-void Application::quit(int code) {
-    if (s_app) {
-        s_app->~Application();
-    }
-	exit(code);
-}
-
