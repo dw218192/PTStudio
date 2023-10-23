@@ -7,9 +7,9 @@
 
 #include <tl/expected.hpp>
 
-
+struct Application;
 struct Renderer {
-	explicit Renderer(RenderConfig const& config) noexcept;
+	explicit Renderer(RenderConfig config) noexcept;
     virtual ~Renderer() noexcept;
 
 	// don't copy because we have handles to GL resources
@@ -27,7 +27,7 @@ struct Renderer {
 	 * \param scene The scene to be opened
 	 * \return on failure, an error message
 	 */
-    NODISCARD virtual auto open_scene(Scene const& scene) noexcept -> tl::expected<void, std::string> = 0;
+    NODISCARD virtual auto open_scene(View<Scene> scene) noexcept -> tl::expected<void, std::string> = 0;
 
     /**
      * \brief Changes the render configuration
@@ -55,7 +55,7 @@ struct Renderer {
      * \param camera The camera to view the scene from
      * \return on failure, an error message
      */
-    NODISCARD virtual auto render(Camera const& camera) noexcept -> tl::expected<void, std::string> = 0;
+    NODISCARD virtual auto render(View<Camera> camera) noexcept -> tl::expected<void, std::string> = 0;
 
 	/**
 	 * \brief Renders the scene to a texture
@@ -64,7 +64,7 @@ struct Renderer {
      * on success, a handle to the texture containing the rendered scene
      * \note The texture is owned by the renderer and will be deleted when the renderer is destroyed
      */
-    NODISCARD virtual auto render_buffered(Camera const& camera) noexcept -> tl::expected<TextureHandle, std::string> = 0;
+    NODISCARD virtual auto render_buffered(View<Camera> camera) noexcept -> tl::expected<TextureHandle, std::string> = 0;
 
     /**
      * \brief Checks if the renderer is initialized and valid.
@@ -82,7 +82,7 @@ struct Renderer {
 	 * \brief Draws any custom UI that might help editing that is specific to a renderer
 	 * \return on failure, an error message
 	 */
-    NODISCARD virtual auto draw_imgui() noexcept -> tl::expected<void, std::string> {
+    NODISCARD virtual auto draw_imgui(ViewPtr<Application> app = nullptr) noexcept -> tl::expected<void, std::string> {
         return {};
     }
 protected:

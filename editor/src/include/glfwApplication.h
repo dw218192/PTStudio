@@ -8,7 +8,9 @@
 #include "debugDrawer.h"
 #include "application.h"
 
-struct GLFWApplication : Application<5> {
+struct GLFWApplication : Application {
+    NO_COPY_MOVE(GLFWApplication);
+
     GLFWApplication(std::string_view name, unsigned width, unsigned height, float min_frame_time);
     ~GLFWApplication() override;
 

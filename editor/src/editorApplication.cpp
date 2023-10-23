@@ -129,6 +129,8 @@ void EditorApplication::loop(float dt) {
         draw_scene_viewport(render_tex);
     }
     end_imgui_window();
+
+    check_error(m_renderer.draw_imgui(this));
 }
 
 void EditorApplication::quit(int code) {

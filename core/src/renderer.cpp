@@ -1,6 +1,4 @@
 #include "include/renderer.h"
 
-Renderer::Renderer(RenderConfig const& config) noexcept :
-    m_config(config) {}
-
+Renderer::Renderer(RenderConfig config) noexcept : m_config(std::move(config)) {}
 Renderer::~Renderer() noexcept = default;

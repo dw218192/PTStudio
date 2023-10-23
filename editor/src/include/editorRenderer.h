@@ -18,25 +18,26 @@ friend Singleton;
 
     ~EditorRenderer() noexcept override;
     [[nodiscard]] auto init() noexcept -> tl::expected<void, std::string> override;
-    [[nodiscard]] auto open_scene(Scene const& scene) noexcept -> tl::expected<void, std::string> override;
-    [[nodiscard]] auto render(Camera const& cam) noexcept -> tl::expected<void, std::string> override;
-    [[nodiscard]] auto render_buffered(Camera const& cam) noexcept -> tl::expected<TextureHandle, std::string> override;
+    [[nodiscard]] auto open_scene(View<Scene> scene) noexcept -> tl::expected<void, std::string> override;
+    [[nodiscard]] auto render(View<Camera> cam) noexcept -> tl::expected<void, std::string> override;
+    [[nodiscard]] auto render_buffered(View<Camera> cam) noexcept -> tl::expected<TextureHandle, std::string> override;
 	[[nodiscard]] auto valid() const noexcept -> bool override { return m_valid; }
     [[nodiscard]] auto on_change_render_config(RenderConfig const& config) noexcept -> tl::expected<void, std::string> override;
     [[nodiscard]] auto on_add_object(ViewPtr<Object> obj) noexcept -> tl::expected<void, std::string> override;
     [[nodiscard]] auto on_remove_object(ViewPtr<Object> obj) noexcept -> tl::expected<void, std::string> override;
-    [[nodiscard]] auto draw_imgui() noexcept -> tl::expected<void, std::string> override;
+    [[nodiscard]] auto draw_imgui(ViewPtr<Application> app) noexcept -> tl::expected<void, std::string> override;
 
     void on_object_change(ViewPtr<Object> obj) noexcept;
 private:
-    EditorRenderer(RenderConfig const& config) noexcept;
+    EditorRenderer(RenderConfig config) noexcept;
 
     struct PerObjectData;
     [[nodiscard]] auto on_add_object_internal(PerObjectData& data, ViewPtr<Object> obj) noexcept -> tl::expected<void, std::string>;
-    [[nodiscard]] auto render_internal(Camera const& cam, GLuint fbo) noexcept -> tl::expected<void, std::string>;
+    [[nodiscard]] auto render_internal(View<Camera> cam, GLuint fbo) noexcept -> tl::expected<void, std::string>;
     void clear_render_data();
 
-    ViewPtr<Scene> m_scene;
+
+	ViewPtr<Scene> m_scene;
     GLFrameBufferRef m_render_buf;
 
     // outline drawing states

@@ -66,3 +66,9 @@ template<typename T> using ObserverPtr = T*;
 template<typename T> using ViewPtr = T const*;
 // non-owing view
 template<typename T> using View = T const&;
+
+#define NO_COPY_MOVE(Ty)\
+Ty(Ty const&) = delete;\
+Ty& operator=(Ty const&) = delete;\
+Ty(Ty&&) = delete;\
+Ty& operator=(Ty&&) = delete

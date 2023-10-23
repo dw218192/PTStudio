@@ -18,6 +18,8 @@ constexpr float k_object_select_mouse_time = 1.0f;
 
 struct EditorApplication final : GLFWApplication, Singleton<EditorApplication> {
 friend Singleton;
+NO_COPY_MOVE(EditorApplication);
+
     void cursor_moved(double x, double y) override;
     void mouse_clicked(int button, int action, int mods) override;
     void mouse_scroll(double x, double y) override;
@@ -39,6 +41,7 @@ friend Singleton;
 
 private:
     EditorApplication(Renderer& renderer, Scene& scene, std::string_view name);
+    ~EditorApplication() override = default;
 
     // imgui rendering
     void draw_scene_panel() noexcept;
@@ -62,8 +65,6 @@ private:
     void handle_mouse_release() noexcept;
     void add_object(Object const& obj) noexcept;
     void remove_object(ObserverPtr<Object> obj) noexcept;
-
-private:
     void print(std::string_view msg) override;
 
     std::string m_console_text;

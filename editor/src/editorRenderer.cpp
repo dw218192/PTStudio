@@ -1,4 +1,5 @@
 #include "include/editorRenderer.h"
+#include "application.h"
 
 #include <cassert>
 #include <algorithm>
@@ -9,8 +10,8 @@ constexpr auto k_clear_color = glm::vec3{ 0 };
 constexpr auto k_outline_scale = 1.02f;
 constexpr auto k_outline_color = glm::vec3{ 1, 0, 0 };
 
-EditorRenderer::EditorRenderer(RenderConfig const& config) noexcept
-	: Renderer{config} { }
+EditorRenderer::EditorRenderer(RenderConfig config) noexcept
+	: Renderer{std::move(config)} { }
 
 EditorRenderer::~EditorRenderer() noexcept { }
 
@@ -69,7 +70,7 @@ auto EditorRenderer::init() noexcept -> tl::expected<void, std::string> {
     return {};
 }
 
-auto EditorRenderer::open_scene(Scene const& scene) noexcept -> tl::expected<void, std::string> {
+auto EditorRenderer::open_scene(View<Scene> scene) noexcept -> tl::expected<void, std::string> {
     m_cur_outline_obj = nullptr;
     m_scene = &scene;
     clear_render_data();
@@ -93,11 +94,11 @@ auto EditorRenderer::open_scene(Scene const& scene) noexcept -> tl::expected<voi
     return {};
 }
 
-auto EditorRenderer::render(Camera const& cam) noexcept -> tl::expected<void, std::string> {
+auto EditorRenderer::render(View<Camera> cam) noexcept -> tl::expected<void, std::string> {
     return render_internal(cam, 0);
 }
 
-auto EditorRenderer::render_buffered(Camera const& cam) noexcept -> tl::expected<TextureHandle, std::string> {
+auto EditorRenderer::render_buffered(View<Camera> cam) noexcept -> tl::expected<TextureHandle, std::string> {
     if (!m_render_buf) {
         TL_ASSIGN(m_render_buf, GLFrameBuffer::create());
         TL_CHECK(m_render_buf->bind());
@@ -169,9 +170,9 @@ auto EditorRenderer::on_remove_object(ViewPtr<Object> obj) noexcept -> tl::expec
     return {};
 }
 
-auto EditorRenderer::draw_imgui() noexcept -> tl::expected<void, std::string> {
+auto EditorRenderer::draw_imgui(ViewPtr<Application> app) noexcept -> tl::expected<void, std::string> {
     TL_CHECK_FWD(Renderer::draw_imgui());
-
+    return {};
 }
 
 void EditorRenderer::on_object_change(ViewPtr<Object> obj) noexcept {
@@ -196,7 +197,7 @@ auto EditorRenderer::on_add_object_internal(PerObjectData& data, ViewPtr<Object>
 
 }
 
-auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> tl::expected<void, std::string> {
+auto EditorRenderer::render_internal(View<Camera> cam, GLuint fbo) noexcept -> tl::expected<void, std::string> {
     auto get_obj_data = [this](ViewPtr<Object> obj)->tl::expected<PerObjectData*, std::string> {
         auto const it = m_render_data.find(obj);
         if (it == m_render_data.end()) {
