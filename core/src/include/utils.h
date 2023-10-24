@@ -34,40 +34,35 @@ constexpr T div_up(T x, T y) {
 
 // convenience helpers
 #ifdef NDEBUG
-	#define TL_ERROR(msg) {}
-	#define TL_GL_ERROR(err) {}
-	#define CHECK_GL_ERROR() (void)0
-	#define TL_CHECK(func_call) func_call
-	#define TL_CHECK_FWD(func_call) func_call
-	#define TL_ASSIGN(out, func_call) out = std::move((func_call).value())
-	#define TL_ASSIGN_FWD(out, func_call) out = std::move((func_call).value())
+#define TL_ERROR(msg) tl::unexpected { msg }
 #else
-	#define TL_ERROR(msg) tl::unexpected { std::string{__FILE__} + ":" + std::to_string(__LINE__) + ": " + (msg) }
-	#define TL_GL_ERROR(err) TL_ERROR(reinterpret_cast<char const*>(glewGetErrorString(err)))
-
-	#define CHECK_GL_ERROR() do { \
-		auto err = glGetError(); \
-		if (err != GL_NO_ERROR) return TL_ERROR(reinterpret_cast<char const*>(glewGetErrorString(err))); \
-	} while (0)
-	#define TL_CHECK(func_call) do { \
-		auto res = func_call;\
-		if (!res) return TL_ERROR(res.error()); \
-	} while (0)
-	#define TL_CHECK_FWD(func_call) do { \
-		auto res = func_call;\
-		if (!res) return res; \
-	} while (0)
-	#define TL_ASSIGN(out, func_call) do { \
-		auto res = func_call;\
-		if (!res) return TL_ERROR(res.error()); \
-		out = std::move(res.value());\
-	} while (0)
-	#define TL_ASSIGN_FWD(out, func_call) do { \
-		auto res = func_call;\
-		if (!res) return res; \
-		out = std::move(res.value());\
-	} while (0)
+#define TL_ERROR(msg) tl::unexpected { std::string{__FILE__} + ":" + std::to_string(__LINE__) + ": " + (msg) }
 #endif
+
+
+#define TL_GL_ERROR(err) TL_ERROR(reinterpret_cast<char const*>(glewGetErrorString(err)))
+#define CHECK_GL_ERROR() do { \
+	auto err = glGetError(); \
+	if (err != GL_NO_ERROR) return TL_ERROR(reinterpret_cast<char const*>(glewGetErrorString(err))); \
+} while (0)
+#define TL_CHECK(func_call) do { \
+	auto res = func_call;\
+	if (!res) return TL_ERROR(res.error()); \
+} while (0)
+#define TL_CHECK_FWD(func_call) do { \
+	auto res = func_call;\
+	if (!res) return res; \
+} while (0)
+#define TL_ASSIGN(out, func_call) do { \
+	auto res = func_call;\
+	if (!res) return TL_ERROR(res.error()); \
+	out = std::move(res.value());\
+} while (0)
+#define TL_ASSIGN_FWD(out, func_call) do { \
+	auto res = func_call;\
+	if (!res) return res; \
+	out = std::move(res.value());\
+} while (0)
 
 // useful typedefs
 // TODO: may implement these as classes later
@@ -97,3 +92,6 @@ Ty& operator=(Ty&&) = default
 #define NO_COPY(Ty)\
 Ty(Ty const&) = delete;\
 Ty& operator=(Ty const&) = delete
+
+#define DECL_ENUM(name, ...)\
+	enum class name { __VA_ARGS__, __COUNT }

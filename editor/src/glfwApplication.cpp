@@ -106,12 +106,12 @@ GLFWApplication::~GLFWApplication() {
 void GLFWApplication::run() {
     double last_frame_time = 0;
     while (!glfwWindowShouldClose(m_window)) {
-        auto now = glfwGetTime();
+        auto const now = glfwGetTime();
 
         // Poll and handle events (inputs, window resize, etc.)
         glfwPollEvents();
 
-        auto dt = static_cast<float>(now - last_frame_time);
+        auto const dt = static_cast<float>(now - last_frame_time);
         if (dt >= m_min_frame_time) {
             m_prev_hovered_widget = m_cur_hovered_widget;
 
@@ -157,10 +157,11 @@ void GLFWApplication::run() {
                 }
             }
         }
-
+        /*
         if (glfwGetKey(m_window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
             glfwSetWindowShouldClose(m_window, GLFW_TRUE);
         }
+        */
     }
 }
 

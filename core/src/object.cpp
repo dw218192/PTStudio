@@ -125,6 +125,65 @@ auto Object::make_quad_obj(Scene const& scene, Material mat, Transform trans) no
     return Object { scene, std::move(trans), std::move(mat), std::move(vertices) };
 }
 
+auto Object::make_cube_obj(Scene const& scene, Material mat, Transform trans) noexcept -> Object {
+    std::vector<Vertex> vertices = {
+        // front
+        Vertex{ glm::vec3{ -0.5, -0.5, 0.5 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 0, 0 } },
+        Vertex{ glm::vec3{ 0.5, -0.5, 0.5 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 1, 0 } },
+        Vertex{ glm::vec3{ -0.5, 0.5, 0.5 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 0, 1 } },
+
+        Vertex{ glm::vec3{ -0.5, 0.5, 0.5 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 0, 1 } },
+        Vertex{ glm::vec3{ 0.5, -0.5, 0.5 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 1, 0 } },
+        Vertex{ glm::vec3{ 0.5, 0.5, 0.5 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 1, 1 } },
+
+        // back
+        Vertex{ glm::vec3{ -0.5, -0.5, -0.5 }, glm::vec3{ 0, 0, -1 }, glm::vec2{ 0, 0 } },
+        Vertex{ glm::vec3{ -0.5, 0.5, -0.5 }, glm::vec3{ 0, 0, -1 }, glm::vec2{ 0, 1 } },
+        Vertex{ glm::vec3{ 0.5, -0.5, -0.5 }, glm::vec3{ 0, 0, -1 }, glm::vec2{ 1, 0 } },
+
+        Vertex{ glm::vec3{ 0.5, -0.5, -0.5 }, glm::vec3{ 0, 0, -1 }, glm::vec2{ 1, 0 } },
+        Vertex{ glm::vec3{ -0.5, 0.5, -0.5 }, glm::vec3{ 0, 0, -1 }, glm::vec2{ 0, 1 } },
+        Vertex{ glm::vec3{ 0.5, 0.5, -0.5 }, glm::vec3{ 0, 0, -1 }, glm::vec2{ 1, 1 } },
+
+        // left
+        Vertex{ glm::vec3{ -0.5, -0.5, -0.5 }, glm::vec3{ -1, 0, 0 }, glm::vec2{ 0, 0 } },
+        Vertex{ glm::vec3{ -0.5, 0.5, -0.5 }, glm::vec3{ -1, 0, 0 }, glm::vec2{ 0, 1 } },
+        Vertex{ glm::vec3{ -0.5, -0.5, 0.5 }, glm::vec3{ -1, 0, 0 }, glm::vec2{ 1, 0 } },
+
+        Vertex{ glm::vec3{ -0.5, -0.5, 0.5 }, glm::vec3{ -1, 0, 0 }, glm::vec2{ 1, 0 } },
+        Vertex{ glm::vec3{ -0.5, 0.5, -0.5 }, glm::vec3{ -1, 0, 0 }, glm::vec2{ 0, 1 } },
+        Vertex{ glm::vec3{ -0.5, 0.5, 0.5 }, glm::vec3{ -1, 0, 0 }, glm::vec2{ 1, 1 } },
+
+        // right
+        Vertex{ glm::vec3{ 0.5, -0.5, -0.5 }, glm::vec3{ 1, 0, 0 }, glm::vec2{ 0, 0 } },
+        Vertex{ glm::vec3{ 0.5, -0.5, 0.5 }, glm::vec3{ 1, 0, 0 }, glm::vec2{ 1, 0 } },
+        Vertex{ glm::vec3{ 0.5, 0.5, -0.5 }, glm::vec3{ 1, 0, 0 }, glm::vec2{ 0, 1 } },
+
+        Vertex{ glm::vec3{ 0.5, 0.5, -0.5 }, glm::vec3{ 1, 0, 0 }, glm::vec2{ 0, 1 } },
+        Vertex{ glm::vec3{ 0.5, -0.5, 0.5 }, glm::vec3{ 1, 0, 0 }, glm::vec2{ 1, 0 } },
+        Vertex{ glm::vec3{ 0.5, 0.5, 0.5 }, glm::vec3{ 1, 0, 0 }, glm::vec2{ 1, 1 } },
+
+        // top
+        Vertex{ glm::vec3{ -0.5, 0.5, -0.5 }, glm::vec3{ 0, 1, 0 }, glm::vec2{ 0, 0 } },
+        Vertex{ glm::vec3{ 0.5, 0.5, -0.5 }, glm::vec3{ 0, 1, 0 }, glm::vec2{ 1, 0 } },
+        Vertex{ glm::vec3{ -0.5, 0.5, 0.5 }, glm::vec3{ 0, 1, 0 }, glm::vec2{ 0, 1 } },
+
+        Vertex{ glm::vec3{ -0.5, 0.5, 0.5 }, glm::vec3{ 0, 1, 0 }, glm::vec2{ 0, 1 } },
+        Vertex{ glm::vec3{ 0.5, 0.5, -0.5 }, glm::vec3{ 0, 1, 0 }, glm::vec2{ 1, 0 } },
+        Vertex{ glm::vec3{ 0.5, 0.5, 0.5 }, glm::vec3{ 0, 1, 0 }, glm::vec2{ 1, 1 } },
+
+        // bottom
+        Vertex{ glm::vec3{ -0.5, -0.5, -0.5 }, glm::vec3{ 0, -1, 0 }, glm::vec2{ 0, 0 } },
+        Vertex{ glm::vec3{ -0.5, -0.5, 0.5 }, glm::vec3{ 0, -1, 0 }, glm::vec2{ 0, 1 } },
+        Vertex{ glm::vec3{ 0.5, -0.5, -0.5 }, glm::vec3{ 0, -1, 0 }, glm::vec2{ 1, 0 } },
+
+        Vertex{ glm::vec3{ 0.5, -0.5, -0.5 }, glm::vec3{ 0, -1, 0 }, glm::vec2{ 1, 0 } },
+        Vertex{ glm::vec3{ -0.5, -0.5, 0.5 }, glm::vec3{ 0, -1, 0 }, glm::vec2{ 0, 1 } },
+        Vertex{ glm::vec3{ 0.5, -0.5, 0.5 }, glm::vec3{ 0, -1, 0 }, glm::vec2{ 1, 1 } },
+    };
+    return Object { scene, std::move(trans), std::move(mat), std::move(vertices) };
+}
+
 void Object::set_transform(Transform transform) noexcept {
     m_transform = std::move(transform);
 }

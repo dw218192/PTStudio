@@ -555,6 +555,7 @@ auto EditorRenderer::draw_imgui(ObserverPtr<Application> app) noexcept -> tl::ex
 
     ImGui::Begin("Shader Editor", nullptr, ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_MenuBar);
     ImGui::SetWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
+    ImGui::SetWindowPos(ImVec2(700, 700), ImGuiCond_FirstUseEver);
 
     if (!m_cur_outline_obj) {
         ImGui::Text("Please Select an object first");
@@ -574,7 +575,7 @@ auto EditorRenderer::draw_imgui(ObserverPtr<Application> app) noexcept -> tl::ex
 
             auto res = m_obj_data[m_cur_outline_obj].shader->try_recompile(srcs);
             if (!res && app) {
-                app->log(res.error());
+                app->log(LogLevel::Error, res.error());
             }
         };
 

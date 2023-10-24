@@ -14,12 +14,10 @@
 
 struct Shader;
 struct ShaderProgram;
-
-enum class ShaderType {
+DECL_ENUM(ShaderType,
     Vertex,
-    Fragment,
-    __COUNT
-};
+    Fragment
+);
 
 using ShaderProgramRef = UniqueGLResRef<ShaderProgram>;
 using ShaderRef = UniqueGLResRef<Shader>;

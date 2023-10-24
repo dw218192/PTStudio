@@ -170,19 +170,18 @@ void EditorApplication::draw_scene_panel() noexcept {
                 add_object(Object::make_triangle_obj(m_scene, Material{}, Transform{}));
             }
             if (ImGui::MenuItem("Cube")) {
-
+                add_object(Object::make_cube_obj(m_scene, Material{}, Transform{}));
             }
             if (ImGui::MenuItem("Sphere")) {
-
             }
             if (ImGui::MenuItem("Import .obj File")) {
-                auto path = ImGui::FileDialogue("obj");
+                auto const path = ImGui::FileDialogue("obj");
                 if(!path.empty()) {
                     std::string warning;
-                    auto obj = check_error(Object::from_obj(m_scene, Material{}, path, &warning));
+                    auto const obj = check_error(Object::from_obj(m_scene, Material{}, path, &warning));
                     add_object(obj);
 
-                    this->log(warning);
+                    this->log(LogLevel::Warning, warning);
                 }
             }
             ImGui::EndMenu();
@@ -275,9 +274,20 @@ void EditorApplication::draw_scene_viewport(TextureHandle render_buf) noexcept {
 }
 
 void EditorApplication::draw_console_panel() const noexcept {
-    ImGui::BeginChild("##scroll");
+    static EArray<LogLevel, ImVec4> const s_log_colors{
+        { LogLevel::Error, ImVec4{1,0,0,1} },
+        { LogLevel::Debug, ImVec4{0,0,1,0} },
+        { LogLevel::Info, ImVec4{1,1,1,1} },
+        { LogLevel::Warning, ImVec4{0,1,0,1} }
+    };
+
+	ImGui::BeginChild("##scroll");
     {
-        ImGui::TextUnformatted(m_console_text.data());
+        for(auto&& [level, msg] : get_logs()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, s_log_colors[level]);
+            ImGui::TextUnformatted(msg.data());
+        	ImGui::PopStyleColor();
+        }
     }
     ImGui::EndChild();
 }
@@ -310,7 +320,7 @@ void EditorApplication::try_select_object() noexcept {
     auto pos = ImGui::GetMousePos();
     auto const win_pos = get_window_content_pos(k_scene_view_win_name);
     if (!win_pos) {
-        this->log("scene view not found");
+        this->log(LogLevel::Error, "scene view not found");
         return;
     } else if(get_cur_hovered_widget() != k_scene_view_win_name) {
         return;
@@ -322,9 +332,7 @@ void EditorApplication::try_select_object() noexcept {
     pos = pos - win_pos.value();
     auto const ray = m_cam.viewport_to_ray(to_glm(pos));
     auto const res = m_scene.ray_cast(ray);
-
-    // prevent deselecting when not in scene view
-    m_control_state.set_cur_obj(res);
+    if(res) m_control_state.set_cur_obj(res); // note: deselection is handled by key press
 
     // m_console.log("Selected object: ", res ? res->get_name() : "None");
 }
@@ -352,6 +360,9 @@ void EditorApplication::handle_key_release() noexcept {
     case GLFW_KEY_X:
         gizmo_state.snap = !gizmo_state.snap;
         break;
+    case GLFW_KEY_ESCAPE:
+        m_control_state.set_cur_obj(nullptr);
+        break;
     default:
         break;
     }
@@ -377,8 +388,8 @@ void EditorApplication::handle_mouse_release() noexcept {
     input_state = {};
 }
 
-void EditorApplication::add_object(Object const& obj) noexcept {
-    auto hobj = m_scene.add_object(obj);
+void EditorApplication::add_object(Object obj) noexcept {
+    auto const hobj = m_scene.add_object(std::move(obj));
     check_error(m_renderer.on_add_object(hobj));
     m_control_state.set_cur_obj(hobj);
 }
@@ -389,9 +400,7 @@ void EditorApplication::remove_object(ObserverPtr<Object> obj) noexcept {
 	m_control_state.set_cur_obj(nullptr);
 }
 
-void EditorApplication::print(std::string_view msg) {
-    m_console_text = msg;
-}
+void EditorApplication::on_log_added() { }
 
 void EditorApplication::ControlState::set_cur_obj(ObserverPtr<Object> obj) noexcept {
     if (obj == m_cur_obj) {

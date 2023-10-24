@@ -67,8 +67,8 @@ protected:
      * \return the renderer
     */
     [[nodiscard]] auto get_debug_drawer() -> DebugDrawer& { return m_debug_drawer; }
-    [[nodiscard]] auto get_cur_hovered_widget() const noexcept -> std::string_view { return m_cur_hovered_widget; }
-    [[nodiscard]] auto get_cur_focused_widget() const noexcept -> std::string_view { return m_cur_focused_widget; }
+    [[nodiscard]] auto get_cur_hovered_widget() const noexcept { return m_cur_hovered_widget; }
+    [[nodiscard]] auto get_cur_focused_widget() const noexcept { return m_cur_focused_widget; }
     
     // imgui helpers
     void begin_imgui_window(

@@ -63,9 +63,9 @@ private:
     void handle_key_release() noexcept;
     void handle_mouse_press(int button) noexcept;
     void handle_mouse_release() noexcept;
-    void add_object(Object const& obj) noexcept;
+    void add_object(Object obj) noexcept;
     void remove_object(ObserverPtr<Object> obj) noexcept;
-    void print(std::string_view msg) override;
+    void on_log_added() override;
 
     std::string m_console_text;
 

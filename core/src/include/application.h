@@ -1,13 +1,14 @@
 #pragma once
+#include <deque>
 #include <sstream>
 #include "utils.h"
 
-enum class LogLevel {
+DECL_ENUM(LogLevel,
     Debug,
     Info,
     Warning,
     Error
-};
+);
 
 /**
  * \brief The base class for all applications (not necessarily graphical)
@@ -29,26 +30,42 @@ struct Application {
     [[noreturn]] virtual void quit(int code) = 0;
 
     template <typename... Args>
-	void log(Args&&... args) noexcept {
+	void log(LogLevel level, Args&&... args) noexcept {
+#if NDEBUG
+        if(level == LogLevel::Debug) {
+            return;
+        }
+#endif
+
         std::ostringstream ss;
         (ss << ... << args);
         ss << '\n';
 
         ++m_line_cnt;
-        if (m_line_cnt > m_max_line_cnt) {
-            if(!m_messages.empty())
-				m_messages = m_messages.substr(m_messages.find('\n') + 1);
-        	--m_line_cnt;
+
+    	if (m_line_cnt > m_max_line_cnt) {
+            if (!m_logs.empty()) {
+                m_logs.pop_front();
+                --m_line_cnt;
+            }
         }
-        m_messages.append(ss.str());
-        print(m_messages);
+
+        m_logs.emplace_back(level, ss.str());
+        on_log_added();
     }
 
 protected:
-    virtual void print(std::string_view msg) = 0;
+    struct LogDesc {
+        LogLevel level;
+        std::string msg;
+        LogDesc(LogLevel level, std::string msg)
+	        : level{level}, msg{std::move(msg)} {}
+    };
+    virtual void on_log_added() = 0;
+    NODISCARD auto get_logs() const -> View<std::deque<LogDesc>> { return m_logs; }
 
 private:
     unsigned m_max_line_cnt{ 5 };
 	unsigned m_line_cnt{ 0 };
-	std::string m_messages;
+    std::deque<LogDesc> m_logs;
 };
