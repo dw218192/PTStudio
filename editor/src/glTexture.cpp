@@ -2,7 +2,7 @@
 #include "include/ext.h"
 
 auto GLTexture::fetch_pixels() const noexcept -> tl::expected<void, std::string> {
-    TL_CHECK_FWD(bind());
+    TL_CHECK_AND_PASS(bind());
 
     glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_UNSIGNED_BYTE, m_pixels.data());
     glBindTexture(GL_TEXTURE_2D, 0);
@@ -50,7 +50,7 @@ auto GLTexture::create_tex(unsigned width, unsigned height, GLenum format, std::
 
 auto GLTexture::create(unsigned width, unsigned height, GLenum format, std::initializer_list<GLParam> params) noexcept -> tl::expected<GLTextureRef, std::string> {
     GLuint tex;
-    TL_ASSIGN(tex, create_tex(width, height, format, params));
+    TL_TRY_ASSIGN(tex, create_tex(width, height, format, params));
     auto ret = GLTextureRef{ new GLTexture{width, height, format, tex }, GLResourceDeleter{} };
     return ret;
 }
@@ -100,7 +100,7 @@ auto GLTexture::get_id() const noexcept -> void* {
 }
 
 auto GLTexture::resize(unsigned width, unsigned height) noexcept -> tl::expected<void, std::string> {
-	TL_CHECK_FWD(Texture::resize(width, height));
+	TL_CHECK_AND_PASS(Texture::resize(width, height));
     glTexImage2D(
         GL_TEXTURE_2D, 0, m_format, // RGB color format
         width, height,

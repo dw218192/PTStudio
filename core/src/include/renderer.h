@@ -9,18 +9,12 @@
 
 struct Application;
 struct Renderer {
+	NO_COPY_MOVE(Renderer);
+
 	explicit Renderer(RenderConfig config) noexcept;
     virtual ~Renderer() noexcept;
 
-	// don't copy because we have handles to GL resources
-	Renderer(Renderer&) = delete;
-    Renderer& operator=(Renderer&) = delete;
-
-    // may implement move, but delete them for now
-    Renderer(Renderer&&) = delete;
-    Renderer& operator=(Renderer&&) = delete;
-
-    NODISCARD virtual auto init() noexcept -> tl::expected<void, std::string> = 0;
+    NODISCARD virtual auto init(ObserverPtr<Application> app) noexcept -> tl::expected<void, std::string>;
 
 	/**
 	 * \brief Opens a new scene
@@ -82,9 +76,11 @@ struct Renderer {
 	 * \brief Draws any custom UI that might help editing that is specific to a renderer
 	 * \return on failure, an error message
 	 */
-    NODISCARD virtual auto draw_imgui(ObserverPtr<Application> app = nullptr) noexcept -> tl::expected<void, std::string> {
+    NODISCARD virtual auto draw_imgui() noexcept -> tl::expected<void, std::string> {
         return {};
     }
+
 protected:
     RenderConfig m_config;
+    ObserverPtr<Application> m_app{ nullptr };
 };

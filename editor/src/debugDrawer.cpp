@@ -90,7 +90,7 @@ void DebugDrawer::draw_rect_3d(View<Camera> cam, glm::vec3 center, glm::vec3 ext
 	}
 }
 void DebugDrawer::draw_box(View<Camera> cam, View<BoundingBox> box, glm::vec3 color, float thickness, float time) noexcept {
-	draw_rect_3d(cam, box.get_center(), box.get_extent(), color, thickness, time);
+	draw_rect_3d(cam, box.get().get_center(), box.get().get_extent(), color, thickness, time);
 }
 
 void DebugDrawer::draw_line_3d(View<Camera> cam, glm::vec3 from, glm::vec3 to, glm::vec3 color, float thickness, float time) noexcept {
@@ -100,8 +100,8 @@ void DebugDrawer::draw_line_3d(View<Camera> cam, glm::vec3 from, glm::vec3 to, g
 			time,
 			[=, offset = m_offset]() {
 				// have to fetch these every frame because the camera might have changed
-				auto view_frm = cam.world_to_viewport(from);
-				auto view_to = cam.world_to_viewport(to);
+				auto view_frm = cam.get().world_to_viewport(from);
+				auto view_to = cam.get().world_to_viewport(to);
 
 				view_frm += offset;
 				view_to += offset;
@@ -118,5 +118,5 @@ void DebugDrawer::draw_line_3d(View<Camera> cam, glm::vec3 from, glm::vec3 to, g
 }
 
 void DebugDrawer::draw_ray_3d(View<Camera> cam, View<Ray> ray, glm::vec3 color, float thickness, float time) noexcept {
-	draw_line_3d(cam, ray.origin, ray.get_point(100.0f), color, thickness, time);
+	draw_line_3d(cam, ray.get().origin, ray.get().get_point(100.0f), color, thickness, time);
 }

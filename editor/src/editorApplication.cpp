@@ -16,7 +16,7 @@ EditorApplication::EditorApplication(Renderer& renderer, Scene& scene, std::stri
       m_cam{ renderer.get_config().fovy, renderer.get_config().width, renderer.get_config().height, scene.get_good_cam_start() }
 {
     // initialize renderer
-    check_error(m_renderer.init());
+    check_error(m_renderer.init(this));
 	check_error(m_renderer.open_scene(scene));
 
 // #define EDITOR_APP_IMGUI_LOAD_INI
@@ -132,7 +132,7 @@ void EditorApplication::loop(float dt) {
     }
     end_imgui_window();
 
-    check_error(m_renderer.draw_imgui(this));
+    check_error(m_renderer.draw_imgui());
 }
 
 void EditorApplication::quit(int code) {
@@ -283,7 +283,7 @@ void EditorApplication::draw_console_panel() const noexcept {
 
 	ImGui::BeginChild("##scroll");
     {
-        for(auto&& [level, msg] : get_logs()) {
+        for(auto&& [level, msg] : get_logs().get()) {
             ImGui::PushStyleColor(ImGuiCol_Text, s_log_colors[level]);
             ImGui::TextUnformatted(msg.data());
         	ImGui::PopStyleColor();
@@ -332,9 +332,9 @@ void EditorApplication::try_select_object() noexcept {
     pos = pos - win_pos.value();
     auto const ray = m_cam.viewport_to_ray(to_glm(pos));
     auto const res = m_scene.ray_cast(ray);
-    if(res) m_control_state.set_cur_obj(res); // note: deselection is handled by key press
-
-    // m_console.log("Selected object: ", res ? res->get_name() : "None");
+    if (res) {
+        m_control_state.set_cur_obj(res); // note: deselection is handled by key press
+    }
 }
 
 void EditorApplication::handle_key_release() noexcept {

@@ -49,20 +49,41 @@ constexpr T div_up(T x, T y) {
 	auto res = func_call;\
 	if (!res) return TL_ERROR(res.error()); \
 } while (0)
-#define TL_CHECK_FWD(func_call) do { \
+#define TL_CHECK_AND_PASS(func_call) do { \
 	auto res = func_call;\
 	if (!res) return res; \
 } while (0)
-#define TL_ASSIGN(out, func_call) do { \
+#define TL_TRY_ASSIGN(out, func_call) do { \
 	auto res = func_call;\
 	if (!res) return TL_ERROR(res.error()); \
 	out = std::move(res.value());\
 } while (0)
-#define TL_ASSIGN_FWD(out, func_call) do { \
+#define TL_TRY_ASSIGN_AND_PASS(out, func_call) do { \
 	auto res = func_call;\
 	if (!res) return res; \
 	out = std::move(res.value());\
 } while (0)
+
+
+
+// non-fatal errors
+#define CHECK_GL_ERROR_NON_FATAL(app, level) do { \
+	auto err = glGetError(); \
+	if (err != GL_NO_ERROR) (app).log(level, glewGetErrorString(err)); \
+} while (0)
+ 
+#define TL_CHECK_NON_FATAL(app, level, func_call) do { \
+	auto res = func_call;\
+	if (!res) (app)->log(level, res.error()); \
+} while (0)
+
+#define TL_TRY_ASSIGN_NON_FATAL(out, app, level, func_call) do { \
+	auto res = func_call;\
+	if (!res) (app)->log(level, res.error()); \
+	else { out = std::move(res.value()); }\
+} while (0)
+
+
 
 // useful typedefs
 // TODO: may implement these as classes later
@@ -74,8 +95,11 @@ template<typename T> using ObserverPtr = T*;
 // non-owning ptr to a const, essentially a view
 template<typename T> using ViewPtr = T const*;
 
-// non-owing view to a const
-template<typename T> using View = T const&;
+// non-owning view
+template<typename T> using Ref = std::reference_wrapper<T>;
+
+// non-owning view to a const
+template<typename T> using View = std::reference_wrapper<T const>;
 
 #define NO_COPY_MOVE(Ty)\
 Ty(Ty const&) = delete;\

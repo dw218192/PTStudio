@@ -77,7 +77,7 @@ struct ShaderProgram final : GLResource {
     auto operator=(ShaderProgram&&) noexcept -> ShaderProgram&;
 
     template<typename UniformType>
-    [[nodiscard]] auto set_uniform(std::string_view name, UniformType const& value) const noexcept
+    [[nodiscard]] auto set_uniform(std::string_view name, UniformType&& value) const noexcept
 		-> tl::expected<void, std::string>;
 
 	[[nodiscard]] auto set_texture(std::string_view name, ViewPtr<struct GLTexture> tex, GLuint slot) const noexcept
@@ -99,8 +99,13 @@ private:
     EArray<ShaderType, ShaderRef> m_shaders{};
 };
 
+template<typename T>
+void see(T&&);
+
 template<typename UniformType>
-auto ShaderProgram::set_uniform(std::string_view name, View<UniformType> value) const noexcept -> tl::expected<void, std::string> {
+auto ShaderProgram::set_uniform(std::string_view name, UniformType&& value) const noexcept -> tl::expected<void, std::string> {
+    using ValueType = std::decay_t<UniformType>;
+
 	if (!valid()) {
         return TL_ERROR( "Invalid shader program" );
     }
@@ -108,25 +113,26 @@ auto ShaderProgram::set_uniform(std::string_view name, View<UniformType> value) 
     if (loc == -1) {
         return TL_ERROR( "Failed to get uniform location" );
     }
-    if constexpr (std::is_same_v<UniformType, glm::mat4>) {
+    if constexpr (std::is_same_v<ValueType, glm::mat4>) {
         glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(value));
     }
-    else if constexpr (std::is_same_v<UniformType, glm::vec2>) {
+    else if constexpr (std::is_same_v<ValueType, glm::vec2>) {
         glUniform2fv(loc, 1, glm::value_ptr(value));
     }
-    else if constexpr (std::is_same_v<UniformType, glm::vec3>) {
+    else if constexpr (std::is_same_v<ValueType, glm::vec3>) {
         glUniform3fv(loc, 1, glm::value_ptr(value));
     }
-    else if constexpr (std::is_same_v<UniformType, glm::vec4>) {
+    else if constexpr (std::is_same_v<ValueType, glm::vec4>) {
         glUniform4fv(loc, 1, glm::value_ptr(value));
     }
-    else if constexpr (std::is_same_v<UniformType, float>) {
+    else if constexpr (std::is_same_v<ValueType, float>) {
         glUniform1f(loc, value);
     }
-    else if constexpr (std::is_same_v<UniformType, int>) {
+    else if constexpr (std::is_same_v<ValueType, int>) {
         glUniform1i(loc, value);
     }
     else {
+        see<ValueType>();
         static_assert(false, "Unsupported uniform type");
     }
 

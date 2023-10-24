@@ -57,7 +57,7 @@ namespace {
     }
 
     auto link_shaders(GLuint program, View<EArray<ShaderType, ShaderRef>> shaders) noexcept -> tl::expected<void, std::string> {
-        for (auto&& shader : shaders) {
+        for (auto&& shader : shaders.get()) {
             glAttachShader(program, shader->handle());
             CHECK_GL_ERROR();
         }
@@ -82,7 +82,7 @@ namespace {
             return TL_ERROR( infoLog );
         }
 
-        for (auto&& shader : shaders) {
+        for (auto&& shader : shaders.get()) {
             glDetachShader(program, shader->handle());
             CHECK_GL_ERROR();
         }
@@ -149,7 +149,7 @@ auto Shader::clone(ViewPtr<Shader> other) noexcept -> tl::expected<ShaderRef, st
 auto Shader::from_src(ShaderType type, std::string_view src) noexcept -> tl::expected<ShaderRef, std::string> {
     auto gltype = to_gl_type(type);
     GLuint handle;
-    TL_ASSIGN(handle, create_shader(gltype, src));
+    TL_TRY_ASSIGN(handle, create_shader(gltype, src));
     auto ret = ShaderRef{ new Shader { gltype, handle, src }, GLResourceDeleter{ } };
 	return ret;
 }
@@ -181,8 +181,8 @@ auto ShaderProgram::set_texture(std::string_view name, ViewPtr<GLTexture> tex, G
     }
 
     glActiveTexture(GL_TEXTURE0 + slot);
-    TL_CHECK_FWD(tex->bind());
-    TL_CHECK_FWD(set_uniform(name, static_cast<int>(slot)));
+    TL_CHECK_AND_PASS(tex->bind());
+    TL_CHECK_AND_PASS(set_uniform(name, static_cast<int>(slot)));
 
     return {};
 }
@@ -202,8 +202,8 @@ void ShaderProgram::unbind() noexcept {
 
 auto ShaderProgram::try_recompile(tcb::span<StageDesc<std::string_view> const> new_srcs) noexcept -> tl::expected<void, std::string> {
     ShaderProgramRef copy;
-    TL_ASSIGN(copy, ShaderProgram::clone(this));
-    TL_CHECK_FWD(copy->recompile(new_srcs));
+    TL_TRY_ASSIGN(copy, ShaderProgram::clone(this));
+    TL_CHECK_AND_PASS(copy->recompile(new_srcs));
     swap(std::move(*copy));
 
 	return {};
@@ -216,12 +216,12 @@ auto ShaderProgram::recompile(tcb::span<StageDesc<std::string_view> const> new_s
 
     for (auto&& [type, src] : new_srcs) {
         if (!m_shaders[type]) {
-            TL_ASSIGN(m_shaders[type], Shader::from_src(type, src));
+            TL_TRY_ASSIGN(m_shaders[type], Shader::from_src(type, src));
         } else {
-            TL_CHECK_FWD(m_shaders[type]->recompile(src));
+            TL_CHECK_AND_PASS(m_shaders[type]->recompile(src));
         }
     }
-	TL_CHECK_FWD(link_shaders(m_handle, m_shaders));
+	TL_CHECK_AND_PASS(link_shaders(m_handle, m_shaders));
 
     return {};
 }
@@ -258,7 +258,7 @@ auto ShaderProgram::clone(ViewPtr<ShaderProgram> other) noexcept -> tl::expected
     std::vector<StageDesc<ShaderRef>> stages;
     for(auto type : EIter<ShaderType>{}) {
         ShaderRef shader;
-        TL_ASSIGN(shader, Shader::clone(other->m_shaders[type].get()));
+        TL_TRY_ASSIGN(shader, Shader::clone(other->m_shaders[type].get()));
         stages.emplace_back(type, std::move(shader));
     }
     return from_shaders(stages);
@@ -268,7 +268,7 @@ auto ShaderProgram::from_files(tcb::span<StageDesc<std::string_view> const> file
     std::vector<StageDesc<ShaderRef>> stages;
     for (auto&& [type, src] : files) {
         ShaderRef shader;
-        TL_ASSIGN(shader, Shader::from_file(type, src));
+        TL_TRY_ASSIGN(shader, Shader::from_file(type, src));
         stages.emplace_back(type, std::move(shader));
     }
 
@@ -279,7 +279,7 @@ auto ShaderProgram::from_srcs(tcb::span<StageDesc<std::string_view> const> srcs)
     std::vector<StageDesc<ShaderRef>> stages;
     for (auto&& [type, src] : srcs) {
         ShaderRef shader;
-        TL_ASSIGN(shader, Shader::from_src(type, src));
+        TL_TRY_ASSIGN(shader, Shader::from_src(type, src));
         stages.emplace_back(type, std::move(shader));
     }
 

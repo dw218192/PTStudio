@@ -73,10 +73,10 @@ auto GLVertexArray::connect(tcb::span<VertexType const, Extent> raw_data, GLAttr
 	static_assert(sizeof...(attris) > 0, "must have at least one attribute");
 
 	GLBufferRef buf;
-	TL_ASSIGN(buf, GLBuffer::create(GL_ARRAY_BUFFER));
-	TL_CHECK_FWD(buf->bind());
+	TL_TRY_ASSIGN(buf, GLBuffer::create(GL_ARRAY_BUFFER));
+	TL_CHECK_AND_PASS(buf->bind());
 	{
-		TL_CHECK_FWD(buf->set_data(raw_data));
+		TL_CHECK_AND_PASS(buf->set_data(raw_data));
 
 		auto set_attr = [](auto&& info) -> void {
 			glEnableVertexAttribArray(info.slot);

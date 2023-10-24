@@ -74,8 +74,8 @@ auto GLFrameBuffer::attach(unsigned width, unsigned height, std::initializer_lis
 	for (auto const& desc : descs) {
 		if (desc.attachment == GL_DEPTH_ATTACHMENT) {
 			GLRenderBufferRef rbo;
-			TL_ASSIGN(rbo, GLRenderBuffer::create(width, height, desc.format));
-			TL_CHECK_FWD(rbo->bind());
+			TL_TRY_ASSIGN(rbo, GLRenderBuffer::create(width, height, desc.format));
+			TL_CHECK_AND_PASS(rbo->bind());
 			{
 				glFramebufferRenderbuffer(GL_FRAMEBUFFER, desc.attachment, GL_RENDERBUFFER, rbo->handle());
 				CHECK_GL_ERROR();
@@ -86,8 +86,8 @@ auto GLFrameBuffer::attach(unsigned width, unsigned height, std::initializer_lis
 
 		} else if (std::find(std::begin(k_color_attachments), std::end(k_color_attachments), desc.attachment) != std::end(k_color_attachments)) {
 			GLTextureRef tex;
-			TL_ASSIGN(tex, GLTexture::create(width, height, desc.format, desc.params));
-			TL_CHECK_FWD(tex->bind());
+			TL_TRY_ASSIGN(tex, GLTexture::create(width, height, desc.format, desc.params));
+			TL_CHECK_AND_PASS(tex->bind());
 			{
 				glFramebufferTexture(GL_FRAMEBUFFER, desc.attachment, tex->handle(), 0);
 				CHECK_GL_ERROR();
@@ -111,13 +111,13 @@ auto GLFrameBuffer::set_draw_buffer(GLenum attachment) const -> tl::expected<voi
 
 auto GLFrameBuffer::resize(unsigned width, unsigned height) noexcept -> tl::expected<void, std::string> {
 	for (auto&& [attachment, rbo] : m_rbo_attchs) {
-		TL_CHECK_FWD(rbo->bind());
-		TL_CHECK_FWD(rbo->resize(width, height));
+		TL_CHECK_AND_PASS(rbo->bind());
+		TL_CHECK_AND_PASS(rbo->resize(width, height));
 		rbo->unbind();
 	}
 	for (auto&& [attachment, tex] : m_tex_attchs) {
-		TL_CHECK_FWD(tex->bind());
-		TL_CHECK_FWD(tex->resize(width, height));
+		TL_CHECK_AND_PASS(tex->bind());
+		TL_CHECK_AND_PASS(tex->resize(width, height));
 		tex->unbind();
 	}
 	return {};
@@ -213,14 +213,14 @@ auto GLFrameBuffer::clear(glm::vec3 color, float depth) const noexcept -> tl::ex
 	CHECK_GL_ERROR();
 
 	for (auto&& [attachment, tex] : m_tex_attchs) {
-		TL_CHECK_FWD(set_draw_buffer(attachment));
+		TL_CHECK_AND_PASS(set_draw_buffer(attachment));
 
 		glClear(GL_COLOR_BUFFER_BIT);
 		CHECK_GL_ERROR();
 	}
 
 	//restore the draw buffer
-	TL_CHECK_FWD(set_draw_buffer(draw_buffer));
+	TL_CHECK_AND_PASS(set_draw_buffer(draw_buffer));
 
 	return {};
 }
@@ -231,7 +231,7 @@ auto GLFrameBuffer::clear_color(GLenum attachment, glm::vec3 color) const noexce
 	glGetIntegerv(GL_DRAW_BUFFER, &draw_buffer);
 	CHECK_GL_ERROR();
 
-	TL_CHECK_FWD(set_draw_buffer(attachment));
+	TL_CHECK_AND_PASS(set_draw_buffer(attachment));
 	
 	glClearColor(color.r, color.g, color.b, 1.0f);
 	CHECK_GL_ERROR();
@@ -240,7 +240,7 @@ auto GLFrameBuffer::clear_color(GLenum attachment, glm::vec3 color) const noexce
 	CHECK_GL_ERROR();
 	
 	//restore the draw buffer
-	TL_CHECK_FWD(set_draw_buffer(draw_buffer));
+	TL_CHECK_AND_PASS(set_draw_buffer(draw_buffer));
 
 	return {};
 }

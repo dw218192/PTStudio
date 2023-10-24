@@ -17,10 +17,10 @@
 
 struct EditorRenderer final : Renderer, Singleton<EditorRenderer> {
 friend Singleton;
-NO_COPY_MOVE(EditorRenderer);
+	NO_COPY_MOVE(EditorRenderer);
 
     ~EditorRenderer() noexcept override;
-    [[nodiscard]] auto init() noexcept -> tl::expected<void, std::string> override;
+    [[nodiscard]] auto init(ObserverPtr<Application> app) noexcept -> tl::expected<void, std::string> override;
     [[nodiscard]] auto open_scene(View<Scene> scene) noexcept -> tl::expected<void, std::string> override;
     [[nodiscard]] auto render(View<Camera> cam) noexcept -> tl::expected<void, std::string> override;
     [[nodiscard]] auto render_buffered(View<Camera> cam) noexcept -> tl::expected<TextureHandle, std::string> override;
@@ -28,7 +28,7 @@ NO_COPY_MOVE(EditorRenderer);
     [[nodiscard]] auto on_change_render_config(RenderConfig const& config) noexcept -> tl::expected<void, std::string> override;
     [[nodiscard]] auto on_add_object(ViewPtr<Object> obj) noexcept -> tl::expected<void, std::string> override;
     [[nodiscard]] auto on_remove_object(ViewPtr<Object> obj) noexcept -> tl::expected<void, std::string> override;
-    [[nodiscard]] auto draw_imgui(ObserverPtr<Application> app) noexcept -> tl::expected<void, std::string> override;
+    [[nodiscard]] auto draw_imgui() noexcept -> tl::expected<void, std::string> override;
 
     void on_object_change(ViewPtr<Object> obj) noexcept;
 private:

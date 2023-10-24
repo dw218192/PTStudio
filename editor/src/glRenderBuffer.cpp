@@ -3,7 +3,7 @@
 
 auto GLRenderBuffer::create(unsigned width, unsigned height, GLenum format) -> tl::expected<GLRenderBufferRef, std::string> {
 	GLuint rbo;
-	TL_ASSIGN(rbo, create_buf(width, height, format));
+	TL_TRY_ASSIGN(rbo, create_buf(width, height, format));
 	auto ret = GLRenderBufferRef{ new GLRenderBuffer{width, height, format, rbo}, GLResourceDeleter{} };
 	return ret;
 }
