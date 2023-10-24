@@ -8,33 +8,46 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include "glResource.h"
+#include "enumArray.h"
 #include "utils.h"
+#include <tcb/span.hpp>
 
 struct Shader;
 struct ShaderProgram;
 
 enum class ShaderType {
     Vertex,
-    Fragment
+    Fragment,
+    __COUNT
 };
 
 using ShaderProgramRef = UniqueGLResRef<ShaderProgram>;
 using ShaderRef = UniqueGLResRef<Shader>;
 
+inline auto to_string(ShaderType type) noexcept {
+	switch (type) {
+	case ShaderType::Vertex:
+        return "Vertex Shader";
+	case ShaderType::Fragment:
+        return "Fragment Shader";
+	}
+    return "";
+}
+
 struct Shader final : GLResource {
 	friend struct GLResourceDeleter;
+    NO_COPY(Shader);
 
     [[nodiscard]] static auto from_file(ShaderType type, std::string_view file) noexcept -> tl::expected<ShaderRef, std::string>;
     [[nodiscard]] static auto from_src(ShaderType type, std::string_view src) noexcept -> tl::expected<ShaderRef, std::string>;
-    [[nodiscard]] static auto clone(Shader const* other) noexcept -> tl::expected<ShaderRef, std::string>;
-
-    Shader(Shader const&) = delete;
-    auto operator=(Shader const&) ->Shader& = delete;
+    [[nodiscard]] static auto clone(ViewPtr<Shader> other) noexcept -> tl::expected<ShaderRef, std::string>;
 
     Shader(Shader&& other) noexcept;
     auto operator=(Shader&& other) noexcept -> Shader&;
 
     [[nodiscard]] auto recompile(std::string_view new_src) -> tl::expected<void, std::string>;
+    [[nodiscard]] auto get_src() const noexcept -> std::string_view { return m_src; }
+    [[nodiscard]] auto get_type() const noexcept -> ShaderType;
 private:
     void swap(Shader&& other) noexcept;
     ~Shader() noexcept override;
@@ -45,35 +58,51 @@ private:
 };
 
 struct ShaderProgram final : GLResource {
-    [[nodiscard]] static auto from_srcs(std::string_view vs, std::string_view ps) noexcept -> tl::expected<ShaderProgramRef, std::string>;
-    [[nodiscard]] static auto from_files(std::string_view vs, std::string_view ps) noexcept -> tl::expected<ShaderProgramRef, std::string>;
-    [[nodiscard]] static auto from_shaders(ShaderRef vs, ShaderRef ps) noexcept -> tl::expected<ShaderProgramRef, std::string>;
-    [[nodiscard]] static auto clone(ShaderProgram const* other) noexcept -> tl::expected<ShaderProgramRef, std::string>;
+    template<typename T>
+    using StageDesc = std::pair<ShaderType const, T> ;
+    NO_COPY(ShaderProgram);
 
-    ShaderProgram(ShaderProgram const&) = delete;
-    auto operator=(ShaderProgram const&)->ShaderProgram& = delete;
+
+    [[nodiscard]] static auto from_srcs(tcb::span<StageDesc<std::string_view> const> srcs) noexcept
+        -> tl::expected<ShaderProgramRef, std::string>;
+    
+    [[nodiscard]] static auto from_files(tcb::span<StageDesc<std::string_view> const> files) noexcept
+        -> tl::expected<ShaderProgramRef, std::string>;
+    
+    [[nodiscard]] static auto from_shaders(tcb::span<StageDesc<ShaderRef>> shaders) noexcept
+        -> tl::expected<ShaderProgramRef, std::string>;
+    
+    [[nodiscard]] static auto clone(ViewPtr<ShaderProgram> other) noexcept
+		-> tl::expected<ShaderProgramRef, std::string>;
 
     ShaderProgram(ShaderProgram&&) noexcept;
     auto operator=(ShaderProgram&&) noexcept -> ShaderProgram&;
 
     template<typename UniformType>
-    [[nodiscard]] auto set_uniform(std::string_view name, UniformType const& value) const noexcept -> tl::expected<void, std::string>;
-    [[nodiscard]] auto set_texture(std::string_view name, struct GLTexture const* tex, GLuint slot) const noexcept -> tl::expected<void, std::string>;
+    [[nodiscard]] auto set_uniform(std::string_view name, UniformType const& value) const noexcept
+		-> tl::expected<void, std::string>;
+
+	[[nodiscard]] auto set_texture(std::string_view name, ViewPtr<struct GLTexture> tex, GLuint slot) const noexcept
+        -> tl::expected<void, std::string>;
 
     [[nodiscard]] auto bind() const noexcept -> tl::expected<void, std::string>;
     static void unbind() noexcept;
 
-    [[nodiscard]] auto recompile(std::string_view new_vs, std::string_view new_ps) noexcept -> tl::expected<void, std::string>;
+    [[nodiscard]] auto try_recompile(tcb::span<StageDesc<std::string_view> const> new_srcs) noexcept
+        -> tl::expected<void, std::string>;
+    [[nodiscard]] auto recompile(tcb::span<StageDesc<std::string_view> const> new_srcs) noexcept
+        -> tl::expected<void, std::string>;
+    
+    [[nodiscard]] auto get_stage(ShaderType type) const noexcept -> ViewPtr<Shader>;
 private:
     void swap(ShaderProgram&& other) noexcept;
     ~ShaderProgram() noexcept override;
-    ShaderProgram(ShaderRef vs, ShaderRef ps, GLuint handle) noexcept;
-    ShaderRef m_vs;
-    ShaderRef m_ps;
+    ShaderProgram(EArray<ShaderType, ShaderRef> shaders, GLuint handle) noexcept;
+    EArray<ShaderType, ShaderRef> m_shaders{};
 };
 
 template<typename UniformType>
-auto ShaderProgram::set_uniform(std::string_view name, UniformType const& value) const noexcept -> tl::expected<void, std::string> {
+auto ShaderProgram::set_uniform(std::string_view name, View<UniformType> value) const noexcept -> tl::expected<void, std::string> {
 	if (!valid()) {
         return TL_ERROR( "Invalid shader program" );
     }

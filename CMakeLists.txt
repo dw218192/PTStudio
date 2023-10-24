@@ -61,8 +61,6 @@ target_include_directories(developer_flags INTERFACE ${CMAKE_CUDA_TOOLKIT_INCLUD
 
 target_compile_features(developer_flags INTERFACE cxx_std_17)
 
-enable_testing()
-
 set(EXT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ext")
 
 # OpenGL and common stuff

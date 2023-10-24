@@ -8,6 +8,8 @@
 
 #include <imgui_internal.h>
 
+static constexpr char const* k_scene_view_win_name = "Scene";
+
 EditorApplication::EditorApplication(Renderer& renderer, Scene& scene, std::string_view name)
     : GLFWApplication { name, renderer.get_config().width, renderer.get_config().height, renderer.get_config().min_frame_time },
 	  m_scene { scene }, m_renderer{ renderer },
@@ -121,7 +123,7 @@ void EditorApplication::loop(float dt) {
     end_imgui_window();
 
     // draw the scene view
-    begin_imgui_window("Scene", 
+    begin_imgui_window(k_scene_view_win_name,
         ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoMove,
         m_on_mouse_leave_scene_viewport_cb,
         m_on_mouse_enter_scene_viewport_cb);
@@ -282,12 +284,14 @@ void EditorApplication::draw_console_panel() const noexcept {
 
 bool EditorApplication::can_rotate() const noexcept {
     return
+        get_cur_focused_widget() == k_scene_view_win_name &&
         !ImGuizmo::IsUsing() &&
         m_control_state.input_state.cur_mouse_down == GLFW_MOUSE_BUTTON_RIGHT;
 }
 
 bool EditorApplication::can_move() const noexcept {
     return
+        get_cur_focused_widget() == k_scene_view_win_name &&
         !ImGuizmo::IsUsing() &&
         m_control_state.input_state.cur_mouse_down == GLFW_MOUSE_BUTTON_LEFT;
 }
@@ -300,13 +304,17 @@ void EditorApplication::on_mouse_enter_scene_viewport() noexcept {
     m_control_state.is_outside_view = false;
 }
 
-void EditorApplication::on_obj_change(Object* obj) noexcept {}
+void EditorApplication::on_obj_change(ObserverPtr<Object> obj) noexcept {}
 
 void EditorApplication::try_select_object() noexcept {
     auto pos = ImGui::GetMousePos();
-    auto const win_pos = get_window_content_pos("Scene");
+    auto const win_pos = get_window_content_pos(k_scene_view_win_name);
     if (!win_pos) {
         this->log("scene view not found");
+        return;
+    } else if(get_cur_hovered_widget() != k_scene_view_win_name) {
+        return;
+    } else if(get_cur_focused_widget() != k_scene_view_win_name) {
         return;
     }
 
@@ -314,6 +322,8 @@ void EditorApplication::try_select_object() noexcept {
     pos = pos - win_pos.value();
     auto const ray = m_cam.viewport_to_ray(to_glm(pos));
     auto const res = m_scene.ray_cast(ray);
+
+    // prevent deselecting when not in scene view
     m_control_state.set_cur_obj(res);
 
     // m_console.log("Selected object: ", res ? res->get_name() : "None");

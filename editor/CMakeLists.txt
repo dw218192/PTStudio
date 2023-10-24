@@ -24,6 +24,7 @@ target_link_libraries(${exec_name}
 	stb
 	imgui
 	imguizmo
+	ImGuiColorTextEdit
 	expected
 	span
 	nativefiledialog

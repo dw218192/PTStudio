@@ -82,6 +82,7 @@ GLFWApplication::GLFWApplication(std::string_view name, unsigned width, unsigned
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
+    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
     
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
@@ -105,12 +106,12 @@ GLFWApplication::~GLFWApplication() {
 void GLFWApplication::run() {
     double last_frame_time = 0;
     while (!glfwWindowShouldClose(m_window)) {
-        double now = glfwGetTime();
+        auto now = glfwGetTime();
 
         // Poll and handle events (inputs, window resize, etc.)
         glfwPollEvents();
 
-        double dt = now - last_frame_time;
+        auto dt = static_cast<float>(now - last_frame_time);
         if (dt >= m_min_frame_time) {
             m_prev_hovered_widget = m_cur_hovered_widget;
 
@@ -196,13 +197,21 @@ void GLFWApplication::begin_imgui_window(
 
     ImGui::Begin(name.data(), nullptr, flags);
     if (ImGui::IsWindowHovered()) {
+        m_cur_hovered_widget = name;
+        /*
         if (ImGui::GetMousePos() >= ImGui::GetWindowPos() && ImGui::GetMousePos() <= ImGui::GetWindowPos() + ImGui::GetWindowSize()) {
             m_cur_hovered_widget = name;
         }
+        */
     }
 
     // disable alt key for imgui
     ImGui::SetKeyOwner(ImGuiMod_Alt, ImGui::GetCurrentWindow()->ID);
+
+    // record the current focus
+    if (ImGui::IsWindowFocused()) {
+        m_cur_focused_widget = name;
+    }
 }
 
 void GLFWApplication::end_imgui_window() noexcept {
@@ -210,7 +219,7 @@ void GLFWApplication::end_imgui_window() noexcept {
 }
 
 auto GLFWApplication::get_window_content_pos(std::string_view name) const noexcept -> std::optional<ImVec2> {
-    auto win = ImGui::FindWindowByName(name.data());
+    auto const win = ImGui::FindWindowByName(name.data());
     if (!win) {
         return std::nullopt;
     }

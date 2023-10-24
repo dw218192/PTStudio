@@ -33,38 +33,53 @@ constexpr T div_up(T x, T y) {
 #include <tl/expected.hpp>
 
 // convenience helpers
-#define TL_ERROR(msg) tl::unexpected { std::string{__FILE__} + ":" + std::to_string(__LINE__) + ": " + (msg) }
-#define TL_GL_ERROR(err) TL_ERROR(reinterpret_cast<char const*>(glewGetErrorString(err)))
+#ifdef NDEBUG
+	#define TL_ERROR(msg) {}
+	#define TL_GL_ERROR(err) {}
+	#define CHECK_GL_ERROR() (void)0
+	#define TL_CHECK(func_call) func_call
+	#define TL_CHECK_FWD(func_call) func_call
+	#define TL_ASSIGN(out, func_call) out = std::move((func_call).value())
+	#define TL_ASSIGN_FWD(out, func_call) out = std::move((func_call).value())
+#else
+	#define TL_ERROR(msg) tl::unexpected { std::string{__FILE__} + ":" + std::to_string(__LINE__) + ": " + (msg) }
+	#define TL_GL_ERROR(err) TL_ERROR(reinterpret_cast<char const*>(glewGetErrorString(err)))
 
-#define CHECK_GL_ERROR() do { \
-	auto err = glGetError(); \
-	if (err != GL_NO_ERROR) return TL_ERROR(reinterpret_cast<char const*>(glewGetErrorString(err))); \
-} while (0)
-#define TL_CHECK(func_call) do { \
-	auto res = func_call;\
-	if (!res) return TL_ERROR(res.error()); \
-} while (0)
-#define TL_CHECK_FWD(func_call) do { \
-	auto res = func_call;\
-	if (!res) return res; \
-} while (0)
-#define TL_ASSIGN(out, func_call) do { \
-	auto res = func_call;\
-	if (!res) return TL_ERROR(res.error()); \
-	out = std::move(res.value());\
-} while (0)
-#define TL_ASSIGN_FWD(out, func_call) do { \
-	auto res = func_call;\
-	if (!res) return res; \
-	out = std::move(res.value());\
-} while (0)
+	#define CHECK_GL_ERROR() do { \
+		auto err = glGetError(); \
+		if (err != GL_NO_ERROR) return TL_ERROR(reinterpret_cast<char const*>(glewGetErrorString(err))); \
+	} while (0)
+	#define TL_CHECK(func_call) do { \
+		auto res = func_call;\
+		if (!res) return TL_ERROR(res.error()); \
+	} while (0)
+	#define TL_CHECK_FWD(func_call) do { \
+		auto res = func_call;\
+		if (!res) return res; \
+	} while (0)
+	#define TL_ASSIGN(out, func_call) do { \
+		auto res = func_call;\
+		if (!res) return TL_ERROR(res.error()); \
+		out = std::move(res.value());\
+	} while (0)
+	#define TL_ASSIGN_FWD(out, func_call) do { \
+		auto res = func_call;\
+		if (!res) return res; \
+		out = std::move(res.value());\
+	} while (0)
+#endif
 
 // useful typedefs
+// TODO: may implement these as classes later
+// because raw ptrs are not zero default-init'ed
+
 // non-owning ptr
 template<typename T> using ObserverPtr = T*;
+
 // non-owning ptr to a const, essentially a view
 template<typename T> using ViewPtr = T const*;
-// non-owing view
+
+// non-owing view to a const
 template<typename T> using View = T const&;
 
 #define NO_COPY_MOVE(Ty)\
@@ -72,3 +87,13 @@ Ty(Ty const&) = delete;\
 Ty& operator=(Ty const&) = delete;\
 Ty(Ty&&) = delete;\
 Ty& operator=(Ty&&) = delete
+
+#define DEFAULT_COPY_MOVE(Ty)\
+Ty(Ty const&) = default;\
+Ty& operator=(Ty const&) = default;\
+Ty(Ty&&) = default;\
+Ty& operator=(Ty&&) = default
+
+#define NO_COPY(Ty)\
+Ty(Ty const&) = delete;\
+Ty& operator=(Ty const&) = delete

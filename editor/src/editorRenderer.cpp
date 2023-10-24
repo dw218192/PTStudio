@@ -4,16 +4,31 @@
 #include <cassert>
 #include <algorithm>
 
+#include "enumIter.h"
+
 constexpr auto k_grid_dim = 100.0f;
 constexpr auto k_grid_spacing = 1.0f;
 constexpr auto k_clear_color = glm::vec3{ 0 };
 constexpr auto k_outline_scale = 1.02f;
 constexpr auto k_outline_color = glm::vec3{ 1, 0, 0 };
 
-EditorRenderer::EditorRenderer(RenderConfig config) noexcept
-	: Renderer{std::move(config)} { }
+EditorRenderer::EditorRenderer(RenderConfig config) noexcept : Renderer{std::move(config)} {
 
-EditorRenderer::~EditorRenderer() noexcept { }
+    auto lang = TextEditor::LanguageDefinition::GLSL();
+    for (auto const k : glsl_keywords)
+        lang.mKeywords.insert(k);
+    for (auto const k : glsl_identifiers) {
+        TextEditor::Identifier id;
+        id.mDeclaration = "Built-in function";
+        lang.mIdentifiers.insert(std::make_pair(k, id));
+    }
+
+    for(auto&& data : m_shader_editor_data) {
+        data.editor.SetLanguageDefinition(lang);
+    }
+}
+
+EditorRenderer::~EditorRenderer() noexcept = default;
 
 auto EditorRenderer::init() noexcept -> tl::expected<void, std::string> {
     auto create_grid = [this](float grid_dim, float spacing) -> tl::expected<void, std::string> {
@@ -38,7 +53,16 @@ auto EditorRenderer::init() noexcept -> tl::expected<void, std::string> {
 
         CHECK_GL_ERROR();
 
-    	// set invariant uniforms
+        // grid shaders
+        {
+            std::array<ShaderProgram::StageDesc<std::string_view>, 2> descs{
+                {
+                    {ShaderType::Vertex, vs_grid_src},
+                    {ShaderType::Fragment, ps_grid_src},
+                }
+            };
+            TL_ASSIGN(m_grid_shader, ShaderProgram::from_srcs(descs));
+        }
         TL_CHECK_FWD(m_grid_shader->bind());
         {
             TL_CHECK_FWD(m_grid_shader->set_uniform(k_uniform_half_grid_dim, half_dim));
@@ -55,11 +79,17 @@ auto EditorRenderer::init() noexcept -> tl::expected<void, std::string> {
     // set up main frame buffer
     MainFrameBuffer::set(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
 
-	// set up shaders
-    TL_ASSIGN(m_default_shader, ShaderProgram::from_srcs(vs_obj_src, ps_obj_src));
-    TL_ASSIGN(m_grid_shader, ShaderProgram::from_srcs(vs_grid_src, ps_grid_src));
+	// default shaders
+    {
+	    std::array<ShaderProgram::StageDesc<std::string_view>, 2> descs{
+		    {
+                {ShaderType::Vertex, vs_obj_src},
+                {ShaderType::Fragment, ps_obj_src},
+		    }
+	    };
+        TL_ASSIGN(m_default_shader, ShaderProgram::from_srcs(descs));
+    }
     TL_CHECK_FWD(create_grid(k_grid_dim, k_grid_spacing));
-
 
     if (!m_grid_shader->valid()) {
         return TL_ERROR("invalid grid shader");
@@ -152,31 +182,34 @@ auto EditorRenderer::on_change_render_config(RenderConfig const& config) noexcep
 auto EditorRenderer::on_add_object(ViewPtr<Object> obj) noexcept -> tl::expected<void, std::string> {
     if (!obj) {
         return {};
-    } else if (m_render_data.count(obj)) {
+    } else if (m_obj_data.count(obj)) {
         return TL_ERROR("object added twice");
     }
-    TL_CHECK_FWD(on_add_object_internal(m_render_data[obj], obj));
+    TL_CHECK_FWD(on_add_object_internal(m_obj_data[obj], obj));
 
     return {};
 }
 
 auto EditorRenderer::on_remove_object(ViewPtr<Object> obj) noexcept -> tl::expected<void, std::string> {
-    auto const it = m_render_data.find(obj);
-    if(it == m_render_data.end()) {
+    auto const it = m_obj_data.find(obj);
+    if(it == m_obj_data.end()) {
         return TL_ERROR("on_remove_object: obj not found");
     }
-    m_render_data.erase(obj);
+    m_obj_data.erase(obj);
 
-    return {};
-}
-
-auto EditorRenderer::draw_imgui(ViewPtr<Application> app) noexcept -> tl::expected<void, std::string> {
-    TL_CHECK_FWD(Renderer::draw_imgui());
     return {};
 }
 
 void EditorRenderer::on_object_change(ViewPtr<Object> obj) noexcept {
+    // save last editing to the object editing data
+    commit_cur_shader_code();
+
     m_cur_outline_obj = obj;
+    for (auto const shader_type : EIter<ShaderType>{}) {
+        m_shader_editor_data[shader_type].editor.SetText(
+            m_obj_data[obj].editing_data.shader_srcs[shader_type]
+        );
+    }
 }
 
 auto EditorRenderer::on_add_object_internal(PerObjectData& data, ViewPtr<Object> obj) noexcept -> tl::expected<void, std::string> {
@@ -193,14 +226,22 @@ auto EditorRenderer::on_add_object_internal(PerObjectData& data, ViewPtr<Object>
     }
     data.render_data->unbind();
 
+    for (auto const shader_type : EIter<ShaderType>{}) {
+        data.editing_data.shader_srcs[shader_type] = data.shader->get_stage(shader_type)->get_src();
+
+        m_shader_editor_data[shader_type].editor.SetText(
+            m_obj_data[obj].editing_data.shader_srcs[shader_type]
+        );
+    }
+
     return {};
 
 }
 
 auto EditorRenderer::render_internal(View<Camera> cam, GLuint fbo) noexcept -> tl::expected<void, std::string> {
     auto get_obj_data = [this](ViewPtr<Object> obj)->tl::expected<PerObjectData*, std::string> {
-        auto const it = m_render_data.find(obj);
-        if (it == m_render_data.end()) {
+        auto const it = m_obj_data.find(obj);
+        if (it == m_obj_data.end()) {
             return  TL_ERROR("obj not found in render data");
         }
         return &it->second;
@@ -240,7 +281,17 @@ auto EditorRenderer::render_internal(View<Camera> cam, GLuint fbo) noexcept -> t
 
             // shaders
             for (int i = 0; i < m_outline.shaders.size(); ++i) {
-                TL_ASSIGN(m_outline.shaders[i], ShaderProgram::from_srcs(vs_outline_passes[i], ps_outline_passes[i]));
+	            std::array<ShaderProgram::StageDesc<std::string_view>, 2> descs{
+		            {
+			            {
+				            ShaderType::Vertex, vs_outline_passes[i]
+			            },
+			            {
+				            ShaderType::Fragment, ps_outline_passes[i]
+			            }
+		            }
+	            };
+                TL_ASSIGN(m_outline.shaders[i], ShaderProgram::from_srcs(descs));
             }
 
             // full screen quad
@@ -399,5 +450,149 @@ auto EditorRenderer::render_internal(View<Camera> cam, GLuint fbo) noexcept -> t
 }
 
 void EditorRenderer::clear_render_data() {
-    m_render_data.clear();
+    m_obj_data.clear();
+}
+
+void EditorRenderer::commit_cur_shader_code() noexcept {
+    if (m_cur_outline_obj) {
+        for (auto const shader_type : EIter<ShaderType>{}) {
+            m_obj_data[m_cur_outline_obj].editing_data.shader_srcs[shader_type] =
+                m_shader_editor_data[shader_type].editor.GetText();
+        }
+    }
+}
+
+void EditorRenderer::draw_glsl_editor(ShaderType type, PerTextEditorData& data) noexcept {
+    auto&& editor = data.editor;
+
+    ImGui::SameLine();
+
+    if (ImGui::BeginCombo("Font Size", data.cur_font_size_mul_str)) {
+        for (size_t i = 0; i < std::size(PerTextEditorData::font_size_mul_strs); ++i)
+        {
+            auto const selected = data.cur_font_size_mul_str == data.font_size_mul_strs[i];
+            if (ImGui::Selectable(PerTextEditorData::font_size_mul_strs[i], selected)) {
+                data.cur_font_size_mul_str = PerTextEditorData::font_size_mul_strs[i];
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    if (ImGui::BeginMenuBar())
+    {
+        if (ImGui::BeginMenu("File"))
+        {
+            if (ImGui::MenuItem("Save"))
+            {
+                auto textToSave = editor.GetText();
+                // TODO: save
+            }
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Edit"))
+        {
+            bool ro = editor.IsReadOnly();
+            if (ImGui::MenuItem("Read-only mode", nullptr, &ro))
+                editor.SetReadOnly(ro);
+            ImGui::Separator();
+
+            if (ImGui::MenuItem("Undo", "ALT-Backspace", nullptr, !ro && editor.CanUndo()))
+                editor.Undo();
+            if (ImGui::MenuItem("Redo", "Ctrl-Y", nullptr, !ro && editor.CanRedo()))
+                editor.Redo();
+
+            ImGui::Separator();
+
+            if (ImGui::MenuItem("Copy", "Ctrl-C", nullptr, editor.HasSelection()))
+                editor.Copy();
+            if (ImGui::MenuItem("Cut", "Ctrl-X", nullptr, !ro && editor.HasSelection()))
+                editor.Cut();
+            if (ImGui::MenuItem("Delete", "Del", nullptr, !ro && editor.HasSelection()))
+                editor.Delete();
+            if (ImGui::MenuItem("Paste", "Ctrl-V", nullptr, !ro && ImGui::GetClipboardText() != nullptr))
+                editor.Paste();
+
+            ImGui::Separator();
+
+            if (ImGui::MenuItem("Select all", nullptr, nullptr))
+                editor.SetSelection(TextEditor::Coordinates(), TextEditor::Coordinates(editor.GetTotalLines(), 0));
+
+            ImGui::EndMenu();
+        }
+
+        if (ImGui::BeginMenu("View"))
+        {
+            if (ImGui::MenuItem("Dark palette"))
+                editor.SetPalette(TextEditor::GetDarkPalette());
+            if (ImGui::MenuItem("Light palette"))
+                editor.SetPalette(TextEditor::GetLightPalette());
+            if (ImGui::MenuItem("Retro blue palette"))
+                editor.SetPalette(TextEditor::GetRetroBluePalette());
+            ImGui::EndMenu();
+        }
+        ImGui::EndMenuBar();
+    }
+
+    auto const cpos = editor.GetCursorPosition();
+    ImGui::SameLine();
+    ImGui::Text("%6d/%-6d %6d lines  | %s | %s | %s | %s", cpos.mLine + 1, cpos.mColumn + 1, editor.GetTotalLines(),
+        editor.IsOverwrite() ? "Ovr" : "Ins",
+        editor.CanUndo() ? "*" : " ",
+        editor.GetLanguageDefinition().mName.c_str(), m_cur_outline_obj->get_name().data());
+
+    auto const default_font = ImGui::GetFont();
+    ImFont font{ *default_font };
+    font.Scale = data.get_font_size_mul();
+
+	ImGui::PushFont(&font);
+    editor.Render(to_string(type));
+    ImGui::PopFont();
+}
+
+
+auto EditorRenderer::draw_imgui(ObserverPtr<Application> app) noexcept -> tl::expected<void, std::string> {
+    TL_CHECK_FWD(Renderer::draw_imgui());
+
+    ImGui::Begin("Shader Editor", nullptr, ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_MenuBar);
+    ImGui::SetWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
+
+    if (!m_cur_outline_obj) {
+        ImGui::Text("Please Select an object first");
+    } else {
+        auto try_compile = [this, app]() {
+            std::vector<ShaderProgram::StageDesc<std::string_view>> srcs;
+        	commit_cur_shader_code();
+
+            auto const& data = m_obj_data[m_cur_outline_obj];
+            for (auto const shader_type : EIter<ShaderType>{}) {
+                auto const& text = data.editing_data.shader_srcs[shader_type];
+                // if it has text, we'll try to compile it
+                if (!text.empty()) {
+                    srcs.emplace_back(shader_type, text);
+                }
+            }
+
+            auto res = m_obj_data[m_cur_outline_obj].shader->try_recompile(srcs);
+            if (!res && app) {
+                app->log(res.error());
+            }
+        };
+
+        if (ImGui::BeginTabBar("##tab")) {
+            for(auto const shader_type : EIter<ShaderType>{}) {
+                if (ImGui::BeginTabItem(to_string(shader_type))) {
+                    if (ImGui::Button("Compile")) {
+                        try_compile();
+                    }
+                    draw_glsl_editor(shader_type, m_shader_editor_data[shader_type]);
+                    ImGui::EndTabItem();
+                }
+            }
+
+            ImGui::EndTabBar();
+        }
+    }
+
+    ImGui::End();
+    return {};
 }

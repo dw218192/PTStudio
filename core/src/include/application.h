@@ -1,8 +1,22 @@
 #pragma once
 #include <sstream>
+#include "utils.h"
 
+enum class LogLevel {
+    Debug,
+    Info,
+    Warning,
+    Error
+};
+
+/**
+ * \brief The base class for all applications (not necessarily graphical)
+ * \details Provides an interface for logging and quitting the application
+*/
 struct Application {
-    Application() = default;
+    DEFAULT_COPY_MOVE(Application);
+
+	Application() = default;
     virtual ~Application() = default;
     virtual void run() = 0;
 
@@ -15,7 +29,7 @@ struct Application {
     [[noreturn]] virtual void quit(int code) = 0;
 
     template <typename... Args>
-	void log(Args&&... args) {
+	void log(Args&&... args) noexcept {
         std::ostringstream ss;
         (ss << ... << args);
         ss << '\n';
@@ -34,7 +48,7 @@ protected:
     virtual void print(std::string_view msg) = 0;
 
 private:
-    unsigned m_line_cnt{ 0 };
     unsigned m_max_line_cnt{ 5 };
-    std::string m_messages;
+	unsigned m_line_cnt{ 0 };
+	std::string m_messages;
 };

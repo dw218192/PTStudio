@@ -68,8 +68,8 @@ protected:
     */
     [[nodiscard]] auto get_debug_drawer() -> DebugDrawer& { return m_debug_drawer; }
     [[nodiscard]] auto get_cur_hovered_widget() const noexcept -> std::string_view { return m_cur_hovered_widget; }
+    [[nodiscard]] auto get_cur_focused_widget() const noexcept -> std::string_view { return m_cur_focused_widget; }
     
-
     // imgui helpers
     void begin_imgui_window(
         std::string_view name, 
@@ -91,6 +91,9 @@ private:
         std::optional<std::function<void()>> on_leave_region, on_enter_region;
     };
     std::unordered_map<std::string_view, ImGuiWindowInfo> m_imgui_window_info;
+    
     std::string_view m_cur_hovered_widget, m_prev_hovered_widget;
+    std::string_view m_cur_focused_widget;
+
     static constexpr auto k_no_hovered_widget = "";
 };

@@ -56,7 +56,7 @@ private:
     // events
     void on_mouse_leave_scene_viewport() noexcept;
     void on_mouse_enter_scene_viewport() noexcept;
-    void on_obj_change(Object* obj) noexcept;
+    void on_obj_change(ObserverPtr<Object> obj) noexcept;
 
     // other helpers
     void try_select_object() noexcept;

@@ -2,6 +2,8 @@
 #include "include/glTexture.h"
 #include <fstream>
 
+#include "enumIter.h"
+
 namespace {
     auto to_gl_type(ShaderType type) noexcept -> GLenum {
         switch (type) {
@@ -54,12 +56,11 @@ namespace {
         return handle;
     }
 
-    auto link_shaders(GLuint program, GLuint vs, GLuint ps) noexcept -> tl::expected<void, std::string> {
-        glAttachShader(program, vs);
-        CHECK_GL_ERROR();
-
-        glAttachShader(program, ps);
-        CHECK_GL_ERROR();
+    auto link_shaders(GLuint program, View<EArray<ShaderType, ShaderRef>> shaders) noexcept -> tl::expected<void, std::string> {
+        for (auto&& shader : shaders) {
+            glAttachShader(program, shader->handle());
+            CHECK_GL_ERROR();
+        }
 
         glLinkProgram(program);
         CHECK_GL_ERROR();
@@ -80,11 +81,11 @@ namespace {
             infoLog = "Failed to compile shader:\n" + infoLog;
             return TL_ERROR( infoLog );
         }
-        glDetachShader(program, vs);
-        CHECK_GL_ERROR();
 
-        glDetachShader(program, ps);
-        CHECK_GL_ERROR();
+        for (auto&& shader : shaders) {
+            glDetachShader(program, shader->handle());
+            CHECK_GL_ERROR();
+        }
 
         return {};
     }
@@ -117,6 +118,10 @@ auto Shader::recompile(std::string_view new_src) -> tl::expected<void, std::stri
     return {};
 }
 
+auto Shader::get_type() const noexcept -> ShaderType {
+    return to_shader_type(m_type);
+}
+
 void Shader::swap(Shader&& other) noexcept {
     m_src.swap(other.m_src);
     m_type = other.m_type;
@@ -134,7 +139,7 @@ auto Shader::from_file(ShaderType type, std::string_view file) noexcept -> tl::e
     return from_src(type, src);
 }
 
-auto Shader::clone(Shader const* other) noexcept -> tl::expected<ShaderRef, std::string> {
+auto Shader::clone(ViewPtr<Shader> other) noexcept -> tl::expected<ShaderRef, std::string> {
     if (!other || !other->valid()) {
         return TL_ERROR("Invalid shader");
     }
@@ -155,8 +160,11 @@ ShaderProgram::~ShaderProgram() noexcept {
     }
 }
 
-ShaderProgram::ShaderProgram(ShaderRef vs, ShaderRef ps, GLuint handle) noexcept
-    : GLResource{ handle }, m_vs{ std::move(vs) }, m_ps{ std::move(ps) } { }
+ShaderProgram::ShaderProgram(EArray<ShaderType, ShaderRef> shaders, GLuint handle) noexcept
+    : GLResource{ handle } 
+{
+    m_shaders = std::move(shaders);
+}
 
 ShaderProgram::ShaderProgram(ShaderProgram&& other) noexcept {
     swap(std::move(other));
@@ -167,7 +175,7 @@ ShaderProgram& ShaderProgram::operator=(ShaderProgram&& other) noexcept {
     return *this;
 }
 
-auto ShaderProgram::set_texture(std::string_view name, GLTexture const* tex, GLuint slot) const noexcept -> tl::expected<void, std::string> {
+auto ShaderProgram::set_texture(std::string_view name, ViewPtr<GLTexture> tex, GLuint slot) const noexcept -> tl::expected<void, std::string> {
     if (!valid()) {
         return TL_ERROR( "Invalid shader program" );
     }
@@ -192,64 +200,88 @@ void ShaderProgram::unbind() noexcept {
     glUseProgram(0);
 }
 
-auto ShaderProgram::recompile(std::string_view new_vs, std::string_view new_ps) noexcept -> tl::expected<void, std::string> {
+auto ShaderProgram::try_recompile(tcb::span<StageDesc<std::string_view> const> new_srcs) noexcept -> tl::expected<void, std::string> {
+    ShaderProgramRef copy;
+    TL_ASSIGN(copy, ShaderProgram::clone(this));
+    TL_CHECK_FWD(copy->recompile(new_srcs));
+    swap(std::move(*copy));
+
+	return {};
+}
+
+auto ShaderProgram::recompile(tcb::span<StageDesc<std::string_view> const> new_srcs) noexcept -> tl::expected<void, std::string> {
     if (!m_handle) {
         return TL_ERROR( "Shader program is not valid" );
     }
 
-    TL_CHECK_FWD(m_vs->recompile(new_vs));
-    TL_CHECK_FWD(m_ps->recompile(new_ps));
-    TL_CHECK_FWD(link_shaders(m_handle, m_vs->handle(), m_ps->handle()));
+    for (auto&& [type, src] : new_srcs) {
+        if (!m_shaders[type]) {
+            TL_ASSIGN(m_shaders[type], Shader::from_src(type, src));
+        } else {
+            TL_CHECK_FWD(m_shaders[type]->recompile(src));
+        }
+    }
+	TL_CHECK_FWD(link_shaders(m_handle, m_shaders));
 
     return {};
 }
 
+auto ShaderProgram::get_stage(ShaderType type) const noexcept -> ViewPtr<Shader> {
+    return m_shaders[type].get();
+}
+
 void ShaderProgram::swap(ShaderProgram&& other) noexcept {
-    m_ps = std::move(other.m_ps);
-    m_vs = std::move(other.m_vs);
+    m_shaders.swap(other.m_shaders);
     this->GLResource::swap(std::move(other));
 }
 
-auto ShaderProgram::from_shaders(ShaderRef vs, ShaderRef ps) noexcept -> tl::expected<ShaderProgramRef, std::string> {
-    if(!vs->valid()) {
-        return TL_ERROR( "Invalid vertex shder" );
-    }
-    if(!ps->valid()) {
-        return TL_ERROR( "Invalid pixel shaer" );
-    }
+auto ShaderProgram::from_shaders(tcb::span<StageDesc<ShaderRef>> shaders) noexcept -> tl::expected<ShaderProgramRef, std::string> {
     auto const program = glCreateProgram();
     if (!program) {
-        return TL_ERROR( "Failed to create hader program" );
+        return TL_ERROR( "Failed to create shader program" );
     }
-    TL_CHECK(link_shaders(program, vs->handle(), ps->handle()));
-    return ShaderProgramRef{ new ShaderProgram { std::move(vs), std::move(ps), program }, GLResourceDeleter{ } };
+
+    EArray<ShaderType, ShaderRef> data;
+	for (auto&& [type, shader] : shaders) {
+        data[type] = std::move(shader);
+    }
+    TL_CHECK(link_shaders(program, data));
+
+    return ShaderProgramRef{ new ShaderProgram { std::move(data), program}, GLResourceDeleter{}};
 }
 
-auto ShaderProgram::clone(ShaderProgram const* other) noexcept -> tl::expected<ShaderProgramRef, std::string> {
+auto ShaderProgram::clone(ViewPtr<ShaderProgram> other) noexcept -> tl::expected<ShaderProgramRef, std::string> {
     if (!other || !other->valid()) {
         return TL_ERROR("Invalid shader program");
     }
-    ShaderRef vs, ps;
-    TL_ASSIGN(vs, Shader::clone(other->m_vs.get()));
-    TL_ASSIGN(ps, Shader::clone(other->m_ps.get()));
-    
-    return from_shaders(std::move(vs), std::move(ps));
+
+    std::vector<StageDesc<ShaderRef>> stages;
+    for(auto type : EIter<ShaderType>{}) {
+        ShaderRef shader;
+        TL_ASSIGN(shader, Shader::clone(other->m_shaders[type].get()));
+        stages.emplace_back(type, std::move(shader));
+    }
+    return from_shaders(stages);
 }
 
-auto ShaderProgram::from_files(std::string_view vs, std::string_view ps) noexcept -> tl::expected<ShaderProgramRef, std::string> {
-    ShaderRef vs_shader, ps_shader;
+auto ShaderProgram::from_files(tcb::span<StageDesc<std::string_view> const> files) noexcept -> tl::expected<ShaderProgramRef, std::string> {
+    std::vector<StageDesc<ShaderRef>> stages;
+    for (auto&& [type, src] : files) {
+        ShaderRef shader;
+        TL_ASSIGN(shader, Shader::from_file(type, src));
+        stages.emplace_back(type, std::move(shader));
+    }
 
-    TL_ASSIGN(vs_shader, Shader::from_file(ShaderType::Vertex, vs));
-    TL_ASSIGN(ps_shader, Shader::from_file(ShaderType::Fragment, ps));
-
-    return from_shaders(std::move(vs_shader), std::move(ps_shader));
+    return from_shaders(stages);
 }
 
-auto ShaderProgram::from_srcs(std::string_view vs, std::string_view ps) noexcept -> tl::expected<ShaderProgramRef, std::string> {
-    ShaderRef vs_shader, ps_shader;
+auto ShaderProgram::from_srcs(tcb::span<StageDesc<std::string_view> const> srcs) noexcept -> tl::expected<ShaderProgramRef, std::string> {
+    std::vector<StageDesc<ShaderRef>> stages;
+    for (auto&& [type, src] : srcs) {
+        ShaderRef shader;
+        TL_ASSIGN(shader, Shader::from_src(type, src));
+        stages.emplace_back(type, std::move(shader));
+    }
 
-	TL_ASSIGN(vs_shader, Shader::from_src(ShaderType::Vertex, vs));
-    TL_ASSIGN(ps_shader, Shader::from_src(ShaderType::Fragment, ps));
-
-    return from_shaders(std::move(vs_shader), std::move(ps_shader));
+    return from_shaders(stages);
 }
