@@ -1,4 +1,4 @@
-#include "include/shaderVariable.h"
+#include "include/UniformVar.h"
 
 #include <glm/gtc/type_ptr.hpp>
 
@@ -25,29 +25,29 @@ auto to_variable_type(GLenum type) noexcept -> ShaderVariableType {
     }
 }
 
-auto ShaderVariable::create(GLenum gltype, GLint loc) noexcept -> tl::expected<ShaderVariable, std::string> {
+auto UniformVar::create(GLenum gltype, GLint loc) noexcept -> tl::expected<UniformVar, std::string> {
 	switch (auto const type = to_variable_type(gltype)) {
     case ShaderVariableType::Mat3:
-        return ShaderVariable{ type, loc, glm::mat3{} };
+        return UniformVar{ type, loc, glm::mat3{} };
     case ShaderVariableType::Mat4:
-        return ShaderVariable{ type, loc, glm::mat4{} };
+        return UniformVar{ type, loc, glm::mat4{} };
     case ShaderVariableType::Vec2:
-        return ShaderVariable{ type, loc, glm::vec2{} };
+        return UniformVar{ type, loc, glm::vec2{} };
     case ShaderVariableType::Vec3:
-        return ShaderVariable{ type, loc, glm::vec3{} };
+        return UniformVar{ type, loc, glm::vec3{} };
     case ShaderVariableType::Vec4:
-        return ShaderVariable{ type, loc, glm::vec4{} };
+        return UniformVar{ type, loc, glm::vec4{} };
     case ShaderVariableType::Float:
-        return ShaderVariable{ type, loc, 0.0f };
+        return UniformVar{ type, loc, 0.0f };
     case ShaderVariableType::Int:
     case ShaderVariableType::Sampler2D:
-        return ShaderVariable{ type, loc, 0 };
+        return UniformVar{ type, loc, 0 };
     default:
         return TL_ERROR( "Unsupported shader variable type" );
     }
 }
 
-auto ShaderVariable::upload() noexcept -> tl::expected <void, std::string> {
+auto UniformVar::upload() noexcept -> tl::expected <void, std::string> {
     switch (get_type()) {
     case ShaderVariableType::Mat3:
         glUniformMatrix3fv(get_loc(), 1, GL_FALSE, glm::value_ptr(std::get<glm::mat3>(value)));

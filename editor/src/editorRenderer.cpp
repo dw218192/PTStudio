@@ -590,7 +590,7 @@ auto EditorRenderer::draw_glsl_editor(ShaderType type, Ref<ShaderProgram> shader
                 bool disabled = std::find(std::begin(k_built_in_uniforms), std::end(k_built_in_uniforms), name) 
                     != std::end(k_built_in_uniforms);
                 
-                ShaderVariable val_copy = val;
+                UniformVar val_copy = val;
                 ImGui::BeginDisabled(disabled);
                 if(disabled) {
                     auto display_name = name + " (built-in)";

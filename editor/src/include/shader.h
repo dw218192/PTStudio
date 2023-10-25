@@ -13,7 +13,7 @@
 #include "glResource.h"
 #include "enumArray.h"
 #include "utils.h"
-#include "shaderVariable.h"
+#include "UniformVar.h"
 
 struct Shader;
 struct ShaderProgram;
@@ -61,7 +61,7 @@ private:
 struct ShaderProgram final : GLResource {
     template<typename T>
     using StageDesc = std::pair<ShaderType const, T> ;
-    using UniformMap = std::unordered_map<std::string, ShaderVariable>;
+    using UniformMap = std::unordered_map<std::string, UniformVar>;
 
     NO_COPY(ShaderProgram);
 
@@ -84,10 +84,10 @@ struct ShaderProgram final : GLResource {
     /**
      * sets and uploads a uniform variable to the shader program
     */
-    template<typename UniformType, typename = std::enable_if_t<!std::is_same_v<std::decay_t<UniformType>, ShaderVariable>>>
+    template<typename UniformType, typename = std::enable_if_t<!std::is_same_v<std::decay_t<UniformType>, UniformVar>>>
     [[nodiscard]] auto set_uniform(std::string_view name, UniformType&& value) noexcept
 		-> tl::expected<void, std::string>;
-    [[nodiscard]] auto set_uniform(std::string_view name, ShaderVariable var) noexcept
+    [[nodiscard]] auto set_uniform(std::string_view name, UniformVar var) noexcept
         -> tl::expected<void, std::string>;
 
     [[nodiscard]] auto get_uniform_map() const noexcept -> View<UniformMap>;

@@ -50,15 +50,15 @@ struct TypeToEnumMsk<int> {
 };
 
 
-struct ShaderVariable {
+struct UniformVar {
     friend struct ShaderProgram;
 
-    static auto create(GLenum type, GLint loc)  noexcept -> tl::expected<ShaderVariable, std::string>;
+    static auto create(GLenum type, GLint loc)  noexcept -> tl::expected<UniformVar, std::string>;
 
-    ShaderVariable() = default;
+    UniformVar() = default;
 
     template<typename T>
-    ShaderVariable(ShaderVariableType type, GLint loc, T value) noexcept
+    UniformVar(ShaderVariableType type, GLint loc, T value) noexcept
         : type(type), loc(loc), value(std::move(value)) {}
     
     template<typename T>

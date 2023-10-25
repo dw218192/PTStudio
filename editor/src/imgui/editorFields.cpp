@@ -64,7 +64,7 @@ bool ImGui::TransformField(const char* label, Transform& transform, ImGuizmo::OP
     return changed;
 }
 
-bool ImGui::ShaderVariableField(const char* label, ShaderVariable& variable) {
+bool ImGui::ShaderVariableField(const char* label, UniformVar& variable) {
     bool changed = false;
     switch (variable.get_type()) {
         case ShaderVariableType::Mat3: {

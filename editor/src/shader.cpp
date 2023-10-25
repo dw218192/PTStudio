@@ -124,8 +124,8 @@ namespace {
                 continue;
             }
 
-            ShaderVariable var;
-            TL_TRY_ASSIGN(var, ShaderVariable::create(type, loc));
+            UniformVar var;
+            TL_TRY_ASSIGN(var, UniformVar::create(type, loc));
             uniforms.emplace(std::move(name), var);
         }
 
@@ -214,7 +214,7 @@ ShaderProgram& ShaderProgram::operator=(ShaderProgram&& other) noexcept {
     return *this;
 }
 
-auto ShaderProgram::set_uniform(std::string_view name, ShaderVariable var) noexcept -> tl::expected<void, std::string> {
+auto ShaderProgram::set_uniform(std::string_view name, UniformVar var) noexcept -> tl::expected<void, std::string> {
     auto const it = m_uniforms.find(name.data());
     if (it == m_uniforms.end()) {
         return TL_ERROR( "Uniform not found" );
