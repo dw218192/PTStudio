@@ -95,6 +95,9 @@
         "future": "cpp",
         "regex": "cpp",
         "__functional_03": "cpp",
-        "xstddef": "cpp"
+        "xstddef": "cpp",
+        "__functional_base_03": "cpp",
+        "__hash_table": "cpp",
+        "__tree": "cpp"
     }
 }

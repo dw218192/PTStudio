@@ -5,6 +5,7 @@
 #include <algorithm>
 
 #include "enumIter.h"
+#include "include/imgui/editorFields.h"
 
 constexpr auto k_grid_dim = 100.0f;
 constexpr auto k_grid_spacing = 1.0f;
@@ -159,11 +160,11 @@ auto EditorRenderer::render_buffered(View<Camera> cam) noexcept -> tl::expected<
     return m_render_buf->get_texture(GL_COLOR_ATTACHMENT0);
 }
 
-auto EditorRenderer::on_change_render_config(RenderConfig const& config) noexcept -> tl::expected<void, std::string> {
+auto EditorRenderer::on_change_render_config(RenderConfig config) noexcept -> tl::expected<void, std::string> {
     if (!config.is_valid() || config == m_config) {
         return {};
     }
-    m_config = config;
+    m_config = std::move(config);
     if (m_render_buf) {
         TL_CHECK_AND_PASS(m_render_buf->bind());
         {
@@ -214,22 +215,22 @@ void EditorRenderer::on_object_change(ViewPtr<Object> obj) noexcept {
     }
 }
 
-auto EditorRenderer::on_add_object_internal(PerObjectData& data, ViewPtr<Object> obj) noexcept -> tl::expected<void, std::string> {
-    TL_TRY_ASSIGN(data.shader, ShaderProgram::clone(m_default_shader.get()));
-	TL_TRY_ASSIGN(data.render_data, GLVertexArray::create(obj->get_vertices().size()));
+auto EditorRenderer::on_add_object_internal(Ref<PerObjectData> data, ViewPtr<Object> obj) noexcept -> tl::expected<void, std::string> {
+    TL_TRY_ASSIGN(data.get().shader, ShaderProgram::clone(m_default_shader.get()));
+	TL_TRY_ASSIGN(data.get().render_data, GLVertexArray::create(obj->get_vertices().size()));
 
-    TL_CHECK_AND_PASS(data.render_data->bind());
+    TL_CHECK_AND_PASS(data.get().render_data->bind());
     {
-        TL_CHECK_AND_PASS(data.render_data->connect(obj->get_vertices(),
+        TL_CHECK_AND_PASS(data.get().render_data->connect(obj->get_vertices(),
             GLAttributeInfo<glm::vec3> { 0, sizeof(Vertex), offsetof(Vertex, position) },
             GLAttributeInfo<glm::vec3> { 1, sizeof(Vertex), offsetof(Vertex, normal) },
             GLAttributeInfo<glm::vec3> { 2, sizeof(Vertex), offsetof(Vertex, uv) }
         ));
     }
-    data.render_data->unbind();
+    data.get().render_data->unbind();
 
     for (auto const shader_type : EIter<ShaderType>{}) {
-        data.editing_data.shader_srcs[shader_type] = data.shader->get_stage(shader_type)->get_src();
+        data.get().editing_data.shader_srcs[shader_type] = data.get().shader->get_stage(shader_type)->get_src();
 
         m_shader_editor_data[shader_type].editor.SetText(
             m_obj_data[obj].editing_data.shader_srcs[shader_type]
@@ -241,15 +242,7 @@ auto EditorRenderer::on_add_object_internal(PerObjectData& data, ViewPtr<Object>
 }
 
 auto EditorRenderer::render_internal(View<Camera> cam, GLuint fbo) noexcept -> tl::expected<void, std::string> {
-    auto get_obj_data = [this](ViewPtr<Object> obj)->tl::expected<PerObjectData*, std::string> {
-        auto const it = m_obj_data.find(obj);
-        if (it == m_obj_data.end()) {
-            return  TL_ERROR("obj not found in render data");
-        }
-        return &it->second;
-    };
-
-    auto draw_outline = [this, cam, fbo, &get_obj_data](ViewPtr<Object> obj)-> tl::expected<void, std::string> {
+    auto draw_outline = [this, cam, fbo](ViewPtr<Object> obj)-> tl::expected<void, std::string> {
         if (!m_outline.render_buf) {
             // initialize outline states
 
@@ -339,9 +332,11 @@ auto EditorRenderer::render_internal(View<Camera> cam, GLuint fbo) noexcept -> t
                 TL_CHECK_AND_PASS(m_outline.shaders[0]->set_uniform(k_uniform_projection, cam.get().get_projection()));
                 TL_CHECK_AND_PASS(m_outline.shaders[0]->set_uniform(k_uniform_model, obj->get_transform().get_matrix()));
 
-            	PerObjectData* data;
-                TL_TRY_ASSIGN(data, get_obj_data(obj));
-                auto&& vao = data->render_data;
+                auto res = try_get_obj_data(obj);
+                if (!res) return TL_ERROR(res.error());
+
+                auto&& data = res.value().get();
+                auto&& vao = data.render_data;
                 TL_CHECK_AND_PASS(vao->bind());
                 TL_CHECK_AND_PASS(vao->draw_array(GL_TRIANGLES));
             }
@@ -403,11 +398,12 @@ auto EditorRenderer::render_internal(View<Camera> cam, GLuint fbo) noexcept -> t
     // render objects
     for (auto [it, i] = std::tuple{ m_scene->begin(), 0 }; it != m_scene->end(); ++it) {
         auto obj = *it;
-        PerObjectData* data;
-        TL_TRY_ASSIGN(data, get_obj_data(obj));
+        auto res = try_get_obj_data(obj);
+        if (!res) return TL_ERROR(res.error());
 
-        auto&& shader = data->shader;
-        auto&& vao = data->render_data;
+    	auto&& data = res.value().get();
+        auto&& shader = data.shader;
+        auto&& vao = data.render_data;
 
         TL_CHECK_AND_PASS(shader->bind());
 
@@ -421,11 +417,11 @@ auto EditorRenderer::render_internal(View<Camera> cam, GLuint fbo) noexcept -> t
         );
         TL_CHECK_NON_FATAL(
             m_app, LogLevel::Warning,
-            shader->set_uniform(k_uniform_view, cam.get().get_projection())
+            shader->set_uniform(k_uniform_projection, cam.get().get_projection())
         );
         TL_CHECK_NON_FATAL(
             m_app, LogLevel::Warning,
-            shader->set_uniform(k_uniform_view, obj->get_transform().get_matrix())
+            shader->set_uniform(k_uniform_model, obj->get_transform().get_matrix())
         );
 
         TL_CHECK_AND_PASS(vao->bind());
@@ -477,10 +473,41 @@ void EditorRenderer::commit_cur_shader_code() noexcept {
     }
 }
 
-void EditorRenderer::draw_glsl_editor(ShaderType type, PerTextEditorData& data) noexcept {
+#pragma region Shader_Editing
+
+auto EditorRenderer::draw_glsl_editor(ShaderType type, Ref<ShaderProgram> shader, PerTextEditorData& data) noexcept
+-> tl::expected <void, std::string>
+{
+    auto try_compile = [this]() {
+        std::vector<ShaderProgram::StageDesc<std::string_view>> srcs;
+        commit_cur_shader_code();
+
+        auto const& data = m_obj_data[m_cur_outline_obj];
+        for (auto const shader_type : EIter<ShaderType>{}) {
+            auto const& text = data.editing_data.shader_srcs[shader_type];
+            // if it has text, we'll try to compile it
+            if (!text.empty()) {
+                srcs.emplace_back(shader_type, text);
+            }
+        }
+
+        auto res = m_obj_data[m_cur_outline_obj].shader->try_recompile(srcs);
+        if (!res) {
+            m_app->log(LogLevel::Error, res.error());
+        }
+    };
+
+
     auto&& editor = data.editor;
+    if (ImGui::Button("Compile")) {
+        try_compile();
+    }
 
     ImGui::SameLine();
+    ImGui::SetNextItemWidth(
+        ImGui::CalcTextSize(data.cur_font_size_mul_str).x * 3.0f + 
+        ImGui::GetStyle().FramePadding.x * 2.0f
+    );
 
     if (ImGui::BeginCombo("Font Size", data.cur_font_size_mul_str)) {
         for (size_t i = 0; i < std::size(PerTextEditorData::font_size_mul_strs); ++i)
@@ -554,6 +581,52 @@ void EditorRenderer::draw_glsl_editor(ShaderType type, PerTextEditorData& data) 
         ImGui::EndMenuBar();
     }
 
+    // draw uniforms
+    auto const uniforms = shader.get().get_uniform_map();
+
+    if(ImGui::CollapsingHeader("uniform variables", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if(ImGui::BeginChild("##", ImVec2(0, 200), true))  {
+            for(auto const& [name, val] : uniforms.get()) {
+                bool disabled = std::find(std::begin(k_built_in_uniforms), std::end(k_built_in_uniforms), name) 
+                    != std::end(k_built_in_uniforms);
+                
+                ShaderVariable val_copy = val;
+                ImGui::BeginDisabled(disabled);
+                if(disabled) {
+                    auto display_name = name + " (built-in)";
+                    ImGui::ShaderVariableField(display_name.c_str(), val_copy);
+                } else {
+                    if (ImGui::ShaderVariableField(name.c_str(), val_copy)) {
+                        TL_CHECK(shader.get().bind());
+                        TL_CHECK_NON_FATAL(
+                            m_app, LogLevel::Warning,
+                            shader.get().set_uniform(name, val_copy)
+                        );
+                        shader.get().unbind();
+                    }
+                }
+                ImGui::EndDisabled();
+                ImGui::Separator();
+                ImGui::Spacing();
+            }
+            ImGui::EndChild();
+        }
+    }
+
+    if(ImGui::CollapsingHeader("Built-in Uniform Declarations", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::BeginDisabled();
+        for (auto const& [name, val] : uniforms.get()) {
+            bool built_in = std::find(std::begin(k_built_in_uniforms), std::end(k_built_in_uniforms), name)
+                != std::end(k_built_in_uniforms);
+            if(built_in) {
+                ImGui::Text("uniform %s %s;", val.get_type_str(), name.data());
+            }
+        }
+        ImGui::EndDisabled();
+    }
+
+    // draw input & outputs
+    ImGui::Separator();
     auto const cpos = editor.GetCursorPosition();
     ImGui::SameLine();
     ImGui::Text("%6d/%-6d %6d lines  | %s | %s | %s | %s", cpos.mLine + 1, cpos.mColumn + 1, editor.GetTotalLines(),
@@ -568,8 +641,17 @@ void EditorRenderer::draw_glsl_editor(ShaderType type, PerTextEditorData& data) 
 	ImGui::PushFont(&font);
     editor.Render(to_string(type));
     ImGui::PopFont();
+
+    return {};
 }
 
+auto EditorRenderer::try_get_obj_data(ViewPtr<Object> obj) noexcept -> tl::expected<Ref<PerObjectData>, std::string> {
+    auto const it = m_obj_data.find(obj);
+    if (it == m_obj_data.end()) {
+        return  TL_ERROR("obj not found in render data");
+    }
+    return it->second;
+}
 
 auto EditorRenderer::draw_imgui() noexcept -> tl::expected<void, std::string> {
     TL_CHECK_AND_PASS(Renderer::draw_imgui());
@@ -581,32 +663,13 @@ auto EditorRenderer::draw_imgui() noexcept -> tl::expected<void, std::string> {
     if (!m_cur_outline_obj) {
         ImGui::Text("Please Select an object first");
     } else {
-        auto try_compile = [this]() {
-            std::vector<ShaderProgram::StageDesc<std::string_view>> srcs;
-        	commit_cur_shader_code();
-
-            auto const& data = m_obj_data[m_cur_outline_obj];
-            for (auto const shader_type : EIter<ShaderType>{}) {
-                auto const& text = data.editing_data.shader_srcs[shader_type];
-                // if it has text, we'll try to compile it
-                if (!text.empty()) {
-                    srcs.emplace_back(shader_type, text);
-                }
-            }
-
-            auto res = m_obj_data[m_cur_outline_obj].shader->try_recompile(srcs);
-            if (!res) {
-                m_app->log(LogLevel::Error, res.error());
-            }
-        };
-
         if (ImGui::BeginTabBar("##tab")) {
             for(auto const shader_type : EIter<ShaderType>{}) {
                 if (ImGui::BeginTabItem(to_string(shader_type))) {
-                    if (ImGui::Button("Compile")) {
-                        try_compile();
-                    }
-                    draw_glsl_editor(shader_type, m_shader_editor_data[shader_type]);
+                    auto res = try_get_obj_data(m_cur_outline_obj);
+                    if (!res) return TL_ERROR(res.error());
+
+                    draw_glsl_editor(shader_type, *(res.value().get().shader), m_shader_editor_data[shader_type]);
                     ImGui::EndTabItem();
                 }
             }
@@ -618,3 +681,5 @@ auto EditorRenderer::draw_imgui() noexcept -> tl::expected<void, std::string> {
     ImGui::End();
     return {};
 }
+
+#pragma endregion Shader_Editing

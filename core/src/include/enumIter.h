@@ -4,7 +4,8 @@
 /**
  * \brief Iterator that iterates over all values of an enum class
  * \tparam Enum the enum class to iterate over
- * \details Assumes the enum class has a _COUNT value as the last value\n
+ * \details NOT meant to be general purpose\n
+ * Assumes the enum class has a _COUNT value as the last value\n
  * and that the enum values are contiguous\n
  * and that the enum values start at 0
 */

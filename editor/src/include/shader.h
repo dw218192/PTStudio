@@ -4,13 +4,16 @@
 #include <string>
 #include <string_view>
 #include <tl/expected.hpp>
+#include <tcb/span.hpp>
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <unordered_map>
+#include <any>
 
 #include "glResource.h"
 #include "enumArray.h"
 #include "utils.h"
-#include <tcb/span.hpp>
+#include "shaderVariable.h"
 
 struct Shader;
 struct ShaderProgram;
@@ -58,6 +61,8 @@ private:
 struct ShaderProgram final : GLResource {
     template<typename T>
     using StageDesc = std::pair<ShaderType const, T> ;
+    using UniformMap = std::unordered_map<std::string, ShaderVariable>;
+
     NO_COPY(ShaderProgram);
 
 
@@ -76,11 +81,18 @@ struct ShaderProgram final : GLResource {
     ShaderProgram(ShaderProgram&&) noexcept;
     auto operator=(ShaderProgram&&) noexcept -> ShaderProgram&;
 
-    template<typename UniformType>
-    [[nodiscard]] auto set_uniform(std::string_view name, UniformType&& value) const noexcept
+    /**
+     * sets and uploads a uniform variable to the shader program
+    */
+    template<typename UniformType, typename = std::enable_if_t<!std::is_same_v<std::decay_t<UniformType>, ShaderVariable>>>
+    [[nodiscard]] auto set_uniform(std::string_view name, UniformType&& value) noexcept
 		-> tl::expected<void, std::string>;
+    [[nodiscard]] auto set_uniform(std::string_view name, ShaderVariable var) noexcept
+        -> tl::expected<void, std::string>;
 
-	[[nodiscard]] auto set_texture(std::string_view name, ViewPtr<struct GLTexture> tex, GLuint slot) const noexcept
+    [[nodiscard]] auto get_uniform_map() const noexcept -> View<UniformMap>;
+
+	[[nodiscard]] auto set_texture(std::string_view name, ViewPtr<struct GLTexture> tex, GLuint slot) noexcept
         -> tl::expected<void, std::string>;
 
     [[nodiscard]] auto bind() const noexcept -> tl::expected<void, std::string>;
@@ -88,32 +100,46 @@ struct ShaderProgram final : GLResource {
 
     [[nodiscard]] auto try_recompile(tcb::span<StageDesc<std::string_view> const> new_srcs) noexcept
         -> tl::expected<void, std::string>;
-    [[nodiscard]] auto recompile(tcb::span<StageDesc<std::string_view> const> new_srcs) noexcept
-        -> tl::expected<void, std::string>;
-    
+
     [[nodiscard]] auto get_stage(ShaderType type) const noexcept -> ViewPtr<Shader>;
+
 private:
+	[[nodiscard]] auto recompile(tcb::span<StageDesc<std::string_view> const> new_srcs) noexcept
+        -> tl::expected<void, std::string>;
+
     void swap(ShaderProgram&& other) noexcept;
-    ~ShaderProgram() noexcept override;
-    ShaderProgram(EArray<ShaderType, ShaderRef> shaders, GLuint handle) noexcept;
-    EArray<ShaderType, ShaderRef> m_shaders{};
+
+	~ShaderProgram() noexcept override;
+    ShaderProgram(EArray<ShaderType, ShaderRef> shaders, UniformMap uniforms, GLuint handle) noexcept;
+
+	EArray<ShaderType, ShaderRef> m_shaders{};
+    UniformMap m_uniforms{};
 };
 
-template<typename T>
-void see(T&&);
-
-template<typename UniformType>
-auto ShaderProgram::set_uniform(std::string_view name, UniformType&& value) const noexcept -> tl::expected<void, std::string> {
+template<typename UniformType, typename>
+auto ShaderProgram::set_uniform(std::string_view name, UniformType&& value) noexcept -> tl::expected<void, std::string> {
     using ValueType = std::decay_t<UniformType>;
 
 	if (!valid()) {
         return TL_ERROR( "Invalid shader program" );
     }
-    GLint loc = glGetUniformLocation(m_handle, name.data());
-    if (loc == -1) {
-        return TL_ERROR( "Failed to get uniform location" );
+
+    auto const it = m_uniforms.find(name.data());
+    if (it == m_uniforms.end()) {
+        return TL_ERROR( "Uniform not found" );
     }
-    if constexpr (std::is_same_v<ValueType, glm::mat4>) {
+    GLint loc = it->second.get_loc(); 
+    if (loc == -1) {
+        return TL_ERROR( "Invalid uniform location" );
+    }
+    if ((TypeToEnumMsk<ValueType>::value & it->second.get_type()) == 0) {
+        return TL_ERROR( "Uniform type mismatch" );
+    }
+
+    if constexpr (std::is_same_v<ValueType, glm::mat3>) {
+        glUniformMatrix3fv(loc, 1, GL_FALSE, glm::value_ptr(value));
+    }
+    else if constexpr (std::is_same_v<ValueType, glm::mat4>) {
         glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(value));
     }
     else if constexpr (std::is_same_v<ValueType, glm::vec2>) {
@@ -132,11 +158,10 @@ auto ShaderProgram::set_uniform(std::string_view name, UniformType&& value) cons
         glUniform1i(loc, value);
     }
     else {
-        see<ValueType>();
         static_assert(false, "Unsupported uniform type");
     }
-
     CHECK_GL_ERROR();
 
+    it->second.set_value<ValueType>(value);
     return {};
 }

@@ -28,7 +28,7 @@ struct Renderer {
      * \param config The new render configuration
      * \return on failure, an error message
     */
-    NODISCARD virtual auto on_change_render_config(RenderConfig const& config) noexcept -> tl::expected<void, std::string> = 0;
+    NODISCARD virtual auto on_change_render_config(RenderConfig config) noexcept -> tl::expected<void, std::string> = 0;
 
     /**
      * \brief Called when an object is added to the scene

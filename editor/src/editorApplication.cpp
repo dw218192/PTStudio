@@ -77,6 +77,7 @@ void EditorApplication::mouse_clicked(int button, int action, int mods) {
 
 void EditorApplication::mouse_scroll(double x, double y) {
     (void)x;
+
     float const delta = y < 0 ? -1.0f : 1.0f;
     m_cam.set_delta_zoom(delta);
 }
@@ -99,7 +100,7 @@ void EditorApplication::loop(float dt) {
 
     // create an UI that covers the whole window, for docking
     ImGui::DockSpaceOverViewport(ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
-    auto render_tex = check_error(m_renderer.render_buffered(m_cam));
+    auto const render_tex = check_error(m_renderer.render_buffered(m_cam));
 
     // draw left panel
     begin_imgui_window("Scene Settings", ImGuiWindowFlags_NoMove);
@@ -276,9 +277,9 @@ void EditorApplication::draw_scene_viewport(TextureHandle render_buf) noexcept {
 void EditorApplication::draw_console_panel() const noexcept {
     static EArray<LogLevel, ImVec4> const s_log_colors{
         { LogLevel::Error, ImVec4{1,0,0,1} },
-        { LogLevel::Debug, ImVec4{0,0,1,0} },
+        { LogLevel::Debug, ImVec4{0,1,1,0} },
         { LogLevel::Info, ImVec4{1,1,1,1} },
-        { LogLevel::Warning, ImVec4{0,1,0,1} }
+        { LogLevel::Warning, ImVec4{1,1,0,1} }
     };
 
 	ImGui::BeginChild("##scroll");

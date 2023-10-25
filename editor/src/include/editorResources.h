@@ -216,13 +216,24 @@ constexpr char const* k_uniform_light_pos = "lightPos";
 constexpr char const* k_uniform_light_color = "lightColor";
 constexpr char const* k_uniform_object_color = "objectColor";
 constexpr char const* k_uniform_half_grid_dim = "half_grid_dim";
-
-
 constexpr char const* k_uniform_screen_texture = "screenTexture";
 constexpr char const* k_uniform_outline_color = "outlineColor";
 constexpr char const* k_uniform_texel_size = "texelSize";
 constexpr char const* k_uniform_thickness = "thickness";
 
+constexpr char const* k_built_in_uniforms[] = {
+    k_uniform_model,
+    k_uniform_view,
+    k_uniform_projection,
+    k_uniform_light_pos,
+    k_uniform_light_color,
+    k_uniform_object_color,
+    k_uniform_half_grid_dim,
+    k_uniform_screen_texture,
+    k_uniform_outline_color,
+    k_uniform_texel_size,
+    k_uniform_thickness,
+};
 
 // for shader editor https://github.com/BalazsJako/ImGuiColorTextEdit/issues/121
 static const char* const glsl_keywords[] = {

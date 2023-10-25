@@ -63,3 +63,80 @@ bool ImGui::TransformField(const char* label, Transform& transform, ImGuizmo::OP
     }
     return changed;
 }
+
+bool ImGui::ShaderVariableField(const char* label, ShaderVariable& variable) {
+    bool changed = false;
+    switch (variable.get_type()) {
+        case ShaderVariableType::Mat3: {
+            ImGui::Text("%s (Mat3)", label);
+
+            auto value = variable.get_value<glm::mat3>().get();
+            for (int i = 0; i < 3; ++i) {
+                if (changed |= ImGui::InputFloat3(std::to_string(i).c_str(), glm::value_ptr(value[i]))) {
+                    variable.set_value(value);
+                }
+            }
+            break;
+        }
+        case ShaderVariableType::Mat4:{
+            ImGui::Text("%s (Mat4)", label);
+
+            auto value = variable.get_value<glm::mat4>().get();
+            for (int i = 0; i < 4; ++i) {
+                if (changed |= ImGui::InputFloat4(std::to_string(i).c_str(), glm::value_ptr(value[i]))) {
+                    variable.set_value(value);
+                }
+            }
+            break;
+        }
+        case ShaderVariableType::Vec2: {
+            ImGui::Text("%s (Vec2)", label);
+
+            auto value = variable.get_value<glm::vec2>().get();
+            if (changed |= ImGui::InputFloat2("value", glm::value_ptr(value))) {
+                variable.set_value(value);
+            }
+            
+            break;
+        }
+        case ShaderVariableType::Vec3:
+            ImGui::Text("%s (Vec3)", label);
+
+            auto value = variable.get_value<glm::vec3>().get();
+            if (changed |= ImGui::InputFloat3("value", glm::value_ptr(value))) {
+                variable.set_value(value);
+            }
+        
+            break;
+        case ShaderVariableType::Vec4: {
+            ImGui::Text("%s (Vec4)", label);
+
+            auto value = variable.get_value<glm::vec4>().get();
+            if (changed |= ImGui::InputFloat4("value", glm::value_ptr(value))) {
+                variable.set_value(value);
+            }
+
+            break;
+        }
+        case ShaderVariableType::Float: {
+            ImGui::Text("%s (Float)", label);
+
+            auto value = variable.get_value<float>().get();
+            if(changed |= ImGui::InputFloat("value", &value)) {
+                variable.set_value(value);
+            }
+            break;
+        }
+        case ShaderVariableType::Int: {
+            ImGui::Text("%s (Int)", label);
+            
+            auto value = variable.get_value<int>().get();
+            if(changed |= ImGui::InputInt("value", &value)) {
+                variable.set_value(value);
+            }   
+            break;
+        }
+    }
+
+    return changed;
+}

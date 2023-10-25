@@ -3,6 +3,7 @@
 #include <fstream>
 
 #include "enumIter.h"
+#include "transactionScope.h"
 
 namespace {
     auto to_gl_type(ShaderType type) noexcept -> GLenum {
@@ -23,8 +24,9 @@ namespace {
         }
         return ShaderType::Vertex;
     }
+
     auto compile_shader(GLuint handle, std::string_view src) noexcept -> tl::expected<void, std::string> {
-        auto src_ptr = src.data();
+        auto const src_ptr = src.data();
         glShaderSource(handle, 1, &src_ptr, nullptr);
         glCompileShader(handle);
 
@@ -44,7 +46,16 @@ namespace {
     }
 
     auto create_shader(GLenum type, std::string_view src) noexcept -> tl::expected<GLuint, std::string> {
-        auto handle = glCreateShader(type);
+        GLuint handle{ 0 };
+        TransactionScope guard{
+			[handle]() {
+			    if (handle) {
+                    glDeleteShader(handle);
+			    }
+			}
+        };
+
+        handle = glCreateShader(type);
         if (!handle) {
             if (type == GL_VERTEX_SHADER) {
                 return TL_ERROR( "Failed to create ertex shader" );
@@ -53,6 +64,8 @@ namespace {
             }
         }
         TL_CHECK(compile_shader(handle, src));
+
+        guard.commit();
         return handle;
     }
 
@@ -88,6 +101,35 @@ namespace {
         }
 
         return {};
+    }
+
+    auto get_uniforms(GLuint program) noexcept -> tl::expected<ShaderProgram::UniformMap, std::string> {
+        ShaderProgram::UniformMap uniforms;
+        GLint count;
+        glGetProgramiv(program, GL_ACTIVE_UNIFORMS, &count);
+        CHECK_GL_ERROR();
+
+        for (GLint i = 0; i < count; ++i) {
+            GLint size;
+            GLenum type;
+            std::string name(256, '\0');
+            glGetActiveUniform(program, i, name.size(), nullptr, &size, &type, name.data());
+            CHECK_GL_ERROR();
+
+            name.resize(strlen(name.data()));
+            auto loc = glGetUniformLocation(program, name.data());
+            CHECK_GL_ERROR();
+
+            if (loc == -1) {
+                continue;
+            }
+
+            ShaderVariable var;
+            TL_TRY_ASSIGN(var, ShaderVariable::create(type, loc));
+            uniforms.emplace(std::move(name), var);
+        }
+
+        return uniforms;
     }
 };
 
@@ -135,7 +177,7 @@ auto Shader::from_file(ShaderType type, std::string_view file) noexcept -> tl::e
         return TL_ERROR( "Failed to open vetex shader file" );
     }
 
-    std::string src{std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};    
+    std::string const src{std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};    
     return from_src(type, src);
 }
 
@@ -147,7 +189,7 @@ auto Shader::clone(ViewPtr<Shader> other) noexcept -> tl::expected<ShaderRef, st
 }
 
 auto Shader::from_src(ShaderType type, std::string_view src) noexcept -> tl::expected<ShaderRef, std::string> {
-    auto gltype = to_gl_type(type);
+    auto const gltype = to_gl_type(type);
     GLuint handle;
     TL_TRY_ASSIGN(handle, create_shader(gltype, src));
     auto ret = ShaderRef{ new Shader { gltype, handle, src }, GLResourceDeleter{ } };
@@ -160,11 +202,8 @@ ShaderProgram::~ShaderProgram() noexcept {
     }
 }
 
-ShaderProgram::ShaderProgram(EArray<ShaderType, ShaderRef> shaders, GLuint handle) noexcept
-    : GLResource{ handle } 
-{
-    m_shaders = std::move(shaders);
-}
+ShaderProgram::ShaderProgram(EArray<ShaderType, ShaderRef> shaders, UniformMap uniforms, GLuint handle) noexcept
+    : GLResource{ handle }, m_shaders{ std::move(shaders) }, m_uniforms{ std::move(uniforms) } {}  
 
 ShaderProgram::ShaderProgram(ShaderProgram&& other) noexcept {
     swap(std::move(other));
@@ -175,7 +214,22 @@ ShaderProgram& ShaderProgram::operator=(ShaderProgram&& other) noexcept {
     return *this;
 }
 
-auto ShaderProgram::set_texture(std::string_view name, ViewPtr<GLTexture> tex, GLuint slot) const noexcept -> tl::expected<void, std::string> {
+auto ShaderProgram::set_uniform(std::string_view name, ShaderVariable var) noexcept -> tl::expected<void, std::string> {
+    auto const it = m_uniforms.find(name.data());
+    if (it == m_uniforms.end()) {
+        return TL_ERROR( "Uniform not found" );
+    }
+
+    TL_CHECK_AND_PASS(var.upload());
+    it->second = std::move(var);
+    return {};
+}
+
+auto ShaderProgram::get_uniform_map() const noexcept -> View<UniformMap> {
+    return m_uniforms;
+}
+
+auto ShaderProgram::set_texture(std::string_view name, ViewPtr<GLTexture> tex, GLuint slot) noexcept -> tl::expected<void, std::string> {
     if (!valid()) {
         return TL_ERROR( "Invalid shader program" );
     }
@@ -223,6 +277,28 @@ auto ShaderProgram::recompile(tcb::span<StageDesc<std::string_view> const> new_s
     }
 	TL_CHECK_AND_PASS(link_shaders(m_handle, m_shaders));
 
+    // upload old uniforms
+    TL_CHECK_AND_PASS(bind());
+    {
+        UniformMap uniforms;
+        TL_TRY_ASSIGN(uniforms, get_uniforms(m_handle));
+        for (auto&& [name, var] : m_uniforms) {
+            auto const it = uniforms.find(name);
+            if (it != uniforms.end()) {
+                // note loc might have also changed
+                TL_CHECK_AND_PASS(it->second.upload());
+            }
+        }
+        // upload new uniforms
+        for (auto&& [name, var] : uniforms) {
+            if (m_uniforms.find(name) == m_uniforms.end()) {
+                TL_CHECK_AND_PASS(var.upload());
+            }
+        }
+        m_uniforms = std::move(uniforms);
+    }
+    unbind();
+
     return {};
 }
 
@@ -232,6 +308,7 @@ auto ShaderProgram::get_stage(ShaderType type) const noexcept -> ViewPtr<Shader>
 
 void ShaderProgram::swap(ShaderProgram&& other) noexcept {
     m_shaders.swap(other.m_shaders);
+    m_uniforms.swap(other.m_uniforms);
     this->GLResource::swap(std::move(other));
 }
 
@@ -247,7 +324,10 @@ auto ShaderProgram::from_shaders(tcb::span<StageDesc<ShaderRef>> shaders) noexce
     }
     TL_CHECK(link_shaders(program, data));
 
-    return ShaderProgramRef{ new ShaderProgram { std::move(data), program}, GLResourceDeleter{}};
+    UniformMap uniforms;
+    TL_TRY_ASSIGN(uniforms, get_uniforms(program));
+
+    return ShaderProgramRef{ new ShaderProgram { std::move(data), std::move(uniforms), program }, GLResourceDeleter{}};
 }
 
 auto ShaderProgram::clone(ViewPtr<ShaderProgram> other) noexcept -> tl::expected<ShaderProgramRef, std::string> {

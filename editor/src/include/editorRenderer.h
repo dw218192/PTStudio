@@ -25,7 +25,7 @@ friend Singleton;
     [[nodiscard]] auto render(View<Camera> cam) noexcept -> tl::expected<void, std::string> override;
     [[nodiscard]] auto render_buffered(View<Camera> cam) noexcept -> tl::expected<TextureHandle, std::string> override;
 	[[nodiscard]] auto valid() const noexcept -> bool override { return m_valid; }
-    [[nodiscard]] auto on_change_render_config(RenderConfig const& config) noexcept -> tl::expected<void, std::string> override;
+    [[nodiscard]] auto on_change_render_config(RenderConfig config) noexcept -> tl::expected<void, std::string> override;
     [[nodiscard]] auto on_add_object(ViewPtr<Object> obj) noexcept -> tl::expected<void, std::string> override;
     [[nodiscard]] auto on_remove_object(ViewPtr<Object> obj) noexcept -> tl::expected<void, std::string> override;
     [[nodiscard]] auto draw_imgui() noexcept -> tl::expected<void, std::string> override;
@@ -37,12 +37,15 @@ private:
     struct PerObjectData;
     struct PerTextEditorData;
 
-    [[nodiscard]] auto on_add_object_internal(PerObjectData& data, ViewPtr<Object> obj) noexcept -> tl::expected<void, std::string>;
+    [[nodiscard]] auto on_add_object_internal(Ref<PerObjectData> data, ViewPtr<Object> obj) noexcept -> tl::expected<void, std::string>;
     [[nodiscard]] auto render_internal(View<Camera> cam, GLuint fbo) noexcept -> tl::expected<void, std::string>;
     void clear_render_data();
 
     void commit_cur_shader_code() noexcept;
-    void draw_glsl_editor(ShaderType type, PerTextEditorData& editor) noexcept;
+    auto draw_glsl_editor(ShaderType type, Ref<ShaderProgram> shader, PerTextEditorData& editor) noexcept
+        -> tl::expected <void, std::string>;
+
+    auto try_get_obj_data(ViewPtr<Object> obj) noexcept -> tl::expected<Ref<PerObjectData>, std::string>;
 
     ViewPtr<Scene> m_scene{ nullptr };
     GLFrameBufferRef m_render_buf{ nullptr };
