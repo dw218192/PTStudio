@@ -44,6 +44,7 @@ private:
     void commit_cur_shader_code() noexcept;
     auto draw_glsl_editor(ShaderType type, Ref<ShaderProgram> shader, PerTextEditorData& editor) noexcept
         -> tl::expected <void, std::string>;
+    void preprocess_shader_code(ShaderType type, std::string& main_src);
 
     auto try_get_obj_data(ViewPtr<Object> obj) noexcept -> tl::expected<Ref<PerObjectData>, std::string>;
 

@@ -1,4 +1,5 @@
 #pragma once
+#include "concat.h"
 
 constexpr char const* k_imgui_ini = 
 "\n\
@@ -199,11 +200,11 @@ void main() {\n\
 constexpr char const* ps_grid_src = 
 "\
 #version 330 core\n\
-uniform float half_grid_dim;\n\
+uniform float halfGridDim;\n\
 in vec2 grid_coords;\n\
 out vec4 FragColor;\n\
 void main() {\n\
-    float dist = max(abs(grid_coords.x), abs(grid_coords.y)) / half_grid_dim;\n\
+    float dist = max(abs(grid_coords.x), abs(grid_coords.y)) / halfGridDim;\n\
     float alpha = 1.0 - pow(dist, 0.25);\n\
     FragColor = vec4(0.7, 0.7, 0.7, alpha);\n\
 }\n\
@@ -215,7 +216,9 @@ constexpr char const* k_uniform_projection = "projection";
 constexpr char const* k_uniform_light_pos = "lightPos";
 constexpr char const* k_uniform_light_color = "lightColor";
 constexpr char const* k_uniform_object_color = "objectColor";
-constexpr char const* k_uniform_half_grid_dim = "half_grid_dim";
+
+
+constexpr char const* k_uniform_half_grid_dim = "halfGridDim";
 constexpr char const* k_uniform_screen_texture = "screenTexture";
 constexpr char const* k_uniform_outline_color = "outlineColor";
 constexpr char const* k_uniform_texel_size = "texelSize";
@@ -228,12 +231,25 @@ constexpr char const* k_built_in_uniforms[] = {
     k_uniform_light_pos,
     k_uniform_light_color,
     k_uniform_object_color,
-    k_uniform_half_grid_dim,
-    k_uniform_screen_texture,
-    k_uniform_outline_color,
-    k_uniform_texel_size,
-    k_uniform_thickness,
 };
+
+constexpr std::string_view k_glsl_ver = "#version 330 core\n";
+constexpr std::string_view k_vertex_attributes_decl = "\
+layout (location = 0) in vec3 aPos;\n\
+layout (location = 1) in vec3 aNormal;\n\
+layout (location = 2) in vec2 aTexCoords;\n\
+";
+constexpr std::string_view k_uniform_decl = "\
+uniform mat4 model;\n\
+uniform mat4 view;\n\
+uniform mat4 projection;\n\
+uniform vec3 lightPos;\n\
+uniform vec3 lightColor;\n\
+uniform vec3 objectColor;\n\
+";
+
+constexpr auto k_user_vs_header = join_v<k_glsl_ver, k_uniform_decl, k_vertex_attributes_decl>;
+constexpr auto k_user_ps_header = join_v<k_glsl_ver, k_uniform_decl>;
 
 // for shader editor https://github.com/BalazsJako/ImGuiColorTextEdit/issues/121
 static const char* const glsl_keywords[] = {

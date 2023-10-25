@@ -13,7 +13,7 @@
 #include "glResource.h"
 #include "enumArray.h"
 #include "utils.h"
-#include "UniformVar.h"
+#include "uniformVar.h"
 
 struct Shader;
 struct ShaderProgram;
@@ -132,7 +132,7 @@ auto ShaderProgram::set_uniform(std::string_view name, UniformType&& value) noex
     if (loc == -1) {
         return TL_ERROR( "Invalid uniform location" );
     }
-    if ((TypeToEnumMsk<ValueType>::value & it->second.get_type()) == 0) {
+    if ((type_to_enum_msk(value) & it->second.get_type()) == 0) {
         return TL_ERROR( "Uniform type mismatch" );
     }
 

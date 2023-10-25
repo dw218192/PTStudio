@@ -484,9 +484,10 @@ auto EditorRenderer::draw_glsl_editor(ShaderType type, Ref<ShaderProgram> shader
 
         auto const& data = m_obj_data[m_cur_outline_obj];
         for (auto const shader_type : EIter<ShaderType>{}) {
-            auto const& text = data.editing_data.shader_srcs[shader_type];
+            auto text = data.editing_data.shader_srcs[shader_type];
             // if it has text, we'll try to compile it
             if (!text.empty()) {
+                // preprocess(shader_type, text);
                 srcs.emplace_back(shader_type, text);
             }
         }
@@ -619,7 +620,7 @@ auto EditorRenderer::draw_glsl_editor(ShaderType type, Ref<ShaderProgram> shader
             bool built_in = std::find(std::begin(k_built_in_uniforms), std::end(k_built_in_uniforms), name)
                 != std::end(k_built_in_uniforms);
             if(built_in) {
-                ImGui::Text("uniform %s %s;", val.get_type_str(), name.data());
+                ImGui::Text("uniform %s %s;", get_type_str(val.get_type()), name.data());
             }
         }
         ImGui::EndDisabled();
@@ -643,6 +644,14 @@ auto EditorRenderer::draw_glsl_editor(ShaderType type, Ref<ShaderProgram> shader
     ImGui::PopFont();
 
     return {};
+}
+
+void EditorRenderer::preprocess_shader_code(ShaderType type, std::string& main_src) {
+    if (type == ShaderType::Vertex) {
+        // add built-in vertex attributes
+
+    }
+    main_src = k_user_shader_header + main_src;
 }
 
 auto EditorRenderer::try_get_obj_data(ViewPtr<Object> obj) noexcept -> tl::expected<Ref<PerObjectData>, std::string> {

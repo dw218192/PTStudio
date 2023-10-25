@@ -47,7 +47,7 @@ namespace {
 
     auto create_shader(GLenum type, std::string_view src) noexcept -> tl::expected<GLuint, std::string> {
         GLuint handle{ 0 };
-        TransactionScope guard{
+        TransactionScope transaction{
 			[handle]() {
 			    if (handle) {
                     glDeleteShader(handle);
@@ -65,7 +65,7 @@ namespace {
         }
         TL_CHECK(compile_shader(handle, src));
 
-        guard.commit();
+        transaction.commit();
         return handle;
     }
 

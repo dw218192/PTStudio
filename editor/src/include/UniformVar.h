@@ -17,38 +17,48 @@ enum ShaderVariableType {
 };
 
 template<typename T>
-struct TypeToEnumMsk;
+constexpr auto type_to_enum_msk(T) {
+    if constexpr (std::is_same_v<T, glm::vec3>) {
+        return ShaderVariableType::Vec3;
+    } else if constexpr (std::is_same_v<T, glm::vec2>) {
+        return ShaderVariableType::Vec2;
+    } else if constexpr (std::is_same_v<T, glm::vec4>) {
+        return ShaderVariableType::Vec4;
+    } else if constexpr (std::is_same_v<T, glm::mat3>) {
+        return ShaderVariableType::Mat3;
+    } else if constexpr (std::is_same_v<T, glm::mat4>) {
+        return ShaderVariableType::Mat4;
+    } else if constexpr (std::is_same_v<T, float>) {
+        return ShaderVariableType::Float;
+    } else if constexpr (std::is_same_v<T, int>) {
+        return ShaderVariableType::Int | ShaderVariableType::Sampler2D;
+    } else {
+        static_assert(false, "Unsupported type");
+    }
+}
 
-
-template<>
-struct TypeToEnumMsk<glm::mat3> {
-    static constexpr int value = ShaderVariableType::Mat3;
-};
-template<>
-struct TypeToEnumMsk<glm::mat4> {
-    static constexpr int value = ShaderVariableType::Mat4;
-};
-template<>
-struct TypeToEnumMsk<glm::vec2> {
-    static constexpr int value = ShaderVariableType::Vec2;
-};
-template<>
-struct TypeToEnumMsk<glm::vec3> {
-    static constexpr int value = ShaderVariableType::Vec3;
-};
-template<>
-struct TypeToEnumMsk<glm::vec4> {
-    static constexpr int value = ShaderVariableType::Vec4;
-};
-template<>
-struct TypeToEnumMsk<float> {
-    static constexpr int value = ShaderVariableType::Float;
-};
-template<>
-struct TypeToEnumMsk<int> {
-    static constexpr int value = ShaderVariableType::Int | ShaderVariableType::Sampler2D;
-};
-
+constexpr auto get_type_str(ShaderVariableType type) {
+    switch (type) {
+    case ShaderVariableType::Mat3:
+        return "mat3";
+    case ShaderVariableType::Mat4:
+        return "mat4";
+    case ShaderVariableType::Vec2:
+        return "vec2";
+    case ShaderVariableType::Vec3:
+        return "vec3";
+    case ShaderVariableType::Vec4:
+        return "vec4";
+    case ShaderVariableType::Float:
+        return "float";
+    case ShaderVariableType::Int:
+        return "int";
+    case ShaderVariableType::Sampler2D:
+        return "sampler2D";
+    default:
+        return "unknown";
+    }
+}
 
 struct UniformVar {
     friend struct ShaderProgram;
@@ -74,28 +84,6 @@ struct UniformVar {
     }
     auto get_loc() const noexcept -> GLint {
         return loc;
-    }
-    auto get_type_str() const noexcept {
-        switch (type) {
-        case ShaderVariableType::Mat3:
-            return "mat3";
-        case ShaderVariableType::Mat4:
-            return "mat4";
-        case ShaderVariableType::Vec2:
-            return "vec2";
-        case ShaderVariableType::Vec3:
-            return "vec3";
-        case ShaderVariableType::Vec4:
-            return "vec4";
-        case ShaderVariableType::Float:
-            return "float";
-        case ShaderVariableType::Int:
-            return "int";
-        case ShaderVariableType::Sampler2D:
-            return "sampler2D";
-        default:
-            return "unknown";
-        }
     }
 private:
     auto upload() noexcept -> tl::expected<void, std::string>;

@@ -1,8 +1,8 @@
-#include "include/UniformVar.h"
+#include "include/uniformVar.h"
 
 #include <glm/gtc/type_ptr.hpp>
 
-auto to_variable_type(GLenum type) noexcept -> ShaderVariableType {
+constexpr auto to_variable_type(GLenum type) noexcept -> ShaderVariableType {
     switch (type) {
     case GL_FLOAT_MAT4:
         return ShaderVariableType::Mat4;
