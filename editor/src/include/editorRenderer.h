@@ -36,15 +36,16 @@ private:
 
     struct PerObjectData;
     struct PerTextEditorData;
+    struct PerObjectEditingData;
 
     [[nodiscard]] auto on_add_object_internal(Ref<PerObjectData> data, ViewPtr<Object> obj) noexcept -> tl::expected<void, std::string>;
     [[nodiscard]] auto render_internal(View<Camera> cam, GLuint fbo) noexcept -> tl::expected<void, std::string>;
     void clear_render_data();
 
     void commit_cur_shader_code() noexcept;
-    auto draw_glsl_editor(ShaderType type, Ref<ShaderProgram> shader, PerTextEditorData& editor) noexcept
+    auto draw_glsl_editor(ShaderType type, Ref<ShaderProgram> shader, Ref<PerTextEditorData> editor) noexcept
         -> tl::expected <void, std::string>;
-    void preprocess_shader_code(ShaderType type, std::string& main_src);
+    auto preprocess_shader_code(ShaderType type, View<PerObjectEditingData> data) noexcept -> std::string;
 
     auto try_get_obj_data(ViewPtr<Object> obj) noexcept -> tl::expected<Ref<PerObjectData>, std::string>;
 
@@ -67,7 +68,10 @@ private:
 
     // for shader editing
     struct PerObjectEditingData {
+        std::string common_funcs;
+        EArray<ShaderType, std::string_view> header;
         EArray<ShaderType, std::string> shader_srcs;
+        PerObjectEditingData();
     };
     // extra object data
     struct PerObjectData {
@@ -94,5 +98,5 @@ private:
         }
     };
     EArray<ShaderType, PerTextEditorData> m_shader_editor_data {};
-
+    bool m_show_built_in_uniform{ false };
 };

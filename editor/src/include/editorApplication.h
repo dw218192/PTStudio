@@ -39,6 +39,9 @@ NO_COPY_MOVE(EditorApplication);
     template<typename T, typename E>
     static constexpr decltype(auto) check_error(tl::expected<T, E>&& res);
 
+protected:
+    void on_begin_first_loop() override;
+
 private:
     EditorApplication(Renderer& renderer, Scene& scene, std::string_view name);
     ~EditorApplication() override = default;

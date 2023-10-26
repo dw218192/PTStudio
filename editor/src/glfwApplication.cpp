@@ -1,6 +1,8 @@
 #include "include/glfwApplication.h"
-#include "include/imgui/imhelper.h"
+
 #include <imgui_internal.h>
+
+#include "include/imgui/imhelper.h"
 #include <iostream>
 
 // stubs for callbacks
@@ -104,6 +106,7 @@ GLFWApplication::~GLFWApplication() {
 }
 
 void GLFWApplication::run() {
+    static bool s_once = false;
     double last_frame_time = 0;
     while (!glfwWindowShouldClose(m_window)) {
         auto const now = glfwGetTime();
@@ -122,6 +125,11 @@ void GLFWApplication::run() {
             ImGui_ImplOpenGL3_NewFrame();
             ImGui_ImplGlfw_NewFrame();
             ImGui::NewFrame();
+
+            if (!s_once) {
+                on_begin_first_loop();
+            	s_once = true;
+            }
 
             // User Rendering
             loop(dt);
@@ -205,9 +213,6 @@ void GLFWApplication::begin_imgui_window(
         }
         */
     }
-
-    // disable alt key for imgui
-    ImGui::SetKeyOwner(ImGuiMod_Alt, ImGui::GetCurrentWindow()->ID);
 
     // record the current focus
     if (ImGui::IsWindowFocused()) {

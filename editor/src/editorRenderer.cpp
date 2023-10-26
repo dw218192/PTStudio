@@ -58,11 +58,9 @@ auto EditorRenderer::init(ObserverPtr<Application> app) noexcept -> tl::expected
 
         // grid shaders
         {
-            std::array<ShaderProgram::StageDesc<std::string_view>, 2> descs{
-                {
-                    {ShaderType::Vertex, vs_grid_src},
-                    {ShaderType::Fragment, ps_grid_src},
-                }
+            ShaderProgram::ShaderDesc descs {
+                {ShaderType::Vertex, vs_grid_src},
+                {ShaderType::Fragment, ps_grid_src},
             };
             TL_TRY_ASSIGN(m_grid_shader, ShaderProgram::from_srcs(descs));
         }
@@ -83,15 +81,7 @@ auto EditorRenderer::init(ObserverPtr<Application> app) noexcept -> tl::expected
     MainFrameBuffer::set(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
 
 	// default shaders
-    {
-	    std::array<ShaderProgram::StageDesc<std::string_view>, 2> descs{
-		    {
-                {ShaderType::Vertex, vs_obj_src},
-                {ShaderType::Fragment, ps_obj_src},
-		    }
-	    };
-        TL_TRY_ASSIGN(m_default_shader, ShaderProgram::from_srcs(descs));
-    }
+    TL_TRY_ASSIGN(m_default_shader, ShaderProgram::from_srcs(k_default_shader_srcs));
     TL_CHECK_AND_PASS(create_grid(k_grid_dim, k_grid_spacing));
 
     if (!m_grid_shader->valid()) {
@@ -206,8 +196,9 @@ auto EditorRenderer::on_remove_object(ViewPtr<Object> obj) noexcept -> tl::expec
 void EditorRenderer::on_object_change(ViewPtr<Object> obj) noexcept {
     // save last editing to the object editing data
     commit_cur_shader_code();
-
     m_cur_outline_obj = obj;
+
+    // update editor texts
     for (auto const shader_type : EIter<ShaderType>{}) {
         m_shader_editor_data[shader_type].editor.SetText(
             m_obj_data[obj].editing_data.shader_srcs[shader_type]
@@ -229,16 +220,14 @@ auto EditorRenderer::on_add_object_internal(Ref<PerObjectData> data, ViewPtr<Obj
     }
     data.get().render_data->unbind();
 
+    // update editor texts
     for (auto const shader_type : EIter<ShaderType>{}) {
-        data.get().editing_data.shader_srcs[shader_type] = data.get().shader->get_stage(shader_type)->get_src();
-
         m_shader_editor_data[shader_type].editor.SetText(
             m_obj_data[obj].editing_data.shader_srcs[shader_type]
         );
     }
 
     return {};
-
 }
 
 auto EditorRenderer::render_internal(View<Camera> cam, GLuint fbo) noexcept -> tl::expected<void, std::string> {
@@ -275,17 +264,11 @@ auto EditorRenderer::render_internal(View<Camera> cam, GLuint fbo) noexcept -> t
             m_outline.render_buf->unbind();
 
             // shaders
-            for (int i = 0; i < m_outline.shaders.size(); ++i) {
-	            std::array<ShaderProgram::StageDesc<std::string_view>, 2> descs{
-		            {
-			            {
-				            ShaderType::Vertex, vs_outline_passes[i]
-			            },
-			            {
-				            ShaderType::Fragment, ps_outline_passes[i]
-			            }
-		            }
-	            };
+            for (size_t i = 0; i < m_outline.shaders.size(); ++i) {
+                ShaderProgram::ShaderDesc descs{
+                    { ShaderType::Vertex, vs_outline_passes[i] },
+                    { ShaderType::Fragment, ps_outline_passes[i] }
+                };
                 TL_TRY_ASSIGN(m_outline.shaders[i], ShaderProgram::from_srcs(descs));
             }
 
@@ -475,30 +458,32 @@ void EditorRenderer::commit_cur_shader_code() noexcept {
 
 #pragma region Shader_Editing
 
-auto EditorRenderer::draw_glsl_editor(ShaderType type, Ref<ShaderProgram> shader, PerTextEditorData& data) noexcept
+auto EditorRenderer::draw_glsl_editor(ShaderType type, Ref<ShaderProgram> shader, Ref<PerTextEditorData> data_ref) noexcept
 -> tl::expected <void, std::string>
 {
     auto try_compile = [this]() {
-        std::vector<ShaderProgram::StageDesc<std::string_view>> srcs;
+        ShaderProgram::ShaderDesc descs;
+        EArray<ShaderType, std::string> srcs;
+
         commit_cur_shader_code();
 
         auto const& data = m_obj_data[m_cur_outline_obj];
         for (auto const shader_type : EIter<ShaderType>{}) {
-            auto text = data.editing_data.shader_srcs[shader_type];
+            auto const& text = data.editing_data.shader_srcs[shader_type];
             // if it has text, we'll try to compile it
             if (!text.empty()) {
-                // preprocess(shader_type, text);
-                srcs.emplace_back(shader_type, text);
+                srcs[shader_type] = preprocess_shader_code(shader_type, data.editing_data);
+                descs[shader_type] = srcs[shader_type];
             }
         }
 
-        auto res = m_obj_data[m_cur_outline_obj].shader->try_recompile(srcs);
+        auto res = m_obj_data[m_cur_outline_obj].shader->try_recompile(descs);
         if (!res) {
             m_app->log(LogLevel::Error, res.error());
         }
     };
 
-
+    auto&& data = data_ref.get();
     auto&& editor = data.editor;
     if (ImGui::Button("Compile")) {
         try_compile();
@@ -585,12 +570,19 @@ auto EditorRenderer::draw_glsl_editor(ShaderType type, Ref<ShaderProgram> shader
     // draw uniforms
     auto const uniforms = shader.get().get_uniform_map();
 
-    if(ImGui::CollapsingHeader("uniform variables", ImGuiTreeNodeFlags_DefaultOpen)) {
-        if(ImGui::BeginChild("##", ImVec2(0, 200), true))  {
+    if(ImGui::CollapsingHeader("Uniform Variables", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (ImGui::RadioButton("Show Built-in", m_show_built_in_uniform)) {
+            m_show_built_in_uniform = !m_show_built_in_uniform;
+        }
+
+        if(ImGui::BeginChild("##Uniform Variables", ImVec2(0, 200), true))  {
             for(auto const& [name, val] : uniforms.get()) {
                 bool disabled = std::find(std::begin(k_built_in_uniforms), std::end(k_built_in_uniforms), name) 
                     != std::end(k_built_in_uniforms);
-                
+
+            	if(disabled && !m_show_built_in_uniform) {
+                    continue;
+                }
                 UniformVar val_copy = val;
                 ImGui::BeginDisabled(disabled);
                 if(disabled) {
@@ -646,12 +638,10 @@ auto EditorRenderer::draw_glsl_editor(ShaderType type, Ref<ShaderProgram> shader
     return {};
 }
 
-void EditorRenderer::preprocess_shader_code(ShaderType type, std::string& main_src) {
-    if (type == ShaderType::Vertex) {
-        // add built-in vertex attributes
-
-    }
-    main_src = k_user_shader_header + main_src;
+auto EditorRenderer::preprocess_shader_code(ShaderType type, View<PerObjectEditingData> data) noexcept -> std::string {
+    return std::string{ k_default_shader_header[type] } +
+        data.get().common_funcs +
+        data.get().shader_srcs[type];
 }
 
 auto EditorRenderer::try_get_obj_data(ViewPtr<Object> obj) noexcept -> tl::expected<Ref<PerObjectData>, std::string> {
@@ -667,13 +657,14 @@ auto EditorRenderer::draw_imgui() noexcept -> tl::expected<void, std::string> {
 
     ImGui::Begin("Shader Editor", nullptr, ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_MenuBar);
     ImGui::SetWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
-    ImGui::SetWindowPos(ImVec2(700, 700), ImGuiCond_FirstUseEver);
+    ImGui::SetWindowPos(ImVec2(700, 300), ImGuiCond_FirstUseEver);
 
     if (!m_cur_outline_obj) {
         ImGui::Text("Please Select an object first");
-    } else {
+    }
+    else {
         if (ImGui::BeginTabBar("##tab")) {
-            for(auto const shader_type : EIter<ShaderType>{}) {
+            for (auto const shader_type : EIter<ShaderType>{}) {
                 if (ImGui::BeginTabItem(to_string(shader_type))) {
                     auto res = try_get_obj_data(m_cur_outline_obj);
                     if (!res) return TL_ERROR(res.error());
@@ -686,9 +677,19 @@ auto EditorRenderer::draw_imgui() noexcept -> tl::expected<void, std::string> {
             ImGui::EndTabBar();
         }
     }
-
     ImGui::End();
+
     return {};
+}
+
+EditorRenderer::PerObjectEditingData::PerObjectEditingData() {
+    common_funcs = k_default_shader_funcs;
+	header = k_default_shader_header;
+    for (auto const type : EIter<ShaderType>{}) {
+        if (k_default_shader_srcs_unprocessed[type]) {
+            shader_srcs[type] = k_default_shader_srcs_unprocessed[type].value();
+        }
+    }
 }
 
 #pragma endregion Shader_Editing

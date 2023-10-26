@@ -61,7 +61,9 @@ struct GLFWApplication : Application {
     virtual void loop(float dt) = 0;
 
     [[nodiscard]] bool mouse_over_any_event_region() const noexcept;
-protected:   
+protected:
+    virtual void on_begin_first_loop() { }
+
     /**
      * \brief Gets the renderer for the application.
      * \return the renderer

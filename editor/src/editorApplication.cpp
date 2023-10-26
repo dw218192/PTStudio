@@ -6,9 +6,14 @@
 #include "include/imgui/imhelper.h"
 #include "include/editorRenderer.h"
 
+#include <filesystem>
 #include <imgui_internal.h>
 
-static constexpr char const* k_scene_view_win_name = "Scene";
+
+static constexpr auto k_scene_setting_win_name = "Scene Settings";
+static constexpr auto k_inspector_win_name = "Inspector";
+static constexpr auto k_scene_view_win_name = "Scene";
+static constexpr auto k_console_win_name = "Console";
 
 EditorApplication::EditorApplication(Renderer& renderer, Scene& scene, std::string_view name)
     : GLFWApplication { name, renderer.get_config().width, renderer.get_config().height, renderer.get_config().min_frame_time },
@@ -18,12 +23,6 @@ EditorApplication::EditorApplication(Renderer& renderer, Scene& scene, std::stri
     // initialize renderer
     check_error(m_renderer.init(this));
 	check_error(m_renderer.open_scene(scene));
-
-// #define EDITOR_APP_IMGUI_LOAD_INI
-#ifndef EDITOR_APP_IMGUI_LOAD_INI
-    ImGui::GetIO().IniFilename = nullptr;
-    ImGui::LoadIniSettingsFromMemory(k_imgui_ini, std::strlen(k_imgui_ini));
-#endif
 
     m_control_state.register_on_obj_change([this] (ObserverPtr<Object> obj) {
 	    on_obj_change(obj);
@@ -94,30 +93,55 @@ void EditorApplication::key_pressed(int key, int scancode, int action, int mods)
     }
 }
 
+void EditorApplication::on_begin_first_loop() {
+    GLFWApplication::on_begin_first_loop();
+
+	// do layout initialization work
+    if (ImGui::GetIO().IniFilename) {
+	    // if we already have a saved layout, do nothing
+        if (std::filesystem::exists(ImGui::GetIO().IniFilename)) {
+            return;
+        }
+    }
+
+	// create an UI that covers the whole window, for docking
+    auto id = ImGui::DockSpaceOverViewport(ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
+    ImGui::DockBuilderRemoveNode(id);
+    ImGui::DockBuilderAddNode(id);
+
+    auto const left = ImGui::DockBuilderSplitNode(id, ImGuiDir_Left, 0.146f, nullptr, &id);
+    auto const right = ImGui::DockBuilderSplitNode(id, ImGuiDir_Right, 0.160f, nullptr, &id);
+    auto const down = ImGui::DockBuilderSplitNode(id, ImGuiDir_Down, 0.245f, nullptr, &id);
+
+    ImGui::DockBuilderDockWindow(k_scene_setting_win_name, left);
+    ImGui::DockBuilderDockWindow(k_scene_view_win_name, id);
+    ImGui::DockBuilderDockWindow(k_inspector_win_name, right);
+    ImGui::DockBuilderDockWindow(k_console_win_name, down);
+}
+
 void EditorApplication::loop(float dt) {
     // ImGuizmo
     ImGuizmo::BeginFrame();
 
-    // create an UI that covers the whole window, for docking
     ImGui::DockSpaceOverViewport(ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
     auto const render_tex = check_error(m_renderer.render_buffered(m_cam));
 
     // draw left panel
-    begin_imgui_window("Scene Settings", ImGuiWindowFlags_NoMove);
+    begin_imgui_window(k_scene_setting_win_name, ImGuiWindowFlags_NoMove);
     {
         draw_scene_panel();
     }
     end_imgui_window();
 
     // draw right panel
-    begin_imgui_window("Inspector", ImGuiWindowFlags_NoMove);
+    begin_imgui_window(k_inspector_win_name, ImGuiWindowFlags_NoMove);
     {
         draw_object_panel();
     }
     end_imgui_window();
     
     // draw bottom panel
-    begin_imgui_window("Console", ImGuiWindowFlags_NoMove);
+    begin_imgui_window(k_console_win_name, ImGuiWindowFlags_NoMove);
     {
         draw_console_panel();
     }
@@ -137,7 +161,6 @@ void EditorApplication::loop(float dt) {
 }
 
 void EditorApplication::quit(int code) {
-    get().~EditorApplication();
 	std::exit(code);
 }
 
@@ -156,7 +179,7 @@ void EditorApplication::draw_scene_panel() noexcept {
     {
         if (ImGui::BeginListBox("##Scene Objects", { 0, 200 }))
         {
-            for (auto obj : m_scene) {
+            for (auto const obj : m_scene) {
                 if (ImGui::Selectable(obj->get_name().data(), m_control_state.get_cur_obj() == obj)) {
                     m_control_state.set_cur_obj(obj);
                 }

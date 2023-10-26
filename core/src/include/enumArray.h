@@ -1,5 +1,6 @@
 #pragma once
 #include "utils.h"
+#include <array>
 
 /**
  * \brief A thin wrapper on top of std::array that allows for strongly typed enum indexing
@@ -12,14 +13,58 @@
 */
 template<typename Enum, typename T>
 struct EArray {
+    struct PairViewIterator {
+        using iterator_category = std::forward_iterator_tag;
+        using value_type = std::pair<Enum, T>;
+        using difference_type = std::ptrdiff_t;
+        using pointer = value_type*;
+        using reference = value_type&;
+
+        constexpr PairViewIterator() noexcept = default;
+        constexpr PairViewIterator(T* data, std::size_t index) noexcept : m_data(data), m_index(index) {}
+
+        constexpr auto operator++() noexcept -> PairViewIterator& {
+            ++m_index;
+            return *this;
+        }
+        constexpr auto operator++(int) noexcept -> PairViewIterator {
+            auto copy = *this;
+            ++m_index;
+            return copy;
+        }
+        constexpr auto operator*() noexcept -> value_type {
+            return { static_cast<Enum>(m_index), m_data[m_index] };
+        }
+        constexpr auto operator*() const noexcept -> value_type const {
+            return { static_cast<Enum>(m_index), m_data[m_index] };
+        }
+        constexpr auto operator==(PairViewIterator const& other) const noexcept -> bool {
+            return m_data == other.m_data && m_index == other.m_index;
+        }
+        constexpr auto operator!=(PairViewIterator const& other) const noexcept -> bool {
+            return !(*this == other);
+        }
+    private:
+        T* m_data {nullptr};
+        std::size_t m_index {0};
+    };
+
+    struct PairView {
+        constexpr PairView(EArray const& arr) noexcept : m_data(arr.m_data) {}
+        constexpr auto begin() const noexcept -> PairViewIterator { return { m_data.data(), 0 }; }
+        constexpr auto end() const noexcept -> PairViewIterator { return { m_data.data(), m_data.size() }; }
+    private:
+        std::array<T, static_cast<std::size_t>(Enum::__COUNT)> const& m_data;
+    };
+
     using container_type = std::array<T, static_cast<std::size_t>(Enum::__COUNT)>;
 
     static_assert(std::is_enum_v<Enum>, "Enum must be an enum type");
     static_assert(std::is_default_constructible_v<T>, "T must be default constructible");
     DEFAULT_COPY_MOVE(EArray);
 
-    EArray() = default;
-    EArray(std::initializer_list<std::pair<Enum, T>> init) noexcept {
+    constexpr EArray() = default;
+    constexpr EArray(std::initializer_list<std::pair<Enum, T>> init) noexcept {
         for (auto const& [e, t] : init) {
             m_data[static_cast<std::size_t>(e)] = std::move(t);
         }

@@ -254,25 +254,33 @@ void ShaderProgram::unbind() noexcept {
     glUseProgram(0);
 }
 
-auto ShaderProgram::try_recompile(tcb::span<StageDesc<std::string_view> const> new_srcs) noexcept -> tl::expected<void, std::string> {
+auto ShaderProgram::try_recompile(View<ShaderDesc> new_srcs) noexcept -> tl::expected<void, std::string> {
     ShaderProgramRef copy;
-    TL_TRY_ASSIGN(copy, ShaderProgram::clone(this));
-    TL_CHECK_AND_PASS(copy->recompile(new_srcs));
+    TL_TRY_ASSIGN(copy, ShaderProgram::from_srcs(new_srcs));
     swap(std::move(*copy));
 
 	return {};
 }
 
-auto ShaderProgram::recompile(tcb::span<StageDesc<std::string_view> const> new_srcs) noexcept -> tl::expected<void, std::string> {
+auto ShaderProgram::recompile(View<ShaderDesc> new_srcs) noexcept -> tl::expected<void, std::string> {
     if (!m_handle) {
         return TL_ERROR( "Shader program is not valid" );
     }
 
-    for (auto&& [type, src] : new_srcs) {
-        if (!m_shaders[type]) {
-            TL_TRY_ASSIGN(m_shaders[type], Shader::from_src(type, src));
+    for (auto const type : EIter<ShaderType>{}) {
+        auto&& src = new_srcs.get()[type];
+        if (src) {
+            // modify or create
+            if (!m_shaders[type]) {
+                TL_TRY_ASSIGN(m_shaders[type], Shader::from_src(type, *src));
+            } else {
+                TL_CHECK_AND_PASS(m_shaders[type]->recompile(*src));
+            }
         } else {
-            TL_CHECK_AND_PASS(m_shaders[type]->recompile(src));
+            // delete
+            if (m_shaders[type]) {
+                m_shaders[type] = nullptr;
+            }
         }
     }
 	TL_CHECK_AND_PASS(link_shaders(m_handle, m_shaders));
@@ -282,18 +290,13 @@ auto ShaderProgram::recompile(tcb::span<StageDesc<std::string_view> const> new_s
     {
         UniformMap uniforms;
         TL_TRY_ASSIGN(uniforms, get_uniforms(m_handle));
-        for (auto&& [name, var] : m_uniforms) {
-            auto const it = uniforms.find(name);
-            if (it != uniforms.end()) {
-                // note loc might have also changed
-                TL_CHECK_AND_PASS(it->second.upload());
-            }
-        }
-        // upload new uniforms
+        // upload uniforms
         for (auto&& [name, var] : uniforms) {
-            if (m_uniforms.find(name) == m_uniforms.end()) {
-                TL_CHECK_AND_PASS(var.upload());
+            if (auto it = m_uniforms.find(name); it != m_uniforms.end()) {
+                // transfer old value
+                var.value = it->second.value;
             }
+            TL_CHECK_AND_PASS(var.upload());
         }
         m_uniforms = std::move(uniforms);
     }
@@ -312,22 +315,18 @@ void ShaderProgram::swap(ShaderProgram&& other) noexcept {
     this->GLResource::swap(std::move(other));
 }
 
-auto ShaderProgram::from_shaders(tcb::span<StageDesc<ShaderRef>> shaders) noexcept -> tl::expected<ShaderProgramRef, std::string> {
+auto ShaderProgram::from_shaders(EArray<ShaderType, ShaderRef> shaders) noexcept -> tl::expected<ShaderProgramRef, std::string> {
     auto const program = glCreateProgram();
     if (!program) {
         return TL_ERROR( "Failed to create shader program" );
     }
 
-    EArray<ShaderType, ShaderRef> data;
-	for (auto&& [type, shader] : shaders) {
-        data[type] = std::move(shader);
-    }
-    TL_CHECK(link_shaders(program, data));
+    TL_CHECK(link_shaders(program, shaders));
 
     UniformMap uniforms;
     TL_TRY_ASSIGN(uniforms, get_uniforms(program));
 
-    return ShaderProgramRef{ new ShaderProgram { std::move(data), std::move(uniforms), program }, GLResourceDeleter{}};
+    return ShaderProgramRef{ new ShaderProgram { std::move(shaders), std::move(uniforms), program }, GLResourceDeleter{}};
 }
 
 auto ShaderProgram::clone(ViewPtr<ShaderProgram> other) noexcept -> tl::expected<ShaderProgramRef, std::string> {
@@ -335,33 +334,37 @@ auto ShaderProgram::clone(ViewPtr<ShaderProgram> other) noexcept -> tl::expected
         return TL_ERROR("Invalid shader program");
     }
 
-    std::vector<StageDesc<ShaderRef>> stages;
-    for(auto type : EIter<ShaderType>{}) {
-        ShaderRef shader;
-        TL_TRY_ASSIGN(shader, Shader::clone(other->m_shaders[type].get()));
-        stages.emplace_back(type, std::move(shader));
+    EArray<ShaderType, ShaderRef> shaders{};
+    for(auto const type : EIter<ShaderType>{}) {
+        if (other->m_shaders[type]) {
+            TL_TRY_ASSIGN(shaders[type], Shader::clone(other->m_shaders[type].get()));
+        }
     }
-    return from_shaders(stages);
+    return from_shaders(std::move(shaders));
 }
 
-auto ShaderProgram::from_files(tcb::span<StageDesc<std::string_view> const> files) noexcept -> tl::expected<ShaderProgramRef, std::string> {
-    std::vector<StageDesc<ShaderRef>> stages;
-    for (auto&& [type, src] : files) {
-        ShaderRef shader;
-        TL_TRY_ASSIGN(shader, Shader::from_file(type, src));
-        stages.emplace_back(type, std::move(shader));
+auto ShaderProgram::from_files(View<ShaderDesc> files) noexcept -> tl::expected<ShaderProgramRef, std::string> {
+
+    EArray<ShaderType, ShaderRef> shaders{};
+    for (auto const type : EIter<ShaderType>{}) {
+        auto&& file = files.get()[type];
+        if (file) {
+            TL_TRY_ASSIGN(shaders[type], Shader::from_file(type, *file));
+        }
     }
 
-    return from_shaders(stages);
+    return from_shaders(std::move(shaders));
 }
 
-auto ShaderProgram::from_srcs(tcb::span<StageDesc<std::string_view> const> srcs) noexcept -> tl::expected<ShaderProgramRef, std::string> {
-    std::vector<StageDesc<ShaderRef>> stages;
-    for (auto&& [type, src] : srcs) {
-        ShaderRef shader;
-        TL_TRY_ASSIGN(shader, Shader::from_src(type, src));
-        stages.emplace_back(type, std::move(shader));
+auto ShaderProgram::from_srcs(View<ShaderDesc> srcs) noexcept -> tl::expected<ShaderProgramRef, std::string> {
+
+    EArray<ShaderType, ShaderRef> shaders{};
+    for (auto const type : EIter<ShaderType>{}) {
+        auto&& src = srcs.get()[type];
+	    if (src) {
+	        TL_TRY_ASSIGN(shaders[type], Shader::from_src(type, *src));
+        }
     }
 
-    return from_shaders(stages);
+    return from_shaders(std::move(shaders));
 }
