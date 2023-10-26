@@ -185,12 +185,12 @@ auto GLFWApplication::get_window_width() const noexcept->int {
     return display_w;
 }
 
-void GLFWApplication::begin_imgui_window(
+auto GLFWApplication::begin_imgui_window(
     std::string_view name, 
     ImGuiWindowFlags flags,
     std::optional<std::function<void()>> const& on_leave_region,
     std::optional<std::function<void()>> const& on_enter_region
-) noexcept {
+) noexcept -> bool {
     // NOTE: here we assume that recv_mouse_event will not change
     // in the lifetime of the application
     // i.e., the following code pattern will not happen:
@@ -204,7 +204,7 @@ void GLFWApplication::begin_imgui_window(
         };
     }
 
-    ImGui::Begin(name.data(), nullptr, flags);
+    auto ret = ImGui::Begin(name.data(), nullptr, flags);
     if (ImGui::IsWindowHovered()) {
         m_cur_hovered_widget = name;
         /*
@@ -218,6 +218,7 @@ void GLFWApplication::begin_imgui_window(
     if (ImGui::IsWindowFocused()) {
         m_cur_focused_widget = name;
     }
+    return ret;
 }
 
 void GLFWApplication::end_imgui_window() noexcept {

@@ -73,12 +73,12 @@ protected:
     [[nodiscard]] auto get_cur_focused_widget() const noexcept { return m_cur_focused_widget; }
     
     // imgui helpers
-    void begin_imgui_window(
-        std::string_view name, 
+    auto begin_imgui_window(
+        std::string_view name,
         ImGuiWindowFlags flags = 0,
         std::optional<std::function<void()>> const& on_leave_region = std::nullopt,
         std::optional<std::function<void()>> const& on_enter_region = std::nullopt
-    ) noexcept;
+    ) noexcept -> bool;
 
     void end_imgui_window() noexcept;
     auto get_window_content_pos(std::string_view name) const noexcept -> std::optional<ImVec2>;

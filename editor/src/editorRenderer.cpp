@@ -602,22 +602,38 @@ auto EditorRenderer::draw_glsl_editor(ShaderType type, Ref<ShaderProgram> shader
                 ImGui::Separator();
                 ImGui::Spacing();
             }
-            ImGui::EndChild();
         }
+        ImGui::EndChild();
     }
 
-    if(ImGui::CollapsingHeader("Built-in Uniform Declarations", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::BeginDisabled();
-        for (auto const& [name, val] : uniforms.get()) {
-            bool built_in = std::find(std::begin(k_built_in_uniforms), std::end(k_built_in_uniforms), name)
-                != std::end(k_built_in_uniforms);
-            if(built_in) {
-                ImGui::Text("uniform %s %s;", get_type_str(val.get_type()), name.data());
-            }
-        }
-        ImGui::EndDisabled();
+	auto const half_w = std::max((ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2.0f, 1.0f);
+
+    ImGui::Columns(2);
+    if (ImGui::CollapsingHeader("Built-in Uniform Declarations")) {
+	    if (ImGui::BeginChild("##Built-in Uniform Declarations", ImVec2(half_w, 100))) {
+		    ImGui::BeginDisabled();
+		    for (auto const& [name, val] : uniforms.get()) {
+			    bool built_in = std::find(std::begin(k_built_in_uniforms), std::end(k_built_in_uniforms), name)
+				    != std::end(k_built_in_uniforms);
+			    if (built_in) {
+				    ImGui::Text("uniform %s %s;", get_type_str(val.get_type()), name.data());
+			    }
+		    }
+		    ImGui::EndDisabled();
+	    }
+        ImGui::EndChild();
+    }
+    
+
+    ImGui::NextColumn();
+    if (ImGui::CollapsingHeader("Inputs")) {
+	    if (ImGui::BeginChild("##Inputs", ImVec2(half_w, 100))) {
+	    }
+        ImGui::EndChild();
     }
 
+    ImGui::Columns(1);
+    
     // draw input & outputs
     ImGui::Separator();
     auto const cpos = editor.GetCursorPosition();
@@ -655,28 +671,30 @@ auto EditorRenderer::try_get_obj_data(ViewPtr<Object> obj) noexcept -> tl::expec
 auto EditorRenderer::draw_imgui() noexcept -> tl::expected<void, std::string> {
     TL_CHECK_AND_PASS(Renderer::draw_imgui());
 
-    ImGui::Begin("Shader Editor", nullptr, ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_MenuBar);
-    ImGui::SetWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
-    ImGui::SetWindowPos(ImVec2(700, 300), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Shader Editor", nullptr, ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_MenuBar)) {
+        ImGui::SetWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
+        ImGui::SetWindowPos(ImVec2(700, 300), ImGuiCond_FirstUseEver);
 
-    if (!m_cur_outline_obj) {
-        ImGui::Text("Please Select an object first");
-    }
-    else {
-        if (ImGui::BeginTabBar("##tab")) {
-            for (auto const shader_type : EIter<ShaderType>{}) {
-                if (ImGui::BeginTabItem(to_string(shader_type))) {
-                    auto res = try_get_obj_data(m_cur_outline_obj);
-                    if (!res) return TL_ERROR(res.error());
+        if (!m_cur_outline_obj) {
+            ImGui::Text("Please Select an object first");
+        }
+        else {
+            if (ImGui::BeginTabBar("##tab")) {
+                for (auto const shader_type : EIter<ShaderType>{}) {
+                    if (ImGui::BeginTabItem(to_string(shader_type))) {
+                        auto res = try_get_obj_data(m_cur_outline_obj);
+                        if (!res) return TL_ERROR(res.error());
 
-                    draw_glsl_editor(shader_type, *(res.value().get().shader), m_shader_editor_data[shader_type]);
-                    ImGui::EndTabItem();
+                        draw_glsl_editor(shader_type, *(res.value().get().shader), m_shader_editor_data[shader_type]);
+                        ImGui::EndTabItem();
+                    }
                 }
-            }
 
-            ImGui::EndTabBar();
+                ImGui::EndTabBar();
+            }
         }
     }
+
     ImGui::End();
 
     return {};

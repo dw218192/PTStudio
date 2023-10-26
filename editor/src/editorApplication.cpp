@@ -127,31 +127,31 @@ void EditorApplication::loop(float dt) {
     auto const render_tex = check_error(m_renderer.render_buffered(m_cam));
 
     // draw left panel
-    begin_imgui_window(k_scene_setting_win_name, ImGuiWindowFlags_NoMove);
+    if (begin_imgui_window(k_scene_setting_win_name, ImGuiWindowFlags_NoMove))
     {
         draw_scene_panel();
     }
     end_imgui_window();
 
     // draw right panel
-    begin_imgui_window(k_inspector_win_name, ImGuiWindowFlags_NoMove);
+    if (begin_imgui_window(k_inspector_win_name, ImGuiWindowFlags_NoMove))
     {
         draw_object_panel();
     }
     end_imgui_window();
     
     // draw bottom panel
-    begin_imgui_window(k_console_win_name, ImGuiWindowFlags_NoMove);
+    if (begin_imgui_window(k_console_win_name, ImGuiWindowFlags_NoMove))
     {
         draw_console_panel();
     }
     end_imgui_window();
 
     // draw the scene view
-    begin_imgui_window(k_scene_view_win_name,
+    if (begin_imgui_window(k_scene_view_win_name,
         ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoMove,
         m_on_mouse_leave_scene_viewport_cb,
-        m_on_mouse_enter_scene_viewport_cb);
+        m_on_mouse_enter_scene_viewport_cb))
     {
         draw_scene_viewport(render_tex);
     }
