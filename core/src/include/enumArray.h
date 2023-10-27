@@ -83,6 +83,8 @@ struct EArray {
 
     constexpr auto size() const noexcept -> std::size_t { return m_data.size(); }
     constexpr auto swap(EArray& other) noexcept -> void { m_data.swap(other.m_data); }
+    
+    constexpr auto pair_view() const noexcept -> PairView { return { *this }; }
 private:
     container_type m_data{};
 };

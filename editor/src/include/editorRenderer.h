@@ -45,7 +45,6 @@ private:
     void commit_cur_shader_code() noexcept;
     auto draw_glsl_editor(ShaderType type, Ref<ShaderProgram> shader, Ref<PerTextEditorData> editor) noexcept
         -> tl::expected <void, std::string>;
-    auto preprocess_shader_code(ShaderType type, View<PerObjectEditingData> data) noexcept -> std::string;
 
     auto try_get_obj_data(ViewPtr<Object> obj) noexcept -> tl::expected<Ref<PerObjectData>, std::string>;
 
@@ -67,11 +66,25 @@ private:
     ShaderProgramRef m_default_shader{ nullptr };
 
     // for shader editing
+    // param passing here is a little weird because we have to work with
+    // TextEditor
     struct PerObjectEditingData {
         std::string common_funcs;
-        EArray<ShaderType, std::string_view> header;
-        EArray<ShaderType, std::string> shader_srcs;
-        PerObjectEditingData();
+        enum class CompilationStatus {
+	        UNKNOWN,
+            SUCCESS,
+            FAILURE
+        } compilation_status = CompilationStatus::UNKNOWN;
+
+    	PerObjectEditingData();
+        void set_src(ShaderType type, std::string src);
+        auto get_src(ShaderType type) -> View<std::string>;
+        auto get_outputs(ShaderType type) -> std::string_view;
+        auto get_inputs(ShaderType type) -> std::string_view;
+    private:
+        EArray<ShaderType, std::string> m_shader_inputs;
+        EArray<ShaderType, std::string> m_shader_outputs;
+        EArray<ShaderType, std::string> m_shader_srcs; // unprocessed src
     };
     // extra object data
     struct PerObjectData {

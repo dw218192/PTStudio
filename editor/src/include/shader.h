@@ -138,6 +138,15 @@ auto ShaderProgram::set_uniform(std::string_view name, UniformType&& value) noex
     else if constexpr (std::is_same_v<ValueType, int>) {
         glUniform1i(loc, value);
     }
+    else if constexpr (std::is_same_v<ValueType, glm::ivec2>) {
+        glUniform2iv(loc, 1, glm::value_ptr(value));
+    }
+    else if constexpr (std::is_same_v<ValueType, glm::ivec3>) {
+        glUniform3iv(loc, 1, glm::value_ptr(value));
+    }
+    else if constexpr (std::is_same_v<ValueType, glm::ivec4>) {
+        glUniform4iv(loc, 1, glm::value_ptr(value));
+    }
     else {
         static_assert(false, "Unsupported uniform type");
     }

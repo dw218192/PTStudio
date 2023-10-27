@@ -83,10 +83,14 @@ protected:
     void end_imgui_window() noexcept;
     auto get_window_content_pos(std::string_view name) const noexcept -> std::optional<ImVec2>;
 
+    [[nodiscard]] auto get_time() const noexcept -> float override;
+    [[nodiscard]] auto get_delta_time() const noexcept -> float override;
+
 private:
     GLFWwindow* m_window;
     DebugDrawer m_debug_drawer;
     float m_min_frame_time;
+    float m_delta_time{ 0.0f };
 
     // used to help detect if the mouse enters/leaves certain imgui windows
     struct ImGuiWindowInfo {

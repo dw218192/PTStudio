@@ -14,6 +14,9 @@ enum ShaderVariableType {
     Float = 1 << 5,
     Int = 1 << 6,
     Sampler2D = 1 << 7,
+    IVec2 = 1 << 8,
+    IVec3 = 1 << 9,
+    IVec4 = 1 << 10,
 };
 
 template<typename T>
@@ -32,8 +35,14 @@ constexpr auto type_to_enum_msk(T) {
         return ShaderVariableType::Float;
     } else if constexpr (std::is_same_v<T, int>) {
         return ShaderVariableType::Int | ShaderVariableType::Sampler2D;
+    } else if constexpr (std::is_same_v<T, glm::ivec2>) {
+        return ShaderVariableType::IVec2;
+    } else if constexpr (std::is_same_v<T, glm::ivec3>) {
+        return ShaderVariableType::IVec3;
+    } else if constexpr (std::is_same_v<T, glm::ivec4>) {
+        return ShaderVariableType::IVec4;
     } else {
-        static_assert(false, "Unsupported type");
+        static_assert(always_false_v<T>, "Unsupported type");
     }
 }
 
@@ -55,6 +64,12 @@ constexpr auto get_type_str(ShaderVariableType type) {
         return "int";
     case ShaderVariableType::Sampler2D:
         return "sampler2D";
+    case ShaderVariableType::IVec2:
+        return "ivec2";
+    case ShaderVariableType::IVec3:
+        return "ivec3";
+    case ShaderVariableType::IVec4:
+        return "ivec4";
     default:
         return "unknown";
     }
@@ -96,6 +111,9 @@ private:
         glm::vec2,
         glm::vec3,
         glm::vec4,
+        glm::ivec2,
+        glm::ivec3,
+        glm::ivec4,
         float,
         int
     > value;

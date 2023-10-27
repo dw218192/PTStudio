@@ -10,11 +10,11 @@ constexpr char const* vs_outline_passes[] = {
     "\
     #version 330 core\n\
     layout (location = 0) in vec3 aPos;\n\
-    uniform mat4 model;\n\
-    uniform mat4 view;\n\
-    uniform mat4 projection;\n\
+    uniform mat4 u_model;\n\
+    uniform mat4 u_view;\n\
+    uniform mat4 u_projection;\n\
     void main() {\n\
-        gl_Position = projection * view * model * vec4(aPos, 1.0);\n\
+        gl_Position = u_projection * u_view * u_model * vec4(aPos, 1.0);\n\
     }\n\
     ",
     // post-process pass 1 & 2 & 3, draw full screen quad
@@ -92,12 +92,12 @@ constexpr char const* vs_grid_src =
 "\
 #version 330 core\n\
 layout (location = 0) in vec3 aPos;\n\
-uniform mat4 view;\n\
-uniform mat4 projection;\n\
-out vec2 grid_coords;\n\
+uniform mat4 u_view;\n\
+uniform mat4 u_projection;\n\
+out vec2 gridCoords;\n\
 void main() {\n\
-    grid_coords = aPos.xz;\n\
-    gl_Position = projection * view * vec4(aPos, 1.0);\n\
+    gridCoords = aPos.xz;\n\
+    gl_Position = u_projection * u_view * vec4(aPos, 1.0);\n\
 }\n\
 ";
 
@@ -105,28 +105,31 @@ constexpr char const* ps_grid_src =
 "\
 #version 330 core\n\
 uniform float halfGridDim;\n\
-in vec2 grid_coords;\n\
+in vec2 gridCoords;\n\
 out vec4 FragColor;\n\
 void main() {\n\
-    float dist = max(abs(grid_coords.x), abs(grid_coords.y)) / halfGridDim;\n\
+    float dist = max(abs(gridCoords.x), abs(gridCoords.y)) / halfGridDim;\n\
     float alpha = 1.0 - pow(dist, 0.25);\n\
     FragColor = vec4(0.7, 0.7, 0.7, alpha);\n\
 }\n\
 ";
-
-constexpr char const* k_uniform_model = "model";
-constexpr char const* k_uniform_view = "view";
-constexpr char const* k_uniform_projection = "projection";
-constexpr char const* k_uniform_light_pos = "lightPos";
-constexpr char const* k_uniform_light_color = "lightColor";
-constexpr char const* k_uniform_object_color = "objectColor";
-
 
 constexpr char const* k_uniform_half_grid_dim = "halfGridDim";
 constexpr char const* k_uniform_screen_texture = "screenTexture";
 constexpr char const* k_uniform_outline_color = "outlineColor";
 constexpr char const* k_uniform_texel_size = "texelSize";
 constexpr char const* k_uniform_thickness = "thickness";
+
+
+constexpr char const* k_uniform_model = "u_model";
+constexpr char const* k_uniform_view = "u_view";
+constexpr char const* k_uniform_projection = "u_projection";
+constexpr char const* k_uniform_light_pos = "u_lightPos";
+constexpr char const* k_uniform_light_color = "u_lightColor";
+constexpr char const* k_uniform_object_color = "u_objectColor";
+constexpr char const* k_uniform_time = "u_time";
+constexpr char const* k_uniform_delta_time = "u_deltaTime";
+constexpr char const* k_uniform_resolution = "u_resolution";
 
 constexpr char const* k_built_in_uniforms[] = {
     k_uniform_model,
@@ -135,20 +138,25 @@ constexpr char const* k_built_in_uniforms[] = {
     k_uniform_light_pos,
     k_uniform_light_color,
     k_uniform_object_color,
+    k_uniform_time,
+    k_uniform_delta_time,
+    k_uniform_resolution
 };
-
 constexpr std::string_view k_glsl_ver = "#version 330 core\n";
 constexpr std::string_view k_vertex_attributes_decl = "\
 layout (location = 0) in vec3 aPos;\n\
 layout (location = 1) in vec3 aNormal;\n\
 layout (location = 2) in vec2 aTexCoords;\n";
 constexpr std::string_view k_uniform_decl = "\
-uniform mat4 model;\n\
-uniform mat4 view;\n\
-uniform mat4 projection;\n\
-uniform vec3 lightPos;\n\
-uniform vec3 lightColor;\n\
-uniform vec3 objectColor;\n";
+uniform mat4 u_model;\n\
+uniform mat4 u_view;\n\
+uniform mat4 u_projection;\n\
+uniform vec3 u_lightPos;\n\
+uniform vec3 u_lightColor;\n\
+uniform vec3 u_objectColor;\n\
+uniform float u_time;\n\
+uniform float u_deltaTime;\n\
+uniform ivec2 u_resolution;\n";
 
 constexpr std::string_view k_default_shader_funcs = "";
 constexpr std::string_view k_default_vs_obj_src_unprocessed =
@@ -158,9 +166,9 @@ out vec3 Normal;\n\
 out vec3 FragPos;\n\
 void main() {\n\
     TexCoords = aTexCoords;\n\
-    Normal = mat3(transpose(inverse(model))) * aNormal;\n\
-    FragPos = vec3(model * vec4(aPos, 1.0));\n\
-    gl_Position = projection * view * vec4(FragPos, 1.0);\n\
+    Normal = mat3(transpose(inverse(u_model))) * aNormal;\n\
+    FragPos = vec3(u_model * vec4(aPos, 1.0));\n\
+    gl_Position = u_projection * u_view * vec4(FragPos, 1.0);\n\
 }\n\
 ";
 
@@ -172,19 +180,18 @@ in vec3 FragPos;\n\
 out vec4 FragColor;\n\
 void main() {\n\
     const vec3 objectColor = vec3(178.0/255.0, 190.0/255.0, 181.0/255.0);\n\
-    const vec3 lightColor = vec3(1.0, 1.0, 1.0);\n\
-    vec3 camPos = view[3].xyz;\n\
+    vec3 camPos = u_view[3].xyz;\n\
     float ambientStrength = 0.2;\n\
-    vec3 ambient = ambientStrength * lightColor;\n\
+    vec3 ambient = ambientStrength * u_lightColor;\n\
     vec3 norm = normalize(Normal);\n\
-    vec3 lightDir = normalize(lightPos - FragPos);\n\
+    vec3 lightDir = normalize(u_lightPos - FragPos);\n\
     float diff = max(dot(norm, lightDir), 0.0);\n\
-    vec3 diffuse = diff * lightColor;\n\
+    vec3 diffuse = diff * u_lightColor;\n\
     float specularStrength = 0.5;\n\
     vec3 viewDir = normalize(camPos - FragPos);\n\
     vec3 reflectDir = reflect(-lightDir, norm);\n\
     float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32);\n\
-    vec3 specular = specularStrength * spec * lightColor;\n\
+    vec3 specular = specularStrength * spec * u_lightColor;\n\
     vec3 result = (ambient + diffuse + specular) * objectColor;\n\
     FragColor = vec4(result, 1.0);\n\
 }\n\

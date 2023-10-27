@@ -1,11 +1,11 @@
 #include "include/editorRenderer.h"
 #include "application.h"
-
-#include <cassert>
-#include <algorithm>
-
 #include "enumIter.h"
 #include "include/imgui/editorFields.h"
+#include "include/glslHelper.h"
+#include "include/imgui/imhelper.h"
+
+#include <algorithm>
 
 constexpr auto k_grid_dim = 100.0f;
 constexpr auto k_grid_spacing = 1.0f;
@@ -201,7 +201,7 @@ void EditorRenderer::on_object_change(ViewPtr<Object> obj) noexcept {
     // update editor texts
     for (auto const shader_type : EIter<ShaderType>{}) {
         m_shader_editor_data[shader_type].editor.SetText(
-            m_obj_data[obj].editing_data.shader_srcs[shader_type]
+            m_obj_data[obj].editing_data.get_src(shader_type)
         );
     }
 }
@@ -223,7 +223,7 @@ auto EditorRenderer::on_add_object_internal(Ref<PerObjectData> data, ViewPtr<Obj
     // update editor texts
     for (auto const shader_type : EIter<ShaderType>{}) {
         m_shader_editor_data[shader_type].editor.SetText(
-            m_obj_data[obj].editing_data.shader_srcs[shader_type]
+            m_obj_data[obj].editing_data.get_src(shader_type)
         );
     }
 
@@ -390,22 +390,34 @@ auto EditorRenderer::render_internal(View<Camera> cam, GLuint fbo) noexcept -> t
 
         TL_CHECK_AND_PASS(shader->bind());
 
-        TL_CHECK_NON_FATAL(
-            m_app, LogLevel::Warning,
-            shader->set_uniform(k_uniform_light_pos, m_scene->get_good_light_pos())
-        );
-        TL_CHECK_NON_FATAL(
-            m_app, LogLevel::Warning,
-            shader->set_uniform(k_uniform_view, cam.get().get_view())
-        );
-        TL_CHECK_NON_FATAL(
-            m_app, LogLevel::Warning,
-            shader->set_uniform(k_uniform_projection, cam.get().get_projection())
-        );
-        TL_CHECK_NON_FATAL(
-            m_app, LogLevel::Warning,
-            shader->set_uniform(k_uniform_model, obj->get_transform().get_matrix())
-        );
+        auto&& uniforms = shader->get_uniform_map().get();
+        // TODO: impl light
+    	if (uniforms.count(k_uniform_light_pos)) {
+            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_light_pos, m_scene->get_good_light_pos()));
+        }
+        if (uniforms.count(k_uniform_light_color)) {
+            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_light_color, glm::vec3(1)));
+        }
+        // MVP
+        if (uniforms.count(k_uniform_view)) {
+            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_view, cam.get().get_view()));
+        }
+        if (uniforms.count(k_uniform_projection)) {
+            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_projection, cam.get().get_projection()));
+        }
+        if (uniforms.count(k_uniform_model)) {
+            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_model, obj->get_transform().get_matrix()));
+        }
+        // misc
+        if (uniforms.count(k_uniform_time)) {
+            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_time, m_app->get_time()));
+        }
+        if (uniforms.count(k_uniform_delta_time)) {
+            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_delta_time, m_app->get_delta_time()));
+        }
+        if (uniforms.count(k_uniform_resolution)) {
+            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_resolution, glm::ivec2 { get_config().width, get_config().height }));
+        }
 
         TL_CHECK_AND_PASS(vao->bind());
         TL_CHECK_AND_PASS(vao->draw_array(GL_TRIANGLES));
@@ -449,9 +461,12 @@ void EditorRenderer::clear_render_data() {
 
 void EditorRenderer::commit_cur_shader_code() noexcept {
     if (m_cur_outline_obj) {
+        // TODO: add the option to only commit one type 
         for (auto const shader_type : EIter<ShaderType>{}) {
-            m_obj_data[m_cur_outline_obj].editing_data.shader_srcs[shader_type] =
-                m_shader_editor_data[shader_type].editor.GetText();
+            m_obj_data[m_cur_outline_obj].editing_data.set_src(
+                shader_type,
+                m_shader_editor_data[shader_type].editor.GetText()
+            );
         }
     }
 }
@@ -465,14 +480,15 @@ auto EditorRenderer::draw_glsl_editor(ShaderType type, Ref<ShaderProgram> shader
         ShaderProgram::ShaderDesc descs;
         EArray<ShaderType, std::string> srcs;
 
-        commit_cur_shader_code();
-
-        auto const& data = m_obj_data[m_cur_outline_obj];
+        auto& data = m_obj_data[m_cur_outline_obj];
         for (auto const shader_type : EIter<ShaderType>{}) {
-            auto const& text = data.editing_data.shader_srcs[shader_type];
+            auto text = m_shader_editor_data[shader_type].editor.GetText();
             // if it has text, we'll try to compile it
             if (!text.empty()) {
-                srcs[shader_type] = preprocess_shader_code(shader_type, data.editing_data);
+                srcs[shader_type] = GLSLHelper::preprocess(shader_type,
+                    data.editing_data.common_funcs,
+                    text
+                );
                 descs[shader_type] = srcs[shader_type];
             }
         }
@@ -480,27 +496,35 @@ auto EditorRenderer::draw_glsl_editor(ShaderType type, Ref<ShaderProgram> shader
         auto res = m_obj_data[m_cur_outline_obj].shader->try_recompile(descs);
         if (!res) {
             m_app->log(LogLevel::Error, res.error());
+            data.editing_data.compilation_status =
+                PerObjectEditingData::CompilationStatus::FAILURE;
+        } else {
+            commit_cur_shader_code();
+            data.editing_data.compilation_status =
+                PerObjectEditingData::CompilationStatus::SUCCESS;
         }
     };
 
-    auto&& data = data_ref.get();
-    auto&& editor = data.editor;
+    auto&& editor_data = data_ref.get();
+    auto& obj_data = m_obj_data[m_cur_outline_obj];
+    auto&& editor = editor_data.editor;
+
     if (ImGui::Button("Compile")) {
         try_compile();
     }
 
-    ImGui::SameLine();
+	ImGui::SameLine();
     ImGui::SetNextItemWidth(
-        ImGui::CalcTextSize(data.cur_font_size_mul_str).x * 3.0f + 
+        ImGui::CalcTextSize(editor_data.cur_font_size_mul_str).x * 3.0f + 
         ImGui::GetStyle().FramePadding.x * 2.0f
     );
 
-    if (ImGui::BeginCombo("Font Size", data.cur_font_size_mul_str)) {
+    if (ImGui::BeginCombo("Font Size", editor_data.cur_font_size_mul_str)) {
         for (size_t i = 0; i < std::size(PerTextEditorData::font_size_mul_strs); ++i)
         {
-            auto const selected = data.cur_font_size_mul_str == data.font_size_mul_strs[i];
+            auto const selected = editor_data.cur_font_size_mul_str == editor_data.font_size_mul_strs[i];
             if (ImGui::Selectable(PerTextEditorData::font_size_mul_strs[i], selected)) {
-                data.cur_font_size_mul_str = PerTextEditorData::font_size_mul_strs[i];
+                editor_data.cur_font_size_mul_str = PerTextEditorData::font_size_mul_strs[i];
             }
         }
         ImGui::EndCombo();
@@ -570,7 +594,7 @@ auto EditorRenderer::draw_glsl_editor(ShaderType type, Ref<ShaderProgram> shader
     // draw uniforms
     auto const uniforms = shader.get().get_uniform_map();
 
-    if(ImGui::CollapsingHeader("Uniform Variables", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if(ImGui::CollapsingHeader("Uniform Variables")) {
         if (ImGui::RadioButton("Show Built-in", m_show_built_in_uniform)) {
             m_show_built_in_uniform = !m_show_built_in_uniform;
         }
@@ -608,27 +632,29 @@ auto EditorRenderer::draw_glsl_editor(ShaderType type, Ref<ShaderProgram> shader
 
 	auto const half_w = std::max((ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2.0f, 1.0f);
 
-    ImGui::Columns(2);
+    ImGui::Columns(3);
     if (ImGui::CollapsingHeader("Built-in Uniform Declarations")) {
 	    if (ImGui::BeginChild("##Built-in Uniform Declarations", ImVec2(half_w, 100))) {
 		    ImGui::BeginDisabled();
-		    for (auto const& [name, val] : uniforms.get()) {
-			    bool built_in = std::find(std::begin(k_built_in_uniforms), std::end(k_built_in_uniforms), name)
-				    != std::end(k_built_in_uniforms);
-			    if (built_in) {
-				    ImGui::Text("uniform %s %s;", get_type_str(val.get_type()), name.data());
-			    }
-		    }
+            ImGui::TextUnformatted(k_uniform_decl.data());
 		    ImGui::EndDisabled();
 	    }
         ImGui::EndChild();
     }
     
-
     ImGui::NextColumn();
     if (ImGui::CollapsingHeader("Inputs")) {
 	    if (ImGui::BeginChild("##Inputs", ImVec2(half_w, 100))) {
+            ImGui::TextUnformatted(obj_data.editing_data.get_inputs(type).data());
 	    }
+        ImGui::EndChild();
+    }
+
+    ImGui::NextColumn();
+    if (ImGui::CollapsingHeader("Outputs")) {
+        if (ImGui::BeginChild("##Outputs", ImVec2(half_w, 100))) {
+            ImGui::TextUnformatted(obj_data.editing_data.get_outputs(type).data());
+        }
         ImGui::EndChild();
     }
 
@@ -645,19 +671,13 @@ auto EditorRenderer::draw_glsl_editor(ShaderType type, Ref<ShaderProgram> shader
 
     auto const default_font = ImGui::GetFont();
     ImFont font{ *default_font };
-    font.Scale = data.get_font_size_mul();
+    font.Scale = editor_data.get_font_size_mul();
 
 	ImGui::PushFont(&font);
     editor.Render(to_string(type));
     ImGui::PopFont();
 
     return {};
-}
-
-auto EditorRenderer::preprocess_shader_code(ShaderType type, View<PerObjectEditingData> data) noexcept -> std::string {
-    return std::string{ k_default_shader_header[type] } +
-        data.get().common_funcs +
-        data.get().shader_srcs[type];
 }
 
 auto EditorRenderer::try_get_obj_data(ViewPtr<Object> obj) noexcept -> tl::expected<Ref<PerObjectData>, std::string> {
@@ -679,6 +699,25 @@ auto EditorRenderer::draw_imgui() noexcept -> tl::expected<void, std::string> {
             ImGui::Text("Please Select an object first");
         }
         else {
+            switch (m_obj_data[m_cur_outline_obj].editing_data.compilation_status) {
+            case PerObjectEditingData::CompilationStatus::FAILURE:
+                ImGui::GetForegroundDrawList()->AddRect(
+                    ImGui::GetWindowContentRegionMin() + ImGui::GetWindowPos(),
+                    ImGui::GetWindowContentRegionMax() + ImGui::GetWindowPos(),
+                    IM_COL32(255, 0, 0, 255)
+                );
+                break;
+            case PerObjectEditingData::CompilationStatus::SUCCESS:
+                ImGui::GetForegroundDrawList()->AddRect(
+                    ImGui::GetWindowContentRegionMin() + ImGui::GetWindowPos(),
+                    ImGui::GetWindowContentRegionMax() + ImGui::GetWindowPos(),
+                    IM_COL32(0, 255, 0, 255)
+                );
+                break;
+            default:
+                break;
+            }
+
             if (ImGui::BeginTabBar("##tab")) {
                 for (auto const shader_type : EIter<ShaderType>{}) {
                     if (ImGui::BeginTabItem(to_string(shader_type))) {
@@ -702,12 +741,30 @@ auto EditorRenderer::draw_imgui() noexcept -> tl::expected<void, std::string> {
 
 EditorRenderer::PerObjectEditingData::PerObjectEditingData() {
     common_funcs = k_default_shader_funcs;
-	header = k_default_shader_header;
     for (auto const type : EIter<ShaderType>{}) {
         if (k_default_shader_srcs_unprocessed[type]) {
-            shader_srcs[type] = k_default_shader_srcs_unprocessed[type].value();
+            set_src(type, std::string { k_default_shader_srcs_unprocessed[type].value() });
         }
     }
+}
+
+void EditorRenderer::PerObjectEditingData::set_src(ShaderType type, std::string src) {
+    auto in_out = GLSLHelper::get_in_out(type, src);
+    m_shader_inputs[type] = std::move(in_out.inputs);
+    m_shader_outputs[type] = std::move(in_out.outputs);
+    m_shader_srcs[type] = std::move(src);
+}
+
+auto EditorRenderer::PerObjectEditingData::get_src(ShaderType type) -> View<std::string> {
+    return m_shader_srcs[type];
+}
+
+auto EditorRenderer::PerObjectEditingData::get_outputs(ShaderType type) -> std::string_view {
+    return m_shader_outputs[type];
+}
+
+auto EditorRenderer::PerObjectEditingData::get_inputs(ShaderType type) -> std::string_view {
+    return m_shader_inputs[type];
 }
 
 #pragma endregion Shader_Editing

@@ -12,8 +12,20 @@ inline ImVec2 operator-(ImVec2 const& lhs, ImVec2 const& rhs) noexcept {
 inline ImVec2 operator*(ImVec2 const& lhs, ImVec2 const& rhs) noexcept {
 	return ImVec2{ lhs.x * rhs.x, lhs.y * rhs.y };
 }
+inline ImVec2 operator*(ImVec2 const& lhs, float rhs) noexcept {
+	return ImVec2{ lhs.x * rhs, lhs.y * rhs };
+}
+inline ImVec2 operator*(float lhs, ImVec2 const& rhs) noexcept {
+	return ImVec2{ lhs * rhs.x, lhs * rhs.y };
+}
 inline ImVec2 operator/(ImVec2 const& lhs, ImVec2 const& rhs) noexcept {
 	return ImVec2{ lhs.x / rhs.x, lhs.y / rhs.y };
+}
+inline ImVec2 operator/(ImVec2 const& lhs, float rhs) noexcept {
+	return ImVec2{ lhs.x / rhs, lhs.y / rhs };
+}
+inline ImVec2 operator/(float lhs, ImVec2 const& rhs) noexcept {
+	return ImVec2{ lhs / rhs.x, lhs / rhs.y };
 }
 inline bool operator<(ImVec2 const& lhs, ImVec2 const& rhs) noexcept {
 	return lhs.x < rhs.x && lhs.y < rhs.y;

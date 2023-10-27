@@ -114,8 +114,8 @@ void GLFWApplication::run() {
         // Poll and handle events (inputs, window resize, etc.)
         glfwPollEvents();
 
-        auto const dt = static_cast<float>(now - last_frame_time);
-        if (dt >= m_min_frame_time) {
+        m_delta_time = static_cast<float>(now - last_frame_time);
+        if (m_delta_time >= m_min_frame_time) {
             m_prev_hovered_widget = m_cur_hovered_widget;
 
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -132,10 +132,10 @@ void GLFWApplication::run() {
             }
 
             // User Rendering
-            loop(dt);
+            loop(m_delta_time);
 
             // Process debug drawing events
-            get_debug_drawer().loop(dt);
+            get_debug_drawer().loop(m_delta_time);
 
             ImGui::Render();
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -231,6 +231,14 @@ auto GLFWApplication::get_window_content_pos(std::string_view name) const noexce
         return std::nullopt;
     }
     return win->ContentRegionRect.Min;
+}
+
+float GLFWApplication::get_time() const noexcept {
+    return static_cast<float>(glfwGetTime());
+}
+
+float GLFWApplication::get_delta_time() const noexcept {
+    return m_delta_time;
 }
 
 bool GLFWApplication::mouse_over_any_event_region() const noexcept {
