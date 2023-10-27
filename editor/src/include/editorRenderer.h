@@ -40,10 +40,14 @@ private:
 
     [[nodiscard]] auto on_add_object_internal(Ref<PerObjectData> data, ViewPtr<Object> obj) noexcept -> tl::expected<void, std::string>;
     [[nodiscard]] auto render_internal(View<Camera> cam, GLuint fbo) noexcept -> tl::expected<void, std::string>;
-    void clear_render_data();
+    auto clear_render_data() -> void;
 
-    void commit_cur_shader_code() noexcept;
-    auto draw_glsl_editor(ShaderType type, Ref<ShaderProgram> shader, Ref<PerTextEditorData> editor) noexcept
+    auto commit_cur_shader_code() noexcept -> void;
+
+    auto try_compile() noexcept -> void;
+    auto draw_text_editor_header(Ref<PerTextEditorData> editor_ref) noexcept -> void;
+    auto draw_text_editor(Ref<PerTextEditorData> editor_ref) noexcept -> void;
+    auto draw_glsl_editor(ShaderType type, Ref<ShaderProgram> shader_ref, Ref<PerTextEditorData> editor_ref) noexcept
         -> tl::expected <void, std::string>;
 
     auto try_get_obj_data(ViewPtr<Object> obj) noexcept -> tl::expected<Ref<PerObjectData>, std::string>;
@@ -98,18 +102,30 @@ private:
     bool m_valid{ false };
 
 	struct PerTextEditorData {
-        static constexpr char const* font_size_mul_strs[] = { "1x", "2x", "4x" };
-
-        char const* cur_font_size_mul_str { font_size_mul_strs[0] };
-        TextEditor editor{ };
-
-        auto get_font_size_mul() const {
-            if (!cur_font_size_mul_str) {
-                return 1.0f;
-            }
-            return static_cast<float>(cur_font_size_mul_str[0] - '0');
-        }
+        TextEditor editor;
     };
+    struct SharedTextEditorData {
+        static constexpr int min_font_size = 12;
+        static constexpr int max_font_size = 36;
+        static constexpr int num_font_sizes = max_font_size - min_font_size + 1;
+
+        // this can be generated during compile time but whatever
+        inline static std::array<std::string, num_font_sizes> font_size_strs{};
+        inline static std::array<ImFont*, num_font_sizes> fonts{};
+        static auto get_font_size_str(int size) -> char const* {
+            return font_size_strs[size - min_font_size].c_str();
+        }
+        static auto get_font(int size) -> ImFont* {
+            return fonts[size - min_font_size];
+        }
+        int cur_font_size{ 16 };
+        bool show_built_in_uniform{ false };
+        bool show_uniform{ false };
+    	bool show_input{ false };
+        bool show_output{ false };
+        bool show_uniform_decl{ false };
+    } m_shared_editor_data;
+
     EArray<ShaderType, PerTextEditorData> m_shader_editor_data {};
-    bool m_show_built_in_uniform{ false };
+    PerTextEditorData m_extra_func_editor_data{};
 };

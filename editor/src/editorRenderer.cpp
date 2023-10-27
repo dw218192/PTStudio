@@ -27,6 +27,7 @@ EditorRenderer::EditorRenderer(RenderConfig config) noexcept : Renderer{std::mov
     for(auto&& data : m_shader_editor_data) {
         data.editor.SetLanguageDefinition(lang);
     }
+    m_extra_func_editor_data.editor.SetLanguageDefinition(lang);
 }
 
 EditorRenderer::~EditorRenderer() noexcept = default;
@@ -90,8 +91,26 @@ auto EditorRenderer::init(ObserverPtr<Application> app) noexcept -> tl::expected
         return TL_ERROR("invalid editor shader");
     }
     m_valid = true;
+
+    // set up fonts for text editor
+    // ImGui will use Font[0] as the default font
+    ImGui::GetIO().Fonts->AddFontDefault();
+    for (int sz = SharedTextEditorData::min_font_size; sz <= SharedTextEditorData::max_font_size; ++sz) {
+        auto& font = SharedTextEditorData::fonts[sz - SharedTextEditorData::min_font_size];
+        //ImFontConfig config;
+        //config.SizePixels = static_cast<float>(sz);
+        font = ImGui::GetIO().Fonts->AddFontFromMemoryCompressedBase85TTF(
+            consolas_compressed_data_base85, static_cast<float>(sz)
+        );
+    }
+    for (int sz = SharedTextEditorData::min_font_size; sz <= SharedTextEditorData::max_font_size; ++sz) {
+        auto& str = SharedTextEditorData::font_size_strs[sz - SharedTextEditorData::min_font_size];
+        str = std::to_string(sz) + "px";
+    }
+
     return {};
 }
+
 
 auto EditorRenderer::open_scene(View<Scene> scene) noexcept -> tl::expected<void, std::string> {
     m_cur_outline_obj = nullptr;
@@ -172,6 +191,8 @@ auto EditorRenderer::on_change_render_config(RenderConfig config) noexcept -> tl
     return {};
 }
 
+#pragma region Scene_Change_Callbacks
+
 auto EditorRenderer::on_add_object(ViewPtr<Object> obj) noexcept -> tl::expected<void, std::string> {
     if (!obj) {
         return {};
@@ -226,9 +247,14 @@ auto EditorRenderer::on_add_object_internal(Ref<PerObjectData> data, ViewPtr<Obj
             m_obj_data[obj].editing_data.get_src(shader_type)
         );
     }
+    m_extra_func_editor_data.editor.SetText(
+        m_obj_data[obj].editing_data.common_funcs
+    );
 
     return {};
 }
+
+#pragma endregion Scene_Change_Callbacks
 
 auto EditorRenderer::render_internal(View<Camera> cam, GLuint fbo) noexcept -> tl::expected<void, std::string> {
     auto draw_outline = [this, cam, fbo](ViewPtr<Object> obj)-> tl::expected<void, std::string> {
@@ -468,63 +494,66 @@ void EditorRenderer::commit_cur_shader_code() noexcept {
                 m_shader_editor_data[shader_type].editor.GetText()
             );
         }
+
+        m_obj_data[m_cur_outline_obj].editing_data.common_funcs =
+            m_extra_func_editor_data.editor.GetText();
     }
 }
 
 #pragma region Shader_Editing
 
-auto EditorRenderer::draw_glsl_editor(ShaderType type, Ref<ShaderProgram> shader, Ref<PerTextEditorData> data_ref) noexcept
--> tl::expected <void, std::string>
-{
-    auto try_compile = [this]() {
-        ShaderProgram::ShaderDesc descs;
-        EArray<ShaderType, std::string> srcs;
+auto EditorRenderer::try_compile() noexcept -> void {
+    ShaderProgram::ShaderDesc descs;
+    EArray<ShaderType, std::string> srcs;
 
-        auto& data = m_obj_data[m_cur_outline_obj];
-        for (auto const shader_type : EIter<ShaderType>{}) {
-            auto text = m_shader_editor_data[shader_type].editor.GetText();
-            // if it has text, we'll try to compile it
-            if (!text.empty()) {
-                srcs[shader_type] = GLSLHelper::preprocess(shader_type,
-                    data.editing_data.common_funcs,
-                    text
-                );
-                descs[shader_type] = srcs[shader_type];
-            }
+    auto& data = m_obj_data[m_cur_outline_obj];
+    auto& edit_data = data.editing_data;
+    auto const common_src = m_extra_func_editor_data.editor.GetText();
+
+    for (auto const shader_type : EIter<ShaderType>{}) {
+        auto main_src = m_shader_editor_data[shader_type].editor.GetText();
+        // if it has text, we'll try to compile it
+        if (!main_src.empty()) {
+            srcs[shader_type] = GLSLHelper::preprocess(shader_type,
+                common_src,
+                main_src
+            );
+            descs[shader_type] = srcs[shader_type];
         }
+    }
 
-        auto res = m_obj_data[m_cur_outline_obj].shader->try_recompile(descs);
-        if (!res) {
-            m_app->log(LogLevel::Error, res.error());
-            data.editing_data.compilation_status =
-                PerObjectEditingData::CompilationStatus::FAILURE;
-        } else {
-            commit_cur_shader_code();
-            data.editing_data.compilation_status =
-                PerObjectEditingData::CompilationStatus::SUCCESS;
-        }
-    };
+    auto res = data.shader->try_recompile(descs);
+    if (!res) {
+        m_app->log(LogLevel::Error, res.error());
+        edit_data.compilation_status =
+            PerObjectEditingData::CompilationStatus::FAILURE;
+    }
+    else {
+        commit_cur_shader_code();
+        edit_data.compilation_status =
+            PerObjectEditingData::CompilationStatus::SUCCESS;
+    }
+}
 
-    auto&& editor_data = data_ref.get();
-    auto& obj_data = m_obj_data[m_cur_outline_obj];
+auto EditorRenderer::draw_text_editor_header(Ref<PerTextEditorData> editor_ref) noexcept -> void {
+    auto&& editor_data = editor_ref.get();
     auto&& editor = editor_data.editor;
 
     if (ImGui::Button("Compile")) {
         try_compile();
     }
 
-	ImGui::SameLine();
+    ImGui::SameLine();
     ImGui::SetNextItemWidth(
-        ImGui::CalcTextSize(editor_data.cur_font_size_mul_str).x * 3.0f + 
+        ImGui::CalcTextSize("00px").x * 3.0f +
         ImGui::GetStyle().FramePadding.x * 2.0f
     );
 
-    if (ImGui::BeginCombo("Font Size", editor_data.cur_font_size_mul_str)) {
-        for (size_t i = 0; i < std::size(PerTextEditorData::font_size_mul_strs); ++i)
-        {
-            auto const selected = editor_data.cur_font_size_mul_str == editor_data.font_size_mul_strs[i];
-            if (ImGui::Selectable(PerTextEditorData::font_size_mul_strs[i], selected)) {
-                editor_data.cur_font_size_mul_str = PerTextEditorData::font_size_mul_strs[i];
+    if (ImGui::BeginCombo("Font Size", SharedTextEditorData::get_font_size_str(m_shared_editor_data.cur_font_size))) {
+        for (int sz = SharedTextEditorData::min_font_size; sz <= SharedTextEditorData::max_font_size; ++sz) {
+            auto const selected = m_shared_editor_data.cur_font_size == sz;
+            if (ImGui::Selectable(SharedTextEditorData::get_font_size_str(sz), selected)) {
+                m_shared_editor_data.cur_font_size = sz;
             }
         }
         ImGui::EndCombo();
@@ -590,21 +619,45 @@ auto EditorRenderer::draw_glsl_editor(ShaderType type, Ref<ShaderProgram> shader
         }
         ImGui::EndMenuBar();
     }
+}
 
-    // draw uniforms
-    auto const uniforms = shader.get().get_uniform_map();
+auto EditorRenderer::draw_text_editor(Ref<PerTextEditorData> editor_ref) noexcept -> void {
+    auto&& editor_data = editor_ref.get();
+    auto& editor = editor_data.editor;
 
-    if(ImGui::CollapsingHeader("Uniform Variables")) {
-        if (ImGui::RadioButton("Show Built-in", m_show_built_in_uniform)) {
-            m_show_built_in_uniform = !m_show_built_in_uniform;
+    auto const cpos = editor.GetCursorPosition();
+    ImGui::SameLine();
+    ImGui::Text("%6d/%-6d %6d lines  | %s | %s | %s | %s", cpos.mLine + 1, cpos.mColumn + 1, editor.GetTotalLines(),
+        editor.IsOverwrite() ? "Ovr" : "Ins",
+        editor.CanUndo() ? "*" : " ",
+        editor.GetLanguageDefinition().mName.c_str(), m_cur_outline_obj->get_name().data());
+
+    ImGui::PushFont(SharedTextEditorData::get_font(m_shared_editor_data.cur_font_size));
+    editor.Render("GLSL Editor");
+    ImGui::PopFont();
+}
+
+auto EditorRenderer::draw_glsl_editor(ShaderType type, Ref<ShaderProgram> shader_ref, Ref<PerTextEditorData> editor_ref) noexcept
+-> tl::expected <void, std::string>
+{
+    auto& obj_data = m_obj_data[m_cur_outline_obj];
+    auto& shader = shader_ref.get();
+
+    draw_text_editor_header(editor_ref);
+ 
+    auto const uniforms = shader.get_uniform_map();
+    ImGui::SetNextItemOpen(m_shared_editor_data.show_uniform);
+    if((m_shared_editor_data.show_uniform = ImGui::CollapsingHeader("Uniform Variables"))) {
+        if (ImGui::RadioButton("Show Built-in", m_shared_editor_data.show_built_in_uniform)) {
+            m_shared_editor_data.show_built_in_uniform = !m_shared_editor_data.show_built_in_uniform;
         }
 
-        if(ImGui::BeginChild("##Uniform Variables", ImVec2(0, 200), true))  {
+        if(ImGui::BeginChild("##Uniform Variables", ImVec2(0, 150), true))  {
             for(auto const& [name, val] : uniforms.get()) {
                 bool disabled = std::find(std::begin(k_built_in_uniforms), std::end(k_built_in_uniforms), name) 
                     != std::end(k_built_in_uniforms);
 
-            	if(disabled && !m_show_built_in_uniform) {
+            	if(disabled && !m_shared_editor_data.show_built_in_uniform) {
                     continue;
                 }
                 UniformVar val_copy = val;
@@ -614,12 +667,12 @@ auto EditorRenderer::draw_glsl_editor(ShaderType type, Ref<ShaderProgram> shader
                     ImGui::ShaderVariableField(display_name.c_str(), val_copy);
                 } else {
                     if (ImGui::ShaderVariableField(name.c_str(), val_copy)) {
-                        TL_CHECK(shader.get().bind());
+                        TL_CHECK(shader.bind());
                         TL_CHECK_NON_FATAL(
                             m_app, LogLevel::Warning,
-                            shader.get().set_uniform(name, val_copy)
+                            shader.set_uniform(name, val_copy)
                         );
-                        shader.get().unbind();
+                        shader.unbind();
                     }
                 }
                 ImGui::EndDisabled();
@@ -630,11 +683,10 @@ auto EditorRenderer::draw_glsl_editor(ShaderType type, Ref<ShaderProgram> shader
         ImGui::EndChild();
     }
 
-	auto const half_w = std::max((ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2.0f, 1.0f);
-
     ImGui::Columns(3);
-    if (ImGui::CollapsingHeader("Built-in Uniform Declarations")) {
-	    if (ImGui::BeginChild("##Built-in Uniform Declarations", ImVec2(half_w, 100))) {
+    ImGui::SetNextItemOpen(m_shared_editor_data.show_uniform_decl);
+    if ((m_shared_editor_data.show_uniform_decl = ImGui::CollapsingHeader("Built-in Uniform Declarations"))) {
+	    if (ImGui::BeginChild("##Built-in Uniform Declarations", ImVec2(0, 100))) {
 		    ImGui::BeginDisabled();
             ImGui::TextUnformatted(k_uniform_decl.data());
 		    ImGui::EndDisabled();
@@ -643,16 +695,18 @@ auto EditorRenderer::draw_glsl_editor(ShaderType type, Ref<ShaderProgram> shader
     }
     
     ImGui::NextColumn();
-    if (ImGui::CollapsingHeader("Inputs")) {
-	    if (ImGui::BeginChild("##Inputs", ImVec2(half_w, 100))) {
+    ImGui::SetNextItemOpen(m_shared_editor_data.show_input);
+    if ((m_shared_editor_data.show_input = ImGui::CollapsingHeader("Inputs"))) {
+	    if (ImGui::BeginChild("##Inputs", ImVec2(0, 100))) {
             ImGui::TextUnformatted(obj_data.editing_data.get_inputs(type).data());
 	    }
         ImGui::EndChild();
     }
 
     ImGui::NextColumn();
-    if (ImGui::CollapsingHeader("Outputs")) {
-        if (ImGui::BeginChild("##Outputs", ImVec2(half_w, 100))) {
+    ImGui::SetNextItemOpen(m_shared_editor_data.show_output);
+    if ((m_shared_editor_data.show_output = ImGui::CollapsingHeader("Outputs"))) {
+        if (ImGui::BeginChild("##Outputs", ImVec2(0, 100))) {
             ImGui::TextUnformatted(obj_data.editing_data.get_outputs(type).data());
         }
         ImGui::EndChild();
@@ -662,20 +716,7 @@ auto EditorRenderer::draw_glsl_editor(ShaderType type, Ref<ShaderProgram> shader
     
     // draw input & outputs
     ImGui::Separator();
-    auto const cpos = editor.GetCursorPosition();
-    ImGui::SameLine();
-    ImGui::Text("%6d/%-6d %6d lines  | %s | %s | %s | %s", cpos.mLine + 1, cpos.mColumn + 1, editor.GetTotalLines(),
-        editor.IsOverwrite() ? "Ovr" : "Ins",
-        editor.CanUndo() ? "*" : " ",
-        editor.GetLanguageDefinition().mName.c_str(), m_cur_outline_obj->get_name().data());
-
-    auto const default_font = ImGui::GetFont();
-    ImFont font{ *default_font };
-    font.Scale = editor_data.get_font_size_mul();
-
-	ImGui::PushFont(&font);
-    editor.Render(to_string(type));
-    ImGui::PopFont();
+    draw_text_editor(editor_ref);
 
     return {};
 }
@@ -718,6 +759,7 @@ auto EditorRenderer::draw_imgui() noexcept -> tl::expected<void, std::string> {
                 break;
             }
 
+            // draw a GLSL editor for each shader type
             if (ImGui::BeginTabBar("##tab")) {
                 for (auto const shader_type : EIter<ShaderType>{}) {
                     if (ImGui::BeginTabItem(to_string(shader_type))) {
@@ -728,9 +770,16 @@ auto EditorRenderer::draw_imgui() noexcept -> tl::expected<void, std::string> {
                         ImGui::EndTabItem();
                     }
                 }
+                // draw a GLSL editor for common GLSL funcs
+                if (ImGui::BeginTabItem("Common")) {
+                    draw_text_editor_header(m_extra_func_editor_data);
+                    draw_text_editor(m_extra_func_editor_data);
+                    ImGui::EndTabItem();
+                }
 
                 ImGui::EndTabBar();
             }
+
         }
     }
 
@@ -752,6 +801,10 @@ void EditorRenderer::PerObjectEditingData::set_src(ShaderType type, std::string 
     auto in_out = GLSLHelper::get_in_out(type, src);
     m_shader_inputs[type] = std::move(in_out.inputs);
     m_shader_outputs[type] = std::move(in_out.outputs);
+
+    // NOTE: see TextEditor.cpp: 107 an extra newline will be added every time you call GetText()
+    // GetText(SetText(GetText) ...
+    src.pop_back();
     m_shader_srcs[type] = std::move(src);
 }
 
@@ -766,5 +819,4 @@ auto EditorRenderer::PerObjectEditingData::get_outputs(ShaderType type) -> std::
 auto EditorRenderer::PerObjectEditingData::get_inputs(ShaderType type) -> std::string_view {
     return m_shader_inputs[type];
 }
-
 #pragma endregion Shader_Editing

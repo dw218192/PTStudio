@@ -15,7 +15,6 @@ struct Renderer {
     virtual ~Renderer() noexcept;
 
     NODISCARD virtual auto init(ObserverPtr<Application> app) noexcept -> tl::expected<void, std::string>;
-
 	/**
 	 * \brief Opens a new scene
 	 * \param scene The scene to be opened
