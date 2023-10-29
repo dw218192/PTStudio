@@ -10,6 +10,9 @@ if (CMAKE_BUILD_TYPE STREQUAL "")
     set(CMAKE_BUILD_TYPE Debug)
 endif ()
 
+# options
+option(PTSTUDIO_PATHTRACER "Build pathtracer" ON)
+
 # Direct all output to /bin directory
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin)
 
@@ -76,13 +79,19 @@ add_subdirectory(${EXT_DIR}/span EXCLUDE_FROM_ALL)
 set(EXPECTED_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 add_subdirectory(${EXT_DIR}/expected EXCLUDE_FROM_ALL)
 
+set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
+add_subdirectory(${EXT_DIR}/json EXCLUDE_FROM_ALL)
+
 # some manual configuration for imgui and imguizmo
 add_subdirectory(${EXT_DIR})
 
 # add subprojects
 add_subdirectory(core)
 add_subdirectory(editor)
-add_subdirectory(pathtracer)
+
+if (PTSTUDIO_PATHTRACER)
+    add_subdirectory(pathtracer)
+endif ()
 
 # set editor as the start-up project
 set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT editor)

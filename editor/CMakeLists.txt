@@ -28,6 +28,7 @@ target_link_libraries(${exec_name}
 	expected
 	span
 	nativefiledialog
+	nlohmann_json
 )
 
 install(TARGETS ${exec_name}
