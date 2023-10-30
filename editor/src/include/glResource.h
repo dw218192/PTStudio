@@ -22,11 +22,11 @@ struct GLResource {
     [[nodiscard]] auto handle() const noexcept -> GLuint { return m_handle; }
 
     GLResource(GLResource&& other) noexcept;
-    GLResource& operator=(GLResource&& other) noexcept;
-    GLResource(GLResource& other) noexcept;
-    GLResource& operator=(GLResource const& other) noexcept;
+    auto operator=(GLResource&& other) noexcept -> GLResource&;
+    GLResource(GLResource const& other) noexcept;
+    auto operator=(GLResource const& other) noexcept -> GLResource&;
 protected:
-    void swap(GLResource&& other) noexcept;
+    auto swap(GLResource&& other) noexcept -> void;
     GLResource(GLuint handle) noexcept { m_handle = handle; }
     GLResource() noexcept = default;
     virtual ~GLResource() noexcept = default;
@@ -34,7 +34,7 @@ protected:
 };
 
 struct GLResourceDeleter {
-	void operator()(GLResource const* res) const {
+	auto operator()(GLResource const* res) const -> void {
         delete res;
 	}
 };

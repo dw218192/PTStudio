@@ -4,15 +4,21 @@ GLResource::GLResource(GLResource&& other) noexcept {
     swap(std::move(other));
 }
 
-GLResource& GLResource::operator=(GLResource&& other) noexcept {
+auto GLResource::operator=(GLResource&& other) noexcept -> GLResource& {
     swap(std::move(other));
     return *this;
 }
 
-GLResource::GLResource(GLResource& other) noexcept {
+GLResource::GLResource(GLResource const& other) noexcept {
+    m_handle = other.m_handle;
 }
 
-void GLResource::swap(GLResource&& other) noexcept {
+auto GLResource::operator=(GLResource const& other) noexcept -> GLResource& {
+    m_handle = other.m_handle;
+    return *this;
+}
+
+auto GLResource::swap(GLResource&& other) noexcept -> void {
     m_handle = other.m_handle;
     other.m_handle = 0;
 }
