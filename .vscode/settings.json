@@ -98,6 +98,9 @@
         "xstddef": "cpp",
         "__functional_base_03": "cpp",
         "__hash_table": "cpp",
-        "__tree": "cpp"
+        "__tree": "cpp",
+        "csignal": "cpp",
+        "valarray": "cpp",
+        "string_view": "cpp"
     }
 }

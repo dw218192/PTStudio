@@ -21,6 +21,7 @@ target_link_libraries(${lib_name}
 	expected
 	nativefiledialog
 	span
+	nlohmann_json
 )
 
 target_include_directories(${lib_name} PUBLIC

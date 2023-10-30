@@ -19,16 +19,8 @@ target_link_libraries(${exec_name}
 	core
 	glfw
 	libglew_static
-	glm
-	tinyobjloader
-	stb
-	imgui
 	imguizmo
 	ImGuiColorTextEdit
-	expected
-	span
-	nativefiledialog
-	nlohmann_json
 )
 
 install(TARGETS ${exec_name}
