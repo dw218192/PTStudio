@@ -28,5 +28,5 @@ struct Archive {
      * \brief Deserializes the scene and camera from a string.
      * \return A pair containing the scene and camera. If an error occurs, an error message is returned.
     */
-    virtual auto load() -> tl::expected<std::pair<Scene, Camera>, std::string> = 0;
+    virtual auto load(std::string_view data) -> tl::expected<std::pair<Scene, Camera>, std::string> = 0;
 };

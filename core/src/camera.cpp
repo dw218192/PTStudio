@@ -3,6 +3,17 @@
 #include <glm/gtx/euler_angles.hpp>
 #include <glm/gtx/transform.hpp>
 
+static constexpr auto k_default_fov = 45.0f;
+static constexpr auto k_default_px_width = 800;
+static constexpr auto k_default_px_height = 600;
+static constexpr auto k_default_look_at = LookAtParams {
+    glm::vec3{ 0.0f, 0.0f, 5.0f },
+    glm::vec3{ 0.0f, 0.0f, 0.0f },
+    glm::vec3{ 0.0f, 1.0f, 0.0f }
+};
+
+Camera::Camera() noexcept : Camera{ k_default_fov, k_default_px_width, k_default_px_height, k_default_look_at } { }
+
 Camera::Camera(float fovy, unsigned px_width, unsigned px_height, glm::vec3 eye, glm::vec3 center, glm::vec3 up) noexcept
     : m_fov(fovy), m_aspect(px_width / static_cast<float>(px_height)),
 		m_px_width(px_width), m_px_height(px_height), m_eye{eye}, m_center{center}, m_up{up}, m_arm_dir{eye - center}

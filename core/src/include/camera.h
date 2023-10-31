@@ -7,6 +7,7 @@ struct LookAtParams {
 };
 
 struct Camera {
+    Camera() noexcept;
     Camera(float fovy, unsigned px_width, unsigned px_height, glm::vec3 eye, glm::vec3 center, glm::vec3 up) noexcept;
     Camera(float fovy, unsigned px_width, unsigned px_height, LookAtParams const& params) noexcept;
 
