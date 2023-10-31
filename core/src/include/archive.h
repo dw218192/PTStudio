@@ -1,26 +1,32 @@
 #pragma once
 
-#include <tl/expected.hpp>
 #include <string_view>
 #include <string>
+#include <utils.h>
+#include <tl/expected.hpp>
+
+struct Scene;
+struct Camera;
 
 /**
- * \brief Interface for any serializer that can be used to serialize/deserialize objects\n
- * serializers should implement operator<< and operator>> for simple types\n
- * all complex serializable types should implement T& operator<<(Archive&, T) and T& operator>>(Archive&, T)
+ * \brief Interface for any serializer that can be used to save/load a scene.
 */
 struct Archive {
-    virtual ~Archive() = default;
-    virtual auto operator<<(bool value) -> Archive& = 0;
-    virtual auto operator<<(int value) -> Archive& = 0;
-    virtual auto operator<<(float value) -> Archive& = 0;
-    virtual auto operator<<(double value) -> Archive& = 0;
-    virtual auto operator<<(std::string_view value) -> Archive& = 0;
-    virtual auto operator>>(bool& value) -> Archive& = 0;
-    virtual auto operator>>(int& value) -> Archive& = 0;
-    virtual auto operator>>(float& value) -> Archive& = 0;
-    virtual auto operator>>(double& value) -> Archive& = 0;
-    virtual auto operator>>(std::string& value) -> Archive& = 0;
+    DEFAULT_COPY_MOVE(Archive);
+    Archive() = default;
+    virtual ~Archive() noexcept = default;
+    
+    /**
+     * \brief Serializes the scene and camera to a string.
+     * \param scene The scene to serialize.
+     * \param camera The camera to serialize.
+     * \return A string containing the serialized scene and camera. If an error occurs, an error message is returned.
+    */
+    virtual auto save(View<Scene> scene_view, View<Camera> camera_view) -> tl::expected<std::string, std::string> = 0;
 
-	virtual auto str() const -> std::string_view = 0;
+    /**
+     * \brief Deserializes the scene and camera from a string.
+     * \return A pair containing the scene and camera. If an error occurs, an error message is returned.
+    */
+    virtual auto load() -> tl::expected<std::pair<Scene, Camera>, std::string> = 0;
 };

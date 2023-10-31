@@ -86,9 +86,11 @@ struct Scene {
         return "Object " + std::to_string(counter++);
     }
 
+    NODISCARD auto get_name() const noexcept -> std::string_view { return m_name; }
 private:
     NODISCARD auto compute_scene_bound() const noexcept -> BoundingBox;
 
+    std::string m_name { "Scene" };
     // these are initialized when the scene is loaded
 	std::list<Object> m_objects;
 };

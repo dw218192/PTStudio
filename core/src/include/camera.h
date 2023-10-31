@@ -15,6 +15,12 @@ struct Camera {
     NODISCARD auto get_projection() const noexcept -> glm::mat4 const& { return m_projection; }
     NODISCARD auto get_fov() const noexcept { return m_fov; }
     NODISCARD auto get_aspect() const noexcept { return m_aspect; }
+    NODISCARD auto get_px_width() const noexcept { return m_px_width; }
+    NODISCARD auto get_px_height() const noexcept { return m_px_height; }
+    NODISCARD auto get_eye() const noexcept { return m_eye; }
+    NODISCARD auto get_center() const noexcept { return m_center; }
+    NODISCARD auto get_up() const noexcept { return m_up; }
+    
     /**
      * \brief Converts a point in screen space to normalized device coordinates
      * \param screen the point in screen space; top left is (0,0), bottom right is (width, height)
