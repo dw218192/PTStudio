@@ -35,7 +35,6 @@ EditorApplication::EditorApplication(Renderer& renderer, Scene& scene, std::stri
     m_on_mouse_leave_scene_viewport_cb = [this] { on_mouse_leave_scene_viewport(); };
     m_on_mouse_enter_scene_viewport_cb = [this] { on_mouse_enter_scene_viewport(); };
 }
-
 void EditorApplication::cursor_moved(double x, double y) {
     auto& input_state = m_control_state.input_state;
     if (input_state.cur_mouse_down == -1) {

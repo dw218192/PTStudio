@@ -1,18 +1,20 @@
 #pragma once
 
+#include <tl/expected.hpp>
+#include <tcb/span.hpp>
+#include <string>
+
 #include "transform.h"
 #include "boundingBox.h"
 #include "material.h"
 #include "vertex.h"
 #include "utils.h"
-
-#include <tl/expected.hpp>
-#include <tcb/span.hpp>
-#include <string>
+#include "reflection.h"
 
 struct Scene;
 
 struct Object {
+    Object() noexcept = default;
     Object(Scene const& scene, Transform transform, Material mat, tcb::span<Vertex const> vertices, std::string_view name);
     Object(Scene const& scene, Transform transform, Material mat, tcb::span<Vertex const> vertices);
 
@@ -30,9 +32,11 @@ struct Object {
     NODISCARD auto get_material() const noexcept -> Material const&;
 
 private:
-    BoundingBox m_local_bound;
-    Transform m_transform;
-    Material m_mat;
-    std::vector<Vertex> m_vertices;
-    std::string m_name;
+    BEGIN_REFLECT(Object);
+        FIELD(BoundingBox, m_local_bound);
+        FIELD(Transform, m_transform);
+        FIELD(Material, m_mat);
+        FIELD(std::vector<Vertex>, m_vertices);
+        FIELD(std::string, m_name);
+    END_REFLECT();
 };

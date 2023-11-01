@@ -4,11 +4,12 @@
 
 #include <string>
 #include <tl/expected.hpp>
-#include <list>
+#include <vector>
 
 #include "camera.h"
 #include "boundingBox.h"
 #include "utils.h"
+#include "reflection.h"
 
 struct Scene {
     template<typename T>
@@ -90,7 +91,8 @@ struct Scene {
 private:
     NODISCARD auto compute_scene_bound() const noexcept -> BoundingBox;
 
-    std::string m_name { "Scene" };
-    // these are initialized when the scene is loaded
-	std::list<Object> m_objects;
+    BEGIN_REFLECT(Scene);
+        FIELD_INIT(std::string, m_name, "Scene");
+        FIELD(std::vector<Object>, m_objects);
+    END_REFLECT();
 };

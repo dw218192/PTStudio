@@ -1,7 +1,9 @@
 #pragma once
 
-#include "utils.h"
 #include <glm/glm.hpp>
+
+#include "utils.h"
+#include "reflection.h"
 
 enum class TransformSpace {
 	LOCAL, WORLD
@@ -37,9 +39,12 @@ struct Transform {
 private:
     void on_trans_matrix_update() noexcept;
     void on_component_update() noexcept;
-    
-    glm::vec3 m_pos;
-    glm::vec3 m_rot;
-    glm::vec3 m_scale;
-    glm::mat4 m_trans, m_inv_trans;
+
+    BEGIN_REFLECT(Transform);
+        FIELD(glm::vec3, m_pos);
+        FIELD(glm::vec3, m_rot);
+        FIELD(glm::vec3, m_scale);
+        FIELD(glm::mat4, m_trans);
+        FIELD(glm::mat4, m_inv_trans);
+    END_REFLECT();
 };

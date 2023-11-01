@@ -3,6 +3,7 @@
 #include "intersection.h"
 
 #include <glm/ext/matrix_transform.hpp>
+#include <algorithm>
 
 Scene::Scene() = default;
 
@@ -92,7 +93,7 @@ auto Scene::add_object(Object obj) noexcept -> ObserverPtr<Object> {
 }
 
 void Scene::remove_object(ObserverPtr<Object> obj) noexcept {
-    m_objects.remove_if([&](auto&& o) { return &o == obj; });
+    std::remove_if(m_objects.begin(), m_objects.end(), [&](auto&& o) { return &o == obj; });
 }
 
 auto Scene::compute_scene_bound() const noexcept -> BoundingBox {

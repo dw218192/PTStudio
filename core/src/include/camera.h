@@ -1,6 +1,7 @@
 #pragma once
 #include "ray.h"
 #include "utils.h"
+#include "reflection.h"
 
 struct LookAtParams {
     glm::vec3 eye, center, up;
@@ -79,17 +80,24 @@ private:
     static constexpr float k_near = 0.1f, k_far = 100.0f;
     static constexpr float k_min_fov = 20.0f, k_max_fov = 120.0f;
 
-    float m_fov, m_aspect, m_px_width, m_px_height;
+BEGIN_REFLECT(Camera);
+    FIELD(float, m_fov);
+    FIELD(float, m_aspect);
+    FIELD(float, m_px_width);
+    FIELD(float, m_px_height);
 
     // m_eye is the position of the camera
     // m_center is the point the camera is looking at
     // m_up is the up vector of the camera
     // m_arm_dir is the direction from m_eye to m_center
-
-    glm::vec3 m_eye, m_center, m_up, m_arm_dir;
-    glm::mat4 m_cam_transform;
-    glm::mat4 m_view;
-    glm::mat4 m_projection;
-    glm::mat4 m_view_proj;
-    glm::mat4 m_inv_view_proj;
+    FIELD(glm::vec3, m_eye);
+    FIELD(glm::vec3, m_center);
+    FIELD(glm::vec3, m_up);
+    FIELD(glm::vec3, m_arm_dir);
+    FIELD(glm::mat4, m_cam_transform);
+    FIELD(glm::mat4, m_view);
+    FIELD(glm::mat4, m_projection);
+    FIELD(glm::mat4, m_view_proj);
+    FIELD(glm::mat4, m_inv_view_proj);
+END_REFLECT();
 }; 
