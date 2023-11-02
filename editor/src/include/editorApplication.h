@@ -11,6 +11,7 @@
 #include "glfwApplication.h"
 #include "glTexture.h"
 #include "singleton.h"
+#include "archive.h"
 
 constexpr float k_init_move_sensitivity = 5.0;
 constexpr float k_init_rot_sensitivity = 60.0;
@@ -43,7 +44,7 @@ protected:
     void on_begin_first_loop() override;
 
 private:
-    EditorApplication(Renderer& renderer, Scene& scene, std::string_view name);
+    EditorApplication(Renderer& renderer, std::string_view name);
     ~EditorApplication() override = default;
 
     // imgui rendering
@@ -75,9 +76,11 @@ private:
     std::function<void()> m_on_mouse_leave_scene_viewport_cb;
     std::function<void()> m_on_mouse_enter_scene_viewport_cb;
     
-    Scene& m_scene;
-    Renderer& m_renderer;
+    Scene m_scene;
     Camera m_cam;
+
+    Renderer& m_renderer;
+    std::unique_ptr<Archive> m_archive;
 
     struct ControlState {
         using ObjChangeCallback = std::function<void(ObserverPtr<Object>)>;

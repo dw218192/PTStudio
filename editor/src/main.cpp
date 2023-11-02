@@ -8,7 +8,6 @@ int main() {
     };
 
     EditorRenderer::create(config);
-    auto scene = EditorApplication::check_error(Scene::make_triangle_scene());
-	EditorApplication::create(EditorRenderer::get(), scene, "PT Editor");
+	EditorApplication::create(EditorRenderer::get(), "PT Editor");
     EditorApplication::get().run();
 }

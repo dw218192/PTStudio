@@ -3,9 +3,16 @@
 #include <imgui.h>
 #include <nfd.h>
 
-auto ImGui::FileDialogue(const char* filter, const char* defaultPath) -> std::string {
+
+auto ImGui::FileDialogue(FileDialogueMode mode, const char* filter, const char* defaultPath) -> std::string {
     nfdchar_t* outPath = nullptr;
-    nfdresult_t result = NFD_OpenDialog(filter, defaultPath, &outPath);
+    nfdresult_t result;
+    if (mode == FileDialogueMode::OPEN) {
+        result = NFD_OpenDialog(filter, defaultPath, &outPath);
+    } else {
+        result = NFD_SaveDialog(filter, defaultPath, &outPath);
+    }
+
     if (result == NFD_OKAY) {
 	    std::string path = outPath;
         free(outPath);

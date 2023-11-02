@@ -3,5 +3,9 @@
 #include <string_view>
 
 namespace ImGui {
-    auto FileDialogue(const char* filter = nullptr, const char* defaultPath = nullptr) -> std::string;
+    enum class FileDialogueMode {
+	    OPEN,
+        SAVE
+    };
+    auto FileDialogue(FileDialogueMode mode, const char* filter = nullptr, const char* defaultPath = nullptr) -> std::string;
 }

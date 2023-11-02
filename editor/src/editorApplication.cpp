@@ -9,20 +9,22 @@
 #include <filesystem>
 #include <imgui_internal.h>
 
+#include "jsonArchive.h"
+
 
 static constexpr auto k_scene_setting_win_name = "Scene Settings";
 static constexpr auto k_inspector_win_name = "Inspector";
 static constexpr auto k_scene_view_win_name = "Scene";
 static constexpr auto k_console_win_name = "Console";
 
-EditorApplication::EditorApplication(Renderer& renderer, Scene& scene, std::string_view name)
+EditorApplication::EditorApplication(Renderer& renderer, std::string_view name)
     : GLFWApplication { name, renderer.get_config().width, renderer.get_config().height, renderer.get_config().min_frame_time },
-	  m_scene { scene }, m_renderer{ renderer },
-      m_cam{ renderer.get_config().fovy, renderer.get_config().width, renderer.get_config().height, scene.get_good_cam_start() }
+    m_cam{ renderer.get_config().fovy, renderer.get_config().width, renderer.get_config().height, LookAtParams{} },
+    m_renderer{ renderer }, m_archive{ new JsonArchive }
 {
     // initialize renderer
     check_error(m_renderer.init(this));
-	check_error(m_renderer.open_scene(scene));
+    check_error(m_renderer.open_scene(m_scene));
 
     m_control_state.register_on_obj_change([this] (ObserverPtr<Object> obj) {
 	    on_obj_change(obj);
@@ -164,6 +166,23 @@ void EditorApplication::quit(int code) {
 }
 
 void EditorApplication::draw_scene_panel() noexcept {
+    if (ImGui::Button("Open Scene")) {
+        auto const path = ImGui::FileDialogue(ImGui::FileDialogueMode::OPEN, m_archive->get_ext().data());
+        if (!path.empty()) {
+            std::tie(m_scene, m_cam) = check_error(m_archive->load_file(path));
+        }
+
+        m_control_state.set_cur_obj(nullptr);
+        check_error(m_renderer.open_scene(m_scene));
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Save Scene")) {
+        auto const path = ImGui::FileDialogue(ImGui::FileDialogueMode::SAVE, m_archive->get_ext().data());
+        if (!path.empty()) {
+            check_error(m_archive->save_file(m_scene, m_cam, path));
+        }
+    }
+
     if (ImGui::CollapsingHeader("Camera Control", ImGuiTreeNodeFlags_DefaultOpen))
     {
         ImGui::Text("Move Sensitivity");
@@ -198,7 +217,7 @@ void EditorApplication::draw_scene_panel() noexcept {
             if (ImGui::MenuItem("Sphere")) {
             }
             if (ImGui::MenuItem("Import .obj File")) {
-                auto const path = ImGui::FileDialogue("obj");
+                auto const path = ImGui::FileDialogue(ImGui::FileDialogueMode::OPEN, "obj");
                 if(!path.empty()) {
                     std::string warning;
                     auto const obj = check_error(Object::from_obj(m_scene, Material{}, path, &warning));

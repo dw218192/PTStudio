@@ -4,7 +4,9 @@
 #include "reflection.h"
 
 struct LookAtParams {
-    glm::vec3 eye, center, up;
+    glm::vec3 eye{ 0,5,5 };
+    glm::vec3 center{ 0, 0, 0 };
+    glm::vec3 up{ 0, 1, 0 };
 };
 
 struct Camera {
