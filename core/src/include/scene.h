@@ -1,6 +1,5 @@
 #pragma once
 
-#include "object.h"
 
 #include <string>
 #include <tl/expected.hpp>
@@ -10,51 +9,10 @@
 #include "boundingBox.h"
 #include "utils.h"
 #include "reflection.h"
+#include "object.h"
+#include "light.h"
 
 struct Scene {
-    template<typename T>
-    struct Iterator {
-        static_assert(!std::is_same_v<typename std::iterator_traits<T>::iterator_category, void>,
-            "T must be an iterator type");
-
-        using value_type = typename T::pointer;
-        using reference = value_type;
-        using pointer = value_type;
-        using iterator_category = std::bidirectional_iterator_tag;
-
-        Iterator(T it) : m_it{ it } {}
-
-        auto operator*() const -> reference { 
-            return &*m_it;
-        }
-        auto operator++() -> Iterator& {
-            ++m_it;
-            return *this;
-        }
-        auto operator++(int) -> Iterator {
-            auto ret = *this;
-            ++m_it;
-            return ret;
-        }
-        auto operator--() -> Iterator& {
-            --m_it;
-            return *this;
-        }
-        auto operator--(int) -> Iterator {
-            auto ret = *this;
-            --m_it;
-            return ret;
-        }
-        auto operator==(const Iterator& other) const -> bool {
-            return m_it == other.m_it;
-        }
-        auto operator!=(const Iterator& other) const -> bool {
-            return m_it != other.m_it;
-        }
-    private:
-        T m_it;
-    };
-
     Scene();
 
     /**
@@ -71,16 +29,16 @@ struct Scene {
     NODISCARD auto get_good_light_pos() const noexcept -> glm::vec3;
 
     NODISCARD auto ray_cast(Ray const& ray, float t_min = 0.0f, float t_max = 1e5f) noexcept -> ObserverPtr<Object>;
-
-    NODISCARD auto begin() const noexcept { return Iterator{ m_objects.begin() }; }
-    NODISCARD auto end() const noexcept { return Iterator{ m_objects.end() }; }
-    NODISCARD auto begin() noexcept { return Iterator{ m_objects.begin() }; }
-    NODISCARD auto end() noexcept { return Iterator{ m_objects.end() }; }
-
     NODISCARD auto size() const noexcept { return m_objects.size(); }
 
     auto add_object(Object obj) noexcept -> ObserverPtr<Object>;
     void remove_object(ObserverPtr<Object> obj) noexcept;
+
+    auto add_light(Light light) noexcept -> ObserverPtr<Light>;
+    void remove_light(ObserverPtr<Light> light) noexcept;
+
+    auto get_objects() const noexcept -> std::vector<Object> const& { return m_objects; }
+    auto get_lights() const noexcept -> std::vector<Light> const& { return m_lights; }
     
     NODISCARD auto next_obj_name() const noexcept -> std::string {
         static int counter = 0;
@@ -97,6 +55,9 @@ private:
             MSerialize{});
 
 		FIELD_MOD(std::vector<Object>, m_objects,
+            MSerialize{});
+
+        FIELD_MOD(std::vector<Light>, m_lights,
             MSerialize{});
     END_REFLECT();
 };

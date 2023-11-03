@@ -13,6 +13,7 @@ struct BoundingBox {
 	    FIELD_MOD(glm::vec3, max_pos, MSerialize{});
 	END_REFLECT();
 
+public:
     static auto from_vertices(std::vector<Vertex> const& vertices) noexcept -> BoundingBox;
     NODISCARD glm::vec3 get_center() const noexcept {
         return (min_pos + max_pos) * 0.5f;

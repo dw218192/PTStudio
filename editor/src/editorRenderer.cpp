@@ -405,9 +405,9 @@ auto EditorRenderer::render_internal(View<Camera> cam, GLuint fbo) noexcept -> t
     glViewport(0, 0, static_cast<GLsizei>(get_config().width), static_cast<GLsizei>(get_config().height));
 
     // render objects
-    for (auto [it, i] = std::tuple{ m_scene->begin(), 0 }; it != m_scene->end(); ++it) {
-        auto obj = *it;
-        auto res = try_get_obj_data(obj);
+    for (auto [it, i] = std::tuple{ m_scene->get_objects().begin(), 0 }; it != m_scene->get_objects().end(); ++it) {
+        auto&& obj = *it;
+        auto res = try_get_obj_data(&obj);
         if (!res) return TL_ERROR(res.error());
 
     	auto&& data = res.value().get();
@@ -418,11 +418,14 @@ auto EditorRenderer::render_internal(View<Camera> cam, GLuint fbo) noexcept -> t
 
         auto&& uniforms = shader->get_uniform_map().get();
         // TODO: impl light
-    	if (uniforms.count(k_uniform_light_pos)) {
-            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_light_pos, m_scene->get_good_light_pos()));
+    	if (uniforms.count(k_uniform_light_pos) && uniforms.count(k_uniform_light_color)) {
+            for (auto const& light : m_scene->get_lights()) {
+                
+            }
         }
-        if (uniforms.count(k_uniform_light_color)) {
-            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_light_color, glm::vec3(1)));
+        // material
+        if (uniforms.count(k_uniform_object_color)) {
+            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_object_color, obj.get_material().albedo));
         }
         // MVP
         if (uniforms.count(k_uniform_view)) {
@@ -432,7 +435,7 @@ auto EditorRenderer::render_internal(View<Camera> cam, GLuint fbo) noexcept -> t
             TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_projection, cam.get().get_projection()));
         }
         if (uniforms.count(k_uniform_model)) {
-            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_model, obj->get_transform().get_matrix()));
+            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_model, obj.get_transform().get_matrix()));
         }
         // misc
         if (uniforms.count(k_uniform_time)) {

@@ -42,7 +42,7 @@ constexpr auto type_to_enum_msk(T) {
     } else if constexpr (std::is_same_v<T, glm::ivec4>) {
         return ShaderVariableType::IVec4;
     } else {
-        static_assert(always_false_v<T>, "Unsupported type");
+        static_assert(false, "Unsupported type");
     }
 }
 

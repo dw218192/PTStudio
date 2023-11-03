@@ -143,59 +143,61 @@ constexpr char const* k_built_in_uniforms[] = {
     k_uniform_resolution
 };
 constexpr std::string_view k_glsl_ver = "#version 330 core\n";
-constexpr std::string_view k_vertex_attributes_decl = "\
-layout (location = 0) in vec3 aPos;\n\
-layout (location = 1) in vec3 aNormal;\n\
-layout (location = 2) in vec2 aTexCoords;\n";
-constexpr std::string_view k_uniform_decl = "\
-uniform mat4 u_model;\n\
-uniform mat4 u_view;\n\
-uniform mat4 u_projection;\n\
-uniform vec3 u_lightPos;\n\
-uniform vec3 u_lightColor;\n\
-uniform vec3 u_objectColor;\n\
-uniform float u_time;\n\
-uniform float u_deltaTime;\n\
-uniform ivec2 u_resolution;\n";
+constexpr std::string_view k_vertex_attributes_decl = R"(
+layout (location = 0) in vec3 aPos;
+layout (location = 1) in vec3 aNormal;
+layout (location = 2) in vec2 aTexCoords;
+)";
+constexpr int k_maxLights = 10;
+constexpr std::string_view k_uniform_decl = R"(
+const int k_maxLights = 10;
+uniform mat4 u_model;
+uniform mat4 u_view;
+uniform mat4 u_projection;
+uniform vec3 u_lightPos[k_maxLights];
+uniform vec3 u_lightColor[k_maxLights];
+uniform vec3 u_objectColor;
+uniform float u_time;
+uniform float u_deltaTime;
+uniform ivec2 u_resolution;
+)";
 
 constexpr std::string_view k_default_shader_funcs = "// add common functions here\n";
-constexpr std::string_view k_default_vs_obj_src_unprocessed =
-"\
-out vec2 TexCoords;\n\
-out vec3 Normal;\n\
-out vec3 FragPos;\n\
-void main() {\n\
-    TexCoords = aTexCoords;\n\
-    Normal = mat3(transpose(inverse(u_model))) * aNormal;\n\
-    FragPos = vec3(u_model * vec4(aPos, 1.0));\n\
-    gl_Position = u_projection * u_view * vec4(FragPos, 1.0);\n\
-}\n\
-";
+constexpr std::string_view k_default_vs_obj_src_unprocessed = R"(
+out vec2 TexCoords;
+out vec3 Normal;
+out vec3 FragPos;
+void main() {
+    TexCoords = aTexCoords;
+    Normal = mat3(transpose(inverse(u_model))) * aNormal;
+    FragPos = vec3(u_model * vec4(aPos, 1.0));
+    gl_Position = u_projection * u_view * vec4(FragPos, 1.0);
+})";
 
 constexpr std::string_view k_default_ps_obj_src_unprocessed =
-"\
-in vec2 TexCoords;\n\
-in vec3 Normal;\n\
-in vec3 FragPos;\n\
-out vec4 FragColor;\n\
-void main() {\n\
-    const vec3 objectColor = vec3(178.0/255.0, 190.0/255.0, 181.0/255.0);\n\
-    vec3 camPos = u_view[3].xyz;\n\
-    float ambientStrength = 0.2;\n\
-    vec3 ambient = ambientStrength * u_lightColor;\n\
-    vec3 norm = normalize(Normal);\n\
-    vec3 lightDir = normalize(u_lightPos - FragPos);\n\
-    float diff = max(dot(norm, lightDir), 0.0);\n\
-    vec3 diffuse = diff * u_lightColor;\n\
-    float specularStrength = 0.5;\n\
-    vec3 viewDir = normalize(camPos - FragPos);\n\
-    vec3 reflectDir = reflect(-lightDir, norm);\n\
-    float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32);\n\
-    vec3 specular = specularStrength * spec * u_lightColor;\n\
-    vec3 result = (ambient + diffuse + specular) * objectColor;\n\
-    FragColor = vec4(result, 1.0);\n\
-}\n\
-";
+R"(
+in vec2 TexCoords;
+in vec3 Normal;
+in vec3 FragPos;
+out vec4 FragColor;
+void main() {
+    vec3 camPos = u_view[3].xyz;
+    vec3 result = vec3(0.0);
+    for (int i=0; i<k_maxLights; ++i) {
+        vec3 norm = normalize(Normal);
+        vec3 lightDir = normalize(u_lightPos[i] - FragPos);
+        float diff = max(dot(norm, lightDir), 0.0);
+        vec3 diffuse = diff * u_lightColor[i];
+        float specularStrength = 0.5;
+        vec3 viewDir = normalize(camPos - FragPos);
+        vec3 reflectDir = reflect(-lightDir, norm);
+        float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32);
+        vec3 specular = specularStrength * spec * u_lightColor[i];
+        result += (diffuse + specular) * u_objectColor;
+    }
+    FragColor = vec4(result, 1.0);
+})";
+
 constexpr EArray<ShaderType, std::string_view> k_default_shader_header = {
     { ShaderType::Vertex,   join_v<k_glsl_ver, k_uniform_decl, k_vertex_attributes_decl> },
     { ShaderType::Fragment, join_v<k_glsl_ver, k_uniform_decl> }

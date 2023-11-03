@@ -227,6 +227,7 @@ Basic Operations:\n\
                 add_object(Object::make_cube_obj(m_scene, Material{}, Transform{}));
             }
             if (ImGui::MenuItem("Sphere")) {
+                this->log(LogLevel::Warning, "not implemented");
             }
             if (ImGui::MenuItem("Import .obj File")) {
                 auto const path = ImGui::FileDialogue(ImGui::FileDialogueMode::OPEN, "obj");
@@ -237,6 +238,9 @@ Basic Operations:\n\
 
                     this->log(LogLevel::Warning, warning);
                 }
+            }
+            if (ImGui::MenuItem("Add Point Light")) {
+                
             }
             ImGui::EndMenu();
         }

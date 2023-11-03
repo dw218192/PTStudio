@@ -5,6 +5,8 @@
 #include <glm/ext/matrix_transform.hpp>
 #include <algorithm>
 
+#include "../../editor/src/include/editorResources.h"
+
 Scene::Scene() = default;
 
 auto Scene::from_obj_file(std::string_view filename) noexcept -> tl::expected<Scene, std::string> {
@@ -95,6 +97,18 @@ auto Scene::add_object(Object obj) noexcept -> ObserverPtr<Object> {
 void Scene::remove_object(ObserverPtr<Object> obj) noexcept {
     auto const result = std::remove_if(m_objects.begin(), m_objects.end(), [&](auto&& o) { return &o == obj; });
     m_objects.erase(result, m_objects.end());
+}
+
+auto Scene::add_light(Light light) noexcept -> ObserverPtr<Light> {
+    if (m_lights.size() == k_maxLights) {
+        return nullptr;
+    }
+    return &(m_lights.emplace_back(std::move(light)));
+}
+
+void Scene::remove_light(ObserverPtr<Light> light) noexcept {
+    auto const result = std::remove_if(m_lights.begin(), m_lights.end(), [&](auto&& o) { return &o == light; });
+    m_lights.erase(result, m_lights.end());
 }
 
 auto Scene::compute_scene_bound() const noexcept -> BoundingBox {
