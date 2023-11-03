@@ -23,20 +23,26 @@ struct Object {
     NODISCARD static auto make_quad_obj(Scene const& scene, Material mat, Transform trans) noexcept -> Object;
     NODISCARD static auto make_cube_obj(Scene const& scene, Material mat, Transform trans) noexcept -> Object;
 
-    void set_transform(Transform transform) noexcept;
     NODISCARD auto get_transform() const noexcept -> Transform const&;
-    void set_name(std::string_view name) noexcept;
     NODISCARD auto get_name() const noexcept -> std::string_view;
     NODISCARD auto get_bound() const noexcept -> BoundingBox const&;
     NODISCARD auto get_vertices() const noexcept -> tcb::span<Vertex const>;
     NODISCARD auto get_material() const noexcept -> Material const&;
-
+    void set_transform(Transform transform) noexcept;
+    void set_name(std::string_view name) noexcept;
+    void set_material(Material mat) noexcept;
+    
 private:
     BEGIN_REFLECT(Object);
-        FIELD(BoundingBox, m_local_bound);
-        FIELD(Transform, m_transform);
-        FIELD(Material, m_mat);
-        FIELD(std::vector<Vertex>, m_vertices);
-        FIELD(std::string, m_name);
+	    FIELD_MOD(BoundingBox, m_local_bound,
+	            MSerialize{});
+	    FIELD_MOD(Transform, m_transform,
+	            MSerialize{});
+	    FIELD_MOD(Material, m_mat,
+	            MSerialize{});
+	    FIELD_MOD(std::vector<Vertex>, m_vertices,
+	            MSerialize{});
+	    FIELD_MOD(std::string, m_name,
+	            MSerialize{});
     END_REFLECT();
 };

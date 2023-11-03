@@ -34,16 +34,26 @@ namespace glm {
 
 template<typename Reflected, typename = std::enable_if_t<is_reflectable<Reflected>::value>>
 auto to_json(nlohmann::json& json, Reflected const& reflected) -> void {
+	if constexpr (has_serialization_callback<Reflected>::value) {
+		reflected.on_serialize();
+	}
 	Reflected::for_each_field([&reflected, &json](auto field) {
-		json[field.var_name] = field.get(reflected);
+		if (field.template get_modifier<MSerialize>()) {
+			json[field.var_name] = field.get(reflected);
+		}
 	});
 }
 
 template<typename Reflected, typename = std::enable_if_t<is_reflectable<Reflected>::value>>
 auto from_json(nlohmann::json const& json, Reflected& reflected) -> void {
 	Reflected::for_each_field([&reflected, &json](auto field) {
-		from_json(json.at(field.var_name), field.get(reflected));
+		if (field.template get_modifier<MSerialize>()) {
+			from_json(json.at(field.var_name), field.get(reflected));
+		}
 	});
+	if constexpr (has_deserialization_callback<Reflected>::value) {
+		reflected.on_deserialize();
+	}
 }
 
 auto JsonArchive::save(View<Scene> scene_view, View<Camera> camera_view) -> tl::expected<std::string, std::string> {

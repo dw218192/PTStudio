@@ -68,7 +68,7 @@ void DebugDrawer::draw_line(glm::vec2 from, glm::vec2 to, glm::vec3 color, float
 		}
 	);
 }
-void DebugDrawer::draw_rect_3d(View<Camera> cam, glm::vec3 center, glm::vec3 extent, glm::vec3 color, float thickness, float time) noexcept {
+void DebugDrawer::draw_rect_3d(View<Camera> cam, glm::ivec2 vp_size, glm::vec3 center, glm::vec3 extent, glm::vec3 color, float thickness, float time) noexcept {
 	glm::vec3 points[8];
 	int i = 0;
 	for (float x : { -extent.x, extent.x }) {
@@ -85,23 +85,23 @@ void DebugDrawer::draw_rect_3d(View<Camera> cam, glm::vec3 center, glm::vec3 ext
 			int lst = j == 0 ? 3 : j - 1;
 			glm::vec3 from = points[faces[i][lst]];
 			glm::vec3 to = points[faces[i][j]];
-			draw_line_3d(cam, from, to, color, thickness, time);
+			draw_line_3d(cam, vp_size, from, to, color, thickness, time);
 		}
 	}
 }
-void DebugDrawer::draw_box(View<Camera> cam, View<BoundingBox> box, glm::vec3 color, float thickness, float time) noexcept {
-	draw_rect_3d(cam, box.get().get_center(), box.get().get_extent(), color, thickness, time);
+void DebugDrawer::draw_box(View<Camera> cam, glm::ivec2 vp_size, View<BoundingBox> box, glm::vec3 color, float thickness, float time) noexcept {
+	draw_rect_3d(cam, vp_size, box.get().get_center(), box.get().get_extent(), color, thickness, time);
 }
 
-void DebugDrawer::draw_line_3d(View<Camera> cam, glm::vec3 from, glm::vec3 to, glm::vec3 color, float thickness, float time) noexcept {
+void DebugDrawer::draw_line_3d(View<Camera> cam, glm::ivec2 vp_size, glm::vec3 from, glm::vec3 to, glm::vec3 color, float thickness, float time) noexcept {
 	auto col = ImGui::ColorConvertFloat4ToU32(ImVec4(color.x, color.y, color.z, 1));
 	m_draw_calls.emplace_back(
 		DrawCallInfo{
 			time,
 			[=, offset = m_offset]() {
 				// have to fetch these every frame because the camera might have changed
-				auto view_frm = cam.get().world_to_viewport(from);
-				auto view_to = cam.get().world_to_viewport(to);
+				auto view_frm = cam.get().world_to_viewport(from, vp_size);
+				auto view_to = cam.get().world_to_viewport(to, vp_size);
 
 				view_frm += offset;
 				view_to += offset;
@@ -117,6 +117,6 @@ void DebugDrawer::draw_line_3d(View<Camera> cam, glm::vec3 from, glm::vec3 to, g
 	);
 }
 
-void DebugDrawer::draw_ray_3d(View<Camera> cam, View<Ray> ray, glm::vec3 color, float thickness, float time) noexcept {
-	draw_line_3d(cam, ray.get().origin, ray.get().get_point(100.0f), color, thickness, time);
+void DebugDrawer::draw_ray_3d(View<Camera> cam, glm::ivec2 vp_size, View<Ray> ray, glm::vec3 color, float thickness, float time) noexcept {
+	draw_line_3d(cam, vp_size, ray.get().origin, ray.get().get_point(100.0f), color, thickness, time);
 }

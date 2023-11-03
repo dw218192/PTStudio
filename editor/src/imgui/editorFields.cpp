@@ -64,6 +64,20 @@ bool ImGui::TransformField(const char* label, Transform& transform, ImGuizmo::OP
     return changed;
 }
 
+bool ImGui::MaterialField(const char* label, Material& material) {
+    bool changed = false;
+    if(ImGui::CollapsingHeader(label, ImGuiTreeNodeFlags_DefaultOpen)) {
+        Material::for_each_field([&](auto field) {
+            if constexpr (std::is_same_v<typename decltype(field)::type, glm::vec3>) {
+                changed |= ImGui::ColorEdit3(field.var_name.data(), glm::value_ptr(field.get(material)));
+            } else if constexpr (std::is_same_v<typename decltype(field)::type, float>) {
+                changed |= ImGui::SliderFloat(field.var_name.data(), &field.get(material), 0, 2.0f);
+            }
+        });
+    }
+    return changed;
+}
+
 bool ImGui::ShaderVariableField(const char* label, UniformVar& variable) {
     bool changed = false;
     switch (variable.get_type()) {

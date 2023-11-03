@@ -5,8 +5,11 @@
 
 struct Vertex {
 BEGIN_REFLECT(Vertex);
-    FIELD(glm::vec3, position);
-    FIELD(glm::vec3, normal);
-    FIELD(glm::vec2, uv);
+	FIELD_MOD(glm::vec3, position,
+		MSerialize{});
+	FIELD_MOD(glm::vec3, normal,
+		MSerialize{});
+	FIELD_MOD(glm::vec2, uv,
+		MSerialize{});
 END_REFLECT();
 };

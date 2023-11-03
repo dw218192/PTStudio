@@ -11,16 +11,14 @@ struct LookAtParams {
 
 struct Camera {
     Camera() noexcept;
-    Camera(float fovy, unsigned px_width, unsigned px_height, glm::vec3 eye, glm::vec3 center, glm::vec3 up) noexcept;
-    Camera(float fovy, unsigned px_width, unsigned px_height, LookAtParams const& params) noexcept;
+    Camera(float fovy, float aspect, glm::vec3 eye, glm::vec3 center, glm::vec3 up) noexcept;
+    Camera(float fovy, float aspect, LookAtParams const& params) noexcept;
 
     NODISCARD auto get_view_proj() const noexcept -> glm::mat4 const& { return m_view_proj; }
     NODISCARD auto get_view() const noexcept -> glm::mat4 const& { return m_view; }
     NODISCARD auto get_projection() const noexcept -> glm::mat4 const& { return m_projection; }
     NODISCARD auto get_fov() const noexcept { return m_fov; }
     NODISCARD auto get_aspect() const noexcept { return m_aspect; }
-    NODISCARD auto get_px_width() const noexcept { return m_px_width; }
-    NODISCARD auto get_px_height() const noexcept { return m_px_height; }
     NODISCARD auto get_eye() const noexcept { return m_eye; }
     NODISCARD auto get_center() const noexcept { return m_center; }
     NODISCARD auto get_up() const noexcept { return m_up; }
@@ -50,30 +48,35 @@ struct Camera {
     /**
      * \brief Converts a point in world space to screen space
      * \param world the point in world space
+     * \param vp_size the size of viewport
      * \return the point in screen space; top left is (0,0), bottom right is (width, height)
      */
-    NODISCARD auto world_to_viewport(glm::vec3 world) const noexcept -> glm::vec2;
+    NODISCARD auto world_to_viewport(glm::vec3 world, glm::ivec2 vp_size) const noexcept -> glm::vec2;
     /**
      * \brief Converts a point in screen space to world space
      * \param screen the point in screen space; top left is (0,0), bottom right is (width, height)
      * \param z the z value to use for the point
+     * \param vp_size the size of viewport
      * \return the point in world space
      */
-    NODISCARD auto viewport_to_world(glm::vec2 screen, float z = -1.0f) const noexcept -> glm::vec3;
+    NODISCARD auto viewport_to_world(glm::vec2 screen, glm::ivec2 vp_size, float z = -1.0f) const noexcept -> glm::vec3;
 
     /**
      * \brief Converts a point in screen space to a ray in world space
      * \param screen the point in screen space; top left is (0,0), bottom right is (width, height)
+     * \param vp_size the size of viewport
      * \return the ray in world space
     */
-    NODISCARD auto viewport_to_ray(glm::vec2 screen) const noexcept -> Ray;
+    NODISCARD auto viewport_to_ray(glm::vec2 screen, glm::ivec2 vp_size) const noexcept -> Ray;
 
 	void set_fov(float fov) noexcept;
-    void set_viewport(unsigned px_width, unsigned px_height) noexcept;
+    void set_aspect(float aspect) noexcept;
 
     void set_delta_rotation(glm::vec3 const& delta) noexcept;
 	void set_delta_dolly(glm::vec3 const& delta) noexcept;
     void set_delta_zoom(float delta) noexcept;
+
+    void on_deserialize() noexcept;
 
 private:
     void on_view_changed() noexcept;
@@ -83,18 +86,21 @@ private:
     static constexpr float k_min_fov = 20.0f, k_max_fov = 120.0f;
 
 BEGIN_REFLECT(Camera);
-    FIELD(float, m_fov);
-    FIELD(float, m_aspect);
-    FIELD(float, m_px_width);
-    FIELD(float, m_px_height);
-
+	FIELD_MOD(float, m_fov,
+        MSerialize{});
+	FIELD_MOD(float, m_aspect,
+        MSerialize{});
     // m_eye is the position of the camera
     // m_center is the point the camera is looking at
     // m_up is the up vector of the camera
     // m_arm_dir is the direction from m_eye to m_center
-    FIELD(glm::vec3, m_eye);
-    FIELD(glm::vec3, m_center);
-    FIELD(glm::vec3, m_up);
+    FIELD_MOD(glm::vec3, m_eye,
+        MSerialize{});
+    FIELD_MOD(glm::vec3, m_center,
+        MSerialize{});
+    FIELD_MOD(glm::vec3, m_up,
+        MSerialize{});
+
     FIELD(glm::vec3, m_arm_dir);
     FIELD(glm::mat4, m_cam_transform);
     FIELD(glm::mat4, m_view);

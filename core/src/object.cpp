@@ -196,6 +196,10 @@ void Object::set_name(std::string_view name) noexcept {
     m_name = name;
 }
 
+void Object::set_material(Material mat) noexcept {
+    m_mat = std::move(mat);
+}
+
 auto Object::get_name() const noexcept -> std::string_view {
     return m_name;
 }

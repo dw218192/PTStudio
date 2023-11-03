@@ -92,7 +92,11 @@ private:
     NODISCARD auto compute_scene_bound() const noexcept -> BoundingBox;
 
     BEGIN_REFLECT(Scene);
-        FIELD_INIT(std::string, m_name, "Scene");
-        FIELD(std::vector<Object>, m_objects);
+	    FIELD_MOD(std::string, m_name, 
+            MDefault{ "Scene" },
+            MSerialize{});
+
+		FIELD_MOD(std::vector<Object>, m_objects,
+            MSerialize{});
     END_REFLECT();
 };

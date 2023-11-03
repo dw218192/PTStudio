@@ -93,7 +93,8 @@ auto Scene::add_object(Object obj) noexcept -> ObserverPtr<Object> {
 }
 
 void Scene::remove_object(ObserverPtr<Object> obj) noexcept {
-    std::remove_if(m_objects.begin(), m_objects.end(), [&](auto&& o) { return &o == obj; });
+    auto const result = std::remove_if(m_objects.begin(), m_objects.end(), [&](auto&& o) { return &o == obj; });
+    m_objects.erase(result, m_objects.end());
 }
 
 auto Scene::compute_scene_bound() const noexcept -> BoundingBox {

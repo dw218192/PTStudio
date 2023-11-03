@@ -78,7 +78,6 @@ private:
     
     Scene m_scene;
     Camera m_cam;
-
     Renderer& m_renderer;
     std::unique_ptr<Archive> m_archive;
 

@@ -19,7 +19,7 @@ static constexpr auto k_console_win_name = "Console";
 
 EditorApplication::EditorApplication(Renderer& renderer, std::string_view name)
     : GLFWApplication { name, renderer.get_config().width, renderer.get_config().height, renderer.get_config().min_frame_time },
-    m_cam{ renderer.get_config().fovy, renderer.get_config().width, renderer.get_config().height, LookAtParams{} },
+    m_cam{ renderer.get_config().fovy, renderer.get_config().get_aspect(), LookAtParams{} },
     m_renderer{ renderer }, m_archive{ new JsonArchive }
 {
     // initialize renderer
@@ -166,12 +166,24 @@ void EditorApplication::quit(int code) {
 }
 
 void EditorApplication::draw_scene_panel() noexcept {
+    ImGui::TextUnformatted("\
+This is a simple editor.\n\
+Basic Operations:\n\
+- Left click to select object\n\
+- Right click to rotate camera\n\
+- Left click + drag to move camera\n\
+- Press W/E/R to switch between translate/rotate/scale gizmo\n\
+- Press X to toggle snap\n\
+- Press Delete to delete selected object\n\
+- Press Escape to deselect object");
+    ImGui::Separator();
+
     if (ImGui::Button("Open Scene")) {
         auto const path = ImGui::FileDialogue(ImGui::FileDialogueMode::OPEN, m_archive->get_ext().data());
         if (!path.empty()) {
             std::tie(m_scene, m_cam) = check_error(m_archive->load_file(path));
         }
-
+        m_cam.set_aspect(m_renderer.get_config().get_aspect());
         m_control_state.set_cur_obj(nullptr);
         check_error(m_renderer.open_scene(m_scene));
     }
@@ -248,6 +260,11 @@ void EditorApplication::draw_object_panel() noexcept {
             if (ImGui::TransformField("Transform", trans, gizmo_state.op, gizmo_state.mode, gizmo_state.snap, gizmo_state.snap_scale)) {
                 obj.set_transform(trans);
             }
+
+            auto mat = obj.get_material();
+            if (ImGui::MaterialField("Material", mat)) {
+                obj.set_material(mat);
+            }
         } else {
             ImGui::Text("No object selected");
         }
@@ -266,7 +283,7 @@ void EditorApplication::draw_scene_viewport(TextureHandle render_buf) noexcept {
             auto conf = m_renderer.get_config();
             conf.width = static_cast<unsigned>(view_size.x);
             conf.height = static_cast<unsigned>(view_size.y);
-            m_cam.set_viewport(conf.width, conf.height);
+            m_cam.set_aspect(conf.get_aspect());
             m_cam.set_fov(conf.fovy);
             check_error(m_renderer.on_change_render_config(conf));
             last_size = view_size;
@@ -280,13 +297,15 @@ void EditorApplication::draw_scene_viewport(TextureHandle render_buf) noexcept {
         render_buf->unbind();
 
         // draw x,y,z axis ref
-        auto const axis_origin = m_cam.viewport_to_world(glm::vec2 {30, 30}, 0.0f);
+        auto const conf = m_renderer.get_config();
+        auto const vp_size = glm::ivec2 { conf.width, conf.height };
+        auto const axis_origin = m_cam.viewport_to_world(glm::vec2 {30, 30}, vp_size,0.0f);
         constexpr float axis_len = 0.01f;
 
         get_debug_drawer().begin_relative(to_glm(ImGui::GetWindowPos() + v_min));
-        get_debug_drawer().draw_line_3d(m_cam, axis_origin, axis_origin + glm::vec3{ axis_len, 0, 0 }, { 1, 0, 0 }, 2.0f, 0.0f);
-        get_debug_drawer().draw_line_3d(m_cam, axis_origin, axis_origin + glm::vec3{ 0, axis_len, 0 }, { 0, 1, 0 }, 2.0f, 0.0f);
-        get_debug_drawer().draw_line_3d(m_cam, axis_origin, axis_origin + glm::vec3{ 0, 0, axis_len }, { 0, 0, 1 }, 2.0f, 0.0f);
+        get_debug_drawer().draw_line_3d(m_cam, vp_size, axis_origin, axis_origin + glm::vec3{ axis_len, 0, 0 }, { 1, 0, 0 }, 2.0f, 0.0f);
+        get_debug_drawer().draw_line_3d(m_cam, vp_size, axis_origin, axis_origin + glm::vec3{ 0, axis_len, 0 }, { 0, 1, 0 }, 2.0f, 0.0f);
+        get_debug_drawer().draw_line_3d(m_cam, vp_size, axis_origin, axis_origin + glm::vec3{ 0, 0, axis_len }, { 0, 0, 1 }, 2.0f, 0.0f);
         get_debug_drawer().end_relative();
 
         // draw gizmos
@@ -372,7 +391,7 @@ void EditorApplication::try_select_object() noexcept {
 
     // convert to viewport space
     pos = pos - win_pos.value();
-    auto const ray = m_cam.viewport_to_ray(to_glm(pos));
+    auto const ray = m_cam.viewport_to_ray(to_glm(pos), { m_renderer.get_config().width, m_renderer.get_config().height });
     auto const res = m_scene.ray_cast(ray);
     if (res) {
         m_control_state.set_cur_obj(res); // note: deselection is handled by key press
