@@ -36,6 +36,7 @@ struct Transform {
     NODISCARD auto local_to_world_len(float len) const noexcept -> float;
     NODISCARD auto world_to_local_len(float len) const noexcept -> float;
 
+    void on_deserialize() noexcept;
 private:
     void on_trans_matrix_update() noexcept;
     void on_component_update() noexcept;
@@ -44,7 +45,7 @@ private:
         FIELD_MOD(glm::vec3, m_pos, MSerialize{});
         FIELD_MOD(glm::vec3, m_rot, MSerialize{});
         FIELD_MOD(glm::vec3, m_scale, MSerialize{});
-        FIELD_MOD(glm::mat4, m_trans, MSerialize{});
-        FIELD_MOD(glm::mat4, m_inv_trans, MSerialize{});
+        FIELD(glm::mat4, m_trans);
+        FIELD(glm::mat4, m_inv_trans);
     END_REFLECT();
 };

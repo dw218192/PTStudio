@@ -126,3 +126,7 @@ auto Transform::local_to_world_len(float len) const noexcept -> float {
 auto Transform::world_to_local_len(float len) const noexcept -> float {
     return len / glm::length(m_scale);
 }
+
+void Transform::on_deserialize() noexcept {
+    on_component_update();
+}
