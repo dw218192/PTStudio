@@ -30,7 +30,8 @@ struct Scene {
 	NODISCARD auto get_good_cam_start() const noexcept -> LookAtParams;
     NODISCARD auto get_good_light_pos() const noexcept -> glm::vec3;
 
-    NODISCARD auto ray_cast(Ray const& ray, float t_min = 0.0f, float t_max = 1e5f) noexcept -> ObserverPtr<Object>;
+    NODISCARD auto ray_cast(Ray const& ray, float t_min = 0.0f, float t_max = 1e5f) noexcept -> std::optional<EditableView>;
+    NODISCARD auto ray_cast_editable(Ray const& ray, float t_min = 0.0f, float t_max = 1e5f) noexcept -> std::optional<EditableView>;
     NODISCARD auto size() const noexcept { return m_objects.size(); }
 
     auto add_object(Object obj) noexcept -> ObserverPtr<Object>;

@@ -48,8 +48,32 @@ auto Scene::get_good_light_pos() const noexcept -> glm::vec3 {
     return center + glm::vec3{ 0, y_extent + 3, 0 };
 }
 
-auto Scene::ray_cast(Ray const& ray, float t_min, float t_max) noexcept -> ObserverPtr<Object> {
-    ObserverPtr<Object> ret = nullptr;
+auto Scene::ray_cast_editable(Ray const& ray, float t_min, float t_max) noexcept -> std::optional<EditableView> {
+    auto ret = ray_cast(ray, t_min, t_max);
+    if (ret) {
+        return ret;
+    }
+
+    // try select lights
+	// intersect with gizmos for editing
+    float closest_t = t_max;
+    auto const light_bound = BoundingBox{ glm::vec3{ -0.5f }, glm::vec3{ 0.5f } };
+    for (auto&& light : m_lights) {
+        Ray local_ray{
+            light.get_transform().world_to_local_pos(ray.origin),
+            light.get_transform().world_to_local_dir(ray.direction)
+        };
+        auto const res = Intersection::ray_box(light_bound, local_ray);
+        if (res.hit && res.t < closest_t && res.t >= t_min) {
+            closest_t = res.t;
+            ret = light;
+        }
+    }
+    return ret;
+}
+
+auto Scene::ray_cast(Ray const& ray, float t_min, float t_max) noexcept -> std::optional<EditableView> {
+    std::optional<EditableView> ret = std::nullopt;
     float closest_t = t_max;
     for (auto&& obj : m_objects) {
         // transform ray to object space
@@ -70,12 +94,13 @@ auto Scene::ray_cast(Ray const& ray, float t_min, float t_max) noexcept -> Obser
             	res = Intersection::ray_triangle(tcb::make_span(triangle), local_ray);
                 if (res.hit && res.t < closest_t && res.t >= t_min) {
                     closest_t = res.t;
-                    ret = &obj;
+                    ret = obj;
                     break;
                 }
             }
         }
     }
+
     return ret;
 }
 

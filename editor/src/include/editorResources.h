@@ -9,112 +9,112 @@
 // outline works by first rendering the object slightly scaled up, with a solid color
 // then rendering the object normally, with the outline color, but with depth testing disabled
 constexpr char const* vs_outline_passes[] = {
-    "\
-    #version 330 core\n\
-    layout (location = 0) in vec3 aPos;\n\
-    uniform mat4 u_model;\n\
-    uniform mat4 u_view;\n\
-    uniform mat4 u_projection;\n\
-    void main() {\n\
-        gl_Position = u_projection * u_view * u_model * vec4(aPos, 1.0);\n\
-    }\n\
-    ",
+    R"(
+    #version 330 core
+    layout (location = 0) in vec3 aPos;
+    uniform mat4 u_model;
+    uniform mat4 u_view;
+    uniform mat4 u_projection;
+    void main() {
+        gl_Position = u_projection * u_view * u_model * vec4(aPos, 1.0);
+    }
+    )",
     // post-process pass 1 & 2 & 3, draw full screen quad
-    "\
-    #version 330 core\n\
-    layout (location = 0) in vec3 aPos;\n\
-    layout (location = 1) in vec2 aTexCoords;\n\
-    out vec2 TexCoords;\n\
-    void main() {\n\
-        TexCoords = aTexCoords;\n\
-        gl_Position = vec4(aPos, 1.0);\n\
-    }\n\
-    ",
-    "\
-    #version 330 core\n\
-    layout (location = 0) in vec3 aPos;\n\
-    layout (location = 1) in vec2 aTexCoords;\n\
-    out vec2 TexCoords;\n\
-    void main() {\n\
-        TexCoords = aTexCoords;\n\
-        gl_Position = vec4(aPos, 1.0);\n\
-    }\n\
-    ",
+    R"(
+    #version 330 core
+    layout (location = 0) in vec3 aPos;
+    layout (location = 1) in vec2 aTexCoords;
+    out vec2 TexCoords;
+    void main() {
+        TexCoords = aTexCoords;
+        gl_Position = vec4(aPos, 1.0);
+    }
+    )",
+    R"(
+    #version 330 core
+    layout (location = 0) in vec3 aPos;
+    layout (location = 1) in vec2 aTexCoords;
+    out vec2 TexCoords;
+    void main() {
+        TexCoords = aTexCoords;
+        gl_Position = vec4(aPos, 1.0);
+    }
+    )",
 };
 constexpr char const* ps_outline_passes[] = {
-    "\
-    #version 330 core\n\
-    layout(location = 0) out vec3 FragColor; \n\
-    void main() {\n\
-        FragColor = vec3(1.0);\n\
-    }\n\
-    ",
+    R"(
+    #version 330 core
+    layout(location = 0) out vec3 FragColor; 
+    void main() {
+        FragColor = vec3(1.0);
+    }
+    )",
     // post-process pass, screen-space outline from shadertoy
-    "\
-    #version 330 core\n\
-    uniform sampler2D screenTexture;\n\
-    uniform float thickness;\n\
-    uniform vec3 outlineColor;\n\
-    uniform vec2 texelSize;\n\
-    in vec2 TexCoords;\n\
-    out vec4 FragColor;\n\
-    void main() {\n\
-        const vec3 target = vec3(0.0, 0.0, 0.0); // Find black \n\
-        const float TAU = 6.28318530;\n\
-        const float steps = 32.0;\n\
-        if (texture(screenTexture, TexCoords).r > 0) {\n\
-            FragColor.a = 0.0;\n\
-            return;\n\
-        }\n\
-        for (float i = 0.0; i < TAU; i += TAU / steps) {\n\
-            // Sample image in a circular pattern\n\
-            vec2 offset = vec2(sin(i), cos(i)) * texelSize * thickness;\n\
-            vec4 col = texture(screenTexture, TexCoords + offset);\n\
-            float alpha = smoothstep(0.5, 0.7, distance(col.rgb, target));\n\
-            FragColor = mix(FragColor, vec4(outlineColor, 1.0), alpha);\n\
-        }\n\
-        vec4 mat = texture(screenTexture, TexCoords);\n\
-        float factor = smoothstep(0.5, 0.7, distance(mat.rgb, target));\n\
-        FragColor = mix(FragColor, mat, factor);\n\
-    }\n\
-    ",
+    R"(
+    #version 330 core
+    uniform sampler2D screenTexture;
+    uniform float thickness;
+    uniform vec3 outlineColor;
+    uniform vec2 texelSize;
+    in vec2 TexCoords;
+    out vec4 FragColor;
+    void main() {
+        const vec3 target = vec3(0.0, 0.0, 0.0); // Find black 
+        const float TAU = 6.28318530;
+        const float steps = 32.0;
+        if (texture(screenTexture, TexCoords).r > 0) {
+            FragColor.a = 0.0;
+            return;
+        }
+        for (float i = 0.0; i < TAU; i += TAU / steps) {
+            // Sample image in a circular pattern
+            vec2 offset = vec2(sin(i), cos(i)) * texelSize * thickness;
+            vec4 col = texture(screenTexture, TexCoords + offset);
+            float alpha = smoothstep(0.5, 0.7, distance(col.rgb, target));
+            FragColor = mix(FragColor, vec4(outlineColor, 1.0), alpha);
+        }
+        vec4 mat = texture(screenTexture, TexCoords);
+        float factor = smoothstep(0.5, 0.7, distance(mat.rgb, target));
+        FragColor = mix(FragColor, mat, factor);
+    }
+    )",
     // copy screen texture to screen
-    "\
-    #version 330 core\n\
-    uniform sampler2D screenTexture;\n\
-    in vec2 TexCoords;\n\
-    out vec4 FragColor;\n\
-    void main() {\n\
-        FragColor = texture(screenTexture, TexCoords);\n\
-    }\n\
-    ",
+    R"(
+    #version 330 core
+    uniform sampler2D screenTexture;
+    in vec2 TexCoords;
+    out vec4 FragColor;
+    void main() {
+        FragColor = texture(screenTexture, TexCoords);
+    }
+    )",
 };
 
 constexpr char const* vs_grid_src = 
-"\
-#version 330 core\n\
-layout (location = 0) in vec3 aPos;\n\
-uniform mat4 u_view;\n\
-uniform mat4 u_projection;\n\
-out vec2 gridCoords;\n\
-void main() {\n\
-    gridCoords = aPos.xz;\n\
-    gl_Position = u_projection * u_view * vec4(aPos, 1.0);\n\
-}\n\
-";
+R"(
+#version 330 core
+layout (location = 0) in vec3 aPos;
+uniform mat4 u_view;
+uniform mat4 u_projection;
+out vec2 gridCoords;
+void main() {
+    gridCoords = aPos.xz;
+    gl_Position = u_projection * u_view * vec4(aPos, 1.0);
+}
+)";
 
 constexpr char const* ps_grid_src = 
-"\
-#version 330 core\n\
-uniform float halfGridDim;\n\
-in vec2 gridCoords;\n\
-out vec4 FragColor;\n\
-void main() {\n\
-    float dist = max(abs(gridCoords.x), abs(gridCoords.y)) / halfGridDim;\n\
-    float alpha = 1.0 - pow(dist, 0.25);\n\
-    FragColor = vec4(0.7, 0.7, 0.7, alpha);\n\
-}\n\
-";
+R"(
+#version 330 core
+uniform float halfGridDim;
+in vec2 gridCoords;
+out vec4 FragColor;
+void main() {
+    float dist = max(abs(gridCoords.x), abs(gridCoords.y)) / halfGridDim;
+    float alpha = 1.0 - pow(dist, 0.25);
+    FragColor = vec4(0.7, 0.7, 0.7, alpha);
+}
+)";
 
 constexpr char const* k_uniform_half_grid_dim = "halfGridDim";
 constexpr char const* k_uniform_screen_texture = "screenTexture";
@@ -126,12 +126,15 @@ constexpr char const* k_uniform_light_count = "u_lightCount";
 constexpr char const* k_uniform_model = "u_model";
 constexpr char const* k_uniform_view = "u_view";
 constexpr char const* k_uniform_projection = "u_projection";
-constexpr char const* k_uniform_light_pos = "u_lightPos[0]";
-constexpr char const* k_uniform_light_color = "u_lightColor[0]";
 constexpr char const* k_uniform_object_color = "u_objectColor";
 constexpr char const* k_uniform_time = "u_time";
 constexpr char const* k_uniform_delta_time = "u_deltaTime";
 constexpr char const* k_uniform_resolution = "u_resolution";
+
+// these arrays are suffixed with [0] because gl introspection functions return them like that
+constexpr char const* k_uniform_light_pos = "u_lightPos[0]";
+constexpr char const* k_uniform_light_color = "u_lightColor[0]";
+constexpr char const* k_uniform_light_intensity = "u_lightIntensity[0]";
 
 constexpr char const* k_built_in_uniforms[] = {
     k_uniform_model,
@@ -139,6 +142,7 @@ constexpr char const* k_built_in_uniforms[] = {
     k_uniform_projection,
     k_uniform_light_pos,
     k_uniform_light_color,
+    k_uniform_light_intensity,
     k_uniform_object_color,
     k_uniform_time,
     k_uniform_delta_time,
@@ -158,6 +162,7 @@ uniform mat4 u_view;
 uniform mat4 u_projection;
 uniform vec3 u_lightPos [100];
 uniform vec3 u_lightColor [100];
+uniform float u_lightIntensity [100];
 uniform vec3 u_objectColor;
 uniform float u_time;
 uniform float u_deltaTime;
@@ -196,7 +201,11 @@ void main() {
         vec3 reflectDir = reflect(-lightDir, norm);
         float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32);
         vec3 specular = specularStrength * spec * u_lightColor[i];
-        result += (diffuse + specular) * u_objectColor;
+
+        // attenuation
+        float distance = length(u_lightPos[i] - FragPos);
+        float attenuation = 1.0 / (1.0 + 0.09 * distance + 0.032 * distance * distance);
+        result += (diffuse + specular) * u_lightIntensity[i] * attenuation * u_objectColor;
     }
     // ambient
     result += vec3(0.2);

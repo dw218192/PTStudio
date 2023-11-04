@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <imgui_internal.h>
 
+#include "intersection.h"
 #include "jsonArchive.h"
 
 
@@ -250,7 +251,7 @@ Basic Operations:\n\
 void EditorApplication::draw_object_panel() noexcept {
     if (ImGui::CollapsingHeader("Object Properties", ImGuiTreeNodeFlags_DefaultOpen)) {
         if (m_control_state.get_cur_obj()) {
-            auto& editable = m_control_state.get_cur_obj().value();
+            auto editable = m_control_state.get_cur_obj().value();
 
             // NOTE: no safety check here, cuz I'm lazy
             if (ImGui::InputText("Name", m_control_state.obj_name_buf.data(), m_control_state.obj_name_buf.size(),
@@ -265,11 +266,14 @@ void EditorApplication::draw_object_panel() noexcept {
                 editable.set_transform(trans);
             }
 
+            // editable-specific fields
             if (auto const obj = editable.as<Object>()) {
                 auto mat = obj->get_material();
-                if (ImGui::MaterialField("Material", mat)) {
+                if (ImGui::ReflectedField("Material", mat)) {
                     obj->set_material(mat);
                 }
+            } else if (auto const light = editable.as<Light>()) {
+                ImGui::ReflectedField("Light", *light);
             }
         } else {
             ImGui::Text("No object selected");
@@ -398,8 +402,7 @@ void EditorApplication::try_select_object() noexcept {
     // convert to viewport space
     pos = pos - win_pos.value();
     auto const ray = m_cam.viewport_to_ray(to_glm(pos), { m_renderer.get_config().width, m_renderer.get_config().height });
-    auto const res = m_scene.ray_cast(ray);
-    if (res) {
+    if (auto const res = m_scene.ray_cast_editable(ray)) {
         m_control_state.set_cur_obj(*res); // note: deselection is handled by key press
     }
 }

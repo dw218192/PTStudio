@@ -8,6 +8,9 @@
 #include "reflection.h"
 
 struct BoundingBox {
+    BoundingBox() noexcept = default;
+    BoundingBox(glm::vec3 min_pos, glm::vec3 max_pos) noexcept : min_pos{ min_pos }, max_pos{ max_pos } { }
+
 	BEGIN_REFLECT(BoundingBox);
 		FIELD_MOD(glm::vec3, min_pos, {},
             MSerialize{});

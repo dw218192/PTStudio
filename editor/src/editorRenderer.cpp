@@ -418,6 +418,7 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
     auto num_lights = std::min(m_scene->get_lights().size(), k_maxLights);
     auto light_positions = std::vector<glm::vec3>(num_lights);
     auto light_colors = std::vector<glm::vec3>(num_lights);
+    auto light_intensities = std::vector<float>(num_lights);
 
 	for (auto [i, it] = std::tuple{ 0, m_scene->get_lights().begin() };
         it != m_scene->get_lights().end();
@@ -425,6 +426,7 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
     {
         light_positions[i] = it->get_transform().get_position();
         light_colors[i] = it->get_color();
+        light_intensities[i] = it->get_intensity();
     }
 
     // render objects
@@ -446,6 +448,7 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
                 static_cast<int>(m_scene->get_lights().size())));
             TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_light_pos, tcb::make_span(light_positions)));
             TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_light_color, tcb::make_span(light_colors)));
+            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_light_intensity, tcb::make_span(light_intensities)));
         }
         // material
         if (uniforms.count(k_uniform_object_color)) {

@@ -25,12 +25,12 @@ struct Light {
 private:
     BEGIN_REFLECT(Light);
 	    FIELD_MOD(std::string, m_name, "Light",
-	        MSerialize{});
+	        MSerialize{}, MNoInspect{}); // handled explicitly
         FIELD_MOD(glm::vec3, m_color, {},
-                MSerialize{});
+            MSerialize{}, MColor{});
         FIELD_MOD(float, m_intensity, {},
-                MSerialize{});
+            MSerialize{}, MRange{0.0f, 100.0f, 0.1f});
         FIELD_MOD(Transform, m_transform, {},
-                MSerialize{});
+            MSerialize{}, MNoInspect{}); // handled explicitly
     END_REFLECT();
 };

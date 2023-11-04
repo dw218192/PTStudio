@@ -6,7 +6,7 @@ struct Material {
     // metallic-roughness workflow
 BEGIN_REFLECT(Material);
 	FIELD_MOD(glm::vec3, albedo, glm::vec3{1.0f},
-        MSerialize{});
+        MSerialize{}, MColor{});
     FIELD_MOD(float, roughness, 0.5f,
         MSerialize{});
     FIELD_MOD(float, metallic, 0.0f,

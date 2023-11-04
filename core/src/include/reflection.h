@@ -46,6 +46,12 @@ struct MRange {
 struct MSerialize {
     static constexpr std::string_view name = "serialize";
 };
+struct MNoInspect {
+    static constexpr std::string_view name = "no inspect";
+};
+struct MColor {
+    static constexpr std::string_view name = "color";
+};
 
 #define STR(x) #x
 #define BEGIN_REFLECT_IMPL(_cls, _counter)\
