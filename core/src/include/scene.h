@@ -3,6 +3,7 @@
 
 #include <string>
 #include <tl/expected.hpp>
+#include <tcb/span.hpp>
 #include <vector>
 
 #include "camera.h"
@@ -11,6 +12,7 @@
 #include "reflection.h"
 #include "object.h"
 #include "light.h"
+#include "editableView.h"
 
 struct Scene {
     Scene();
@@ -32,32 +34,41 @@ struct Scene {
     NODISCARD auto size() const noexcept { return m_objects.size(); }
 
     auto add_object(Object obj) noexcept -> ObserverPtr<Object>;
-    void remove_object(ObserverPtr<Object> obj) noexcept;
+    void remove_object(View<Object> obj_view) noexcept;
 
     auto add_light(Light light) noexcept -> ObserverPtr<Light>;
-    void remove_light(ObserverPtr<Light> light) noexcept;
+    void remove_light(View<Light> light_view) noexcept;
 
-    auto get_objects() const noexcept -> std::vector<Object> const& { return m_objects; }
-    auto get_lights() const noexcept -> std::vector<Light> const& { return m_lights; }
-    
+    NODISCARD auto get_objects() const noexcept -> auto const& { return m_objects; }
+    NODISCARD auto get_lights() const noexcept -> auto const& { return m_lights; }
+    NODISCARD auto get_editables() const noexcept -> auto const& { return m_editables; }
+
     NODISCARD auto next_obj_name() const noexcept -> std::string {
         static int counter = 0;
         return "Object " + std::to_string(counter++);
     }
-
+    NODISCARD auto next_light_name() const noexcept -> std::string {
+        static int counter = 0;
+        return "Light " + std::to_string(counter++);
+    }
     NODISCARD auto get_name() const noexcept -> std::string_view { return m_name; }
+
+    void on_deserialize() noexcept;
 private:
     NODISCARD auto compute_scene_bound() const noexcept -> BoundingBox;
+    auto remove_editable(ConstEditableView editable) noexcept -> void;
 
     BEGIN_REFLECT(Scene);
-	    FIELD_MOD(std::string, m_name, 
-            MDefault{ "Scene" },
+	    FIELD_MOD(std::string, m_name, "Scene",
             MSerialize{});
 
-		FIELD_MOD(std::vector<Object>, m_objects,
+		FIELD_MOD(std::list<Object>, m_objects, {},
             MSerialize{});
 
-        FIELD_MOD(std::vector<Light>, m_lights,
+        FIELD_MOD(std::list<Light>, m_lights, {},
             MSerialize{});
     END_REFLECT();
+
+private:
+    std::list<EditableView> m_editables;
 };

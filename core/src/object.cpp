@@ -19,6 +19,20 @@ Object::Object(Scene const& scene, Transform transform, Material mat, tcb::span<
     set_transform(transform);
 }
 
+Object::Object(Transform transform, Material mat, tcb::span<Vertex const> vertices, std::string_view name) 
+    : m_mat { std::move(mat) }, m_vertices{ vertices.begin(), vertices.end() }, m_name { name }
+{
+    m_local_bound = BoundingBox::from_vertices(m_vertices);
+    set_transform(transform);
+}
+
+Object::Object(Transform transform, Material mat, tcb::span<Vertex const> vertices)
+    : m_mat { std::move(mat) }, m_vertices{ vertices.begin(), vertices.end() }, m_name { "Object" }
+{
+    m_local_bound = BoundingBox::from_vertices(m_vertices);
+    set_transform(transform);
+}
+
 auto Object::from_obj(Scene const& scene, Material mat, std::string_view filename, std::string* warning) noexcept 
 -> tl::expected<Object, std::string> {
     std::vector<Vertex> vertices;

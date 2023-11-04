@@ -101,6 +101,7 @@
         "__tree": "cpp",
         "csignal": "cpp",
         "valarray": "cpp",
-        "string_view": "cpp"
+        "string_view": "cpp",
+        "codecvt": "cpp"
     }
 }

@@ -42,10 +42,11 @@ private:
     void on_component_update() noexcept;
 
     BEGIN_REFLECT(Transform);
-        FIELD_MOD(glm::vec3, m_pos, MSerialize{});
-        FIELD_MOD(glm::vec3, m_rot, MSerialize{});
-        FIELD_MOD(glm::vec3, m_scale, MSerialize{});
-        FIELD(glm::mat4, m_trans);
-        FIELD(glm::mat4, m_inv_trans);
+      FIELD_MOD(glm::vec3, m_pos, {}, MSerialize{});
+      FIELD_MOD(glm::vec3, m_rot, {}, MSerialize{});
+      FIELD_MOD(glm::vec3, m_scale, {}, MSerialize{});
     END_REFLECT();
+
+    glm::mat4 m_trans;
+    glm::mat4 m_inv_trans;
 };

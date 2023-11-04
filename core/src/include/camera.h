@@ -86,26 +86,25 @@ private:
     static constexpr float k_min_fov = 20.0f, k_max_fov = 120.0f;
 
 BEGIN_REFLECT(Camera);
-	FIELD_MOD(float, m_fov,
+	FIELD_MOD(float, m_fov, {},
         MSerialize{});
-	FIELD_MOD(float, m_aspect,
+	FIELD_MOD(float, m_aspect, {},
         MSerialize{});
     // m_eye is the position of the camera
     // m_center is the point the camera is looking at
     // m_up is the up vector of the camera
     // m_arm_dir is the direction from m_eye to m_center
-    FIELD_MOD(glm::vec3, m_eye,
+    FIELD_MOD(glm::vec3, m_eye, {},
         MSerialize{});
-    FIELD_MOD(glm::vec3, m_center,
+    FIELD_MOD(glm::vec3, m_center, {},
         MSerialize{});
-    FIELD_MOD(glm::vec3, m_up,
+    FIELD_MOD(glm::vec3, m_up, {},
         MSerialize{});
-
-    FIELD(glm::vec3, m_arm_dir);
-    FIELD(glm::mat4, m_cam_transform);
-    FIELD(glm::mat4, m_view);
-    FIELD(glm::mat4, m_projection);
-    FIELD(glm::mat4, m_view_proj);
-    FIELD(glm::mat4, m_inv_view_proj);
 END_REFLECT();
+	glm::vec3 m_arm_dir;
+	glm::mat4 m_cam_transform;
+	glm::mat4 m_view;
+	glm::mat4 m_projection;
+	glm::mat4 m_view_proj;
+	glm::mat4 m_inv_view_proj;
 }; 

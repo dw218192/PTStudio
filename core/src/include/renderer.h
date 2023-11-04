@@ -31,17 +31,17 @@ struct Renderer {
 
     /**
      * \brief Called when an object is added to the scene
-     * \param obj The object that was added
+     * \param editable The editable that was added
      * \return on failure, an error message
     */
-    NODISCARD virtual auto on_add_object(ViewPtr<Object> obj) noexcept -> tl::expected<void, std::string> = 0;
+    NODISCARD virtual auto on_add_editable(EditableView editable) noexcept -> tl::expected<void, std::string> = 0;
 
     /**
      * \brief Called when an object is removed from the scene
-     * \param obj The object that was removed
+     * \param editable The editable that was removed
      * \return on failure, an error message
     */
-    NODISCARD virtual auto on_remove_object(ViewPtr<Object> obj) noexcept -> tl::expected<void, std::string> = 0;
+    NODISCARD virtual auto on_remove_editable(EditableView editable) noexcept -> tl::expected<void, std::string> = 0;
 
 	/**
      * \brief Renders the scene directly in the window

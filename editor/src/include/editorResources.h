@@ -1,6 +1,8 @@
 #pragma once
+#include <optional>
+
+#include "shaderType.h"
 #include "concat.h"
-#include "shader.h"
 #include "enumArray.h"
 
 // shaders
@@ -120,12 +122,12 @@ constexpr char const* k_uniform_outline_color = "outlineColor";
 constexpr char const* k_uniform_texel_size = "texelSize";
 constexpr char const* k_uniform_thickness = "thickness";
 
-
+constexpr char const* k_uniform_light_count = "u_lightCount";
 constexpr char const* k_uniform_model = "u_model";
 constexpr char const* k_uniform_view = "u_view";
 constexpr char const* k_uniform_projection = "u_projection";
-constexpr char const* k_uniform_light_pos = "u_lightPos";
-constexpr char const* k_uniform_light_color = "u_lightColor";
+constexpr char const* k_uniform_light_pos = "u_lightPos[0]";
+constexpr char const* k_uniform_light_color = "u_lightColor[0]";
 constexpr char const* k_uniform_object_color = "u_objectColor";
 constexpr char const* k_uniform_time = "u_time";
 constexpr char const* k_uniform_delta_time = "u_deltaTime";
@@ -148,14 +150,14 @@ layout (location = 0) in vec3 aPos;
 layout (location = 1) in vec3 aNormal;
 layout (location = 2) in vec2 aTexCoords;
 )";
-constexpr int k_maxLights = 10;
+constexpr size_t k_maxLights = 100;
 constexpr std::string_view k_uniform_decl = R"(
-const int k_maxLights = 10;
+uniform int u_lightCount;
 uniform mat4 u_model;
 uniform mat4 u_view;
 uniform mat4 u_projection;
-uniform vec3 u_lightPos[k_maxLights];
-uniform vec3 u_lightColor[k_maxLights];
+uniform vec3 u_lightPos [100];
+uniform vec3 u_lightColor [100];
 uniform vec3 u_objectColor;
 uniform float u_time;
 uniform float u_deltaTime;
@@ -172,7 +174,8 @@ void main() {
     Normal = mat3(transpose(inverse(u_model))) * aNormal;
     FragPos = vec3(u_model * vec4(aPos, 1.0));
     gl_Position = u_projection * u_view * vec4(FragPos, 1.0);
-})";
+}
+)";
 
 constexpr std::string_view k_default_ps_obj_src_unprocessed =
 R"(
@@ -183,7 +186,7 @@ out vec4 FragColor;
 void main() {
     vec3 camPos = u_view[3].xyz;
     vec3 result = vec3(0.0);
-    for (int i=0; i<k_maxLights; ++i) {
+    for (int i=0; i<u_lightCount; ++i) {
         vec3 norm = normalize(Normal);
         vec3 lightDir = normalize(u_lightPos[i] - FragPos);
         float diff = max(dot(norm, lightDir), 0.0);
@@ -195,8 +198,11 @@ void main() {
         vec3 specular = specularStrength * spec * u_lightColor[i];
         result += (diffuse + specular) * u_objectColor;
     }
+    // ambient
+    result += vec3(0.2);
     FragColor = vec4(result, 1.0);
-})";
+}
+)";
 
 constexpr EArray<ShaderType, std::string_view> k_default_shader_header = {
     { ShaderType::Vertex,   join_v<k_glsl_ver, k_uniform_decl, k_vertex_attributes_decl> },

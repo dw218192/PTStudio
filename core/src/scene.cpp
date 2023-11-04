@@ -5,8 +5,6 @@
 #include <glm/ext/matrix_transform.hpp>
 #include <algorithm>
 
-#include "../../editor/src/include/editorResources.h"
-
 Scene::Scene() = default;
 
 auto Scene::from_obj_file(std::string_view filename) noexcept -> tl::expected<Scene, std::string> {
@@ -91,24 +89,43 @@ auto Scene::make_triangle_scene() noexcept -> tl::expected<Scene, std::string> {
 }
 
 auto Scene::add_object(Object obj) noexcept -> ObserverPtr<Object> {
-    return &(m_objects.emplace_back(std::move(obj)));
+    auto const ret = &(m_objects.emplace_back(std::move(obj)));
+    m_editables.emplace_back(*ret);
+    return ret;
 }
 
-void Scene::remove_object(ObserverPtr<Object> obj) noexcept {
-    auto const result = std::remove_if(m_objects.begin(), m_objects.end(), [&](auto&& o) { return &o == obj; });
-    m_objects.erase(result, m_objects.end());
+void Scene::remove_object(View<Object> obj_view) noexcept {
+    auto&& obj = obj_view.get();
+    remove_editable(obj);
+    m_objects.remove_if([&](auto&& o) { return &o == &obj; });
 }
 
 auto Scene::add_light(Light light) noexcept -> ObserverPtr<Light> {
-    if (m_lights.size() == k_maxLights) {
-        return nullptr;
-    }
-    return &(m_lights.emplace_back(std::move(light)));
+    auto const ret = &(m_lights.emplace_back(std::move(light)));
+    m_editables.emplace_back(*ret);
+    return ret;
 }
 
-void Scene::remove_light(ObserverPtr<Light> light) noexcept {
-    auto const result = std::remove_if(m_lights.begin(), m_lights.end(), [&](auto&& o) { return &o == light; });
-    m_lights.erase(result, m_lights.end());
+void Scene::remove_light(View<Light> light_view) noexcept {
+    auto&& light = light_view.get();
+    remove_editable(light);
+
+    for (auto [idx, l] = std::tuple{ 0, m_lights.begin() }; l != m_lights.end(); ++l, ++idx) {
+        if (&(*l) == &light) {
+            m_lights.erase(l);
+            break;
+        }
+    }
+}
+
+void Scene::on_deserialize() noexcept {
+    for (auto&& light : m_lights) {
+        m_editables.emplace_back(light);
+    }
+
+    for (auto&& obj : m_objects) {
+        m_editables.emplace_back(obj);
+    }
 }
 
 auto Scene::compute_scene_bound() const noexcept -> BoundingBox {
@@ -120,4 +137,8 @@ auto Scene::compute_scene_bound() const noexcept -> BoundingBox {
         scene_bound += obj.get_bound();
     }
     return scene_bound;
+}
+
+auto Scene::remove_editable(ConstEditableView editable) noexcept -> void {
+    m_editables.remove_if([&](auto&& obj) { return obj == editable; });
 }

@@ -1,6 +1,5 @@
 #pragma once
 #include <string_view>
-#include <string_view>
 #include <utility>
 #include <tuple>
 #include <optional>
@@ -23,14 +22,8 @@ struct ModifierPack {
     constexpr void for_each(Callable&& callable) const {
         std::apply([&callable](auto&&... args) {
             (callable(args), ...);
-            }, args);
+        }, args);
     }
-};
-template<typename T>
-struct MDefault {
-    T value;
-    static constexpr std::string_view name = "default";
-    constexpr MDefault(T val) : value(val) {}
 };
 template<typename T>
 struct MMin {
@@ -77,8 +70,8 @@ struct MSerialize {
         template<typename Modifier>\
         static constexpr auto get_modifier() -> std::optional<Modifier> { return std::nullopt; }\
     }
-#define FIELD_IMPL_MOD(_counter, _var_type, _var_name, ...)\
-    _var_type _var_name;\
+#define FIELD_IMPL_MOD(_counter, _var_type, _var_name, _init, ...)\
+    _var_type _var_name = _init;\
     template<typename fake> struct _field_info<(_counter) - _init_count - 1, fake> {\
         static constexpr std::string_view var_name = STR(_var_name);\
         static constexpr std::string_view type_name = STR(_var_type);\
@@ -113,22 +106,12 @@ public:\
         for_each_field_impl(std::forward<Callable>(callable), std::make_index_sequence<num_members>{});\
     }\
     static constexpr bool is_reflectable() { return true; }\
-    static constexpr auto type_name() { return _type_name; }\
-    static constexpr int num_members = (_counter) - _init_count - 1;\
-    int _initialize_members = [this]() {\
-        for_each_field([this](auto desc) {\
-            using type = typename decltype(desc)::type;\
-            auto modifier = desc.template get_modifier<MDefault<type>>();\
-            if (modifier) {\
-                desc.get(*this) = modifier->value;\
-            }\
-        });\
-        return 0;\
-    }()
+    static constexpr auto get_class_name() { return _type_name; }\
+    static constexpr int num_members = (_counter) - _init_count - 1
 
 #define BEGIN_REFLECT(cls) BEGIN_REFLECT_IMPL(cls, __COUNTER__)
 #define FIELD(type, var_name) FIELD_IMPL(__COUNTER__, type, var_name)
-#define FIELD_MOD(type, var_name, ...) FIELD_IMPL_MOD(__COUNTER__, type, var_name, __VA_ARGS__)
+#define FIELD_MOD(type, var_name, init, ...) FIELD_IMPL_MOD(__COUNTER__, type, var_name, init, __VA_ARGS__)
 #define END_REFLECT() END_REFLECT_IMPL(__COUNTER__)
 
 // type traits

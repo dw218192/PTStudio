@@ -67,8 +67,10 @@ target_compile_features(developer_flags INTERFACE cxx_std_17)
 set(EXT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ext")
 
 # OpenGL and common stuff
-add_definitions(-DGLEW_STATIC)
 add_subdirectory(${EXT_DIR}/glfw EXCLUDE_FROM_ALL)
+
+set(glew-cmake_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+set(glew-cmake_BUILD_STATIC ON CACHE BOOL "" FORCE)
 add_subdirectory(${EXT_DIR}/glew-cmake EXCLUDE_FROM_ALL)
 add_subdirectory(${EXT_DIR}/glm EXCLUDE_FROM_ALL)
 add_subdirectory(${EXT_DIR}/tinyobjloader EXCLUDE_FROM_ALL)

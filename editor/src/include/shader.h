@@ -4,6 +4,7 @@
 #include <string>
 #include <string_view>
 #include <tl/expected.hpp>
+#include <tcb/span.hpp>
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <unordered_map>
@@ -109,49 +110,10 @@ auto ShaderProgram::set_uniform(std::string_view name, UniformType&& value) noex
     if (it == m_uniforms.end()) {
         return TL_ERROR( "Uniform not found" );
     }
-    GLint loc = it->second.get_loc(); 
-    if (loc == -1) {
-        return TL_ERROR( "Invalid uniform location" );
-    }
-    if ((type_to_enum_msk(value) & it->second.get_type()) == 0) {
-        return TL_ERROR( "Uniform type mismatch" );
-    }
-
-    if constexpr (std::is_same_v<ValueType, glm::mat3>) {
-        glUniformMatrix3fv(loc, 1, GL_FALSE, glm::value_ptr(value));
-    }
-    else if constexpr (std::is_same_v<ValueType, glm::mat4>) {
-        glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(value));
-    }
-    else if constexpr (std::is_same_v<ValueType, glm::vec2>) {
-        glUniform2fv(loc, 1, glm::value_ptr(value));
-    }
-    else if constexpr (std::is_same_v<ValueType, glm::vec3>) {
-        glUniform3fv(loc, 1, glm::value_ptr(value));
-    }
-    else if constexpr (std::is_same_v<ValueType, glm::vec4>) {
-        glUniform4fv(loc, 1, glm::value_ptr(value));
-    }
-    else if constexpr (std::is_same_v<ValueType, float>) {
-        glUniform1f(loc, value);
-    }
-    else if constexpr (std::is_same_v<ValueType, int>) {
-        glUniform1i(loc, value);
-    }
-    else if constexpr (std::is_same_v<ValueType, glm::ivec2>) {
-        glUniform2iv(loc, 1, glm::value_ptr(value));
-    }
-    else if constexpr (std::is_same_v<ValueType, glm::ivec3>) {
-        glUniform3iv(loc, 1, glm::value_ptr(value));
-    }
-    else if constexpr (std::is_same_v<ValueType, glm::ivec4>) {
-        glUniform4iv(loc, 1, glm::value_ptr(value));
-    }
-    else {
-        static_assert(false, "Unsupported uniform type");
-    }
-    CHECK_GL_ERROR();
 
     it->second.set_value<ValueType>(value);
+    TL_CHECK_AND_PASS(it->second.upload());
+    CHECK_GL_ERROR();
+
     return {};
 }

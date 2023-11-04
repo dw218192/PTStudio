@@ -9,8 +9,10 @@
 
 struct BoundingBox {
 	BEGIN_REFLECT(BoundingBox);
-	    FIELD_MOD(glm::vec3, min_pos, MSerialize{});
-	    FIELD_MOD(glm::vec3, max_pos, MSerialize{});
+		FIELD_MOD(glm::vec3, min_pos, {},
+            MSerialize{});
+		FIELD_MOD(glm::vec3, max_pos, {},
+            MSerialize{});
 	END_REFLECT();
 
 public:

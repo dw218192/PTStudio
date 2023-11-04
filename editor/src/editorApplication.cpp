@@ -26,12 +26,12 @@ EditorApplication::EditorApplication(Renderer& renderer, std::string_view name)
     check_error(m_renderer.init(this));
     check_error(m_renderer.open_scene(m_scene));
 
-    m_control_state.register_on_obj_change([this] (ObserverPtr<Object> obj) {
+    m_control_state.register_on_obj_change([this] (auto&& obj) {
 	    on_obj_change(obj);
     });
     if(auto p_editor_renderer = dynamic_cast<EditorRenderer*>(&renderer); p_editor_renderer) {
-        m_control_state.register_on_obj_change([p_editor_renderer](ObserverPtr<Object> obj) {
-            p_editor_renderer->on_object_change(obj);
+        m_control_state.register_on_obj_change([p_editor_renderer](auto&& editable) {
+            p_editor_renderer->on_editable_change(editable);
         });
     }
     m_on_mouse_leave_scene_viewport_cb = [this] { on_mouse_leave_scene_viewport(); };
@@ -184,7 +184,7 @@ Basic Operations:\n\
             std::tie(m_scene, m_cam) = check_error(m_archive->load_file(path));
         }
         m_cam.set_aspect(m_renderer.get_config().get_aspect());
-        m_control_state.set_cur_obj(nullptr);
+        m_control_state.set_cur_obj(std::nullopt);
         check_error(m_renderer.open_scene(m_scene));
     }
     ImGui::SameLine();
@@ -209,9 +209,9 @@ Basic Operations:\n\
     {
         if (ImGui::BeginListBox("##Scene Objects", { 0, 200 }))
         {
-            for (auto const obj : m_scene) {
-                if (ImGui::Selectable(obj->get_name().data(), m_control_state.get_cur_obj() == obj)) {
-                    m_control_state.set_cur_obj(obj);
+            for (auto&& editable : m_scene.get_editables()) {
+                if (ImGui::Selectable(editable.get_name().data(), m_control_state.get_cur_obj() == editable)) {
+                    m_control_state.set_cur_obj(editable);
                 }
             }
 
@@ -240,7 +240,7 @@ Basic Operations:\n\
                 }
             }
             if (ImGui::MenuItem("Add Point Light")) {
-                
+                add_light(Light { m_scene,glm::vec3(1.0f), 1.0f, Transform{}});
             }
             ImGui::EndMenu();
         }
@@ -250,24 +250,26 @@ Basic Operations:\n\
 void EditorApplication::draw_object_panel() noexcept {
     if (ImGui::CollapsingHeader("Object Properties", ImGuiTreeNodeFlags_DefaultOpen)) {
         if (m_control_state.get_cur_obj()) {
-            auto& obj = *m_control_state.get_cur_obj();
+            auto& editable = m_control_state.get_cur_obj().value();
 
             // NOTE: no safety check here, cuz I'm lazy
             if (ImGui::InputText("Name", m_control_state.obj_name_buf.data(), m_control_state.obj_name_buf.size(),
                 ImGuiInputTextFlags_EnterReturnsTrue)) 
             {
-                obj.set_name(m_control_state.obj_name_buf.data());
+                editable.set_name(m_control_state.obj_name_buf.data());
             }
 
             auto&& gizmo_state = m_control_state.gizmo_state;
-            auto trans = obj.get_transform();
+            auto trans = editable.get_transform();
             if (ImGui::TransformField("Transform", trans, gizmo_state.op, gizmo_state.mode, gizmo_state.snap, gizmo_state.snap_scale)) {
-                obj.set_transform(trans);
+                editable.set_transform(trans);
             }
 
-            auto mat = obj.get_material();
-            if (ImGui::MaterialField("Material", mat)) {
-                obj.set_material(mat);
+            if (auto const obj = editable.as<Object>()) {
+                auto mat = obj->get_material();
+                if (ImGui::MaterialField("Material", mat)) {
+                    obj->set_material(mat);
+                }
             }
         } else {
             ImGui::Text("No object selected");
@@ -379,7 +381,7 @@ void EditorApplication::on_mouse_enter_scene_viewport() noexcept {
     m_control_state.is_outside_view = false;
 }
 
-void EditorApplication::on_obj_change(ObserverPtr<Object> obj) noexcept {}
+void EditorApplication::on_obj_change(std::optional<EditableView> obj) noexcept {}
 
 void EditorApplication::try_select_object() noexcept {
     auto pos = ImGui::GetMousePos();
@@ -398,7 +400,7 @@ void EditorApplication::try_select_object() noexcept {
     auto const ray = m_cam.viewport_to_ray(to_glm(pos), { m_renderer.get_config().width, m_renderer.get_config().height });
     auto const res = m_scene.ray_cast(ray);
     if (res) {
-        m_control_state.set_cur_obj(res); // note: deselection is handled by key press
+        m_control_state.set_cur_obj(*res); // note: deselection is handled by key press
     }
 }
 
@@ -411,7 +413,7 @@ void EditorApplication::handle_key_release() noexcept {
     }
     switch(input_state.cur_button_down) {
     case GLFW_KEY_DELETE:
-        remove_object(m_control_state.get_cur_obj());
+        remove_editable(m_control_state.get_cur_obj().value());
         break;
     case GLFW_KEY_W:
         gizmo_state.op = ImGuizmo::TRANSLATE;
@@ -426,7 +428,7 @@ void EditorApplication::handle_key_release() noexcept {
         gizmo_state.snap = !gizmo_state.snap;
         break;
     case GLFW_KEY_ESCAPE:
-        m_control_state.set_cur_obj(nullptr);
+        m_control_state.set_cur_obj(std::nullopt);
         break;
     default:
         break;
@@ -454,20 +456,44 @@ void EditorApplication::handle_mouse_release() noexcept {
 }
 
 void EditorApplication::add_object(Object obj) noexcept {
-    auto const hobj = m_scene.add_object(std::move(obj));
-    check_error(m_renderer.on_add_object(hobj));
-    m_control_state.set_cur_obj(hobj);
+    auto const pobj = m_scene.add_object(std::move(obj));
+    if(!pobj) {
+        this->log(LogLevel::Error, "failed to add object");
+    } else {
+        on_add_editable(*pobj);
+    }
 }
 
-void EditorApplication::remove_object(ObserverPtr<Object> obj) noexcept {
-    check_error(m_renderer.on_remove_object(obj));
-    m_scene.remove_object(m_control_state.get_cur_obj());
-	m_control_state.set_cur_obj(nullptr);
+void EditorApplication::add_light(Light light) noexcept {
+    auto const plight = m_scene.add_light(std::move(light));
+    if (!plight) {
+        this->log(LogLevel::Error, "failed to add object");
+    }
+    else {
+        on_add_editable(*plight);
+    }
+}
+
+void EditorApplication::remove_editable(EditableView editable) noexcept {
+    check_error(m_renderer.on_remove_editable(editable));
+
+    if (auto const obj = editable.as<Object>()) {
+        m_scene.remove_object(*obj);
+    } else if (auto const light = editable.as<Light>()) {
+        m_scene.remove_light(*light);
+    }
+
+    m_control_state.set_cur_obj(std::nullopt);
+}
+
+void EditorApplication::on_add_editable(EditableView editable) noexcept {
+    check_error(m_renderer.on_add_editable(editable));
+    m_control_state.set_cur_obj(editable);
 }
 
 void EditorApplication::on_log_added() { }
 
-void EditorApplication::ControlState::set_cur_obj(ObserverPtr<Object> obj) noexcept {
+void EditorApplication::ControlState::set_cur_obj(std::optional<EditableView> obj) noexcept {
     if (obj == m_cur_obj) {
         return;
     }

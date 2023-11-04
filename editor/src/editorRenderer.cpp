@@ -119,8 +119,8 @@ auto EditorRenderer::open_scene(View<Scene> scene) noexcept -> tl::expected<void
 
     CHECK_GL_ERROR();
 
-    for (auto const obj : scene.get()) {
-        TL_CHECK_AND_PASS(on_add_object(obj));
+    for (auto&& editable : scene.get().get_editables()) {
+        TL_CHECK_AND_PASS(on_add_editable(editable));
     }
 
     // Set a few settings/modes in OpenGL rendering
@@ -193,62 +193,72 @@ auto EditorRenderer::on_change_render_config(RenderConfig config) noexcept -> tl
 
 #pragma region Scene_Change_Callbacks
 
-auto EditorRenderer::on_add_object(ViewPtr<Object> obj) noexcept -> tl::expected<void, std::string> {
-    if (!obj) {
-        return {};
-    } else if (m_obj_data.count(obj)) {
-        return TL_ERROR("object added twice");
+auto EditorRenderer::on_add_editable(EditableView editable) noexcept -> tl::expected<void, std::string> {
+    if (auto const obj = editable.as<Object>()) {
+        if (m_obj_data.count(obj)) {
+            return TL_ERROR("object added twice");
+        }
+        TL_CHECK_AND_PASS(on_add_object_internal(m_obj_data[obj], *obj));
     }
-    TL_CHECK_AND_PASS(on_add_object_internal(m_obj_data[obj], obj));
 
     return {};
 }
 
-auto EditorRenderer::on_remove_object(ViewPtr<Object> obj) noexcept -> tl::expected<void, std::string> {
-    auto const it = m_obj_data.find(obj);
-    if(it == m_obj_data.end()) {
-        return TL_ERROR("on_remove_object: obj not found");
+auto EditorRenderer::on_remove_editable(EditableView editable) noexcept -> tl::expected<void, std::string> {
+    if (auto const obj = editable.as<Object>()) {
+        auto const it = m_obj_data.find(obj);
+        if (it == m_obj_data.end()) {
+            return TL_ERROR("obj not found");
+        }
+        m_obj_data.erase(obj);
     }
-    m_obj_data.erase(obj);
 
     return {};
 }
 
-void EditorRenderer::on_object_change(ViewPtr<Object> obj) noexcept {
-    // save last editing to the object editing data
-    commit_cur_shader_code();
-    m_cur_outline_obj = obj;
+void EditorRenderer::on_editable_change(std::optional<EditableView> editable) noexcept {
+    if (!editable) {
+        commit_cur_shader_code();
+        m_cur_outline_obj = nullptr;
+    } else if (auto const obj = editable->as<Object>()) {
+        // save last editing to the object editing data
+        commit_cur_shader_code();
+        m_cur_outline_obj = obj;
 
-    // update editor texts
-    for (auto const shader_type : EIter<ShaderType>{}) {
-        m_shader_editor_data[shader_type].editor.SetText(
-            m_obj_data[obj].editing_data.get_src(shader_type)
-        );
+        // update editor texts
+        for (auto const shader_type : EIter<ShaderType>{}) {
+            m_shader_editor_data[shader_type].editor.SetText(
+                m_obj_data[obj].editing_data.get_src(shader_type)
+            );
+        }
+    } else {
+        commit_cur_shader_code();
+        m_cur_outline_obj = nullptr;
     }
 }
 
-auto EditorRenderer::on_add_object_internal(Ref<PerObjectData> data, ViewPtr<Object> obj) noexcept -> tl::expected<void, std::string> {
-    TL_TRY_ASSIGN(data.get().shader, ShaderProgram::clone(m_default_shader.get()));
-	TL_TRY_ASSIGN(data.get().render_data, GLVertexArray::create(obj->get_vertices().size()));
+auto EditorRenderer::on_add_object_internal(PerObjectData& data, Object const& obj) noexcept -> tl::expected<void, std::string> {
+    TL_TRY_ASSIGN(data.shader, ShaderProgram::clone(m_default_shader.get()));
+	TL_TRY_ASSIGN(data.render_data, GLVertexArray::create(obj.get_vertices().size()));
 
-    TL_CHECK_AND_PASS(data.get().render_data->bind());
+    TL_CHECK_AND_PASS(data.render_data->bind());
     {
-        TL_CHECK_AND_PASS(data.get().render_data->connect(obj->get_vertices(),
+        TL_CHECK_AND_PASS(data.render_data->connect(obj.get_vertices(),
             GLAttributeInfo<glm::vec3> { 0, sizeof(Vertex), offsetof(Vertex, position) },
             GLAttributeInfo<glm::vec3> { 1, sizeof(Vertex), offsetof(Vertex, normal) },
             GLAttributeInfo<glm::vec3> { 2, sizeof(Vertex), offsetof(Vertex, uv) }
         ));
     }
-    data.get().render_data->unbind();
+    data.render_data->unbind();
 
     // update editor texts
     for (auto const shader_type : EIter<ShaderType>{}) {
         m_shader_editor_data[shader_type].editor.SetText(
-            m_obj_data[obj].editing_data.get_src(shader_type)
+            m_obj_data[&obj].editing_data.get_src(shader_type)
         );
     }
     m_extra_func_editor_data.editor.SetText(
-        m_obj_data[obj].editing_data.common_funcs
+        m_obj_data[&obj].editing_data.common_funcs
     );
 
     return {};
@@ -256,7 +266,7 @@ auto EditorRenderer::on_add_object_internal(Ref<PerObjectData> data, ViewPtr<Obj
 
 #pragma endregion Scene_Change_Callbacks
 
-auto EditorRenderer::render_internal(View<Camera> cam, GLuint fbo) noexcept -> tl::expected<void, std::string> {
+auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> tl::expected<void, std::string> {
     auto draw_outline = [this, cam, fbo](ViewPtr<Object> obj)-> tl::expected<void, std::string> {
         if (!m_outline.render_buf) {
             // initialize outline states
@@ -337,8 +347,8 @@ auto EditorRenderer::render_internal(View<Camera> cam, GLuint fbo) noexcept -> t
 
             TL_CHECK_AND_PASS(m_outline.shaders[0]->bind());
             {
-                TL_CHECK_AND_PASS(m_outline.shaders[0]->set_uniform(k_uniform_view, cam.get().get_view()));
-                TL_CHECK_AND_PASS(m_outline.shaders[0]->set_uniform(k_uniform_projection, cam.get().get_projection()));
+                TL_CHECK_AND_PASS(m_outline.shaders[0]->set_uniform(k_uniform_view, cam.get_view()));
+                TL_CHECK_AND_PASS(m_outline.shaders[0]->set_uniform(k_uniform_projection, cam.get_projection()));
                 TL_CHECK_AND_PASS(m_outline.shaders[0]->set_uniform(k_uniform_model, obj->get_transform().get_matrix()));
 
                 auto res = try_get_obj_data(obj);
@@ -404,6 +414,19 @@ auto EditorRenderer::render_internal(View<Camera> cam, GLuint fbo) noexcept -> t
 
     glViewport(0, 0, static_cast<GLsizei>(get_config().width), static_cast<GLsizei>(get_config().height));
 
+    // put light positions and colors into a contiguous array
+    auto num_lights = std::min(m_scene->get_lights().size(), k_maxLights);
+    auto light_positions = std::vector<glm::vec3>(num_lights);
+    auto light_colors = std::vector<glm::vec3>(num_lights);
+
+	for (auto [i, it] = std::tuple{ 0, m_scene->get_lights().begin() };
+        it != m_scene->get_lights().end();
+        ++it, ++i) 
+    {
+        light_positions[i] = it->get_transform().get_position();
+        light_colors[i] = it->get_color();
+    }
+
     // render objects
     for (auto [it, i] = std::tuple{ m_scene->get_objects().begin(), 0 }; it != m_scene->get_objects().end(); ++it) {
         auto&& obj = *it;
@@ -417,11 +440,12 @@ auto EditorRenderer::render_internal(View<Camera> cam, GLuint fbo) noexcept -> t
         TL_CHECK_AND_PASS(shader->bind());
 
         auto&& uniforms = shader->get_uniform_map().get();
-        // TODO: impl light
+        // light
     	if (uniforms.count(k_uniform_light_pos) && uniforms.count(k_uniform_light_color)) {
-            for (auto const& light : m_scene->get_lights()) {
-                
-            }
+            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_light_count, 
+                static_cast<int>(m_scene->get_lights().size())));
+            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_light_pos, tcb::make_span(light_positions)));
+            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_light_color, tcb::make_span(light_colors)));
         }
         // material
         if (uniforms.count(k_uniform_object_color)) {
@@ -429,10 +453,10 @@ auto EditorRenderer::render_internal(View<Camera> cam, GLuint fbo) noexcept -> t
         }
         // MVP
         if (uniforms.count(k_uniform_view)) {
-            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_view, cam.get().get_view()));
+            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_view, cam.get_view()));
         }
         if (uniforms.count(k_uniform_projection)) {
-            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_projection, cam.get().get_projection()));
+            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_projection, cam.get_projection()));
         }
         if (uniforms.count(k_uniform_model)) {
             TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_model, obj.get_transform().get_matrix()));
@@ -463,8 +487,8 @@ auto EditorRenderer::render_internal(View<Camera> cam, GLuint fbo) noexcept -> t
     TL_CHECK_AND_PASS(m_grid_render_data->bind());
     TL_CHECK_AND_PASS(m_grid_shader->bind());
     {
-        TL_CHECK_AND_PASS(m_grid_shader->set_uniform(k_uniform_view, cam.get().get_view()));
-        TL_CHECK_AND_PASS(m_grid_shader->set_uniform(k_uniform_projection, cam.get().get_projection()));
+        TL_CHECK_AND_PASS(m_grid_shader->set_uniform(k_uniform_view, cam.get_view()));
+        TL_CHECK_AND_PASS(m_grid_shader->set_uniform(k_uniform_projection, cam.get_projection()));
         TL_CHECK_AND_PASS(m_grid_render_data->draw_array(GL_LINES));
     }
     m_grid_shader->unbind();
@@ -624,7 +648,7 @@ auto EditorRenderer::draw_text_editor_header(Ref<PerTextEditorData> editor_ref) 
     }
 }
 
-auto EditorRenderer::draw_text_editor(Ref<PerTextEditorData> editor_ref) noexcept -> void {
+auto EditorRenderer::draw_text_editor(Ref<PerTextEditorData> editor_ref) const noexcept -> void {
     auto&& editor_data = editor_ref.get();
     auto& editor = editor_data.editor;
 

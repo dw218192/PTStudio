@@ -3,6 +3,7 @@
 #include <GL/glew.h>
 #include <variant>
 #include <glm/glm.hpp>
+#include <tcb/span.hpp>
 #include "utils.h"
 
 enum ShaderVariableType {
@@ -17,6 +18,11 @@ enum ShaderVariableType {
     IVec2 = 1 << 8,
     IVec3 = 1 << 9,
     IVec4 = 1 << 10,
+    Vec3Array = 1 << 11,
+    Vec4Array = 1 << 12,
+    Mat4Array = 1 << 14,
+    FloatArray = 1 << 15,
+    IntArray = 1 << 16,
 };
 
 template<typename T>
@@ -41,8 +47,18 @@ constexpr auto type_to_enum_msk(T) {
         return ShaderVariableType::IVec3;
     } else if constexpr (std::is_same_v<T, glm::ivec4>) {
         return ShaderVariableType::IVec4;
+    } else if constexpr (std::is_same_v<T, tcb::span<glm::vec3 const>>) {
+        return ShaderVariableType::Vec3Array;
+    } else if constexpr (std::is_same_v<T, tcb::span<glm::vec4 const>>) {
+        return ShaderVariableType::Vec4Array;
+    } else if constexpr (std::is_same_v<T, tcb::span<glm::mat4 const>>) {
+        return ShaderVariableType::Mat4Array;
+    } else if constexpr (std::is_same_v<T, tcb::span<float const>>) {
+        return ShaderVariableType::FloatArray;
+    } else if constexpr (std::is_same_v<T, tcb::span<int const>>) {
+        return ShaderVariableType::IntArray;
     } else {
-        static_assert(false, "Unsupported type");
+        static_assert(false, "Invalid type");
     }
 }
 
@@ -70,6 +86,16 @@ constexpr auto get_type_str(ShaderVariableType type) {
         return "ivec3";
     case ShaderVariableType::IVec4:
         return "ivec4";
+    case ShaderVariableType::Vec3Array:
+        return "vec3[]";
+    case ShaderVariableType::Vec4Array:
+        return "vec4[]";
+    case ShaderVariableType::Mat4Array:
+        return "mat4[]";
+    case ShaderVariableType::FloatArray:
+        return "float[]";
+    case ShaderVariableType::IntArray:
+        return "int[]";
     default:
         return "unknown";
     }
@@ -78,13 +104,13 @@ constexpr auto get_type_str(ShaderVariableType type) {
 struct UniformVar {
     friend struct ShaderProgram;
 
-    static auto create(GLenum type, GLint loc)  noexcept -> tl::expected<UniformVar, std::string>;
+    static auto create(GLenum type, GLint loc, std::string_view name)  noexcept -> tl::expected<UniformVar, std::string>;
 
     UniformVar() = default;
 
     template<typename T>
     UniformVar(ShaderVariableType type, GLint loc, T value) noexcept
-        : type(type), loc(loc), value(std::move(value)) {}
+        : m_type(type), m_loc(loc), value(std::move(value)) {}
     
     template<typename T>
     void set_value(T value) noexcept {
@@ -95,16 +121,16 @@ struct UniformVar {
         return std::get<T>(value);
     }
     auto get_type() const noexcept -> ShaderVariableType {
-        return type;
+        return m_type;
     }
     auto get_loc() const noexcept -> GLint {
-        return loc;
+        return m_loc;
     }
 private:
     auto upload() noexcept -> tl::expected<void, std::string>;
 
-    ShaderVariableType type;
-    GLint loc;
+    ShaderVariableType m_type;
+    GLint m_loc;
     std::variant<
         glm::mat3,
         glm::mat4,
@@ -115,6 +141,11 @@ private:
         glm::ivec3,
         glm::ivec4,
         float,
-        int
+        int,
+        tcb::span<glm::vec3 const>,
+        tcb::span<glm::vec4 const>,
+        tcb::span<glm::mat4 const>,
+        tcb::span<float const>,
+        tcb::span<int const>
     > value;
 };

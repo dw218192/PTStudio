@@ -125,7 +125,7 @@ namespace {
             }
 
             UniformVar var;
-            TL_TRY_ASSIGN(var, UniformVar::create(type, loc));
+            TL_TRY_ASSIGN(var, UniformVar::create(type, loc, name));
             uniforms.emplace(std::move(name), var);
         }
 

@@ -54,13 +54,13 @@ private:
     void draw_console_panel() const noexcept;
 
     // control conditions
-    bool can_rotate() const noexcept;
-    bool can_move() const noexcept;
+    auto can_rotate() const noexcept -> bool;
+    auto can_move() const noexcept -> bool;
 
     // events
     void on_mouse_leave_scene_viewport() noexcept;
     void on_mouse_enter_scene_viewport() noexcept;
-    void on_obj_change(ObserverPtr<Object> obj) noexcept;
+    void on_obj_change(std::optional<EditableView> editable) noexcept;
 
     // other helpers
     void try_select_object() noexcept;
@@ -68,8 +68,10 @@ private:
     void handle_mouse_press(int button) noexcept;
     void handle_mouse_release() noexcept;
     void add_object(Object obj) noexcept;
-    void remove_object(ObserverPtr<Object> obj) noexcept;
-    void on_log_added() override;
+    void add_light(Light light) noexcept;
+    void remove_editable(EditableView editable) noexcept;
+    void on_add_editable(EditableView editable) noexcept;
+	void on_log_added() override;
 
     std::string m_console_text;
 
@@ -82,9 +84,9 @@ private:
     std::unique_ptr<Archive> m_archive;
 
     struct ControlState {
-        using ObjChangeCallback = std::function<void(ObserverPtr<Object>)>;
+        using ObjChangeCallback = std::function<void(std::optional<EditableView>)>;
 
-        void set_cur_obj(ObserverPtr<Object> obj) noexcept;
+        void set_cur_obj(std::optional<EditableView> obj) noexcept;
         auto get_cur_obj() const noexcept { return m_cur_obj; }
         void register_on_obj_change(ObjChangeCallback callback) noexcept;
 
@@ -109,7 +111,7 @@ private:
             glm::vec3 snap_scale{ 1.0 };
         } gizmo_state{ };
     private:
-        ObserverPtr<Object> m_cur_obj = nullptr;
+        std::optional<EditableView> m_cur_obj;
         std::vector<ObjChangeCallback> m_obj_change_callbacks;
     } m_control_state;
 };

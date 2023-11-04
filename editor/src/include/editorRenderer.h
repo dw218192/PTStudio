@@ -26,11 +26,11 @@ friend Singleton;
     [[nodiscard]] auto render_buffered(View<Camera> cam) noexcept -> tl::expected<TextureHandle, std::string> override;
 	[[nodiscard]] auto valid() const noexcept -> bool override { return m_valid; }
     [[nodiscard]] auto on_change_render_config(RenderConfig config) noexcept -> tl::expected<void, std::string> override;
-    [[nodiscard]] auto on_add_object(ViewPtr<Object> obj) noexcept -> tl::expected<void, std::string> override;
-    [[nodiscard]] auto on_remove_object(ViewPtr<Object> obj) noexcept -> tl::expected<void, std::string> override;
-    [[nodiscard]] auto draw_imgui() noexcept -> tl::expected<void, std::string> override;
+    [[nodiscard]] auto on_add_editable(EditableView editable) noexcept -> tl::expected<void, std::string> override;
+    [[nodiscard]] auto on_remove_editable(EditableView editable) noexcept -> tl::expected<void, std::string> override;
+	[[nodiscard]] auto draw_imgui() noexcept -> tl::expected<void, std::string> override;
 
-    void on_object_change(ViewPtr<Object> obj) noexcept;
+    void on_editable_change(std::optional<EditableView> obj) noexcept;
 private:
     EditorRenderer(RenderConfig config) noexcept;
 
@@ -38,21 +38,21 @@ private:
     struct PerTextEditorData;
     struct PerObjectEditingData;
 
-    [[nodiscard]] auto on_add_object_internal(Ref<PerObjectData> data, ViewPtr<Object> obj) noexcept -> tl::expected<void, std::string>;
-    [[nodiscard]] auto render_internal(View<Camera> cam, GLuint fbo) noexcept -> tl::expected<void, std::string>;
+    [[nodiscard]] auto on_add_object_internal(PerObjectData& data, Object const& obj) noexcept -> tl::expected<void, std::string>;
+    [[nodiscard]] auto render_internal(Camera const& cam, GLuint fbo) noexcept -> tl::expected<void, std::string>;
     auto clear_render_data() -> void;
 
     auto commit_cur_shader_code() noexcept -> void;
 
     auto try_compile() noexcept -> void;
     auto draw_text_editor_header(Ref<PerTextEditorData> editor_ref) noexcept -> void;
-    auto draw_text_editor(Ref<PerTextEditorData> editor_ref) noexcept -> void;
+    auto draw_text_editor(Ref<PerTextEditorData> editor_ref) const noexcept -> void;
     auto draw_glsl_editor(ShaderType type, Ref<ShaderProgram> shader_ref, Ref<PerTextEditorData> editor_ref) noexcept
         -> tl::expected <void, std::string>;
 
     auto try_get_obj_data(ViewPtr<Object> obj) noexcept -> tl::expected<Ref<PerObjectData>, std::string>;
 
-    ViewPtr<Scene> m_scene{ nullptr };
+	ViewPtr<Scene> m_scene{ nullptr };
     GLFrameBufferRef m_render_buf{ nullptr };
 
     // outline drawing states
