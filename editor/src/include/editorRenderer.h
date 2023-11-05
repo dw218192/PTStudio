@@ -60,13 +60,21 @@ private:
         GLFrameBufferRef render_buf{ nullptr };
         std::array<ShaderProgramRef, std::size(vs_outline_passes)> shaders{};
         GLVertexArrayRef quad_render_data{ nullptr };
-    } m_outline;
+    } m_outline; // this is lazily initialized
 
-    // grid drawing states
+    // gizmo sprite drawing states, should be initialized in init()
+    struct GizmoSpriteData {
+        GLTextureRef texture{ nullptr };
+        GLVertexArrayRef render_data{ nullptr };
+        ShaderProgramRef shader{ nullptr };
+    };
+    GizmoSpriteData m_light_gizmo_data;
+
+    // grid drawing states, should be initialized in init()
     GLVertexArrayRef m_grid_render_data{ nullptr };
     ShaderProgramRef m_grid_shader{ nullptr };
 
-    // default shader
+    // default shader, should be initialized in init()
     ShaderProgramRef m_default_shader{ nullptr };
 
     // for shader editing

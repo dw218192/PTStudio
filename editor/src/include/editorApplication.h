@@ -83,6 +83,8 @@ private:
     Renderer& m_renderer;
     std::unique_ptr<Archive> m_archive;
 
+    GLTextureRef m_light_icon_tex;
+
     struct ControlState {
         using ObjChangeCallback = std::function<void(std::optional<EditableView>)>;
 

@@ -18,7 +18,7 @@ enum class FileFormat {
 using TextureHandle = Texture const*;
 
 struct Texture {
-    Texture(unsigned width, unsigned height) noexcept;
+    Texture(unsigned width, unsigned height, unsigned num_channel) noexcept;
     virtual ~Texture() noexcept = default;
 
     NODISCARD auto get_pixels() const noexcept -> std::vector<unsigned char> const& {
@@ -67,5 +67,6 @@ protected:
 	mutable std::vector<unsigned char> m_pixels;
     unsigned m_width{ 0 };
     unsigned m_height{ 0 };
+    unsigned m_num_channel{ 0 };
 	unsigned m_linear_sz{ 0 };
 };

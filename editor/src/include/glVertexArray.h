@@ -12,7 +12,7 @@ struct GLVertexArray;
 using GLVertexArrayRef = UniqueGLResRef<GLVertexArray>;
 
 struct GLVertexArray final : GLResource {
-	static auto create(GLsizei num_vertices) -> tl::expected<GLVertexArrayRef, std::string>;
+	[[nodiscard]] static auto create(GLsizei num_vertices) -> tl::expected<GLVertexArrayRef, std::string>;
 
 	GLVertexArray(GLVertexArray const&) = delete;
 	auto operator=(GLVertexArray const&) -> GLVertexArray& = delete;

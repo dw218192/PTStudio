@@ -135,7 +135,7 @@ void GLFWApplication::run() {
             loop(m_delta_time);
 
             // Process debug drawing events
-            get_debug_drawer().loop(m_delta_time);
+            get_debug_drawer().loop(*this, m_delta_time);
 
             ImGui::Render();
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -191,12 +191,6 @@ auto GLFWApplication::begin_imgui_window(
     std::optional<std::function<void()>> const& on_leave_region,
     std::optional<std::function<void()>> const& on_enter_region
 ) noexcept -> bool {
-    // NOTE: here we assume that recv_mouse_event will not change
-    // in the lifetime of the application
-    // i.e., the following code pattern will not happen:
-    // if (cond) begin_imgui_window("window1", true);
-    // else begin_imgui_window("window1", false);
-
     if (!m_imgui_window_info.count(name)) {
         m_imgui_window_info[name] = ImGuiWindowInfo {
             on_leave_region,
@@ -204,7 +198,7 @@ auto GLFWApplication::begin_imgui_window(
         };
     }
 
-    auto ret = ImGui::Begin(name.data(), nullptr, flags);
+    auto const ret = ImGui::Begin(name.data(), nullptr, flags);
     if (ImGui::IsWindowHovered()) {
         m_cur_hovered_widget = name;
         /*

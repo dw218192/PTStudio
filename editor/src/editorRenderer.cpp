@@ -13,6 +13,25 @@ constexpr auto k_clear_color = glm::vec3{ 0 };
 constexpr auto k_outline_scale = 1.02f;
 constexpr auto k_outline_color = glm::vec3{ 1, 0, 0 };
 
+constexpr float k_quad_data_pos_uv[] = {
+    // First triangle (positions)
+    -1.0f, -1.0f, 0.0f,
+    1.0f, -1.0f, 0.0f,
+    1.0f,  1.0f, 0.0f,
+    // Second triangle (positions)
+    -1.0f, -1.0f, 0.0f,
+    1.0f,  1.0f, 0.0f,
+    -1.0f,  1.0f, 0.0f,
+    // First triangle (UVs)
+    0.0f, 0.0f,
+    1.0f, 0.0f,
+    1.0f, 1.0f,
+    // Second triangle (UVs)
+    0.0f, 0.0f,
+    1.0f, 1.0f,
+    0.0f, 1.0f
+};
+
 EditorRenderer::EditorRenderer(RenderConfig config) noexcept : Renderer{std::move(config)} {
 
     auto lang = TextEditor::LanguageDefinition::GLSL();
@@ -90,15 +109,31 @@ auto EditorRenderer::init(ObserverPtr<Application> app) noexcept -> tl::expected
     } else if (!m_default_shader->valid()) {
         return TL_ERROR("invalid editor shader");
     }
-    m_valid = true;
+    
+    // set up gizmo sprite data
+    TL_TRY_ASSIGN(m_light_gizmo_data.texture, GLTexture::create(light_icon_png_data, FileFormat::PNG));
+    TL_TRY_ASSIGN(m_light_gizmo_data.render_data, GLVertexArray::create(6));
+    
+    TL_CHECK_AND_PASS(m_light_gizmo_data.render_data->bind());
+    m_light_gizmo_data.render_data->connect(tcb::make_span(k_quad_data_pos_uv),
+        GLAttributeInfo<glm::vec3> { 0, 0, 0 },
+        GLAttributeInfo<glm::vec2> { 1, 0, 18 * sizeof(float) }
+    );
+    m_light_gizmo_data.render_data->unbind();
+
+    {
+        ShaderProgram::ShaderDesc descs {
+            {ShaderType::Vertex, vs_billboard_src},
+            {ShaderType::Fragment, ps_billboard_src},
+        };
+        TL_TRY_ASSIGN(m_light_gizmo_data.shader, ShaderProgram::from_srcs(descs));
+    }
 
     // set up fonts for text editor
     // ImGui will use Font[0] as the default font
     ImGui::GetIO().Fonts->AddFontDefault();
     for (int sz = SharedTextEditorData::min_font_size; sz <= SharedTextEditorData::max_font_size; ++sz) {
         auto& font = SharedTextEditorData::fonts[sz - SharedTextEditorData::min_font_size];
-        //ImFontConfig config;
-        //config.SizePixels = static_cast<float>(sz);
         font = ImGui::GetIO().Fonts->AddFontFromMemoryCompressedBase85TTF(
             consolas_compressed_data_base85, static_cast<float>(sz)
         );
@@ -108,6 +143,7 @@ auto EditorRenderer::init(ObserverPtr<Application> app) noexcept -> tl::expected
         str = std::to_string(sz) + "px";
     }
 
+    m_valid = true;
     return {};
 }
 
@@ -312,25 +348,7 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
             TL_TRY_ASSIGN(m_outline.quad_render_data, GLVertexArray::create(6));
             TL_CHECK_AND_PASS(m_outline.quad_render_data->bind());
             {
-                static constexpr float data[] = {
-                    // First triangle (positions)
-                    -1.0f, -1.0f, 0.0f,
-                     1.0f, -1.0f, 0.0f,
-                     1.0f,  1.0f, 0.0f,
-                     // Second triangle (positions)
-                     -1.0f, -1.0f, 0.0f,
-                      1.0f,  1.0f, 0.0f,
-                     -1.0f,  1.0f, 0.0f,
-                     // First triangle (UVs)
-                     0.0f, 0.0f,
-                     1.0f, 0.0f,
-                     1.0f, 1.0f,
-                     // Second triangle (UVs)
-                     0.0f, 0.0f,
-                     1.0f, 1.0f,
-                     0.0f, 1.0f
-                };
-                TL_CHECK_AND_PASS(m_outline.quad_render_data->connect(tcb::make_span(data), 
+                TL_CHECK_AND_PASS(m_outline.quad_render_data->connect(tcb::make_span(k_quad_data_pos_uv), 
                     GLAttributeInfo<glm::vec3>{0, 0, 0},
                     GLAttributeInfo<glm::vec2>{1, 0, 18 * sizeof(float)}
                 ));
@@ -494,9 +512,25 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
         TL_CHECK_AND_PASS(m_grid_shader->set_uniform(k_uniform_projection, cam.get_projection()));
         TL_CHECK_AND_PASS(m_grid_render_data->draw_array(GL_LINES));
     }
-    m_grid_shader->unbind();
-    m_grid_render_data->unbind();
 
+    // render gizmo
+    if (!m_scene->get_lights().empty()) {
+        TL_CHECK_AND_PASS(m_light_gizmo_data.render_data->bind());
+        TL_CHECK_AND_PASS(m_light_gizmo_data.shader->bind());
+        {
+            TL_CHECK_AND_PASS(m_light_gizmo_data.shader->set_uniform(k_uniform_view, cam.get_view()));
+            TL_CHECK_AND_PASS(m_light_gizmo_data.shader->set_uniform(k_uniform_projection, cam.get_projection()));
+            TL_CHECK_AND_PASS(m_light_gizmo_data.shader->set_texture(k_uniform_sprite_texture, m_light_gizmo_data.texture.get(), 0));
+
+            // draw light gizmos
+            for (auto&& light : m_scene->get_lights()) {
+                TL_CHECK_AND_PASS(m_light_gizmo_data.shader->set_uniform(k_uniform_sprite_world_pos, light.get_transform().get_position()));
+                TL_CHECK_AND_PASS(m_light_gizmo_data.render_data->draw_array(GL_TRIANGLES));
+            }
+        }
+    }
+
+    // draw_outline will unbind the shader
     glDisable(GL_BLEND);
 
     // render outline

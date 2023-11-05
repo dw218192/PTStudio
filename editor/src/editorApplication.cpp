@@ -26,6 +26,9 @@ EditorApplication::EditorApplication(Renderer& renderer, std::string_view name)
     // initialize renderer
     check_error(m_renderer.init(this));
     check_error(m_renderer.open_scene(m_scene));
+    
+    // initialize gizmo icon textures
+    m_light_icon_tex = check_error(GLTexture::create(light_icon_png_data, FileFormat::PNG));
 
     m_control_state.register_on_obj_change([this] (auto&& obj) {
 	    on_obj_change(obj);
@@ -309,14 +312,15 @@ void EditorApplication::draw_scene_viewport(TextureHandle render_buf) noexcept {
         // draw x,y,z axis ref
         auto const conf = m_renderer.get_config();
         auto const vp_size = glm::ivec2 { conf.width, conf.height };
-        auto const axis_origin = m_cam.viewport_to_world(glm::vec2 {30, 30}, vp_size,0.0f);
-        constexpr float axis_len = 0.01f;
 
-        get_debug_drawer().begin_relative(to_glm(ImGui::GetWindowPos() + v_min));
-        get_debug_drawer().draw_line_3d(m_cam, vp_size, axis_origin, axis_origin + glm::vec3{ axis_len, 0, 0 }, { 1, 0, 0 }, 2.0f, 0.0f);
-        get_debug_drawer().draw_line_3d(m_cam, vp_size, axis_origin, axis_origin + glm::vec3{ 0, axis_len, 0 }, { 0, 1, 0 }, 2.0f, 0.0f);
-        get_debug_drawer().draw_line_3d(m_cam, vp_size, axis_origin, axis_origin + glm::vec3{ 0, 0, axis_len }, { 0, 0, 1 }, 2.0f, 0.0f);
-        get_debug_drawer().end_relative();
+        // TODO: figure out why ImGuiConfigFlags_ViewportsEnable makes these not work
+        //auto const axis_origin = m_cam.viewport_to_world(glm::vec2 {30, 30}, vp_size,0.0f);
+        //constexpr float axis_len = 0.01f;
+        //get_debug_drawer().begin_relative(to_glm(ImGui::GetWindowPos() + v_min));
+        //get_debug_drawer().draw_line_3d(m_cam, vp_size, axis_origin, axis_origin + glm::vec3{ axis_len, 0, 0 }, { 1, 0, 0 }, 2.0f, 0.0f);
+        //get_debug_drawer().draw_line_3d(m_cam, vp_size, axis_origin, axis_origin + glm::vec3{ 0, axis_len, 0 }, { 0, 1, 0 }, 2.0f, 0.0f);
+        //get_debug_drawer().draw_line_3d(m_cam, vp_size, axis_origin, axis_origin + glm::vec3{ 0, 0, axis_len }, { 0, 0, 1 }, 2.0f, 0.0f);
+        //get_debug_drawer().end_relative();
 
         // draw gizmos
         if (m_control_state.get_cur_obj()) {

@@ -13,10 +13,10 @@ void DebugDrawer::end_relative() noexcept {
 	m_offset = glm::vec2{ 0,0 };
 }
 
-void DebugDrawer::loop(float dt) noexcept {
+void DebugDrawer::loop(Ref<Application> app, float dt) noexcept {
 	for(auto it = m_draw_calls.begin(); it != m_draw_calls.end(); ) {
 		auto&& call = *it;
-		call.draw_call();
+		call.draw_call(app);
 		call.life -= dt;
 		
 		if (call.life <= 0) {
@@ -31,11 +31,11 @@ void DebugDrawer::draw_rect(glm::vec2 min, glm::vec2 max, glm::vec3 color, float
 	min += m_offset;
 	max += m_offset;
 
-	auto col = ImGui::ColorConvertFloat4ToU32(ImVec4(color.x, color.y, color.z, 1));
+	auto const col = ImGui::ColorConvertFloat4ToU32(ImVec4(color.x, color.y, color.z, 1));
 	m_draw_calls.emplace_back(
 		DrawCallInfo{
 			time,
-			[=]() {
+			[=](Ref<Application>) {
 				ImGui::GetForegroundDrawList()->AddRect(
 					ImVec2(min.x, min.y),
 					ImVec2(max.x, max.y),
@@ -53,11 +53,11 @@ void DebugDrawer::draw_line(glm::vec2 from, glm::vec2 to, glm::vec3 color, float
 	from += m_offset;
 	to += m_offset;
 
-	auto col = ImGui::ColorConvertFloat4ToU32(ImVec4(color.x, color.y, color.z, 1));
+	auto const col = ImGui::ColorConvertFloat4ToU32(ImVec4(color.x, color.y, color.z, 1));
 	m_draw_calls.emplace_back(
 		DrawCallInfo{
 			time,
-			[=]() {
+			[=](Ref<Application>) {
 				ImGui::GetForegroundDrawList()->AddLine(
 					ImVec2(from.x, from.y),
 					ImVec2(to.x, to.y),
@@ -68,6 +68,29 @@ void DebugDrawer::draw_line(glm::vec2 from, glm::vec2 to, glm::vec3 color, float
 		}
 	);
 }
+
+void DebugDrawer::draw_img(glm::vec2 pos, glm::vec2 size, TextureHandle tex, float time) noexcept {
+	pos += m_offset;
+
+	m_draw_calls.emplace_back(
+		DrawCallInfo{
+			time,
+			[=](Ref<Application> app) {
+				if (auto res = tex->bind(); !res) {
+					app.get().log(LogLevel::Error, res.error());
+					return;
+				}
+				ImGui::GetForegroundDrawList()->AddImage(
+					tex->get_id(),
+					ImVec2(pos.x, pos.y),
+					ImVec2(pos.x + size.x, pos.y + size.y)
+				);
+				tex->unbind();
+			}
+		}
+	);
+}
+
 void DebugDrawer::draw_rect_3d(View<Camera> cam, glm::ivec2 vp_size, glm::vec3 center, glm::vec3 extent, glm::vec3 color, float thickness, float time) noexcept {
 	glm::vec3 points[8];
 	int i = 0;
@@ -94,11 +117,11 @@ void DebugDrawer::draw_box(View<Camera> cam, glm::ivec2 vp_size, View<BoundingBo
 }
 
 void DebugDrawer::draw_line_3d(View<Camera> cam, glm::ivec2 vp_size, glm::vec3 from, glm::vec3 to, glm::vec3 color, float thickness, float time) noexcept {
-	auto col = ImGui::ColorConvertFloat4ToU32(ImVec4(color.x, color.y, color.z, 1));
+	auto const col = ImGui::ColorConvertFloat4ToU32(ImVec4(color.x, color.y, color.z, 1));
 	m_draw_calls.emplace_back(
 		DrawCallInfo{
 			time,
-			[=, offset = m_offset]() {
+			[=, offset = m_offset](Ref<Application>) {
 				// have to fetch these every frame because the camera might have changed
 				auto view_frm = cam.get().world_to_viewport(from, vp_size);
 				auto view_to = cam.get().world_to_viewport(to, vp_size);
@@ -119,4 +142,17 @@ void DebugDrawer::draw_line_3d(View<Camera> cam, glm::ivec2 vp_size, glm::vec3 f
 
 void DebugDrawer::draw_ray_3d(View<Camera> cam, glm::ivec2 vp_size, View<Ray> ray, glm::vec3 color, float thickness, float time) noexcept {
 	draw_line_3d(cam, vp_size, ray.get().origin, ray.get().get_point(100.0f), color, thickness, time);
+}
+
+void DebugDrawer::draw_img_3d(View<Camera> cam, glm::ivec2 vp_size, glm::vec3 pos, glm::vec2 size, TextureHandle tex, float time) noexcept {
+	m_draw_calls.emplace_back(
+		DrawCallInfo{
+			time,
+			[=, offset = m_offset](Ref<Application>) {
+				auto view_pos = cam.get().world_to_viewport(pos, vp_size);
+				view_pos += offset;
+				draw_img(view_pos, size, tex, time);
+			}
+		}
+	);
 }
