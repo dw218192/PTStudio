@@ -15,11 +15,11 @@
 #include "TextEditor.h"
 #include "enumArray.h"
 
-struct EditorRenderer final : Renderer, Singleton<EditorRenderer> {
-friend Singleton;
+struct EditorRenderer final : Renderer {
 	NO_COPY_MOVE(EditorRenderer);
-
+    EditorRenderer(RenderConfig config) noexcept;
     ~EditorRenderer() noexcept override;
+    
     [[nodiscard]] auto init(ObserverPtr<Application> app) noexcept -> tl::expected<void, std::string> override;
     [[nodiscard]] auto open_scene(View<Scene> scene) noexcept -> tl::expected<void, std::string> override;
     [[nodiscard]] auto render(View<Camera> cam) noexcept -> tl::expected<void, std::string> override;
@@ -32,7 +32,6 @@ friend Singleton;
 
     void on_editable_change(std::optional<EditableView> obj) noexcept;
 private:
-    EditorRenderer(RenderConfig config) noexcept;
 
     struct PerObjectData;
     struct PerTextEditorData;

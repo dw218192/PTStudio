@@ -6,8 +6,6 @@ int main() {
         1280, 720,
         60.0, 120.0
     };
-
-    EditorRenderer::create(config);
-	EditorApplication::create(EditorRenderer::get(), "PT Editor");
+	EditorApplication::create("PT Editor", config);
     EditorApplication::get().run();
 }

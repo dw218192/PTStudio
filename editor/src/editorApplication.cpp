@@ -18,28 +18,22 @@ static constexpr auto k_inspector_win_name = "Inspector";
 static constexpr auto k_scene_view_win_name = "Scene";
 static constexpr auto k_console_win_name = "Console";
 
-EditorApplication::EditorApplication(Renderer& renderer, std::string_view name)
-    : GLFWApplication { name, renderer.get_config().width, renderer.get_config().height, renderer.get_config().min_frame_time },
-    m_cam{ renderer.get_config().fovy, renderer.get_config().get_aspect(), LookAtParams{} },
-    m_renderer{ renderer }, m_archive{ new JsonArchive }
+EditorApplication::EditorApplication(std::string_view name, RenderConfig config)
+    : GLFWApplication { name, config.width, config.height, config.min_frame_time },
+    m_config{config}, m_cam{ config.fovy, config.get_aspect(), LookAtParams{} },
+    m_archive{ new JsonArchive }
 {
-    // initialize renderer
-    check_error(m_renderer.init(this));
-    check_error(m_renderer.open_scene(m_scene));
-    
+
     // initialize gizmo icon textures
     m_light_icon_tex = check_error(GLTexture::create(light_icon_png_data, FileFormat::PNG));
 
     m_control_state.register_on_obj_change([this] (auto&& obj) {
 	    on_obj_change(obj);
     });
-    if(auto p_editor_renderer = dynamic_cast<EditorRenderer*>(&renderer); p_editor_renderer) {
-        m_control_state.register_on_obj_change([p_editor_renderer](auto&& editable) {
-            p_editor_renderer->on_editable_change(editable);
-        });
-    }
+
     m_on_mouse_leave_scene_viewport_cb = [this] { on_mouse_leave_scene_viewport(); };
     m_on_mouse_enter_scene_viewport_cb = [this] { on_mouse_enter_scene_viewport(); };
+    add_renderer(std::make_unique<EditorRenderer>(config));
 }
 void EditorApplication::cursor_moved(double x, double y) {
     auto& input_state = m_control_state.input_state;
@@ -98,6 +92,25 @@ void EditorApplication::key_pressed(int key, int scancode, int action, int mods)
     }
 }
 
+void EditorApplication::add_renderer(std::unique_ptr<Renderer> renderer) noexcept {
+    if (!renderer) {
+        this->log(LogLevel::Error, "add_renderer(): renderer is null");
+        return;
+    }
+    
+    // initialize renderer
+    check_error(renderer->init(this));
+    check_error(renderer->open_scene(m_scene));
+
+    if(auto p_editor_renderer = dynamic_cast<EditorRenderer*>(renderer.get()); p_editor_renderer) {
+        m_control_state.register_on_obj_change([p_editor_renderer](auto&& editable) {
+            p_editor_renderer->on_editable_change(editable);
+        });
+    }
+
+    m_renderers.emplace_back(std::move(renderer));
+}
+
 void EditorApplication::on_begin_first_loop() {
     GLFWApplication::on_begin_first_loop();
 
@@ -129,7 +142,7 @@ void EditorApplication::loop(float dt) {
     ImGuizmo::BeginFrame();
 
     ImGui::DockSpaceOverViewport(ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
-    auto const render_tex = check_error(m_renderer.render_buffered(m_cam));
+    auto const render_tex = check_error(get_cur_renderer().render_buffered(m_cam));
 
     // draw left panel
     if (begin_imgui_window(k_scene_setting_win_name, ImGuiWindowFlags_NoMove))
@@ -154,7 +167,7 @@ void EditorApplication::loop(float dt) {
 
     // draw the scene view
     if (begin_imgui_window(k_scene_view_win_name,
-        ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoMove,
+        ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_MenuBar,
         m_on_mouse_leave_scene_viewport_cb,
         m_on_mouse_enter_scene_viewport_cb))
     {
@@ -162,7 +175,7 @@ void EditorApplication::loop(float dt) {
     }
     end_imgui_window();
 
-    check_error(m_renderer.draw_imgui());
+    check_error(get_cur_renderer().draw_imgui());
 }
 
 void EditorApplication::quit(int code) {
@@ -186,10 +199,8 @@ Basic Operations:\n\
         auto const path = ImGui::FileDialogue(ImGui::FileDialogueMode::OPEN, m_archive->get_ext().data());
         if (!path.empty()) {
             std::tie(m_scene, m_cam) = check_error(m_archive->load_file(path));
+            on_scene_opened(m_scene);
         }
-        m_cam.set_aspect(m_renderer.get_config().get_aspect());
-        m_control_state.set_cur_obj(std::nullopt);
-        check_error(m_renderer.open_scene(m_scene));
     }
     ImGui::SameLine();
     if (ImGui::Button("Save Scene")) {
@@ -285,7 +296,23 @@ void EditorApplication::draw_object_panel() noexcept {
 }
 
 void EditorApplication::draw_scene_viewport(TextureHandle render_buf) noexcept {
-    if (m_renderer.valid()) {
+    if (ImGui::BeginMenuBar()) {
+        ImGui::Text("Select Renderer");
+        ImGui::SameLine();
+        if (ImGui::Combo("##Select Renderer", &m_control_state.cur_renderer_idx,
+            [](void* data, int idx, char const** out_text) {
+                auto const& renderers = *static_cast<std::vector<std::unique_ptr<Renderer>> const*>(data);
+                *out_text = renderers[idx]->get_name().data();
+                return true;
+            }, &m_renderers, m_renderers.size())) 
+        {
+            on_render_config_change(m_config);
+        }
+        
+        ImGui::EndMenuBar();
+    }
+
+    if (get_cur_renderer().valid()) {
         static auto last_size = ImVec2{ 0, 0 };
 
         auto const v_min = ImGui::GetWindowContentRegionMin();
@@ -293,12 +320,9 @@ void EditorApplication::draw_scene_viewport(TextureHandle render_buf) noexcept {
         auto const view_size = v_max - v_min;
 
         if (std::abs(view_size.x - last_size.x) >= 0.01f || std::abs(view_size.y - last_size.y) >= 0.01f) {
-            auto conf = m_renderer.get_config();
-            conf.width = static_cast<unsigned>(view_size.x);
-            conf.height = static_cast<unsigned>(view_size.y);
-            m_cam.set_aspect(conf.get_aspect());
-            m_cam.set_fov(conf.fovy);
-            check_error(m_renderer.on_change_render_config(conf));
+            m_config.width = static_cast<unsigned>(view_size.x);
+            m_config.height = static_cast<unsigned>(view_size.y);
+            on_render_config_change(m_config);
             last_size = view_size;
         }
 
@@ -310,8 +334,7 @@ void EditorApplication::draw_scene_viewport(TextureHandle render_buf) noexcept {
         render_buf->unbind();
 
         // draw x,y,z axis ref
-        auto const conf = m_renderer.get_config();
-        auto const vp_size = glm::ivec2 { conf.width, conf.height };
+        auto const vp_size = glm::ivec2 { m_config.width, m_config.height };
 
         // TODO: figure out why ImGuiConfigFlags_ViewportsEnable makes these not work
         //auto const axis_origin = m_cam.viewport_to_world(glm::vec2 {30, 30}, vp_size,0.0f);
@@ -381,6 +404,23 @@ bool EditorApplication::can_move() const noexcept {
         m_control_state.input_state.cur_mouse_down == GLFW_MOUSE_BUTTON_LEFT;
 }
 
+void EditorApplication::on_scene_opened(Scene const& scene) {
+    m_cam.set_aspect(m_config.get_aspect());
+    m_control_state.set_cur_obj(std::nullopt);
+
+    for (auto&& renderer : m_renderers) {
+        check_error(renderer->open_scene(scene));
+    }
+}
+
+void EditorApplication::on_render_config_change(RenderConfig const& conf) {
+    m_cam.set_aspect(conf.get_aspect());
+    m_cam.set_fov(conf.fovy);
+    for (auto&& renderer : m_renderers) {
+        check_error(renderer->on_change_render_config(conf));
+    }
+}
+
 void EditorApplication::on_mouse_leave_scene_viewport() noexcept {
     m_control_state.is_outside_view = true;
 }
@@ -405,7 +445,7 @@ void EditorApplication::try_select_object() noexcept {
 
     // convert to viewport space
     pos = pos - win_pos.value();
-    auto const ray = m_cam.viewport_to_ray(to_glm(pos), { m_renderer.get_config().width, m_renderer.get_config().height });
+    auto const ray = m_cam.viewport_to_ray(to_glm(pos), { m_config.width, m_config.height });
     if (auto const res = m_scene.ray_cast_editable(ray)) {
         m_control_state.set_cur_obj(*res); // note: deselection is handled by key press
     }
@@ -481,8 +521,10 @@ void EditorApplication::add_light(Light light) noexcept {
     }
 }
 
-void EditorApplication::remove_editable(EditableView editable) noexcept {
-    check_error(m_renderer.on_remove_editable(editable));
+void EditorApplication::remove_editable(EditableView editable) {
+    for (auto&& renderer : m_renderers) {
+        check_error(renderer->on_remove_editable(editable));
+    }
 
     if (auto const obj = editable.as<Object>()) {
         m_scene.remove_object(*obj);
@@ -493,12 +535,24 @@ void EditorApplication::remove_editable(EditableView editable) noexcept {
     m_control_state.set_cur_obj(std::nullopt);
 }
 
-void EditorApplication::on_add_editable(EditableView editable) noexcept {
-    check_error(m_renderer.on_add_editable(editable));
+void EditorApplication::on_add_editable(EditableView editable) {
+    for (auto&& renderer : m_renderers) {
+        check_error(renderer->on_add_editable(editable));
+    }
+    
     m_control_state.set_cur_obj(editable);
 }
 
 void EditorApplication::on_log_added() { }
+
+auto EditorApplication::get_cur_renderer() noexcept -> Renderer& {
+    if (m_control_state.cur_renderer_idx >= m_renderers.size() || m_control_state.cur_renderer_idx < 0) {
+        this->log(LogLevel::Error, "the current renderer is no longer valid");
+        m_control_state.cur_renderer_idx = k_default_renderer_idx;
+    }
+
+    return *m_renderers[m_control_state.cur_renderer_idx];
+}
 
 void EditorApplication::ControlState::set_cur_obj(std::optional<EditableView> obj) noexcept {
     if (obj == m_cur_obj) {

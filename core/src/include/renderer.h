@@ -11,12 +11,12 @@ struct Application;
 struct Renderer {
 	NO_COPY_MOVE(Renderer);
 
-	explicit Renderer(RenderConfig config) noexcept;
+	explicit Renderer(RenderConfig config, std::string_view name) noexcept;
     virtual ~Renderer() noexcept;
 
     NODISCARD virtual auto init(ObserverPtr<Application> app) noexcept -> tl::expected<void, std::string>;
 	/**
-	 * \brief Opens a new scene
+	 * \brief Opens a new scene and closes the current one if there is one
 	 * \param scene The scene to be opened
 	 * \return on failure, an error message
 	 */
@@ -72,6 +72,12 @@ struct Renderer {
     NODISCARD auto get_config() const noexcept -> RenderConfig const& { return m_config; }
 
     /**
+     * \brief Gets the name of the renderer
+     * \return The name of the renderer
+     */
+    NODISCARD auto get_name() const noexcept -> std::string_view { return m_name; }
+
+    /**
 	 * \brief Draws any custom UI that might help editing that is specific to a renderer
 	 * \return on failure, an error message
 	 */
@@ -80,6 +86,7 @@ struct Renderer {
     }
 
 protected:
+    std::string m_name;
     RenderConfig m_config;
     ObserverPtr<Application> m_app{ nullptr };
 };

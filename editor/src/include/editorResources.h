@@ -121,6 +121,7 @@ R"(
 #version 330 core
 layout (location = 0) in vec3 aPos;
 layout (location = 1) in vec2 aTexCoords;
+uniform float u_scale;
 uniform vec3 u_worldPos;
 uniform mat4 u_view;
 uniform mat4 u_projection;
@@ -130,7 +131,8 @@ void main() {
     vec3 n = -normalize(pos);
     vec3 u = normalize(cross(vec3(0.0, 1.0, 0.0), n));
     vec3 v = normalize(cross(n, u));
-    pos = aPos.x * u + aPos.y * v + aPos.z * n + pos;
+    vec3 objPos = aPos * u_scale;
+    pos = objPos.x * u + objPos.y * v + objPos.z * n + pos;
     gl_Position = u_projection * vec4(pos, 1.0);
     uv = aTexCoords;
 }
@@ -153,6 +155,7 @@ constexpr char const* k_uniform_texel_size = "texelSize";
 constexpr char const* k_uniform_thickness = "thickness";
 constexpr char const* k_uniform_sprite_texture = "u_spriteTexture";
 constexpr char const* k_uniform_sprite_world_pos = "u_worldPos";
+constexpr char const* k_uniform_sprite_scale = "u_scale";
 
 constexpr char const* k_uniform_light_count = "u_lightCount";
 constexpr char const* k_uniform_model = "u_model";

@@ -16,6 +16,7 @@
 constexpr float k_init_move_sensitivity = 5.0;
 constexpr float k_init_rot_sensitivity = 60.0;
 constexpr float k_object_select_mouse_time = 1.0f;
+constexpr int k_default_renderer_idx = 0;
 
 struct EditorApplication final : GLFWApplication, Singleton<EditorApplication> {
 friend Singleton;
@@ -26,6 +27,7 @@ NO_COPY_MOVE(EditorApplication);
     void mouse_scroll(double x, double y) override;
     void key_pressed(int key, int scancode, int action, int mods) override;
 
+    void add_renderer(std::unique_ptr<Renderer> renderer) noexcept;
     void loop(float dt) override;
     void quit(int code) override;
     /**
@@ -44,7 +46,7 @@ protected:
     void on_begin_first_loop() override;
 
 private:
-    EditorApplication(Renderer& renderer, std::string_view name);
+    EditorApplication(std::string_view name, RenderConfig config);
     ~EditorApplication() override = default;
 
     // imgui rendering
@@ -58,6 +60,8 @@ private:
     auto can_move() const noexcept -> bool;
 
     // events
+    void on_scene_opened(Scene const& scene);
+    void on_render_config_change(RenderConfig const& conf);
     void on_mouse_leave_scene_viewport() noexcept;
     void on_mouse_enter_scene_viewport() noexcept;
     void on_obj_change(std::optional<EditableView> editable) noexcept;
@@ -69,18 +73,20 @@ private:
     void handle_mouse_release() noexcept;
     void add_object(Object obj) noexcept;
     void add_light(Light light) noexcept;
-    void remove_editable(EditableView editable) noexcept;
-    void on_add_editable(EditableView editable) noexcept;
+    void remove_editable(EditableView editable);
+    void on_add_editable(EditableView editable);
 	void on_log_added() override;
+    auto get_cur_renderer() noexcept -> Renderer&;
 
     std::string m_console_text;
 
     std::function<void()> m_on_mouse_leave_scene_viewport_cb;
     std::function<void()> m_on_mouse_enter_scene_viewport_cb;
     
+    RenderConfig m_config;
     Scene m_scene;
     Camera m_cam;
-    Renderer& m_renderer;
+    std::vector<std::unique_ptr<Renderer>> m_renderers;
     std::unique_ptr<Archive> m_archive;
 
     GLTextureRef m_light_icon_tex;
@@ -97,6 +103,7 @@ private:
         std::array<char, 1024> obj_name_buf {};
 
         bool is_outside_view{ false };
+        int cur_renderer_idx{ k_default_renderer_idx };
 
         struct InputState {
             bool first_time_motion{ true };

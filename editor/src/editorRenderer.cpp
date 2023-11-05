@@ -12,6 +12,7 @@ constexpr auto k_grid_spacing = 1.0f;
 constexpr auto k_clear_color = glm::vec3{ 0 };
 constexpr auto k_outline_scale = 1.02f;
 constexpr auto k_outline_color = glm::vec3{ 1, 0, 0 };
+constexpr auto k_sprite_scale = 0.35f;
 
 constexpr float k_quad_data_pos_uv[] = {
     // First triangle (positions)
@@ -32,7 +33,7 @@ constexpr float k_quad_data_pos_uv[] = {
     0.0f, 1.0f
 };
 
-EditorRenderer::EditorRenderer(RenderConfig config) noexcept : Renderer{std::move(config)} {
+EditorRenderer::EditorRenderer(RenderConfig config) noexcept : Renderer{std::move(config), "EditorRenderer"} {
 
     auto lang = TextEditor::LanguageDefinition::GLSL();
     for (auto const k : glsl_keywords)
@@ -521,6 +522,7 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
             TL_CHECK_AND_PASS(m_light_gizmo_data.shader->set_uniform(k_uniform_view, cam.get_view()));
             TL_CHECK_AND_PASS(m_light_gizmo_data.shader->set_uniform(k_uniform_projection, cam.get_projection()));
             TL_CHECK_AND_PASS(m_light_gizmo_data.shader->set_texture(k_uniform_sprite_texture, m_light_gizmo_data.texture.get(), 0));
+            TL_CHECK_AND_PASS(m_light_gizmo_data.shader->set_uniform(k_uniform_sprite_scale, k_sprite_scale));
 
             // draw light gizmos
             for (auto&& light : m_scene->get_lights()) {
