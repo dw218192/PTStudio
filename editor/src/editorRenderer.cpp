@@ -7,6 +7,9 @@
 
 #include <algorithm>
 
+using namespace PTS;
+using namespace PTS::Editor;
+
 constexpr auto k_grid_dim = 100.0f;
 constexpr auto k_grid_spacing = 1.0f;
 constexpr auto k_clear_color = glm::vec3{ 0 };

@@ -4,6 +4,7 @@
 
 #include <tiny_obj_loader.h>
 #include <glm/ext/scalar_constants.hpp>
+using namespace PTS;
 
 Object::Object(Scene const& scene, Transform transform, Material mat, tcb::span<Vertex const> vertices, std::string_view name)
     : m_mat { std::move(mat) }, m_vertices { vertices.begin(), vertices.end() }, m_name { name }

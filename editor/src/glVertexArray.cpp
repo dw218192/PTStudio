@@ -1,6 +1,8 @@
 #include "include/glVertexArray.h"
 #include "utils.h"
 
+using namespace PTS;
+
 auto GLVertexArray::create(GLsizei num_vertices) -> tl::expected<GLVertexArrayRef, std::string> {
 	GLuint vao;
 	glGenVertexArrays(1, &vao);

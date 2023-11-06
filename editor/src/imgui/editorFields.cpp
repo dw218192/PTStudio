@@ -3,7 +3,7 @@
 #include <imgui.h>
 #include <glm/gtc/type_ptr.hpp>
 
-bool ImGui::TransformField(const char* label, Transform& transform, ImGuizmo::OPERATION& op, ImGuizmo::MODE& mode, bool& snap, glm::vec3& snap_scale) {
+bool ImGui::TransformField(const char* label, PTS::Transform& transform, ImGuizmo::OPERATION& op, ImGuizmo::MODE& mode, bool& snap, glm::vec3& snap_scale) {
     bool changed = false;
     if(ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto pos = transform.get_position();
@@ -12,15 +12,15 @@ bool ImGui::TransformField(const char* label, Transform& transform, ImGuizmo::OP
 
         if(ImGui::InputFloat3("position", glm::value_ptr(pos))) {
             changed = true;
-            transform.set_position(TransformSpace::WORLD, pos);
+            transform.set_position(PTS::TransformSpace::WORLD, pos);
         }
         if(ImGui::InputFloat3("rotation", glm::value_ptr(rot))) {
             changed = true;
-            transform.set_rotation(TransformSpace::WORLD, rot);
+            transform.set_rotation(PTS::TransformSpace::WORLD, rot);
         }
         if(ImGui::InputFloat3("scale", glm::value_ptr(scale))) {
             changed = true;
-            transform.set_scale(TransformSpace::WORLD, scale);
+            transform.set_scale(PTS::TransformSpace::WORLD, scale);
         }
 
         ImGui::SeparatorText("Transform Mode");
@@ -64,10 +64,10 @@ bool ImGui::TransformField(const char* label, Transform& transform, ImGuizmo::OP
     return changed;
 }
 
-bool ImGui::ShaderVariableField(const char* label, UniformVar& variable) {
+bool ImGui::ShaderVariableField(const char* label, PTS::UniformVar& variable) {
     bool changed = false;
     switch (variable.get_type()) {
-        case ShaderVariableType::Mat3: {
+        case PTS::ShaderVariableType::Mat3: {
             ImGui::Text("%s (Mat3)", label);
 
             auto value = variable.get_value<glm::mat3>().get();
@@ -78,7 +78,7 @@ bool ImGui::ShaderVariableField(const char* label, UniformVar& variable) {
             }
             break;
         }
-        case ShaderVariableType::Mat4:{
+        case PTS::ShaderVariableType::Mat4:{
             ImGui::Text("%s (Mat4)", label);
 
             auto value = variable.get_value<glm::mat4>().get();
@@ -89,7 +89,7 @@ bool ImGui::ShaderVariableField(const char* label, UniformVar& variable) {
             }
             break;
         }
-        case ShaderVariableType::Vec2: {
+        case PTS::ShaderVariableType::Vec2: {
             ImGui::Text("%s (Vec2)", label);
 
             auto value = variable.get_value<glm::vec2>().get();
@@ -99,7 +99,7 @@ bool ImGui::ShaderVariableField(const char* label, UniformVar& variable) {
             
             break;
         }
-        case ShaderVariableType::Vec3:
+        case PTS::ShaderVariableType::Vec3:
             ImGui::Text("%s (Vec3)", label);
 
             auto value = variable.get_value<glm::vec3>().get();
@@ -108,7 +108,7 @@ bool ImGui::ShaderVariableField(const char* label, UniformVar& variable) {
             }
         
             break;
-        case ShaderVariableType::Vec4: {
+        case PTS::ShaderVariableType::Vec4: {
             ImGui::Text("%s (Vec4)", label);
 
             auto value = variable.get_value<glm::vec4>().get();
@@ -118,7 +118,7 @@ bool ImGui::ShaderVariableField(const char* label, UniformVar& variable) {
 
             break;
         }
-        case ShaderVariableType::Float: {
+        case PTS::ShaderVariableType::Float: {
             ImGui::Text("%s (Float)", label);
 
             auto value = variable.get_value<float>().get();
@@ -127,7 +127,7 @@ bool ImGui::ShaderVariableField(const char* label, UniformVar& variable) {
             }
             break;
         }
-        case ShaderVariableType::Int: {
+        case PTS::ShaderVariableType::Int: {
             ImGui::Text("%s (Int)", label);
             
             auto value = variable.get_value<int>().get();

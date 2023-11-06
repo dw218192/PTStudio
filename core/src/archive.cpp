@@ -1,7 +1,7 @@
 #include "archive.h"
 #include <fstream>
 
-auto Archive::load_file(std::string_view file) noexcept -> tl::expected<std::pair<Scene, Camera>, std::string> {
+auto PTS::Archive::load_file(std::string_view file) noexcept -> tl::expected<std::pair<Scene, Camera>, std::string> {
 	std::ifstream stream { file.data() };
 	if (!stream.is_open()) {
 		return TL_ERROR("Failed to open archive file " + std::string{ file });
@@ -10,7 +10,7 @@ auto Archive::load_file(std::string_view file) noexcept -> tl::expected<std::pai
 	return load(data);
 }
 
-auto Archive::save_file(View<Scene> scene_view, View<Camera> camera_view, std::string_view file) noexcept -> tl::expected<void, std::string> {
+auto PTS::Archive::save_file(View<Scene> scene_view, View<Camera> camera_view, std::string_view file) noexcept -> tl::expected<void, std::string> {
 	std::ofstream stream{ file.data() };
 	if (!stream.is_open()) {
 		return TL_ERROR("Failed to open archive file " + std::string{ file });

@@ -88,18 +88,19 @@ constexpr T div_up(T x, T y) {
 // useful typedefs
 // TODO: may implement these as classes later
 // because raw ptrs are not zero default-init'ed
+namespace PTS {
+	// non-owning ptr
+	template<typename T> using ObserverPtr = T*;
 
-// non-owning ptr
-template<typename T> using ObserverPtr = T*;
+	// non-owning ptr to a const, essentially a view
+	template<typename T> using ViewPtr = T const*;
 
-// non-owning ptr to a const, essentially a view
-template<typename T> using ViewPtr = T const*;
+	// non-owning view
+	template<typename T> using Ref = std::reference_wrapper<T>;
 
-// non-owning view
-template<typename T> using Ref = std::reference_wrapper<T>;
-
-// non-owning view to a const
-template<typename T> using View = std::reference_wrapper<T const>;
+	// non-owning view to a const
+	template<typename T> using View = std::reference_wrapper<T const>;
+}
 
 #define NO_COPY_MOVE(Ty)\
 Ty(Ty const&) = delete;\

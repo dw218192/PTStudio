@@ -8,6 +8,8 @@
 #include <glm/ext/matrix_transform.hpp>
 #include <algorithm>
 
+using namespace PTS;
+
 Scene::Scene() = default;
 
 auto Scene::from_obj_file(std::string_view filename) noexcept -> tl::expected<Scene, std::string> {

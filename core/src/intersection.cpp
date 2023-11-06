@@ -6,6 +6,8 @@
 #define LARGE_FLOAT 1e6f
 #define EPSILON 1e-6f
 
+using namespace PTS;
+
 // we try to avoid any functions in std namespace
 // because we need this code to be runnable on both host and device
 auto Intersection::ray_box(BoundingBox const& box, Ray const& r) noexcept -> Result {

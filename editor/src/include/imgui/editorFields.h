@@ -9,11 +9,11 @@
 #include "../UniformVar.h"
 
 namespace ImGui {    
-    bool TransformField(const char* label, Transform& transform, ImGuizmo::OPERATION& op, ImGuizmo::MODE& mode, bool& snap, glm::vec3& snap_scale);
-    bool ShaderVariableField(const char* label, UniformVar& variable);
+    bool TransformField(const char* label, PTS::Transform& transform, ImGuizmo::OPERATION& op, ImGuizmo::MODE& mode, bool& snap, glm::vec3& snap_scale);
+    bool ShaderVariableField(const char* label, PTS::UniformVar& variable);
     
     // reflectable types can be inspected in the editor and modified automatically
-    template<typename Reflected, typename = std::enable_if_t<is_reflectable<Reflected>::value>>
+    template<typename Reflected, typename = std::enable_if_t<PTS::is_reflectable<Reflected>::value>>
     bool ReflectedField(const char* label, Reflected& reflected) {
         bool changed = false;
         if (ImGui::CollapsingHeader(label)) {

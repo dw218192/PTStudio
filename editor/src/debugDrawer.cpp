@@ -5,6 +5,8 @@
 #include "camera.h"
 #include "ray.h"
 
+using namespace PTS;
+
 void DebugDrawer::begin_relative(glm::vec2 offset) noexcept {
 	m_offset = offset;
 }

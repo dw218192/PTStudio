@@ -6,6 +6,7 @@
 #include <tcb/span.hpp>
 #include "utils.h"
 
+namespace PTS {
 enum ShaderVariableType {
     Mat3 = 1,
     Mat4 = 2,
@@ -149,3 +150,5 @@ private:
         tcb::span<int const>
     > value;
 };
+
+}

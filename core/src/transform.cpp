@@ -4,6 +4,8 @@
 #include <glm/gtx/euler_angles.hpp>
 #include <glm/gtx/transform.hpp>
 
+using namespace PTS;
+
 namespace {
     void decompose(glm::mat4 const& mat, glm::vec3& ppos, glm::vec3& prot, glm::vec3& pscale) {
         ppos = glm::column(mat, 3);

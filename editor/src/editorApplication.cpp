@@ -13,6 +13,8 @@
 #include "intersection.h"
 #include "jsonArchive.h"
 
+using namespace PTS;
+using namespace PTS::Editor;
 
 static constexpr auto k_scene_setting_win_name = "Scene Settings";
 static constexpr auto k_inspector_win_name = "Inspector";
@@ -453,28 +455,40 @@ void EditorApplication::try_select_object() noexcept {
 void EditorApplication::handle_key_release() noexcept {
     auto& gizmo_state = m_control_state.gizmo_state;
     auto& input_state = m_control_state.input_state;
-    if (!m_control_state.get_cur_obj() || ImGuizmo::IsUsing() || get_cur_focused_widget() != k_scene_view_win_name) {
+    if (!m_control_state.get_cur_obj() || ImGuizmo::IsUsing()) {
         input_state.cur_button_down = -1;
         return;
     }
     switch(input_state.cur_button_down) {
     case GLFW_KEY_DELETE:
-        remove_editable(m_control_state.get_cur_obj().value());
+        if (get_cur_focused_widget() == k_scene_view_win_name) {
+            remove_editable(m_control_state.get_cur_obj().value());
+        }
         break;
     case GLFW_KEY_W:
-        gizmo_state.op = ImGuizmo::TRANSLATE;
+        if (get_cur_focused_widget() == k_scene_view_win_name) {
+            gizmo_state.op = ImGuizmo::TRANSLATE;
+        }
         break;
     case GLFW_KEY_E:
-        gizmo_state.op = ImGuizmo::ROTATE;
+        if (get_cur_focused_widget() == k_scene_view_win_name) {
+            gizmo_state.op = ImGuizmo::ROTATE;
+        }
         break;
     case GLFW_KEY_R:
-        gizmo_state.op = ImGuizmo::SCALE;
+        if (get_cur_focused_widget() == k_scene_view_win_name) {
+            gizmo_state.op = ImGuizmo::SCALE;
+        }
         break;
     case GLFW_KEY_X:
-        gizmo_state.snap = !gizmo_state.snap;
+        if (get_cur_focused_widget() == k_scene_view_win_name) {
+            gizmo_state.snap = !gizmo_state.snap;
+        }
         break;
     case GLFW_KEY_ESCAPE:
-        m_control_state.set_cur_obj(std::nullopt);
+        if (get_cur_focused_widget() == k_scene_view_win_name) {
+            m_control_state.set_cur_obj(std::nullopt);
+        }
         break;
     case GLFW_KEY_F: {
 	        BoundingBox local_bound;

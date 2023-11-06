@@ -12,6 +12,10 @@
 #include "glTexture.h"
 #include "singleton.h"
 #include "archive.h"
+#include "camera.h"
+
+namespace PTS {
+namespace Editor {
 
 constexpr float k_init_move_sensitivity = 5.0;
 constexpr float k_init_rot_sensitivity = 60.0;
@@ -144,4 +148,7 @@ constexpr decltype(auto) EditorApplication::check_error(tl::expected<T, E>&& res
 	if constexpr (!std::is_void_v<T>) {
         return std::move(res).value();
     }
+}
+
+}
 }

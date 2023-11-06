@@ -1,5 +1,7 @@
 #include "include/glResource.h"
 
+using namespace PTS;
+
 GLResource::GLResource(GLResource&& other) noexcept {
     swap(std::move(other));
 }

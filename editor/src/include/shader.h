@@ -17,6 +17,8 @@
 #include "uniformVar.h"
 #include "shaderType.h"
 
+namespace PTS {
+
 using ShaderProgramRef = UniqueGLResRef<ShaderProgram>;
 using ShaderRef = UniqueGLResRef<Shader>;
 
@@ -116,4 +118,6 @@ auto ShaderProgram::set_uniform(std::string_view name, UniformType&& value) noex
     CHECK_GL_ERROR();
 
     return {};
+}
+
 }

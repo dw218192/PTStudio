@@ -2,6 +2,8 @@
 #include <fstream>
 #include <stb_image.h>
 
+using namespace PTS;
+
 auto GLTexture::fetch_pixels() const noexcept -> tl::expected<void, std::string> {
     TL_CHECK_AND_PASS(bind());
     glGetTexImage(GL_TEXTURE_2D, 0, m_format, GL_UNSIGNED_BYTE, m_pixels.data());

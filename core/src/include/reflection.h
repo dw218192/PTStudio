@@ -3,55 +3,55 @@
 #include <utility>
 #include <tuple>
 #include <optional>
+namespace PTS {
+    /**
+     * simple reflection
+     * limitations:
+     *  - doesn't include inherited members
+     *  - only single declaration per line
+     *  - FIELD(type<a,b,c,..>, name) doesn't work, alias the type first
+     *  - relies on non-standard __COUNTER__ macro, but g++, clang, and msvc all support it
+     *  - access control change in END_REFLECT() may cause bugs
+    */
+    template<typename... Modifiers>
+    struct ModifierPack {
+        std::tuple<Modifiers...> args;
+        constexpr ModifierPack(Modifiers... args) : args(std::make_tuple(args...)) {}
 
-/**
- * simple reflection
- * limitations:
- *  - doesn't include inherited members
- *  - only single declaration per line
- *  - FIELD(type<a,b,c,..>, name) doesn't work, alias the type first
- *  - relies on non-standard __COUNTER__ macro, but g++, clang, and msvc all support it
- *  - access control change in END_REFLECT() may cause bugs
-*/
-template<typename... Modifiers>
-struct ModifierPack {
-    std::tuple<Modifiers...> args;
-    constexpr ModifierPack(Modifiers... args) : args(std::make_tuple(args...)) {}
-
-    template<typename Callable>
-    constexpr void for_each(Callable&& callable) const {
-        std::apply([&callable](auto&&... args) {
-            (callable(args), ...);
-        }, args);
-    }
-};
-template<typename T>
-struct MMin {
-    T value;
-    static constexpr std::string_view name = "min";
-    constexpr MMin(T val) : value(val) {}
-};
-template<typename T>
-struct MMax {
-    T value;
-    static constexpr std::string_view name = "max";
-    constexpr MMax(T val) : value(val) {}
-};
-template<typename T>
-struct MRange {
-    T min, max, step;
-    static constexpr std::string_view name = "range";
-    constexpr MRange(T min, T max, T step) : min(min), max(max), step(step) {}
-};
-struct MSerialize {
-    static constexpr std::string_view name = "serialize";
-};
-struct MNoInspect {
-    static constexpr std::string_view name = "no inspect";
-};
-struct MColor {
-    static constexpr std::string_view name = "color";
-};
+        template<typename Callable>
+        constexpr void for_each(Callable&& callable) const {
+            std::apply([&callable](auto&&... args) {
+                (callable(args), ...);
+                }, args);
+        }
+    };
+    template<typename T>
+    struct MMin {
+        T value;
+        static constexpr std::string_view name = "min";
+        constexpr MMin(T val) : value(val) {}
+    };
+    template<typename T>
+    struct MMax {
+        T value;
+        static constexpr std::string_view name = "max";
+        constexpr MMax(T val) : value(val) {}
+    };
+    template<typename T>
+    struct MRange {
+        T min, max, step;
+        static constexpr std::string_view name = "range";
+        constexpr MRange(T min, T max, T step) : min(min), max(max), step(step) {}
+    };
+    struct MSerialize {
+        static constexpr std::string_view name = "serialize";
+    };
+    struct MNoInspect {
+        static constexpr std::string_view name = "no inspect";
+    };
+    struct MColor {
+        static constexpr std::string_view name = "color";
+    };
 
 #define STR(x) #x
 #define BEGIN_REFLECT_IMPL(_cls, _counter)\
@@ -120,30 +120,31 @@ public:\
 #define FIELD_MOD(type, var_name, init, ...) FIELD_IMPL_MOD(__COUNTER__, type, var_name, init, __VA_ARGS__)
 #define END_REFLECT() END_REFLECT_IMPL(__COUNTER__)
 
-// type traits
-template<typename T>
-struct is_reflectable {
-    template<typename U>
-    static auto test(int) -> decltype(U::is_reflectable(), std::true_type{});
-    template<typename>
-    static auto test(...) -> std::false_type;
-    static constexpr bool value = decltype(test<T>(0))::value;
-};
+    // type traits
+    template<typename T>
+    struct is_reflectable {
+        template<typename U>
+        static auto test(int) -> decltype(U::is_reflectable(), std::true_type{});
+        template<typename>
+        static auto test(...) -> std::false_type;
+        static constexpr bool value = decltype(test<T>(0))::value;
+    };
 
-template<typename T>
-struct has_serialization_callback {
-    template<typename U>
-    static auto test(int) -> decltype(std::declval<U>().on_serialize(), std::true_type{});
-    template<typename>
-    static auto test(...) -> std::false_type;
-    static constexpr bool value = decltype(test<T>(0))::value;
-};
+    template<typename T>
+    struct has_serialization_callback {
+        template<typename U>
+        static auto test(int) -> decltype(std::declval<U>().on_serialize(), std::true_type{});
+        template<typename>
+        static auto test(...) -> std::false_type;
+        static constexpr bool value = decltype(test<T>(0))::value;
+    };
 
-template<typename T>
-struct has_deserialization_callback {
-    template<typename U>
-    static auto test(int) -> decltype(std::declval<U>().on_deserialize(), std::true_type{});
-    template<typename>
-    static auto test(...) -> std::false_type;
-    static constexpr bool value = decltype(test<T>(0))::value;
-};
+    template<typename T>
+    struct has_deserialization_callback {
+        template<typename U>
+        static auto test(int) -> decltype(std::declval<U>().on_deserialize(), std::true_type{});
+        template<typename>
+        static auto test(...) -> std::false_type;
+        static constexpr bool value = decltype(test<T>(0))::value;
+    };
+}

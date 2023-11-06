@@ -5,6 +5,8 @@
 #include "enumIter.h"
 #include "transactionScope.h"
 
+using namespace PTS;
+
 namespace {
     auto to_gl_type(ShaderType type) noexcept -> GLenum {
         switch (type) {

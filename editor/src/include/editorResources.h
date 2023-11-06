@@ -261,17 +261,17 @@ void main() {
 }
 )";
 
-constexpr EArray<ShaderType, std::string_view> k_default_shader_header = {
-    { ShaderType::Vertex,   join_v<k_glsl_ver, k_uniform_decl, k_vertex_attributes_decl> },
-    { ShaderType::Fragment, join_v<k_glsl_ver, k_uniform_decl> }
+constexpr PTS::EArray<PTS::ShaderType, std::string_view> k_default_shader_header = {
+    {PTS::ShaderType::Vertex,   join_v<k_glsl_ver, k_uniform_decl, k_vertex_attributes_decl> },
+    {PTS::ShaderType::Fragment, join_v<k_glsl_ver, k_uniform_decl> }
 };
-constexpr EArray<ShaderType, std::optional<std::string_view>> k_default_shader_srcs_unprocessed = {
-    { ShaderType::Vertex,   k_default_vs_obj_src_unprocessed },
-    { ShaderType::Fragment, k_default_ps_obj_src_unprocessed }
+constexpr PTS::EArray<PTS::ShaderType, std::optional<std::string_view>> k_default_shader_srcs_unprocessed = {
+    {PTS::ShaderType::Vertex,   k_default_vs_obj_src_unprocessed },
+    {PTS::ShaderType::Fragment, k_default_ps_obj_src_unprocessed }
 };
-constexpr EArray<ShaderType, std::optional<std::string_view>> k_default_shader_srcs = {
-    { ShaderType::Vertex,   join_v<k_glsl_ver, k_uniform_decl, k_vertex_attributes_decl, k_default_vs_obj_src_unprocessed>},
-    { ShaderType::Fragment, join_v<k_glsl_ver, k_uniform_decl, k_default_ps_obj_src_unprocessed> }
+constexpr PTS::EArray<PTS::ShaderType, std::optional<std::string_view>> k_default_shader_srcs = {
+    {PTS::ShaderType::Vertex,   join_v<k_glsl_ver, k_uniform_decl, k_vertex_attributes_decl, k_default_vs_obj_src_unprocessed>},
+    {PTS::ShaderType::Fragment, join_v<k_glsl_ver, k_uniform_decl, k_default_ps_obj_src_unprocessed> }
 };
 // for shader editor https://github.com/BalazsJako/ImGuiColorTextEdit/issues/121
 static const char* const glsl_keywords[] = {

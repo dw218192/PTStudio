@@ -1,6 +1,8 @@
 #include "texture.h"
 #include "stb_image_write.h"
 
+using namespace PTS;
+
 Texture::Texture(unsigned width, unsigned height, unsigned num_channel) noexcept :
 	m_width{width}, m_height{height}, m_num_channel{ num_channel }, m_linear_sz{ width * height * num_channel }
 {

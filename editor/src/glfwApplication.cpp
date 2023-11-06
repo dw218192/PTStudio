@@ -5,6 +5,8 @@
 #include "include/imgui/imhelper.h"
 #include <iostream>
 
+using namespace PTS;
+
 // stubs for callbacks
 static void click_func(GLFWwindow* window, int button, int action, int mods) {
     auto const app = static_cast<GLFWApplication*>(glfwGetWindowUserPointer(window));

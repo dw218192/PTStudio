@@ -1,6 +1,8 @@
 #include "include/uniformVar.h"
 #include <glm/gtc/type_ptr.hpp>
 
+using namespace PTS;
+
 auto to_variable_type(GLenum type, std::string_view name) noexcept -> tl::expected<ShaderVariableType, std::string> {
 	if (name.find('[') != std::string_view::npos) {
         switch (type) {

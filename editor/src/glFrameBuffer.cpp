@@ -3,6 +3,8 @@
 #include "include/glTexture.h"
 #include "utils.h"
 
+using namespace PTS;
+
 static constexpr GLenum k_color_attachments[] = {
 	GL_COLOR_ATTACHMENT0,
 	GL_COLOR_ATTACHMENT1,

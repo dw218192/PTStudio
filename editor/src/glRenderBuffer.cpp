@@ -1,6 +1,8 @@
 #include "include/glRenderBuffer.h"
 #include "utils.h"
 
+using namespace PTS;
+
 auto GLRenderBuffer::create(unsigned width, unsigned height, GLenum format) -> tl::expected<GLRenderBufferRef, std::string> {
 	GLuint rbo;
 	TL_TRY_ASSIGN(rbo, create_buf(width, height, format));

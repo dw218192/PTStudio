@@ -10,10 +10,10 @@
 #include "utils.h"
 #include "application.h"
 
+namespace PTS {
 struct BoundingBox;
 struct Camera;
 struct Ray;
-
 struct DebugDrawer {
 	static constexpr float k_default_lifetime = 2;
 	static constexpr float k_default_thickness = 2;
@@ -40,3 +40,4 @@ private:
 	glm::vec2 m_offset = glm::vec2{ 0,0 };
 	std::list<DrawCallInfo> m_draw_calls;
 };
+}

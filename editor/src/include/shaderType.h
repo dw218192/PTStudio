@@ -1,6 +1,8 @@
 #pragma once
 #include "utils.h"
 
+
+namespace PTS {
 struct Shader;
 struct ShaderProgram;
 DECL_ENUM(ShaderType,
@@ -15,4 +17,5 @@ constexpr auto to_string(ShaderType type) {
         return "Fragment Shader";
 	}
     return "";
+}
 }

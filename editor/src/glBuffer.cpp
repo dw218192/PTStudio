@@ -1,5 +1,7 @@
 #include "include/glBuffer.h"
 
+using namespace PTS;
+
 auto GLBuffer::create(GLenum target) -> tl::expected<GLBufferRef, std::string> {
 	GLuint buffer;
 	glGenBuffers(1, &buffer);

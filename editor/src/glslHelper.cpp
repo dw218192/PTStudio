@@ -4,6 +4,8 @@
 #include <regex>
 #include <sstream>
 
+using namespace PTS;
+
 auto GLSLHelper::preprocess(ShaderType type, std::string_view common_funcs, std::string_view main_src) -> std::string {
     return std::string{ k_default_shader_header[type] } + common_funcs.data() + "\n" + main_src.data();
 }
