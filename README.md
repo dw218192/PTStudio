@@ -6,8 +6,8 @@ This project is still in its early stage and might be quite buggy. I am still **
 
 ## Screenshots and Videos
 ![Screenshot](docs/readme_assets/scene_editing.png)
----
-<video src="./docs/readme_assets/PT%20Editor%202023-11-05%2023-25-34.mp4" controls title="Title"></video>
+
+https://github.com/dw218192/PTStudio/assets/31294154/6c956cb8-3d53-4e00-8419-cb108d74fecd
 
 ## Build Instructions
 
