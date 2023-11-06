@@ -54,3 +54,9 @@ auto Intersection::ray_triangle(tcb::span<glm::vec3 const, 3> triangle, Ray cons
     auto const hit = glm::intersectRayTriangle(r.origin, r.direction, triangle[0], triangle[1], triangle[2], bary_pos, dist);
     return Result{ hit, dist };
 }
+
+auto Intersection::ray_sphere(BoundingSphere const& sphere, Ray const& r) noexcept -> Result {
+    float dist = 0;
+    auto const hit = glm::intersectRaySphere(r.origin, r.direction, sphere.center, sphere.radius * sphere.radius, dist);
+    return Result{ hit, dist };
+}

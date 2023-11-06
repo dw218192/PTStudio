@@ -5,6 +5,18 @@
 #include "concat.h"
 #include "enumArray.h"
 
+constexpr char const* k_editor_tutorial_text = R"(This is a simple editor.
+Basic Operations:
+- Left click to select object
+- Press Escape to deselect object
+- Press Delete to delete selected object
+- Press F to focus on selected object
+- Right click to rotate camera
+- Left click + drag to move camera
+- Press W/E/R to switch between translate/rotate/scale gizmo
+- Press X to toggle snap
+)";
+
 // shaders
 // outline works by first rendering the object slightly scaled up, with a solid color
 // then rendering the object normally, with the outline color, but with depth testing disabled

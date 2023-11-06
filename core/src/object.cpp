@@ -3,7 +3,7 @@
 #include "scene.h"
 
 #include <tiny_obj_loader.h>
-
+#include <glm/ext/scalar_constants.hpp>
 
 Object::Object(Scene const& scene, Transform transform, Material mat, tcb::span<Vertex const> vertices, std::string_view name)
     : m_mat { std::move(mat) }, m_vertices { vertices.begin(), vertices.end() }, m_name { name }
@@ -198,34 +198,53 @@ auto Object::make_cube_obj(Scene const& scene, Material mat, Transform trans) no
     return Object { scene, std::move(trans), std::move(mat), std::move(vertices) };
 }
 
-void Object::set_transform(Transform transform) noexcept {
-    m_transform = std::move(transform);
-}
+auto Object::make_sphere_obj(Scene const& scene, Material mat, Transform trans) noexcept -> Object {
+    // see http://www.songho.ca/opengl/gl_sphere.html
+    std::vector<Vertex> points;
 
-auto Object::get_transform() const noexcept -> Transform const& {
-    return m_transform;
-}
+    // will make these customizable later as a component
+    float radius = 1.0f;
+    float length_inv = 1.0f / radius;
+    int sector_count = 36;
+    int stack_count = 18;
+    float sector_step = 2 * glm::pi<float>() / sector_count;
+    float stack_step = glm::pi<float>() / stack_count;
+    for(int i = 0; i <= stack_count; ++i)
+    {
+        auto stack_angle = glm::pi<float>() / 2 - i * stack_step;
+        auto xy = radius * glm::cos(stack_angle);
+        auto z = radius * glm::sin(stack_angle);
 
-void Object::set_name(std::string_view name) noexcept {
-    m_name = name;
-}
+        for(int j = 0; j <= sector_count; ++j) {
+            auto sectorAngle = j * sector_step;       
+            auto x = xy * cosf(sectorAngle);
+            auto y = xy * sinf(sectorAngle);
+            auto nx = x * length_inv;
+            auto ny = y * length_inv;
+            auto nz = z * length_inv;
+            auto s = static_cast<float>(j) / sector_count;
+            auto t = static_cast<float>(i) / sector_count;
+            points.emplace_back(Vertex{ glm::vec3{ x, y, z }, glm::vec3{ nx, ny, nz }, glm::vec2{ s, t } });
+        }
+    }
 
-void Object::set_material(Material mat) noexcept {
-    m_mat = std::move(mat);
-}
+    std::vector<Vertex> vertices;
+    for(int i = 0; i < stack_count; ++i) {
+        auto k1 = i * (sector_count + 1);
+        auto k2 = k1 + sector_count + 1;
+        for(int j = 0; j < sector_count; ++j, ++k1, ++k2) {
+            if(i != 0) {
+                vertices.emplace_back(points[k1]);
+                vertices.emplace_back(points[k2]);
+                vertices.emplace_back(points[k1 + 1]);
+            }
+            if(i != (stack_count - 1)) {
+                vertices.emplace_back(points[k1 + 1]);
+                vertices.emplace_back(points[k2]);
+                vertices.emplace_back(points[k2 + 1]);
+            }
+        }
+    }
 
-auto Object::get_name() const noexcept -> std::string_view {
-    return m_name;
-}
-
-auto Object::get_bound() const noexcept -> BoundingBox const& {
-    return m_local_bound;
-}
-
-auto Object::get_vertices() const noexcept -> tcb::span<Vertex const> {
-    return m_vertices;
-}
-
-auto Object::get_material() const noexcept -> Material const& {
-    return m_mat;
+    return Object { scene, std::move(trans), std::move(mat), std::move(vertices) };
 }

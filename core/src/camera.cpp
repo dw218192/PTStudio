@@ -77,6 +77,23 @@ void Camera::set_delta_zoom(float delta) noexcept {
     on_view_changed();
 }
 
+void Camera::set_eye(glm::vec3 const& eye) noexcept {
+    m_eye = eye;
+    on_deserialize();
+}
+
+void Camera::set_center(glm::vec3 const& center) noexcept {
+    m_center = center;
+    on_deserialize();
+}
+
+void Camera::set(LookAtParams const& params) noexcept {
+    m_eye = params.eye;
+    m_center = params.center;
+    m_up = params.up;
+    on_deserialize();
+}
+
 void Camera::on_deserialize() noexcept {
     m_arm_dir = m_eye - m_center;
     m_view = glm::lookAt(m_eye, m_center, m_up);

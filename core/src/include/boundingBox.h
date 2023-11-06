@@ -2,13 +2,13 @@
 
 #include <glm/glm.hpp>
 #include <vector>
-
+#include <limits>
 #include "vertex.h"
 #include "utils.h"
 #include "reflection.h"
 
 struct BoundingBox {
-    BoundingBox() noexcept = default;
+    BoundingBox() noexcept : min_pos{ std::numeric_limits<float>::max() }, max_pos{ std::numeric_limits<float>::lowest() } { }
     BoundingBox(glm::vec3 min_pos, glm::vec3 max_pos) noexcept : min_pos{ min_pos }, max_pos{ max_pos } { }
 
 	BEGIN_REFLECT(BoundingBox);

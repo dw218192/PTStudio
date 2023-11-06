@@ -5,6 +5,7 @@
 #include "include/imgui/fileDialogue.h"
 #include "include/imgui/imhelper.h"
 #include "include/editorRenderer.h"
+#include "boundingVolume.h"
 
 #include <filesystem>
 #include <imgui_internal.h>
@@ -183,16 +184,7 @@ void EditorApplication::quit(int code) {
 }
 
 void EditorApplication::draw_scene_panel() noexcept {
-    ImGui::TextUnformatted("\
-This is a simple editor.\n\
-Basic Operations:\n\
-- Left click to select object\n\
-- Right click to rotate camera\n\
-- Left click + drag to move camera\n\
-- Press W/E/R to switch between translate/rotate/scale gizmo\n\
-- Press X to toggle snap\n\
-- Press Delete to delete selected object\n\
-- Press Escape to deselect object");
+    ImGui::TextUnformatted(k_editor_tutorial_text);
     ImGui::Separator();
 
     if (ImGui::Button("Open Scene")) {
@@ -242,7 +234,7 @@ Basic Operations:\n\
                 add_object(Object::make_cube_obj(m_scene, Material{}, Transform{}));
             }
             if (ImGui::MenuItem("Sphere")) {
-                this->log(LogLevel::Warning, "not implemented");
+                add_object(Object::make_sphere_obj(m_scene, Material{}, Transform{}));
             }
             if (ImGui::MenuItem("Import .obj File")) {
                 auto const path = ImGui::FileDialogue(ImGui::FileDialogueMode::OPEN, "obj");
@@ -334,9 +326,9 @@ void EditorApplication::draw_scene_viewport(TextureHandle render_buf) noexcept {
         render_buf->unbind();
 
         // draw x,y,z axis ref
-        auto const vp_size = glm::ivec2 { m_config.width, m_config.height };
 
         // TODO: figure out why ImGuiConfigFlags_ViewportsEnable makes these not work
+        //auto const vp_size = glm::ivec2{ m_config.width, m_config.height };
         //auto const axis_origin = m_cam.viewport_to_world(glm::vec2 {30, 30}, vp_size,0.0f);
         //constexpr float axis_len = 0.01f;
         //get_debug_drawer().begin_relative(to_glm(ImGui::GetWindowPos() + v_min));
@@ -392,14 +384,14 @@ void EditorApplication::draw_console_panel() const noexcept {
 
 bool EditorApplication::can_rotate() const noexcept {
     return
-        get_cur_focused_widget() == k_scene_view_win_name &&
+        get_cur_hovered_widget() == k_scene_view_win_name &&
         !ImGuizmo::IsUsing() &&
         m_control_state.input_state.cur_mouse_down == GLFW_MOUSE_BUTTON_RIGHT;
 }
 
 bool EditorApplication::can_move() const noexcept {
     return
-        get_cur_focused_widget() == k_scene_view_win_name &&
+        get_cur_hovered_widget() == k_scene_view_win_name &&
         !ImGuizmo::IsUsing() &&
         m_control_state.input_state.cur_mouse_down == GLFW_MOUSE_BUTTON_LEFT;
 }
@@ -477,6 +469,21 @@ void EditorApplication::handle_key_release() noexcept {
     case GLFW_KEY_ESCAPE:
         m_control_state.set_cur_obj(std::nullopt);
         break;
+    case GLFW_KEY_F:
+        if (m_control_state.get_cur_obj()) {
+            BoundingBox local_bound;
+            if(auto obj = m_control_state.get_cur_obj().value().as<Object>()) {
+                local_bound = obj->get_bound();
+            } else if(auto light = m_control_state.get_cur_obj().value().as<Light>()) {
+                local_bound = BoundingBox { glm::vec3 { -0.5f }, glm::vec3 { 0.5f } };
+            }
+            LookAtParams params;
+            params.center = m_control_state.get_cur_obj()->get_transform().get_position();
+            params.eye = params.center + local_bound.get_extent() * 2.0f;
+            params.up = glm::vec3 { 0, 1, 0 };
+            m_cam.set(params);
+        }
+        break;
     default:
         break;
     }
@@ -503,11 +510,21 @@ void EditorApplication::handle_mouse_release() noexcept {
 }
 
 void EditorApplication::add_object(Object obj) noexcept {
+    auto const bbox = m_scene.get_scene_bound();
     auto const pobj = m_scene.add_object(std::move(obj));
     if(!pobj) {
         this->log(LogLevel::Error, "failed to add object");
     } else {
         on_add_editable(*pobj);
+    }
+
+    // we imagine that the camera view is a sphere
+    // if the scene bound is outside the sphere, move the camera to a better position
+    auto const new_bbox = m_scene.get_scene_bound();
+    auto const radius = glm::length(m_cam.get_eye() - m_cam.get_center());
+    auto const new_radius = new_bbox.get_extent().length();
+    if (new_radius > radius * 1.5f) {
+        m_cam.set(m_scene.get_good_cam_start());
     }
 }
 

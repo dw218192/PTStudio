@@ -19,7 +19,17 @@ struct Camera {
     NODISCARD auto get_projection() const noexcept -> glm::mat4 const& { return m_projection; }
     NODISCARD auto get_fov() const noexcept { return m_fov; }
     NODISCARD auto get_aspect() const noexcept { return m_aspect; }
+
+    /**
+     * \brief Returns the position of the camera
+     * \return the position of the camera
+    */
     NODISCARD auto get_eye() const noexcept { return m_eye; }
+
+    /**
+     * \brief Returns the point that the camera is looking at
+     * \return the point that the camera is looking at
+    */
     NODISCARD auto get_center() const noexcept { return m_center; }
     NODISCARD auto get_up() const noexcept { return m_up; }
     
@@ -75,14 +85,16 @@ struct Camera {
     void set_delta_rotation(glm::vec3 const& delta) noexcept;
 	void set_delta_dolly(glm::vec3 const& delta) noexcept;
     void set_delta_zoom(float delta) noexcept;
-
+    void set_eye(glm::vec3 const& eye) noexcept;
+    void set_center(glm::vec3 const& center) noexcept;
+    void set(LookAtParams const& params) noexcept;
     void on_deserialize() noexcept;
 
 private:
     void on_view_changed() noexcept;
     void on_proj_changed() noexcept;
 
-    static constexpr float k_near = 0.1f, k_far = 100.0f;
+    static constexpr float k_near = 0.1f, k_far = 100000.0f;
     static constexpr float k_min_fov = 20.0f, k_max_fov = 120.0f;
 
 BEGIN_REFLECT(Camera);

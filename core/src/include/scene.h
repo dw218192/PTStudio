@@ -23,16 +23,21 @@ struct Scene {
      * \return nothing if the file was loaded successfully, an error otherwise
     */
     NODISCARD static auto from_obj_file(std::string_view filename) noexcept -> tl::expected<Scene, std::string>;
-    // for test only
-    NODISCARD static auto make_triangle_scene() noexcept -> tl::expected<Scene, std::string>;
 
 	// compute good positions to place light and camera
 	NODISCARD auto get_good_cam_start() const noexcept -> LookAtParams;
     NODISCARD auto get_good_light_pos() const noexcept -> glm::vec3;
+    NODISCARD auto get_scene_bound() const noexcept {
+        if(empty()) {
+            return BoundingBox{ glm::vec3{ 0 }, glm::vec3{ 0 } };
+        }
+        return m_scene_bound;
+    }
 
     NODISCARD auto ray_cast(Ray const& ray, float t_min = 0.0f, float t_max = 1e5f) noexcept -> std::optional<EditableView>;
     NODISCARD auto ray_cast_editable(Ray const& ray, float t_min = 0.0f, float t_max = 1e5f) noexcept -> std::optional<EditableView>;
     NODISCARD auto size() const noexcept { return m_objects.size(); }
+    NODISCARD auto empty() const noexcept -> bool { return m_objects.empty(); }
 
     auto add_object(Object obj) noexcept -> ObserverPtr<Object>;
     void remove_object(View<Object> obj_view) noexcept;
@@ -53,10 +58,10 @@ struct Scene {
         return "Light " + std::to_string(counter++);
     }
     NODISCARD auto get_name() const noexcept -> std::string_view { return m_name; }
+    auto set_name(std::string_view name) noexcept -> void { m_name = name; }
 
     void on_deserialize() noexcept;
 private:
-    NODISCARD auto compute_scene_bound() const noexcept -> BoundingBox;
     auto remove_editable(ConstEditableView editable) noexcept -> void;
 
     BEGIN_REFLECT(Scene);
@@ -67,6 +72,9 @@ private:
             MSerialize{});
 
         FIELD_MOD(std::list<Light>, m_lights, {},
+            MSerialize{});
+        
+        FIELD_MOD(BoundingBox, m_scene_bound, {},
             MSerialize{});
     END_REFLECT();
 

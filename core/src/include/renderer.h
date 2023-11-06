@@ -88,5 +88,5 @@ struct Renderer {
 protected:
     std::string m_name;
     RenderConfig m_config;
-    ObserverPtr<Application> m_app{ nullptr };
+    ObserverPtr<Application> m_app;
 };

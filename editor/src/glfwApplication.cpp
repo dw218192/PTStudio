@@ -116,10 +116,12 @@ void GLFWApplication::run() {
 
         m_delta_time = static_cast<float>(now - last_frame_time);
         if (m_delta_time >= m_min_frame_time) {
-            m_prev_hovered_widget = m_cur_hovered_widget;
-
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+
+            m_prev_hovered_widget = m_cur_hovered_widget;
+            m_cur_hovered_widget = "";
+            m_cur_focused_widget = "";
 
             // Start the Dear ImGui frame
             ImGui_ImplOpenGL3_NewFrame();
@@ -150,26 +152,20 @@ void GLFWApplication::run() {
             // process hover change events
             if (m_prev_hovered_widget != m_cur_hovered_widget) {
                 if (m_prev_hovered_widget != k_no_hovered_widget) {
-
                     // call on_leave_region on the previous widget
                     auto it = m_imgui_window_info.find(m_prev_hovered_widget);
                     if (it != m_imgui_window_info.end() && it->second.on_leave_region.has_value()) {
                         it->second.on_leave_region.value()();
                     }
+                }
 
-                    // call on_enter_region on the current widget
-                    it = m_imgui_window_info.find(m_cur_hovered_widget);
-                    if (it != m_imgui_window_info.end() && it->second.on_enter_region.has_value()) {
-                        it->second.on_enter_region.value()();
-                    }
+                // call on_enter_region on the current widget
+                auto it = m_imgui_window_info.find(m_cur_hovered_widget);
+                if (it != m_imgui_window_info.end() && it->second.on_enter_region.has_value()) {
+                    it->second.on_enter_region.value()();
                 }
             }
         }
-        /*
-        if (glfwGetKey(m_window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
-            glfwSetWindowShouldClose(m_window, GLFW_TRUE);
-        }
-        */
     }
 }
 
@@ -199,17 +195,10 @@ auto GLFWApplication::begin_imgui_window(
     }
 
     auto const ret = ImGui::Begin(name.data(), nullptr, flags);
-    if (ImGui::IsWindowHovered()) {
+    if (ImGui::IsWindowHovered(ImGuiItemStatusFlags_HoveredRect)) {
         m_cur_hovered_widget = name;
-        /*
-        if (ImGui::GetMousePos() >= ImGui::GetWindowPos() && ImGui::GetMousePos() <= ImGui::GetWindowPos() + ImGui::GetWindowSize()) {
-            m_cur_hovered_widget = name;
-        }
-        */
     }
-
-    // record the current focus
-    if (ImGui::IsWindowFocused()) {
+    if (ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows)) {
         m_cur_focused_widget = name;
     }
     return ret;

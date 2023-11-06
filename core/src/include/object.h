@@ -5,11 +5,11 @@
 #include <string>
 
 #include "transform.h"
-#include "boundingBox.h"
 #include "material.h"
 #include "vertex.h"
 #include "utils.h"
 #include "reflection.h"
+#include "boundingBox.h"
 
 struct Scene;
 
@@ -24,15 +24,32 @@ struct Object {
     NODISCARD static auto make_triangle_obj(Scene const& scene, Material mat, Transform trans) noexcept -> Object;
     NODISCARD static auto make_quad_obj(Scene const& scene, Material mat, Transform trans) noexcept -> Object;
     NODISCARD static auto make_cube_obj(Scene const& scene, Material mat, Transform trans) noexcept -> Object;
+    NODISCARD static auto make_sphere_obj(Scene const& scene, Material mat, Transform trans) noexcept -> Object;
 
-    NODISCARD auto get_transform() const noexcept -> Transform const&;
-    NODISCARD auto get_name() const noexcept -> std::string_view;
-    NODISCARD auto get_bound() const noexcept -> BoundingBox const&;
-    NODISCARD auto get_vertices() const noexcept -> tcb::span<Vertex const>;
-    NODISCARD auto get_material() const noexcept -> Material const&;
-    void set_transform(Transform transform) noexcept;
-    void set_name(std::string_view name) noexcept;
-    void set_material(Material mat) noexcept;
+    NODISCARD auto get_transform() const noexcept -> auto const& {
+        return m_transform;
+    }
+    NODISCARD auto get_name() const noexcept -> std::string_view {
+        return m_name;
+    }
+    NODISCARD auto get_bound() const noexcept -> auto const& {
+        return m_local_bound;
+    }
+    NODISCARD auto get_vertices() const noexcept -> tcb::span<Vertex const> {
+        return m_vertices;
+    }
+    NODISCARD auto get_material() const noexcept -> auto const& {
+        return m_mat;
+    }
+    auto set_transform(Transform transform) noexcept -> void {
+        m_transform = std::move(transform);
+    }
+    auto set_name(std::string_view name) noexcept -> void {
+        m_name = name;
+    }
+    auto set_material(Material mat) noexcept -> void {
+        m_mat = std::move(mat);
+    }
     
 private:
     BEGIN_REFLECT(Object);

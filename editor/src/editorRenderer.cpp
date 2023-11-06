@@ -34,7 +34,6 @@ constexpr float k_quad_data_pos_uv[] = {
 };
 
 EditorRenderer::EditorRenderer(RenderConfig config) noexcept : Renderer{std::move(config), "EditorRenderer"} {
-
     auto lang = TextEditor::LanguageDefinition::GLSL();
     for (auto const k : glsl_keywords)
         lang.mKeywords.insert(k);
@@ -798,6 +797,7 @@ auto EditorRenderer::try_get_obj_data(ViewPtr<Object> obj) noexcept -> tl::expec
 auto EditorRenderer::draw_imgui() noexcept -> tl::expected<void, std::string> {
     TL_CHECK_AND_PASS(Renderer::draw_imgui());
 
+    
     if (ImGui::Begin("Shader Editor", nullptr, ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_MenuBar)) {
         ImGui::SetWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
         ImGui::SetWindowPos(ImVec2(700, 300), ImGuiCond_FirstUseEver);
