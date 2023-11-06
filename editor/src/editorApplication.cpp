@@ -50,9 +50,15 @@ void EditorApplication::cursor_moved(double x, double y) {
         auto const rot_sensitivity = m_control_state.rot_sensitivity;
 
         if (can_move()) {
-            m_cam.set_delta_dolly({
-                move_sensitivity * px, 0, move_sensitivity* py
-            });
+            if (input_state.cur_mouse_down == GLFW_MOUSE_BUTTON_MIDDLE) {
+                m_cam.set_delta_dolly({
+                    0, move_sensitivity * py, 0
+                });
+            } else {
+                m_cam.set_delta_dolly({
+					move_sensitivity * px, 0, move_sensitivity * py
+                });
+            }
         } else if (can_rotate()) {
             m_cam.set_delta_rotation({
                 rot_sensitivity * py, rot_sensitivity * px, 0
@@ -393,7 +399,8 @@ bool EditorApplication::can_move() const noexcept {
     return
         get_cur_hovered_widget() == k_scene_view_win_name &&
         !ImGuizmo::IsUsing() &&
-        m_control_state.input_state.cur_mouse_down == GLFW_MOUSE_BUTTON_LEFT;
+        m_control_state.input_state.cur_mouse_down == GLFW_MOUSE_BUTTON_LEFT ||
+        m_control_state.input_state.cur_mouse_down == GLFW_MOUSE_BUTTON_MIDDLE;
 }
 
 void EditorApplication::on_scene_opened(Scene const& scene) {
@@ -446,7 +453,7 @@ void EditorApplication::try_select_object() noexcept {
 void EditorApplication::handle_key_release() noexcept {
     auto& gizmo_state = m_control_state.gizmo_state;
     auto& input_state = m_control_state.input_state;
-    if (!m_control_state.get_cur_obj() || ImGuizmo::IsUsing()) {
+    if (!m_control_state.get_cur_obj() || ImGuizmo::IsUsing() || get_cur_focused_widget() != k_scene_view_win_name) {
         input_state.cur_button_down = -1;
         return;
     }
@@ -469,20 +476,20 @@ void EditorApplication::handle_key_release() noexcept {
     case GLFW_KEY_ESCAPE:
         m_control_state.set_cur_obj(std::nullopt);
         break;
-    case GLFW_KEY_F:
-        if (m_control_state.get_cur_obj()) {
-            BoundingBox local_bound;
-            if(auto obj = m_control_state.get_cur_obj().value().as<Object>()) {
-                local_bound = obj->get_bound();
-            } else if(auto light = m_control_state.get_cur_obj().value().as<Light>()) {
-                local_bound = BoundingBox { glm::vec3 { -0.5f }, glm::vec3 { 0.5f } };
-            }
-            LookAtParams params;
-            params.center = m_control_state.get_cur_obj()->get_transform().get_position();
-            params.eye = params.center + local_bound.get_extent() * 2.0f;
-            params.up = glm::vec3 { 0, 1, 0 };
-            m_cam.set(params);
-        }
+    case GLFW_KEY_F: {
+	        BoundingBox local_bound;
+	        if (auto obj = m_control_state.get_cur_obj().value().as<Object>()) {
+	            local_bound = obj->get_bound();
+	        }
+	        else if (auto light = m_control_state.get_cur_obj().value().as<Light>()) {
+	            local_bound = BoundingBox{ glm::vec3 { -0.5f }, glm::vec3 { 0.5f } };
+	        }
+	        LookAtParams params;
+	        params.center = m_control_state.get_cur_obj()->get_transform().get_position();
+	        params.eye = params.center + local_bound.get_extent() * 2.0f;
+	        params.up = glm::vec3{ 0, 1, 0 };
+	        m_cam.set(params);
+	    }
         break;
     default:
         break;
@@ -518,7 +525,7 @@ void EditorApplication::add_object(Object obj) noexcept {
         on_add_editable(*pobj);
     }
 
-    // we imagine that the camera view is a sphere
+    // imagine that the camera view is a sphere
     // if the scene bound is outside the sphere, move the camera to a better position
     auto const new_bbox = m_scene.get_scene_bound();
     auto const radius = glm::length(m_cam.get_eye() - m_cam.get_center());

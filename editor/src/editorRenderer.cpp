@@ -246,17 +246,25 @@ auto EditorRenderer::on_remove_editable(EditableView editable) noexcept -> tl::e
         if (it == m_obj_data.end()) {
             return TL_ERROR("obj not found");
         }
-        m_obj_data.erase(obj);
+        m_obj_data.erase(it);
+        if (obj == m_cur_outline_obj) {
+            m_cur_outline_obj = nullptr;
+        }
     }
 
     return {};
 }
 
 void EditorRenderer::on_editable_change(std::optional<EditableView> editable) noexcept {
+    commit_cur_shader_code();
+    m_cur_outline_obj = nullptr;
+
     if (!editable) {
-        commit_cur_shader_code();
-        m_cur_outline_obj = nullptr;
     } else if (auto const obj = editable->as<Object>()) {
+        auto const it = m_obj_data.find(obj);
+        if (it == m_obj_data.end()) {
+        	return;
+        }
         // save last editing to the object editing data
         commit_cur_shader_code();
         m_cur_outline_obj = obj;
@@ -264,12 +272,9 @@ void EditorRenderer::on_editable_change(std::optional<EditableView> editable) no
         // update editor texts
         for (auto const shader_type : EIter<ShaderType>{}) {
             m_shader_editor_data[shader_type].editor.SetText(
-                m_obj_data[obj].editing_data.get_src(shader_type)
+                it->second.editing_data.get_src(shader_type)
             );
         }
-    } else {
-        commit_cur_shader_code();
-        m_cur_outline_obj = nullptr;
     }
 }
 
@@ -290,11 +295,11 @@ auto EditorRenderer::on_add_object_internal(PerObjectData& data, Object const& o
     // update editor texts
     for (auto const shader_type : EIter<ShaderType>{}) {
         m_shader_editor_data[shader_type].editor.SetText(
-            m_obj_data[&obj].editing_data.get_src(shader_type)
+            data.editing_data.get_src(shader_type)
         );
     }
     m_extra_func_editor_data.editor.SetText(
-        m_obj_data[&obj].editing_data.common_funcs
+        data.editing_data.common_funcs
     );
 
     return {};

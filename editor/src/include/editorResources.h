@@ -12,7 +12,8 @@ Basic Operations:
 - Press Delete to delete selected object
 - Press F to focus on selected object
 - Right click to rotate camera
-- Left click + drag to move camera
+- Left click + drag for dolly and track
+- Middle click + drag for pedestal
 - Press W/E/R to switch between translate/rotate/scale gizmo
 - Press X to toggle snap
 )";

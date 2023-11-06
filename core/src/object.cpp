@@ -123,7 +123,9 @@ auto Object::make_triangle_obj(Scene const& scene, Material mat, Transform trans
 	    Vertex{ glm::vec3{ 0.5, -0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 1, 0 } },
 	    Vertex{ glm::vec3{ 0, 0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 0.5, 1 } }
     };
-    return Object { scene, std::move(trans), std::move(mat), std::move(vertices) };
+    auto ret = Object { scene, std::move(trans), std::move(mat), std::move(vertices) };
+    ret.m_primitive_type = PrimitiveType::Triangle;
+    return ret;
 }
 
 auto Object::make_quad_obj(Scene const& scene, Material mat, Transform trans) noexcept -> Object {
@@ -136,7 +138,9 @@ auto Object::make_quad_obj(Scene const& scene, Material mat, Transform trans) no
         Vertex{ glm::vec3{ 0.5, -0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 1, 0 } },
         Vertex{ glm::vec3{ 0.5, 0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 1, 1 } }
     };
-    return Object { scene, std::move(trans), std::move(mat), std::move(vertices) };
+    auto ret = Object { scene, std::move(trans), std::move(mat), std::move(vertices) };
+    ret.m_primitive_type = PrimitiveType::Quad;
+    return ret;
 }
 
 auto Object::make_cube_obj(Scene const& scene, Material mat, Transform trans) noexcept -> Object {
@@ -195,7 +199,9 @@ auto Object::make_cube_obj(Scene const& scene, Material mat, Transform trans) no
         Vertex{ glm::vec3{ -0.5, -0.5, 0.5 }, glm::vec3{ 0, -1, 0 }, glm::vec2{ 0, 1 } },
         Vertex{ glm::vec3{ 0.5, -0.5, 0.5 }, glm::vec3{ 0, -1, 0 }, glm::vec2{ 1, 1 } },
     };
-    return Object { scene, std::move(trans), std::move(mat), std::move(vertices) };
+    auto ret = Object { scene, std::move(trans), std::move(mat), std::move(vertices) };
+    ret.m_primitive_type = PrimitiveType::Cube;
+    return ret;
 }
 
 auto Object::make_sphere_obj(Scene const& scene, Material mat, Transform trans) noexcept -> Object {
@@ -246,5 +252,7 @@ auto Object::make_sphere_obj(Scene const& scene, Material mat, Transform trans) 
         }
     }
 
-    return Object { scene, std::move(trans), std::move(mat), std::move(vertices) };
+    auto ret = Object { scene, std::move(trans), std::move(mat), std::move(vertices) };
+    ret.m_primitive_type = PrimitiveType::Sphere;
+    return ret;
 }

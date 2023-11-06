@@ -2,6 +2,7 @@
 
 #include <glm/gtx/euler_angles.hpp>
 #include <glm/gtx/transform.hpp>
+#include <glm/gtc/matrix_access.hpp>
 
 static constexpr auto k_default_fov = 45.0f;
 static constexpr auto k_default_aspect = 1.33f;
@@ -64,7 +65,11 @@ void Camera::set_delta_rotation(glm::vec3 const& delta) noexcept {
 }
 
 void Camera::set_delta_dolly(glm::vec3 const& delta) noexcept {
-    m_center += delta;
+    glm::vec3 right = glm::column(m_cam_transform, 0);
+    glm::vec3 up = glm::column(m_cam_transform, 1);
+    glm::vec3 forward = glm::column(m_cam_transform, 2);
+    auto world_delta = delta.x * right + delta.y * up + delta.z * forward;
+    m_center += world_delta;
     on_view_changed();
 }
 

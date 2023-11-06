@@ -82,9 +82,27 @@ struct Camera {
 	void set_fov(float fov) noexcept;
     void set_aspect(float aspect) noexcept;
 
+    /**
+     * \brief Rotates the camera pivoted at the center
+     * \param delta the rotation in degrees
+     * \note the rotation is applied in the order XYZ
+    */
     void set_delta_rotation(glm::vec3 const& delta) noexcept;
+
+    /**
+     * \brief Moves the camera center by delta, in local space
+     * \param delta the movement in local space
+    */
 	void set_delta_dolly(glm::vec3 const& delta) noexcept;
+
+    /**
+     * \brief Zooms the camera by delta
+     * \param delta the zoom amount
+     * \note delta > 0 zooms in, delta < 0 zooms out
+    */
     void set_delta_zoom(float delta) noexcept;
+
+    
     void set_eye(glm::vec3 const& eye) noexcept;
     void set_center(glm::vec3 const& center) noexcept;
     void set(LookAtParams const& params) noexcept;

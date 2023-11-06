@@ -11,6 +11,17 @@
 #include "reflection.h"
 #include "boundingBox.h"
 
+/**
+ * \brief If the object is a primitive, this enum will be used to determine which primitive it is
+*/
+enum class PrimitiveType {
+    None,
+    Triangle,
+    Quad,
+    Cube,
+    Sphere
+};
+
 struct Scene;
 
 struct Object {
@@ -50,7 +61,13 @@ struct Object {
     auto set_material(Material mat) noexcept -> void {
         m_mat = std::move(mat);
     }
-    
+
+    auto is_primitive() const noexcept -> bool {
+        return m_primitive_type != PrimitiveType::None;
+    }
+    auto get_primitive_type() const noexcept -> PrimitiveType {
+        return m_primitive_type;
+    }
 private:
     BEGIN_REFLECT(Object);
         FIELD_MOD(BoundingBox, m_local_bound, {},
@@ -62,6 +79,8 @@ private:
         FIELD_MOD(std::vector<Vertex>, m_vertices, {},
                 MSerialize{});
         FIELD_MOD(std::string, m_name, "Object",
+                MSerialize{});
+        FIELD_MOD(PrimitiveType, m_primitive_type, PrimitiveType::None,
                 MSerialize{});
     END_REFLECT();
 };
