@@ -37,68 +37,143 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config)
     m_on_mouse_leave_scene_viewport_cb = [this] { on_mouse_leave_scene_viewport(); };
     m_on_mouse_enter_scene_viewport_cb = [this] { on_mouse_enter_scene_viewport(); };
     add_renderer(std::make_unique<EditorRenderer>(config));
+    create_input_actions();
 }
-void EditorApplication::cursor_moved(double x, double y) {
-    auto& input_state = m_control_state.input_state;
-    if (input_state.cur_mouse_down == -1) {
-        return;
-    }
 
-    if (!input_state.first_time_motion) {
-        auto const px = (x - input_state.prev_x) / get_window_width();
-        auto const py = (y - input_state.prev_y) / get_window_height();
+void EditorApplication::create_input_actions() noexcept {
+    // initialize input actions
+    auto obj_selected = InputActionConstraint { [this] (InputEvent const&) {
+        return m_control_state.get_cur_obj() && m_control_state.get_cur_obj().has_value();
+    }};
+    auto using_gizmo = InputActionConstraint { [this] (InputEvent const&) {
+        return ImGuizmo::IsUsing();
+    }};
+    auto scene_view_focused = InputActionConstraint { [this] (InputEvent const&) {
+        return get_cur_focused_widget() == k_scene_view_win_name;
+    }};
+    auto scene_view_hovered = InputActionConstraint { [this] (InputEvent const&) {
+        return get_cur_hovered_widget() == k_scene_view_win_name;
+    }};
+    auto initiated_in_scene_view = InputActionConstraint { [this] (InputEvent const& event) {
+        return event.initiated_window == k_scene_view_win_name;
+    }};
 
-        auto const move_sensitivity = m_control_state.move_sensitivity;
-        auto const rot_sensitivity = m_control_state.rot_sensitivity;
+    // object manipulation
 
-        if (can_move()) {
-            if (input_state.cur_mouse_down == GLFW_MOUSE_BUTTON_MIDDLE) {
-                m_cam.set_delta_dolly({
-                    0, move_sensitivity * py, 0
-                });
-            } else {
-                m_cam.set_delta_dolly({
-					move_sensitivity * px, 0, move_sensitivity * py
-                });
+    auto translate_mode = InputAction {{ InputType::KEYBOARD, ActionType::PRESS, ImGuiKey_W },
+        [this] (InputEvent const& event) {
+            m_control_state.gizmo_state.op = ImGuizmo::OPERATION::TRANSLATE;
+        }
+    };
+    auto rotate_mode = InputAction {{ InputType::KEYBOARD, ActionType::PRESS, ImGuiKey_E },
+        [this] (InputEvent const& event) {
+            m_control_state.gizmo_state.op = ImGuizmo::OPERATION::ROTATE;
+        }
+    };
+    auto scale_mode = InputAction {{InputType::KEYBOARD, ActionType::PRESS, ImGuiKey_R },
+        [this] (InputEvent const& event) {
+            m_control_state.gizmo_state.op = ImGuizmo::OPERATION::SCALE;
+        }
+    };
+    auto toggle_snap = InputAction {{InputType::KEYBOARD, ActionType::PRESS, ImGuiKey_X },
+        [this] (InputEvent const& event) {
+            m_control_state.gizmo_state.snap = !m_control_state.gizmo_state.snap;
+        }
+    };
+
+    auto delete_obj = InputAction {{ InputType::KEYBOARD, ActionType::PRESS, ImGuiKey_Delete },
+        [this] (InputEvent const& event) {
+            remove_editable(m_control_state.get_cur_obj().value());
+        }
+    };
+    auto focus_on_obj = InputAction {{InputType::KEYBOARD, ActionType::PRESS, ImGuiKey_F },
+        [this] (InputEvent const& event) {
+            BoundingBox local_bound;
+            if (auto obj = m_control_state.get_cur_obj().value().as<Object>()) {
+                local_bound = obj->get_bound();
+            } else if (auto light = m_control_state.get_cur_obj().value().as<Light>()) {
+                local_bound = BoundingBox{ glm::vec3 { -0.5f }, glm::vec3 { 0.5f } };
             }
-        } else if (can_rotate()) {
-            m_cam.set_delta_rotation({
-                rot_sensitivity * py, rot_sensitivity * px, 0
+            LookAtParams params;
+            params.center = m_control_state.get_cur_obj()->get_transform().get_position();
+            params.eye = params.center + local_bound.get_extent() * 2.0f;
+            params.up = glm::vec3{ 0, 1, 0 };
+            m_cam.set(params);
+        }
+    };
+
+    auto select_obj = InputAction {{InputType::MOUSE, ActionType::RELEASE, ImGuiMouseButton_Left },
+        [this] (InputEvent const& event) { 
+            if (!m_control_state.is_outside_view && 
+                (glfwGetTime() - event.time) <= k_object_select_mouse_time) {
+                try_select_object();
+            }
+        }
+    };
+    auto cam_pedestal = InputAction {{InputType::MOUSE, ActionType::HOLD, ImGuiMouseButton_Middle}, 
+        [this] (InputEvent const& event) {
+            m_cam.set_delta_dolly({
+                0, m_control_state.move_sensitivity * event.normalized_mouse_delta.y, 0
             });
         }
-    }
-    else {
-        input_state.first_time_motion = false;
-    }
-    input_state.prev_x = x;
-    input_state.prev_y = y;
-}
+    };
+    auto cam_pan = InputAction {{InputType::MOUSE, ActionType::HOLD, ImGuiMouseButton_Left },
+        [this] (InputEvent const& event) {
+            m_cam.set_delta_dolly({
+                -m_control_state.move_sensitivity * event.normalized_mouse_delta.x,
+                0,
+                m_control_state.move_sensitivity * event.normalized_mouse_delta.y
+            });
+        }
+    };
+    auto cam_rotate = InputAction {{InputType::MOUSE, ActionType::HOLD, ImGuiMouseButton_Right},
+        [this] (InputEvent const& event) {
+            m_cam.set_delta_rotation({
+                m_control_state.rot_sensitivity * event.normalized_mouse_delta.y,
+                m_control_state.rot_sensitivity * event.normalized_mouse_delta.x,
+                0
+            });
+        }
+    }; 
+    auto cam_zoom = InputAction {{InputType::MOUSE, ActionType::SCROLL, ImGuiMouseButton_Middle },
+        [this] (InputEvent const& event) {
+            m_cam.set_delta_zoom(event.mouse_scroll_delta.y);
+        }
+    };
 
-void EditorApplication::mouse_clicked(int button, int action, int mods) {
-    if (action == GLFW_PRESS) {
-        handle_mouse_press(button);
-    } else if (action == GLFW_RELEASE) {
-        handle_mouse_release();
-    }
-}
-
-void EditorApplication::mouse_scroll(double x, double y) {
-    (void)x;
-
-    float const delta = y < 0 ? -1.0f : 1.0f;
-    m_cam.set_delta_zoom(delta);
-}
-
-void EditorApplication::key_pressed(int key, int scancode, int action, int mods) {
-    (void)scancode;
-    (void)mods;
-
-    auto& input_state = m_control_state.input_state;
-    if (action == GLFW_PRESS) {
-        input_state.cur_button_down = key;
-    } else if (action == GLFW_RELEASE) {
-        handle_key_release();
-    }
+    m_input_actions = {
+        translate_mode
+            .add_constraint(scene_view_focused)
+            .add_constraint(scene_view_hovered),
+        rotate_mode
+            .add_constraint(scene_view_focused)
+            .add_constraint(scene_view_hovered),
+        scale_mode
+            .add_constraint(scene_view_focused)
+            .add_constraint(scene_view_hovered),
+        toggle_snap
+            .add_constraint(scene_view_focused)
+            .add_constraint(scene_view_hovered)
+            .add_constraint(using_gizmo),
+        delete_obj
+            .add_constraint(scene_view_focused)
+            .add_constraint(scene_view_hovered)
+            .add_constraint(obj_selected),
+        focus_on_obj
+            .add_constraint(obj_selected),
+        select_obj
+            .add_constraint(scene_view_focused)
+            .add_constraint(scene_view_hovered),
+        cam_pedestal
+            .add_constraint(initiated_in_scene_view),
+        cam_pan
+            .add_constraint(initiated_in_scene_view),
+        cam_rotate
+            .add_constraint(initiated_in_scene_view),
+        cam_zoom
+            .add_constraint(scene_view_focused)
+            .add_constraint(scene_view_hovered)
+    };
 }
 
 void EditorApplication::add_renderer(std::unique_ptr<Renderer> renderer) noexcept {
@@ -390,21 +465,6 @@ void EditorApplication::draw_console_panel() const noexcept {
     ImGui::EndChild();
 }
 
-bool EditorApplication::can_rotate() const noexcept {
-    return
-        get_cur_hovered_widget() == k_scene_view_win_name &&
-        !ImGuizmo::IsUsing() &&
-        m_control_state.input_state.cur_mouse_down == GLFW_MOUSE_BUTTON_RIGHT;
-}
-
-bool EditorApplication::can_move() const noexcept {
-    return
-        get_cur_hovered_widget() == k_scene_view_win_name &&
-        !ImGuizmo::IsUsing() &&
-        m_control_state.input_state.cur_mouse_down == GLFW_MOUSE_BUTTON_LEFT ||
-        m_control_state.input_state.cur_mouse_down == GLFW_MOUSE_BUTTON_MIDDLE;
-}
-
 void EditorApplication::on_scene_opened(Scene const& scene) {
     m_cam.set_aspect(m_config.get_aspect());
     m_control_state.set_cur_obj(std::nullopt);
@@ -452,82 +512,42 @@ void EditorApplication::try_select_object() noexcept {
     }
 }
 
-void EditorApplication::handle_key_release() noexcept {
-    auto& gizmo_state = m_control_state.gizmo_state;
-    auto& input_state = m_control_state.input_state;
-    if (!m_control_state.get_cur_obj() || ImGuizmo::IsUsing()) {
-        input_state.cur_button_down = -1;
-        return;
-    }
-    switch(input_state.cur_button_down) {
-    case GLFW_KEY_DELETE:
-        if (get_cur_focused_widget() == k_scene_view_win_name) {
-            remove_editable(m_control_state.get_cur_obj().value());
-        }
-        break;
-    case GLFW_KEY_W:
-        if (get_cur_focused_widget() == k_scene_view_win_name) {
-            gizmo_state.op = ImGuizmo::TRANSLATE;
-        }
-        break;
-    case GLFW_KEY_E:
-        if (get_cur_focused_widget() == k_scene_view_win_name) {
-            gizmo_state.op = ImGuizmo::ROTATE;
-        }
-        break;
-    case GLFW_KEY_R:
-        if (get_cur_focused_widget() == k_scene_view_win_name) {
-            gizmo_state.op = ImGuizmo::SCALE;
-        }
-        break;
-    case GLFW_KEY_X:
-        if (get_cur_focused_widget() == k_scene_view_win_name) {
-            gizmo_state.snap = !gizmo_state.snap;
-        }
-        break;
-    case GLFW_KEY_ESCAPE:
-        if (get_cur_focused_widget() == k_scene_view_win_name) {
-            m_control_state.set_cur_obj(std::nullopt);
-        }
-        break;
-    case GLFW_KEY_F: {
-	        BoundingBox local_bound;
-	        if (auto obj = m_control_state.get_cur_obj().value().as<Object>()) {
-	            local_bound = obj->get_bound();
-	        }
-	        else if (auto light = m_control_state.get_cur_obj().value().as<Light>()) {
-	            local_bound = BoundingBox{ glm::vec3 { -0.5f }, glm::vec3 { 0.5f } };
-	        }
-	        LookAtParams params;
-	        params.center = m_control_state.get_cur_obj()->get_transform().get_position();
-	        params.eye = params.center + local_bound.get_extent() * 2.0f;
-	        params.up = glm::vec3{ 0, 1, 0 };
-	        m_cam.set(params);
-	    }
-        break;
-    default:
-        break;
-    }
+void EditorApplication::handle_input(InputEvent const& event) noexcept {
+    //char const* input_type;
+    //switch (event.input.input_type) {
+    //case InputType::KEYBOARD:
+    //    input_type = "keyboard";
+    //    break;
+    //case InputType::MOUSE:
+    //    input_type = "mouse";
+    //    break;
+    //default:
+    //    input_type = "unknown";
+    //    break;
+    //}
+    //char const* action_type;
+    //switch (event.input.action_type) {
+    //case ActionType::PRESS:
+    //    action_type = "press";
+    //    break;
+    //case ActionType::HOLD:
+    //    action_type = "hold";
+    //    break;
+    //case ActionType::RELEASE:
+    //    action_type = "release";
+    //    break;
+    //case ActionType::SCROLL:
+    //    action_type = "scroll";
+    //    break;
+    //default:
+    //    action_type = "unknown";
+    //    break;
+    //}
+    //std::cout << input_type << ' ' << action_type << std::endl;
 
-    input_state.cur_button_down = -1;
-}
-
-void EditorApplication::handle_mouse_press(int button) noexcept {
-    auto& input_state = m_control_state.input_state;
-    if (!m_control_state.is_outside_view) {
-        // only initiate mouse input in the scene view window
-        input_state.mouse_down_time = glfwGetTime();
-        input_state.cur_mouse_down = button;
-        input_state.first_time_motion = true;
+    for (auto&& action : m_input_actions) {
+        action(event);
     }
-}
-
-void EditorApplication::handle_mouse_release() noexcept {
-    auto& input_state = m_control_state.input_state;
-    if (!m_control_state.is_outside_view && (glfwGetTime() - input_state.mouse_down_time) <= k_object_select_mouse_time) {
-        try_select_object();
-    }
-    input_state = {};
 }
 
 void EditorApplication::add_object(Object obj) noexcept {

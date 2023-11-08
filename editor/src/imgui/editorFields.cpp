@@ -64,6 +64,7 @@ bool ImGui::TransformField(const char* label, PTS::Transform& transform, ImGuizm
     return changed;
 }
 
+// TODO: handle all variable types
 bool ImGui::ShaderVariableField(const char* label, PTS::UniformVar& variable) {
     bool changed = false;
     switch (variable.get_type()) {
@@ -136,6 +137,8 @@ bool ImGui::ShaderVariableField(const char* label, PTS::UniformVar& variable) {
             }   
             break;
         }
+    default:
+        ImGui::TextUnformatted("Unsupported Uniform Type");
     }
 
     return changed;

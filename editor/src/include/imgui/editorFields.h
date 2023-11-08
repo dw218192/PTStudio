@@ -15,6 +15,7 @@ namespace ImGui {
     // reflectable types can be inspected in the editor and modified automatically
     template<typename Reflected, typename = std::enable_if_t<PTS::is_reflectable<Reflected>::value>>
     bool ReflectedField(const char* label, Reflected& reflected) {
+        using namespace PTS;
         bool changed = false;
         if (ImGui::CollapsingHeader(label)) {
             Reflected::for_each_field([&](auto field_info) {

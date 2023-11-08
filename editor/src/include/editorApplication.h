@@ -13,23 +13,19 @@
 #include "singleton.h"
 #include "archive.h"
 #include "camera.h"
+#include "inputAction.h"
 
 namespace PTS {
 namespace Editor {
 
-constexpr float k_init_move_sensitivity = 5.0;
-constexpr float k_init_rot_sensitivity = 60.0;
-constexpr float k_object_select_mouse_time = 1.0f;
-constexpr int k_default_renderer_idx = 0;
+constexpr auto k_init_move_sensitivity = 5.0f;
+constexpr auto k_init_rot_sensitivity = 60.0f;
+constexpr auto k_object_select_mouse_time = 1.0f;
+constexpr auto k_default_renderer_idx = 0;
 
 struct EditorApplication final : GLFWApplication, Singleton<EditorApplication> {
 friend Singleton;
 NO_COPY_MOVE(EditorApplication);
-
-    void cursor_moved(double x, double y) override;
-    void mouse_clicked(int button, int action, int mods) override;
-    void mouse_scroll(double x, double y) override;
-    void key_pressed(int key, int scancode, int action, int mods) override;
 
     void add_renderer(std::unique_ptr<Renderer> renderer) noexcept;
     void loop(float dt) override;
@@ -53,15 +49,13 @@ private:
     EditorApplication(std::string_view name, RenderConfig config);
     ~EditorApplication() override = default;
 
+    void create_input_actions() noexcept;
+
     // imgui rendering
     void draw_scene_panel() noexcept;
     void draw_object_panel() noexcept;
     void draw_scene_viewport(TextureHandle render_buf) noexcept;
     void draw_console_panel() const noexcept;
-
-    // control conditions
-    auto can_rotate() const noexcept -> bool;
-    auto can_move() const noexcept -> bool;
 
     // events
     void on_scene_opened(Scene const& scene);
@@ -72,9 +66,8 @@ private:
 
     // other helpers
     void try_select_object() noexcept;
-    void handle_key_release() noexcept;
-    void handle_mouse_press(int button) noexcept;
-    void handle_mouse_release() noexcept;
+    void handle_input(InputEvent const& event) noexcept override;
+
     void add_object(Object obj) noexcept;
     void add_light(Light light) noexcept;
     void remove_editable(EditableView editable);
@@ -86,10 +79,16 @@ private:
 
     std::function<void()> m_on_mouse_leave_scene_viewport_cb;
     std::function<void()> m_on_mouse_enter_scene_viewport_cb;
-    
+
+    // rendering
     RenderConfig m_config;
     Scene m_scene;
     Camera m_cam;
+
+    // input handling
+    std::vector<InputAction> m_input_actions;
+
+    // rendering
     std::vector<std::unique_ptr<Renderer>> m_renderers;
     std::unique_ptr<Archive> m_archive;
 
@@ -105,17 +104,9 @@ private:
         float move_sensitivity = k_init_move_sensitivity;
         float rot_sensitivity = k_init_rot_sensitivity;
         std::array<char, 1024> obj_name_buf {};
-
         bool is_outside_view{ false };
         int cur_renderer_idx{ k_default_renderer_idx };
-
-        struct InputState {
-            bool first_time_motion{ true };
-            int cur_mouse_down{ -1 };
-            int cur_button_down{ -1 };
-            double mouse_down_time { glfwGetTime() };
-            double prev_x{ 0 }, prev_y{ 0 };
-        } input_state { };
+        std::optional<glm::vec2> last_mouse_pos{ std::nullopt };
 
         struct GizmoState {
             ImGuizmo::OPERATION op{ ImGuizmo::OPERATION::TRANSLATE };

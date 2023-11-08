@@ -22,6 +22,8 @@ namespace PTS {
      * @details This interface is used to allow the editor to modify objects without knowing their type.\n
      * However, the type needs to be reflectable as the interface provides functionalities for un-erasing
      * the type.
+     * @note This interface does not store the object, nor does it own it. It has no way of knowing if the
+     * object is still alive. It is the user's responsibility to ensure the object is still valid.
     */
     struct EditableView {
         friend struct ConstEditableView;

@@ -4,12 +4,25 @@
 
 #include <functional>
 #include <optional>
+#include <string_view>
+#include <bitset>
+#include <array>
 
 #include "debugDrawer.h"
 #include "application.h"
+#include "inputAction.h"
 
 namespace PTS {
+	/**
+	 * \brief abstract GLFW application. Responsible for creating the window and polling events.
+	*/
 	struct GLFWApplication : Application {
+		friend static void click_func(GLFWwindow* window, int button, int action, int mods);
+		friend static void motion_func(GLFWwindow* window, double x, double y);
+		friend static void scroll_func(GLFWwindow* window, double x, double y);
+		friend static void key_func(GLFWwindow* window, int key, int scancode, int action, int mods);
+		friend static void error_func(int error, const char* description);
+		
 		NO_COPY_MOVE(GLFWApplication);
 
 		GLFWApplication(std::string_view name, unsigned width, unsigned height, float min_frame_time);
@@ -19,57 +32,16 @@ namespace PTS {
 
 		[[nodiscard]] auto get_window_width() const noexcept -> int;
 		[[nodiscard]] auto get_window_height() const noexcept -> int;
-
-		/**
-		 * \brief Called when the cursor moves. Override to handle cursor movement.
-		 * \param x the x position of the cursor
-		 * \param y the y position of the cursor
-		 * \see https://www.glfw.org/docs/latest/input_guide.html
-		*/
-		virtual void cursor_moved(double x, double y) {
-		}
-
-		/**
-		 * \brief Called when the mouse is clicked. Override to handle mouse clicks.
-		 * \param button the button that was clicked
-		 * \param action the action that was performed
-		 * \param mods the modifiers that were pressed
-		 * \see https://www.glfw.org/docs/latest/input_guide.html
-		*/
-		virtual void mouse_clicked(int button, int action, int mods) {
-		}
-
-		/**
-		 * \brief Called when the user scrolls. Override to handle mouse scrolling.
-		 * \param x the x offset of the scroll
-		 * \param y the y offset of the scroll
-		 * \see https://www.glfw.org/docs/latest/input_guide.html
-		*/
-		virtual void mouse_scroll(double x, double y) {
-		}
-
-		/**
-		 * \brief Called when a key is pressed. Override to handle key presses.
-		 * \param key the key that was pressed
-		 * \param scancode the scancode of the key
-		 * \param action the action that was performed
-		 * \param mods the modifiers that were pressed
-		 * \see https://www.glfw.org/docs/latest/input_guide.html
-		*/
-		virtual void key_pressed(int key, int scancode, int action, int mods) {
-		}
-
 		/**
 		 * \brief Called every frame. Override to handle the main loop.
 		 * \param dt the time since the last frame
 		*/
 		virtual void loop(float dt) = 0;
 
-		[[nodiscard]] bool mouse_over_any_event_region() const noexcept;
-
 	protected:
-		virtual void on_begin_first_loop() {
-		}
+		virtual auto handle_input(InputEvent const& event) noexcept -> void {}
+		virtual auto on_begin_first_loop() -> void {}
+		auto poll_input_events() noexcept -> void;
 
 		/**
 		 * \brief Gets the renderer for the application.
@@ -94,6 +66,14 @@ namespace PTS {
 		[[nodiscard]] auto get_delta_time() const noexcept -> float override;
 
 	private:
+		glm::vec2 m_mouse_scroll_delta;
+		glm::vec2 m_mouse_pos;
+		std::optional<glm::vec2> m_last_mouse_pos { std::nullopt };
+		std::bitset<ImGuiMouseButton_COUNT> m_mouse_states {};
+		std::bitset<ImGuiKey_COUNT> m_key_states {};
+		std::array<std::string_view, ImGuiMouseButton_COUNT> m_mouse_initiated_window {};
+		std::array<std::string_view, ImGuiKey_COUNT> m_key_initiated_window {};
+
 		GLFWwindow* m_window;
 		DebugDrawer m_debug_drawer;
 		float m_min_frame_time;
