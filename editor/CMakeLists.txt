@@ -17,8 +17,8 @@ add_executable(${exec_name} ${src_files})
 target_link_libraries(${exec_name}   
 	$<BUILD_INTERFACE:developer_flags>
 	core
+	gl_wrapper
 	glfw
-	libglew_static
 	imguizmo
 	ImGuiColorTextEdit
 )

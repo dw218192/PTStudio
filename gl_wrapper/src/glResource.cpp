@@ -1,4 +1,4 @@
-#include "include/glResource.h"
+#include "glResource.h"
 
 using namespace PTS;
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <tcb/span.hpp>
+#include <tl/expected.hpp>
 
 #include "glResource.h"
 #include "texture.h"

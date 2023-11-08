@@ -7,3 +7,5 @@ file(GLOB_RECURSE src_files
 
 add_library(stb ${src_files})
 target_include_directories(stb INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
+
+set(STB_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR} PARENT_SCOPE)

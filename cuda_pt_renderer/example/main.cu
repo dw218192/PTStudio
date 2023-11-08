@@ -6,8 +6,8 @@
 
 #include <iostream>
 
-#include "include/utils.h"
-#include "include/helpers.cuh"
+#include "utils.h"
+#include "helpers.cuh"
 
 GLOBAL void incrementKernel(int* d_array, int arraySize) {
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;

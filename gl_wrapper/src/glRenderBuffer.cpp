@@ -1,4 +1,4 @@
-#include "include/glRenderBuffer.h"
+#include "glRenderBuffer.h"
 #include "utils.h"
 
 using namespace PTS;

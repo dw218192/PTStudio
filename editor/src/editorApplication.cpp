@@ -498,9 +498,9 @@ void EditorApplication::try_select_object() noexcept {
     if (!win_pos) {
         this->log(LogLevel::Error, "scene view not found");
         return;
-    } else if(get_cur_hovered_widget() != k_scene_view_win_name) {
+    } else if (get_cur_hovered_widget() != k_scene_view_win_name) {
         return;
-    } else if(get_cur_focused_widget() != k_scene_view_win_name) {
+    } else if (get_cur_focused_widget() != k_scene_view_win_name) {
         return;
     }
 

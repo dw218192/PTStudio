@@ -1,5 +1,5 @@
 #include "include/shader.h"
-#include "include/glTexture.h"
+#include "glTexture.h"
 #include <fstream>
 
 #include "enumIter.h"

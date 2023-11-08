@@ -1,6 +1,6 @@
-#include "include/glFrameBuffer.h"
-#include "include/glRenderBuffer.h"
-#include "include/glTexture.h"
+#include "glFrameBuffer.h"
+#include "glRenderBuffer.h"
+#include "glTexture.h"
 #include "utils.h"
 
 using namespace PTS;
