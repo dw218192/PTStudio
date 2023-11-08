@@ -101,7 +101,6 @@ void EditorApplication::create_input_actions() noexcept {
             m_cam.set(params);
         }
     };
-
     auto select_obj = InputAction {{InputType::MOUSE, ActionType::RELEASE, ImGuiMouseButton_Left },
         [this] (InputEvent const& event) { 
             if (!m_control_state.is_outside_view && 
@@ -110,6 +109,12 @@ void EditorApplication::create_input_actions() noexcept {
             }
         }
     };
+    auto deselect_obj = InputAction {{InputType::KEYBOARD, ActionType::PRESS, ImGuiKey_Escape },
+        [this] (InputEvent const& event) {
+            m_control_state.set_cur_obj(std::nullopt);
+        }
+    };
+
     auto cam_pedestal = InputAction {{InputType::MOUSE, ActionType::HOLD, ImGuiMouseButton_Middle}, 
         [this] (InputEvent const& event) {
             m_cam.set_delta_dolly({
@@ -164,6 +169,10 @@ void EditorApplication::create_input_actions() noexcept {
         select_obj
             .add_constraint(scene_view_focused)
             .add_constraint(scene_view_hovered),
+        deselect_obj
+            .add_constraint(scene_view_focused)
+            .add_constraint(scene_view_hovered)
+            .add_constraint(obj_selected),
         cam_pedestal
             .add_constraint(initiated_in_scene_view),
         cam_pan
@@ -478,7 +487,7 @@ void EditorApplication::on_render_config_change(RenderConfig const& conf) {
     m_cam.set_aspect(conf.get_aspect());
     m_cam.set_fov(conf.fovy);
     for (auto&& renderer : m_renderers) {
-        check_error(renderer->on_change_render_config(conf));
+        check_error(renderer->set_render_config(conf));
     }
 }
 

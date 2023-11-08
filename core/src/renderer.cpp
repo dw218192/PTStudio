@@ -11,3 +11,11 @@ auto PTS::Renderer::init(ObserverPtr<Application> app) noexcept -> tl::expected<
 	m_app = app;
 	return {};
 }
+
+auto PTS::Renderer::set_render_config(RenderConfig config) noexcept -> tl::expected<void, std::string> {
+	if (!config.is_valid() || config == m_config) {
+        return {};
+    }
+	m_config = config;
+	return on_change_render_config();
+}

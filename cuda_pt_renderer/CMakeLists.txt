@@ -24,5 +24,6 @@ set_property(TARGET ${lib_name} PROPERTY
 target_link_libraries( ${lib_name}   
 	$<BUILD_INTERFACE:developer_flags>
 	core
+	gl_wrapper
 	Thrust
 )

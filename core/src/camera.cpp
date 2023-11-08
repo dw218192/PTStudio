@@ -54,6 +54,7 @@ auto PTS::Camera::viewport_to_world(glm::vec2 screen, glm::ivec2 vp_size, float 
     ndc = ndc * 2.0f - 1.0f;
     return ndc_to_wrold(ndc, z);
 }
+
 auto PTS::Camera::viewport_to_ray(glm::vec2 screen, glm::ivec2 vp_size) const noexcept -> Ray {
     auto world = viewport_to_world(screen, vp_size, 1.0f);
     return Ray{ m_eye, world - m_eye };
@@ -107,6 +108,14 @@ void PTS::Camera::on_deserialize() noexcept {
     m_projection = glm::perspective(glm::radians(m_fov), m_aspect, k_near, k_far);
     m_view_proj = m_projection * m_view;
     m_inv_view_proj = glm::inverse(m_view_proj);
+}
+
+auto PTS::Camera::operator==(Camera const& other) const noexcept -> bool {
+	return m_view_proj == other.m_view_proj;
+}
+
+auto PTS::Camera::operator!=(Camera const& other) const noexcept -> bool {
+    return !(*this == other);
 }
 
 void PTS::Camera::set_fov(float fov) noexcept {

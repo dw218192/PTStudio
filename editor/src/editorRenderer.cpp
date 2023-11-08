@@ -208,11 +208,7 @@ auto EditorRenderer::render_buffered(View<Camera> cam) noexcept -> tl::expected<
     return m_render_buf->get_texture(GL_COLOR_ATTACHMENT0);
 }
 
-auto EditorRenderer::on_change_render_config(RenderConfig config) noexcept -> tl::expected<void, std::string> {
-    if (!config.is_valid() || config == m_config) {
-        return {};
-    }
-    m_config = std::move(config);
+auto EditorRenderer::on_change_render_config() noexcept -> tl::expected<void, std::string> {
     if (m_render_buf) {
         TL_CHECK_AND_PASS(m_render_buf->bind());
         {

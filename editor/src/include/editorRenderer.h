@@ -27,14 +27,13 @@ namespace PTS {
             [[nodiscard]] auto render(View<Camera> cam) noexcept -> tl::expected<void, std::string> override;
             [[nodiscard]] auto render_buffered(View<Camera> cam) noexcept -> tl::expected<TextureHandle, std::string> override;
             [[nodiscard]] auto valid() const noexcept -> bool override { return m_valid; }
-            [[nodiscard]] auto on_change_render_config(RenderConfig config) noexcept -> tl::expected<void, std::string> override;
             [[nodiscard]] auto on_add_editable(EditableView editable) noexcept -> tl::expected<void, std::string> override;
             [[nodiscard]] auto on_remove_editable(EditableView editable) noexcept -> tl::expected<void, std::string> override;
             [[nodiscard]] auto draw_imgui() noexcept -> tl::expected<void, std::string> override;
-
             void on_editable_change(std::optional<EditableView> obj) noexcept;
+        protected:
+            [[nodiscard]] auto on_change_render_config() noexcept -> tl::expected<void, std::string> override;
         private:
-
             struct PerObjectData;
             struct PerTextEditorData;
             struct PerObjectEditingData;

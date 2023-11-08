@@ -10,7 +10,7 @@ using namespace PTS;
 
 // we try to avoid any functions in std namespace
 // because we need this code to be runnable on both host and device
-auto Intersection::ray_box(BoundingBox const& box, Ray const& r) noexcept -> Result {
+HOST DEVICE auto Intersection::ray_box(BoundingBox const& box, Ray const& r) noexcept -> Result {
     float tmin = SMALL_FLOAT;
     float tmax = LARGE_FLOAT;
     glm::vec3 tmins = (box.min_pos - r.origin) / r.direction;
@@ -50,14 +50,14 @@ auto Intersection::ray_box(BoundingBox const& box, Ray const& r) noexcept -> Res
     };
 }
 
-auto Intersection::ray_triangle(tcb::span<glm::vec3 const, 3> triangle, Ray const& r) noexcept -> Result {
+HOST DEVICE auto Intersection::ray_triangle(glm::vec3 const (&triangle) [3], Ray const& r) noexcept -> Result {
     glm::vec2 bary_pos;
     float dist = 0;
     auto const hit = glm::intersectRayTriangle(r.origin, r.direction, triangle[0], triangle[1], triangle[2], bary_pos, dist);
     return Result{ hit, dist };
 }
 
-auto Intersection::ray_sphere(BoundingSphere const& sphere, Ray const& r) noexcept -> Result {
+HOST DEVICE auto Intersection::ray_sphere(BoundingSphere const& sphere, Ray const& r) noexcept -> Result {
     float dist = 0;
     auto const hit = glm::intersectRaySphere(r.origin, r.direction, sphere.center, sphere.radius * sphere.radius, dist);
     return Result{ hit, dist };

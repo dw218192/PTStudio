@@ -109,6 +109,9 @@ namespace PTS {
         void set(LookAtParams const& params) noexcept;
         void on_deserialize() noexcept;
 
+        auto operator==(Camera const& other) const noexcept -> bool;
+        auto operator!=(Camera const& other) const noexcept -> bool;
+
     private:
         void on_view_changed() noexcept;
         void on_proj_changed() noexcept;

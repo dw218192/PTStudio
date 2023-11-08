@@ -92,13 +92,13 @@ auto Scene::ray_cast(Ray const& ray, float t_min, float t_max) noexcept -> std::
         if (res.hit && res.t < closest_t && res.t >= t_min) {
             auto&& triangles = obj.get_vertices();
             for (int i=0; i<triangles.size(); i+=3) {
-                auto triangle = {
+                glm::vec3 triangle[3] = {
                     triangles[i].position,
                     triangles[i + 1].position,
                     triangles[i + 2].position
                 };
 
-            	res = Intersection::ray_triangle(tcb::make_span(triangle), local_ray);
+            	res = Intersection::ray_triangle(triangle, local_ray);
                 if (res.hit && res.t < closest_t && res.t >= t_min) {
                     closest_t = res.t;
                     ret = obj;

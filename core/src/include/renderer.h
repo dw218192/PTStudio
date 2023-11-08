@@ -27,7 +27,7 @@ namespace PTS {
          * \param config The new render configuration
          * \return on failure, an error message
         */
-        NODISCARD virtual auto on_change_render_config(RenderConfig config) noexcept -> tl::expected<void, std::string> = 0;
+        NODISCARD auto set_render_config(RenderConfig config) noexcept -> tl::expected<void, std::string>;
 
         /**
          * \brief Called when an object is added to the scene
@@ -86,6 +86,8 @@ namespace PTS {
         }
 
     protected:
+        NODISCARD virtual auto on_change_render_config() noexcept -> tl::expected<void, std::string> = 0;
+
         std::string m_name;
         RenderConfig m_config;
         ObserverPtr<Application> m_app;
