@@ -9,7 +9,6 @@
 
 #include <unordered_map>
 #include <array>
-#include <singleton.h>
 
 #include "editorResources.h"
 #include "TextEditor.h"

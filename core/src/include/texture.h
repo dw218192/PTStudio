@@ -2,6 +2,7 @@
 #include "utils.h"
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <tl/expected.hpp>

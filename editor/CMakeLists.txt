@@ -21,6 +21,9 @@ target_link_libraries(${exec_name}
 	glfw
 	imguizmo
 	ImGuiColorTextEdit
+
+	#renderers
+	vulkan_raytracer
 )
 
 install(TARGETS ${exec_name}

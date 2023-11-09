@@ -15,7 +15,7 @@ if (CMAKE_BUILD_TYPE STREQUAL "")
 endif ()
 
 # options
-option(PTSTUDIO_PATHTRACER "Build pathtracer" ON)
+option(PTSTUDIO_PATHTRACER "Build CUDA pathtracer" OFF)
 
 # Direct all output to /bin directory
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin)
@@ -44,11 +44,12 @@ set(MSVC_XCOMPILER_FLAGS
 )
 
 set(cuda_flags
-    #$<$<AND:$<CXX_COMPILER_ID:GNU>,$<CONFIG:Debug>>:-Xcompiler -Wall -g -O0>
-    #$<$<AND:$<CXX_COMPILER_ID:GNU>,$<NOT:$<CONFIG:Debug>>>:-Xcompiler -Wall -O3>
-    #$<$<AND:$<CXX_COMPILER_ID:Clang>,$<CONFIG:Debug>>:-Xcompiler -Wall -g -O0>
-    #$<$<AND:$<CXX_COMPILER_ID:Clang>,$<NOT:$<CONFIG:Debug>>>:-Xcompiler -Wall -O3>
-    # $<$<CXX_COMPILER_ID:MSVC>:-Xcompiler ${MSVC_XCOMPILER_FLAGS}>
+    -std=c++17
+    $<$<AND:$<CXX_COMPILER_ID:GNU>,$<CONFIG:Debug>>:-Xcompiler -Wall -g -O0>
+    $<$<AND:$<CXX_COMPILER_ID:GNU>,$<NOT:$<CONFIG:Debug>>>:-Xcompiler -Wall -O3>
+    $<$<AND:$<CXX_COMPILER_ID:Clang>,$<CONFIG:Debug>>:-Xcompiler -Wall -g -O0>
+    $<$<AND:$<CXX_COMPILER_ID:Clang>,$<NOT:$<CONFIG:Debug>>>:-Xcompiler -Wall -O3>
+    $<$<CXX_COMPILER_ID:MSVC>:-Xcompiler ${MSVC_XCOMPILER_FLAGS}>
     -Xcudafe=--display_error_number    
     -lineinfo    
     --expt-extended-lambda    
@@ -93,10 +94,13 @@ add_subdirectory(${EXT_DIR})
 
 # add subprojects
 add_subdirectory(core)
+
+# renderers
 add_subdirectory(gl_wrapper)
 if (PTSTUDIO_PATHTRACER)
     add_subdirectory(cuda_pt_renderer)
 endif ()
+add_subdirectory(vulkan_raytracer)
 
 add_subdirectory(editor)
 
