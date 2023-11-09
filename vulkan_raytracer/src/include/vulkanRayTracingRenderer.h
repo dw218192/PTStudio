@@ -23,16 +23,47 @@ namespace PTS {
 	    [[nodiscard]] auto draw_imgui() noexcept -> tl::expected<void, std::string> override;
 
     private:
-        [[nodiscard]] auto create_instance() -> tl::expected<vk::UniqueInstance, std::string>;
-        [[nodiscard]] auto create_device() -> tl::expected<vk::UniqueDevice, std::string>;
+		template<typename UniqueHandle>
+		struct VulkanInfo {
+			UniqueHandle handle;
+			operator bool() const {
+				return handle.get();
+			}
+			auto* operator->() {
+				return handle.operator->();
+			}
+			auto& operator*() {
+				return handle.operator*();
+			}
+			auto const* operator->() const {
+				return handle.operator->();
+			}
+			auto const& operator*() const {
+				return handle.operator*();
+			}
+		};
+		struct VulkanInsInfo : VulkanInfo<vk::UniqueInstance> {
+			std::vector<char const*> device_exts;
+			std::vector<char const*> layers;
+		};
+		struct VulkanDeviceInfo : VulkanInfo<vk::UniqueDevice> {
+			unsigned queue_family_idx{ 0 };
+		};
+		struct VulkanCmdPoolInfo : VulkanInfo<vk::UniqueCommandPool> {
+			vk::Queue queue;
+		};
+
+        [[nodiscard]] auto create_instance() -> tl::expected<VulkanInsInfo, std::string>;
+        [[nodiscard]] auto create_device() -> tl::expected<VulkanDeviceInfo, std::string>;
+		[[nodiscard]] auto create_cmd_pool()->tl::expected<VulkanCmdPoolInfo, std::string>;
 		[[nodiscard]] auto create_frame_buffer() -> tl::expected<void, std::string>;
 
         // prepare shared texture between vulkan and opengl
         [[nodiscard]] auto prepared_shared_tex() -> tl::expected<void, std::string>;
 
-
-        vk::UniqueInstance m_vk_ins;
-		vk::UniqueDevice m_vk_device;
+		VulkanInsInfo m_vk_ins;
+		VulkanDeviceInfo m_vk_device;
+		VulkanCmdPoolInfo m_vk_cmd_pool;
 
 		struct {
 			vk::UniqueImage image;
