@@ -1,7 +1,10 @@
 #pragma once
 
 #include "renderer.h"
+#include "glTexture.h"
+#include "vulkanGLInterop.h"
 #include <vulkan/vulkan.hpp>
+#include <tcb/span.hpp>
 
 namespace PTS {
     struct VulkanRayTracingRenderer final : Renderer {
@@ -49,39 +52,52 @@ namespace PTS {
             }
 		};
 		struct VulkanInsInfo : VulkanInfo<vk::UniqueInstance> {
-			std::vector<char const*> device_exts;
-			std::vector<char const*> layers;
+			std::vector<std::string_view> ins_exts {};
+			std::vector<std::string_view> layers {};
 		};
 		struct VulkanDeviceInfo : VulkanInfo<vk::UniqueDevice> {
-            vk::PhysicalDevice physical_device;
+            vk::PhysicalDevice physical_device {};
 			unsigned queue_family_idx{ 0 };
 		};
 		struct VulkanCmdPoolInfo : VulkanInfo<vk::UniqueCommandPool> {
-			vk::Queue queue;
+			vk::Queue queue {};
 		};
         struct VulkanBufferInfo : VulkanInfo<vk::UniqueBuffer> {
-            vk::UniqueDeviceMemory mem;
+            vk::UniqueDeviceMemory mem {};
         };
-        struct VulkanImageInfo : VulkanInfo<vk::UniqueImage> {
-            vk::UniqueDeviceMemory mem;
-            vk::UniqueImageView view;
-            vk::Format format;
+        // if not shared, only vulkan part of this struct is valid
+        struct VulkanImageInfo {
+            VulkanGLInteropUtils::SharedImage img{};
+            vk::UniqueImageView view {};
+            vk::UniqueSampler sampler {};
         };
         struct VulkanRenderPassInfo : VulkanInfo<vk::UniqueRenderPass> {
-            vk::Format color_fmt;
-            vk::Format depth_fmt;
+            vk::Format color_fmt {};
+            vk::Format depth_fmt {};
         };
         struct VulkanFrameBufferInfo : VulkanInfo<vk::UniqueFramebuffer> {
-            VulkanImageInfo color_tex;
-            VulkanImageInfo depth_tex;
+            VulkanImageInfo color_tex {};
+            VulkanImageInfo depth_tex {};
+        };
+        struct VulkanShaderInfo : VulkanInfo<vk::UniqueShaderModule> {
+            vk::ShaderStageFlagBits stage {};
         };
         struct VulkanPipelineInfo : VulkanInfo<vk::UniquePipeline> {
-            vk::UniquePipelineLayout layout;
+            vk::UniquePipelineLayout layout {};
+            vk::UniqueDescriptorSetLayout desc_set_layout {};
         };
-        
-#define REQUIRES_INFO(...) // only for documentation
-        [[nodiscard]] auto create_instance() -> tl::expected<VulkanInsInfo, std::string>;
-        [[nodiscard]] auto create_device() -> tl::expected<VulkanDeviceInfo, std::string>;
+        struct VulkanCmdBufInfo : VulkanInfo<vk::UniqueCommandBuffer> {
+            vk::UniqueFence fence {};
+        };
+
+        [[nodiscard]] auto create_instance(
+            tcb::span<std::string_view> required_ins_ext,
+            tcb::span<std::string_view> required_gl_ext
+        ) -> tl::expected<VulkanInsInfo, std::string>;
+
+        [[nodiscard]] auto create_device(tcb::span<std::string_view> required_device_ext)
+          -> tl::expected<VulkanDeviceInfo, std::string>;
+
         [[nodiscard]] auto create_cmd_pool() -> tl::expected<VulkanCmdPoolInfo, std::string>;
         [[nodiscard]] auto create_buffer(
             vk::BufferUsageFlags usage_flags,
@@ -90,7 +106,7 @@ namespace PTS {
             void* data
         ) -> tl::expected<VulkanBufferInfo, std::string>;
         
-        [[nodiscard]] auto do_work_now(VulkanCmdPoolInfo const& cmd, vk::UniqueCommandBuffer cmd_buf)
+        [[nodiscard]] auto do_work_now(VulkanCmdPoolInfo const& cmd, vk::CommandBuffer const& cmd_buf)
             -> tl::expected<void, std::string>;
         
         [[nodiscard]] auto create_tex(
@@ -99,17 +115,30 @@ namespace PTS {
             vk::ImageUsageFlags usage_flags,
             vk::MemoryPropertyFlags prop_flags,
             vk::ImageAspectFlags aspect_flags,
-            vk::ImageLayout layout
+            vk::ImageLayout layout,
+            vk::SamplerCreateInfo sampler_info,
+            bool shared
         ) -> tl::expected<VulkanImageInfo, std::string>;
+
 
         [[nodiscard]] auto create_render_pass() -> tl::expected<VulkanRenderPassInfo, std::string>;
         [[nodiscard]] auto create_frame_buf() -> tl::expected<VulkanFrameBufferInfo, std::string>;
+        [[nodiscard]] auto create_shader_glsl(std::string_view src, std::string_view name, vk::ShaderStageFlagBits stage)
+            -> tl::expected<VulkanShaderInfo, std::string>;
         [[nodiscard]] auto create_pipeline() -> tl::expected<VulkanPipelineInfo, std::string>;
+        [[nodiscard]] auto config_cmd_buf(
+            vk::CommandBuffer& cmd_buf,
+            unsigned width, unsigned height
+        ) -> tl::expected<void, std::string>;
+        [[nodiscard]] auto create_cmd_buf() -> tl::expected<VulkanCmdBufInfo, std::string>;
 
 		VulkanInsInfo m_vk_ins;
 		VulkanDeviceInfo m_vk_device;
 		VulkanCmdPoolInfo m_vk_cmd_pool;
         VulkanRenderPassInfo m_vk_render_pass;
         VulkanFrameBufferInfo m_vk_frame_buf;
+        VulkanPipelineInfo m_vk_pipeline;
+        VulkanCmdBufInfo m_vk_render_cmd_buf;
+        VulkanBufferInfo m_vk_vertex_buf;
     };
 }

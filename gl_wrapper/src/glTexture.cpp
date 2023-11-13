@@ -4,6 +4,45 @@
 
 using namespace PTS;
 
+namespace {
+    auto get_num_channels(GLenum format) noexcept -> unsigned {
+        switch (format) {
+        case GL_RED:
+        case GL_GREEN:
+        case GL_BLUE:
+        case GL_RED_INTEGER:
+        case GL_GREEN_INTEGER:
+        case GL_BLUE_INTEGER:
+        case GL_ALPHA:
+        case GL_LUMINANCE:
+        case GL_LUMINANCE_ALPHA:
+        case GL_STENCIL_INDEX:
+        case GL_COLOR_INDEX:
+        case GL_DEPTH_COMPONENT:
+        case GL_DEPTH_STENCIL:
+            return 1;
+        case GL_RG:
+        case GL_RG_INTEGER:
+            return 2;
+        case GL_RGB:
+        case GL_BGR:
+        case GL_RGB_INTEGER:
+        case GL_BGR_INTEGER:
+            return  3;
+        case GL_RGBA:
+        case GL_BGRA:
+        case GL_RGBA_INTEGER:
+        case GL_BGRA_INTEGER:
+        case GL_RGBA8:
+        case GL_RGBA8_SNORM:
+            return 4;
+
+        default:
+            return 0;
+        }
+    }
+}
+
 auto GLTexture::fetch_pixels() const noexcept -> tl::expected<void, std::string> {
     TL_CHECK_AND_PASS(bind());
     glGetTexImage(GL_TEXTURE_2D, 0, m_format, GL_UNSIGNED_BYTE, m_pixels.data());
@@ -42,13 +81,9 @@ auto GLTexture::create(unsigned width, unsigned height, GLenum format, std::init
 {
     GLuint tex;
     TL_TRY_ASSIGN(tex, create_tex(width, height, format, nullptr, params));
-    unsigned num_channels;
-    switch (format) {
-    case GL_RED: num_channels = 1; break;
-    case GL_RG: num_channels = 2; break;
-    case GL_RGB: num_channels = 3; break;
-    case GL_RGBA: num_channels = 4; break;
-    default: return TL_ERROR("unsupported image format");
+    auto num_channels = get_num_channels(format);
+    if (!num_channels) {
+        return TL_ERROR("unsupported image format");
     }
     auto ret = GLTextureRef{ new GLTexture{ width, height, num_channels, format, tex }, GLResourceDeleter{} };
     return ret;
@@ -107,6 +142,16 @@ auto GLTexture::create(std::string_view img_file, FileFormat type, std::initiali
     std::vector<unsigned char> img_mem(size);
     file.read(reinterpret_cast<char*>(img_mem.data()), size);
     return create(img_mem, type, params);
+}
+
+auto GLTexture::create(unsigned width, unsigned height, GLenum format, GLuint handle) noexcept
+-> tl::expected<GLTextureRef, std::string> {
+    auto const channels = get_num_channels(format);
+    if (!channels) {
+        return TL_ERROR("unsupported image format");
+    }
+    auto ret = GLTextureRef{ new GLTexture{ width, height, channels, format, handle }, GLResourceDeleter{} };
+    return ret;
 }
 
 GLTexture::GLTexture(unsigned width, unsigned height, unsigned channels, GLenum format, GLuint handle)

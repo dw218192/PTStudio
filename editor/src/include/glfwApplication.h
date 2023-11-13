@@ -40,7 +40,7 @@ namespace PTS {
 
 	protected:
 		virtual auto handle_input(InputEvent const& event) noexcept -> void {}
-		virtual auto on_begin_first_loop() -> void {}
+		virtual auto on_begin_first_loop() -> void;
 		auto poll_input_events() noexcept -> void;
 
 		/**

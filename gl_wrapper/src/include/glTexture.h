@@ -25,6 +25,8 @@ namespace PTS {
 		[[nodiscard]] static auto create(std::string_view img_file, FileFormat type,
 		                                 std::initializer_list<GLParam> params = k_default_params) noexcept
 			-> tl::expected<GLTextureRef, std::string>;
+		[[nodiscard]] static auto create(unsigned width, unsigned height, GLenum format, GLuint handle) noexcept
+			-> tl::expected<GLTextureRef, std::string>;
 
 		GLTexture(GLTexture const&) = delete;
 		auto operator=(GLTexture const&) -> GLTexture& = delete;
@@ -37,7 +39,6 @@ namespace PTS {
 		[[nodiscard]] auto get_id() const noexcept -> void* override;
 		[[nodiscard]] auto format() const noexcept -> GLenum { return m_format; }
 		[[nodiscard]] auto resize(unsigned width, unsigned height) noexcept -> tl::expected<void, std::string> override;
-
 	private:
 		[[nodiscard]] static auto create_tex(unsigned width, unsigned height, GLenum format, unsigned char const* data,
 		                                     std::initializer_list<GLParam> params) noexcept -> tl::expected<

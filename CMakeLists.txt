@@ -7,7 +7,6 @@ project(${project_name} LANGUAGES CXX C)
 
 # CUDA and C++ standard
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CUDA_STANDARD 17)
 
 #default build type is Debug
 if (CMAKE_BUILD_TYPE STREQUAL "")

@@ -85,9 +85,6 @@ GLFWApplication::GLFWApplication(std::string_view name, unsigned width, unsigned
     // Setup Platform/Renderer backends
     ImGui_ImplGlfw_InitForOpenGL(m_window, true);
     ImGui_ImplOpenGL3_Init("#version 130");
-
-    ImGui::SetNextWindowPos({ 10, 10 });
-    ImGui::SetNextWindowSize({ 0, static_cast<float>(height) / 5.0f });
 }
 
 GLFWApplication::~GLFWApplication() {
@@ -164,6 +161,8 @@ void GLFWApplication::run() {
         }
     }
 }
+
+auto GLFWApplication::on_begin_first_loop() -> void {}
 
 auto GLFWApplication::poll_input_events() noexcept -> void {
     auto screen_dim = glm::ivec2{ get_window_width(), get_window_height() };

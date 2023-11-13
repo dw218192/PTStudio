@@ -414,9 +414,24 @@ void EditorApplication::draw_scene_viewport(TextureHandle render_buf) noexcept {
         }
 
         check_error(render_buf->bind());
+        auto uv0 = ImVec2{ 0, 0 };
+        auto uv1 = ImVec2{ 1, 1 };
+
+        if (render_buf->get_width() != m_config.width) {
+            uv1.x = m_config.width / static_cast<float>(render_buf->get_width());
+        }
+        if (render_buf->get_height() != m_config.height) {
+            uv1.y = m_config.height / static_cast<float>(render_buf->get_height());
+        }
+        // imgui uses top-left as origin, but we use bottom-left
+        uv0.y = uv1.y;
+        uv1.y = 0;
+
         ImGui::Image(
             render_buf->get_id(),
-            view_size, { 0, 1 }, { 1, 0 }
+            view_size,
+            uv0,
+            uv1
         );
         render_buf->unbind();
 
@@ -525,45 +540,12 @@ void EditorApplication::try_select_object() noexcept {
 }
 
 void EditorApplication::handle_input(InputEvent const& event) noexcept {
-    //char const* input_type;
-    //switch (event.input.input_type) {
-    //case InputType::KEYBOARD:
-    //    input_type = "keyboard";
-    //    break;
-    //case InputType::MOUSE:
-    //    input_type = "mouse";
-    //    break;
-    //default:
-    //    input_type = "unknown";
-    //    break;
-    //}
-    //char const* action_type;
-    //switch (event.input.action_type) {
-    //case ActionType::PRESS:
-    //    action_type = "press";
-    //    break;
-    //case ActionType::HOLD:
-    //    action_type = "hold";
-    //    break;
-    //case ActionType::RELEASE:
-    //    action_type = "release";
-    //    break;
-    //case ActionType::SCROLL:
-    //    action_type = "scroll";
-    //    break;
-    //default:
-    //    action_type = "unknown";
-    //    break;
-    //}
-    //std::cout << input_type << ' ' << action_type << std::endl;
-
     for (auto&& action : m_input_actions) {
         action(event);
     }
 }
 
 void EditorApplication::add_object(Object obj) noexcept {
-    auto const bbox = m_scene.get_scene_bound();
     auto const pobj = m_scene.add_object(std::move(obj));
     if(!pobj) {
         this->log(LogLevel::Error, "failed to add object");
