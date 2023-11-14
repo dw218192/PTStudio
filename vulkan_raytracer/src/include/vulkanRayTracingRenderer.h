@@ -102,8 +102,19 @@ namespace PTS {
             vk::DeviceAddress device_addr {};
         };
         struct VulkanAccelStructInfo : VulkanInfo<vk::UniqueAccelerationStructureKHR> {
-            VulkanBufferInfo buffer {};
+            VulkanBufferInfo storage_mem {};
+            vk::AccelerationStructureBuildGeometryInfoKHR geom_build_info {};
             vk::WriteDescriptorSetAccelerationStructureKHR desc_info {};
+        };
+        struct VulkanBottomAccelStructInfo {
+            VulkanAccelStructInfo accel {};
+            VulkanBufferInfo vertex_mem {};
+            VulkanBufferInfo index_mem {};
+        };
+        struct VulkanTopAccelStructInfo {
+            VulkanAccelStructInfo accel {};
+            std::vector<VulkanBottomAccelStructInfo> bottom_accels {};
+            std::vector<vk::AccelerationStructureInstanceKHR> instances {};
         };
 
         [[nodiscard]] auto create_instance(
@@ -115,14 +126,20 @@ namespace PTS {
           -> tl::expected<VulkanDeviceInfo, std::string>;
 
         [[nodiscard]] auto create_cmd_pool() -> tl::expected<VulkanCmdPoolInfo, std::string>;
+
+        /**
+         * @brief Convenience function to create a vulkan buffer
+         * @param type the type of the buffer
+         * @param size the size of the buffer, in bytes
+         * @param data the data to be copied to the buffer, can be nullptr if the buffer is not to be initialized
+        */
         [[nodiscard]] auto create_buffer(
             VulkanBufferInfo::Type type,
             vk::DeviceSize size,
-            void* data
+            void const* data
         ) -> tl::expected<VulkanBufferInfo, std::string>;
         
-        [[nodiscard]] auto do_work_now(VulkanCmdPoolInfo const& cmd, vk::CommandBuffer const& cmd_buf)
-            -> tl::expected<void, std::string>;
+        [[nodiscard]] auto do_work_now(vk::CommandBuffer const& cmd_buf) -> tl::expected<void, std::string>;
         
         [[nodiscard]] auto create_tex(
             vk::Format fmt,
@@ -135,7 +152,6 @@ namespace PTS {
             bool shared
         ) -> tl::expected<VulkanImageInfo, std::string>;
 
-
         [[nodiscard]] auto create_render_pass() -> tl::expected<VulkanRenderPassInfo, std::string>;
         [[nodiscard]] auto create_frame_buf() -> tl::expected<VulkanFrameBufferInfo, std::string>;
         [[nodiscard]] auto create_shader_glsl(std::string_view src, std::string_view name, vk::ShaderStageFlagBits stage)
@@ -146,20 +162,25 @@ namespace PTS {
         ) -> tl::expected<void, std::string>;
         [[nodiscard]] auto create_cmd_buf() -> tl::expected<VulkanCmdBufInfo, std::string>;
 
-
-        [[nodiscard]] auto create_accel_struct() -> tl::expected<VulkanAccelStructInfo, std::string>;
-        [[nodiscard]] auto create_rt_pipeline() -> tl::expected<VulkanPipelineInfo, std::string>;
+        [[nodiscard]] auto create_accel(
+            vk::AccelerationStructureBuildGeometryInfoKHR geom_build_info,
+            vk::AccelerationStructureTypeKHR type,
+            uint32_t primitive_count
+        ) -> tl::expected<VulkanAccelStructInfo, std::string>;
+        [[nodiscard]] auto create_bottom_accel_for(Object const& obj) -> tl::expected<VulkanBottomAccelStructInfo, std::string>;
+        [[nodiscard]] auto create_top_accel_for(Scene const& scene) -> tl::expected<VulkanTopAccelStructInfo, std::string>;
+        [[nodiscard]] auto create_rt_pipeline(Scene const& scene) -> tl::expected<VulkanPipelineInfo, std::string>;
 
         // a simple rasterization pipeline for testing
-        [[nodiscard]] auto create_test_pipeline() -> tl::expected<VulkanPipelineInfo, std::string>;
+        [[nodiscard]] auto test_create_pipeline() -> tl::expected<VulkanPipelineInfo, std::string>;
 
 		VulkanInsInfo m_vk_ins;
 		VulkanDeviceInfo m_vk_device;
 		VulkanCmdPoolInfo m_vk_cmd_pool;
+        VulkanCmdBufInfo m_vk_render_cmd_buf;
         VulkanRenderPassInfo m_vk_render_pass;
         VulkanFrameBufferInfo m_vk_frame_buf;
+        VulkanTopAccelStructInfo m_vk_top_accel;
         VulkanPipelineInfo m_vk_pipeline;
-        VulkanCmdBufInfo m_vk_render_cmd_buf;
-        VulkanBufferInfo m_vk_vertex_buf;
     };
 }

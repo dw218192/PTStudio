@@ -13,6 +13,7 @@ namespace PTS {
 	using GLVertexArrayRef = UniqueGLResRef<GLVertexArray>;
 
 	struct GLVertexArray final : GLResource {
+		NO_COPY(GLVertexArray);
 		template <typename VertexType, std::size_t Extent, typename... GLAttributeInfos>
 		[[nodiscard]] static auto create(tcb::span<VertexType const, Extent> vertex_data, GLAttributeInfos... attris)
 			-> tl::expected<GLVertexArrayRef, std::string>;
@@ -24,8 +25,6 @@ namespace PTS {
 			GLAttributeInfos... attris
 		) -> tl::expected<GLVertexArrayRef, std::string>;
 
-		GLVertexArray(GLVertexArray const&) = delete;
-		auto operator=(GLVertexArray const&) -> GLVertexArray& = delete;
 		GLVertexArray(GLVertexArray&& other) noexcept;
 		auto operator=(GLVertexArray&& other) noexcept -> GLVertexArray&;
 

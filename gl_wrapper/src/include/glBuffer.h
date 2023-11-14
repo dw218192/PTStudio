@@ -12,10 +12,9 @@ namespace PTS {
 	using GLBufferRef = UniqueGLResRef<GLBuffer>;
 
 	struct GLBuffer final : GLResource {
-		static auto create(GLenum target) -> tl::expected<GLBufferRef, std::string>;
+		NO_COPY(GLBuffer);
+		[[nodiscard]] static auto create(GLenum target) -> tl::expected<GLBufferRef, std::string>;
 
-		GLBuffer(GLBuffer const&) = delete;
-		auto operator=(GLBuffer const&)->GLBuffer & = delete;
 		GLBuffer(GLBuffer&& other) noexcept;
 		auto operator=(GLBuffer&& other) noexcept -> GLBuffer&;
 
