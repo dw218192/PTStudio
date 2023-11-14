@@ -123,53 +123,19 @@ auto PTS::VulkanRayTracingRenderer::init(ObserverPtr<Application> app) noexcept
     ));
     
     auto device_ext = VulkanGLInteropUtils::get_vk_dev_exts();
+    // add ray tracing extensions
+    device_ext.emplace_back(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
+    device_ext.emplace_back(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+
 	TL_TRY_ASSIGN(m_vk_device, create_device(device_ext));
     TL_TRY_ASSIGN(m_vk_cmd_pool, create_cmd_pool());
-    
-    // upload vertex data to VRAM
-    {
-        VulkanBufferInfo staging_buffer;
-        TL_TRY_ASSIGN(staging_buffer, create_buffer(
-            vk::BufferUsageFlagBits::eTransferSrc,
-            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-            sizeof(k_quad_data_pos_uv),
-            const_cast<void*>(static_cast<void const*>(k_quad_data_pos_uv))
-        ));
-        TL_TRY_ASSIGN(m_vk_vertex_buf, create_buffer(
-            vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer,
-            vk::MemoryPropertyFlagBits::eDeviceLocal,
-            sizeof(k_quad_data_pos_uv),
-            nullptr
-        ));
-
-        auto copy_cmd = vk::UniqueCommandBuffer {};
-        try {
-            auto cmds = m_vk_device->allocateCommandBuffersUnique(
-                vk::CommandBufferAllocateInfo{
-                    m_vk_cmd_pool.handle.get(),
-                    vk::CommandBufferLevel::ePrimary,
-                    1
-                }
-            );
-            cmds[0]->begin(vk::CommandBufferBeginInfo{});
-            cmds[0]->copyBuffer(staging_buffer.handle.get(), m_vk_vertex_buf.handle.get(), vk::BufferCopy {
-                0, 0, sizeof(k_quad_data_pos_uv)
-            });
-            cmds[0]->end();
-            copy_cmd = std::move(cmds[0]);
-        } catch (vk::SystemError& err) {
-            return TL_ERROR(err.what());
-        }
-
-        TL_CHECK_AND_PASS(do_work_now(m_vk_cmd_pool, *copy_cmd));
-    }
 
     // create render pass
     TL_TRY_ASSIGN(m_vk_render_pass, create_render_pass());
     // create frame buffer
     TL_TRY_ASSIGN(m_vk_frame_buf, create_frame_buf());
     // create pipeline
-    TL_TRY_ASSIGN(m_vk_pipeline, create_pipeline());
+    TL_TRY_ASSIGN(m_vk_pipeline, create_rt_pipeline());
     // create command buffer
     TL_TRY_ASSIGN(m_vk_render_cmd_buf, create_cmd_buf());
 
@@ -348,13 +314,40 @@ auto PTS::VulkanRayTracingRenderer::create_cmd_pool() -> tl::expected<VulkanCmdP
 	}
 }
 
-auto PTS::VulkanRayTracingRenderer::create_buffer(vk::BufferUsageFlags usage_flags, vk::MemoryPropertyFlags prop_flags, vk::DeviceSize size, void* data)
+auto PTS::VulkanRayTracingRenderer::create_buffer(VulkanBufferInfo::Type type, vk::DeviceSize size, void* data)
 -> tl::expected<VulkanBufferInfo, std::string> {
     if(!m_vk_device) {
         return TL_ERROR("device not created");
     }
 
     try {
+        auto usage_flags = vk::BufferUsageFlags{};
+        auto mem_props_flags = vk::MemoryPropertyFlags{};
+        switch (type) {
+        case VulkanBufferInfo::Type::Scratch:
+            usage_flags = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress;
+            mem_props_flags = vk::MemoryPropertyFlagBits::eDeviceLocal;
+            break;
+        case VulkanBufferInfo::Type::AccelInput:
+            usage_flags = vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR | 
+                vk::BufferUsageFlagBits::eShaderDeviceAddress |
+                vk::BufferUsageFlagBits::eStorageBuffer;
+            mem_props_flags = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
+            break;
+        case VulkanBufferInfo::Type::AccelStorage:
+            usage_flags = vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR | 
+                vk::BufferUsageFlagBits::eShaderDeviceAddress;
+            mem_props_flags = vk::MemoryPropertyFlagBits::eDeviceLocal;
+            break;
+        case VulkanBufferInfo::Type::ShaderBindingTable:
+            usage_flags = vk::BufferUsageFlagBits::eShaderBindingTableKHR | 
+                vk::BufferUsageFlagBits::eShaderDeviceAddress;
+            mem_props_flags = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
+            break;
+        default:
+            return TL_ERROR("invalid buffer type");
+        }
+
         auto buffer = m_vk_device->createBufferUnique(
             vk::BufferCreateInfo{
                 vk::BufferCreateFlags{},
@@ -371,7 +364,7 @@ auto PTS::VulkanRayTracingRenderer::create_buffer(vk::BufferUsageFlags usage_fla
         auto mem_type_idx = std::numeric_limits<uint32_t>::max();
         auto mem_props = m_vk_device.physical_device.getMemoryProperties();
         for (auto i = 0u; i < mem_props.memoryTypeCount; ++i) {
-            if ((mem_req.memoryTypeBits & (1 << i)) && (mem_props.memoryTypes[i].propertyFlags & prop_flags) == prop_flags) {
+            if ((mem_req.memoryTypeBits & (1 << i)) && (mem_props.memoryTypes[i].propertyFlags & mem_props_flags) == mem_props_flags) {
                 mem_type_idx = i;
                 break;
             }
@@ -389,9 +382,18 @@ auto PTS::VulkanRayTracingRenderer::create_buffer(vk::BufferUsageFlags usage_fla
             memcpy(mapped, data, size);
             m_vk_device->unmapMemory(*mem);
         }
-
         m_vk_device->bindBufferMemory(*buffer, *mem, 0);
-        return VulkanBufferInfo{{std::move(buffer)}, std::move(mem) };
+        auto desc_info = vk::DescriptorBufferInfo{
+            *buffer,
+            0,
+            size
+        }; 
+        auto device_addr = m_vk_device->getBufferAddressKHR(
+            vk::BufferDeviceAddressInfo{
+                *buffer
+            }
+        );
+        return VulkanBufferInfo{{std::move(buffer)}, std::move(mem), std::move(desc_info), device_addr };
     } catch (vk::SystemError& err) {
         return TL_ERROR(err.what());
     }
@@ -706,7 +708,7 @@ auto PTS::VulkanRayTracingRenderer::create_shader_glsl(std::string_view src, std
     }
 }
 
-auto PTS::VulkanRayTracingRenderer::create_pipeline() -> tl::expected<VulkanPipelineInfo, std::string> {
+auto PTS::VulkanRayTracingRenderer::create_test_pipeline() -> tl::expected<VulkanPipelineInfo, std::string> {
     if(!m_vk_device) {
         return TL_ERROR("device not created");
     }
@@ -993,4 +995,12 @@ auto PTS::VulkanRayTracingRenderer::create_cmd_buf() -> tl::expected<VulkanCmdBu
     }
 
     return VulkanCmdBufInfo{{std::move(cmd_buf)}, vk::UniqueFence{} };
+}
+
+auto PTS::VulkanRayTracingRenderer::create_accel_struct() -> tl::expected<VulkanAccelStructInfo, std::string> {
+	return {};
+}
+
+auto PTS::VulkanRayTracingRenderer::create_rt_pipeline() -> tl::expected<VulkanPipelineInfo, std::string> {
+    return {};
 }

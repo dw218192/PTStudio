@@ -39,7 +39,7 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config)
     m_on_mouse_leave_scene_viewport_cb = [this] { on_mouse_leave_scene_viewport(); };
     m_on_mouse_enter_scene_viewport_cb = [this] { on_mouse_enter_scene_viewport(); };
     add_renderer(std::make_unique<EditorRenderer>(config));
-    add_renderer(std::make_unique<VulkanRayTracingRenderer>(config));
+    // add_renderer(std::make_unique<VulkanRayTracingRenderer>(config));
     create_input_actions();
 }
 
@@ -50,6 +50,9 @@ void EditorApplication::create_input_actions() noexcept {
     }};
     auto using_gizmo = InputActionConstraint { [this] (InputEvent const&) {
         return ImGuizmo::IsUsing();
+    }};
+    auto not_using_gizmo = InputActionConstraint { [this] (InputEvent const&) {
+        return !ImGuizmo::IsUsing();
     }};
     auto scene_view_focused = InputActionConstraint { [this] (InputEvent const&) {
         return get_cur_focused_widget() == k_scene_view_win_name;
@@ -177,14 +180,18 @@ void EditorApplication::create_input_actions() noexcept {
             .add_constraint(scene_view_hovered)
             .add_constraint(obj_selected),
         cam_pedestal
-            .add_constraint(initiated_in_scene_view),
+            .add_constraint(initiated_in_scene_view)
+            .add_constraint(not_using_gizmo),
         cam_pan
-            .add_constraint(initiated_in_scene_view),
+            .add_constraint(initiated_in_scene_view)
+            .add_constraint(not_using_gizmo),
         cam_rotate
-            .add_constraint(initiated_in_scene_view),
+            .add_constraint(initiated_in_scene_view)
+            .add_constraint(not_using_gizmo),
         cam_zoom
             .add_constraint(scene_view_focused)
             .add_constraint(scene_view_hovered)
+            .add_constraint(not_using_gizmo),
     };
 }
 
@@ -423,7 +430,7 @@ void EditorApplication::draw_scene_viewport(TextureHandle render_buf) noexcept {
         if (render_buf->get_height() != m_config.height) {
             uv1.y = m_config.height / static_cast<float>(render_buf->get_height());
         }
-        // imgui uses top-left as origin, but we use bottom-left
+        // imgui uses top-left as origin, but OpenGL use bottom-left
         uv0.y = uv1.y;
         uv1.y = 0;
 

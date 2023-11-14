@@ -26,6 +26,10 @@ namespace PTS {
 	    [[nodiscard]] auto draw_imgui() noexcept -> tl::expected<void, std::string> override;
 
     private:
+        /**
+         * @brief A wrapper for vulkan unique handles; used to logically bundle a handle with other related data
+         * @tparam UniqueHandle vulkan unique handle type
+        */
 		template<typename UniqueHandle>
 		struct VulkanInfo {
 			UniqueHandle handle;
@@ -62,9 +66,6 @@ namespace PTS {
 		struct VulkanCmdPoolInfo : VulkanInfo<vk::UniqueCommandPool> {
 			vk::Queue queue {};
 		};
-        struct VulkanBufferInfo : VulkanInfo<vk::UniqueBuffer> {
-            vk::UniqueDeviceMemory mem {};
-        };
         // if not shared, only vulkan part of this struct is valid
         struct VulkanImageInfo {
             VulkanGLInteropUtils::SharedImage img{};
@@ -89,6 +90,21 @@ namespace PTS {
         struct VulkanCmdBufInfo : VulkanInfo<vk::UniqueCommandBuffer> {
             vk::UniqueFence fence {};
         };
+        struct VulkanBufferInfo : VulkanInfo<vk::UniqueBuffer> {
+            enum class Type {
+                Scratch,
+                AccelInput,
+                AccelStorage,
+                ShaderBindingTable,
+            };
+            vk::UniqueDeviceMemory mem {};
+            vk::DescriptorBufferInfo desc_info {};
+            vk::DeviceAddress device_addr {};
+        };
+        struct VulkanAccelStructInfo : VulkanInfo<vk::UniqueAccelerationStructureKHR> {
+            VulkanBufferInfo buffer {};
+            vk::WriteDescriptorSetAccelerationStructureKHR desc_info {};
+        };
 
         [[nodiscard]] auto create_instance(
             tcb::span<std::string_view> required_ins_ext,
@@ -100,8 +116,7 @@ namespace PTS {
 
         [[nodiscard]] auto create_cmd_pool() -> tl::expected<VulkanCmdPoolInfo, std::string>;
         [[nodiscard]] auto create_buffer(
-            vk::BufferUsageFlags usage_flags,
-            vk::MemoryPropertyFlags prop_flags, 
+            VulkanBufferInfo::Type type,
             vk::DeviceSize size,
             void* data
         ) -> tl::expected<VulkanBufferInfo, std::string>;
@@ -125,12 +140,18 @@ namespace PTS {
         [[nodiscard]] auto create_frame_buf() -> tl::expected<VulkanFrameBufferInfo, std::string>;
         [[nodiscard]] auto create_shader_glsl(std::string_view src, std::string_view name, vk::ShaderStageFlagBits stage)
             -> tl::expected<VulkanShaderInfo, std::string>;
-        [[nodiscard]] auto create_pipeline() -> tl::expected<VulkanPipelineInfo, std::string>;
         [[nodiscard]] auto config_cmd_buf(
             vk::CommandBuffer& cmd_buf,
             unsigned width, unsigned height
         ) -> tl::expected<void, std::string>;
         [[nodiscard]] auto create_cmd_buf() -> tl::expected<VulkanCmdBufInfo, std::string>;
+
+
+        [[nodiscard]] auto create_accel_struct() -> tl::expected<VulkanAccelStructInfo, std::string>;
+        [[nodiscard]] auto create_rt_pipeline() -> tl::expected<VulkanPipelineInfo, std::string>;
+
+        // a simple rasterization pipeline for testing
+        [[nodiscard]] auto create_test_pipeline() -> tl::expected<VulkanPipelineInfo, std::string>;
 
 		VulkanInsInfo m_vk_ins;
 		VulkanDeviceInfo m_vk_device;

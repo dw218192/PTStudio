@@ -3,13 +3,6 @@
 
 using namespace PTS;
 
-auto GLVertexArray::create(GLsizei num_vertices) -> tl::expected<GLVertexArrayRef, std::string> {
-	GLuint vao;
-	glGenVertexArrays(1, &vao);
-	CHECK_GL_ERROR();
-	return GLVertexArrayRef{ new GLVertexArray { vao, num_vertices }, GLResourceDeleter{} };
-}
-
 GLVertexArray::GLVertexArray(GLVertexArray&& other) noexcept {
 	swap(std::move(other));
 }
@@ -31,9 +24,12 @@ auto GLVertexArray::bind() const noexcept -> tl::expected<void, std::string> {
 void GLVertexArray::unbind() noexcept {
 	glBindVertexArray(0);
 }
-
-auto GLVertexArray::draw_array(GLenum mode) const noexcept -> tl::expected<void, std::string> {
-	glDrawArrays(mode, 0, m_num_vertices);
+auto GLVertexArray::draw(GLenum mode) const noexcept -> tl::expected<void, std::string> {
+	if (!m_element_buf) {
+		glDrawArrays(mode, 0, m_num_vertices);
+	} else {
+		glDrawElements(mode, m_num_vertices, GL_UNSIGNED_INT, nullptr);
+	}
 	CHECK_GL_ERROR();
 	return {};
 }

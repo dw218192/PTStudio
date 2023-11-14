@@ -90,14 +90,14 @@ auto Scene::ray_cast(Ray const& ray, float t_min, float t_max) noexcept -> std::
         };
         auto res = Intersection::ray_box(obj.get_bound(), local_ray);
         if (res.hit && res.t < closest_t && res.t >= t_min) {
-            auto&& triangles = obj.get_vertices();
-            for (int i=0; i<triangles.size(); i+=3) {
-                glm::vec3 triangle[3] = {
-                    triangles[i].position,
-                    triangles[i + 1].position,
-                    triangles[i + 2].position
+            auto const& indices = obj.get_indices();
+            auto const& verts = obj.get_vertices();
+            for (size_t i=0; i < indices.size(); i+=3) {
+                glm::vec3 triangle[3] {
+                    verts[indices[i]].position,
+                    verts[indices[i + 1]].position,
+                    verts[indices[i + 2]].position
                 };
-
             	res = Intersection::ray_triangle(triangle, local_ray);
                 if (res.hit && res.t < closest_t && res.t >= t_min) {
                     closest_t = res.t;

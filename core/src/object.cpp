@@ -6,29 +6,33 @@
 #include <glm/ext/scalar_constants.hpp>
 using namespace PTS;
 
-Object::Object(Scene const& scene, Transform transform, Material mat, tcb::span<Vertex const> vertices, std::string_view name)
-    : m_mat { std::move(mat) }, m_vertices { vertices.begin(), vertices.end() }, m_name { name }
+Object::Object(Scene const& scene, Transform transform, Material mat, tcb::span<Vertex const> vertices, tcb::span<unsigned const> indices, std::string_view name)
+    : m_mat { std::move(mat) }, m_vertices { vertices.begin(), vertices.end() }, m_indices { indices.begin(), indices.end() }, 
+        m_name { name }
 {
     m_local_bound = BoundingBox::from_vertices(m_vertices);
     set_transform(transform);
 }
 
-Object::Object(Scene const& scene, Transform transform, Material mat, tcb::span<Vertex const> vertices)
-    : m_mat { std::move(mat) }, m_vertices{ vertices.begin(), vertices.end() }, m_name { scene.next_obj_name() }
+Object::Object(Scene const& scene, Transform transform, Material mat, tcb::span<Vertex const> vertices, tcb::span<unsigned const> indices)
+    : m_mat { std::move(mat) }, m_vertices{ vertices.begin(), vertices.end() }, m_indices { indices.begin(), indices.end() }, 
+        m_name { scene.next_obj_name() }
 {
     m_local_bound = BoundingBox::from_vertices(m_vertices);
     set_transform(transform);
 }
 
-Object::Object(Transform transform, Material mat, tcb::span<Vertex const> vertices, std::string_view name) 
-    : m_mat { std::move(mat) }, m_vertices{ vertices.begin(), vertices.end() }, m_name { name }
+Object::Object(Transform transform, Material mat, tcb::span<Vertex const> vertices, tcb::span<unsigned const> indices, std::string_view name) 
+    : m_mat { std::move(mat) }, m_vertices{ vertices.begin(), vertices.end() }, m_indices { indices.begin(), indices.end() },
+        m_name { name }
 {
     m_local_bound = BoundingBox::from_vertices(m_vertices);
     set_transform(transform);
 }
 
-Object::Object(Transform transform, Material mat, tcb::span<Vertex const> vertices)
-    : m_mat { std::move(mat) }, m_vertices{ vertices.begin(), vertices.end() }, m_name { "Object" }
+Object::Object(Transform transform, Material mat, tcb::span<Vertex const> vertices, tcb::span<unsigned const> indices)
+    : m_mat { std::move(mat) }, m_vertices{ vertices.begin(), vertices.end() }, m_indices { indices.begin(), indices.end() },
+        m_name { "Object" }
 {
     m_local_bound = BoundingBox::from_vertices(m_vertices);
     set_transform(transform);
@@ -37,6 +41,7 @@ Object::Object(Transform transform, Material mat, tcb::span<Vertex const> vertic
 auto Object::from_obj(Scene const& scene, Material mat, std::string_view filename, std::string* warning) noexcept 
 -> tl::expected<Object, std::string> {
     std::vector<Vertex> vertices;
+    std::vector<unsigned> indices;
 
     tinyobj::ObjReaderConfig config;
     config.mtl_search_path = "./";
@@ -56,65 +61,55 @@ auto Object::from_obj(Scene const& scene, Material mat, std::string_view filenam
     }
 
     auto const& attrib = reader.GetAttrib();
-    bool infer_normal = false;
-    for (auto const& s : reader.GetShapes()) {
-        auto const& indices = s.mesh.indices;
-        for (size_t i = 0; i < s.mesh.material_ids.size(); ++i) {
-            for (size_t j = 0; j < 3; ++j) {
-                int vi = indices[3 * i + j].vertex_index;
-                int ni = indices[3 * i + j].normal_index;
-                int uvi = indices[3 * i + j].texcoord_index;
+    // fill vertex positions first, normals and uvs will be filled later
+    for (size_t i = 2; i < attrib.vertices.size(); i += 3) {
+        Vertex vertex {};
+        vertex.position = glm::vec3{ 
+            attrib.vertices[i - 2],
+            attrib.vertices[i - 1],
+            attrib.vertices[i - 0]
+        };
+        vertices.emplace_back(vertex);
+    }
 
-                Vertex vertex;
-                vertex.position = glm::vec3{ 
-                    attrib.vertices[3 * vi + 0], 
-                    attrib.vertices[3 * vi + 1],
-                    attrib.vertices[3 * vi + 2]
-                };
+    for (auto const& s : reader.GetShapes()) {
+        for (size_t i = 0; i < s.mesh.material_ids.size(); ++i) {
+            bool infer_normals = false;
+            for (size_t j = 0; j < 3; ++j) {
+                auto vi = s.mesh.indices[3 * i + j].vertex_index;
+                auto ni = s.mesh.indices[3 * i + j].normal_index;
+                auto uvi = s.mesh.indices[3 * i + j].texcoord_index;
+
                 if (ni != -1) {
-                    vertex.normal = glm::vec3{ 
+                    vertices[vi].normal = glm::vec3{
                         attrib.normals[3 * ni + 0],
                         attrib.normals[3 * ni + 1],
                         attrib.normals[3 * ni + 2]
                     };
                 } else {
-                    // to be calculated later
-                    infer_normal = true;
+                    infer_normals = true;
                 }
-                
                 if (uvi != -1) {
-                    vertex.uv = glm::vec2{
+                    vertices[vi].uv = glm::vec2{
                         attrib.texcoords[2 * uvi + 0],
                         attrib.texcoords[2 * uvi + 1]
                     };
                 }
-
-
-                vertices.emplace_back(vertex);
+                indices.emplace_back(static_cast<unsigned>(vi));
+            }
+            if (infer_normals) {
+                auto const& v0 = vertices[indices[indices.size() - 3]];
+                auto const& v1 = vertices[indices[indices.size() - 2]];
+                auto const& v2 = vertices[indices[indices.size() - 1]];
+                auto normal = glm::normalize(glm::cross(v1.position - v0.position, v2.position - v0.position));
+                vertices[indices[indices.size() - 3]].normal = normal;
+                vertices[indices[indices.size() - 2]].normal = normal;
+                vertices[indices[indices.size() - 1]].normal = normal;
             }
         }
     }
 
-    if(infer_normal) {
-        // clear all normals
-        for (auto& v : vertices) {
-            v.normal = glm::vec3{ 0 };
-        }
-        for (size_t i = 2; i < vertices.size(); i += 3) {
-            glm::vec3 normal = glm::cross(
-                vertices[i - 1].position - vertices[i - 2].position,
-                vertices[i - 0].position - vertices[i - 2].position
-            );
-            vertices[i - 2].normal += normal;
-            vertices[i - 1].normal += normal;
-            vertices[i].normal += normal;
-        }
-        for (auto& v : vertices) {
-            v.normal = glm::normalize(v.normal);
-        }
-    }
-
-    Object ret{ scene, Transform{}, std::move(mat), std::move(vertices) };
+    Object ret{ scene, Transform{}, std::move(mat), std::move(vertices), std::move(indices) };
     return ret;
 }
 
@@ -124,7 +119,9 @@ auto Object::make_triangle_obj(Scene const& scene, Material mat, Transform trans
 	    Vertex{ glm::vec3{ 0.5, -0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 1, 0 } },
 	    Vertex{ glm::vec3{ 0, 0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 0.5, 1 } }
     };
-    auto ret = Object { scene, std::move(trans), std::move(mat), std::move(vertices) };
+    std::vector<unsigned> indices = { 0, 1, 2 };
+
+    auto ret = Object { scene, std::move(trans), std::move(mat), std::move(vertices), std::move(indices) };
     ret.m_primitive_type = PrimitiveType::Triangle;
     return ret;
 }
@@ -134,12 +131,11 @@ auto Object::make_quad_obj(Scene const& scene, Material mat, Transform trans) no
         Vertex{ glm::vec3{ -0.5, -0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 0, 0 } },
         Vertex{ glm::vec3{ 0.5, -0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 1, 0 } },
         Vertex{ glm::vec3{ -0.5, 0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 0, 1 } },
-
-        Vertex{ glm::vec3{ -0.5, 0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 0, 1 } },
-        Vertex{ glm::vec3{ 0.5, -0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 1, 0 } },
         Vertex{ glm::vec3{ 0.5, 0.5, 0 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 1, 1 } }
     };
-    auto ret = Object { scene, std::move(trans), std::move(mat), std::move(vertices) };
+    std::vector<unsigned> indices = { 0, 1, 2, 1, 3, 2 };
+
+    auto ret = Object { scene, std::move(trans), std::move(mat), std::move(vertices), std::move(indices) };
     ret.m_primitive_type = PrimitiveType::Quad;
     return ret;
 }
@@ -150,64 +146,56 @@ auto Object::make_cube_obj(Scene const& scene, Material mat, Transform trans) no
         Vertex{ glm::vec3{ -0.5, -0.5, 0.5 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 0, 0 } },
         Vertex{ glm::vec3{ 0.5, -0.5, 0.5 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 1, 0 } },
         Vertex{ glm::vec3{ -0.5, 0.5, 0.5 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 0, 1 } },
-
-        Vertex{ glm::vec3{ -0.5, 0.5, 0.5 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 0, 1 } },
-        Vertex{ glm::vec3{ 0.5, -0.5, 0.5 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 1, 0 } },
         Vertex{ glm::vec3{ 0.5, 0.5, 0.5 }, glm::vec3{ 0, 0, 1 }, glm::vec2{ 1, 1 } },
-
         // back
         Vertex{ glm::vec3{ -0.5, -0.5, -0.5 }, glm::vec3{ 0, 0, -1 }, glm::vec2{ 0, 0 } },
-        Vertex{ glm::vec3{ -0.5, 0.5, -0.5 }, glm::vec3{ 0, 0, -1 }, glm::vec2{ 0, 1 } },
-        Vertex{ glm::vec3{ 0.5, -0.5, -0.5 }, glm::vec3{ 0, 0, -1 }, glm::vec2{ 1, 0 } },
-
         Vertex{ glm::vec3{ 0.5, -0.5, -0.5 }, glm::vec3{ 0, 0, -1 }, glm::vec2{ 1, 0 } },
         Vertex{ glm::vec3{ -0.5, 0.5, -0.5 }, glm::vec3{ 0, 0, -1 }, glm::vec2{ 0, 1 } },
         Vertex{ glm::vec3{ 0.5, 0.5, -0.5 }, glm::vec3{ 0, 0, -1 }, glm::vec2{ 1, 1 } },
-
         // left
         Vertex{ glm::vec3{ -0.5, -0.5, -0.5 }, glm::vec3{ -1, 0, 0 }, glm::vec2{ 0, 0 } },
-        Vertex{ glm::vec3{ -0.5, 0.5, -0.5 }, glm::vec3{ -1, 0, 0 }, glm::vec2{ 0, 1 } },
-        Vertex{ glm::vec3{ -0.5, -0.5, 0.5 }, glm::vec3{ -1, 0, 0 }, glm::vec2{ 1, 0 } },
-
         Vertex{ glm::vec3{ -0.5, -0.5, 0.5 }, glm::vec3{ -1, 0, 0 }, glm::vec2{ 1, 0 } },
         Vertex{ glm::vec3{ -0.5, 0.5, -0.5 }, glm::vec3{ -1, 0, 0 }, glm::vec2{ 0, 1 } },
         Vertex{ glm::vec3{ -0.5, 0.5, 0.5 }, glm::vec3{ -1, 0, 0 }, glm::vec2{ 1, 1 } },
-
         // right
         Vertex{ glm::vec3{ 0.5, -0.5, -0.5 }, glm::vec3{ 1, 0, 0 }, glm::vec2{ 0, 0 } },
         Vertex{ glm::vec3{ 0.5, -0.5, 0.5 }, glm::vec3{ 1, 0, 0 }, glm::vec2{ 1, 0 } },
         Vertex{ glm::vec3{ 0.5, 0.5, -0.5 }, glm::vec3{ 1, 0, 0 }, glm::vec2{ 0, 1 } },
-
-        Vertex{ glm::vec3{ 0.5, 0.5, -0.5 }, glm::vec3{ 1, 0, 0 }, glm::vec2{ 0, 1 } },
-        Vertex{ glm::vec3{ 0.5, -0.5, 0.5 }, glm::vec3{ 1, 0, 0 }, glm::vec2{ 1, 0 } },
         Vertex{ glm::vec3{ 0.5, 0.5, 0.5 }, glm::vec3{ 1, 0, 0 }, glm::vec2{ 1, 1 } },
-
         // top
         Vertex{ glm::vec3{ -0.5, 0.5, -0.5 }, glm::vec3{ 0, 1, 0 }, glm::vec2{ 0, 0 } },
         Vertex{ glm::vec3{ 0.5, 0.5, -0.5 }, glm::vec3{ 0, 1, 0 }, glm::vec2{ 1, 0 } },
         Vertex{ glm::vec3{ -0.5, 0.5, 0.5 }, glm::vec3{ 0, 1, 0 }, glm::vec2{ 0, 1 } },
-
-        Vertex{ glm::vec3{ -0.5, 0.5, 0.5 }, glm::vec3{ 0, 1, 0 }, glm::vec2{ 0, 1 } },
-        Vertex{ glm::vec3{ 0.5, 0.5, -0.5 }, glm::vec3{ 0, 1, 0 }, glm::vec2{ 1, 0 } },
         Vertex{ glm::vec3{ 0.5, 0.5, 0.5 }, glm::vec3{ 0, 1, 0 }, glm::vec2{ 1, 1 } },
-
         // bottom
         Vertex{ glm::vec3{ -0.5, -0.5, -0.5 }, glm::vec3{ 0, -1, 0 }, glm::vec2{ 0, 0 } },
-        Vertex{ glm::vec3{ -0.5, -0.5, 0.5 }, glm::vec3{ 0, -1, 0 }, glm::vec2{ 0, 1 } },
-        Vertex{ glm::vec3{ 0.5, -0.5, -0.5 }, glm::vec3{ 0, -1, 0 }, glm::vec2{ 1, 0 } },
-
         Vertex{ glm::vec3{ 0.5, -0.5, -0.5 }, glm::vec3{ 0, -1, 0 }, glm::vec2{ 1, 0 } },
         Vertex{ glm::vec3{ -0.5, -0.5, 0.5 }, glm::vec3{ 0, -1, 0 }, glm::vec2{ 0, 1 } },
-        Vertex{ glm::vec3{ 0.5, -0.5, 0.5 }, glm::vec3{ 0, -1, 0 }, glm::vec2{ 1, 1 } },
+        Vertex{ glm::vec3{ 0.5, -0.5, 0.5 }, glm::vec3{ 0, -1, 0 }, glm::vec2{ 1, 1 } }
     };
-    auto ret = Object { scene, std::move(trans), std::move(mat), std::move(vertices) };
+    std::vector<unsigned> indices = {
+        // front
+        0, 1, 2, 1, 3, 2,
+        // back
+        4, 5, 6, 5, 7, 6,
+        // left
+        8, 9, 10, 9, 11, 10,
+        // right
+        12, 13, 14, 13, 15, 14,
+        // top
+        16, 17, 18, 17, 19, 18,
+        // bottom
+        20, 21, 22, 21, 23, 22
+    };
+
+    auto ret = Object { scene, std::move(trans), std::move(mat), std::move(vertices), std::move(indices) };
     ret.m_primitive_type = PrimitiveType::Cube;
     return ret;
 }
 
 auto Object::make_sphere_obj(Scene const& scene, Material mat, Transform trans) noexcept -> Object {
     // see http://www.songho.ca/opengl/gl_sphere.html
-    std::vector<Vertex> points;
+    std::vector<Vertex> vertices;
 
     // will make these customizable later as a component
     float radius = 1.0f;
@@ -231,29 +219,29 @@ auto Object::make_sphere_obj(Scene const& scene, Material mat, Transform trans) 
             auto nz = z * length_inv;
             auto s = static_cast<float>(j) / sector_count;
             auto t = static_cast<float>(i) / sector_count;
-            points.emplace_back(Vertex{ glm::vec3{ x, y, z }, glm::vec3{ nx, ny, nz }, glm::vec2{ s, t } });
+            vertices.emplace_back(Vertex{ glm::vec3{ x, y, z }, glm::vec3{ nx, ny, nz }, glm::vec2{ s, t } });
         }
     }
 
-    std::vector<Vertex> vertices;
+    std::vector<unsigned> indices;
     for(int i = 0; i < stack_count; ++i) {
         auto k1 = i * (sector_count + 1);
         auto k2 = k1 + sector_count + 1;
         for(int j = 0; j < sector_count; ++j, ++k1, ++k2) {
             if(i != 0) {
-                vertices.emplace_back(points[k1]);
-                vertices.emplace_back(points[k2]);
-                vertices.emplace_back(points[k1 + 1]);
+                indices.emplace_back(k1);
+                indices.emplace_back(k2);
+                indices.emplace_back(k1 + 1);
             }
             if(i != (stack_count - 1)) {
-                vertices.emplace_back(points[k1 + 1]);
-                vertices.emplace_back(points[k2]);
-                vertices.emplace_back(points[k2 + 1]);
+                indices.emplace_back(k1 + 1);
+                indices.emplace_back(k2);
+                indices.emplace_back(k2 + 1);
             }
         }
     }
 
-    auto ret = Object { scene, std::move(trans), std::move(mat), std::move(vertices) };
+    auto ret = Object { scene, std::move(trans), std::move(mat), std::move(vertices), std::move(indices) };
     ret.m_primitive_type = PrimitiveType::Sphere;
     return ret;
 }

@@ -68,13 +68,11 @@ auto EditorRenderer::init(ObserverPtr<Application> app) noexcept -> tl::expected
             vertices.emplace_back(-half_dim, 0.0f, z);
             vertices.emplace_back(half_dim, 0.0f, z);
         }
-
-        TL_TRY_ASSIGN(m_grid_render_data, GLVertexArray::create(vertices.size()));
-        TL_CHECK_AND_PASS(m_grid_render_data->bind());
-    	{
-            auto const& view = vertices;
-            TL_CHECK_AND_PASS(m_grid_render_data->connect(tcb::make_span(view), GLAttributeInfo<glm::vec3>{0, 0, 0}));
-        }
+        auto const& view = vertices;
+        TL_TRY_ASSIGN(m_grid_render_data, GLVertexArray::create(
+            tcb::make_span(view),
+            GLAttributeInfo<glm::vec3>{0, 0, 0})
+        );
         m_grid_render_data->unbind();
 
         CHECK_GL_ERROR();
@@ -115,15 +113,11 @@ auto EditorRenderer::init(ObserverPtr<Application> app) noexcept -> tl::expected
     
     // set up gizmo sprite data
     TL_TRY_ASSIGN(m_light_gizmo_data.texture, GLTexture::create(light_icon_png_data, FileFormat::PNG));
-    TL_TRY_ASSIGN(m_light_gizmo_data.render_data, GLVertexArray::create(6));
-    
-    TL_CHECK_AND_PASS(m_light_gizmo_data.render_data->bind());
-    m_light_gizmo_data.render_data->connect(tcb::make_span(k_quad_data_pos_uv),
+    TL_TRY_ASSIGN(m_light_gizmo_data.render_data, GLVertexArray::create(
+        tcb::make_span(k_quad_data_pos_uv),
         GLAttributeInfo<glm::vec3> { 0, 0, 0 },
         GLAttributeInfo<glm::vec2> { 1, 0, 18 * sizeof(float) }
-    );
-    m_light_gizmo_data.render_data->unbind();
-
+    ));
     {
         ShaderProgram::ShaderDesc descs {
             {ShaderType::Vertex, vs_billboard_src},
@@ -279,17 +273,11 @@ void EditorRenderer::on_editable_change(std::optional<EditableView> editable) no
 
 auto EditorRenderer::on_add_object_internal(PerObjectData& data, Object const& obj) noexcept -> tl::expected<void, std::string> {
     TL_TRY_ASSIGN(data.shader, ShaderProgram::clone(m_default_shader.get()));
-	TL_TRY_ASSIGN(data.render_data, GLVertexArray::create(obj.get_vertices().size()));
-
-    TL_CHECK_AND_PASS(data.render_data->bind());
-    {
-        TL_CHECK_AND_PASS(data.render_data->connect(obj.get_vertices(),
-            GLAttributeInfo<glm::vec3> { 0, sizeof(Vertex), offsetof(Vertex, position) },
-            GLAttributeInfo<glm::vec3> { 1, sizeof(Vertex), offsetof(Vertex, normal) },
-            GLAttributeInfo<glm::vec3> { 2, sizeof(Vertex), offsetof(Vertex, uv) }
-        ));
-    }
-    data.render_data->unbind();
+	TL_TRY_ASSIGN(data.render_data, GLVertexArray::create_indexed(obj.get_vertices(), obj.get_indices(), 
+        GLAttributeInfo<glm::vec3> { 0, sizeof(Vertex), offsetof(Vertex, position) },
+        GLAttributeInfo<glm::vec3> { 1, sizeof(Vertex), offsetof(Vertex, normal) },
+        GLAttributeInfo<glm::vec3> { 2, sizeof(Vertex), offsetof(Vertex, uv) }
+    ));
 
     // update editor texts
     for (auto const shader_type : EIter<ShaderType>{}) {
@@ -349,14 +337,11 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
             }
 
             // full screen quad
-            TL_TRY_ASSIGN(m_outline.quad_render_data, GLVertexArray::create(6));
-            TL_CHECK_AND_PASS(m_outline.quad_render_data->bind());
-            {
-                TL_CHECK_AND_PASS(m_outline.quad_render_data->connect(tcb::make_span(k_quad_data_pos_uv), 
-                    GLAttributeInfo<glm::vec3>{0, 0, 0},
-                    GLAttributeInfo<glm::vec2>{1, 0, 18 * sizeof(float)}
-                ));
-            }
+            TL_TRY_ASSIGN(m_outline.quad_render_data, GLVertexArray::create(
+                tcb::make_span(k_quad_data_pos_uv), 
+                GLAttributeInfo<glm::vec3>{0, 0, 0},
+                GLAttributeInfo<glm::vec2>{1, 0, 18 * sizeof(float)}
+            ));
             m_outline.quad_render_data->unbind();
         }
 
@@ -379,7 +364,7 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
                 auto&& data = res.value().get();
                 auto&& vao = data.render_data;
                 TL_CHECK_AND_PASS(vao->bind());
-                TL_CHECK_AND_PASS(vao->draw_array(GL_TRIANGLES));
+                TL_CHECK_AND_PASS(vao->draw(GL_TRIANGLES));
             }
             // draw to attachment 1 based on attachment 0
             TL_CHECK(m_outline.render_buf->set_draw_buffer(GL_COLOR_ATTACHMENT1));
@@ -390,7 +375,7 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
                 TL_CHECK_AND_PASS(m_outline.shaders[1]->set_uniform(k_uniform_thickness, 0.9f));
                 TL_CHECK_AND_PASS(m_outline.shaders[1]->set_uniform(k_uniform_texel_size, 1.0f / glm::vec2(m_config.width, m_config.height)));
                 TL_CHECK_AND_PASS(m_outline.quad_render_data->bind());
-                TL_CHECK_AND_PASS(m_outline.quad_render_data->draw_array(GL_TRIANGLES));
+                TL_CHECK_AND_PASS(m_outline.quad_render_data->draw(GL_TRIANGLES));
                 m_outline.quad_render_data->unbind();
             }
         }
@@ -411,7 +396,7 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
             TL_CHECK_AND_PASS(m_outline.quad_render_data->bind());
             {
                 TL_CHECK_AND_PASS(m_outline.shaders[2]->set_texture(k_uniform_screen_texture, m_outline.render_buf->get_texture(GL_COLOR_ATTACHMENT1), 0));
-                TL_CHECK_AND_PASS(m_outline.quad_render_data->draw_array(GL_TRIANGLES));
+                TL_CHECK_AND_PASS(m_outline.quad_render_data->draw(GL_TRIANGLES));
             }
             m_outline.quad_render_data->unbind();
         }
@@ -498,7 +483,7 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
         }
 
         TL_CHECK_AND_PASS(vao->bind());
-        TL_CHECK_AND_PASS(vao->draw_array(GL_TRIANGLES));
+        TL_CHECK_AND_PASS(vao->draw(GL_TRIANGLES));
 
         if (i == m_scene->size() - 1) {
             shader->unbind();
@@ -514,7 +499,7 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
     {
         TL_CHECK_AND_PASS(m_grid_shader->set_uniform(k_uniform_view, cam.get_view()));
         TL_CHECK_AND_PASS(m_grid_shader->set_uniform(k_uniform_projection, cam.get_projection()));
-        TL_CHECK_AND_PASS(m_grid_render_data->draw_array(GL_LINES));
+        TL_CHECK_AND_PASS(m_grid_render_data->draw(GL_LINES));
     }
 
     // render gizmo
@@ -530,7 +515,7 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
             // draw light gizmos
             for (auto&& light : m_scene->get_lights()) {
                 TL_CHECK_AND_PASS(m_light_gizmo_data.shader->set_uniform(k_uniform_sprite_world_pos, light.get_transform().get_position()));
-                TL_CHECK_AND_PASS(m_light_gizmo_data.render_data->draw_array(GL_TRIANGLES));
+                TL_CHECK_AND_PASS(m_light_gizmo_data.render_data->draw(GL_TRIANGLES));
             }
         }
     }

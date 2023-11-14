@@ -19,6 +19,7 @@ namespace PTS {
 		GLBuffer(GLBuffer&& other) noexcept;
 		auto operator=(GLBuffer&& other) noexcept -> GLBuffer&;
 
+		// TODO: might be helpful to store the element type as well
 		template<typename T, size_t Extent>
 		[[nodiscard]] auto set_data(tcb::span<T const, Extent> data, GLenum usage = GL_STATIC_DRAW) -> tl::expected<void, std::string>;
 

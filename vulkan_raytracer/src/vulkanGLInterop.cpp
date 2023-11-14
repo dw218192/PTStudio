@@ -5,7 +5,7 @@
 #include "utils.h"
 
 auto PTS::VulkanGLInteropUtils::to_gl_fmt(vk::Format fmt) noexcept -> std::optional<GLenum> {
-    // TODO: add more formats
+    // TODO: add more formats if needed
     switch (fmt) {
         // single component
         case vk::Format::eR8Unorm:
