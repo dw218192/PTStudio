@@ -1078,6 +1078,10 @@ auto PTS::VulkanRayTracingRenderer::on_remove_editable(EditableView editable) no
 	return {};
 }
 
+auto VulkanRayTracingRenderer::on_editable_change(EditableView editable) noexcept -> tl::expected<void, std::string> {
+    return {};
+}
+
 auto PTS::VulkanRayTracingRenderer::render(View<Camera> camera) noexcept
 	-> tl::expected<void, std::string> {
 	return {};

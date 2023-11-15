@@ -372,6 +372,7 @@ void EditorApplication::draw_object_panel() noexcept {
             auto trans = editable.get_transform();
             if (ImGui::TransformField("Transform", trans, gizmo_state.op, gizmo_state.mode, gizmo_state.snap, gizmo_state.snap_scale)) {
                 editable.set_transform(trans);
+                on_editable_change(editable);
             }
 
             // editable-specific fields
@@ -379,9 +380,12 @@ void EditorApplication::draw_object_panel() noexcept {
                 auto mat = obj->get_material();
                 if (ImGui::ReflectedField("Material", mat)) {
                     obj->set_material(mat);
+                    on_editable_change(editable);
                 }
             } else if (auto const light = editable.as<Light>()) {
-                ImGui::ReflectedField("Light", *light);
+                if (ImGui::ReflectedField("Light", *light)) {
+                    on_editable_change(editable);
+                }
             }
         } else {
             ImGui::Text("No object selected");
@@ -473,6 +477,7 @@ void EditorApplication::draw_scene_viewport(TextureHandle render_buf) noexcept {
                 gizmo_state.snap ? glm::value_ptr(gizmo_state.snap_scale) : nullptr
             )) {
                 m_control_state.get_cur_obj()->set_transform(Transform{ mat });
+                on_editable_change(m_control_state.get_cur_obj().value());
             }
         }
     } else {
@@ -600,6 +605,12 @@ void EditorApplication::on_add_editable(EditableView editable) {
     }
     
     m_control_state.set_cur_obj(editable);
+}
+
+void EditorApplication::on_editable_change(EditableView editable) {
+    for (auto&& renderer : m_renderers) {
+        check_error(renderer->on_editable_change(m_control_state.get_cur_obj().value()));
+    }
 }
 
 void EditorApplication::on_log_added() { }

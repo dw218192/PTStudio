@@ -121,6 +121,7 @@ namespace PTS {
 	    [[nodiscard]] auto open_scene(View<Scene> scene) noexcept -> tl::expected<void, std::string> override;
 	    [[nodiscard]] auto on_add_editable(EditableView editable) noexcept -> tl::expected<void, std::string> override;
 	    [[nodiscard]] auto on_remove_editable(EditableView editable) noexcept -> tl::expected<void, std::string> override;
+        [[nodiscard]] auto on_editable_change(EditableView editable) noexcept -> tl::expected<void, std::string> override;
 	    [[nodiscard]] auto render(View<Camera> camera) noexcept -> tl::expected<void, std::string> override;
 	    [[nodiscard]] auto render_buffered(View<Camera> camera) noexcept -> tl::expected<TextureHandle, std::string> override;
 	    [[nodiscard]] auto valid() const noexcept -> bool override;
