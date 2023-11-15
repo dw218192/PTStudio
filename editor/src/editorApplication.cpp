@@ -39,7 +39,7 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config)
     m_on_mouse_leave_scene_viewport_cb = [this] { on_mouse_leave_scene_viewport(); };
     m_on_mouse_enter_scene_viewport_cb = [this] { on_mouse_enter_scene_viewport(); };
     add_renderer(std::make_unique<EditorRenderer>(config));
-    // add_renderer(std::make_unique<VulkanRayTracingRenderer>(config));
+    add_renderer(std::make_unique<VulkanRayTracingRenderer>(config));
     create_input_actions();
 }
 
