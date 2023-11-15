@@ -131,7 +131,7 @@ namespace PTS {
 		VulkanDeviceInfo m_vk_device;
 		VulkanCmdPoolInfo m_vk_cmd_pool;
         VulkanDescSetPoolInfo m_vk_desc_set_pool;
-        VulkanImageInfo m_output_img;
+        VulkanImageInfo m_output_img; // image used for ray tracing output
         VulkanCmdBufInfo m_vk_render_cmd_buf;
         VulkanTopAccelStructInfo m_vk_top_accel;
         VulkanPipelineInfo m_vk_pipeline;

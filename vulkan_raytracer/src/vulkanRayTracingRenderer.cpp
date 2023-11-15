@@ -1,8 +1,10 @@
 #include "vulkanRayTracingRenderer.h"
 #include <GLFW/glfw3.h>
-#include <iostream>
 #include <shaderc/shaderc.hpp>
 #include <glm/gtc/type_ptr.hpp>
+
+#include <iostream>
+#include <tuple>
 
 using namespace PTS;
 
@@ -829,7 +831,7 @@ template<typename CreateInfoChainType>
             layout (binding = 1, rgba8) uniform image2D outputImage;
 
             void main() {
-                imageStore(outputImage, ivec2(gl_LaunchIDEXT.xy), vec4(gl_LaunchIDEXT.xy, 0.0, 1.0));
+                imageStore(outputImage, ivec2(gl_LaunchIDEXT.xy), vec4(1.0, 0.0, 0.0, 1.0));
             }
         )",
         "ray_gen_shader",
@@ -886,21 +888,21 @@ template<typename CreateInfoChainType>
     auto shader_groups = std::array{
         vk::RayTracingShaderGroupCreateInfoKHR{
             vk::RayTracingShaderGroupTypeKHR::eGeneral,
-            VK_SHADER_UNUSED_KHR,
+            0,
             VK_SHADER_UNUSED_KHR,
             VK_SHADER_UNUSED_KHR,
             VK_SHADER_UNUSED_KHR
         },
         vk::RayTracingShaderGroupCreateInfoKHR{
             vk::RayTracingShaderGroupTypeKHR::eGeneral,
-            VK_SHADER_UNUSED_KHR,
+            1,
             VK_SHADER_UNUSED_KHR,
             VK_SHADER_UNUSED_KHR,
             VK_SHADER_UNUSED_KHR
         },
         vk::RayTracingShaderGroupCreateInfoKHR{
             vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
-            VK_SHADER_UNUSED_KHR,
+            2,
             VK_SHADER_UNUSED_KHR,
             VK_SHADER_UNUSED_KHR,
             VK_SHADER_UNUSED_KHR
@@ -1071,7 +1073,7 @@ auto PTS::VulkanRayTracingRenderer::open_scene(View<Scene> scene) noexcept
     }
 
     // (re)create pipeline
-    TL_TRY_ASSIGN(m_vk_pipeline, create_rt_pipeline(m_vk_device,m_vk_cmd_pool,m_output_img,m_vk_desc_set_pool,scene));
+    TL_TRY_ASSIGN(m_vk_pipeline, create_rt_pipeline(m_vk_device, m_vk_cmd_pool, m_output_img,m_vk_desc_set_pool, scene));
     if (!m_vk_render_cmd_buf) {
         // create command buffer
        TL_TRY_ASSIGN(m_vk_render_cmd_buf, create_cmd_buf(m_vk_device, m_vk_cmd_pool, m_output_img, m_vk_pipeline));
@@ -1105,11 +1107,9 @@ auto PTS::VulkanRayTracingRenderer::render_buffered(View<Camera> camera) noexcep
     if (!m_vk_render_cmd_buf) {
         return TL_ERROR("command buffer not initialized");
     }
-
     m_vk_cmd_pool.queue.submit(
         vk::SubmitInfo{}
-            .setCommandBufferCount(1)
-            .setPCommandBuffers(&*m_vk_render_cmd_buf),
+            .setCommandBuffers(*m_vk_render_cmd_buf),
         nullptr
     );
     m_vk_cmd_pool.queue.waitIdle();
@@ -1118,7 +1118,8 @@ auto PTS::VulkanRayTracingRenderer::render_buffered(View<Camera> camera) noexcep
 }
 
 auto PTS::VulkanRayTracingRenderer::valid() const noexcept -> bool {
-	return true;
+    return m_vk_ins && m_vk_device && m_vk_cmd_pool && m_vk_desc_set_pool && m_output_img.img.vk_image
+        && m_output_img.img.gl_tex.get() && m_vk_pipeline && m_vk_render_cmd_buf;
 }
 
 auto PTS::VulkanRayTracingRenderer::on_change_render_config() noexcept -> tl::expected<void, std::string> {
@@ -1181,9 +1182,10 @@ auto PTS::VulkanRayTracingRenderer::init(ObserverPtr<Application> app) noexcept
         vk::ImageAspectFlagBits::eColor,
         vk::ImageLayout::eUndefined,
         vk::ImageLayout::eGeneral,
-        {},
+        {}, 
         true
     ));
+
 	return {};
 }
 
