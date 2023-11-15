@@ -1,4 +1,6 @@
 #include "vulkanRayTracingRenderer.h"
+#include "vulkanRayTracingShaders.h"
+
 #include <GLFW/glfw3.h>
 #include <shaderc/shaderc.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -547,7 +549,7 @@ template<typename CreateInfoChainType>
                 vk::PipelineBindPoint::eRayTracingKHR,
                 *pipeline.layout,
                 0,
-                *pipeline.desc_set,
+                *pipeline.per_scene_desc_set,
                 nullptr
             );
 
@@ -824,40 +826,19 @@ template<typename CreateInfoChainType>
     auto shader_infos = std::array<VulkanShaderInfo, 3> {};
     TL_TRY_ASSIGN(shader_infos[0], create_shader_glsl(
         dev,
-        R"(
-            #version 460
-            #extension GL_EXT_ray_tracing : enable
-            layout (binding = 0) uniform accelerationStructureEXT topLevelAS;
-            layout (binding = 1, rgba8) uniform image2D outputImage;
-
-            void main() {
-                imageStore(outputImage, ivec2(gl_LaunchIDEXT.xy), vec4(1.0, 0.0, 0.0, 1.0));
-            }
-        )",
+        k_ray_gen_shader_test_glsl,
         "ray_gen_shader",
         vk::ShaderStageFlagBits::eRaygenKHR
     ));
     TL_TRY_ASSIGN(shader_infos[1], create_shader_glsl(
         dev,
-        R"(
-            #version 460
-            #extension GL_EXT_ray_tracing : enable
-            void main() {
-                return;
-            }
-        )",
+        k_miss_shader_src_glsl,
         "miss_shader",
         vk::ShaderStageFlagBits::eMissKHR
     ));
     TL_TRY_ASSIGN(shader_infos[2], create_shader_glsl(
         dev,
-        R"(
-            #version 460
-            #extension GL_EXT_ray_tracing : enable
-            void main() {
-                return;
-            }
-        )",
+        k_closest_hit_shader_src_glsl,
         "chit_shader",
         vk::ShaderStageFlagBits::eClosestHitKHR
     ));
@@ -1028,9 +1009,12 @@ template<typename CreateInfoChainType>
         return VulkanPipelineInfo{
             { std::move(pipeline.value) },
             std::move(pipeline_layout),
-            std::move(desc_set_layout),
-            std::move(desc_sets[0]),
             std::move(vk_top_accel),
+            VulkanDescSetInfo { 
+                {std::move(desc_sets[0])},
+                std::move(desc_set_layout) 
+            },
+            {},
             std::move(raygen_buf),
             std::move(miss_buf),
             std::move(hit_buf),
@@ -1555,7 +1539,7 @@ auto PTS::VulkanRayTracingRenderer::draw_imgui() noexcept -> tl::expected<void, 
             return TL_ERROR("failed to create pipeline");
         }
 
-        return VulkanPipelineInfo{{std::move(pipeline.value)}, std::move(pipeline_layout), std::move(descriptor_set_layout) };
+        return TL_ERROR("not implemented fully");
     } catch (vk::SystemError& err) {
         return TL_ERROR(err.what());
     }

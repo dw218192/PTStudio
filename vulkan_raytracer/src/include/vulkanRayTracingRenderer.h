@@ -47,8 +47,11 @@ namespace PTS {
     struct VulkanCmdPoolInfo : VulkanInfo<vk::UniqueCommandPool> {
         vk::Queue queue {};
     };
-    struct VulkanDescSetPoolInfo : VulkanInfo<vk::UniqueDescriptorPool> {
+    struct VulkanDescSetPoolInfo : VulkanInfo<vk::UniqueDescriptorPool> {};
+    struct VulkanDescSetInfo : VulkanInfo<vk::UniqueDescriptorSet> {
+        vk::UniqueDescriptorSetLayout layout {};
     };
+
     // if not shared, only vulkan part of this struct is valid
     struct VulkanImageInfo {
         VulkanGLInteropUtils::SharedImage img{};
@@ -96,9 +99,13 @@ namespace PTS {
     };
     struct VulkanPipelineInfo : VulkanInfo<vk::UniquePipeline> {
         vk::UniquePipelineLayout layout{};
-        vk::UniqueDescriptorSetLayout desc_set_layout{};
-        vk::UniqueDescriptorSet desc_set{};
         VulkanTopAccelStructInfo top_accel{};
+
+        // Desc Set related
+        VulkanDescSetInfo per_scene_desc_set{};
+
+        // Uniforms related
+        VulkanBufferInfo camera_mem{};
 
         // SBT related
         VulkanBufferInfo raygen_mem{};
