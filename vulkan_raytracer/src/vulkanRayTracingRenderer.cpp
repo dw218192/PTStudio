@@ -1079,6 +1079,20 @@ template<typename CreateInfoChainType>
 [[nodiscard]] auto test_create_pipeline() -> tl::expected<VulkanPipelineInfo, std::string>;
 
 
+void VulkanTopAccelStructInfo::add_instance(
+    VulkanBottomAccelStructInfo const& bottom_accel, glm::mat4 const& transform
+) noexcept {
+    
+}
+
+void VulkanTopAccelStructInfo::remove_instance(size_t idx) noexcept {
+	
+}
+
+void VulkanTopAccelStructInfo::update_instance(size_t idx, glm::mat4 const& transform) noexcept {
+	
+}
+
 PTS::VulkanRayTracingRenderer::VulkanRayTracingRenderer(RenderConfig config)
 	: Renderer{config, "Vulkan Ray Tracer"} {}
 
@@ -1114,7 +1128,13 @@ auto PTS::VulkanRayTracingRenderer::open_scene(View<Scene> scene) noexcept
 
 auto PTS::VulkanRayTracingRenderer::on_add_editable(EditableView editable) noexcept
 	-> tl::expected<void, std::string> {
-	return {};
+	if(auto const& pobj = editable.as<Object>()) {
+        auto vk_bottom_accel = VulkanBottomAccelStructInfo{};
+        TL_TRY_ASSIGN(vk_bottom_accel, create_bottom_accel_for(m_vk_device, m_vk_cmd_pool, *pobj));
+
+    }
+
+    return {};
 }
 
 auto PTS::VulkanRayTracingRenderer::on_remove_editable(EditableView editable) noexcept

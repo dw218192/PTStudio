@@ -104,6 +104,10 @@ namespace PTS {
         VulkanAccelStructInfo accel {};
         std::vector<VulkanBottomAccelStructInfo> bottom_accels {};
         std::vector<vk::AccelerationStructureInstanceKHR> instances {};
+
+        void add_instance(VulkanBottomAccelStructInfo const& bottom_accel, glm::mat4 const& transform) noexcept;
+        void remove_instance(size_t idx) noexcept;
+        void update_instance(size_t idx, glm::mat4 const& transform) noexcept;
     };
     struct VulkanPipelineInfo : VulkanInfo<vk::UniquePipeline> {
         vk::UniquePipelineLayout layout{};
