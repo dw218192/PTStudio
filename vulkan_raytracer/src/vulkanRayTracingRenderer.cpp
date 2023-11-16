@@ -454,17 +454,11 @@ template<typename CreateInfoChainType>
         );
 
         auto sampler = dev->createSamplerUnique(sampler_info);
-        auto desc_img_info = vk::DescriptorImageInfo{
-            *sampler,
-            *view,
-            layout
-        };
-
         return VulkanImageInfo{
             std::move(shared_img),
             std::move(view),
-            std::move(sampler),
-            desc_img_info
+            layout,
+            std::move(sampler)
         };
 
     } catch (vk::SystemError& err) {
@@ -472,6 +466,45 @@ template<typename CreateInfoChainType>
     }
 }
 
+[[nodiscard]] auto create_desc_set(
+    VulkanDeviceInfo const& dev,
+    VulkanDescSetPoolInfo const& pool,
+    std::initializer_list<std::pair<vk::DescriptorSetLayoutBinding, vk::WriteDescriptorSet>> desc_set_bindings
+) -> tl::expected<VulkanDescSetInfo, std::string> {
+    try {
+        auto bindings = std::vector<vk::DescriptorSetLayoutBinding>{};
+        auto writes = std::vector<vk::WriteDescriptorSet>{};
+        for (auto const& [binding, write] : desc_set_bindings) {
+            bindings.push_back(binding);
+            writes.push_back(write);
+        }
+        auto layout = dev->createDescriptorSetLayoutUnique(
+            vk::DescriptorSetLayoutCreateInfo{
+                vk::DescriptorSetLayoutCreateFlags{},
+                bindings
+            }
+        );
+        auto desc_set = dev->allocateDescriptorSetsUnique(
+            vk::DescriptorSetAllocateInfo{
+                *pool,
+                *layout
+            }
+        );
+        for (auto i = 0u; i < writes.size(); ++i) {
+            writes[i].setDstSet(*desc_set[0])
+                .setDstBinding(bindings[i].binding)
+                .setDescriptorCount(bindings[i].descriptorCount)
+                .setDescriptorType(bindings[i].descriptorType);
+        }
+        dev->updateDescriptorSets(writes, {});
+        return VulkanDescSetInfo{
+	        {std::move(desc_set[0])},
+            std::move(layout)
+        };
+    } catch (vk::SystemError& err) {
+        return TL_ERROR(err.what());
+    }
+}
 
 [[nodiscard]] auto create_shader_glsl(
     VulkanDeviceInfo const& dev,
@@ -568,6 +601,7 @@ template<typename CreateInfoChainType>
                 )
                 .setOldLayout(vk::ImageLayout::eUndefined)
                 .setNewLayout(vk::ImageLayout::eGeneral);
+
             cmd_buf.pipelineBarrier(
                 vk::PipelineStageFlagBits::eAllCommands,
                 vk::PipelineStageFlagBits::eAllCommands,
@@ -672,17 +706,14 @@ template<typename CreateInfoChainType>
         .setPrimitiveOffset(0)
         .setTransformOffset(0);
     
-    TL_CHECK(do_work_now(dev, cmd_pool, [&](vk::CommandBuffer& cmd_buf) {
-        cmd_buf.buildAccelerationStructuresKHR(geom_build_info, &build_range_info);
+    TL_CHECK(do_work_now(dev, cmd_pool, [&](vk::CommandBuffer& a_cmd_buf) {
+        a_cmd_buf.buildAccelerationStructuresKHR(geom_build_info, &build_range_info);
     }));
 
-    auto desc_info = vk::WriteDescriptorSetAccelerationStructureKHR{ *accel };
-
     return VulkanAccelStructInfo {
-        { std::move(accel) },
+        std::move(accel),
         std::move(accel_buf),
-        std::move(geom_build_info),
-        std::move(desc_info)
+        std::move(geom_build_info)
     };
 }
 
@@ -890,29 +921,40 @@ template<typename CreateInfoChainType>
         }
     };
 
-    auto bindings = std::array{
-        vk::DescriptorSetLayoutBinding {}
-            .setBinding(0)
-            .setDescriptorType(vk::DescriptorType::eAccelerationStructureKHR)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eRaygenKHR),
-        vk::DescriptorSetLayoutBinding {}
-            .setBinding(1)
-            .setDescriptorType(vk::DescriptorType::eStorageImage)
-            .setDescriptorCount(1)
-            .setStageFlags(vk::ShaderStageFlagBits::eRaygenKHR),
-    };
-
     try {
-        auto desc_set_layout = dev->createDescriptorSetLayoutUnique(
-            vk::DescriptorSetLayoutCreateInfo{
-                vk::DescriptorSetLayoutCreateFlags{},
-                bindings
-            }
+        auto desc_set_info = VulkanDescSetInfo{};
+        auto accel_info = vk_top_accel.accel.get_desc_info();
+        auto img_info = output_img.get_desc_info();
+
+        TL_TRY_ASSIGN(desc_set_info,
+            create_desc_set(
+                dev, desc_set_pool, {
+				    std::pair {
+				        vk::DescriptorSetLayoutBinding {}
+							.setBinding(0)
+							.setDescriptorType(vk::DescriptorType::eAccelerationStructureKHR)
+							.setDescriptorCount(1)
+							.setStageFlags(vk::ShaderStageFlagBits::eRaygenKHR),
+				        vk::WriteDescriptorSet{}
+				            .setPNext(&accel_info)
+				    },
+                	std::pair {
+				        vk::DescriptorSetLayoutBinding {}
+				            .setBinding(1)
+				            .setDescriptorType(vk::DescriptorType::eStorageImage)
+				            .setDescriptorCount(1)
+				            .setStageFlags(vk::ShaderStageFlagBits::eRaygenKHR),
+	                    vk::WriteDescriptorSet{}
+	                        .setImageInfo(img_info)
+			        }
+	            }
+	        )
         );
+
+
         auto pipeline_layout = dev->createPipelineLayoutUnique(
             vk::PipelineLayoutCreateInfo{}
-            .setSetLayouts(*desc_set_layout)
+            .setSetLayouts(*desc_set_info.layout)
             .setPushConstantRanges({})
         );
         auto pipeline = dev->createRayTracingPipelineKHRUnique(
@@ -986,34 +1028,11 @@ template<typename CreateInfoChainType>
             handle_size_aligned
         };
 
-        auto desc_set_layouts = std::array{ *desc_set_layout };
-        auto desc_sets = dev->allocateDescriptorSetsUnique(
-            vk::DescriptorSetAllocateInfo{
-                *desc_set_pool,
-                desc_set_layouts
-            }
-        );
-
-        auto desc_writes = std::vector<vk::WriteDescriptorSet>(bindings.size());
-        for (auto i = 0; i < bindings.size(); ++i) {
-            desc_writes[i]
-                .setDstSet(*desc_sets[0])
-                .setDstBinding(bindings[i].binding)
-                .setDescriptorCount(bindings[i].descriptorCount)
-                .setDescriptorType(bindings[i].descriptorType);
-        }
-        desc_writes[0].setPNext(&vk_top_accel.accel.desc_info);
-        desc_writes[1].setImageInfo(output_img.img_info);
-        dev->updateDescriptorSets(desc_writes, {});
-
         return VulkanPipelineInfo{
             { std::move(pipeline.value) },
             std::move(pipeline_layout),
             std::move(vk_top_accel),
-            VulkanDescSetInfo { 
-                {std::move(desc_sets[0])},
-                std::move(desc_set_layout) 
-            },
+            std::move(desc_set_info),
             {},
             std::move(raygen_buf),
             std::move(miss_buf),

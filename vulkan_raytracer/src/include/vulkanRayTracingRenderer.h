@@ -56,8 +56,11 @@ namespace PTS {
     struct VulkanImageInfo {
         VulkanGLInteropUtils::SharedImage img{};
         vk::UniqueImageView view {};
+        vk::ImageLayout layout {};
         vk::UniqueSampler sampler {};
-        vk::DescriptorImageInfo img_info {};
+        auto get_desc_info() const noexcept -> vk::DescriptorImageInfo {
+            return vk::DescriptorImageInfo { *sampler, *view, layout };
+        }
     };
     struct VulkanRenderPassInfo : VulkanInfo<vk::UniqueRenderPass> {
         vk::Format color_fmt {};
@@ -85,7 +88,9 @@ namespace PTS {
     struct VulkanAccelStructInfo : VulkanInfo<vk::UniqueAccelerationStructureKHR> {
         VulkanBufferInfo storage_mem {};
         vk::AccelerationStructureBuildGeometryInfoKHR geom_build_info {};
-        vk::WriteDescriptorSetAccelerationStructureKHR desc_info {};
+        auto get_desc_info() const noexcept -> vk::WriteDescriptorSetAccelerationStructureKHR {
+            return vk::WriteDescriptorSetAccelerationStructureKHR { *handle };
+        }
     };
     struct VulkanBottomAccelStructInfo {
         VulkanAccelStructInfo accel {};
