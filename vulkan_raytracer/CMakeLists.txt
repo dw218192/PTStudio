@@ -15,7 +15,15 @@ set(SHADERC_SKIP_INSTALL ON CACHE BOOL "" FORCE)
 set(SHADERC_DIR ${EXT_DIR}/shaderc)
 find_package(PythonInterp 3 REQUIRED)
 
-find_package(Vulkan REQUIRED COMPONENTS shaderc_combined)
+# compile shaderc manually because of debug vs release crt mismatch
+# shaderc requires this python script to be run before building
+execute_process(COMMAND ${PYTHON_EXECUTABLE} utils/git-sync-deps
+    WORKING_DIRECTORY ${SHADERC_DIR}
+)
+set(SHADERC_ENABLE_SHARED_CRT ON CACHE BOOL "" FORCE)
+add_subdirectory(${SHADERC_DIR} ${CMAKE_CURRENT_BINARY_DIR}/shaderc)
+
+find_package(Vulkan REQUIRED)
 add_library(${lib_name} STATIC ${src_files})
 
 target_include_directories(${lib_name} 
@@ -29,11 +37,10 @@ target_compile_definitions(${lib_name}
         VULKAN_HPP_DISPATCH_LOADER_DYNAMIC = 1
 )
 
-# enable VK_USE_PLATFORM_WIN32_KHR on windows
-if(WIN32)
+if (WIN32)
     target_compile_definitions(${lib_name} 
         PRIVATE
-            NOMINMAX # disables the annoying min/max macros in windows.h
+            NOMINMAX
             VK_USE_PLATFORM_WIN32_KHR
     )
 endif()
@@ -43,5 +50,5 @@ target_link_libraries( ${lib_name}
 	core
     gl_wrapper
     Vulkan::Vulkan
-    Vulkan::shaderc_combined
+    shaderc
 )

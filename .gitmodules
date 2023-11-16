@@ -30,3 +30,6 @@
 [submodule "ext/json"]
 	path = ext/json
 	url = https://github.com/nlohmann/json.git
+[submodule "ext/shaderc"]
+	path = ext/shaderc
+	url = https://github.com/google/shaderc.git
