@@ -77,13 +77,16 @@ namespace PTS {
     struct VulkanBufferInfo : VulkanInfo<vk::UniqueBuffer> {
         enum class Type {
             Scratch,
+            Uniform,
             AccelInput,
             AccelStorage,
             ShaderBindingTable,
         };
         vk::UniqueDeviceMemory mem {};
-        vk::DescriptorBufferInfo desc_info {};
         vk::DeviceAddress device_addr {};
+        auto get_desc_info() const noexcept -> vk::DescriptorBufferInfo {
+            return vk::DescriptorBufferInfo { *handle, 0, VK_WHOLE_SIZE };
+        }
     };
     struct VulkanAccelStructInfo : VulkanInfo<vk::UniqueAccelerationStructureKHR> {
         VulkanBufferInfo storage_mem {};
@@ -107,7 +110,7 @@ namespace PTS {
         VulkanTopAccelStructInfo top_accel{};
 
         // Desc Set related
-        VulkanDescSetInfo per_scene_desc_set{};
+        VulkanDescSetInfo desc_sets{};
 
         // Uniforms related
         VulkanBufferInfo camera_mem{};

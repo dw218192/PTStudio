@@ -18,9 +18,8 @@ auto constexpr k_ray_gen_shader_src_glsl = R"(
 // per-scene data
 layout (set = 0, binding = 0) uniform accelerationStructureEXT topLevelAS;
 layout (set = 0, binding = 1, rgba8) uniform image2D outputImage;
-
 // per-frame data
-layout (set = 1, binding = 0) uniform CameraData {
+layout (set = 0, binding = 2) uniform CameraData {
     mat4 inv_view_proj;
     mat4 inv_view;
 };
@@ -35,21 +34,21 @@ void main() {
     vec4 uv_world = inv_view_proj * vec4(uv * 2.0 - 1.0, 1.0, 1.0);
     vec3 direction = normalize(uv_world.xyz / uv_world.w - origin); // ray direction in world space
 
-    traceRayEXT(
-        topLevelAS,
-        gl_RayFlagsOpaqueEXT, // ray flags
-        0xFF,  // cull mask
-        0, // sbt record offset
-        0, // sbt record stride
-        0, // miss index
-        origin, // ray origin
-        0.001, // ray tmin
-        direction, // ray direction
-        100000.0, // ray tmax
-        0 // payload location
-    );
+    // traceRayEXT(
+    //     topLevelAS,
+    //     gl_RayFlagsOpaqueEXT, // ray flags
+    //     0xFF,  // cull mask
+    //     0, // sbt record offset
+    //     0, // sbt record stride
+    //     0, // miss index
+    //     origin, // ray origin
+    //     0.001, // ray tmin
+    //     direction, // ray direction
+    //     100000.0, // ray tmax
+    //     0 // payload location
+    // );
 
-    imageStore(outputImage, ivec2(gl_LaunchIDEXT.xy), payload);
+    imageStore(outputImage, ivec2(gl_LaunchIDEXT.xy), vec4(direction, 1.0));
 }
 )";
 

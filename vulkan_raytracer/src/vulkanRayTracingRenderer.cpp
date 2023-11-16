@@ -30,6 +30,11 @@ static constexpr float k_quad_data_pos_uv[] = {
 static constexpr int k_max_width = 4000;
 static constexpr int k_max_height = 4000;
 
+struct CameraData {
+    glm::mat4 inv_view_proj;
+    glm::mat4 inv_view;
+};
+
 // conversion and convenience functions
 auto to_cstr_vec(tcb::span<std::string_view> views) -> std::vector<char const*> {
     auto res = std::vector<char const*>{};
@@ -249,6 +254,10 @@ template<typename CreateInfoChainType>
                 vk::DescriptorType::eStorageImage,
                 1
             },
+            vk::DescriptorPoolSize{
+                vk::DescriptorType::eUniformBuffer,
+                1
+            }
         };
         auto pool = dev->createDescriptorPoolUnique(
             vk::DescriptorPoolCreateInfo{}
@@ -281,6 +290,10 @@ template<typename CreateInfoChainType>
         case VulkanBufferInfo::Type::Scratch:
             usage_flags = vk::BufferUsageFlagBits::eStorageBuffer;
             mem_props_flags = vk::MemoryPropertyFlagBits::eDeviceLocal;
+            break;
+        case VulkanBufferInfo::Type::Uniform:
+            usage_flags = vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst;
+            mem_props_flags = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
             break;
         case VulkanBufferInfo::Type::AccelInput:
             usage_flags = vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
@@ -335,17 +348,12 @@ template<typename CreateInfoChainType>
             dev->unmapMemory(*mem);
         }
         dev->bindBufferMemory(*buffer, *mem, 0);
-        auto desc_info = vk::DescriptorBufferInfo{
-            *buffer,
-            0,
-            size
-        }; 
         auto device_addr = dev->getBufferAddressKHR(
             vk::BufferDeviceAddressInfo{
                 *buffer
             }
         );
-        return VulkanBufferInfo{{std::move(buffer)}, std::move(mem), std::move(desc_info), device_addr };
+        return VulkanBufferInfo{{std::move(buffer)}, std::move(mem), device_addr };
     } catch (vk::SystemError& err) {
         return TL_ERROR(err.what());
     }
@@ -582,7 +590,7 @@ template<typename CreateInfoChainType>
                 vk::PipelineBindPoint::eRayTracingKHR,
                 *pipeline.layout,
                 0,
-                *pipeline.per_scene_desc_set,
+                *pipeline.desc_sets,
                 nullptr
             );
 
@@ -857,7 +865,7 @@ template<typename CreateInfoChainType>
     auto shader_infos = std::array<VulkanShaderInfo, 3> {};
     TL_TRY_ASSIGN(shader_infos[0], create_shader_glsl(
         dev,
-        k_ray_gen_shader_test_glsl,
+        k_ray_gen_shader_src_glsl,
         "ray_gen_shader",
         vk::ShaderStageFlagBits::eRaygenKHR
     ));
@@ -925,6 +933,14 @@ template<typename CreateInfoChainType>
         auto desc_set_info = VulkanDescSetInfo{};
         auto accel_info = vk_top_accel.accel.get_desc_info();
         auto img_info = output_img.get_desc_info();
+        auto camera_buf = VulkanBufferInfo{};
+        TL_TRY_ASSIGN(camera_buf, create_buffer(
+            dev,
+            VulkanBufferInfo::Type::Uniform,
+            sizeof(CameraData),
+            nullptr
+        ));
+        auto buf_info = camera_buf.get_desc_info();
 
         TL_TRY_ASSIGN(desc_set_info,
             create_desc_set(
@@ -946,7 +962,16 @@ template<typename CreateInfoChainType>
 				            .setStageFlags(vk::ShaderStageFlagBits::eRaygenKHR),
 	                    vk::WriteDescriptorSet{}
 	                        .setImageInfo(img_info)
-			        }
+			        },
+                    std::pair {
+                        vk::DescriptorSetLayoutBinding {}
+                            .setBinding(2)
+                            .setDescriptorType(vk::DescriptorType::eUniformBuffer)
+                            .setDescriptorCount(1)
+                            .setStageFlags(vk::ShaderStageFlagBits::eRaygenKHR),
+                        vk::WriteDescriptorSet{}
+                            .setBufferInfo(buf_info)
+                    }
 	            }
 	        )
         );
@@ -1033,7 +1058,7 @@ template<typename CreateInfoChainType>
             std::move(pipeline_layout),
             std::move(vk_top_accel),
             std::move(desc_set_info),
-            {},
+            std::move(camera_buf),
             std::move(raygen_buf),
             std::move(miss_buf),
             std::move(hit_buf),
@@ -1108,12 +1133,33 @@ auto PTS::VulkanRayTracingRenderer::render(View<Camera> camera) noexcept
 
 auto PTS::VulkanRayTracingRenderer::render_buffered(View<Camera> camera) noexcept
 -> tl::expected<TextureHandle, std::string> {
+    if (!m_vk_device) {
+        return TL_ERROR("device not initialized");
+    }
     if (!m_vk_cmd_pool) {
         return TL_ERROR("command pool not initialized");
     }
     if (!m_vk_render_cmd_buf) {
         return TL_ERROR("command buffer not initialized");
     }
+
+    // update camera data
+    do_work_now(m_vk_device, m_vk_cmd_pool, 
+        [&](vk::CommandBuffer& cmd_buf) {
+            auto const cam_data = CameraData{
+                glm::inverse(camera.get().get_view()),
+                glm::inverse(camera.get().get_view_proj())
+            };
+
+            cmd_buf.updateBuffer(
+                *m_vk_pipeline.camera_mem,
+                0,
+                sizeof(CameraData),
+                &cam_data
+            );
+        }
+    );
+
     m_vk_cmd_pool.queue.submit(
         vk::SubmitInfo{}
             .setCommandBuffers(*m_vk_render_cmd_buf),
