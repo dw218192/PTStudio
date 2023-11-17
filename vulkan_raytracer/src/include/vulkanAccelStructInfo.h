@@ -113,5 +113,8 @@ namespace PTS {
         std::vector<vk::AccelerationStructureInstanceKHR> m_instances {};
         ViewPtr<VulkanDeviceInfo> m_dev { nullptr };
         ViewPtr<VulkanCmdPoolInfo> m_cmd_pool { nullptr };
+        
+        // free index
+        std::vector<size_t> m_free_idx {};
     };
 } // namespace PTS

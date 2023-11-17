@@ -221,21 +221,41 @@
         .setInstanceShaderBindingTableRecordOffset(0)
         .setFlags(vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable)
         .setAccelerationStructureReference(bottom_accel.accel.storage_mem.get_device_addr());
-    m_instances.emplace_back(accel_ins);
-    m_bottom_accels.emplace_back(std::move(bottom_accel));
 
-    TL_CHECK(update_instance_gpu(m_instances.size() - 1, transform));
+    auto idx = size_t{ 0 };
+    if (m_free_idx.empty()) {
+        idx = m_instances.size();
+        m_instances.emplace_back(accel_ins);
+        m_bottom_accels.emplace_back(std::move(bottom_accel));
+    } else {
+        idx = m_free_idx.back();
+        m_free_idx.pop_back();
+        m_instances[idx] = accel_ins;
+        m_bottom_accels[idx] = std::move(bottom_accel);
+    }
+
+    TL_CHECK(update_instance_gpu(idx, transform));
     TL_CHECK(update_accel_gpu(
-        // has to use build mode here because there is a new instance
+        // has to do a full rebuild because a new instance is added
         vk::BuildAccelerationStructureModeKHR::eBuild,
-        m_instances.size() - 1, m_instances.size() - 1
+        0, m_instances.size() - 1
     ));
-    return m_instances.size() - 1;
+    return idx;
 }
 
 [[nodiscard]] auto PTS::VulkanTopAccelStructInfo::remove_instance(size_t idx) noexcept
 -> tl::expected<void, std::string> {
-	return {};
+    // clear the instance data
+    m_instances[idx] = vk::AccelerationStructureInstanceKHR{};
+    TL_CHECK_AND_PASS(update_instance_gpu(idx, glm::mat4{ 1.0f }));
+    TL_CHECK_AND_PASS(update_accel_gpu(
+        // has to do a full rebuild because the instance is removed
+        vk::BuildAccelerationStructureModeKHR::eBuild,
+        0, m_instances.size() - 1
+    ));
+
+    m_free_idx.emplace_back(idx);
+    return {};
 }
 
 [[nodiscard]] auto PTS::VulkanTopAccelStructInfo::update_instance(size_t idx, glm::mat4 const& transform) noexcept
@@ -243,7 +263,7 @@
     TL_CHECK_AND_PASS(update_instance_gpu(idx, transform));
     return update_accel_gpu(
         vk::BuildAccelerationStructureModeKHR::eUpdate,
-        idx, idx
+        0, m_instances.size() - 1
     );
 }
 

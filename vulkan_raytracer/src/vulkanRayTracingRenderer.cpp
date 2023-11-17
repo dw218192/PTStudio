@@ -807,7 +807,15 @@ auto PTS::VulkanRayTracingRenderer::on_add_editable(EditableView editable) noexc
 
 auto PTS::VulkanRayTracingRenderer::on_remove_editable(EditableView editable) noexcept
 -> tl::expected<void, std::string> {
-	return {};
+	if(auto const& pobj = editable.as<Object>()) {
+        auto it = m_obj_data.find(pobj);
+        if (it == m_obj_data.end()) {
+            return TL_ERROR("object not found");
+        }
+        m_vk_pipeline.top_accel.remove_instance(it->second.accel_idx);
+        m_obj_data.erase(it);
+    }
+    return {};
 }
 
 auto VulkanRayTracingRenderer::on_editable_change(EditableView editable, EditableChangeType type) noexcept
