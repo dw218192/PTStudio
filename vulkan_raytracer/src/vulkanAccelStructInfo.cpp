@@ -1,6 +1,11 @@
 #include "vulkanAccelStructInfo.h"
 #include "params.h"
 
+#ifndef NDEBUG
+#include <glm/gtx/string_cast.hpp>
+#include <iostream>
+#endif
+
 [[nodiscard]] auto PTS::VulkanAccelStructInfo::create(
     VulkanDeviceInfo const& dev,
     VulkanCmdPoolInfo const& cmd_pool,
@@ -243,10 +248,13 @@
 }
 
 [[nodiscard]] auto PTS::VulkanTopAccelStructInfo::to_mat4x3(glm::mat4 const& mat) noexcept -> vk::TransformMatrixKHR {
+    // vk::TransformMatrixKHR is a 3x4 matrix and is row-major
+    // glm::mat4 is a 4x4 matrix and is column-major
+
     return vk::TransformMatrixKHR{ std::array {
-        std::array { mat[0][0], mat[0][1], mat[0][2], mat[0][3] },
-        std::array { mat[1][0], mat[1][1], mat[1][2], mat[1][3] },
-        std::array { mat[2][0], mat[2][1], mat[2][2], mat[2][3] }
+        std::array { mat[0][0], mat[1][0], mat[2][0], mat[3][0] },
+        std::array { mat[0][1], mat[1][1], mat[2][1], mat[3][1] },
+        std::array { mat[0][2], mat[1][2], mat[2][2], mat[3][2] }
     }};
 }
 
