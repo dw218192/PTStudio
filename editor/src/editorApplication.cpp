@@ -205,9 +205,10 @@ void EditorApplication::add_renderer(std::unique_ptr<Renderer> renderer) noexcep
     check_error(renderer->init(this));
     check_error(renderer->open_scene(m_scene));
 
+    // editor renderer-specific initialization
     if(auto p_editor_renderer = dynamic_cast<EditorRenderer*>(renderer.get()); p_editor_renderer) {
         m_control_state.register_on_obj_change([p_editor_renderer](auto&& editable) {
-            p_editor_renderer->on_editable_change(editable);
+            p_editor_renderer->on_selected_editable_change(editable);
         });
     }
 
@@ -372,7 +373,7 @@ void EditorApplication::draw_object_panel() noexcept {
             auto trans = editable.get_transform();
             if (ImGui::TransformField("Transform", trans, gizmo_state.op, gizmo_state.mode, gizmo_state.snap, gizmo_state.snap_scale)) {
                 editable.set_transform(trans);
-                on_editable_change(editable);
+                on_editable_change(editable, EditableChangeType::TRANSFORM);
             }
 
             // editable-specific fields
@@ -380,11 +381,11 @@ void EditorApplication::draw_object_panel() noexcept {
                 auto mat = obj->get_material();
                 if (ImGui::ReflectedField("Material", mat)) {
                     obj->set_material(mat);
-                    on_editable_change(editable);
+                    on_editable_change(editable, EditableChangeType::MATERIAL);
                 }
             } else if (auto const light = editable.as<Light>()) {
                 if (ImGui::ReflectedField("Light", *light)) {
-                    on_editable_change(editable);
+                    on_editable_change(editable, EditableChangeType::OTHER);
                 }
             }
         } else {
@@ -477,7 +478,7 @@ void EditorApplication::draw_scene_viewport(TextureHandle render_buf) noexcept {
                 gizmo_state.snap ? glm::value_ptr(gizmo_state.snap_scale) : nullptr
             )) {
                 m_control_state.get_cur_obj()->set_transform(Transform{ mat });
-                on_editable_change(m_control_state.get_cur_obj().value());
+                on_editable_change(m_control_state.get_cur_obj().value(), EditableChangeType::TRANSFORM);
             }
         }
     } else {
@@ -607,9 +608,9 @@ void EditorApplication::on_add_editable(EditableView editable) {
     m_control_state.set_cur_obj(editable);
 }
 
-void EditorApplication::on_editable_change(EditableView editable) {
+void EditorApplication::on_editable_change(EditableView editable, EditableChangeType type) {
     for (auto&& renderer : m_renderers) {
-        check_error(renderer->on_editable_change(m_control_state.get_cur_obj().value()));
+        check_error(renderer->on_editable_change(m_control_state.get_cur_obj().value(), type));
     }
 }
 

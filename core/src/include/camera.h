@@ -18,6 +18,7 @@ namespace PTS {
         NODISCARD auto get_view_proj() const noexcept -> glm::mat4 const& { return m_view_proj; }
         NODISCARD auto get_view() const noexcept -> glm::mat4 const& { return m_view; }
         NODISCARD auto get_projection() const noexcept -> glm::mat4 const& { return m_projection; }
+        NODISCARD auto get_inv_view_proj() const noexcept -> glm::mat4 const& { return m_inv_view_proj; }
         NODISCARD auto get_fov() const noexcept { return m_fov; }
         NODISCARD auto get_aspect() const noexcept { return m_aspect; }
 

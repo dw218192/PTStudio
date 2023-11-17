@@ -29,9 +29,9 @@ namespace PTS {
             [[nodiscard]] auto on_add_editable(EditableView editable) noexcept -> tl::expected<void, std::string> override;
             [[nodiscard]] auto on_remove_editable(EditableView editable) noexcept -> tl::expected<void, std::string> override;
             // not used, as the render() function fetches the data directly from the scene every frame
-            [[nodiscard]] auto on_editable_change(EditableView editable) noexcept -> tl::expected<void, std::string> override { return {}; } 
+            [[nodiscard]] auto on_editable_change(EditableView editable, EditableChangeType type) noexcept -> tl::expected<void, std::string> override { return {}; } 
             [[nodiscard]] auto draw_imgui() noexcept -> tl::expected<void, std::string> override;
-            void on_editable_change(std::optional<EditableView> obj) noexcept;
+            void on_selected_editable_change(std::optional<EditableView> obj) noexcept;
         protected:
             [[nodiscard]] auto on_change_render_config() noexcept -> tl::expected<void, std::string> override;
         private:

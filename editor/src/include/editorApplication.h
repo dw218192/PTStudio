@@ -72,7 +72,7 @@ private:
     void add_light(Light light) noexcept;
     void remove_editable(EditableView editable);
     void on_add_editable(EditableView editable);
-    void on_editable_change(EditableView editable);
+    void on_editable_change(EditableView editable, EditableChangeType type);
 	void on_log_added() override;
     auto get_cur_renderer() noexcept -> Renderer&;
 

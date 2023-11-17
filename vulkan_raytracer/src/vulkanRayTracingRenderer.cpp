@@ -27,13 +27,6 @@ static constexpr float k_quad_data_pos_uv[] = {
 	0.0f, 1.0f
 };
 
-static constexpr int k_max_width = 4000;
-static constexpr int k_max_height = 4000;
-
-struct CameraData {
-    glm::mat4 inv_view_proj;
-    glm::mat4 inv_view;
-};
 
 // conversion and convenience functions
 auto to_cstr_vec(tcb::span<std::string_view> views) -> std::vector<char const*> {
@@ -266,132 +259,6 @@ template<typename CreateInfoChainType>
                 .setPoolSizes(pool_sizes)
         );
         return VulkanDescSetPoolInfo{{std::move(pool)}};
-    } catch (vk::SystemError& err) {
-        return TL_ERROR(err.what());
-    }
-}
-
-/**
- * @brief Convenience function to create a vulkan buffer
- * @param type the type of the buffer
- * @param size the size of the buffer, in bytes
- * @param data the data to be copied to the buffer, can be nullptr if the buffer is not to be initialized
-*/
-[[nodiscard]] auto create_buffer(
-    VulkanDeviceInfo const& dev,
-    VulkanBufferInfo::Type type,
-    vk::DeviceSize size,
-    void const* data
-) -> tl::expected<VulkanBufferInfo, std::string> {
-    try {
-        auto usage_flags = vk::BufferUsageFlags{};
-        auto mem_props_flags = vk::MemoryPropertyFlags{};
-        switch (type) {
-        case VulkanBufferInfo::Type::Scratch:
-            usage_flags = vk::BufferUsageFlagBits::eStorageBuffer;
-            mem_props_flags = vk::MemoryPropertyFlagBits::eDeviceLocal;
-            break;
-        case VulkanBufferInfo::Type::Uniform:
-            usage_flags = vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst;
-            mem_props_flags = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
-            break;
-        case VulkanBufferInfo::Type::AccelInput:
-            usage_flags = vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
-                vk::BufferUsageFlagBits::eStorageBuffer;
-            mem_props_flags = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
-            break;
-        case VulkanBufferInfo::Type::AccelStorage:
-            usage_flags = vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR;
-            mem_props_flags = vk::MemoryPropertyFlagBits::eDeviceLocal;
-            break;
-        case VulkanBufferInfo::Type::ShaderBindingTable:
-            usage_flags = vk::BufferUsageFlagBits::eShaderBindingTableKHR;
-            mem_props_flags = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
-            break;
-        default:
-            return TL_ERROR("invalid buffer type");
-        }
-        usage_flags |= vk::BufferUsageFlagBits::eShaderDeviceAddress;
-
-        if(!size) {
-            // create an empty buffer
-            size = 1;
-        }
-
-        auto buffer = dev->createBufferUnique(
-            vk::BufferCreateInfo{}
-                .setSize(size)
-                .setUsage(usage_flags)
-                .setSharingMode(vk::SharingMode::eExclusive)
-        );
-        // get property index
-        auto const mem_req = dev->getBufferMemoryRequirements(*buffer);
-        auto mem_type_idx = std::numeric_limits<uint32_t>::max();
-        auto mem_props = dev.physical_device.getMemoryProperties();
-        for (auto i = 0u; i < mem_props.memoryTypeCount; ++i) {
-            if ((mem_req.memoryTypeBits & (1 << i)) && (mem_props.memoryTypes[i].propertyFlags & mem_props_flags) == mem_props_flags) {
-                mem_type_idx = i;
-                break;
-            }
-        }
-        auto flags_info = vk::MemoryAllocateFlagsInfo{ vk::MemoryAllocateFlagBits::eDeviceAddress };
-        auto alloc_info = vk::MemoryAllocateInfo{
-            mem_req.size,
-            mem_type_idx        
-        };
-        alloc_info.setPNext(&flags_info);
-        auto mem = dev->allocateMemoryUnique(alloc_info);
-
-        if (data) {
-            auto const mapped = dev->mapMemory(*mem, 0, size);
-            memcpy(mapped, data, size);
-            dev->unmapMemory(*mem);
-        }
-        dev->bindBufferMemory(*buffer, *mem, 0);
-        auto device_addr = dev->getBufferAddressKHR(
-            vk::BufferDeviceAddressInfo{
-                *buffer
-            }
-        );
-        return VulkanBufferInfo{{std::move(buffer)}, std::move(mem), device_addr };
-    } catch (vk::SystemError& err) {
-        return TL_ERROR(err.what());
-    }
-}
-
-[[nodiscard]] auto do_work_now(
-    VulkanDeviceInfo const& dev,
-    VulkanCmdPoolInfo const& cmd_pool,
-    std::function<void(vk::CommandBuffer&)> work
-) -> tl::expected<void, std::string> {
-    try {
-        auto cmd_bufs = dev->allocateCommandBuffersUnique(
-            vk::CommandBufferAllocateInfo{
-                *cmd_pool,
-                vk::CommandBufferLevel::ePrimary,
-                1
-            }
-        );
-        auto& cmd_buf = *cmd_bufs[0];
-        cmd_buf.begin(vk::CommandBufferBeginInfo{});
-        work(cmd_buf);
-        cmd_buf.end();
-
-        auto const fence = dev->createFenceUnique(vk::FenceCreateInfo{});
-        cmd_pool.queue.submit(
-            vk::SubmitInfo{}
-                .setCommandBufferCount(1)
-                .setPCommandBuffers(&cmd_buf),
-            *fence
-        );
-
-        auto const res = dev->waitForFences(*fence, true, std::numeric_limits<uint64_t>::max());
-        if (res != vk::Result::eSuccess) {
-            return TL_ERROR("failed to wait for fence");
-        }
-
-        dev->resetFences(*fence);
-        return {};
     } catch (vk::SystemError& err) {
         return TL_ERROR(err.what());
     }
@@ -656,199 +523,6 @@ template<typename CreateInfoChainType>
     return VulkanCmdBufInfo{{std::move(cmd_buf)}};
 }
 
-[[nodiscard]] auto create_accel(
-    VulkanDeviceInfo const& dev,
-    VulkanCmdPoolInfo const& cmd_pool,
-    vk::AccelerationStructureBuildGeometryInfoKHR geom_build_info,
-    vk::AccelerationStructureTypeKHR type,
-    uint32_t primitive_count
-) -> tl::expected<VulkanAccelStructInfo, std::string> {
-
-    auto build_sizes = dev->getAccelerationStructureBuildSizesKHR(
-        vk::AccelerationStructureBuildTypeKHR::eDevice,
-        geom_build_info,
-        primitive_count
-    );
-    auto accel_buf = VulkanBufferInfo{};
-    TL_TRY_ASSIGN(accel_buf, create_buffer(
-        dev,
-        VulkanBufferInfo::Type::AccelStorage,
-        build_sizes.accelerationStructureSize,
-        nullptr
-    ));
-    auto accel = dev->createAccelerationStructureKHRUnique(
-        vk::AccelerationStructureCreateInfoKHR{}
-            .setBuffer(*accel_buf)
-            .setSize(build_sizes.accelerationStructureSize)
-            .setType(type)
-    );
-
-    auto scratch_buf = VulkanBufferInfo{};
-    TL_TRY_ASSIGN(scratch_buf, create_buffer(
-        dev,
-        VulkanBufferInfo::Type::Scratch,
-        build_sizes.buildScratchSize,
-        nullptr
-    ));
-
-    geom_build_info
-        .setScratchData(scratch_buf.device_addr)
-        .setDstAccelerationStructure(*accel);
-
-    auto cmd_buf = vk::UniqueCommandBuffer{};
-    try {
-        auto cmd_bufs = dev->allocateCommandBuffersUnique(
-            vk::CommandBufferAllocateInfo{
-                *cmd_pool,
-                vk::CommandBufferLevel::ePrimary,
-                1
-            }
-        );
-        cmd_buf = std::move(cmd_bufs[0]);
-    } catch (vk::SystemError& err) {
-        return TL_ERROR(err.what());
-    }
-    auto build_range_info = vk::AccelerationStructureBuildRangeInfoKHR{}
-        .setFirstVertex(0)
-        .setPrimitiveCount(primitive_count)
-        .setPrimitiveOffset(0)
-        .setTransformOffset(0);
-    
-    TL_CHECK(do_work_now(dev, cmd_pool, [&](vk::CommandBuffer& a_cmd_buf) {
-        a_cmd_buf.buildAccelerationStructuresKHR(geom_build_info, &build_range_info);
-    }));
-
-    return VulkanAccelStructInfo {
-        std::move(accel),
-        std::move(accel_buf),
-        std::move(geom_build_info)
-    };
-}
-
-[[nodiscard]] auto create_bottom_accel_for(
-    VulkanDeviceInfo const& dev,
-    VulkanCmdPoolInfo const& cmd_pool,
-    Object const& obj
-) -> tl::expected<VulkanBottomAccelStructInfo, std::string> {
-    // note: transform will be later applied to the instances of the acceleration structure
-    // so it's not needed here
-    auto vert_buf = VulkanBufferInfo{};
-    auto index_buf = VulkanBufferInfo{};
-
-    auto vertices = std::vector<glm::vec3>{};
-    vertices.reserve(obj.get_vertices().size());
-    std::transform(
-        obj.get_vertices().begin(), obj.get_vertices().end(),
-        std::back_inserter(vertices),
-        [](Vertex const& v) { return v.position; }
-    );
-    TL_TRY_ASSIGN(vert_buf, create_buffer(
-        dev,
-        VulkanBufferInfo::Type::AccelInput,
-        sizeof(decltype(vertices)::value_type) * vertices.size(),
-        vertices.data()
-    ));
-    TL_TRY_ASSIGN(index_buf, create_buffer(
-        dev,
-        VulkanBufferInfo::Type::AccelInput,
-        sizeof(decltype(obj.get_indices())::value_type) * obj.get_indices().size(),
-        obj.get_indices().data()
-    ));
-    auto prim_cnt = static_cast<uint32_t>(obj.get_indices().size() / 3);
-    auto triangle_data = vk::AccelerationStructureGeometryTrianglesDataKHR{}
-        .setVertexFormat(vk::Format::eR32G32B32Sfloat)
-        .setVertexData(vert_buf.device_addr)
-        .setVertexStride(sizeof(float) * 3)
-        .setMaxVertex(prim_cnt)
-        .setIndexType(vk::IndexType::eUint32)
-        .setIndexData(index_buf.device_addr);
-    auto geometry = vk::AccelerationStructureGeometryKHR{}
-        .setGeometryType(vk::GeometryTypeKHR::eTriangles)
-        .setFlags(vk::GeometryFlagBitsKHR::eOpaque)
-        .setGeometry(vk::AccelerationStructureGeometryDataKHR{ triangle_data });
-    auto build_info = vk::AccelerationStructureBuildGeometryInfoKHR{}
-        .setFlags(vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace | 
-            vk::BuildAccelerationStructureFlagBitsKHR::eAllowDataAccess)
-        .setGeometryCount(1)
-        .setPGeometries(&geometry)
-        .setMode(vk::BuildAccelerationStructureModeKHR::eBuild)
-        .setType(vk::AccelerationStructureTypeKHR::eBottomLevel);
-
-    auto accel = VulkanAccelStructInfo{};
-    TL_TRY_ASSIGN(accel,
-        create_accel(dev, cmd_pool, build_info, vk::AccelerationStructureTypeKHR::eBottomLevel, prim_cnt)
-    );
-    
-    return VulkanBottomAccelStructInfo{
-        std::move(accel),
-        std::move(vert_buf),
-        std::move(index_buf)
-    };
-}
-
-[[nodiscard]] auto create_top_accel_for(
-    VulkanDeviceInfo const& dev,
-    VulkanCmdPoolInfo const& cmd_pool,
-    Scene const& scene
-) -> tl::expected<VulkanTopAccelStructInfo, std::string> {
-    auto accel_ins_vec = std::vector<vk::AccelerationStructureInstanceKHR>{};
-    auto bottom_accels = std::vector<VulkanBottomAccelStructInfo>{};
-    for(auto const& obj : scene.get_objects()) {
-        auto accel = VulkanBottomAccelStructInfo{};
-        TL_TRY_ASSIGN(accel, create_bottom_accel_for(dev, cmd_pool, obj));
-
-        auto mat_data = glm::mat3x4 { obj.get_transform().get_matrix() };
-        auto mat_data_arr = std::array {
-            std::array { mat_data[0][0], mat_data[0][1], mat_data[0][2], mat_data[0][3] },
-            std::array { mat_data[1][0], mat_data[1][1], mat_data[1][2], mat_data[1][3] },
-            std::array { mat_data[2][0], mat_data[2][1], mat_data[2][2], mat_data[2][3] }
-        };
-
-        auto accel_inst_buf = VulkanBufferInfo{};
-        auto accel_ins = vk::AccelerationStructureInstanceKHR{}
-            .setTransform(vk::TransformMatrixKHR{ mat_data_arr })
-            .setInstanceCustomIndex(0)
-            .setMask(0xFF)
-            .setInstanceShaderBindingTableRecordOffset(0)
-            .setFlags(vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable)
-            .setAccelerationStructureReference(accel.accel.storage_mem.device_addr);
-        accel_ins_vec.emplace_back(accel_ins);
-        bottom_accels.emplace_back(std::move(accel));
-    }
-    auto accel_ins_buf = VulkanBufferInfo{};
-    TL_TRY_ASSIGN(accel_ins_buf, create_buffer(
-        dev,
-        VulkanBufferInfo::Type::AccelInput,
-        sizeof(decltype(accel_ins_vec)::value_type) * accel_ins_vec.size(),
-        accel_ins_vec.data()
-    ));
-    auto prim_cnt = static_cast<uint32_t>(accel_ins_vec.size());
-    auto instance_data = vk::AccelerationStructureGeometryInstancesDataKHR{}
-        .setArrayOfPointers(false)
-        .setData(accel_ins_buf.device_addr);
-    auto geometry = vk::AccelerationStructureGeometryKHR{}
-        .setGeometryType(vk::GeometryTypeKHR::eInstances)
-        .setFlags(vk::GeometryFlagBitsKHR::eOpaque)
-        .setGeometry(vk::AccelerationStructureGeometryDataKHR{ instance_data });
-    auto build_info = vk::AccelerationStructureBuildGeometryInfoKHR{}
-        .setFlags(vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace | 
-            vk::BuildAccelerationStructureFlagBitsKHR::eAllowDataAccess)
-        .setGeometryCount(1)
-        .setPGeometries(&geometry)
-        .setMode(vk::BuildAccelerationStructureModeKHR::eBuild)
-        .setType(vk::AccelerationStructureTypeKHR::eTopLevel);
-    auto accel = VulkanAccelStructInfo{};
-    TL_TRY_ASSIGN(accel, create_accel(
-        dev, cmd_pool,
-        build_info, vk::AccelerationStructureTypeKHR::eTopLevel, prim_cnt)
-    );
-    return VulkanTopAccelStructInfo{
-        std::move(accel),
-        std::move(bottom_accels),
-        std::move(accel_ins_vec)
-    };
-}
-
 [[nodiscard]] auto create_rt_pipeline(
     VulkanDeviceInfo const& dev,
     VulkanCmdPoolInfo const& cmd_pool,
@@ -857,7 +531,7 @@ template<typename CreateInfoChainType>
     Scene const& scene
 ) -> tl::expected<VulkanPipelineInfo, std::string> {
     auto vk_top_accel = VulkanTopAccelStructInfo{};
-    TL_TRY_ASSIGN(vk_top_accel, create_top_accel_for(dev, cmd_pool, scene));
+    TL_TRY_ASSIGN(vk_top_accel, VulkanTopAccelStructInfo::create(dev, cmd_pool, scene));
     auto ray_gen_shader = VulkanShaderInfo{};
     auto miss_shader = VulkanShaderInfo{};
     auto chit_shader = VulkanShaderInfo{};
@@ -931,14 +605,13 @@ template<typename CreateInfoChainType>
 
     try {
         auto desc_set_info = VulkanDescSetInfo{};
-        auto accel_info = vk_top_accel.accel.get_desc_info();
+        auto accel_info = vk_top_accel.get_accel().get_desc_info();
         auto img_info = output_img.get_desc_info();
         auto camera_buf = VulkanBufferInfo{};
-        TL_TRY_ASSIGN(camera_buf, create_buffer(
+        TL_TRY_ASSIGN(camera_buf, VulkanBufferInfo::create(
             dev,
             VulkanBufferInfo::Type::Uniform,
-            sizeof(CameraData),
-            nullptr
+            sizeof(CameraData)
         ));
         auto buf_info = camera_buf.get_desc_info();
 
@@ -1016,39 +689,39 @@ template<typename CreateInfoChainType>
         }
 
         auto raygen_buf = VulkanBufferInfo{};
-        TL_TRY_ASSIGN(raygen_buf, create_buffer(
+        TL_TRY_ASSIGN(raygen_buf, VulkanBufferInfo::create(
             dev,
             VulkanBufferInfo::Type::ShaderBindingTable,
             handle_size,
-            handles.data()
+            tcb::span { handles.data(), 1 }
         ));
         auto miss_buf = VulkanBufferInfo{};
-        TL_TRY_ASSIGN(miss_buf, create_buffer(
+        TL_TRY_ASSIGN(miss_buf, VulkanBufferInfo::create(
             dev,
             VulkanBufferInfo::Type::ShaderBindingTable,
             handle_size,
-            handles.data() + handle_size_aligned
+            tcb::span { handles.data() + handle_size_aligned, 1 }
         ));
         auto hit_buf = VulkanBufferInfo{};
-        TL_TRY_ASSIGN(hit_buf, create_buffer(
+        TL_TRY_ASSIGN(hit_buf, VulkanBufferInfo::create(
             dev,
             VulkanBufferInfo::Type::ShaderBindingTable,
             handle_size,
-            handles.data() + handle_size_aligned * 2
+            tcb::span { handles.data() + handle_size_aligned * 2, 1 }
         ));
 
         auto raygen_region = vk::StridedDeviceAddressRegionKHR{
-            raygen_buf.device_addr,
+            raygen_buf.get_device_addr(),
             handle_size_aligned,
             handle_size_aligned
         };
         auto miss_region = vk::StridedDeviceAddressRegionKHR{
-            miss_buf.device_addr,
+            miss_buf.get_device_addr(),
             handle_size_aligned,
             handle_size_aligned
         };
         auto hit_region = vk::StridedDeviceAddressRegionKHR{
-            hit_buf.device_addr,
+            hit_buf.get_device_addr(),
             handle_size_aligned,
             handle_size_aligned
         };
@@ -1077,21 +750,6 @@ template<typename CreateInfoChainType>
 [[nodiscard]] auto test_create_render_pass() -> tl::expected<VulkanRenderPassInfo, std::string>;
 [[nodiscard]] auto test_create_frame_buf() -> tl::expected<VulkanFrameBufferInfo, std::string>;
 [[nodiscard]] auto test_create_pipeline() -> tl::expected<VulkanPipelineInfo, std::string>;
-
-
-void VulkanTopAccelStructInfo::add_instance(
-    VulkanBottomAccelStructInfo const& bottom_accel, glm::mat4 const& transform
-) noexcept {
-    
-}
-
-void VulkanTopAccelStructInfo::remove_instance(size_t idx) noexcept {
-	
-}
-
-void VulkanTopAccelStructInfo::update_instance(size_t idx, glm::mat4 const& transform) noexcept {
-	
-}
 
 PTS::VulkanRayTracingRenderer::VulkanRayTracingRenderer(RenderConfig config)
 	: Renderer{config, "Vulkan Ray Tracer"} {}
@@ -1127,25 +785,53 @@ auto PTS::VulkanRayTracingRenderer::open_scene(View<Scene> scene) noexcept
 }
 
 auto PTS::VulkanRayTracingRenderer::on_add_editable(EditableView editable) noexcept
-	-> tl::expected<void, std::string> {
+-> tl::expected<void, std::string> {
 	if(auto const& pobj = editable.as<Object>()) {
         auto vk_bottom_accel = VulkanBottomAccelStructInfo{};
-        TL_TRY_ASSIGN(vk_bottom_accel, create_bottom_accel_for(m_vk_device, m_vk_cmd_pool, *pobj));
+        TL_TRY_ASSIGN(vk_bottom_accel, VulkanBottomAccelStructInfo::create(m_vk_device, m_vk_cmd_pool, *pobj));
 
+        auto id = size_t{ 0 };
+        TL_TRY_ASSIGN(id,
+            m_vk_pipeline.top_accel.add_instance(
+                std::move(vk_bottom_accel),
+                pobj->get_transform().get_matrix()
+            )
+        );
+        if (m_obj_data.count(pobj)) {
+            return TL_ERROR("object already added");
+        }
+        m_obj_data.emplace(pobj, PerObjectData{ id });
     }
-
     return {};
 }
 
 auto PTS::VulkanRayTracingRenderer::on_remove_editable(EditableView editable) noexcept
-	-> tl::expected<void, std::string> {
+-> tl::expected<void, std::string> {
 	return {};
 }
 
-auto VulkanRayTracingRenderer::on_editable_change(EditableView editable) noexcept -> tl::expected<void, std::string> {
+auto VulkanRayTracingRenderer::on_editable_change(EditableView editable, EditableChangeType type) noexcept
+-> tl::expected<void, std::string> {
+	if(auto const& pobj = editable.as<Object>()) {
+        auto it = m_obj_data.find(pobj);
+        if (it == m_obj_data.end()) {
+            return TL_ERROR("object not found");
+        }
+
+        switch (type) {
+        case EditableChangeType::TRANSFORM:
+            TL_CHECK_AND_PASS(
+                m_vk_pipeline.top_accel.update_instance(
+                    it->second.accel_idx,
+                    pobj->get_transform().get_matrix()
+                )
+            );
+            break;
+        }
+    }
+
     return {};
 }
-
 auto PTS::VulkanRayTracingRenderer::render(View<Camera> camera) noexcept
 	-> tl::expected<void, std::string> {
 	return {};
@@ -1153,32 +839,14 @@ auto PTS::VulkanRayTracingRenderer::render(View<Camera> camera) noexcept
 
 auto PTS::VulkanRayTracingRenderer::render_buffered(View<Camera> camera) noexcept
 -> tl::expected<TextureHandle, std::string> {
-    if (!m_vk_device) {
-        return TL_ERROR("device not initialized");
-    }
-    if (!m_vk_cmd_pool) {
-        return TL_ERROR("command pool not initialized");
-    }
-    if (!m_vk_render_cmd_buf) {
-        return TL_ERROR("command buffer not initialized");
-    }
-
     // update camera data
-    do_work_now(m_vk_device, m_vk_cmd_pool, 
-        [&](vk::CommandBuffer& cmd_buf) {
-            auto const cam_data = CameraData{
-                glm::inverse(camera.get().get_view()),
-                glm::inverse(camera.get().get_view_proj())
-            };
-
-            cmd_buf.updateBuffer(
-                *m_vk_pipeline.camera_mem,
-                0,
-                sizeof(CameraData),
-                &cam_data
-            );
-        }
-    );
+    auto const cam_data = CameraData{
+        camera.get().get_inv_view_proj(),
+        camera.get().get_eye(),
+    };
+    auto host_mem = m_vk_device->mapMemory(*m_vk_pipeline.camera_mem.get_mem(), 0, sizeof(CameraData));
+    *reinterpret_cast<CameraData*>(host_mem) = cam_data;
+    m_vk_device->unmapMemory(*m_vk_pipeline.camera_mem.get_mem());
 
     m_vk_cmd_pool.queue.submit(
         vk::SubmitInfo{}

@@ -248,7 +248,7 @@ auto EditorRenderer::on_remove_editable(EditableView editable) noexcept -> tl::e
     return {};
 }
 
-void EditorRenderer::on_editable_change(std::optional<EditableView> editable) noexcept {
+void EditorRenderer::on_selected_editable_change(std::optional<EditableView> editable) noexcept {
     commit_cur_shader_code();
     m_cur_outline_obj = nullptr;
 

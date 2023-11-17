@@ -6,6 +6,13 @@
 #include "utils.h"
 
 #include <tl/expected.hpp>
+
+enum class EditableChangeType {
+    TRANSFORM,
+    MATERIAL,
+    OTHER
+};
+
 namespace PTS {
     struct Application;
     struct Renderer {
@@ -46,9 +53,10 @@ namespace PTS {
         /**
          * \brief Called when an editable is changed in any way (transform, material, etc.)
          * \param editable The editable that was changed
+         * \param type The type of change that was made
          * \return on failure, an error message
         */
-        NODISCARD virtual auto on_editable_change(EditableView editable) noexcept -> tl::expected<void, std::string> = 0;
+        NODISCARD virtual auto on_editable_change(EditableView editable, EditableChangeType type) noexcept -> tl::expected<void, std::string> = 0;
 
         /**
          * \brief Renders the scene directly in the window

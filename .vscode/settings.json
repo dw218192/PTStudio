@@ -102,6 +102,12 @@
         "csignal": "cpp",
         "valarray": "cpp",
         "string_view": "cpp",
-        "codecvt": "cpp"
+        "codecvt": "cpp",
+        "cfenv": "cpp",
+        "cinttypes": "cpp",
+        "coroutine": "cpp",
+        "scoped_allocator": "cpp",
+        "shared_mutex": "cpp",
+        "typeindex": "cpp"
     }
 }
