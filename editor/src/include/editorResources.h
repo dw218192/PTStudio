@@ -5,6 +5,8 @@
 #include "concat.h"
 #include "enumArray.h"
 
+using std::literals::string_view_literals::operator""sv;
+
 constexpr char const* k_editor_tutorial_text = R"(This is a simple editor.
 Basic Operations:
 - Left click to select object
@@ -262,16 +264,16 @@ void main() {
 )";
 
 constexpr PTS::EArray<PTS::ShaderType, std::string_view> k_default_shader_header = {
-    {PTS::ShaderType::Vertex,   join_v<k_glsl_ver, k_uniform_decl, k_vertex_attributes_decl> },
-    {PTS::ShaderType::Fragment, join_v<k_glsl_ver, k_uniform_decl> }
+    {PTS::ShaderType::Vertex,   PTS::join_v<k_glsl_ver, k_uniform_decl, k_vertex_attributes_decl> },
+    {PTS::ShaderType::Fragment, PTS::join_v<k_glsl_ver, k_uniform_decl> }
 };
 constexpr PTS::EArray<PTS::ShaderType, std::optional<std::string_view>> k_default_shader_srcs_unprocessed = {
     {PTS::ShaderType::Vertex,   k_default_vs_obj_src_unprocessed },
     {PTS::ShaderType::Fragment, k_default_ps_obj_src_unprocessed }
 };
 constexpr PTS::EArray<PTS::ShaderType, std::optional<std::string_view>> k_default_shader_srcs = {
-    {PTS::ShaderType::Vertex,   join_v<k_glsl_ver, k_uniform_decl, k_vertex_attributes_decl, k_default_vs_obj_src_unprocessed>},
-    {PTS::ShaderType::Fragment, join_v<k_glsl_ver, k_uniform_decl, k_default_ps_obj_src_unprocessed> }
+    {PTS::ShaderType::Vertex,   PTS::join_v<k_glsl_ver, k_uniform_decl, k_vertex_attributes_decl, k_default_vs_obj_src_unprocessed>},
+    {PTS::ShaderType::Fragment, PTS::join_v<k_glsl_ver, k_uniform_decl, k_default_ps_obj_src_unprocessed> }
 };
 // for shader editor https://github.com/BalazsJako/ImGuiColorTextEdit/issues/121
 static const char* const glsl_keywords[] = {

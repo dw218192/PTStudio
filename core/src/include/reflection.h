@@ -5,13 +5,19 @@
 #include <optional>
 namespace PTS {
     /**
-     * simple reflection
+     * simple reflection framework
      * limitations:
      *  - doesn't include inherited members
      *  - only single declaration per line
      *  - FIELD(type<a,b,c,..>, name) doesn't work, alias the type first
      *  - relies on non-standard __COUNTER__ macro, but g++, clang, and msvc all support it
      *  - access control change in END_REFLECT() may cause bugs
+    */
+
+    /**
+     * a modifier is an attribute that can be attached to a field
+     * modifiers are used to change the behavior of the inspector
+     * modifiers are optional
     */
     template<typename... Modifiers>
     struct ModifierPack {
@@ -22,7 +28,7 @@ namespace PTS {
         constexpr void for_each(Callable&& callable) const {
             std::apply([&callable](auto&&... args) {
                 (callable(args), ...);
-                }, args);
+            }, args);
         }
     };
     template<typename T>

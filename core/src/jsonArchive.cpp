@@ -42,7 +42,7 @@ namespace PTS {
 			if (field.template get_modifier<MSerialize>()) {
 				json[field.var_name] = field.get(reflected);
 			}
-			});
+		});
 	}
 
 	template<typename Reflected, typename = std::enable_if_t<is_reflectable<Reflected>::value>>

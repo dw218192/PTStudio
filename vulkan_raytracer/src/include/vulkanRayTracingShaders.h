@@ -1,4 +1,7 @@
 #pragma once
+#include "concat.h"
+
+using std::literals::string_view_literals::operator""sv;
 
 auto constexpr k_ray_gen_shader_test_glsl = R"(
 #version 460
@@ -10,11 +13,18 @@ void main() {
     vec2 uv = vec2(gl_LaunchIDEXT.xy) / vec2(gl_LaunchSizeEXT.xy); // uv in [0, 1]
     imageStore(outputImage, ivec2(gl_LaunchIDEXT.xy), vec4(uv, 0.0, 1.0));
 }
-)";
+)"sv;
 
-auto constexpr k_ray_gen_shader_src_glsl = R"(
+
+auto constexpr k_common_src = R"(
 #version 460
 #extension GL_EXT_ray_tracing : enable
+struct Payload {
+    vec3 color;
+};
+)"sv;
+
+auto constexpr _k_ray_gen_shader_src_glsl = R"(
 // per-scene data
 layout (set = 0, binding = 0) uniform accelerationStructureEXT topLevelAS;
 layout (set = 0, binding = 1, rgba8) uniform image2D outputImage;
@@ -25,7 +35,7 @@ layout (set = 0, binding = 2) uniform CameraData {
 };
 
 // intersection data
-layout(location = 0) rayPayloadEXT vec4 payload;
+layout(location = 0) rayPayloadEXT Payload payload;
 
 void main() {
     vec2 uv = vec2(gl_LaunchIDEXT.xy) / vec2(gl_LaunchSizeEXT.xy); // uv in [0, 1]
@@ -47,24 +57,37 @@ void main() {
         0 // payload location
     );
 
-    imageStore(outputImage, ivec2(gl_LaunchIDEXT.xy), vec4(payload.xyz, 1.0));
+    imageStore(outputImage, ivec2(gl_LaunchIDEXT.xy), vec4(payload.color, 1.0));
 }
-)";
+)"sv;
 
-auto constexpr k_miss_shader_src_glsl = R"(
-#version 460
-#extension GL_EXT_ray_tracing : enable
-layout (location = 0) rayPayloadInEXT vec4 payload;
-void main() {
-    payload = vec4(0.0, 0.0, 0.0, 1.0);
-}
-)";
+auto constexpr _k_miss_shader_src_glsl = R"(
+layout(location = 0) rayPayloadInEXT Payload payload;
 
-auto constexpr k_closest_hit_shader_src_glsl = R"(
-#version 460
-#extension GL_EXT_ray_tracing : enable
-layout (location = 0) rayPayloadInEXT vec4 payload;
 void main() {
-    payload = vec4(1.0, 1.0, 1.0, 1.0);
+    payload.color = vec3(0.0);
 }
-)";
+)"sv;
+
+auto constexpr _k_closest_hit_shader_src_glsl = R"(
+layout(location = 0) rayPayloadInEXT Payload payload;
+
+void main() {
+    payload.color = vec3(1.0);
+}
+)"sv;
+
+auto constexpr k_ray_gen_shader_src_glsl = PTS::join_v<
+    k_common_src,
+    _k_ray_gen_shader_src_glsl
+>;
+
+auto constexpr k_miss_shader_src_glsl = PTS::join_v<
+    k_common_src,
+    _k_miss_shader_src_glsl
+>;
+
+auto constexpr k_closest_hit_shader_src_glsl = PTS::join_v<
+    k_common_src,
+    _k_closest_hit_shader_src_glsl
+>;

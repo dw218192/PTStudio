@@ -4,6 +4,7 @@
 #include <iostream>
 #include <string_view>
 
+namespace PTS {
 // from https://stackoverflow.com/questions/38955940/how-to-concatenate-static-strings-at-compile-time/62823211#62823211
 template <std::string_view const&... Strs>
 struct join {
@@ -27,3 +28,4 @@ struct join {
 // Helper to get the value out
 template <std::string_view const&... Strs>
 static constexpr auto join_v = join<Strs...>::value;
+}  // namespace PTS
