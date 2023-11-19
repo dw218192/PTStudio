@@ -2,7 +2,7 @@
 #include <optional>
 
 #include "shaderType.h"
-#include "concat.h"
+#include "stringManip.h"
 #include "enumArray.h"
 
 using std::literals::string_view_literals::operator""sv;

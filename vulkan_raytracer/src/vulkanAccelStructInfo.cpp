@@ -1,5 +1,6 @@
 #include "vulkanAccelStructInfo.h"
 #include "params.h"
+#include "vulkanRayTracingShaders.h"
 
 #ifndef NDEBUG
 #include <glm/gtx/string_cast.hpp>
@@ -88,13 +89,7 @@
     auto vert_buf = VulkanBufferInfo{};
     auto index_buf = VulkanBufferInfo{};
 
-    auto vertices = std::vector<VertexData>{};
-    vertices.reserve(obj.get_vertices().size());
-    std::transform(
-        obj.get_vertices().begin(), obj.get_vertices().end(),
-        std::back_inserter(vertices),
-        [](Vertex const& v) { return VertexData { v.position }; }
-    );
+    auto vertices = to_rt_data(obj.get_vertices());
     TL_TRY_ASSIGN(vert_buf, VulkanBufferInfo::create(
         dev,
         VulkanBufferInfo::Type::AccelInput,
@@ -209,14 +204,13 @@
 }
 
 [[nodiscard]] auto PTS::VulkanTopAccelStructInfo::add_instance(
-    VulkanBottomAccelStructInfo bottom_accel,
+    VulkanBottomAccelStructInfo&& bottom_accel,
     glm::mat4 const& transform
 ) noexcept -> tl::expected<size_t, std::string> {
     if (m_instances.size() >= k_max_instances) {
         return TL_ERROR("max instances reached");
     }
     auto accel_ins = vk::AccelerationStructureInstanceKHR{}
-        .setInstanceCustomIndex(0)
         .setMask(0xFF)
         .setInstanceShaderBindingTableRecordOffset(0)
         .setFlags(vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable)
@@ -225,11 +219,15 @@
     auto idx = size_t{ 0 };
     if (m_free_idx.empty()) {
         idx = m_instances.size();
+
+        accel_ins.setInstanceCustomIndex(idx);
         m_instances.emplace_back(accel_ins);
         m_bottom_accels.emplace_back(std::move(bottom_accel));
     } else {
         idx = m_free_idx.back();
         m_free_idx.pop_back();
+
+        accel_ins.setInstanceCustomIndex(idx);
         m_instances[idx] = accel_ins;
         m_bottom_accels[idx] = std::move(bottom_accel);
     }
@@ -258,7 +256,7 @@
     return {};
 }
 
-[[nodiscard]] auto PTS::VulkanTopAccelStructInfo::update_instance(size_t idx, glm::mat4 const& transform) noexcept
+[[nodiscard]] auto PTS::VulkanTopAccelStructInfo::update_instance_transform(size_t idx, glm::mat4 const& transform) noexcept
 -> tl::expected<void, std::string> {
     TL_CHECK_AND_PASS(update_instance_gpu(idx, transform));
     return update_accel_gpu(

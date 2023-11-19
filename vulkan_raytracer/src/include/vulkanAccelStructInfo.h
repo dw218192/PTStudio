@@ -51,12 +51,30 @@ namespace PTS {
             Scene const& scene
         ) -> tl::expected<VulkanTopAccelStructInfo, std::string>;
         
+        /**
+         * given a bottom accel struct, add an instance of it to the top accel struct
+         * @note the bottom accel's ownership is transferred to the top accel
+         * @param bottom_accel the bottom accel struct to add
+         * @param transform the transform to apply to the bottom accel struct
+        */
         [[nodiscard]] auto add_instance(
-            VulkanBottomAccelStructInfo bottom_accel,
+            VulkanBottomAccelStructInfo&& bottom_accel,
             glm::mat4 const& transform
         ) noexcept -> tl::expected<size_t, std::string>;
+
+        /**
+         * remove an instance from the top accel struct
+         * @param idx the index of the instance to remove
+         * @return void on success, error string on failure
+        */
         [[nodiscard]] auto remove_instance(size_t idx) noexcept -> tl::expected<void, std::string>;
-        [[nodiscard]] auto update_instance(size_t idx, glm::mat4 const& transform) noexcept -> tl::expected<void, std::string>;
+
+        /**
+         * update an instance's transform
+         * @param idx the index of the instance to update
+         * @param transform the new transform to apply to the instance
+        */
+        [[nodiscard]] auto update_instance_transform(size_t idx, glm::mat4 const& transform) noexcept -> tl::expected<void, std::string>;
         [[nodiscard]] auto get_accel() const -> auto const& {
             return m_accel;
         }
@@ -106,7 +124,7 @@ namespace PTS {
         }
 
         VulkanAccelStructInfo m_accel {};
-        // mem to store geometry info
+        // mem to store bottom accel instances
         VulkanBufferInfo m_ins_mem {};
         // refs to bottom accels, the top accel owns the bottom accels
         std::vector<VulkanBottomAccelStructInfo> m_bottom_accels {};

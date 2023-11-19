@@ -62,7 +62,15 @@ namespace PTS {
         [[nodiscard]] auto upload(ElementType const& data, size_t offset_bytes = 0) -> tl::expected<void, std::string> {
             return upload(tcb::span{ &data, 1 }, offset_bytes);
         }
-
+        template<typename ElementType>
+        [[nodiscard]] auto upload(ElementType& data, size_t offset_bytes = 0) -> tl::expected<void, std::string> {
+            return upload(tcb::span{ &data, 1 }, offset_bytes);
+        }
+        // disallow temporary objects
+        template<typename ElementType>
+        [[nodiscard]] auto upload(ElementType&&, size_t) = delete;
+        template<typename ElementType>
+        [[nodiscard]] auto upload(ElementType const&&, size_t) = delete;
     private:
         VulkanBufferInfo(
             vk::UniqueBuffer buffer,

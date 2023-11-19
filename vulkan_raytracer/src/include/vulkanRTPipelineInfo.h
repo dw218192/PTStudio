@@ -4,15 +4,16 @@
 #include "vulkanBufferInfo.h"
 
 namespace PTS {
-struct VulkanPipelineInfo : VulkanInfo<vk::UniquePipeline> {
+struct VulkanRTPipelineInfo : VulkanInfo<vk::UniquePipeline> {
     vk::UniquePipelineLayout layout{};
     VulkanTopAccelStructInfo top_accel{};
 
     // Desc Set related
-    VulkanDescSetInfo desc_sets{};
+    VulkanDescSetInfo desc_set{};
 
     // Uniforms related
     VulkanBufferInfo camera_mem{};
+    VulkanBufferInfo materials_mem{};
 
     // SBT related
     VulkanBufferInfo raygen_mem{};

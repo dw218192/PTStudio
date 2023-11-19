@@ -444,7 +444,7 @@ template<typename CreateInfoChainType>
 
 [[nodiscard]] auto config_cmd_buf(
     vk::CommandBuffer& cmd_buf,
-    VulkanPipelineInfo const& pipeline,
+    VulkanRTPipelineInfo const& pipeline,
     VulkanImageInfo const& output_img,
     unsigned width, unsigned height
 ) -> tl::expected<void, std::string> {
@@ -457,7 +457,7 @@ template<typename CreateInfoChainType>
                 vk::PipelineBindPoint::eRayTracingKHR,
                 *pipeline.layout,
                 0,
-                *pipeline.desc_sets,
+                *pipeline.desc_set,
                 nullptr
             );
 
@@ -504,7 +504,7 @@ template<typename CreateInfoChainType>
     VulkanDeviceInfo const& dev,
     VulkanCmdPoolInfo const& cmd_pool,
     VulkanImageInfo const& output_img,
-    VulkanPipelineInfo const& pipeline
+    VulkanRTPipelineInfo const& pipeline
 ) -> tl::expected<VulkanCmdBufInfo, std::string> {
     auto cmd_buf = vk::UniqueCommandBuffer {};
     try {
@@ -529,7 +529,7 @@ template<typename CreateInfoChainType>
     VulkanImageInfo const& output_img,
     VulkanDescSetPoolInfo const& desc_set_pool,
     Scene const& scene
-) -> tl::expected<VulkanPipelineInfo, std::string> {
+) -> tl::expected<VulkanRTPipelineInfo, std::string> {
     auto vk_top_accel = VulkanTopAccelStructInfo{};
     TL_TRY_ASSIGN(vk_top_accel, VulkanTopAccelStructInfo::create(dev, cmd_pool, scene));
     auto ray_gen_shader = VulkanShaderInfo{};
@@ -607,20 +607,37 @@ template<typename CreateInfoChainType>
         auto desc_set_info = VulkanDescSetInfo{};
         auto accel_info = vk_top_accel.get_accel().get_desc_info();
         auto img_info = output_img.get_desc_info();
+
+        // create camera buffer
         auto camera_buf = VulkanBufferInfo{};
         TL_TRY_ASSIGN(camera_buf, VulkanBufferInfo::create(
             dev,
             VulkanBufferInfo::Type::Uniform,
             sizeof(CameraData)
         ));
-        auto buf_info = camera_buf.get_desc_info();
+        auto cam_buf_info = camera_buf.get_desc_info();
+
+        // create material buffer
+        auto mat_buf = VulkanBufferInfo{};
+        auto mat_data = std::vector<MaterialData>{};
+        mat_data.reserve(scene.get_objects().size());
+        for(auto const& obj : scene.get_objects()) {
+            mat_data.emplace_back(to_rt_data(obj.get_material()));
+        }
+        TL_TRY_ASSIGN(mat_buf, VulkanBufferInfo::create(
+            dev,
+            VulkanBufferInfo::Type::Uniform,
+            sizeof(MaterialData) * k_max_instances,
+            tcb::make_span(mat_data)
+        ));
+        auto mat_buf_info = mat_buf.get_desc_info();
 
         TL_TRY_ASSIGN(desc_set_info,
             create_desc_set(
                 dev, desc_set_pool, {
 				    std::pair {
 				        vk::DescriptorSetLayoutBinding {}
-							.setBinding(0)
+							.setBinding(RTBindings::ACCEL_STRUCT_BINDING)
 							.setDescriptorType(vk::DescriptorType::eAccelerationStructureKHR)
 							.setDescriptorCount(1)
 							.setStageFlags(vk::ShaderStageFlagBits::eRaygenKHR),
@@ -629,7 +646,7 @@ template<typename CreateInfoChainType>
 				    },
                 	std::pair {
 				        vk::DescriptorSetLayoutBinding {}
-				            .setBinding(1)
+				            .setBinding(RTBindings::OUTPUT_IMAGE_BINDING)
 				            .setDescriptorType(vk::DescriptorType::eStorageImage)
 				            .setDescriptorCount(1)
 				            .setStageFlags(vk::ShaderStageFlagBits::eRaygenKHR),
@@ -638,12 +655,21 @@ template<typename CreateInfoChainType>
 			        },
                     std::pair {
                         vk::DescriptorSetLayoutBinding {}
-                            .setBinding(2)
+                            .setBinding(RTBindings::CAMERA_BINDING)
                             .setDescriptorType(vk::DescriptorType::eUniformBuffer)
                             .setDescriptorCount(1)
                             .setStageFlags(vk::ShaderStageFlagBits::eRaygenKHR),
                         vk::WriteDescriptorSet{}
-                            .setBufferInfo(buf_info)
+                            .setBufferInfo(cam_buf_info)
+                    },
+                    std::pair {
+                        vk::DescriptorSetLayoutBinding {}
+                            .setBinding(RTBindings::MATERIALS_BINDING)
+                            .setDescriptorType(vk::DescriptorType::eUniformBuffer)
+                            .setDescriptorCount(1)
+                            .setStageFlags(vk::ShaderStageFlagBits::eClosestHitKHR),
+                        vk::WriteDescriptorSet{}
+                            .setBufferInfo(mat_buf_info)
                     }
 	            }
 	        )
@@ -726,12 +752,13 @@ template<typename CreateInfoChainType>
             handle_size_aligned
         };
 
-        return VulkanPipelineInfo{
+        return VulkanRTPipelineInfo{
             { std::move(pipeline.value) },
             std::move(pipeline_layout),
             std::move(vk_top_accel),
             std::move(desc_set_info),
             std::move(camera_buf),
+            std::move(mat_buf),
             std::move(raygen_buf),
             std::move(miss_buf),
             std::move(hit_buf),
@@ -745,11 +772,6 @@ template<typename CreateInfoChainType>
         return TL_ERROR(err.what());
     }
 }
-
-// a simple rasterization pipeline for testing
-[[nodiscard]] auto test_create_render_pass() -> tl::expected<VulkanRenderPassInfo, std::string>;
-[[nodiscard]] auto test_create_frame_buf() -> tl::expected<VulkanFrameBufferInfo, std::string>;
-[[nodiscard]] auto test_create_pipeline() -> tl::expected<VulkanPipelineInfo, std::string>;
 
 PTS::VulkanRayTracingRenderer::VulkanRayTracingRenderer(RenderConfig config)
 	: Renderer{config, "Vulkan Ray Tracer"} {}
@@ -787,9 +809,15 @@ auto PTS::VulkanRayTracingRenderer::open_scene(View<Scene> scene) noexcept
 auto PTS::VulkanRayTracingRenderer::on_add_editable(EditableView editable) noexcept
 -> tl::expected<void, std::string> {
 	if(auto const& pobj = editable.as<Object>()) {
+        if (m_obj_data.count(pobj)) {
+            return TL_ERROR("object already added");
+        }
+
+        // create bottom level acceleration structure
         auto vk_bottom_accel = VulkanBottomAccelStructInfo{};
         TL_TRY_ASSIGN(vk_bottom_accel, VulkanBottomAccelStructInfo::create(m_vk_device, m_vk_cmd_pool, *pobj));
 
+        // add instance to top level acceleration structure
         auto id = size_t{ 0 };
         TL_TRY_ASSIGN(id,
             m_vk_pipeline.top_accel.add_instance(
@@ -797,9 +825,15 @@ auto PTS::VulkanRayTracingRenderer::on_add_editable(EditableView editable) noexc
                 pobj->get_transform().get_matrix()
             )
         );
-        if (m_obj_data.count(pobj)) {
-            return TL_ERROR("object already added");
-        }
+
+        // update material buffer
+        auto mat_data = to_rt_data(pobj->get_material());
+        TL_CHECK_AND_PASS(
+            m_vk_pipeline.materials_mem.upload(
+                mat_data,
+                id * sizeof(MaterialData)
+            )
+        );
         m_obj_data.emplace(pobj, PerObjectData{ id });
     }
     return {};
@@ -812,7 +846,7 @@ auto PTS::VulkanRayTracingRenderer::on_remove_editable(EditableView editable) no
         if (it == m_obj_data.end()) {
             return TL_ERROR("object not found");
         }
-        m_vk_pipeline.top_accel.remove_instance(it->second.accel_idx);
+        TL_CHECK_AND_PASS(m_vk_pipeline.top_accel.remove_instance(it->second.gpu_idx));
         m_obj_data.erase(it);
     }
     return {};
@@ -829,12 +863,22 @@ auto VulkanRayTracingRenderer::on_editable_change(EditableView editable, Editabl
         switch (type) {
         case EditableChangeType::TRANSFORM:
             TL_CHECK_AND_PASS(
-                m_vk_pipeline.top_accel.update_instance(
-                    it->second.accel_idx,
+                m_vk_pipeline.top_accel.update_instance_transform(
+                    it->second.gpu_idx,
                     pobj->get_transform().get_matrix()
                 )
             );
             break;
+        case EditableChangeType::MATERIAL: {
+            auto mat_data = to_rt_data(pobj->get_material());
+            TL_CHECK_AND_PASS(
+                m_vk_pipeline.materials_mem.upload(
+                    mat_data,
+                    it->second.gpu_idx * sizeof(MaterialData)
+                )
+            );
+            break;
+        }
         }
     }
 
@@ -848,13 +892,8 @@ auto PTS::VulkanRayTracingRenderer::render(View<Camera> camera) noexcept
 auto PTS::VulkanRayTracingRenderer::render_buffered(View<Camera> camera) noexcept
 -> tl::expected<TextureHandle, std::string> {
     // update camera data
-    auto const cam_data = CameraData{
-        camera.get().get_inv_view_proj(),
-        camera.get().get_eye(),
-    };
-    auto host_mem = m_vk_device->mapMemory(*m_vk_pipeline.camera_mem.get_mem(), 0, sizeof(CameraData));
-    *reinterpret_cast<CameraData*>(host_mem) = cam_data;
-    m_vk_device->unmapMemory(*m_vk_pipeline.camera_mem.get_mem());
+    auto const cam_data = to_rt_data(camera);
+    TL_CHECK(m_vk_pipeline.camera_mem.upload(cam_data));
 
     m_vk_cmd_pool.queue.submit(
         vk::SubmitInfo{}
@@ -941,373 +980,3 @@ auto PTS::VulkanRayTracingRenderer::init(ObserverPtr<Application> app) noexcept
 auto PTS::VulkanRayTracingRenderer::draw_imgui() noexcept -> tl::expected<void, std::string> {
 	return Renderer::draw_imgui();
 }
-
-#pragma region test
-[[nodiscard]] auto test_create_render_pass(
-    VulkanDeviceInfo const& dev
-) -> tl::expected<VulkanRenderPassInfo, std::string> {
-    try {
-        auto const color_fmt = vk::Format::eR8G8B8A8Unorm;
-        auto const depth_fmt = vk::Format::eD32Sfloat;
-    
-        auto props = dev.physical_device.getFormatProperties(color_fmt);
-        if (!(props.optimalTilingFeatures & vk::FormatFeatureFlagBits::eColorAttachment)) {
-            return TL_ERROR("color attachment not supported");
-        }
-        props = dev.physical_device.getFormatProperties(depth_fmt);
-        if (!(props.optimalTilingFeatures & vk::FormatFeatureFlagBits::eDepthStencilAttachment)) {
-            return TL_ERROR("depth attachment not supported");
-        }
-
-        auto color_attch_desc = vk::AttachmentDescription{
-            vk::AttachmentDescriptionFlags{},
-            color_fmt,
-            vk::SampleCountFlagBits::e1,
-            vk::AttachmentLoadOp::eClear,
-            vk::AttachmentStoreOp::eStore,
-            vk::AttachmentLoadOp::eDontCare,
-            vk::AttachmentStoreOp::eDontCare,
-            vk::ImageLayout::eUndefined,
-            vk::ImageLayout::eTransferSrcOptimal
-        };
-        auto depth_attch_desc = vk::AttachmentDescription{
-            vk::AttachmentDescriptionFlags{},
-            depth_fmt,
-            vk::SampleCountFlagBits::e1,
-            vk::AttachmentLoadOp::eClear,
-            vk::AttachmentStoreOp::eDontCare,
-            vk::AttachmentLoadOp::eDontCare,
-            vk::AttachmentStoreOp::eDontCare,
-            vk::ImageLayout::eUndefined,
-            vk::ImageLayout::eDepthStencilAttachmentOptimal
-        };
-        auto attch_descs = std::array {
-            color_attch_desc,
-            depth_attch_desc
-        };
-
-        auto color_attch_ref = vk::AttachmentReference{
-            0, vk::ImageLayout::eColorAttachmentOptimal
-        };
-        auto depth_attch_ref = vk::AttachmentReference{
-            1, vk::ImageLayout::eDepthStencilAttachmentOptimal
-        };
-        auto subpass_desc = vk::SubpassDescription{
-            vk::SubpassDescriptionFlags{},
-            vk::PipelineBindPoint::eGraphics,
-            0,
-            nullptr,
-            1,
-            &color_attch_ref,
-            nullptr,
-            &depth_attch_ref,
-            0,
-            nullptr
-        };
-        auto subpass_descs = std::array {
-            subpass_desc
-        };
-
-        auto deps = std::array {
-            vk::SubpassDependency{
-                VK_SUBPASS_EXTERNAL,
-                0,
-                vk::PipelineStageFlagBits::eBottomOfPipe,
-                vk::PipelineStageFlagBits::eColorAttachmentOutput,
-                vk::AccessFlagBits::eMemoryRead,
-                vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite,
-                vk::DependencyFlagBits::eByRegion
-            },
-            vk::SubpassDependency{
-                0, VK_SUBPASS_EXTERNAL,
-                vk::PipelineStageFlagBits::eColorAttachmentOutput,
-                vk::PipelineStageFlagBits::eBottomOfPipe,
-                vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite,
-                vk::AccessFlagBits::eMemoryRead,
-                vk::DependencyFlagBits::eByRegion
-            }
-        };
-
-        auto pass = dev->createRenderPassUnique(
-            vk::RenderPassCreateInfo {
-                vk::RenderPassCreateFlags{},
-                attch_descs,
-                subpass_descs,
-                deps
-            }
-        );
-
-        return VulkanRenderPassInfo{{std::move(pass)}, color_fmt, depth_fmt };
-    } catch (vk::SystemError& err) {
-        return TL_ERROR(err.what());
-    }
-}
-
-[[nodiscard]] auto test_create_frame_buf(
-    VulkanDeviceInfo& dev,
-    VulkanRenderPassInfo const& render_pass,
-    RenderConfig const& config
-) -> tl::expected<VulkanFrameBufferInfo, std::string> {
-    try {
-        auto color_tex = VulkanImageInfo{};
-        TL_TRY_ASSIGN(color_tex, create_tex(
-            dev,
-            render_pass.color_fmt,
-            config.width,
-            config.height,
-            vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferSrc,
-            vk::MemoryPropertyFlagBits::eDeviceLocal,
-            vk::ImageAspectFlagBits::eColor,
-            vk::ImageLayout::eUndefined,
-            vk::ImageLayout::eGeneral,
-            {},
-            true
-        ));
-        auto depth_tex = VulkanImageInfo{};
-        TL_TRY_ASSIGN(depth_tex, create_tex(
-            dev,
-            render_pass.depth_fmt,
-            config.width,
-            config.height,
-            vk::ImageUsageFlagBits::eDepthStencilAttachment,
-            vk::MemoryPropertyFlagBits::eDeviceLocal,
-            vk::ImageAspectFlagBits::eDepth,
-            vk::ImageLayout::eUndefined,
-            vk::ImageLayout::eGeneral,
-            {},
-            false
-        ));
-
-        auto attachments = std::array<vk::ImageView, 2> {
-            color_tex.view.get(),
-            depth_tex.view.get()
-        };
-
-        auto frame_buf = dev->createFramebufferUnique(
-            vk::FramebufferCreateInfo{
-                vk::FramebufferCreateFlags{},
-                *render_pass,
-                static_cast<uint32_t>(attachments.size()),
-                attachments.data(),
-                config.width,
-                config.height,
-                1
-            }
-        );
-        return VulkanFrameBufferInfo{{std::move(frame_buf)}, std::move(color_tex), std::move(depth_tex) };
-    } catch (vk::SystemError& err) {
-        return TL_ERROR(err.what());
-    }
-}
-
-[[nodiscard]] auto test_create_pipeline(
-    VulkanDeviceInfo const& dev,
-    VulkanRenderPassInfo const& render_pass,
-    VulkanFrameBufferInfo const& frame_buf,
-    VulkanDescSetPoolInfo const& desc_set_pool,
-    RenderConfig const& config
-) -> tl::expected<VulkanPipelineInfo, std::string> {
-    auto vertex_shader = VulkanShaderInfo{};
-    TL_TRY_ASSIGN(vertex_shader, create_shader_glsl(
-        dev,
-        R"(
-            #version 450
-            #extension GL_ARB_separate_shader_objects : enable
-
-            layout(location = 0) in vec3 pos;
-            layout(location = 1) in vec2 uv;
-            layout(location = 0) out vec2 frag_uv;
-
-            void main() {
-                gl_Position = vec4(pos, 1.0);
-                frag_uv = uv;
-            }
-        )",
-        "vertex_shader",
-        vk::ShaderStageFlagBits::eVertex
-    ));
-    auto fragment_shader = VulkanShaderInfo{};
-    TL_TRY_ASSIGN(fragment_shader, create_shader_glsl(
-        dev,
-        R"(
-            #version 450
-            #extension GL_ARB_separate_shader_objects : enable
-
-            layout(location = 0) in vec2 frag_uv;
-            layout(location = 0) out vec4 frag_color;
-            void main() {
-                frag_color = vec4(frag_uv, 0.0, 1.0);
-            }
-        )",
-        "fragment_shader",
-        vk::ShaderStageFlagBits::eFragment
-    ));
-    
-    try {
-        auto vert_stage_info = vk::PipelineShaderStageCreateInfo{
-            vk::PipelineShaderStageCreateFlags{},
-            vk::ShaderStageFlagBits::eVertex,
-            *vertex_shader,
-            "main",
-            nullptr
-        };
-        auto frag_stage_info = vk::PipelineShaderStageCreateInfo{
-            vk::PipelineShaderStageCreateFlags{},
-            vk::ShaderStageFlagBits::eFragment,
-            *fragment_shader,
-            "main",
-            nullptr
-        };
-        auto shader_stages = std::array {
-            vert_stage_info,
-            frag_stage_info
-        };
-        
-        auto vert_binding_desc = std::array{
-            vk::VertexInputBindingDescription{}
-                .setBinding(0)
-                .setStride(sizeof(float) * 5)
-                .setInputRate(vk::VertexInputRate::eVertex),
-        };
-        auto vert_attrib_desc = std::array{
-            vk::VertexInputAttributeDescription{}
-                .setBinding(0)
-                .setLocation(0)
-                .setFormat(vk::Format::eR32G32B32Sfloat)
-                .setOffset(0),
-            vk::VertexInputAttributeDescription{}
-                .setBinding(0)
-                .setLocation(1)
-                .setFormat(vk::Format::eR32G32Sfloat)
-                .setOffset(sizeof(float) * 3)
-        };
-        auto vert_input_info = vk::PipelineVertexInputStateCreateInfo{
-            vk::PipelineVertexInputStateCreateFlags{},
-            vert_binding_desc,
-            vert_attrib_desc
-        };
-        auto input_assembly_info = vk::PipelineInputAssemblyStateCreateInfo{
-            vk::PipelineInputAssemblyStateCreateFlags{},
-            vk::PrimitiveTopology::eTriangleList,
-            false
-        };
-        auto viewport = std::array {
-                vk::Viewport{
-                0.0f, 0.0f,
-                static_cast<float>(config.width),
-                static_cast<float>(config.height),
-                0.0f, 1.0f
-            }
-        };
-        auto scissor = std::array {
-                vk::Rect2D{
-                vk::Offset2D{ 0, 0 },
-                vk::Extent2D{ config.width, config.height }
-            }
-        };
-        auto viewport_state_info = vk::PipelineViewportStateCreateInfo{
-            vk::PipelineViewportStateCreateFlags{},
-            viewport,
-            scissor
-        };
-        auto rasterizer_info = vk::PipelineRasterizationStateCreateInfo{
-            vk::PipelineRasterizationStateCreateFlags{},
-            false, false,
-            vk::PolygonMode::eFill,
-            vk::CullModeFlagBits::eNone,
-            vk::FrontFace::eCounterClockwise,
-            false,
-            0.0f, 0.0f, 0.0f,
-            1.0f
-        };
-        auto multisample_info = vk::PipelineMultisampleStateCreateInfo{
-            vk::PipelineMultisampleStateCreateFlags{},
-            vk::SampleCountFlagBits::e1,
-            false,
-            1.0f, nullptr,
-            false, false
-        };
-        auto color_blend_attachment = std::array {
-            vk::PipelineColorBlendAttachmentState{
-                false,
-                vk::BlendFactor::eOne, vk::BlendFactor::eZero, vk::BlendOp::eAdd,
-                vk::BlendFactor::eOne, vk::BlendFactor::eZero, vk::BlendOp::eAdd,
-                vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
-                vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
-            }
-        };
-        auto color_blend_info = vk::PipelineColorBlendStateCreateInfo{
-            vk::PipelineColorBlendStateCreateFlags{},
-            false,
-            vk::LogicOp::eCopy,
-            color_blend_attachment,
-            { 0.0f, 0.0f, 0.0f, 0.0f }
-        };
-        auto depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo{
-            vk::PipelineDepthStencilStateCreateFlags{},
-            true, true,
-            vk::CompareOp::eLess,
-            false, false,
-            vk::StencilOpState{},
-            vk::StencilOpState{},
-            0.0f, 1.0f
-        };
-
-        
-        auto descriptor_set_layout_binding = std::array {
-            vk::DescriptorSetLayoutBinding{
-                0, vk::DescriptorType::eUniformBuffer,
-                1, vk::ShaderStageFlagBits::eVertex,
-                nullptr
-            }
-        };
-        auto descriptor_set_layout = dev->createDescriptorSetLayoutUnique(
-            vk::DescriptorSetLayoutCreateInfo{
-                vk::DescriptorSetLayoutCreateFlags{},
-                descriptor_set_layout_binding
-            }
-        );
-        auto descriptor_set_layouts = std::array {
-            *descriptor_set_layout
-        };
-        auto pipeline_layout = dev->createPipelineLayoutUnique(
-            vk::PipelineLayoutCreateInfo{
-                vk::PipelineLayoutCreateFlags{},
-                descriptor_set_layouts,
-                nullptr
-            }
-        );
-
-        auto pipeline = dev->createGraphicsPipelineUnique(
-            nullptr,
-            vk::GraphicsPipelineCreateInfo{
-                vk::PipelineCreateFlags{},
-                shader_stages,
-                &vert_input_info,
-                &input_assembly_info,
-                nullptr,
-                &viewport_state_info,
-                &rasterizer_info,
-                &multisample_info,
-                &depth_stencil_info,
-                &color_blend_info,
-                nullptr,
-                *pipeline_layout,
-                *render_pass,
-                0,
-                nullptr,
-                0,
-                nullptr
-            }
-        );
-        if (pipeline.result != vk::Result::eSuccess) {
-            return TL_ERROR("failed to create pipeline");
-        }
-
-        return TL_ERROR("not implemented fully");
-    } catch (vk::SystemError& err) {
-        return TL_ERROR(err.what());
-    }
-}
-
-#pragma endregion

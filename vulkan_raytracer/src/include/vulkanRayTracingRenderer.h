@@ -38,11 +38,11 @@ namespace PTS {
         VulkanImageInfo m_output_img; // image used for ray tracing output
         VulkanCmdBufInfo m_vk_render_cmd_buf;
         VulkanTopAccelStructInfo m_vk_top_accel;
-        VulkanPipelineInfo m_vk_pipeline;
+        VulkanRTPipelineInfo m_vk_pipeline;
 
         // extra object data
         struct PerObjectData {
-            size_t accel_idx{};
+            size_t gpu_idx{};
         };
         std::unordered_map<ViewPtr<Object>, PerObjectData> m_obj_data;
     };
