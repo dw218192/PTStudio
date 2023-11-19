@@ -19,10 +19,28 @@ struct VertexData {
 };
 struct MaterialData {
     glm::vec3 base_color;
+    glm::vec3 emissive_color;
 
     MaterialData() = default;
-    MaterialData(Material const& material) : base_color{material.albedo} {}
+    MaterialData(Material const& material) : 
+        base_color{material.albedo}, emissive_color{material.emission} {}
 };
+
+auto constexpr k_common_src = R"(
+#version 460
+#extension GL_EXT_ray_tracing : enable
+struct Payload {
+    vec3 color;
+};
+struct Material {
+    vec3 base_color;
+    vec3 emissive_color;
+};
+struct CameraData {
+    mat4 inv_view_proj;
+    vec3 pos;
+};
+)"sv;
 
 [[nodiscard]] inline auto to_rt_data(Camera const& camera) -> CameraData {
     return {
@@ -31,7 +49,7 @@ struct MaterialData {
     };
 }
 [[nodiscard]] inline auto to_rt_data(Material const& material) -> MaterialData {
-    return { material};
+    return { material };
 }
 [[nodiscard]] inline auto to_rt_data(tcb::span<Vertex const> vertices) -> std::vector<VertexData> {
     std::vector<VertexData> result;
@@ -99,22 +117,6 @@ auto constexpr k_accel_struct_decl = PTS::join_v<
     PTS::to_str_v<RTBindings::ACCEL_STRUCT_BINDING>,
     _k_accel_struct_decl_1
 >;
-
-auto constexpr k_common_src = R"(
-#version 460
-#extension GL_EXT_ray_tracing : enable
-struct Payload {
-    vec3 color;
-};
-struct Material {
-    vec3 base_color;
-};
-struct CameraData
-{
-    mat4 inv_view_proj;
-    vec3 pos;
-};
-)"sv;
 
 auto constexpr _k_ray_gen_shader_src_glsl = R"(
 // intersection data
