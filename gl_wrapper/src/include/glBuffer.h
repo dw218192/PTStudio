@@ -21,6 +21,8 @@ namespace PTS {
 		// TODO: might be helpful to store the element type as well
 		template<typename T, size_t Extent>
 		[[nodiscard]] auto set_data(tcb::span<T const, Extent> data, GLenum usage = GL_STATIC_DRAW) -> tl::expected<void, std::string>;
+		template<typename T, size_t Extent>
+		[[nodiscard]] auto set_data(tcb::span<T, Extent> data, GLenum usage = GL_STATIC_DRAW) -> tl::expected<void, std::string>;
 
 		[[nodiscard]] auto bind() const noexcept -> tl::expected<void, std::string>;
 		void unbind() const noexcept;
@@ -37,6 +39,17 @@ namespace PTS {
 
 	template <typename T, size_t Extent>
 	auto GLBuffer::set_data(tcb::span<T const, Extent> data, GLenum usage) -> tl::expected<void, std::string> {
+		if (data.empty()) {
+			return {};
+		}
+		glBufferData(m_target, data.size() * sizeof(T), data.data(), usage);
+		CHECK_GL_ERROR();
+
+		m_size = data.size();
+		return {};
+	}
+	template <typename T, size_t Extent>
+	auto GLBuffer::set_data(tcb::span<T, Extent> data, GLenum usage) -> tl::expected<void, std::string> {
 		if (data.empty()) {
 			return {};
 		}

@@ -110,6 +110,9 @@ auto EditorRenderer::init(ObserverPtr<Application> app) noexcept -> tl::expected
     } else if (!m_default_shader->valid()) {
         return TL_ERROR("invalid editor shader");
     }
+
+    // set up light ubo
+    TL_TRY_ASSIGN(m_light_data.ubo, GLBuffer::create(GL_UNIFORM_BUFFER));
     
     // set up gizmo sprite data
     TL_TRY_ASSIGN(m_light_gizmo_data.texture, GLTexture::create(light_icon_png_data, FileFormat::PNG));
@@ -228,6 +231,15 @@ auto EditorRenderer::on_add_editable(EditableView editable) noexcept -> tl::expe
             return TL_ERROR("object added twice");
         }
         TL_CHECK_AND_PASS(on_add_object_internal(m_obj_data[obj], *obj));
+    } else if(auto const light = editable.as<Light>()) {
+        m_light_data.data.emplace_back(light->get_data());
+        m_light_data.light_ptrs.emplace_back(light);
+
+        TL_CHECK_AND_PASS(m_light_data.ubo->bind());
+        {
+            TL_CHECK_AND_PASS(m_light_data.ubo->set_data(tcb::make_span(m_light_data.data), GL_DYNAMIC_DRAW));
+        }
+        m_light_data.ubo->unbind();
     }
 
     return {};
@@ -243,8 +255,46 @@ auto EditorRenderer::on_remove_editable(EditableView editable) noexcept -> tl::e
         if (obj == m_cur_outline_obj) {
             m_cur_outline_obj = nullptr;
         }
+    } else if (auto const light = editable.as<Light>()) {
+        auto const it = std::find_if(m_light_data.light_ptrs.begin(), m_light_data.light_ptrs.end(),
+            [light](auto const& ptr) { return ptr == light; }
+        );
+        if (it == m_light_data.light_ptrs.end()) {
+            return TL_ERROR("light not found");
+        }
+        auto const idx = std::distance(m_light_data.light_ptrs.begin(), it);
+        m_light_data.data.erase(m_light_data.data.begin() + idx);
+        m_light_data.light_ptrs.erase(it);
+
+        TL_CHECK_AND_PASS(m_light_data.ubo->bind());
+        {
+            TL_CHECK_AND_PASS(m_light_data.ubo->set_data(tcb::make_span(m_light_data.data), GL_DYNAMIC_DRAW));
+        }
+        m_light_data.ubo->unbind();
     }
 
+    return {};
+}
+
+auto EditorRenderer::on_editable_change(EditableView editable, EditableChangeType type) noexcept
+-> tl::expected<void, std::string> {
+	if (auto const obj = editable.as<Object>()) {
+    } else if (auto const light = editable.as<Light>()) {
+        auto const it = std::find_if(m_light_data.light_ptrs.begin(), m_light_data.light_ptrs.end(),
+            [light](auto const& ptr) { return ptr == light; }
+        );
+        if (it == m_light_data.light_ptrs.end()) {
+            return TL_ERROR("light not found");
+        }
+        auto const idx = std::distance(m_light_data.light_ptrs.begin(), it);
+        m_light_data.data[idx] = light->get_data();
+        TL_CHECK_AND_PASS(m_light_data.ubo->bind());
+        {
+            // TODO: only need to update the light that changed
+            TL_CHECK_AND_PASS(m_light_data.ubo->set_data(tcb::make_span(m_light_data.data), GL_DYNAMIC_DRAW));
+        }
+        m_light_data.ubo->unbind();
+    }
     return {};
 }
 
@@ -274,9 +324,9 @@ void EditorRenderer::on_selected_editable_change(std::optional<EditableView> edi
 auto EditorRenderer::on_add_object_internal(PerObjectData& data, Object const& obj) noexcept -> tl::expected<void, std::string> {
     TL_TRY_ASSIGN(data.shader, ShaderProgram::clone(m_default_shader.get()));
 	TL_TRY_ASSIGN(data.render_data, GLVertexArray::create_indexed(obj.get_vertices(), obj.get_indices(), 
-        GLAttributeInfo<glm::vec3> { 0, sizeof(Vertex), offsetof(Vertex, position) },
-        GLAttributeInfo<glm::vec3> { 1, sizeof(Vertex), offsetof(Vertex, normal) },
-        GLAttributeInfo<glm::vec3> { 2, sizeof(Vertex), offsetof(Vertex, uv) }
+        GLAttributeInfo<glm::vec3> { VertexAttribBinding::Position,  sizeof(Vertex), offsetof(Vertex, position) },
+        GLAttributeInfo<glm::vec3> { VertexAttribBinding::Normal,    sizeof(Vertex), offsetof(Vertex, normal) },
+        GLAttributeInfo<glm::vec3> { VertexAttribBinding::TexCoords, sizeof(Vertex), offsetof(Vertex, uv) }
     ));
 
     // update editor texts
@@ -421,21 +471,6 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
 
     glViewport(0, 0, static_cast<GLsizei>(get_config().width), static_cast<GLsizei>(get_config().height));
 
-    // put light positions and colors into a contiguous array
-    auto num_lights = std::min(m_scene->get_lights().size(), k_maxLights);
-    auto light_positions = std::vector<glm::vec3>(num_lights);
-    auto light_colors = std::vector<glm::vec3>(num_lights);
-    auto light_intensities = std::vector<float>(num_lights);
-
-	for (auto [i, it] = std::tuple{ 0, m_scene->get_lights().begin() };
-        it != m_scene->get_lights().end();
-        ++it, ++i) 
-    {
-        light_positions[i] = it->get_transform().get_position();
-        light_colors[i] = it->get_color();
-        light_intensities[i] = it->get_intensity();
-    }
-
     // render objects
     for (auto [it, i] = std::tuple{ m_scene->get_objects().begin(), 0 }; it != m_scene->get_objects().end(); ++it) {
         auto&& obj = *it;
@@ -450,12 +485,10 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
 
         auto&& uniforms = shader->get_uniform_map().get();
         // light
-    	if (uniforms.count(k_uniform_light_pos) && uniforms.count(k_uniform_light_color)) {
-            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_light_count, 
-                static_cast<int>(m_scene->get_lights().size())));
-            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_light_pos, tcb::make_span(light_positions)));
-            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_light_color, tcb::make_span(light_colors)));
-            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_light_intensity, tcb::make_span(light_intensities)));
+        if (uniforms.count(k_uniform_light_count)) {
+            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_light_count, static_cast<int>(m_light_data.data.size())));
+            glBindBufferBase(GL_UNIFORM_BUFFER, UBOBinding::LightBlock, m_light_data.ubo->handle());
+            CHECK_GL_ERROR();
         }
         // material
         if (uniforms.count(k_uniform_object_color)) {

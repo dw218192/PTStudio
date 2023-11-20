@@ -12,7 +12,26 @@ namespace PTS {
     enum class LightType {
         Directional,
         Point,
-        Spot
+        Spot,
+        Mesh, // Object with emissive material
+    };
+
+    // used in glsl
+    struct LightData {
+        glm::vec3 color;        // 0    base alignment: 16
+        float intensity;        // 12   base alignment: 4
+        glm::vec3 position;     // 16   base alignment: 16
+        int type;               // 28   base alignment: 4
+        unsigned char _pad1[4];  // 32
+
+        static constexpr auto glsl_def = std::string_view{
+            "struct LightData {\n"
+            "   vec3 color;\n"
+            "   float intensity;\n"
+            "   vec3 position;\n"
+            "   int type;\n"
+            "};\n"
+        };
     };
 
     struct Light {
@@ -29,6 +48,15 @@ namespace PTS {
         void set_color(glm::vec3 color) noexcept { m_color = color; }
         void set_intensity(float intensity) noexcept { m_intensity = intensity; }
         void set_transform(Transform transform) noexcept { m_transform = std::move(transform); }
+
+        auto get_data() const noexcept -> LightData {
+            return {
+                m_color,
+                m_intensity,
+                m_transform.get_position(),
+                static_cast<int>(m_type),
+            };
+        }
 
     private:
         BEGIN_REFLECT(Light);

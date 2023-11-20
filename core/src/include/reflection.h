@@ -72,6 +72,7 @@ namespace PTS {
     template<typename fake> struct _field_info<(_counter) - _init_count - 1, fake> {\
         static constexpr std::string_view var_name = STR(_var_name);\
         static constexpr std::string_view type_name = STR(_var_type);\
+        static constexpr auto offset = offsetof(_my_type, _var_name);\
         using type = _var_type;\
         static constexpr type& get(_my_type& obj) {\
             return obj._var_name;\
@@ -88,6 +89,7 @@ namespace PTS {
         static constexpr std::string_view var_name = STR(_var_name);\
         static constexpr std::string_view type_name = STR(_var_type);\
         static constexpr auto modifiers = ModifierPack {__VA_ARGS__};\
+        static constexpr auto offset = offsetof(_my_type, _var_name);\
         using type = _var_type;\
         static constexpr type& get(_my_type& obj) {\
             return obj._var_name;\

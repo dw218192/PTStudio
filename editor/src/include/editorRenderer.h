@@ -29,7 +29,7 @@ namespace PTS {
             [[nodiscard]] auto on_add_editable(EditableView editable) noexcept -> tl::expected<void, std::string> override;
             [[nodiscard]] auto on_remove_editable(EditableView editable) noexcept -> tl::expected<void, std::string> override;
             // not used, as the render() function fetches the data directly from the scene every frame
-            [[nodiscard]] auto on_editable_change(EditableView editable, EditableChangeType type) noexcept -> tl::expected<void, std::string> override { return {}; } 
+            [[nodiscard]] auto on_editable_change(EditableView editable, EditableChangeType type) noexcept -> tl::expected<void, std::string> override;
             [[nodiscard]] auto draw_imgui() noexcept -> tl::expected<void, std::string> override;
             void on_selected_editable_change(std::optional<EditableView> obj) noexcept;
         protected:
@@ -78,6 +78,15 @@ namespace PTS {
             // default shader, should be initialized in init()
             ShaderProgramRef m_default_shader{ nullptr };
 
+            // light data
+            struct {
+                GLBufferRef ubo{ nullptr };
+
+                // data[i] and light_ptrs[i] should correspond to the same light
+                std::vector<LightData> data{};
+                std::vector<ViewPtr<Light>> light_ptrs{};
+            } m_light_data;
+            
             // for shader editing
             // param passing here is a little weird because we have to work with
             // TextEditor
