@@ -58,6 +58,16 @@ namespace PTS {
     struct MColor {
         static constexpr std::string_view name = "color";
     };
+    struct MEnum {
+        static constexpr std::string_view name = "enum";
+        static auto imgui_callback_adapter(void* data, int idx, char const** out_text) -> bool {
+            auto enum_info = reinterpret_cast<MEnum const*>(data);
+            *out_text = enum_info->get_name(idx);
+            return true;
+        }
+        auto (*get_name)(int idx) -> char const*;
+        int num_items;
+    };
 
 #define STR(x) #x
 #define BEGIN_REFLECT_IMPL(_cls, _counter)\

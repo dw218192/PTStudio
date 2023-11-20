@@ -94,6 +94,19 @@ namespace ImGui {
                             changed = true;
                         }
                     }
+                } else if constexpr (std::is_enum_v<FieldType>) {
+                    if (auto enum_mod = field_info.template get_modifier<MEnum>()) {
+                        auto&& field = field_info.get(reflected);
+                        if (ImGui::Combo(field_info.var_name.data(), reinterpret_cast<int*>(&field), 
+                            MEnum::imgui_callback_adapter,
+                            &enum_mod,
+                            enum_mod->num_items)
+                        ) {
+                            changed = true;
+                        }
+                    } else {
+                        ImGui::Text("Enum type %s does not have a modifier", field_info.type_name.data());
+                    }
                 } else {
                     ImGui::Text("Unsupported type: %s", field_info.type_name.data());
                 }

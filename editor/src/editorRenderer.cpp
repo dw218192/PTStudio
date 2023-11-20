@@ -537,6 +537,7 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
 
     // render gizmo
     if (!m_scene->get_lights().empty()) {
+        glDisable(GL_DEPTH_TEST);
         TL_CHECK_AND_PASS(m_light_gizmo_data.render_data->bind());
         TL_CHECK_AND_PASS(m_light_gizmo_data.shader->bind());
         {
@@ -551,6 +552,7 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
                 TL_CHECK_AND_PASS(m_light_gizmo_data.render_data->draw(GL_TRIANGLES));
             }
         }
+        glEnable(GL_DEPTH_TEST);
     }
 
     // draw_outline will unbind the shader

@@ -63,7 +63,20 @@ namespace PTS {
         FIELD_MOD(std::string, m_name, "Light",
             MSerialize{}, MNoInspect{}); // handled explicitly
         FIELD_MOD(LightType, m_type, LightType::Point,
-            MSerialize{}, MNoInspect{}); // handled explicitly
+            MSerialize{},
+            MEnum {
+                [] (int idx) -> char const* {
+                    switch (idx) {
+                    case 0: return "Directional";
+                    case 1: return "Point";
+                    case 2: return "Spot";
+                    case 3: return "Mesh";
+                    default: return "Unknown";
+                    }
+                },
+                4
+            }
+        );
         FIELD_MOD(glm::vec3, m_color, {},
             MSerialize{}, MColor{});
         FIELD_MOD(float, m_intensity, {},

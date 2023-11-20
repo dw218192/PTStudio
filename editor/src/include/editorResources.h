@@ -202,7 +202,13 @@ enum UBOBinding {
 };
 
 namespace _private {
+// silence MSVC warning C4455 which is a bug
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 4455)
 using std::literals::string_view_literals::operator""sv;
+#pragma warning(pop)
+#endif
 
 constexpr auto k_glsl_ver = "#version 420 core\n"sv;
 

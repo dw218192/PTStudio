@@ -16,8 +16,10 @@ struct VertexData {
     VertexData(Vertex const& vertex) : position{vertex.position} {}
 };
 struct MaterialData {
-    glm::vec3 base_color;
-    glm::vec3 emissive_color;
+    glm::vec3 base_color;     // 0
+    unsigned char _pad1[4];   // 12
+    glm::vec3 emissive_color; // 16
+    unsigned char _pad2[4];   // 28
 
     MaterialData() = default;
     MaterialData(Material const& material) : 
@@ -50,7 +52,13 @@ enum RTBindings {
 };
 
 namespace _private {
+// silence MSVC warning C4455 which is a bug
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 4455)
 using std::literals::string_view_literals::operator""sv;
+#pragma warning(pop)
+#endif
 
 auto constexpr k_common_src = R"(
 #version 460
