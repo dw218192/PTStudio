@@ -339,6 +339,10 @@ void EditorApplication::draw_scene_panel() noexcept {
             if (ImGui::MenuItem("Sphere")) {
                 add_object(Object::make_sphere_obj(m_scene, Material{}, Transform{}));
             }
+            if (ImGui::MenuItem("Quad")) {
+                add_object(Object::make_quad_obj(m_scene, Material{}, Transform{}));
+            }
+
             if (ImGui::MenuItem("Import .obj File")) {
                 auto const path = ImGui::FileDialogue(ImGui::FileDialogueMode::OPEN, "obj");
                 if(!path.empty()) {
@@ -349,9 +353,10 @@ void EditorApplication::draw_scene_panel() noexcept {
                     this->log(LogLevel::Warning, warning);
                 }
             }
-            if (ImGui::MenuItem("Add Point Light")) {
+            if (ImGui::MenuItem("Add Light")) {
                 add_light(Light { m_scene,glm::vec3(1.0f), 1.0f, Transform{}});
             }
+
             ImGui::EndMenu();
         }
     }

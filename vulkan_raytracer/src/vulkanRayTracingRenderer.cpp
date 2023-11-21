@@ -502,9 +502,7 @@ template<typename CreateInfoChainType>
 
 [[nodiscard]] auto create_cmd_buf(
     VulkanDeviceInfo const& dev,
-    VulkanCmdPoolInfo const& cmd_pool,
-    VulkanImageInfo const& output_img,
-    VulkanRTPipelineInfo const& pipeline
+    VulkanCmdPoolInfo const& cmd_pool
 ) -> tl::expected<VulkanCmdBufInfo, std::string> {
     auto cmd_buf = vk::UniqueCommandBuffer {};
     try {
@@ -609,13 +607,13 @@ template<typename CreateInfoChainType>
         auto img_info = output_img.get_desc_info();
 
         // create camera buffer
-        auto camera_buf = VulkanBufferInfo{};
-        TL_TRY_ASSIGN(camera_buf, VulkanBufferInfo::create(
+        auto per_frame_buf = VulkanBufferInfo{};
+        TL_TRY_ASSIGN(per_frame_buf, VulkanBufferInfo::create(
             dev,
             VulkanBufferInfo::Type::Uniform,
-            sizeof(CameraData)
+            sizeof(PerFrameData)
         ));
-        auto cam_buf_info = camera_buf.get_desc_info();
+        auto per_frame_buf_info = per_frame_buf.get_desc_info();
 
         // create material buffer
         auto mat_buf = VulkanBufferInfo{};
@@ -655,12 +653,12 @@ template<typename CreateInfoChainType>
 			        },
                     std::pair {
                         vk::DescriptorSetLayoutBinding {}
-                            .setBinding(RTBindings::CAMERA_BINDING)
+                            .setBinding(RTBindings::PER_FRAME_DATA_BINDING)
                             .setDescriptorType(vk::DescriptorType::eUniformBuffer)
                             .setDescriptorCount(1)
                             .setStageFlags(vk::ShaderStageFlagBits::eRaygenKHR),
                         vk::WriteDescriptorSet{}
-                            .setBufferInfo(cam_buf_info)
+                            .setBufferInfo(per_frame_buf_info)
                     },
                     std::pair {
                         vk::DescriptorSetLayoutBinding {}
@@ -757,7 +755,7 @@ template<typename CreateInfoChainType>
             std::move(pipeline_layout),
             std::move(vk_top_accel),
             std::move(desc_set_info),
-            std::move(camera_buf),
+            std::move(per_frame_buf),
             std::move(mat_buf),
             std::move(raygen_buf),
             std::move(miss_buf),
@@ -798,7 +796,8 @@ auto PTS::VulkanRayTracingRenderer::open_scene(View<Scene> scene) noexcept
     TL_TRY_ASSIGN(m_vk_pipeline, create_rt_pipeline(m_vk_device, m_vk_cmd_pool, m_output_img,m_vk_desc_set_pool, scene));
     if (!m_vk_render_cmd_buf) {
         // create command buffer
-       TL_TRY_ASSIGN(m_vk_render_cmd_buf, create_cmd_buf(m_vk_device, m_vk_cmd_pool, m_output_img, m_vk_pipeline));
+       TL_TRY_ASSIGN(m_vk_render_cmd_buf, create_cmd_buf(m_vk_device, m_vk_cmd_pool));
+       TL_TRY_ASSIGN(m_vk_uniform_upload_cmd_buf, create_cmd_buf(m_vk_device, m_vk_cmd_pool));
     }
     // configure command buffer
     TL_CHECK_AND_PASS(config_cmd_buf(*m_vk_render_cmd_buf, m_vk_pipeline, m_output_img, m_config.width, m_config.height));
@@ -891,13 +890,26 @@ auto PTS::VulkanRayTracingRenderer::render(View<Camera> camera) noexcept
 
 auto PTS::VulkanRayTracingRenderer::render_buffered(View<Camera> camera) noexcept
 -> tl::expected<TextureHandle, std::string> {
-    // update camera data
-    auto const cam_data = to_rt_data(camera);
-    TL_CHECK(m_vk_pipeline.camera_mem.upload(cam_data));
+    static auto frame = 0;
+    ++frame;
 
+    // update camera data
+    auto cam_data = to_rt_data(camera);
+    auto per_frame_data = PerFrameData{ cam_data, frame };
+
+    m_vk_uniform_upload_cmd_buf->reset(vk::CommandBufferResetFlags{});
+    m_vk_uniform_upload_cmd_buf->begin(vk::CommandBufferBeginInfo{});
+    m_vk_uniform_upload_cmd_buf->updateBuffer(
+        *m_vk_pipeline.per_frame_mem.handle,
+        0, sizeof(PerFrameData),
+        &per_frame_data
+    );
+    m_vk_uniform_upload_cmd_buf->end();
+
+    auto cmd_bufs = std::array{ *m_vk_uniform_upload_cmd_buf, *m_vk_render_cmd_buf };
     m_vk_cmd_pool.queue.submit(
         vk::SubmitInfo{}
-            .setCommandBuffers(*m_vk_render_cmd_buf),
+            .setCommandBuffers(cmd_bufs),
         nullptr
     );
     m_vk_cmd_pool.queue.waitIdle();
@@ -907,7 +919,7 @@ auto PTS::VulkanRayTracingRenderer::render_buffered(View<Camera> camera) noexcep
 
 auto PTS::VulkanRayTracingRenderer::valid() const noexcept -> bool {
     return m_vk_ins && m_vk_device && m_vk_cmd_pool && m_vk_desc_set_pool && m_output_img.img.vk_image
-        && m_output_img.img.gl_tex.get() && m_vk_pipeline && m_vk_render_cmd_buf;
+        && m_output_img.img.gl_tex.get() && m_vk_pipeline && m_vk_render_cmd_buf && m_vk_uniform_upload_cmd_buf;
 }
 
 auto PTS::VulkanRayTracingRenderer::on_change_render_config() noexcept -> tl::expected<void, std::string> {

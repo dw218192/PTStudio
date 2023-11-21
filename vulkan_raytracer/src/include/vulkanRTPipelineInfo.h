@@ -12,7 +12,7 @@ struct VulkanRTPipelineInfo : VulkanInfo<vk::UniquePipeline> {
     VulkanDescSetInfo desc_set{};
 
     // Uniforms related
-    VulkanBufferInfo camera_mem{};
+    VulkanBufferInfo per_frame_mem{};
     VulkanBufferInfo materials_mem{};
 
     // SBT related

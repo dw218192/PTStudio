@@ -9,6 +9,12 @@ struct CameraData {
     glm::mat4 inv_view_proj;
     glm::vec3 cam_pos;
 };
+struct PerFrameData {
+    CameraData camera;
+    int frame_cnt;
+    unsigned char _pad[4];
+};
+
 struct VertexData {
     glm::vec3 position;
 
@@ -46,7 +52,7 @@ struct MaterialData {
 
 enum RTBindings {
     ACCEL_STRUCT_BINDING = 0,
-    CAMERA_BINDING = 1,
+    PER_FRAME_DATA_BINDING = 1,
     MATERIALS_BINDING = 2,
     OUTPUT_IMAGE_BINDING = 3,
 };
@@ -67,10 +73,11 @@ auto constexpr k_common_src = R"(
 #extension GL_EXT_ray_tracing_position_fetch : enable
 
 struct Payload {
-    vec3 brdf;
-    vec3 color;
-    vec3 position;
-    vec3 normal;
+    vec3 Li;  // sampled radiance
+    vec3 pos; // intersection pos
+    vec3 wi;  // incoming dir
+    vec3 n;   // normal
+    float pdf; // pdf of wi
     bool done;
 };
 struct Material {
@@ -127,7 +134,56 @@ vec3 Faceforward(vec3 n, vec3 v) {
 bool SameHemisphere(vec3 w, vec3 wp) {
     return w.z * wp.z > 0;
 }
+vec3 squareToDiskConcentric(vec2 xi) {
+    float theta, r;
+    float a = 2 * xi.x - 1;
+    float b = 2 * xi.y - 1;
+    float c = PI * 0.25f;
+    if(a > -b) {
+        if(a > b) {
+            r = a;
+            theta = c * b / a;
+        } else {
+            r = b;
+            theta = c * (2 - a / b);
+        }
+    } else {
+        if(a < b) {
+            r = -a;
+            theta = c * (4 + b / a);
+        } else {
+            r = -b;
+            if(b != 0) {
+                theta = c * (6 - a / b);
+            } else {
+                theta = 0;
+            }
+        }
+    }
+    return vec3(r * cos(theta), r * sin(theta), 0);
+}
+vec3 squareToHemisphereCosine(vec2 xi) {
+    vec3 ret = squareToDiskConcentric(xi);
+    ret.z = sqrt(max(0.f, 1 - ret.x * ret.x - ret.y * ret.y));
+    return ret;
+}
+float squareToHemisphereCosinePDF(vec3 sp) {
+    return sp.z * INV_PI;
+}
+vec3 squareToSphereUniform(vec2 sp) {
+    float z = 1 - 2 * sp.x;
+    float b = sqrt(1 - z * z);
+    float phi = 2 * PI * sp.y;
 
+    return vec3 (
+        cos(phi) * b,
+        sin(phi) * b,
+        z
+    );
+}
+float squareToSphereUniformPDF(vec3 sp) {
+    return INV_FOUR_PI;
+}
 )"sv;
 
 // material uniform declaration
@@ -149,13 +205,14 @@ auto constexpr k_material_uniform_decl = PTS::join_v<
 // camera uniform declaration
 auto constexpr _k_camera_uniform_decl_0 = R"(
 layout (set = 0, binding = )"sv;
-auto constexpr _k_camera_uniform_decl_1 = R"() uniform CameraBlock {
+auto constexpr _k_camera_uniform_decl_1 = R"() uniform PerFrameDataBlock {
     CameraData camera;
+    int frame_cnt;
 };
 )"sv;
 auto constexpr k_camera_uniform_decl = PTS::join_v<
     _k_camera_uniform_decl_0,
-    PTS::to_str_v<RTBindings::CAMERA_BINDING>,
+    PTS::to_str_v<RTBindings::PER_FRAME_DATA_BINDING>,
     _k_camera_uniform_decl_1
 >;
 
@@ -189,23 +246,48 @@ void main() {
     vec2 uv = vec2(gl_LaunchIDEXT.xy) / vec2(gl_LaunchSizeEXT.xy); // uv in [0, 1]
     vec2 ndc = uv * 2.0 - 1.0; // uv in [-1, 1]
     vec4 uv_world = camera.inv_view_proj * vec4(ndc, 1.0, 1.0);
-    vec3 direction = normalize(uv_world.xyz / uv_world.w - camera.pos); // ray direction in world space
+    vec3 rd = normalize(uv_world.xyz / uv_world.w - camera.pos); // ray direction in world space
+    vec3 ro = camera.pos; // ray origin in world space
+    int num_samples = 256;
 
-    traceRayEXT(
-        topLevelAS,
-        gl_RayFlagsOpaqueEXT, // target opaque geometry
-        0xFF,  // cull mask
-        0, // sbt record offset
-        0, // sbt record stride
-        0, // miss index
-        camera.pos, // ray origin
-        0.001, // ray tmin
-        direction, // ray direction
-        100000.0, // ray tmax
-        0 // payload location
-    );
+    vec3 color = vec3(1.0);
+    for (int i = 0; i < num_samples; ++i) {
+        payload = Payload(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, false);
+        traceRayEXT(
+            topLevelAS,
+            gl_RayFlagsOpaqueEXT, // target opaque geometry
+            0xFF,  // cull mask
+            0, // sbt record offset
+            0, // sbt record stride
+            0, // miss index
+            ro, // ray origin
+            0.001, // ray tmin
+            rd, // ray direction
+            100000.0, // ray tmax
+            0 // payload location
+        );
 
-    imageStore(outputImage, ivec2(gl_LaunchIDEXT.xy), vec4(payload.color, 1.0));
+        if (payload.pdf <= Epsilon || payload.Li == vec3(0.0) || payload.wi == vec3(0.0)) {
+            color = vec3(0.0);
+            break;
+        } 
+        if (payload.done) {
+            color *= payload.Li;
+            break;
+        } else {
+            color *= payload.Li * abs(dot(payload.wi, payload.n)) / payload.pdf;
+            ro = payload.pos;
+            rd = payload.wi;
+        }
+    }
+
+    if (frame_cnt == 0) {
+        imageStore(outputImage, ivec2(gl_LaunchIDEXT.xy), vec4(color, 1.0));
+    } else {
+        vec4 prevColor = imageLoad(outputImage, ivec2(gl_LaunchIDEXT.xy));
+        color = mix(prevColor.rgb, color, 1.0 / float(frame_cnt));
+        imageStore(outputImage, ivec2(gl_LaunchIDEXT.xy), vec4(color, 1.0));
+    }
 }
 )"sv;
 
@@ -213,8 +295,7 @@ auto constexpr _k_miss_shader_src_glsl = R"(
 layout(location = 0) rayPayloadInEXT Payload payload;
 
 void main() {
-    payload.color = vec3(0.0);
-    payload.done = true;
+    payload = Payload(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, true);
 }
 )"sv;
 
@@ -222,13 +303,9 @@ auto constexpr _k_closest_hit_shader_src_glsl = R"(
 layout(location = 0) rayPayloadInEXT Payload payload;
 hitAttributeEXT vec3 attribs;
 
-// vec3 Li_Direct(vec3 p, vec3 n, vec3 wo, Material material) {
-//     vec3 throughput = vec3(1.0);
-// }
 vec3 calcNormal(vec3 p0, vec3 p1, vec3 p2) {
     return -normalize(cross(p1 - p0, p2 - p0));
 }
-
 void main() {
     vec3 ps[3];
     ps[0] = gl_HitTriangleVertexPositionsEXT[0];
@@ -240,9 +317,18 @@ void main() {
     vec3 n = calcNormal(ps[0], ps[1], ps[2]);
 
     Material material = materials[gl_InstanceCustomIndexEXT];
-    
-    payload.color = material.base_color;
-    payload.done = true;
+    if (material.emissive_color != vec3(0.0)) {
+        payload = Payload(material.emissive_color, pos, vec3(0.0), n, 0.0, true);
+    } else {
+        // diffuse
+        seed = uvec2(gl_LaunchIDEXT.xy);
+        vec2 xi = vec2(rng(), rng());
+        vec3 wi = squareToHemisphereCosine(xi);
+        float pdf = squareToHemisphereCosinePDF(wi);
+        vec3 wiW = LocalToWorld(n) * wi;
+        vec3 Li = material.base_color * INV_PI;
+        payload = Payload(Li, pos, wiW, n, pdf, false);
+    }
 }
 )"sv;
 } // namespace _private
