@@ -2,17 +2,32 @@
 #include "stringManip.h"
 #include "camera.h"
 #include "object.h"
+#include "params.h"
 
 namespace PTS {
 
 struct CameraData {
-    glm::mat4 inv_view_proj;
-    glm::vec3 cam_pos;
+    glm::mat4 inv_view_proj; // 0
+    glm::vec3 cam_pos;       // 64
+    unsigned char _pad[4] = { 0, 0, 0, 0 };
+    // total size: 80
+
+    auto operator==(CameraData const& other) const noexcept -> bool {
+        return inv_view_proj == other.inv_view_proj
+            && cam_pos == other.cam_pos;
+    }
+    auto operator!=(CameraData const& other) const noexcept -> bool {
+        return !(*this == other);
+    }
 };
+static_assert(sizeof(CameraData) == 80, "CameraData size mismatch");
+
 struct PerFrameData {
-    CameraData camera;
-    int frame_cnt;
-    unsigned char _pad[4];
+    CameraData camera; // 0
+    int iteration;     // 80
+    int num_samples;   // 84
+    int max_bounces;   // 88
+    // total size: 96
 };
 
 struct VertexData {
@@ -22,15 +37,17 @@ struct VertexData {
     VertexData(Vertex const& vertex) : position{vertex.position} {}
 };
 struct MaterialData {
-    glm::vec3 base_color;     // 0
-    unsigned char _pad1[4];   // 12
-    glm::vec3 emissive_color; // 16
-    unsigned char _pad2[4];   // 28
+    glm::vec3 base_color;                          // 0    base alignment: 16
+    unsigned char _pad1[4] = { 0, 0, 0, 0 };       // 12
+    glm::vec3 emissive_color;                      // 16   base alignment: 16
+    unsigned char _pad2[4] = { 0, 0, 0, 0 };       // 28
+    // total size: 32
 
     MaterialData() = default;
     MaterialData(Material const& material) : 
         base_color{material.albedo}, emissive_color{material.emission} {}
 };
+static_assert(sizeof(MaterialData) == 32, "MaterialData size mismatch");
 
 [[nodiscard]] inline auto to_rt_data(Camera const& camera) -> CameraData {
     return {
@@ -52,7 +69,6 @@ struct MaterialData {
 
 enum RTBindings {
     ACCEL_STRUCT_BINDING = 0,
-    PER_FRAME_DATA_BINDING = 1,
     MATERIALS_BINDING = 2,
     OUTPUT_IMAGE_BINDING = 3,
 };
@@ -105,8 +121,7 @@ struct CameraData {
 #define Epsilon          0.000001
 
 // from ShaderToy https://www.shadertoy.com/view/4tXyWN
-uvec2 seed;
-float rng() {
+float rng(uvec2 seed) {
     seed += uvec2(1);
     uvec2 q = 1103515245U * ( (seed >> 1U) ^ (seed.yx) );
     uint  n = 1103515245U * ( (q.x) ^ (q.y >> 3U) );
@@ -203,18 +218,14 @@ auto constexpr k_material_uniform_decl = PTS::join_v<
 >;
 
 // camera uniform declaration
-auto constexpr _k_camera_uniform_decl_0 = R"(
-layout (set = 0, binding = )"sv;
-auto constexpr _k_camera_uniform_decl_1 = R"() uniform PerFrameDataBlock {
+auto constexpr k_camera_uniform_decl = R"(
+layout (push_constant) uniform PerFrameDataBlock {
     CameraData camera;
-    int frame_cnt;
+    int iteration;
+    int num_samples;
+    int max_bounces;
 };
 )"sv;
-auto constexpr k_camera_uniform_decl = PTS::join_v<
-    _k_camera_uniform_decl_0,
-    PTS::to_str_v<RTBindings::PER_FRAME_DATA_BINDING>,
-    _k_camera_uniform_decl_1
->;
 
 // output image declaration
 auto constexpr _k_output_image_decl_0 = R"(
@@ -248,10 +259,9 @@ void main() {
     vec4 uv_world = camera.inv_view_proj * vec4(ndc, 1.0, 1.0);
     vec3 rd = normalize(uv_world.xyz / uv_world.w - camera.pos); // ray direction in world space
     vec3 ro = camera.pos; // ray origin in world space
-    int num_samples = 256;
 
     vec3 color = vec3(1.0);
-    for (int i = 0; i < num_samples; ++i) {
+    for (int i = 0; i < max_bounces; ++i) {
         payload = Payload(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, false);
         traceRayEXT(
             topLevelAS,
@@ -266,28 +276,29 @@ void main() {
             100000.0, // ray tmax
             0 // payload location
         );
-
-        if (payload.pdf <= Epsilon || payload.Li == vec3(0.0) || payload.wi == vec3(0.0)) {
-            color = vec3(0.0);
-            break;
-        } 
         if (payload.done) {
             color *= payload.Li;
             break;
         } else {
+            if (payload.pdf <= Epsilon || payload.Li == vec3(0.0) || payload.wi == vec3(0.0)) {
+                // invalid path
+                color = vec3(0.0);
+                break;
+            }
             color *= payload.Li * abs(dot(payload.wi, payload.n)) / payload.pdf;
             ro = payload.pos;
             rd = payload.wi;
         }
     }
 
-    if (frame_cnt == 0) {
-        imageStore(outputImage, ivec2(gl_LaunchIDEXT.xy), vec4(color, 1.0));
-    } else {
-        vec4 prevColor = imageLoad(outputImage, ivec2(gl_LaunchIDEXT.xy));
-        color = mix(prevColor.rgb, color, 1.0 / float(frame_cnt));
-        imageStore(outputImage, ivec2(gl_LaunchIDEXT.xy), vec4(color, 1.0));
+    if (!payload.done) {
+        // didn't hit any light source
+        color = vec3(0.0);
     }
+    
+    vec4 prevColor = imageLoad(outputImage, ivec2(gl_LaunchIDEXT.xy));
+    color = mix(prevColor.rgb, color, 1.0 / float(iteration));
+    imageStore(outputImage, ivec2(gl_LaunchIDEXT.xy), vec4(color, 1.0));
 }
 )"sv;
 
@@ -299,12 +310,13 @@ void main() {
 }
 )"sv;
 
+// https://github.com/KhronosGroup/GLSL/blob/master/extensions/ext/GLSL_EXT_ray_tracing.txt
 auto constexpr _k_closest_hit_shader_src_glsl = R"(
 layout(location = 0) rayPayloadInEXT Payload payload;
 hitAttributeEXT vec3 attribs;
 
 vec3 calcNormal(vec3 p0, vec3 p1, vec3 p2) {
-    return -normalize(cross(p1 - p0, p2 - p0));
+    return normalize(cross(p1 - p0, p2 - p0));
 }
 void main() {
     vec3 ps[3];
@@ -316,18 +328,23 @@ void main() {
     vec3 pos = ps[0] * bary.x + ps[1] * bary.y + ps[2] * bary.z;
     vec3 n = calcNormal(ps[0], ps[1], ps[2]);
 
+    // gl_ObjectToWorldEXT is a 4x3 matrix (4 columns, 3 rows)
+    vec3 posW = gl_ObjectToWorldEXT * vec4(pos, 1.0);
+    mat3 invTrans = transpose(inverse(mat3(gl_ObjectToWorldEXT)));
+    vec3 nW = normalize(invTrans * n);
+
     Material material = materials[gl_InstanceCustomIndexEXT];
     if (material.emissive_color != vec3(0.0)) {
-        payload = Payload(material.emissive_color, pos, vec3(0.0), n, 0.0, true);
+        payload = Payload(material.emissive_color, posW, vec3(0.0), nW, 0.0, true);
     } else {
         // diffuse
-        seed = uvec2(gl_LaunchIDEXT.xy);
-        vec2 xi = vec2(rng(), rng());
+        uvec2 seed = uvec2(gl_LaunchIDEXT.xy);
+        vec2 xi = vec2(rng(seed), rng(seed));
         vec3 wi = squareToHemisphereCosine(xi);
         float pdf = squareToHemisphereCosinePDF(wi);
         vec3 wiW = LocalToWorld(n) * wi;
         vec3 Li = material.base_color * INV_PI;
-        payload = Payload(Li, pos, wiW, n, pdf, false);
+        payload = Payload(Li, posW, wiW, nW, pdf, false);
     }
 }
 )"sv;

@@ -26,6 +26,11 @@ target_link_libraries(${exec_name}
 	vulkan_raytracer
 )
 
+target_include_directories(${exec_name}
+	PRIVATE
+		${CMAKE_CURRENT_SOURCE_DIR}/src/include
+)
+
 install(TARGETS ${exec_name}
 	RUNTIME DESTINATION ${PROJECT_BINARY_DIR}
 )

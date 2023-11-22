@@ -22,7 +22,8 @@ namespace PTS {
         float intensity;        // 12   base alignment: 4
         glm::vec3 position;     // 16   base alignment: 16
         int type;               // 28   base alignment: 4
-        unsigned char _pad1[4];  // 32
+        unsigned char _pad1[4] = { 0, 0, 0, 0 }; // 32
+        // total size: 36
 
         static constexpr auto glsl_def = std::string_view{
             "struct LightData {\n"
@@ -33,6 +34,8 @@ namespace PTS {
             "};\n"
         };
     };
+
+    static_assert(sizeof(LightData) == 36, "LightData size mismatch");
 
     struct Light {
         Light() noexcept = default;
@@ -80,7 +83,7 @@ namespace PTS {
         FIELD_MOD(glm::vec3, m_color, {},
             MSerialize{}, MColor{});
         FIELD_MOD(float, m_intensity, {},
-            MSerialize{}, MRange{ 0.0f, 100.0f, 0.1f });
+            MSerialize{}, MRange{ 0.0f, 100.0f });
         FIELD_MOD(Transform, m_transform, {},
             MSerialize{}, MNoInspect{}); // handled explicitly
         END_REFLECT();

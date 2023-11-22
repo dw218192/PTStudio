@@ -108,6 +108,7 @@
         "coroutine": "cpp",
         "scoped_allocator": "cpp",
         "shared_mutex": "cpp",
-        "typeindex": "cpp"
+        "typeindex": "cpp",
+        "*.hpp11": "cpp"
     }
 }

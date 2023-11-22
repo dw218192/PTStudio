@@ -1,5 +1,4 @@
 #include "vulkanRayTracingRenderer.h"
-#include "vulkanRayTracingShaders.h"
 
 #include <GLFW/glfw3.h>
 #include <shaderc/shaderc.hpp>
@@ -7,6 +6,9 @@
 
 #include <iostream>
 #include <tuple>
+
+#include <imgui.h>
+#include "imgui/reflectedField.h"
 
 using namespace PTS;
 
@@ -442,64 +444,6 @@ template<typename CreateInfoChainType>
     }
 }
 
-[[nodiscard]] auto config_cmd_buf(
-    vk::CommandBuffer& cmd_buf,
-    VulkanRTPipelineInfo const& pipeline,
-    VulkanImageInfo const& output_img,
-    unsigned width, unsigned height
-) -> tl::expected<void, std::string> {
-    try {
-        cmd_buf.reset(vk::CommandBufferResetFlags{});
-        cmd_buf.begin(vk::CommandBufferBeginInfo{});
-        {
-            cmd_buf.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, *pipeline);
-            cmd_buf.bindDescriptorSets(
-                vk::PipelineBindPoint::eRayTracingKHR,
-                *pipeline.layout,
-                0,
-                *pipeline.desc_set,
-                nullptr
-            );
-
-            // set image layout
-            auto const img_barrier = vk::ImageMemoryBarrier{}
-                .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-                .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-                .setImage(*output_img.img.vk_image)
-                .setSubresourceRange(
-                    vk::ImageSubresourceRange{}
-                        .setAspectMask(vk::ImageAspectFlagBits::eColor)
-                        .setBaseArrayLayer(0)
-                        .setBaseMipLevel(0)
-                        .setLayerCount(1)
-                        .setLevelCount(1)
-                )
-                .setOldLayout(vk::ImageLayout::eUndefined)
-                .setNewLayout(vk::ImageLayout::eGeneral);
-
-            cmd_buf.pipelineBarrier(
-                vk::PipelineStageFlagBits::eAllCommands,
-                vk::PipelineStageFlagBits::eAllCommands,
-                {}, {}, {}, img_barrier
-            );
-
-            cmd_buf.traceRaysKHR(
-                pipeline.raygen_region,
-                pipeline.miss_region,
-                pipeline.hit_region,
-                {},
-                width,
-                height,
-                1
-            );
-        }
-        cmd_buf.end();
-        return {};
-    } catch (vk::SystemError& err) {
-        return TL_ERROR(err.what());
-    }
-}
-
 [[nodiscard]] auto create_cmd_buf(
     VulkanDeviceInfo const& dev,
     VulkanCmdPoolInfo const& cmd_pool
@@ -606,15 +550,6 @@ template<typename CreateInfoChainType>
         auto accel_info = vk_top_accel.get_accel().get_desc_info();
         auto img_info = output_img.get_desc_info();
 
-        // create camera buffer
-        auto per_frame_buf = VulkanBufferInfo{};
-        TL_TRY_ASSIGN(per_frame_buf, VulkanBufferInfo::create(
-            dev,
-            VulkanBufferInfo::Type::Uniform,
-            sizeof(PerFrameData)
-        ));
-        auto per_frame_buf_info = per_frame_buf.get_desc_info();
-
         // create material buffer
         auto mat_buf = VulkanBufferInfo{};
         auto mat_data = std::vector<MaterialData>{};
@@ -653,15 +588,6 @@ template<typename CreateInfoChainType>
 			        },
                     std::pair {
                         vk::DescriptorSetLayoutBinding {}
-                            .setBinding(RTBindings::PER_FRAME_DATA_BINDING)
-                            .setDescriptorType(vk::DescriptorType::eUniformBuffer)
-                            .setDescriptorCount(1)
-                            .setStageFlags(vk::ShaderStageFlagBits::eRaygenKHR),
-                        vk::WriteDescriptorSet{}
-                            .setBufferInfo(per_frame_buf_info)
-                    },
-                    std::pair {
-                        vk::DescriptorSetLayoutBinding {}
                             .setBinding(RTBindings::MATERIALS_BINDING)
                             .setDescriptorType(vk::DescriptorType::eUniformBuffer)
                             .setDescriptorCount(1)
@@ -673,11 +599,14 @@ template<typename CreateInfoChainType>
 	        )
         );
 
-
+        auto push_const_range = vk::PushConstantRange{}
+            .setStageFlags(vk::ShaderStageFlagBits::eRaygenKHR)
+            .setOffset(0)
+            .setSize(sizeof(PerFrameData));
         auto pipeline_layout = dev->createPipelineLayoutUnique(
             vk::PipelineLayoutCreateInfo{}
             .setSetLayouts(*desc_set_info.layout)
-            .setPushConstantRanges({})
+            .setPushConstantRanges(push_const_range)
         );
         auto pipeline = dev->createRayTracingPipelineKHRUnique(
             nullptr, nullptr,
@@ -755,7 +684,6 @@ template<typename CreateInfoChainType>
             std::move(pipeline_layout),
             std::move(vk_top_accel),
             std::move(desc_set_info),
-            std::move(per_frame_buf),
             std::move(mat_buf),
             std::move(raygen_buf),
             std::move(miss_buf),
@@ -769,6 +697,54 @@ template<typename CreateInfoChainType>
     catch (vk::SystemError& err) {
         return TL_ERROR(err.what());
     }
+}
+
+
+[[nodiscard]] auto clear_tex(
+    VulkanDeviceInfo const& dev,
+    VulkanCmdPoolInfo const& cmd_pool,
+    VulkanImageInfo const& img,
+    glm::vec4 const& color
+) -> tl::expected<void, std::string> {
+    auto const clear_color = vk::ClearColorValue{ color.r, color.g, color.b, color.a };
+    TL_CHECK_AND_PASS(
+        do_work_now(dev, cmd_pool, [&](vk::CommandBuffer& cmd_buf) {
+            // set image layout
+            auto vk_img = *img.img.vk_image;
+            auto const img_barrier = vk::ImageMemoryBarrier{}
+                .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+                .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+                .setImage(vk_img)
+                .setSubresourceRange(
+                    vk::ImageSubresourceRange{}
+                        .setAspectMask(vk::ImageAspectFlagBits::eColor)
+                        .setBaseArrayLayer(0)
+                        .setBaseMipLevel(0)
+                        .setLayerCount(1)
+                        .setLevelCount(1)
+                )
+                .setOldLayout(vk::ImageLayout::eUndefined)
+                .setNewLayout(vk::ImageLayout::eTransferDstOptimal);
+
+            cmd_buf.pipelineBarrier(
+                vk::PipelineStageFlagBits::eAllCommands,
+                vk::PipelineStageFlagBits::eAllCommands,
+                {}, {}, {}, img_barrier
+            );
+
+            cmd_buf.clearColorImage(
+                vk_img,
+                vk::ImageLayout::eTransferDstOptimal,
+                clear_color,
+                vk::ImageSubresourceRange{}
+                    .setAspectMask(vk::ImageAspectFlagBits::eColor)
+                    .setBaseArrayLayer(0)
+                    .setBaseMipLevel(0)
+                    .setLayerCount(1)
+                    .setLevelCount(1)
+            );
+        })
+    );
 }
 
 PTS::VulkanRayTracingRenderer::VulkanRayTracingRenderer(RenderConfig config)
@@ -797,10 +773,9 @@ auto PTS::VulkanRayTracingRenderer::open_scene(View<Scene> scene) noexcept
     if (!m_vk_render_cmd_buf) {
         // create command buffer
        TL_TRY_ASSIGN(m_vk_render_cmd_buf, create_cmd_buf(m_vk_device, m_vk_cmd_pool));
-       TL_TRY_ASSIGN(m_vk_uniform_upload_cmd_buf, create_cmd_buf(m_vk_device, m_vk_cmd_pool));
     }
-    // configure command buffer
-    TL_CHECK_AND_PASS(config_cmd_buf(*m_vk_render_cmd_buf, m_vk_pipeline, m_output_img, m_config.width, m_config.height));
+    // clear output image
+    TL_CHECK_AND_PASS(reset_path_tracing());
 
     return {};
 }
@@ -835,7 +810,7 @@ auto PTS::VulkanRayTracingRenderer::on_add_editable(EditableView editable) noexc
         );
         m_obj_data.emplace(pobj, PerObjectData{ id });
     }
-    return {};
+    return reset_path_tracing();
 }
 
 auto PTS::VulkanRayTracingRenderer::on_remove_editable(EditableView editable) noexcept
@@ -848,7 +823,7 @@ auto PTS::VulkanRayTracingRenderer::on_remove_editable(EditableView editable) no
         TL_CHECK_AND_PASS(m_vk_pipeline.top_accel.remove_instance(it->second.gpu_idx));
         m_obj_data.erase(it);
     }
-    return {};
+    return reset_path_tracing();
 }
 
 auto VulkanRayTracingRenderer::on_editable_change(EditableView editable, EditableChangeType type) noexcept
@@ -880,58 +855,121 @@ auto VulkanRayTracingRenderer::on_editable_change(EditableView editable, Editabl
         }
         }
     }
-
-    return {};
+    return reset_path_tracing();
 }
 auto PTS::VulkanRayTracingRenderer::render(View<Camera> camera) noexcept
 	-> tl::expected<void, std::string> {
-	return {};
+	return TL_ERROR("not implemented for direct rendering");
 }
 
 auto PTS::VulkanRayTracingRenderer::render_buffered(View<Camera> camera) noexcept
 -> tl::expected<TextureHandle, std::string> {
-    static auto frame = 0;
-    ++frame;
+    auto camera_data = to_rt_data(camera);
+    if(m_path_tracing_data.camera_data && camera_data != m_path_tracing_data.camera_data) {
+        if (*m_path_tracing_data.camera_data != camera_data) {
+            TL_CHECK(reset_path_tracing());
+        }
+    }
+    m_path_tracing_data.camera_data = camera_data;
 
-    // update camera data
-    auto cam_data = to_rt_data(camera);
-    auto per_frame_data = PerFrameData{ cam_data, frame };
+    if(m_path_tracing_data.iteration < m_editing_data.num_samples) {
+        ++m_path_tracing_data.iteration;
+        auto camera_data = to_rt_data(camera);
 
-    m_vk_uniform_upload_cmd_buf->reset(vk::CommandBufferResetFlags{});
-    m_vk_uniform_upload_cmd_buf->begin(vk::CommandBufferBeginInfo{});
-    m_vk_uniform_upload_cmd_buf->updateBuffer(
-        *m_vk_pipeline.per_frame_mem.handle,
-        0, sizeof(PerFrameData),
-        &per_frame_data
-    );
-    m_vk_uniform_upload_cmd_buf->end();
+        // redo the path tracing if the camera changed
+        if(!m_path_tracing_data.camera_data || camera_data != m_path_tracing_data.camera_data) {
+            if (*m_path_tracing_data.camera_data != camera_data) {
+                TL_CHECK(reset_path_tracing());
+            }
+        }
+        m_path_tracing_data.camera_data = camera_data;
 
-    auto cmd_bufs = std::array{ *m_vk_uniform_upload_cmd_buf, *m_vk_render_cmd_buf };
-    m_vk_cmd_pool.queue.submit(
-        vk::SubmitInfo{}
-            .setCommandBuffers(cmd_bufs),
-        nullptr
-    );
-    m_vk_cmd_pool.queue.waitIdle();
-    
+        // update per frame data
+        auto per_frame_data = PerFrameData{ 
+            camera_data,
+            m_path_tracing_data.iteration,
+            m_editing_data.num_samples,
+            m_editing_data.max_bounces
+        };
+        try {
+            m_vk_render_cmd_buf->reset(vk::CommandBufferResetFlags{});
+            m_vk_render_cmd_buf->begin(vk::CommandBufferBeginInfo{});
+            {
+                // clear image
+                auto const clear_color = vk::ClearColorValue{ 0.0f, 0.0f, 0.0f, 1.0f };
+                m_vk_render_cmd_buf->bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, *m_vk_pipeline);
+                
+                m_vk_render_cmd_buf->pushConstants(
+                    *m_vk_pipeline.layout,
+                    vk::ShaderStageFlagBits::eRaygenKHR,
+                    0,
+                    sizeof(PerFrameData),
+                    &per_frame_data
+                );
+                
+                m_vk_render_cmd_buf->bindDescriptorSets(
+                    vk::PipelineBindPoint::eRayTracingKHR,
+                    *m_vk_pipeline.layout,
+                    0,
+                    *m_vk_pipeline.desc_set,
+                    nullptr
+                );
+
+                // set image layout
+                auto const img_barrier = vk::ImageMemoryBarrier{}
+                    .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+                    .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+                    .setImage(*m_output_img.img.vk_image)
+                    .setSubresourceRange(
+                        vk::ImageSubresourceRange{}
+                            .setAspectMask(vk::ImageAspectFlagBits::eColor)
+                            .setBaseArrayLayer(0)
+                            .setBaseMipLevel(0)
+                            .setLayerCount(1)
+                            .setLevelCount(1)
+                    )
+                    .setOldLayout(vk::ImageLayout::eUndefined)
+                    .setNewLayout(vk::ImageLayout::eGeneral);
+                
+                // clear image
+                m_vk_render_cmd_buf->pipelineBarrier(
+                    vk::PipelineStageFlagBits::eAllCommands,
+                    vk::PipelineStageFlagBits::eAllCommands,
+                    {}, {}, {}, img_barrier
+                );
+
+                m_vk_render_cmd_buf->traceRaysKHR(
+                    m_vk_pipeline.raygen_region,
+                    m_vk_pipeline.miss_region,
+                    m_vk_pipeline.hit_region,
+                    {},
+                    m_config.width,
+                    m_config.height,
+                    1
+                );
+            }
+            m_vk_render_cmd_buf->end();
+
+            m_vk_cmd_pool.queue.submit(
+                vk::SubmitInfo{}
+                    .setCommandBuffers(*m_vk_render_cmd_buf),
+                nullptr
+            );
+            m_vk_cmd_pool.queue.waitIdle();
+        } catch (vk::SystemError& err) {
+            return TL_ERROR(err.what());
+        }
+    }
     return m_output_img.img.gl_tex.get();
 }
 
 auto PTS::VulkanRayTracingRenderer::valid() const noexcept -> bool {
     return m_vk_ins && m_vk_device && m_vk_cmd_pool && m_vk_desc_set_pool && m_output_img.img.vk_image
-        && m_output_img.img.gl_tex.get() && m_vk_pipeline && m_vk_render_cmd_buf && m_vk_uniform_upload_cmd_buf;
+        && m_output_img.img.gl_tex.get() && m_vk_pipeline && m_vk_render_cmd_buf;
 }
 
 auto PTS::VulkanRayTracingRenderer::on_change_render_config() noexcept -> tl::expected<void, std::string> {
-    if (!m_vk_pipeline) {
-        return TL_ERROR("pipeline not initialized");
-    }
-    if (!m_vk_render_cmd_buf) {
-        return TL_ERROR("command buffer not initialized");
-    }
-    
-	TL_CHECK_AND_PASS(config_cmd_buf(*m_vk_render_cmd_buf, m_vk_pipeline, m_output_img, m_config.width, m_config.height));
-    return {};
+    return reset_path_tracing();
 }
 
 auto PTS::VulkanRayTracingRenderer::init(ObserverPtr<Application> app) noexcept
@@ -990,5 +1028,18 @@ auto PTS::VulkanRayTracingRenderer::init(ObserverPtr<Application> app) noexcept
 }
 
 auto PTS::VulkanRayTracingRenderer::draw_imgui() noexcept -> tl::expected<void, std::string> {
-	return Renderer::draw_imgui();
+    ImGui::SetNextWindowSize({ 300, 100 }, ImGuiCond_FirstUseEver);
+	ImGui::Begin("Vulkan Ray Tracer");
+    if (ImGui::ReflectedField("Editing Data", m_editing_data)) {
+        TL_CHECK_AND_PASS(reset_path_tracing());
+    }
+    ImGui::End();
+    return {};
+}
+
+auto VulkanRayTracingRenderer::reset_path_tracing() noexcept -> tl::expected<void, std::string> {
+    TL_CHECK_AND_PASS(clear_tex(m_vk_device, m_vk_cmd_pool, m_output_img, glm::vec4{ 0.0f }));
+    m_path_tracing_data.iteration = 0;
+
+    return {};
 }

@@ -5,7 +5,9 @@ set(lib_name "core")
 #GLOB source files 
 file(GLOB_RECURSE src_files
 	${CMAKE_CURRENT_SOURCE_DIR}/src/*.*
+	${CMAKE_CURRENT_SOURCE_DIR}/src/imgui/*.*
 	${CMAKE_CURRENT_SOURCE_DIR}/src/include/*.*
+	${CMAKE_CURRENT_SOURCE_DIR}/src/include/imgui/*.*
 )
 
 #Executable

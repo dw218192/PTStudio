@@ -1,5 +1,5 @@
-#include "include/debugDrawer.h"
-#include "include/imgui/imhelper.h"
+#include "debugDrawer.h"
+#include "imgui/imhelper.h"
 
 #include "boundingBox.h"
 #include "camera.h"

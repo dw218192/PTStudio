@@ -1,17 +1,18 @@
 #pragma once
 
-#include "params.h"
 #include "renderer.h"
 #include "vulkanHelper.h"
 #include "vulkanAccelStructInfo.h"
 #include "vulkanRTPipelineInfo.h"
+#include "vulkanRayTracingShaders.h"
 
 #include <vulkan/vulkan.hpp>
 #include <tcb/span.hpp>
 #include <unordered_map>
+#include <optional>
 
 namespace PTS {
-    struct VulkanRayTracingRenderer final : Renderer {
+	struct VulkanRayTracingRenderer final : Renderer {
 		NO_COPY_MOVE(VulkanRayTracingRenderer);
 		VulkanRayTracingRenderer(RenderConfig config);
 	    [[nodiscard]] auto open_scene(View<Scene> scene) noexcept -> tl::expected<void, std::string> override;
@@ -31,12 +32,14 @@ namespace PTS {
 	    [[nodiscard]] auto draw_imgui() noexcept -> tl::expected<void, std::string> override;
 
     private:
+        [[nodiscard]] auto reset_path_tracing() noexcept -> tl::expected<void, std::string>;
+
 		VulkanInsInfo m_vk_ins;
 		VulkanDeviceInfo m_vk_device;
 		VulkanCmdPoolInfo m_vk_cmd_pool;
         VulkanDescSetPoolInfo m_vk_desc_set_pool;
         VulkanImageInfo m_output_img; // image used for ray tracing output
-        VulkanCmdBufInfo m_vk_render_cmd_buf, m_vk_uniform_upload_cmd_buf;
+        VulkanCmdBufInfo m_vk_render_cmd_buf;
         VulkanTopAccelStructInfo m_vk_top_accel;
         VulkanRTPipelineInfo m_vk_pipeline;
 
@@ -45,5 +48,19 @@ namespace PTS {
             size_t gpu_idx{};
         };
         std::unordered_map<ViewPtr<Object>, PerObjectData> m_obj_data;
+
+        struct EditingData {
+            BEGIN_REFLECT(EditingData);
+            FIELD_MOD(int, num_samples, 32,
+                MRange { 1, 1000 });
+            FIELD_MOD(int, max_bounces, 4,
+                MRange { 1, 100 });
+            END_REFLECT();
+        } m_editing_data;
+
+        struct PathTracingData {
+            int iteration{};
+            std::optional<CameraData> camera_data{};
+        } m_path_tracing_data;
     };
 }

@@ -1,10 +1,13 @@
-#include "include/editorApplication.h"
-#include "include/debugDrawer.h"
-#include "include/editorResources.h"
-#include "include/imgui/editorFields.h"
-#include "include/imgui/fileDialogue.h"
-#include "include/imgui/imhelper.h"
-#include "include/editorRenderer.h"
+#include "editorApplication.h"
+#include "debugDrawer.h"
+#include "editorResources.h"
+
+#include "imgui/editorFields.h"
+#include "imgui/fileDialogue.h"
+#include "imgui/imhelper.h"
+#include "imgui/reflectedField.h"
+
+#include "editorRenderer.h"
 
 #include "vulkanRayTracingRenderer.h"
 #include "boundingVolume.h"

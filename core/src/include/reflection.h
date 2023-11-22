@@ -32,22 +32,10 @@ namespace PTS {
         }
     };
     template<typename T>
-    struct MMin {
-        T value;
-        static constexpr std::string_view name = "min";
-        constexpr MMin(T val) : value(val) {}
-    };
-    template<typename T>
-    struct MMax {
-        T value;
-        static constexpr std::string_view name = "max";
-        constexpr MMax(T val) : value(val) {}
-    };
-    template<typename T>
     struct MRange {
-        T min, max, step;
+        T min, max;
         static constexpr std::string_view name = "range";
-        constexpr MRange(T min, T max, T step) : min(min), max(max), step(step) {}
+        constexpr MRange(T min, T max) : min(min), max(max) {}
     };
     struct MSerialize {
         static constexpr std::string_view name = "serialize";
