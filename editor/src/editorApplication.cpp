@@ -92,7 +92,12 @@ void EditorApplication::create_input_actions() noexcept {
 
     auto delete_obj = InputAction {{ InputType::KEYBOARD, ActionType::PRESS, ImGuiKey_Delete },
         [this] (InputEvent const& event) {
-            remove_editable(m_control_state.get_cur_obj().value());
+            if ((get_cur_focused_widget() == k_scene_view_win_name
+                || get_cur_focused_widget() == k_scene_setting_win_name)
+                && get_cur_focused_widget() == get_cur_hovered_widget())
+            {
+                remove_editable(m_control_state.get_cur_obj().value());
+            }
         }
     };
     auto focus_on_obj = InputAction {{InputType::KEYBOARD, ActionType::PRESS, ImGuiKey_F },
@@ -170,8 +175,6 @@ void EditorApplication::create_input_actions() noexcept {
             .add_constraint(scene_view_hovered)
             .add_constraint(using_gizmo),
         delete_obj
-            .add_constraint(scene_view_focused)
-            .add_constraint(scene_view_hovered)
             .add_constraint(obj_selected),
         focus_on_obj
             .add_constraint(scene_view_focused)
@@ -180,7 +183,7 @@ void EditorApplication::create_input_actions() noexcept {
             .add_constraint(scene_view_focused)
             .add_constraint(scene_view_hovered),
         deselect_obj
-            .add_constraint(scene_view_focused)
+    		.add_constraint(scene_view_focused)
             .add_constraint(scene_view_hovered)
             .add_constraint(obj_selected),
         cam_pedestal
