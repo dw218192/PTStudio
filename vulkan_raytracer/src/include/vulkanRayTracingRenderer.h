@@ -51,6 +51,7 @@ namespace PTS {
 
         struct EditingData {
             BEGIN_REFLECT(EditingData);
+            FIELD_MOD(bool, unlimited_samples, false);
             FIELD_MOD(int, num_samples, 32,
                 MRange { 1, 1000 });
             FIELD_MOD(int, max_bounces, 4,

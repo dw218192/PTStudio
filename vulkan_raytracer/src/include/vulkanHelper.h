@@ -53,9 +53,6 @@ namespace PTS {
         vk::Queue queue {};
     };
     struct VulkanDescSetPoolInfo : VulkanInfo<vk::UniqueDescriptorPool> {};
-    struct VulkanDescSetInfo : VulkanInfo<vk::UniqueDescriptorSet> {
-        vk::UniqueDescriptorSetLayout layout {};
-    };
 
     // if not shared, only vulkan part of this struct is valid
     struct VulkanImageInfo {

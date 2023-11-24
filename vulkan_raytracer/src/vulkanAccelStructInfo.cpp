@@ -89,7 +89,13 @@
     auto vert_buf = VulkanBufferInfo{};
     auto index_buf = VulkanBufferInfo{};
 
-    auto vertices = to_rt_data(obj.get_vertices());
+    auto vertices = std::vector<VertexData>{};
+    vertices.reserve(obj.get_vertices().size());
+    std::transform(obj.get_vertices().begin(), obj.get_vertices().end(), std::back_inserter(vertices),
+        [](auto const& vert) {
+            return VertexData{ vert };
+        }
+    );
     TL_TRY_ASSIGN(vert_buf, VulkanBufferInfo::create(
         dev,
         VulkanBufferInfo::Type::AccelInput,

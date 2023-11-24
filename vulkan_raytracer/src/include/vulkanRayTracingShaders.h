@@ -12,6 +12,10 @@ struct CameraData {
     unsigned char _pad[4] = { 0, 0, 0, 0 };
     // total size: 80
 
+    CameraData() = default;
+    explicit CameraData(Camera const& camera) : 
+        inv_view_proj{camera.get_inv_view_proj()}, cam_pos{camera.get_eye()} {}
+
     auto operator==(CameraData const& other) const noexcept -> bool {
         return inv_view_proj == other.inv_view_proj
             && cam_pos == other.cam_pos;
@@ -19,6 +23,12 @@ struct CameraData {
     auto operator!=(CameraData const& other) const noexcept -> bool {
         return !(*this == other);
     }
+
+    static constexpr auto k_glsl_decl = std::string_view { "\
+        struct CameraData {\n\
+            mat4 inv_view_proj;\n\
+            vec3 pos;\n\
+        };\n" };
 };
 static_assert(sizeof(CameraData) == 80, "CameraData size mismatch");
 
@@ -28,13 +38,21 @@ struct PerFrameData {
     int num_samples;   // 84
     int max_bounces;   // 88
     // total size: 96
+
+    static constexpr auto k_glsl_decl = std::string_view { "\
+        struct PerFrameData {\n\
+            CameraData camera;\n\
+            int iteration;\n\
+            int num_samples;\n\
+            int max_bounces;\n\
+        };\n" };
 };
 
 struct VertexData {
     glm::vec3 position;
 
     VertexData() = default;
-    VertexData(Vertex const& vertex) : position{vertex.position} {}
+    explicit VertexData(Vertex const& vertex) : position{vertex.position} {}
 };
 struct MaterialData {
     glm::vec3 base_color;                          // 0    base alignment: 16
@@ -44,33 +62,74 @@ struct MaterialData {
     // total size: 32
 
     MaterialData() = default;
-    MaterialData(Material const& material) : 
+    explicit MaterialData(Material const& material) : 
         base_color{material.albedo}, emissive_color{material.emission} {}
+
+    auto operator==(MaterialData const& other) const noexcept -> bool {
+        return base_color == other.base_color
+            && emissive_color == other.emissive_color;
+    }
+    auto operator!=(MaterialData const& other) const noexcept -> bool {
+        return !(*this == other);
+    }
+
+    static constexpr auto k_glsl_decl = std::string_view { "\
+        struct MaterialData {\n\
+            vec3 base_color;\n\
+            vec3 emissive_color;\n\
+        };\n" };
 };
 static_assert(sizeof(MaterialData) == 32, "MaterialData size mismatch");
 
-[[nodiscard]] inline auto to_rt_data(Camera const& camera) -> CameraData {
-    return {
-        camera.get_inv_view_proj(),
-        camera.get_eye()
-    };
-}
-[[nodiscard]] inline auto to_rt_data(Material const& material) -> MaterialData {
-    return { material };
-}
-[[nodiscard]] inline auto to_rt_data(tcb::span<Vertex const> vertices) -> std::vector<VertexData> {
-    std::vector<VertexData> result;
-    result.reserve(vertices.size());
-    for (auto const& vertex : vertices) {
-        result.emplace_back(vertex);
-    }
-    return result;
-}
+struct VertexAttribData {
+    glm::vec3 normal;     // 0   base alignment: 16
+    unsigned char _pad1[4] = { 0, 0, 0, 0 };
+    glm::vec2 tex_coord;  // 16  base alignment: 8
+    unsigned char _pad2[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
 
-enum RTBindings {
-    ACCEL_STRUCT_BINDING = 0,
-    MATERIALS_BINDING = 2,
-    OUTPUT_IMAGE_BINDING = 3,
+    VertexAttribData() = default;
+    explicit VertexAttribData(Vertex const& vertex) : 
+        normal{vertex.normal}, tex_coord{vertex.uv} {}
+
+    auto operator==(VertexAttribData const& other) const noexcept -> bool {
+        return normal == other.normal
+            && tex_coord == other.tex_coord;
+    }
+    auto operator!=(VertexAttribData const& other) const noexcept -> bool {
+        return !(*this == other);
+    }
+
+    static constexpr auto k_glsl_decl = std::string_view { "\
+        struct VertexAttribData {\n\
+            vec3 normal;\n\
+            vec2 tex_coord;\n\
+        };\n" };
+};
+static_assert(sizeof(VertexAttribData) == 32, "VertexAttribData size mismatch");
+
+struct FaceIndexData {
+    glm::uvec3 indices;
+    unsigned char _pad[4] = { 0, 0, 0, 0 };
+
+    FaceIndexData() = default;
+    explicit FaceIndexData(unsigned i0, unsigned i1, unsigned i2) : 
+        indices{i0, i1, i2} {} 
+};
+static_assert(sizeof(FaceIndexData) == 16, "FaceIndexData size mismatch");
+
+struct Binding {
+    int set, binding;
+};
+struct RayTracingBindings {
+    static constexpr Binding ACCEL_STRUCT_BINDING { 0, 0 };
+    static constexpr Binding MATERIALS_BINDING { 0, 1 };
+    static constexpr Binding OUTPUT_IMAGE_BINDING { 0, 2 };
+
+    static constexpr Binding VERTEX_ATTRIBS_BINDING { 1, 0 };
+    static constexpr Binding INDICES_BINDING { 2, 0 };
+
+    static constexpr int k_num_bindings = 5;
+    static constexpr int k_num_sets = 3;
 };
 
 namespace _private {
@@ -82,11 +141,29 @@ using std::literals::string_view_literals::operator""sv;
 #pragma warning(pop)
 #endif
 
+// meta function to generate glsl declaration
+template <int set, int binding, std::string_view const& decl, std::string_view const&... mods>
+struct gen_glsl_decl {
+    static auto constexpr _0 = "layout (set ="sv;
+    static auto constexpr _1 = ", binding ="sv;
+    static auto constexpr _2 = ") "sv;
+    static auto constexpr _3 = ", "sv;
+    static auto constexpr impl() {
+        if constexpr (sizeof...(mods) == 0) {
+            return PTS::join_v<_0, PTS::to_str_v<set>, _1, PTS::to_str_v<binding>, _2, decl>;
+        } else {
+            return PTS::join_v<_0, PTS::to_str_v<set>, _1, PTS::to_str_v<binding>, _3, PTS::join_v<mods...>, _2, decl>;
+        }
+    }
+    static auto constexpr value = impl();
+};
+
 auto constexpr k_common_src = R"(
 #version 460
 
 #extension GL_EXT_ray_tracing : enable
 #extension GL_EXT_ray_tracing_position_fetch : enable
+#extension GL_EXT_nonuniform_qualifier : enable
 
 struct Payload {
     vec3 Li;  // sampled radiance
@@ -95,14 +172,6 @@ struct Payload {
     vec3 n;   // normal
     float pdf; // pdf of wi
     bool done;
-};
-struct Material {
-    vec3 base_color;
-    vec3 emissive_color;
-};
-struct CameraData {
-    mat4 inv_view_proj;
-    vec3 pos;
 };
 
 // utility functions and constants
@@ -199,55 +268,93 @@ vec3 squareToSphereUniform(vec2 sp) {
 float squareToSphereUniformPDF(vec3 sp) {
     return INV_FOUR_PI;
 }
+
+vec2 baryLerp(vec2 a, vec2 b, vec2 c, vec3 bary) {
+    return vec2(
+        bary.x * a.x + bary.y * b.x + bary.z * c.x,
+        bary.x * a.y + bary.y * b.y + bary.z * c.y
+    );
+}
+
+vec3 baryLerp(vec3 a, vec3 b, vec3 c, vec3 bary) {
+    return vec3(
+        bary.x * a.x + bary.y * b.x + bary.z * c.x,
+        bary.x * a.y + bary.y * b.y + bary.z * c.y,
+        bary.x * a.z + bary.y * b.z + bary.z * c.z
+    );
+}
 )"sv;
+
+auto constexpr _k_vertex_attribs_decl = R"(
+readonly buffer VertexAttribsBlock {
+    VertexAttribData data[];
+} vertexAttribs[];
+)"sv;
+auto constexpr k_vertex_attribs_decl = gen_glsl_decl<
+    RayTracingBindings::VERTEX_ATTRIBS_BINDING.set,
+    RayTracingBindings::VERTEX_ATTRIBS_BINDING.binding,
+    _k_vertex_attribs_decl
+>::value;
+
+// indices declaration
+auto constexpr _k_indices_decl = R"(
+readonly buffer FaceIndicesBlock {
+    uvec3 data[];
+} faceIndices[];
+)"sv;
+auto constexpr k_indices_decl = gen_glsl_decl<
+    RayTracingBindings::INDICES_BINDING.set,
+    RayTracingBindings::INDICES_BINDING.binding,
+    _k_indices_decl
+>::value;
 
 // material uniform declaration
 auto constexpr _k_material_uniform_decl_0 = R"(
-layout (set = 0, binding = )"sv;
-auto constexpr _k_material_uniform_decl_1 = R"() uniform MaterialBlock {
-    Material materials[)"sv;
-auto constexpr _k_material_uniform_decl_2 = R"(];
+uniform MaterialBlock {
+    MaterialData materials[)"sv;
+auto constexpr _k_material_uniform_decl_1 = R"(];
 };
 )"sv;
-auto constexpr k_material_uniform_decl = PTS::join_v<
+auto constexpr _k_material_uniform_decl = PTS::join_v<
     _k_material_uniform_decl_0,
-    PTS::to_str_v<RTBindings::MATERIALS_BINDING>,
-    _k_material_uniform_decl_1,
     PTS::to_str_v<k_max_instances>,
-    _k_material_uniform_decl_2
+    _k_material_uniform_decl_1
 >;
+auto constexpr k_material_uniform_decl = gen_glsl_decl<
+    RayTracingBindings::MATERIALS_BINDING.set,
+    RayTracingBindings::MATERIALS_BINDING.binding,
+    _k_material_uniform_decl
+>::value;
 
 // camera uniform declaration
 auto constexpr k_camera_uniform_decl = R"(
 layout (push_constant) uniform PerFrameDataBlock {
-    CameraData camera;
-    int iteration;
-    int num_samples;
-    int max_bounces;
+    PerFrameData perFrameData;
 };
 )"sv;
 
 // output image declaration
-auto constexpr _k_output_image_decl_0 = R"(
-layout (set = 0, binding = )"sv;
-auto constexpr _k_output_image_decl_1 = R"(, rgba8) uniform image2D outputImage;
+auto constexpr _k_output_image_decl = R"(
+uniform image2D outputImage;
 )"sv;
-auto constexpr k_output_image_decl = PTS::join_v<
-    _k_output_image_decl_0,
-    PTS::to_str_v<RTBindings::OUTPUT_IMAGE_BINDING>,
-    _k_output_image_decl_1
->;
+auto constexpr _k_output_image_mod = "rgba8"sv;
+auto constexpr k_output_image_decl = gen_glsl_decl<
+    RayTracingBindings::OUTPUT_IMAGE_BINDING.set,
+    RayTracingBindings::OUTPUT_IMAGE_BINDING.binding,
+    _k_output_image_decl,
+    _k_output_image_mod
+>::value;
 
 // acceleration structure declaration
-auto constexpr _k_accel_struct_decl_0 = R"(
-layout (set = 0, binding = )"sv;
-auto constexpr _k_accel_struct_decl_1 = R"() uniform accelerationStructureEXT topLevelAS;
+auto constexpr _k_accel_struct_decl = R"(
+uniform accelerationStructureEXT topLevelAS;
 )"sv;
-auto constexpr k_accel_struct_decl = PTS::join_v<
-    _k_accel_struct_decl_0,
-    PTS::to_str_v<RTBindings::ACCEL_STRUCT_BINDING>,
-    _k_accel_struct_decl_1
->;
+
+auto constexpr k_accel_struct_decl = gen_glsl_decl<
+    RayTracingBindings::ACCEL_STRUCT_BINDING.set,
+    RayTracingBindings::ACCEL_STRUCT_BINDING.binding,
+    _k_accel_struct_decl
+>::value;
 
 auto constexpr _k_ray_gen_shader_src_glsl = R"(
 // intersection data
@@ -256,12 +363,12 @@ layout(location = 0) rayPayloadEXT Payload payload;
 void main() {
     vec2 uv = vec2(gl_LaunchIDEXT.xy) / vec2(gl_LaunchSizeEXT.xy); // uv in [0, 1]
     vec2 ndc = uv * 2.0 - 1.0; // uv in [-1, 1]
-    vec4 uv_world = camera.inv_view_proj * vec4(ndc, 1.0, 1.0);
-    vec3 rd = normalize(uv_world.xyz / uv_world.w - camera.pos); // ray direction in world space
-    vec3 ro = camera.pos; // ray origin in world space
+    vec4 uv_world = perFrameData.camera.inv_view_proj * vec4(ndc, 1.0, 1.0);
+    vec3 rd = normalize(uv_world.xyz / uv_world.w - perFrameData.camera.pos); // ray direction in world space
+    vec3 ro = perFrameData.camera.pos; // ray origin in world space
 
     vec3 color = vec3(1.0);
-    for (int i = 0; i < max_bounces; ++i) {
+    for (int i = 0; i < perFrameData.max_bounces; ++i) {
         payload = Payload(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, false);
         traceRayEXT(
             topLevelAS,
@@ -297,7 +404,7 @@ void main() {
     }
     
     vec4 prevColor = imageLoad(outputImage, ivec2(gl_LaunchIDEXT.xy));
-    color = mix(prevColor.rgb, color, 1.0 / float(iteration));
+    color = mix(prevColor.rgb, color, 1.0 / float(perFrameData.iteration));
     imageStore(outputImage, ivec2(gl_LaunchIDEXT.xy), vec4(color, 1.0));
 }
 )"sv;
@@ -306,7 +413,7 @@ auto constexpr _k_miss_shader_src_glsl = R"(
 layout(location = 0) rayPayloadInEXT Payload payload;
 
 void main() {
-    payload = Payload(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, true);
+    payload = Payload(vec3(0.0, 0.0, 0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, true);
 }
 )"sv;
 
@@ -315,9 +422,6 @@ auto constexpr _k_closest_hit_shader_src_glsl = R"(
 layout(location = 0) rayPayloadInEXT Payload payload;
 hitAttributeEXT vec3 attribs;
 
-vec3 calcNormal(vec3 p0, vec3 p1, vec3 p2) {
-    return normalize(cross(p1 - p0, p2 - p0));
-}
 void main() {
     vec3 ps[3];
     ps[0] = gl_HitTriangleVertexPositionsEXT[0];
@@ -325,15 +429,25 @@ void main() {
     ps[2] = gl_HitTriangleVertexPositionsEXT[2];
 
     vec3 bary = vec3(1.0 - attribs.x - attribs.y, attribs.x, attribs.y);
-    vec3 pos = ps[0] * bary.x + ps[1] * bary.y + ps[2] * bary.z;
-    vec3 n = calcNormal(ps[0], ps[1], ps[2]);
+    vec3 pos = baryLerp(ps[0], ps[1], ps[2], bary);
+
+    // gl_InstanceCustomIndexEXT is unique ID for the mesh instance
+    // gl_PrimitiveID is the index of the triangle in the mesh
+
+    uvec3 triIndices = faceIndices[nonuniformEXT(gl_InstanceCustomIndexEXT)].data[gl_PrimitiveID];
+    VertexAttribData vas[3];
+    vas[0] = vertexAttribs[nonuniformEXT(gl_InstanceCustomIndexEXT)].data[int(triIndices.x)];
+    vas[1] = vertexAttribs[nonuniformEXT(gl_InstanceCustomIndexEXT)].data[int(triIndices.y)];
+    vas[2] = vertexAttribs[nonuniformEXT(gl_InstanceCustomIndexEXT)].data[int(triIndices.z)];
+    vec3 n = baryLerp(vas[0].normal, vas[1].normal, vas[2].normal, bary);
 
     // gl_ObjectToWorldEXT is a 4x3 matrix (4 columns, 3 rows)
     vec3 posW = gl_ObjectToWorldEXT * vec4(pos, 1.0);
-    mat3 invTrans = transpose(inverse(mat3(gl_ObjectToWorldEXT)));
+    mat3 inner = mat3(gl_ObjectToWorldEXT[0].xyz, gl_ObjectToWorldEXT[1].xyz, gl_ObjectToWorldEXT[2].xyz);
+    mat3 invTrans = transpose(inverse(inner));
     vec3 nW = normalize(invTrans * n);
 
-    Material material = materials[gl_InstanceCustomIndexEXT];
+    MaterialData material = materials[gl_InstanceCustomIndexEXT];
     if (material.emissive_color != vec3(0.0)) {
         payload = Payload(material.emissive_color, posW, vec3(0.0), nW, 0.0, true);
     } else {
@@ -342,7 +456,7 @@ void main() {
         vec2 xi = vec2(rng(seed), rng(seed));
         vec3 wi = squareToHemisphereCosine(xi);
         float pdf = squareToHemisphereCosinePDF(wi);
-        vec3 wiW = LocalToWorld(n) * wi;
+        vec3 wiW = LocalToWorld(nW) * wi;
         vec3 Li = material.base_color * INV_PI;
         payload = Payload(Li, posW, wiW, nW, pdf, false);
     }
@@ -353,6 +467,12 @@ void main() {
 // produce the final shader source
 auto constexpr k_ray_gen_shader_src_glsl = PTS::join_v<
     _private::k_common_src,
+    CameraData::k_glsl_decl,
+    PerFrameData::k_glsl_decl,
+    MaterialData::k_glsl_decl,
+    VertexAttribData::k_glsl_decl,
+    _private::k_vertex_attribs_decl,
+    _private::k_indices_decl,
     _private::k_accel_struct_decl,
     _private::k_camera_uniform_decl,
     _private::k_material_uniform_decl,
@@ -367,6 +487,10 @@ auto constexpr k_miss_shader_src_glsl = PTS::join_v<
 
 auto constexpr k_closest_hit_shader_src_glsl = PTS::join_v<
     _private::k_common_src,
+    MaterialData::k_glsl_decl,
+    VertexAttribData::k_glsl_decl,
+    _private::k_vertex_attribs_decl,
+    _private::k_indices_decl,
     _private::k_material_uniform_decl,
     _private::_k_closest_hit_shader_src_glsl
 >;

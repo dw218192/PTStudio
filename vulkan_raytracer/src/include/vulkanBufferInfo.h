@@ -5,11 +5,12 @@
 namespace PTS {
     struct VulkanBufferInfo : VulkanInfo<vk::UniqueBuffer> {
         enum class Type {
-            Scratch,
-            Uniform,
-            AccelInput,
-            AccelStorage,
-            ShaderBindingTable,
+            Scratch, // for building an accel struct
+            Uniform, // UBO
+            Storage, // SSBO
+            AccelInput, // for data stored by the accel struct, e.g. geometry info like vertices and indices or instances
+            AccelStorage, // for storing the top level accel struct
+            ShaderBindingTable, // for storing the shader binding table
         };
 
         NO_COPY(VulkanBufferInfo);
@@ -115,6 +116,10 @@ namespace PTS {
                 break;
             case VulkanBufferInfo::Type::Uniform:
                 usage_flags = vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst;
+                mem_props_flags = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
+                break;
+            case VulkanBufferInfo::Type::Storage:
+                usage_flags = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst;
                 mem_props_flags = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
                 break;
             case VulkanBufferInfo::Type::AccelInput:

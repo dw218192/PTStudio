@@ -36,7 +36,8 @@ namespace PTS {
 
         // mem to store geometry info
         VulkanBufferInfo vertex_mem {};
-        VulkanBufferInfo index_mem {};        
+        VulkanBufferInfo index_mem {};
+        // uvs, normals, materials, etc. are stored in the pipeline instead of here
     };
 
     struct VulkanTopAccelStructInfo {

@@ -14,21 +14,24 @@ using namespace PTS;
 
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 
-static constexpr float k_quad_data_pos_uv[] = {
-	-1.0f, -1.0f, 0.0f,
-    0.0f, 0.0f,
-	1.0f, -1.0f, 0.0f,
-	1.0f, 0.0f,
-	1.0f,  1.0f, 0.0f,
-	1.0f, 1.0f,
-	-1.0f, -1.0f, 0.0f,
-    0.0f, 0.0f,
-	1.0f,  1.0f, 0.0f,
-	1.0f, 1.0f,
-    -1.0f,  1.0f, 0.0f,
-	0.0f, 1.0f
+static constexpr auto k_desc_pool_sizes = std::array{
+    vk::DescriptorPoolSize{
+        vk::DescriptorType::eAccelerationStructureKHR,
+        1
+    },
+    vk::DescriptorPoolSize{
+        vk::DescriptorType::eStorageBuffer,
+        3 + 2 * k_max_instances
+    },
+    vk::DescriptorPoolSize{
+        vk::DescriptorType::eStorageImage,
+        1
+    },
+    vk::DescriptorPoolSize{
+        vk::DescriptorType::eUniformBuffer,
+        1
+    }
 };
-
 
 // conversion and convenience functions
 auto to_cstr_vec(tcb::span<std::string_view> views) -> std::vector<char const*> {
@@ -236,29 +239,11 @@ template<typename CreateInfoChainType>
 
 [[nodiscard]] auto create_desc_set_pool(VulkanDeviceInfo const& dev) -> tl::expected<VulkanDescSetPoolInfo, std::string> {
     try {
-        auto const pool_sizes = std::array{
-            vk::DescriptorPoolSize{
-                vk::DescriptorType::eAccelerationStructureKHR,
-                1
-            },
-            vk::DescriptorPoolSize{
-                vk::DescriptorType::eStorageBuffer,
-                3
-            },
-            vk::DescriptorPoolSize{
-                vk::DescriptorType::eStorageImage,
-                1
-            },
-            vk::DescriptorPoolSize{
-                vk::DescriptorType::eUniformBuffer,
-                1
-            }
-        };
         auto pool = dev->createDescriptorPoolUnique(
             vk::DescriptorPoolCreateInfo{}
-                .setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet)
-                .setMaxSets(1)
-                .setPoolSizes(pool_sizes)
+                .setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet | vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind)
+                .setMaxSets(RayTracingBindings::k_num_sets)
+                .setPoolSizes(k_desc_pool_sizes)
         );
         return VulkanDescSetPoolInfo{{std::move(pool)}};
     } catch (vk::SystemError& err) {
@@ -343,106 +328,6 @@ template<typename CreateInfoChainType>
     }
 }
 
-[[nodiscard]] auto create_desc_set(
-    VulkanDeviceInfo const& dev,
-    VulkanDescSetPoolInfo const& pool,
-    std::initializer_list<std::pair<vk::DescriptorSetLayoutBinding, vk::WriteDescriptorSet>> desc_set_bindings
-) -> tl::expected<VulkanDescSetInfo, std::string> {
-    try {
-        auto bindings = std::vector<vk::DescriptorSetLayoutBinding>{};
-        auto writes = std::vector<vk::WriteDescriptorSet>{};
-        for (auto const& [binding, write] : desc_set_bindings) {
-            bindings.push_back(binding);
-            writes.push_back(write);
-        }
-        auto layout = dev->createDescriptorSetLayoutUnique(
-            vk::DescriptorSetLayoutCreateInfo{
-                vk::DescriptorSetLayoutCreateFlags{},
-                bindings
-            }
-        );
-        auto desc_set = dev->allocateDescriptorSetsUnique(
-            vk::DescriptorSetAllocateInfo{
-                *pool,
-                *layout
-            }
-        );
-        for (auto i = 0u; i < writes.size(); ++i) {
-            writes[i].setDstSet(*desc_set[0])
-                .setDstBinding(bindings[i].binding)
-                .setDescriptorCount(bindings[i].descriptorCount)
-                .setDescriptorType(bindings[i].descriptorType);
-        }
-        dev->updateDescriptorSets(writes, {});
-        return VulkanDescSetInfo{
-	        {std::move(desc_set[0])},
-            std::move(layout)
-        };
-    } catch (vk::SystemError& err) {
-        return TL_ERROR(err.what());
-    }
-}
-
-[[nodiscard]] auto create_shader_glsl(
-    VulkanDeviceInfo const& dev,
-    std::string_view src,
-    std::string_view name,
-    vk::ShaderStageFlagBits stage
-) -> tl::expected<VulkanShaderInfo, std::string> {
-    auto to_shaderc_stage = [](vk::ShaderStageFlagBits stage) {
-        switch (stage) {
-        case vk::ShaderStageFlagBits::eVertex:
-            return shaderc_shader_kind::shaderc_vertex_shader;
-        case vk::ShaderStageFlagBits::eFragment:
-            return shaderc_shader_kind::shaderc_fragment_shader;
-        case vk::ShaderStageFlagBits::eCompute:
-            return shaderc_shader_kind::shaderc_compute_shader;
-        case vk::ShaderStageFlagBits::eRaygenKHR:
-            return shaderc_shader_kind::shaderc_raygen_shader;
-        case vk::ShaderStageFlagBits::eAnyHitKHR:
-            return shaderc_shader_kind::shaderc_anyhit_shader;
-        case vk::ShaderStageFlagBits::eClosestHitKHR:
-            return shaderc_shader_kind::shaderc_closesthit_shader;
-        case vk::ShaderStageFlagBits::eMissKHR:
-            return shaderc_shader_kind::shaderc_miss_shader;
-        case vk::ShaderStageFlagBits::eIntersectionKHR:
-            return shaderc_shader_kind::shaderc_intersection_shader;
-        case vk::ShaderStageFlagBits::eCallableKHR:
-            return shaderc_shader_kind::shaderc_callable_shader;
-        default:
-            return shaderc_shader_kind::shaderc_glsl_infer_from_source;
-        }
-    };
-
-    try {
-        auto compiler = shaderc::Compiler{};
-        auto options = shaderc::CompileOptions{};
-        options.SetSourceLanguage(shaderc_source_language_glsl);
-        options.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_2);
-        options.SetTargetSpirv(shaderc_spirv_version_1_5);
-        options.SetOptimizationLevel(shaderc_optimization_level_performance);
-        auto const res = compiler.CompileGlslToSpv(
-            src.data(),
-            to_shaderc_stage(stage),
-            name.data(),
-            options
-        );
-        if (res.GetCompilationStatus() != shaderc_compilation_status_success) {
-            return TL_ERROR(res.GetErrorMessage());
-        }
-        auto sprv_code = std::vector<uint32_t>{ res.cbegin(), res.cend() };
-        auto shader = dev->createShaderModuleUnique(
-            vk::ShaderModuleCreateInfo{
-                vk::ShaderModuleCreateFlags{},
-                std::distance(sprv_code.cbegin(), sprv_code.cend()) * sizeof(uint32_t),
-                sprv_code.data()
-            }
-        );
-        return VulkanShaderInfo{{std::move(shader)}, stage };
-    } catch (vk::SystemError& err) {
-        return TL_ERROR(err.what());
-    }
-}
 
 [[nodiscard]] auto create_cmd_buf(
     VulkanDeviceInfo const& dev,
@@ -464,241 +349,6 @@ template<typename CreateInfoChainType>
 
     return VulkanCmdBufInfo{{std::move(cmd_buf)}};
 }
-
-[[nodiscard]] auto create_rt_pipeline(
-    VulkanDeviceInfo const& dev,
-    VulkanCmdPoolInfo const& cmd_pool,
-    VulkanImageInfo const& output_img,
-    VulkanDescSetPoolInfo const& desc_set_pool,
-    Scene const& scene
-) -> tl::expected<VulkanRTPipelineInfo, std::string> {
-    auto vk_top_accel = VulkanTopAccelStructInfo{};
-    TL_TRY_ASSIGN(vk_top_accel, VulkanTopAccelStructInfo::create(dev, cmd_pool, scene));
-    auto ray_gen_shader = VulkanShaderInfo{};
-    auto miss_shader = VulkanShaderInfo{};
-    auto chit_shader = VulkanShaderInfo{};
-
-    auto shader_infos = std::array<VulkanShaderInfo, 3> {};
-    TL_TRY_ASSIGN(shader_infos[0], create_shader_glsl(
-        dev,
-        k_ray_gen_shader_src_glsl,
-        "ray_gen_shader",
-        vk::ShaderStageFlagBits::eRaygenKHR
-    ));
-    TL_TRY_ASSIGN(shader_infos[1], create_shader_glsl(
-        dev,
-        k_miss_shader_src_glsl,
-        "miss_shader",
-        vk::ShaderStageFlagBits::eMissKHR
-    ));
-    TL_TRY_ASSIGN(shader_infos[2], create_shader_glsl(
-        dev,
-        k_closest_hit_shader_src_glsl,
-        "chit_shader",
-        vk::ShaderStageFlagBits::eClosestHitKHR
-    ));
-
-    auto shader_stages = std::array{
-        vk::PipelineShaderStageCreateInfo{
-            vk::PipelineShaderStageCreateFlags{},
-            vk::ShaderStageFlagBits::eRaygenKHR,
-            *shader_infos[0],
-            "main",
-            nullptr
-        },
-        vk::PipelineShaderStageCreateInfo{
-            vk::PipelineShaderStageCreateFlags{},
-            vk::ShaderStageFlagBits::eMissKHR,
-            *shader_infos[1],
-            "main",
-            nullptr
-        },
-        vk::PipelineShaderStageCreateInfo{
-            vk::PipelineShaderStageCreateFlags{},
-            vk::ShaderStageFlagBits::eClosestHitKHR,
-            *shader_infos[2],
-            "main",
-            nullptr
-        }
-    };
-    auto shader_groups = std::array{
-        vk::RayTracingShaderGroupCreateInfoKHR{
-            vk::RayTracingShaderGroupTypeKHR::eGeneral,
-            0,
-            VK_SHADER_UNUSED_KHR,
-            VK_SHADER_UNUSED_KHR,
-            VK_SHADER_UNUSED_KHR
-        },
-        vk::RayTracingShaderGroupCreateInfoKHR{
-            vk::RayTracingShaderGroupTypeKHR::eGeneral,
-            1,
-            VK_SHADER_UNUSED_KHR,
-            VK_SHADER_UNUSED_KHR,
-            VK_SHADER_UNUSED_KHR
-        },
-        vk::RayTracingShaderGroupCreateInfoKHR{
-            vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
-            2,
-            VK_SHADER_UNUSED_KHR,
-            VK_SHADER_UNUSED_KHR,
-            VK_SHADER_UNUSED_KHR
-        }
-    };
-
-    try {
-        auto desc_set_info = VulkanDescSetInfo{};
-        auto accel_info = vk_top_accel.get_accel().get_desc_info();
-        auto img_info = output_img.get_desc_info();
-
-        // create material buffer
-        auto mat_buf = VulkanBufferInfo{};
-        auto mat_data = std::vector<MaterialData>{};
-        mat_data.reserve(scene.get_objects().size());
-        for(auto const& obj : scene.get_objects()) {
-            mat_data.emplace_back(to_rt_data(obj.get_material()));
-        }
-        TL_TRY_ASSIGN(mat_buf, VulkanBufferInfo::create(
-            dev,
-            VulkanBufferInfo::Type::Uniform,
-            sizeof(MaterialData) * k_max_instances,
-            tcb::make_span(mat_data)
-        ));
-        auto mat_buf_info = mat_buf.get_desc_info();
-
-        TL_TRY_ASSIGN(desc_set_info,
-            create_desc_set(
-                dev, desc_set_pool, {
-				    std::pair {
-				        vk::DescriptorSetLayoutBinding {}
-							.setBinding(RTBindings::ACCEL_STRUCT_BINDING)
-							.setDescriptorType(vk::DescriptorType::eAccelerationStructureKHR)
-							.setDescriptorCount(1)
-							.setStageFlags(vk::ShaderStageFlagBits::eRaygenKHR),
-				        vk::WriteDescriptorSet{}
-				            .setPNext(&accel_info)
-				    },
-                	std::pair {
-				        vk::DescriptorSetLayoutBinding {}
-				            .setBinding(RTBindings::OUTPUT_IMAGE_BINDING)
-				            .setDescriptorType(vk::DescriptorType::eStorageImage)
-				            .setDescriptorCount(1)
-				            .setStageFlags(vk::ShaderStageFlagBits::eRaygenKHR),
-	                    vk::WriteDescriptorSet{}
-	                        .setImageInfo(img_info)
-			        },
-                    std::pair {
-                        vk::DescriptorSetLayoutBinding {}
-                            .setBinding(RTBindings::MATERIALS_BINDING)
-                            .setDescriptorType(vk::DescriptorType::eUniformBuffer)
-                            .setDescriptorCount(1)
-                            .setStageFlags(vk::ShaderStageFlagBits::eClosestHitKHR),
-                        vk::WriteDescriptorSet{}
-                            .setBufferInfo(mat_buf_info)
-                    }
-	            }
-	        )
-        );
-
-        auto push_const_range = vk::PushConstantRange{}
-            .setStageFlags(vk::ShaderStageFlagBits::eRaygenKHR)
-            .setOffset(0)
-            .setSize(sizeof(PerFrameData));
-        auto pipeline_layout = dev->createPipelineLayoutUnique(
-            vk::PipelineLayoutCreateInfo{}
-            .setSetLayouts(*desc_set_info.layout)
-            .setPushConstantRanges(push_const_range)
-        );
-        auto pipeline = dev->createRayTracingPipelineKHRUnique(
-            nullptr, nullptr,
-            vk::RayTracingPipelineCreateInfoKHR{}
-            .setStages(shader_stages)
-            .setGroups(shader_groups)
-            .setMaxPipelineRayRecursionDepth(4)
-            .setLayout(*pipeline_layout)
-        );
-        if (pipeline.result != vk::Result::eSuccess) {
-            return TL_ERROR("failed to create ray tracing pipeline");
-        }
-
-        // create descriptor set
-        auto props = dev.physical_device.getProperties2<
-            vk::PhysicalDeviceProperties2,
-            vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
-        auto rt_props = props.get<vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
-
-        auto handle_size = rt_props.shaderGroupHandleSize;
-        auto handle_size_aligned = rt_props.shaderGroupHandleAlignment;
-        auto group_count = static_cast<uint32_t>(shader_groups.size());
-        auto sbt_size = handle_size_aligned * group_count;
-
-        auto handles = std::vector<uint8_t>(sbt_size);
-        if (dev->getRayTracingShaderGroupHandlesKHR(
-            *pipeline.value,
-            0, group_count,
-            sbt_size,
-            handles.data()
-        ) != vk::Result::eSuccess) {
-            return TL_ERROR("failed to get ray tracing shader group handles");
-        }
-
-        auto raygen_buf = VulkanBufferInfo{};
-        TL_TRY_ASSIGN(raygen_buf, VulkanBufferInfo::create(
-            dev,
-            VulkanBufferInfo::Type::ShaderBindingTable,
-            handle_size,
-            tcb::span { handles.data(), 1 }
-        ));
-        auto miss_buf = VulkanBufferInfo{};
-        TL_TRY_ASSIGN(miss_buf, VulkanBufferInfo::create(
-            dev,
-            VulkanBufferInfo::Type::ShaderBindingTable,
-            handle_size,
-            tcb::span { handles.data() + handle_size_aligned, 1 }
-        ));
-        auto hit_buf = VulkanBufferInfo{};
-        TL_TRY_ASSIGN(hit_buf, VulkanBufferInfo::create(
-            dev,
-            VulkanBufferInfo::Type::ShaderBindingTable,
-            handle_size,
-            tcb::span { handles.data() + handle_size_aligned * 2, 1 }
-        ));
-
-        auto raygen_region = vk::StridedDeviceAddressRegionKHR{
-            raygen_buf.get_device_addr(),
-            handle_size_aligned,
-            handle_size_aligned
-        };
-        auto miss_region = vk::StridedDeviceAddressRegionKHR{
-            miss_buf.get_device_addr(),
-            handle_size_aligned,
-            handle_size_aligned
-        };
-        auto hit_region = vk::StridedDeviceAddressRegionKHR{
-            hit_buf.get_device_addr(),
-            handle_size_aligned,
-            handle_size_aligned
-        };
-
-        return VulkanRTPipelineInfo{
-            { std::move(pipeline.value) },
-            std::move(pipeline_layout),
-            std::move(vk_top_accel),
-            std::move(desc_set_info),
-            std::move(mat_buf),
-            std::move(raygen_buf),
-            std::move(miss_buf),
-            std::move(hit_buf),
-            raygen_region,
-            miss_region,
-            hit_region,
-        };
-
-    }
-    catch (vk::SystemError& err) {
-        return TL_ERROR(err.what());
-    }
-}
-
 
 [[nodiscard]] auto clear_tex(
     VulkanDeviceInfo const& dev,
@@ -743,8 +393,30 @@ template<typename CreateInfoChainType>
                     .setLayerCount(1)
                     .setLevelCount(1)
             );
+
+            auto const img_barrier2 = vk::ImageMemoryBarrier{}
+                .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+                .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+                .setImage(vk_img)
+                .setSubresourceRange(
+                    vk::ImageSubresourceRange{}
+                        .setAspectMask(vk::ImageAspectFlagBits::eColor)
+                        .setBaseArrayLayer(0)
+                        .setBaseMipLevel(0)
+                        .setLayerCount(1)
+                        .setLevelCount(1)
+                )
+                .setOldLayout(vk::ImageLayout::eTransferDstOptimal)
+                .setNewLayout(vk::ImageLayout::eGeneral);
+            cmd_buf.pipelineBarrier(
+                vk::PipelineStageFlagBits::eAllCommands,
+                vk::PipelineStageFlagBits::eAllCommands,
+                {}, {}, {}, img_barrier2
+            );
         })
     );
+
+    return {};
 }
 
 PTS::VulkanRayTracingRenderer::VulkanRayTracingRenderer(RenderConfig config)
@@ -769,7 +441,14 @@ auto PTS::VulkanRayTracingRenderer::open_scene(View<Scene> scene) noexcept
     }
 
     // (re)create pipeline
-    TL_TRY_ASSIGN(m_vk_pipeline, create_rt_pipeline(m_vk_device, m_vk_cmd_pool, m_output_img,m_vk_desc_set_pool, scene));
+    TL_TRY_ASSIGN(m_vk_pipeline, VulkanRTPipelineInfo::create(
+        m_vk_device,
+        m_vk_cmd_pool,
+        m_output_img,
+        m_vk_desc_set_pool,
+        scene.get()
+    ));
+
     if (!m_vk_render_cmd_buf) {
         // create command buffer
        TL_TRY_ASSIGN(m_vk_render_cmd_buf, create_cmd_buf(m_vk_device, m_vk_cmd_pool));
@@ -800,14 +479,22 @@ auto PTS::VulkanRayTracingRenderer::on_add_editable(EditableView editable) noexc
             )
         );
 
+        // bind the vertex attributes and indices to the corresponding buffers
+        auto const& vertex_attribs = pobj->get_vertices();
+        auto const& indices = pobj->get_indices();
+
+        TL_CHECK_AND_PASS(m_vk_pipeline.bind_vertex_attribs(m_vk_device, id, vertex_attribs));
+        TL_CHECK_AND_PASS(m_vk_pipeline.bind_indices(m_vk_device, id, indices));
+
         // update material buffer
-        auto mat_data = to_rt_data(pobj->get_material());
+        auto mat_data = MaterialData{ pobj->get_material() };
         TL_CHECK_AND_PASS(
             m_vk_pipeline.materials_mem.upload(
                 mat_data,
                 id * sizeof(MaterialData)
             )
         );
+
         m_obj_data.emplace(pobj, PerObjectData{ id });
     }
     return reset_path_tracing();
@@ -822,6 +509,8 @@ auto PTS::VulkanRayTracingRenderer::on_remove_editable(EditableView editable) no
         }
         TL_CHECK_AND_PASS(m_vk_pipeline.top_accel.remove_instance(it->second.gpu_idx));
         m_obj_data.erase(it);
+
+        // TODO: remove vertex attribs and indices?
     }
     return reset_path_tracing();
 }
@@ -844,7 +533,7 @@ auto VulkanRayTracingRenderer::on_editable_change(EditableView editable, Editabl
             );
             break;
         case EditableChangeType::MATERIAL: {
-            auto mat_data = to_rt_data(pobj->get_material());
+            auto mat_data = MaterialData{ pobj->get_material() };
             TL_CHECK_AND_PASS(
                 m_vk_pipeline.materials_mem.upload(
                     mat_data,
@@ -864,7 +553,7 @@ auto PTS::VulkanRayTracingRenderer::render(View<Camera> camera) noexcept
 
 auto PTS::VulkanRayTracingRenderer::render_buffered(View<Camera> camera) noexcept
 -> tl::expected<TextureHandle, std::string> {
-    auto camera_data = to_rt_data(camera);
+    auto camera_data = CameraData { camera.get() };
     if(m_path_tracing_data.camera_data && camera_data != m_path_tracing_data.camera_data) {
         if (*m_path_tracing_data.camera_data != camera_data) {
             TL_CHECK(reset_path_tracing());
@@ -872,18 +561,10 @@ auto PTS::VulkanRayTracingRenderer::render_buffered(View<Camera> camera) noexcep
     }
     m_path_tracing_data.camera_data = camera_data;
 
-    if(m_path_tracing_data.iteration < m_editing_data.num_samples) {
+    if(m_editing_data.unlimited_samples || 
+        m_path_tracing_data.iteration < m_editing_data.num_samples) {
+        
         ++m_path_tracing_data.iteration;
-        auto camera_data = to_rt_data(camera);
-
-        // redo the path tracing if the camera changed
-        if(!m_path_tracing_data.camera_data || camera_data != m_path_tracing_data.camera_data) {
-            if (*m_path_tracing_data.camera_data != camera_data) {
-                TL_CHECK(reset_path_tracing());
-            }
-        }
-        m_path_tracing_data.camera_data = camera_data;
-
         // update per frame data
         auto per_frame_data = PerFrameData{ 
             camera_data,
@@ -896,7 +577,6 @@ auto PTS::VulkanRayTracingRenderer::render_buffered(View<Camera> camera) noexcep
             m_vk_render_cmd_buf->begin(vk::CommandBufferBeginInfo{});
             {
                 // clear image
-                auto const clear_color = vk::ClearColorValue{ 0.0f, 0.0f, 0.0f, 1.0f };
                 m_vk_render_cmd_buf->bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, *m_vk_pipeline);
                 
                 m_vk_render_cmd_buf->pushConstants(
@@ -911,33 +591,9 @@ auto PTS::VulkanRayTracingRenderer::render_buffered(View<Camera> camera) noexcep
                     vk::PipelineBindPoint::eRayTracingKHR,
                     *m_vk_pipeline.layout,
                     0,
-                    *m_vk_pipeline.desc_set,
+                    m_vk_pipeline.get_desc_sets(),
                     nullptr
                 );
-
-                // set image layout
-                auto const img_barrier = vk::ImageMemoryBarrier{}
-                    .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-                    .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-                    .setImage(*m_output_img.img.vk_image)
-                    .setSubresourceRange(
-                        vk::ImageSubresourceRange{}
-                            .setAspectMask(vk::ImageAspectFlagBits::eColor)
-                            .setBaseArrayLayer(0)
-                            .setBaseMipLevel(0)
-                            .setLayerCount(1)
-                            .setLevelCount(1)
-                    )
-                    .setOldLayout(vk::ImageLayout::eUndefined)
-                    .setNewLayout(vk::ImageLayout::eGeneral);
-                
-                // clear image
-                m_vk_render_cmd_buf->pipelineBarrier(
-                    vk::PipelineStageFlagBits::eAllCommands,
-                    vk::PipelineStageFlagBits::eAllCommands,
-                    {}, {}, {}, img_barrier
-                );
-
                 m_vk_render_cmd_buf->traceRaysKHR(
                     m_vk_pipeline.raygen_region,
                     m_vk_pipeline.miss_region,
@@ -978,6 +634,7 @@ auto PTS::VulkanRayTracingRenderer::init(ObserverPtr<Application> app) noexcept
 
     auto ins_ext = VulkanGLInteropUtils::get_vk_ins_exts();
     ins_ext.emplace_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+    ins_ext.emplace_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
 
     auto gl_ext = VulkanGLInteropUtils::get_gl_exts();
     VULKAN_HPP_DEFAULT_DISPATCHER.init();
@@ -995,16 +652,38 @@ auto PTS::VulkanRayTracingRenderer::init(ObserverPtr<Application> app) noexcept
     device_ext.emplace_back(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
     device_ext.emplace_back(VK_KHR_RAY_TRACING_POSITION_FETCH_EXTENSION_NAME);
 
+    // add descriptor indexing extension
+    device_ext.emplace_back(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
+    device_ext.emplace_back(VK_KHR_MAINTENANCE1_EXTENSION_NAME);
+
     using CreateInfoChainType = vk::StructureChain<
         vk::DeviceCreateInfo,
         vk::PhysicalDeviceBufferDeviceAddressFeatures,
         vk::PhysicalDeviceRayTracingPipelineFeaturesKHR,
         vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
-        vk::PhysicalDeviceRayTracingPositionFetchFeaturesKHR
+        vk::PhysicalDeviceRayTracingPositionFetchFeaturesKHR,
+        vk::PhysicalDeviceDescriptorIndexingFeaturesEXT
     >;
 	TL_TRY_ASSIGN(m_vk_device, create_device(m_vk_ins, device_ext, std::function {
         [](vk::DeviceCreateInfo create_info) {
-            return CreateInfoChainType { create_info, { true }, { true }, { true }, { true } };
+            return CreateInfoChainType {
+                create_info,
+                vk::PhysicalDeviceBufferDeviceAddressFeatures{}
+                    .setBufferDeviceAddress(true),
+                vk::PhysicalDeviceRayTracingPipelineFeaturesKHR{}
+                    .setRayTracingPipeline(true),
+                vk::PhysicalDeviceAccelerationStructureFeaturesKHR{}
+                    .setAccelerationStructure(true),
+                vk::PhysicalDeviceRayTracingPositionFetchFeaturesKHR{}
+                    .setRayTracingPositionFetch(true),
+                vk::PhysicalDeviceDescriptorIndexingFeaturesEXT{}
+                    .setDescriptorBindingPartiallyBound(true)
+                    .setDescriptorBindingVariableDescriptorCount(true)
+                    .setRuntimeDescriptorArray(true)
+                    .setShaderSampledImageArrayNonUniformIndexing(true)
+                    .setDescriptorBindingStorageBufferUpdateAfterBind(true)
+                    .setShaderStorageBufferArrayNonUniformIndexing(true)
+            };
         }
     }));
 
