@@ -48,8 +48,7 @@ namespace PTS {
 
         [[nodiscard]] static auto create(
             VulkanDeviceInfo const& dev,
-            VulkanCmdPoolInfo const& cmd_pool,
-            Scene const& scene
+            VulkanCmdPoolInfo const& cmd_pool
         ) -> tl::expected<VulkanTopAccelStructInfo, std::string>;
         
         /**

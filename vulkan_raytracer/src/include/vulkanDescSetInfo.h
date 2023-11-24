@@ -3,7 +3,7 @@
 
 namespace PTS {
 struct VulkanDescSetInfo : VulkanInfo<vk::UniqueDescriptorSet> {
-    [[nodiscard]] auto add_binding(
+    auto add_binding(
         vk::DescriptorSetLayoutBinding binding,
         vk::DescriptorBindingFlags flags,
         vk::WriteDescriptorSet how_to_write

@@ -110,7 +110,7 @@ void EditorApplication::create_input_actions() noexcept {
             m_cam.set(params);
         }
     };
-    auto select_obj = InputAction {{InputType::MOUSE, ActionType::RELEASE, ImGuiMouseButton_Left },
+    auto select_obj = InputAction {{InputType::MOUSE, ActionType::PRESS, ImGuiMouseButton_Left },
         [this] (InputEvent const& event) { 
             if (!m_control_state.is_outside_view && 
                 (glfwGetTime() - event.time) <= k_object_select_mouse_time) {
@@ -174,6 +174,7 @@ void EditorApplication::create_input_actions() noexcept {
             .add_constraint(scene_view_hovered)
             .add_constraint(obj_selected),
         focus_on_obj
+            .add_constraint(scene_view_focused)
             .add_constraint(obj_selected),
         select_obj
             .add_constraint(scene_view_focused)
@@ -648,6 +649,7 @@ void EditorApplication::ControlState::set_cur_obj(std::optional<EditableView> ob
         callback(obj);
     }
     if (obj) {
+        std::fill(obj_name_buf.begin(), obj_name_buf.end(), '\0');
         std::copy(obj->get_name().begin(), obj->get_name().end(), obj_name_buf.begin());
     }
 }

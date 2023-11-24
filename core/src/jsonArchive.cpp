@@ -49,9 +49,11 @@ namespace PTS {
 	auto from_json(nlohmann::json const& json, Reflected& reflected) -> void {
 		Reflected::for_each_field([&reflected, &json](auto field) {
 			if (field.template get_modifier<MSerialize>()) {
-				from_json(json.at(field.var_name), field.get(reflected));
+				if (json.count(field.var_name)) {
+					from_json(json.at(field.var_name), field.get(reflected));
+				}
 			}
-			});
+		});
 		if constexpr (has_deserialization_callback<Reflected>::value) {
 			reflected.on_deserialize();
 		}

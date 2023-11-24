@@ -440,19 +440,29 @@ auto PTS::VulkanRayTracingRenderer::open_scene(View<Scene> scene) noexcept
         return TL_ERROR("output image not initialized");
     }
 
-    // (re)create pipeline
-    TL_TRY_ASSIGN(m_vk_pipeline, VulkanRTPipelineInfo::create(
-        m_vk_device,
-        m_vk_cmd_pool,
-        m_output_img,
-        m_vk_desc_set_pool,
-        scene.get()
-    ));
-
-    if (!m_vk_render_cmd_buf) {
+    if (*m_vk_pipeline) {
+        // remove all objects
+        for (auto& [pobj, data] : m_obj_data) {
+            TL_CHECK_AND_PASS(remove_object(*pobj));
+        }
+    } else {
+        // continue first time initialization, following init() call
+        // create ray tracing pipeline
+        TL_TRY_ASSIGN(m_vk_pipeline, VulkanRTPipelineInfo::create(
+            m_vk_device,
+            m_vk_cmd_pool,
+            m_output_img,
+            m_vk_desc_set_pool
+        ));
         // create command buffer
        TL_TRY_ASSIGN(m_vk_render_cmd_buf, create_cmd_buf(m_vk_device, m_vk_cmd_pool));
     }
+
+    // add objects
+    for (auto& obj : scene.get().get_objects()) {
+        TL_CHECK_AND_PASS(add_object(obj));
+    }
+
     // clear output image
     TL_CHECK_AND_PASS(reset_path_tracing());
 
@@ -462,55 +472,16 @@ auto PTS::VulkanRayTracingRenderer::open_scene(View<Scene> scene) noexcept
 auto PTS::VulkanRayTracingRenderer::on_add_editable(EditableView editable) noexcept
 -> tl::expected<void, std::string> {
 	if(auto const& pobj = editable.as<Object>()) {
-        if (m_obj_data.count(pobj)) {
-            return TL_ERROR("object already added");
-        }
-
-        // create bottom level acceleration structure
-        auto vk_bottom_accel = VulkanBottomAccelStructInfo{};
-        TL_TRY_ASSIGN(vk_bottom_accel, VulkanBottomAccelStructInfo::create(m_vk_device, m_vk_cmd_pool, *pobj));
-
-        // add instance to top level acceleration structure
-        auto id = size_t{ 0 };
-        TL_TRY_ASSIGN(id,
-            m_vk_pipeline.top_accel.add_instance(
-                std::move(vk_bottom_accel),
-                pobj->get_transform().get_matrix()
-            )
-        );
-
-        // bind the vertex attributes and indices to the corresponding buffers
-        auto const& vertex_attribs = pobj->get_vertices();
-        auto const& indices = pobj->get_indices();
-
-        TL_CHECK_AND_PASS(m_vk_pipeline.bind_vertex_attribs(m_vk_device, id, vertex_attribs));
-        TL_CHECK_AND_PASS(m_vk_pipeline.bind_indices(m_vk_device, id, indices));
-
-        // update material buffer
-        auto mat_data = MaterialData{ pobj->get_material() };
-        TL_CHECK_AND_PASS(
-            m_vk_pipeline.materials_mem.upload(
-                mat_data,
-                id * sizeof(MaterialData)
-            )
-        );
-
-        m_obj_data.emplace(pobj, PerObjectData{ id });
+        add_object(*pobj);
     }
     return reset_path_tracing();
 }
 
+
 auto PTS::VulkanRayTracingRenderer::on_remove_editable(EditableView editable) noexcept
 -> tl::expected<void, std::string> {
 	if(auto const& pobj = editable.as<Object>()) {
-        auto it = m_obj_data.find(pobj);
-        if (it == m_obj_data.end()) {
-            return TL_ERROR("object not found");
-        }
-        TL_CHECK_AND_PASS(m_vk_pipeline.top_accel.remove_instance(it->second.gpu_idx));
-        m_obj_data.erase(it);
-
-        // TODO: remove vertex attribs and indices?
+        remove_object(*pobj);
     }
     return reset_path_tracing();
 }
@@ -722,3 +693,53 @@ auto VulkanRayTracingRenderer::reset_path_tracing() noexcept -> tl::expected<voi
 
     return {};
 }
+
+auto PTS::VulkanRayTracingRenderer::add_object(Object const& obj) -> tl::expected<void, std::string> {
+    if (m_obj_data.count(&obj)) {
+        return TL_ERROR("object already added");
+    }
+
+    // create bottom level acceleration structure
+    auto vk_bottom_accel = VulkanBottomAccelStructInfo{};
+    TL_TRY_ASSIGN(vk_bottom_accel, VulkanBottomAccelStructInfo::create(m_vk_device, m_vk_cmd_pool, obj));
+
+    // add instance to top level acceleration structure
+    auto id = size_t{ 0 };
+    TL_TRY_ASSIGN(id,
+        m_vk_pipeline.top_accel.add_instance(
+            std::move(vk_bottom_accel),
+            obj.get_transform().get_matrix()
+        )
+    );
+
+    // bind the vertex attributes and indices to the corresponding buffers
+    auto const& vertex_attribs = obj.get_vertices();
+    auto const& indices = obj.get_indices();
+
+    TL_CHECK_AND_PASS(m_vk_pipeline.bind_vertex_attribs(m_vk_device, id, vertex_attribs));
+    TL_CHECK_AND_PASS(m_vk_pipeline.bind_indices(m_vk_device, id, indices));
+
+    // update material buffer
+    auto mat_data = MaterialData{ obj.get_material() };
+    TL_CHECK_AND_PASS(
+        m_vk_pipeline.materials_mem.upload(
+            mat_data,
+            id * sizeof(MaterialData)
+        )
+    );
+
+    m_obj_data.emplace(&obj, PerObjectData{ id });
+}
+
+auto PTS::VulkanRayTracingRenderer::remove_object(Object const& obj) -> tl::expected<void, std::string> {
+    auto it = m_obj_data.find(&obj);
+    if (it == m_obj_data.end()) {
+        return TL_ERROR("object not found");
+    }
+    TL_CHECK_AND_PASS(m_vk_pipeline.top_accel.remove_instance(it->second.gpu_idx));
+    m_obj_data.erase(it);
+
+    // no need to remove vertex attributes and indices because they will be overwritten
+    return {};
+}
+

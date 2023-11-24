@@ -1,5 +1,4 @@
 #include "vulkanRTPipelineInfo.h"
-#include "scene.h"
 #include <shaderc/shaderc.hpp>
 
 namespace PTS {
@@ -70,11 +69,11 @@ auto PTS::VulkanRTPipelineInfo::create(
     VulkanDeviceInfo const& dev,
     VulkanCmdPoolInfo const& cmd_pool,
 	VulkanImageInfo const& output_img,
-    VulkanDescSetPoolInfo const& desc_set_pool,
-	Scene const& scene
+    VulkanDescSetPoolInfo const& desc_set_pool
 ) -> tl::expected<VulkanRTPipelineInfo, std::string> {
     auto vk_top_accel = VulkanTopAccelStructInfo{};
-    TL_TRY_ASSIGN(vk_top_accel, VulkanTopAccelStructInfo::create(dev, cmd_pool, scene));
+    TL_TRY_ASSIGN(vk_top_accel, VulkanTopAccelStructInfo::create(dev, cmd_pool));
+
     auto ray_gen_shader = VulkanShaderInfo{};
     auto miss_shader = VulkanShaderInfo{};
     auto chit_shader = VulkanShaderInfo{};
@@ -152,19 +151,10 @@ auto PTS::VulkanRTPipelineInfo::create(
 
         // create material buffer
         auto mat_buf = VulkanBufferInfo{};
-        auto mat_data = std::vector<MaterialData>{};
-        mat_data.reserve(scene.get_objects().size());
-        std::transform(scene.get_objects().begin(), scene.get_objects().end(), std::back_inserter(mat_data),
-            [](Object const& obj) {
-                return MaterialData{ obj.get_material() };
-            }
-        );
-
         TL_TRY_ASSIGN(mat_buf, VulkanBufferInfo::create(
             dev,
             VulkanBufferInfo::Type::Uniform,
-            sizeof(MaterialData) * k_max_instances,
-            tcb::make_span(mat_data)
+            sizeof(MaterialData) * k_max_instances
         ));
         auto mat_buf_info = mat_buf.get_desc_info();
 

@@ -12,8 +12,7 @@ struct VulkanRTPipelineInfo : VulkanInfo<vk::UniquePipeline> {
         VulkanDeviceInfo const& dev,
         VulkanCmdPoolInfo const& cmd_pool,
         VulkanImageInfo const& output_img,
-        VulkanDescSetPoolInfo const& desc_set_pool,
-        struct Scene const& scene
+        VulkanDescSetPoolInfo const& desc_set_pool
     ) -> tl::expected<VulkanRTPipelineInfo, std::string>;
 
     /**

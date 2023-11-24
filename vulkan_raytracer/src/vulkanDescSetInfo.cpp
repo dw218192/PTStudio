@@ -1,5 +1,6 @@
 #include "vulkanDescSetInfo.h"
-[[nodiscard]] auto PTS::VulkanDescSetInfo::add_binding(
+
+auto PTS::VulkanDescSetInfo::add_binding(
     vk::DescriptorSetLayoutBinding binding,
     vk::DescriptorBindingFlags flags,
     vk::WriteDescriptorSet how_to_write

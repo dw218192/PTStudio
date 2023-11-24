@@ -141,36 +141,11 @@
 
 [[nodiscard]] auto PTS::VulkanTopAccelStructInfo::create(
     VulkanDeviceInfo const& dev,
-    VulkanCmdPoolInfo const& cmd_pool,
-    Scene const& scene
+    VulkanCmdPoolInfo const& cmd_pool
 ) -> tl::expected<VulkanTopAccelStructInfo, std::string>
 {
     auto accel_ins_vec = std::vector<vk::AccelerationStructureInstanceKHR>{};
     auto bottom_accels = std::vector<VulkanBottomAccelStructInfo>{};
-    // auto objs = std::vector<Object>{};
-    // objs.emplace_back(Object::make_triangle_obj(scene, {}, {}));
-    for(auto const& obj : scene.get_objects()) {
-        auto accel = VulkanBottomAccelStructInfo{};
-        TL_TRY_ASSIGN(accel, VulkanBottomAccelStructInfo::create(dev, cmd_pool, obj));
-
-        auto mat_data = glm::mat3x4 { obj.get_transform().get_matrix() };
-        auto mat_data_arr = std::array {
-            std::array { mat_data[0][0], mat_data[0][1], mat_data[0][2], mat_data[0][3] },
-            std::array { mat_data[1][0], mat_data[1][1], mat_data[1][2], mat_data[1][3] },
-            std::array { mat_data[2][0], mat_data[2][1], mat_data[2][2], mat_data[2][3] }
-        };
-
-        auto accel_inst_buf = VulkanBufferInfo{};
-        auto accel_ins = vk::AccelerationStructureInstanceKHR{}
-            .setTransform(vk::TransformMatrixKHR{ mat_data_arr })
-            .setInstanceCustomIndex(0)
-            .setMask(0xFF)
-            .setInstanceShaderBindingTableRecordOffset(0)
-            .setFlags(vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable)
-            .setAccelerationStructureReference(accel.accel.storage_mem.get_device_addr());
-        accel_ins_vec.emplace_back(accel_ins);
-        bottom_accels.emplace_back(std::move(accel));
-    }
     auto accel_ins_buf = VulkanBufferInfo{};
     TL_TRY_ASSIGN(accel_ins_buf, VulkanBufferInfo::create(
         dev,

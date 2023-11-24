@@ -7,17 +7,17 @@
 
 namespace ImGui {
     template<typename Reflected, typename = std::enable_if_t<PTS::is_reflectable<Reflected>::value>>
-    bool ReflectedField(const char* label, Reflected& value);
+    bool ReflectedField(const char* label, Reflected& reflected, bool collapsed = false);
 }
 
 
 // reflectable types can be inspected in the editor and modified automatically
 template<typename Reflected, typename>
-bool ImGui::ReflectedField(const char* label, Reflected& reflected) {
+bool ImGui::ReflectedField(const char* label, Reflected& reflected, bool collapsed) {
     using namespace PTS;
     
     bool changed = false;
-    if (ImGui::CollapsingHeader(label)) {
+    if (ImGui::CollapsingHeader(label, collapsed ? 0 : ImGuiTreeNodeFlags_DefaultOpen)) {
         Reflected::for_each_field([&](auto field_info) {
             using FieldType = typename decltype(field_info)::type;
             if (auto no_inpsect_mod = field_info.template get_modifier<MNoInspect>()) {

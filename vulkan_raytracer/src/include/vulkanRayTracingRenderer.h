@@ -33,6 +33,8 @@ namespace PTS {
 
     private:
         [[nodiscard]] auto reset_path_tracing() noexcept -> tl::expected<void, std::string>;
+        [[nodiscard]] auto add_object(Object const& obj) -> tl::expected<void, std::string>;
+        [[nodiscard]] auto remove_object(Object const& obj) -> tl::expected<void, std::string>;
 
 		VulkanInsInfo m_vk_ins;
 		VulkanDeviceInfo m_vk_device;
