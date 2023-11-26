@@ -115,6 +115,8 @@ private:
             bool snap{ false };
             glm::vec3 snap_scale{ 1.0 };
         } gizmo_state{ };
+
+        bool unlimited_fps{ false };
     private:
         std::optional<EditableView> m_cur_obj;
         std::vector<ObjChangeCallback> m_obj_change_callbacks;

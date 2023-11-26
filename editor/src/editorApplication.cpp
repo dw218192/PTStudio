@@ -320,6 +320,29 @@ void EditorApplication::draw_scene_panel() noexcept {
         ImGui::SliderFloat("##Rotate Sensitivity", &m_control_state.rot_sensitivity, 2.0f, 100.0f);
     }
 
+    if (ImGui::CollapsingHeader("Performance", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Unlimited FPS", &m_control_state.unlimited_fps);
+        if (m_control_state.unlimited_fps) {
+            set_min_frame_time(0.0f);
+        }
+
+        ImGui::BeginDisabled(m_control_state.unlimited_fps);
+        {
+            float cap = m_control_state.unlimited_fps ? 
+                std::numeric_limits<float>::infinity() : 1 / get_min_frame_time();
+
+            ImGui::Text("FPS Cap");
+            ImGui::SameLine();
+            if (ImGui::SliderFloat("##FPS Cap", &cap, 1.0f, 1000.0f)) {
+                set_min_frame_time(1 / cap);
+            }
+        }
+        ImGui::EndDisabled();
+
+        ImGui::Text("Current FPS: %.2f", 1.0f / get_delta_time());
+    }
+
     // draw scene object list
     ImGui::Spacing();
     if (ImGui::CollapsingHeader("Scene Objects", ImGuiTreeNodeFlags_DefaultOpen))

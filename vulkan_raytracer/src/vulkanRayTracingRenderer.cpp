@@ -350,75 +350,6 @@ template<typename CreateInfoChainType>
     return VulkanCmdBufInfo{{std::move(cmd_buf)}};
 }
 
-[[nodiscard]] auto clear_tex(
-    VulkanDeviceInfo const& dev,
-    VulkanCmdPoolInfo const& cmd_pool,
-    VulkanImageInfo const& img,
-    glm::vec4 const& color
-) -> tl::expected<void, std::string> {
-    auto const clear_color = vk::ClearColorValue{ color.r, color.g, color.b, color.a };
-    TL_CHECK_AND_PASS(
-        do_work_now(dev, cmd_pool, [&](vk::CommandBuffer& cmd_buf) {
-            // set image layout
-            auto vk_img = *img.img.vk_image;
-            auto const img_barrier = vk::ImageMemoryBarrier{}
-                .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-                .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-                .setImage(vk_img)
-                .setSubresourceRange(
-                    vk::ImageSubresourceRange{}
-                        .setAspectMask(vk::ImageAspectFlagBits::eColor)
-                        .setBaseArrayLayer(0)
-                        .setBaseMipLevel(0)
-                        .setLayerCount(1)
-                        .setLevelCount(1)
-                )
-                .setOldLayout(vk::ImageLayout::eUndefined)
-                .setNewLayout(vk::ImageLayout::eTransferDstOptimal);
-
-            cmd_buf.pipelineBarrier(
-                vk::PipelineStageFlagBits::eAllCommands,
-                vk::PipelineStageFlagBits::eAllCommands,
-                {}, {}, {}, img_barrier
-            );
-
-            cmd_buf.clearColorImage(
-                vk_img,
-                vk::ImageLayout::eTransferDstOptimal,
-                clear_color,
-                vk::ImageSubresourceRange{}
-                    .setAspectMask(vk::ImageAspectFlagBits::eColor)
-                    .setBaseArrayLayer(0)
-                    .setBaseMipLevel(0)
-                    .setLayerCount(1)
-                    .setLevelCount(1)
-            );
-
-            auto const img_barrier2 = vk::ImageMemoryBarrier{}
-                .setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-                .setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-                .setImage(vk_img)
-                .setSubresourceRange(
-                    vk::ImageSubresourceRange{}
-                        .setAspectMask(vk::ImageAspectFlagBits::eColor)
-                        .setBaseArrayLayer(0)
-                        .setBaseMipLevel(0)
-                        .setLayerCount(1)
-                        .setLevelCount(1)
-                )
-                .setOldLayout(vk::ImageLayout::eTransferDstOptimal)
-                .setNewLayout(vk::ImageLayout::eGeneral);
-            cmd_buf.pipelineBarrier(
-                vk::PipelineStageFlagBits::eAllCommands,
-                vk::PipelineStageFlagBits::eAllCommands,
-                {}, {}, {}, img_barrier2
-            );
-        })
-    );
-
-    return {};
-}
-
 PTS::VulkanRayTracingRenderer::VulkanRayTracingRenderer(RenderConfig config)
 	: Renderer{config, "Vulkan Ray Tracer"} {}
 
@@ -442,7 +373,12 @@ auto PTS::VulkanRayTracingRenderer::open_scene(View<Scene> scene) noexcept
 
     if (*m_vk_pipeline) {
         // remove all objects
-        for (auto& [pobj, data] : m_obj_data) {
+        auto to_remove = std::vector<Object const*> (m_obj_data.size());
+        std::transform(m_obj_data.begin(), m_obj_data.end(), to_remove.begin(),
+            [](auto&& kvp) {
+                return kvp.first;
+            });
+        for (auto const pobj : to_remove) {
             TL_CHECK_AND_PASS(remove_object(*pobj));
         }
     } else {
@@ -533,9 +469,7 @@ auto PTS::VulkanRayTracingRenderer::render_buffered(View<Camera> camera) noexcep
     m_path_tracing_data.camera_data = camera_data;
 
     if(m_editing_data.unlimited_samples || 
-        m_path_tracing_data.iteration < m_editing_data.num_samples) {
-        
-        ++m_path_tracing_data.iteration;
+        m_path_tracing_data.iteration < m_editing_data.num_samples) {        
         // update per frame data
         auto per_frame_data = PerFrameData{ 
             camera_data,
@@ -583,6 +517,8 @@ auto PTS::VulkanRayTracingRenderer::render_buffered(View<Camera> camera) noexcep
                 nullptr
             );
             m_vk_cmd_pool.queue.waitIdle();
+
+            ++ m_path_tracing_data.iteration;
         } catch (vk::SystemError& err) {
             return TL_ERROR(err.what());
         }
@@ -674,6 +610,31 @@ auto PTS::VulkanRayTracingRenderer::init(ObserverPtr<Application> app) noexcept
         true
     ));
 
+    // set up texture layout transition
+    do_work_now(m_vk_device, m_vk_cmd_pool, [this](vk::CommandBuffer& cmd_buf) {
+        cmd_buf.pipelineBarrier(
+            vk::PipelineStageFlagBits::eTopOfPipe,
+            vk::PipelineStageFlagBits::eTransfer,
+            vk::DependencyFlags{},
+            nullptr,
+            nullptr,
+            vk::ImageMemoryBarrier{
+                vk::AccessFlags{},
+                vk::AccessFlagBits::eTransferWrite,
+                vk::ImageLayout::eUndefined,
+                m_output_img.layout,
+                VK_QUEUE_FAMILY_IGNORED,
+                VK_QUEUE_FAMILY_IGNORED,
+                *m_output_img.img.vk_image,
+                vk::ImageSubresourceRange{}
+                    .setAspectMask(vk::ImageAspectFlagBits::eColor)
+                    .setBaseMipLevel(0)
+                    .setLevelCount(1)
+                    .setBaseArrayLayer(0)
+                    .setLayerCount(1)
+            }
+        );
+    });
 	return {};
 }
 
@@ -683,12 +644,19 @@ auto PTS::VulkanRayTracingRenderer::draw_imgui() noexcept -> tl::expected<void, 
     if (ImGui::ReflectedField("Editing Data", m_editing_data)) {
         TL_CHECK_AND_PASS(reset_path_tracing());
     }
+    if (m_path_tracing_data.iteration < m_editing_data.num_samples || m_editing_data.unlimited_samples) {
+        ImGui::Text("Iteration: %d", m_path_tracing_data.iteration);
+    } else {
+        ImGui::PushStyleColor(ImGuiCol_Text, { 0.0f, 1.0f, 0.0f, 1.0f });
+        ImGui::Text("Iteration: %d (done)", m_path_tracing_data.iteration);
+        ImGui::PopStyleColor();
+    }
+
     ImGui::End();
     return {};
 }
 
 auto VulkanRayTracingRenderer::reset_path_tracing() noexcept -> tl::expected<void, std::string> {
-    TL_CHECK_AND_PASS(clear_tex(m_vk_device, m_vk_cmd_pool, m_output_img, glm::vec4{ 0.0f }));
     m_path_tracing_data.iteration = 0;
 
     return {};

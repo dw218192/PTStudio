@@ -34,9 +34,8 @@ namespace PTS {
     }
 }
 
-GLFWApplication::GLFWApplication(std::string_view name, unsigned width, unsigned height, float min_frame_time)
-    : m_min_frame_time (min_frame_time) 
-{
+GLFWApplication::GLFWApplication(std::string_view name, unsigned width, unsigned height, float min_frame_time) {
+    set_min_frame_time(min_frame_time);
     glfwSetErrorCallback(error_func);
 
     if (!glfwInit()) {

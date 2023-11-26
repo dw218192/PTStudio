@@ -65,7 +65,10 @@ namespace PTS {
 		[[nodiscard]] auto get_time() const noexcept -> float override;
 		[[nodiscard]] auto get_delta_time() const noexcept -> float override;
 
-	private:
+		auto set_min_frame_time(float min_frame_time) noexcept { m_min_frame_time = min_frame_time; }
+		[[nodiscard]] auto get_min_frame_time() const noexcept { return m_min_frame_time; }
+
+	protected:
 		glm::vec2 m_mouse_scroll_delta;
 		glm::vec2 m_mouse_pos;
 		std::optional<glm::vec2> m_last_mouse_pos { std::nullopt };

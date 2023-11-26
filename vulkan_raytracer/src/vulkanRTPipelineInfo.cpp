@@ -1,6 +1,10 @@
 #include "vulkanRTPipelineInfo.h"
 #include <shaderc/shaderc.hpp>
 
+#ifndef NDEBUG
+#include "vulkanRayTracingTestShaders.h"
+#endif
+
 namespace PTS {
     [[nodiscard]] auto create_shader_glsl(
         VulkanDeviceInfo const& dev,
@@ -176,7 +180,7 @@ auto PTS::VulkanRTPipelineInfo::create(
                     .setBinding(RayTracingBindings::ACCEL_STRUCT_BINDING.binding)
                     .setDescriptorType(vk::DescriptorType::eAccelerationStructureKHR)
                     .setDescriptorCount(1)
-                    .setStageFlags(vk::ShaderStageFlagBits::eRaygenKHR),
+                    .setStageFlags(vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR),
                 vk::DescriptorBindingFlags {},
                 vk::WriteDescriptorSet{}
                     .setPNext(&accel_info)
