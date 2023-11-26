@@ -6,6 +6,8 @@ This project is still in its early stage and might be quite buggy. I am still **
 
 ## Screenshots and Videos
 ![Screenshot](docs/readme_assets/scene_editing.png)
+![Screenshot](docs/readme_assets/cornell_editing.png)
+![Screenshot](docs/readme_assets/cornell.png)
 
 https://github.com/dw218192/PTStudio/assets/31294154/6c956cb8-3d53-4e00-8419-cb108d74fecd
 
@@ -22,45 +24,35 @@ https://github.com/dw218192/PTStudio/assets/31294154/6c956cb8-3d53-4e00-8419-cb1
 git clone --recursive [repo url]
 ```
 
-## Features (As of 2023-11-05)
-- [ ] Application framework
-    - [x] GLFW window, input handling
-    - [x] ImGui integration, basic UI
-    - [x] Simple Reflection system
-    - [x] Renderer Interface
-    - [x] Serialization/Deserialization Interface
-    - [ ] Primitive Scene Data Types
-        - [x] Light
-        - [x] Camera
-        - [x] Mesh
-        - [x] Material
-        - [x] Texture
-        - [ ] ...
-    - [ ] Asset/ Resource Management System
-- [ ] Scene Editing
-    - [x] Basic scene object manipulation, Gizmo
-    - [ ] Scene object duplication
-    - [x] Scene object creation, deletion
-    - [x] Scene object selection, ray picking
-    - [x] Multiple light support
-    - [ ] Scene object hierarchy
-    - [ ] Scene object component system
-        - [ ] Scene object custom data
-    - [ ] Undo/Redo System
-    - [ ] OpenGL-based Editor Renderer
-        - [x] Outline, Sprite rendering
-        - [x] Grid rendering
-        - [x] GLSL shader hot reload
-        - [x] GLSL shader editor
-        - [ ] GLSL shader save/load
-    - [x] Json serialization
-    - [ ] Mesh loading
-        - [ ] Multi-threaded mesh loading
-        - [ ] Texture loading
-        - [x] .obj file loading
-    - [ ] Renderer switching
-        - [ ] Dynamic renderer DLL loading
-- [ ] Renderers
-    - [ ] CUDA Path Tracer
-    - [ ] Vulkan hardware ray tracer
-    - [ ] OpenGL deferred renderer
+## Roadmap (As of 2023/11/26)
+- High Priority
+    - [x] implement renderer switcher
+    - [ ] implement the ability to append custom data to scene objects
+        - [ ] possible strategy: a component system, we can attach a component to a scene object
+        - [ ] problem: how to handle dynamically registered component types? 
+            - requirement for component class:
+                - no inheritance (our reflection system doesn't support inheritance)
+                - must be serializable (i.e. must have a default constructor)
+                - must be reflectable
+                - can be constructed given its class name
+    - [x] implement performance display
+        - [ ] fix FPS display bug
+    - [ ] Editing Improvements
+        - [ ] put mesh loading in a separate thread
+        - [ ] adaptive grid resizing
+        - [ ] Ctrl+S to save scene (first time a file dialog will pop up, then subsequent saves will save to the same file)
+        - [ ] Ctrl+D and Ctrl+C to duplicate selected objects
+        - [ ] Ctrl+Z and Ctrl+Y to undo/redo
+        - [ ] camera should move faster the further away it is from the center
+    - [ ] emissive material should be considered as a light source in editor renderer
+    - [ ] lights should be considered in vulkan ray tracer
+    - [ ] fix sphere primitive uv bug
+- Medium Priority
+    - [ ] implement undo/redo system
+    - [ ] fix GLTexture::save() bug
+    - [ ] fix potential bugs in GL wrapper classes (usage of std::swap in move might swap in uninitialized data)
+    - [ ] log flush timer
+- Low Priority
+    - [ ] implement scene object hierarchy
+    - [ ] implement asset system
+    - [ ] implement dynamic renderer DLL loading & unloading
