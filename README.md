@@ -4,12 +4,13 @@ PTStudio is a light-weight, modular, and extensible 3D scene editor and renderer
 ## Disclaimer
 This project is still in its early stage and might be quite buggy. I am still **actively** working on the basic functionalities. See the section below for the current roadmap and feature overview of this project. As the project matures, I will add more documentation, examples, demos, and tests. The source code structure is still undergoing major changes, so I may not be able to accept pull requests at this time. However, I am always open to suggestions and minor fixes. Please feel free to open an issue if you have any questions or suggestions.
 
-## Screenshots and Videos
+## Screenshots and Demos
+https://github.com/dw218192/PTStudio/assets/31294154/4116308d-ee31-4d20-a449-f130d11fe253
+
 ![Screenshot](docs/readme_assets/scene_editing.png)
 ![Screenshot](docs/readme_assets/cornell_editing.png)
 ![Screenshot](docs/readme_assets/cornell.png)
 
-https://github.com/dw218192/PTStudio/assets/31294154/6c956cb8-3d53-4e00-8419-cb108d74fecd
 
 ## Build Instructions
 
