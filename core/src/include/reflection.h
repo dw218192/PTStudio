@@ -3,6 +3,9 @@
 #include <utility>
 #include <tuple>
 #include <optional>
+#include <vector>
+#include <functional>
+
 namespace PTS {
     /**
      * simple reflection framework
@@ -31,21 +34,37 @@ namespace PTS {
             }, args);
         }
     };
+    /**
+     * @brief displays the field as a slider, only works for float and int
+     * @tparam T the type of the field
+    */
     template<typename T>
     struct MRange {
         T min, max;
         static constexpr std::string_view name = "range";
         constexpr MRange(T min, T max) : min(min), max(max) {}
     };
+    /**
+     * @brief mark the field as serializable, only fields with this modifier will be saved to the scene file
+    */
     struct MSerialize {
         static constexpr std::string_view name = "serialize";
     };
+    /**
+     * @brief don't show this field in the inspector, can be used to hide explicitly handled fields or fields that shouldn't be edited
+    */
     struct MNoInspect {
         static constexpr std::string_view name = "no inspect";
     };
+    /**
+     * @brief displays a color picker, only works for glm::vec3 and glm::vec4
+    */
     struct MColor {
         static constexpr std::string_view name = "color";
     };
+    /**
+     * @brief displays an enum as a dropdown
+    */
     struct MEnum {
         static constexpr std::string_view name = "enum";
         static auto imgui_callback_adapter(void* data, int idx, char const** out_text) -> bool {
@@ -53,8 +72,16 @@ namespace PTS {
             *out_text = enum_info->get_name(idx);
             return true;
         }
-        auto (*get_name)(int idx) -> char const*;
         int num_items;
+        auto (*get_name)(int idx) -> char const*;
+    };
+    /**
+     * @brief displays a multi-select enum as a dropdown
+    */
+    struct MEnumFlags {
+        static constexpr std::string_view name = "enum flags";
+        int num_items;
+        auto (*get_name)(int idx) -> char const*;
     };
 
 #define STR(x) #x
@@ -65,22 +92,6 @@ namespace PTS {
     static constexpr int _init_count = _counter;\
     using _my_type = _cls
 
-#define FIELD_IMPL(_counter, _var_type, _var_name)\
-    _var_type _var_name;\
-    template<typename fake> struct _field_info<(_counter) - _init_count - 1, fake> {\
-        static constexpr std::string_view var_name = STR(_var_name);\
-        static constexpr std::string_view type_name = STR(_var_type);\
-        static constexpr auto offset = offsetof(_my_type, _var_name);\
-        using type = _var_type;\
-        static constexpr type& get(_my_type& obj) {\
-            return obj._var_name;\
-        }\
-        static constexpr type const& get(_my_type const& obj) {\
-            return obj._var_name;\
-        }\
-        template<typename Modifier>\
-        static constexpr auto get_modifier() -> std::optional<Modifier> { return std::nullopt; }\
-    }
 #define FIELD_IMPL_MOD(_counter, _var_type, _var_name, _init, ...)\
     _var_type _var_name = _init;\
     template<typename fake> struct _field_info<(_counter) - _init_count - 1, fake> {\
@@ -88,12 +99,16 @@ namespace PTS {
         static constexpr std::string_view type_name = STR(_var_type);\
         static constexpr auto modifiers = ModifierPack {__VA_ARGS__};\
         static constexpr auto offset = offsetof(_my_type, _var_name);\
+        static inline _var_type default_value = _init;\
         using type = _var_type;\
         static constexpr type& get(_my_type& obj) {\
             return obj._var_name;\
         }\
         static constexpr type const& get(_my_type const& obj) {\
             return obj._var_name;\
+        }\
+        static type const& get_default() {\
+            return default_value;\
         }\
         template<typename Modifier>\
         static constexpr auto get_modifier() -> std::optional<Modifier> {\
@@ -105,6 +120,28 @@ namespace PTS {
             });\
             return ret;\
         }\
+        using CallbackType = std::function<void(_var_type&, _var_type&, _my_type&)>;\
+        static auto register_on_change_callback(CallbackType callback) {\
+            _on_change_callbacks.emplace_back(std::move(callback));\
+            return _on_change_callbacks.size() - 1;\
+        }\
+        static void on_change(_var_type old_val, _var_type new_val, _my_type& obj) {\
+            for (auto& callback : _on_change_callbacks) {\
+                callback(old_val, new_val, obj);\
+            }\
+        }\
+        static void unregister_on_change_callback(int idx) {\
+            if (idx < 0 || idx >= _on_change_callbacks.size()) return;\
+            _on_change_callbacks.erase(_on_change_callbacks.begin() + idx);\
+        }\
+        static void unregister_all_on_change_callbacks() {\
+            _on_change_callbacks.clear();\
+        }\
+        static void set_default(type const& val) {\
+            default_value = val;\
+        }\
+private:\
+        static inline std::vector<CallbackType> _on_change_callbacks;\
     }
 #define END_REFLECT_IMPL(_counter)\
 public:\
@@ -122,7 +159,6 @@ public:\
     static constexpr int num_members = (_counter) - _init_count - 1
 
 #define BEGIN_REFLECT(cls) BEGIN_REFLECT_IMPL(cls, __COUNTER__)
-#define FIELD(type, var_name) FIELD_IMPL(__COUNTER__, type, var_name)
 #define FIELD_MOD(type, var_name, init, ...) FIELD_IMPL_MOD(__COUNTER__, type, var_name, init, __VA_ARGS__)
 #define END_REFLECT() END_REFLECT_IMPL(__COUNTER__)
 
@@ -153,4 +189,4 @@ public:\
         static auto test(...) -> std::false_type;
         static constexpr bool value = decltype(test<T>(0))::value;
     };
-}
+} // namespace PTS

@@ -10,6 +10,7 @@
 enum class EditableChangeType {
     TRANSFORM,
     MATERIAL,
+    EDIT_FLAGS,
     OTHER
 };
 

@@ -44,13 +44,16 @@ namespace PTS {
 			}
 		});
 	}
-
+	
 	template<typename Reflected, typename = std::enable_if_t<is_reflectable<Reflected>::value>>
 	auto from_json(nlohmann::json const& json, Reflected& reflected) -> void {
 		Reflected::for_each_field([&reflected, &json](auto field) {
 			if (field.template get_modifier<MSerialize>()) {
 				if (json.count(field.var_name)) {
 					from_json(json.at(field.var_name), field.get(reflected));
+				} else {
+					// use default value if not present in json
+					field.get(reflected) = field.get_default();
 				}
 			}
 		});

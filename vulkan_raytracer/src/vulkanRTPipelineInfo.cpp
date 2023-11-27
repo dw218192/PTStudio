@@ -35,7 +35,7 @@ namespace PTS {
             default:
                 return shaderc_shader_kind::shaderc_glsl_infer_from_source;
             }
-            };
+        };
 
         try {
             auto compiler = shaderc::Compiler{};

@@ -10,6 +10,8 @@
 #include "utils.h"
 #include "reflection.h"
 #include "boundingBox.h"
+#include "editFlags.h"
+
 namespace PTS {
     /**
      * \brief If the object is a primitive, this enum will be used to determine which primitive it is
@@ -56,6 +58,16 @@ namespace PTS {
         NODISCARD auto get_material() const noexcept -> auto const& {
             return m_mat;
         }
+        auto get_primitive_type() const noexcept -> PrimitiveType {
+            return m_primitive_type;
+        }
+        auto get_edit_flags() const noexcept {
+            return m_flags;
+        }
+        auto is_primitive() const noexcept -> bool {
+            return m_primitive_type != PrimitiveType::None;
+        }
+
         auto set_transform(Transform transform) noexcept -> void {
             m_transform = std::move(transform);
         }
@@ -65,29 +77,29 @@ namespace PTS {
         auto set_material(Material mat) noexcept -> void {
             m_mat = std::move(mat);
         }
-
-        auto is_primitive() const noexcept -> bool {
-            return m_primitive_type != PrimitiveType::None;
-        }
-        auto get_primitive_type() const noexcept -> PrimitiveType {
-            return m_primitive_type;
+        auto set_edit_flags(int flags) noexcept -> void {
+            m_flags = static_cast<EditFlags>(flags);
         }
     private:
         BEGIN_REFLECT(Object);
         FIELD_MOD(BoundingBox, m_local_bound, {},
-            MSerialize{});
+            MSerialize{}, MNoInspect{});
         FIELD_MOD(Transform, m_transform, {},
-            MSerialize{});
+            MSerialize{}, MNoInspect{}); // handled explicitly
         FIELD_MOD(Material, m_mat, {},
             MSerialize{});
         FIELD_MOD(std::vector<Vertex>, m_vertices, {},
-            MSerialize{});
+            MSerialize{}, MNoInspect{});
         FIELD_MOD(std::vector<unsigned>, m_indices, {},
-            MSerialize{});
+            MSerialize{}, MNoInspect{});
         FIELD_MOD(std::string, m_name, "Object",
-            MSerialize{});
+            MSerialize{}, MNoInspect{}); // handled explicitly
         FIELD_MOD(PrimitiveType, m_primitive_type, PrimitiveType::None,
-            MSerialize{});
+            MSerialize{}, MNoInspect{});
+        FIELD_MOD(EditFlags, m_flags, static_cast<EditFlags>(EditFlags::Visible | EditFlags::Editable),
+            MSerialize{}, edit_flags_modifier
+        );
+
         END_REFLECT();
     };
 }

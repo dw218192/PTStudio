@@ -129,8 +129,8 @@ void main() {
             0 // payload location
         );
         if (payload.done) {
-            // TODO: fix this hack
-            color *= payload.Li * 2.0;
+            // TODO: remove this hack
+            color *= payload.Li * 2.;
             break;
         } else {
             if (payload.pdf <= Epsilon || payload.Li == vec3(0.0) || payload.wi == vec3(0.0)) {
@@ -210,8 +210,7 @@ void main() {
 
     // gl_ObjectToWorldEXT is a 4x3 matrix (4 columns, 3 rows)    
     vec3 posW = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT;
-    mat3 inner = mat3(gl_ObjectToWorldEXT[0].xyz, gl_ObjectToWorldEXT[1].xyz, gl_ObjectToWorldEXT[2].xyz);
-    mat3 invTrans = transpose(inverse(inner));
+    mat3 invTrans = transpose(inverse(mat3(gl_ObjectToWorldEXT)));
     vec3 nW = normalize(invTrans * n);
 
     MaterialData material = materials[nonuniformEXT(gl_InstanceCustomIndexEXT)];

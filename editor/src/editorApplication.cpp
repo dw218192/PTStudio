@@ -44,6 +44,57 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config)
     add_renderer(std::make_unique<EditorRenderer>(config));
     add_renderer(std::make_unique<VulkanRayTracingRenderer>(config));
     create_input_actions();
+
+    // register field change callbacks
+    Object::for_each_field([this](auto field) {
+        using type = typename decltype(field)::type;
+        if constexpr (std::is_same_v<type, Material>) {
+            field.register_on_change_callback([this](Material& old_val, Material& new_val, Object& obj) {
+                if (!m_control_state.get_cur_obj() || 
+                    m_control_state.get_cur_obj()->get_addr() != &obj) {
+                    return;
+                }
+                on_editable_change(obj, EditableChangeType::MATERIAL);
+            });
+        } else if constexpr (std::is_same_v<type, Transform>) {
+            field.register_on_change_callback([this](Transform& old_val, Transform& new_val, Object& obj) {
+                if (!m_control_state.get_cur_obj() || 
+                    m_control_state.get_cur_obj()->get_addr() != &obj) {
+                    return;
+                }
+                on_editable_change(obj, EditableChangeType::TRANSFORM);
+            });
+        } else if constexpr (std::is_same_v<type, EditFlags>) {
+            field.register_on_change_callback([this](EditFlags& old_val, EditFlags& new_val, Object& obj) {
+                if (!m_control_state.get_cur_obj() || 
+                    m_control_state.get_cur_obj()->get_addr() != &obj) {
+                    return;
+                }
+                on_editable_change(obj, EditableChangeType::EDIT_FLAGS);
+            });
+        }
+    });
+
+    Light::for_each_field([this](auto field) {
+        using type = typename decltype(field)::type;
+        if constexpr (std::is_same_v<type, Transform>) {
+            field.register_on_change_callback([this](Transform& old_val, Transform& new_val, Light& light) {
+                if (!m_control_state.get_cur_obj() || 
+                    m_control_state.get_cur_obj()->get_addr() != &light) {
+                    return;
+                }
+                on_editable_change(light, EditableChangeType::TRANSFORM);
+            });
+        } else if constexpr (std::is_same_v<type, EditFlags>) {
+            field.register_on_change_callback([this](EditFlags& old_val, EditFlags& new_val, Light& light) {
+                if (!m_control_state.get_cur_obj() || 
+                    m_control_state.get_cur_obj()->get_addr() != &light) {
+                    return;
+                }
+                on_editable_change(light, EditableChangeType::EDIT_FLAGS);
+            });
+        }
+    });
 }
 
 void EditorApplication::create_input_actions() noexcept {
@@ -413,15 +464,9 @@ void EditorApplication::draw_object_panel() noexcept {
 
             // editable-specific fields
             if (auto const obj = editable.as<Object>()) {
-                auto mat = obj->get_material();
-                if (ImGui::ReflectedField("Material", mat)) {
-                    obj->set_material(mat);
-                    on_editable_change(editable, EditableChangeType::MATERIAL);
-                }
+                ImGui::ReflectedField("Object Data", *obj);
             } else if (auto const light = editable.as<Light>()) {
-                if (ImGui::ReflectedField("Light", *light)) {
-                    on_editable_change(editable, EditableChangeType::OTHER);
-                }
+                ImGui::ReflectedField("Light", *light);
             }
         } else {
             ImGui::Text("No object selected");

@@ -4,6 +4,7 @@
 #include "transform.h"
 #include "reflection.h"
 #include "utils.h"
+#include "editFlags.h"
 
 
 namespace PTS {
@@ -46,11 +47,13 @@ namespace PTS {
         NODISCARD auto get_color() const noexcept -> auto const& { return m_color; }
         NODISCARD auto get_intensity() const noexcept { return m_intensity; }
         NODISCARD auto get_transform() const noexcept -> auto const& { return m_transform; }
+        NODISCARD auto get_edit_flags() const noexcept -> EditFlags { return m_flags; }
 
         void set_name(std::string_view name) noexcept { m_name = name; }
         void set_color(glm::vec3 color) noexcept { m_color = color; }
         void set_intensity(float intensity) noexcept { m_intensity = intensity; }
         void set_transform(Transform transform) noexcept { m_transform = std::move(transform); }
+        void set_edit_flags(int flags) noexcept { m_flags = static_cast<EditFlags>(flags); }
 
         auto get_data() const noexcept -> LightData {
             return {
@@ -68,6 +71,7 @@ namespace PTS {
         FIELD_MOD(LightType, m_type, LightType::Point,
             MSerialize{},
             MEnum {
+                4,
                 [] (int idx) -> char const* {
                     switch (idx) {
                     case 0: return "Directional";
@@ -76,8 +80,7 @@ namespace PTS {
                     case 3: return "Mesh";
                     default: return "Unknown";
                     }
-                },
-                4
+                }
             }
         );
         FIELD_MOD(glm::vec3, m_color, {},
@@ -86,6 +89,9 @@ namespace PTS {
             MSerialize{}, MRange{ 0.0f, 100.0f });
         FIELD_MOD(Transform, m_transform, {},
             MSerialize{}, MNoInspect{}); // handled explicitly
+        FIELD_MOD(EditFlags, m_flags, static_cast<EditFlags>(EditFlags::Visible | EditFlags::Editable),
+            MSerialize{}, edit_flags_modifier
+        );
         END_REFLECT();
     };
 }

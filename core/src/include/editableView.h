@@ -1,6 +1,7 @@
 #pragma once
 #include "transform.h"
 #include "reflection.h"
+#include "editFlags.h"
 #include <memory>
 
 namespace PTS {
@@ -8,6 +9,7 @@ namespace PTS {
         virtual ~ConstEditableInterface() = default;
         virtual auto get_name() const noexcept -> std::string_view = 0;
         virtual auto get_transform() const noexcept -> Transform const& = 0;
+        virtual auto get_edit_flags() const noexcept -> EditFlags = 0;
         virtual auto get_class_name() const noexcept -> std::string_view = 0;
         virtual auto get_addr() const noexcept -> void const* = 0;
     };
@@ -15,6 +17,7 @@ namespace PTS {
     struct EditableInterface : ConstEditableInterface {
         virtual auto set_name(std::string_view name) noexcept -> void = 0;
         virtual auto set_transform(Transform transform) noexcept -> void = 0;
+        virtual auto set_edit_flags(int flags) noexcept -> void = 0;
         virtual auto get_addr() noexcept -> void* = 0;
     };
     /**
@@ -47,6 +50,12 @@ namespace PTS {
             }
             auto get_transform() const noexcept -> Transform const& override {
                 return m_obj.get().get_transform();
+            }
+            auto get_edit_flags() const noexcept -> EditFlags override {
+                return m_obj.get().get_edit_flags();
+            }
+            auto set_edit_flags(int flags) noexcept -> void override {
+                m_obj.get().set_edit_flags(flags);
             }
             auto set_transform(Transform transform) noexcept -> void override {
                 m_obj.get().set_transform(std::move(transform));
@@ -132,6 +141,9 @@ namespace PTS {
             }
             auto get_transform() const noexcept -> Transform const& override {
                 return m_obj.get().get_transform();
+            }
+            auto get_edit_flags() const noexcept -> EditFlags override {
+                return m_obj.get().get_edit_flags();
             }
             auto get_class_name() const noexcept -> std::string_view override {
                 return T::get_class_name();
