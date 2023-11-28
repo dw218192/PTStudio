@@ -557,7 +557,6 @@ auto PTS::VulkanRayTracingRenderer::init(ObserverPtr<Application> app) noexcept
     device_ext.emplace_back(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
     device_ext.emplace_back(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
     device_ext.emplace_back(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
-    device_ext.emplace_back(VK_KHR_RAY_TRACING_POSITION_FETCH_EXTENSION_NAME);
 
     // add descriptor indexing extension
     device_ext.emplace_back(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
@@ -568,7 +567,6 @@ auto PTS::VulkanRayTracingRenderer::init(ObserverPtr<Application> app) noexcept
         vk::PhysicalDeviceBufferDeviceAddressFeatures,
         vk::PhysicalDeviceRayTracingPipelineFeaturesKHR,
         vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
-        vk::PhysicalDeviceRayTracingPositionFetchFeaturesKHR,
         vk::PhysicalDeviceDescriptorIndexingFeaturesEXT
     >;
 	TL_TRY_ASSIGN(m_vk_device, create_device(m_vk_ins, device_ext, std::function {
@@ -581,8 +579,6 @@ auto PTS::VulkanRayTracingRenderer::init(ObserverPtr<Application> app) noexcept
                     .setRayTracingPipeline(true),
                 vk::PhysicalDeviceAccelerationStructureFeaturesKHR{}
                     .setAccelerationStructure(true),
-                vk::PhysicalDeviceRayTracingPositionFetchFeaturesKHR{}
-                    .setRayTracingPositionFetch(true),
                 vk::PhysicalDeviceDescriptorIndexingFeaturesEXT{}
                     .setDescriptorBindingPartiallyBound(true)
                     .setDescriptorBindingVariableDescriptorCount(true)
