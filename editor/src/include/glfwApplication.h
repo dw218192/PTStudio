@@ -68,6 +68,8 @@ namespace PTS {
 		auto set_min_frame_time(float min_frame_time) noexcept { m_min_frame_time = min_frame_time; }
 		[[nodiscard]] auto get_min_frame_time() const noexcept { return m_min_frame_time; }
 
+        auto set_log_flush_interval(float interval_secs) { m_log_flush_interval = interval_secs; }
+
 	protected:
 		glm::vec2 m_mouse_scroll_delta;
 		glm::vec2 m_mouse_pos;
@@ -80,6 +82,8 @@ namespace PTS {
 		GLFWwindow* m_window;
 		DebugDrawer m_debug_drawer;
 		float m_min_frame_time;
+		float m_log_flush_interval{ 5.0f };
+		float m_log_flush_timer{ 0.0f };
 		float m_delta_time{0.0f};
 
 		// used to help detect if the mouse enters/leaves certain imgui windows

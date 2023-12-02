@@ -62,17 +62,17 @@ private:
     void on_render_config_change(RenderConfig const& conf);
     void on_mouse_leave_scene_viewport() noexcept;
     void on_mouse_enter_scene_viewport() noexcept;
-    void on_obj_change(std::optional<EditableView> editable) noexcept;
+    void on_obj_change(ObserverPtr<SceneObject> editable) noexcept;
 
     // other helpers
     void try_select_object() noexcept;
     void handle_input(InputEvent const& event) noexcept override;
 
-    void add_object(Object obj) noexcept;
-    void add_light(Light light) noexcept;
-    void remove_editable(EditableView editable);
-    void on_add_editable(EditableView editable);
-    void on_editable_change(EditableView editable, EditableChangeType type);
+    void add_object(RenderableObject&& obj) noexcept;
+    void add_light(Light&& light) noexcept;
+    void remove_editable(Ref<SceneObject> editable);
+    void on_add_editable(Ref<SceneObject> editable);
+    void on_editable_change(Ref<SceneObject> editable, SceneObjectChangeType type);
 	void on_log_added() override;
     auto get_cur_renderer() noexcept -> Renderer&;
 
@@ -96,9 +96,9 @@ private:
     GLTextureRef m_light_icon_tex;
 
     struct ControlState {
-        using ObjChangeCallback = std::function<void(std::optional<EditableView>)>;
+        using ObjChangeCallback = std::function<void(ObserverPtr<SceneObject>)>;
 
-        void set_cur_obj(std::optional<EditableView> obj) noexcept;
+        void set_cur_obj(ObserverPtr<SceneObject> obj) noexcept;
         auto get_cur_obj() const noexcept { return m_cur_obj; }
         void register_on_obj_change(ObjChangeCallback callback) noexcept;
 
@@ -116,9 +116,10 @@ private:
             glm::vec3 snap_scale{ 1.0 };
         } gizmo_state{ };
 
-        bool unlimited_fps{ false };
+        bool unlimited_fps{ true };
+        bool disable_log_flush{ true };
     private:
-        std::optional<EditableView> m_cur_obj;
+        ObserverPtr<SceneObject> m_cur_obj { nullptr };
         std::vector<ObjChangeCallback> m_obj_change_callbacks;
     } m_control_state;
 };

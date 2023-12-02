@@ -81,7 +81,7 @@
 [[nodiscard]] auto PTS::VulkanBottomAccelStructInfo::create(
     VulkanDeviceInfo const& dev,
     VulkanCmdPoolInfo const& cmd_pool,
-    Object const& obj
+    RenderableObject const& obj
 ) -> tl::expected<VulkanBottomAccelStructInfo, std::string>
 {
     // note: transform will be later applied to the instances of the acceleration structure

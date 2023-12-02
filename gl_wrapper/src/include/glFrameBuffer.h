@@ -20,25 +20,6 @@ namespace PTS {
 	};
 
 	/**
-	 * @brief the default frame buffer object that is created by the window
-	 * @details rendering to this buffer is the same as rendering to the screen
-	 */
-	namespace MainFrameBuffer {
-		[[nodiscard]] auto bind() noexcept -> tl::expected<void, std::string>;
-
-		/**
-		 * @brief clear the frame buffer
-		 * @param color the color to clear to
-		 * @param depth the depth to clear to
-		 * @return error message on failure
-		 */
-		[[nodiscard]] auto clear(glm::vec3 color, float depth) noexcept -> tl::expected<void, std::string>;
-		void set(GLbitfield mask);
-
-		static inline GLbitfield s_attachment_flags{ 0 };
-	}
-
-	/**
 	 * @brief a frame buffer object
 	 * @details a frame buffer object is a collection of buffers that can be used as the destination for rendering\N
 	 * only supports color render buffers and depth render buffers for now

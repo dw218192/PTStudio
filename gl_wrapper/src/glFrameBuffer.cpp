@@ -24,26 +24,6 @@ static constexpr GLenum k_color_attachments[] = {
 	GL_COLOR_ATTACHMENT15,
 };
 
-auto MainFrameBuffer::bind() noexcept -> tl::expected<void, std::string> {
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	CHECK_GL_ERROR();
-	return {};
-}
-
-auto MainFrameBuffer::clear(glm::vec3 color, float depth) noexcept -> tl::expected<void, std::string> {
-	glClearColor(color.r, color.g, color.b, 1.0f);
-	CHECK_GL_ERROR();
-	glClearDepth(depth);
-	CHECK_GL_ERROR();
-	glClear(s_attachment_flags);
-	CHECK_GL_ERROR();
-	return {};
-}
-
-void MainFrameBuffer::set(GLbitfield mask) {
-	s_attachment_flags = mask;
-}
-
 auto GLFrameBuffer::create() -> tl::expected<GLFrameBufferRef, std::string> {
 	GLuint fbo;
 	glGenFramebuffers(1, &fbo);

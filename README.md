@@ -28,16 +28,10 @@ git clone --recursive [repo url]
 ## Roadmap (As of 2023/11/26)
 - High Priority
     - [x] implement renderer switcher
-    - [ ] implement the ability to append custom data to scene objects
-        - [ ] possible strategy: a component system, we can attach a component to a scene object
-        - [ ] problem: how to handle dynamically registered component types? 
-            - requirement for component class:
-                - no inheritance (our reflection system doesn't support inheritance)
-                - must be serializable (i.e. must have a default constructor)
-                - must be reflectable
-                - can be constructed given its class name
     - [x] implement performance display
-        - [ ] fix FPS display bug
+        - [x] fix FPS display bug
+    - [ ] implement child object
+        - [ ] a child object's transform is updated when its parent's transform is updated
     - [ ] Editing Improvements
         - [ ] put mesh loading in a separate thread
         - [ ] adaptive grid resizing
@@ -48,11 +42,22 @@ git clone --recursive [repo url]
     - [ ] emissive material should be considered as a light source in editor renderer
     - [ ] lights should be considered in vulkan ray tracer
     - [ ] fix sphere primitive uv bug
+    - [ ] reflection system improvements
+        - [ ] support for inheritance
+        - [ ] support for reference and pointer members
 - Medium Priority
     - [ ] implement undo/redo system
     - [ ] fix GLTexture::save() bug
     - [ ] fix potential bugs in GL wrapper classes (usage of std::swap in move might swap in uninitialized data)
-    - [ ] log flush timer
+    - [x] log flush timer
+    - [ ] add the ability to append custom data to scene objects
+        - [ ] possible strategy: a component system, we can attach a component to a scene object
+        - [ ] problem: how to handle dynamically registered component types? 
+            - requirement for component class:
+                - no inheritance (our reflection system doesn't support inheritance)
+                - must be serializable (i.e. must have a default constructor)
+                - must be reflectable
+                - can be constructed given its class name
 - Low Priority
     - [ ] implement scene object hierarchy
     - [ ] implement asset system

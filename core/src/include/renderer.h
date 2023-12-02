@@ -3,11 +3,12 @@
 #include "scene.h"
 #include "camera.h"
 #include "renderConfig.h"
+#include "sceneObject.h"
 #include "utils.h"
 
 #include <tl/expected.hpp>
 
-enum class EditableChangeType {
+enum class SceneObjectChangeType {
     TRANSFORM,
     MATERIAL,
     EDIT_FLAGS,
@@ -42,14 +43,14 @@ namespace PTS {
          * \param editable The editable that was added
          * \return on failure, an error message
         */
-        NODISCARD virtual auto on_add_editable(EditableView editable) noexcept -> tl::expected<void, std::string> = 0;
+        NODISCARD virtual auto on_add_obj(Ref<SceneObject> editable) noexcept -> tl::expected<void, std::string> = 0;
 
         /**
          * \brief Called when an object is removed from the scene
          * \param editable The editable that was removed
          * \return on failure, an error message
         */
-        NODISCARD virtual auto on_remove_editable(EditableView editable) noexcept -> tl::expected<void, std::string> = 0;
+        NODISCARD virtual auto on_remove_obj(Ref<SceneObject> editable) noexcept -> tl::expected<void, std::string> = 0;
 
         /**
          * \brief Called when an editable is changed in any way (transform, material, etc.)
@@ -57,14 +58,7 @@ namespace PTS {
          * \param type The type of change that was made
          * \return on failure, an error message
         */
-        NODISCARD virtual auto on_editable_change(EditableView editable, EditableChangeType type) noexcept -> tl::expected<void, std::string> = 0;
-
-        /**
-         * \brief Renders the scene directly in the window
-         * \param camera The camera to view the scene from
-         * \return on failure, an error message
-         */
-        NODISCARD virtual auto render(View<Camera> camera) noexcept -> tl::expected<void, std::string> = 0;
+        NODISCARD virtual auto on_obj_change(Ref<SceneObject> editable, SceneObjectChangeType type) noexcept -> tl::expected<void, std::string> = 0;
 
         /**
          * \brief Renders the scene to a texture
@@ -73,7 +67,7 @@ namespace PTS {
          * on success, a handle to the texture containing the rendered scene
          * \note The texture is owned by the renderer and will be deleted when the renderer is destroyed
          */
-        NODISCARD virtual auto render_buffered(View<Camera> camera) noexcept -> tl::expected<TextureHandle, std::string> = 0;
+        NODISCARD virtual auto render(View<Camera> camera) noexcept -> tl::expected<TextureHandle, std::string> = 0;
 
         /**
          * \brief Checks if the renderer is initialized and valid.

@@ -1,10 +1,9 @@
 #pragma once
 
 #include <tl/expected.hpp>
-#include "transform.h"
 #include "reflection.h"
 #include "utils.h"
-#include "editFlags.h"
+#include "sceneObject.h"
 
 
 namespace PTS {
@@ -38,34 +37,26 @@ namespace PTS {
 
     static_assert(sizeof(LightData) == 36, "LightData size mismatch");
 
-    struct Light {
+    struct Light : SceneObject {
         Light() noexcept = default;
-        Light(Scene const& scene, glm::vec3 color, float intensity, Transform transform) noexcept;
-        Light(glm::vec3 color, float intensity, Transform transform) noexcept;
+        Light(Scene const& scene, Transform transform, glm::vec3 color, float intensity) noexcept;
 
-        NODISCARD auto get_name() const noexcept -> std::string_view { return m_name; }
         NODISCARD auto get_color() const noexcept -> auto const& { return m_color; }
         NODISCARD auto get_intensity() const noexcept { return m_intensity; }
-        NODISCARD auto get_transform() const noexcept -> auto const& { return m_transform; }
-        NODISCARD auto get_edit_flags() const noexcept -> EditFlags { return m_flags; }
-
-        void set_name(std::string_view name) noexcept { m_name = name; }
         void set_color(glm::vec3 color) noexcept { m_color = color; }
         void set_intensity(float intensity) noexcept { m_intensity = intensity; }
-        void set_transform(Transform transform) noexcept { m_transform = std::move(transform); }
-        void set_edit_flags(int flags) noexcept { m_flags = static_cast<EditFlags>(flags); }
 
         auto get_data() const noexcept -> LightData {
             return {
                 m_color,
                 m_intensity,
-                m_transform.get_position(),
+                get_transform().get_position(),
                 static_cast<int>(m_type),
             };
         }
 
     private:
-        BEGIN_REFLECT(Light);
+        BEGIN_REFLECT_INHERIT(Light, SceneObject);
         FIELD_MOD(std::string, m_name, "Light",
             MSerialize{}, MNoInspect{}); // handled explicitly
         FIELD_MOD(LightType, m_type, LightType::Point,
@@ -87,11 +78,6 @@ namespace PTS {
             MSerialize{}, MColor{});
         FIELD_MOD(float, m_intensity, {},
             MSerialize{}, MRange{ 0.0f, 100.0f });
-        FIELD_MOD(Transform, m_transform, {},
-            MSerialize{}, MNoInspect{}); // handled explicitly
-        FIELD_MOD(EditFlags, m_flags, static_cast<EditFlags>(EditFlags::Visible | EditFlags::Editable),
-            MSerialize{}, edit_flags_modifier
-        );
-        END_REFLECT();
+        END_REFLECT_INHERIT();
     };
 }

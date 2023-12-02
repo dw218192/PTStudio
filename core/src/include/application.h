@@ -23,7 +23,7 @@ namespace PTS {
         virtual ~Application() = default;
         virtual void run() = 0;
 
-        auto set_max_log_cnt(unsigned cnt) -> void { m_max_line_cnt = cnt; }
+        auto set_max_log_cnt(unsigned cnt) { m_max_line_cnt = cnt; }
         /**
          * \brief Terminates the program with the given exit code
          * \param code the exit code
@@ -68,6 +68,7 @@ namespace PTS {
         };
         virtual void on_log_added() = 0;
         NODISCARD auto get_logs() const -> View<std::deque<LogDesc>> { return m_logs; }
+        auto clear_logs() { m_logs.clear(); }
 
     private:
         unsigned m_max_line_cnt{ 5 };

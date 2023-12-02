@@ -11,6 +11,7 @@ namespace ImGui {
     bool ReflectedField(const char* label, Reflected& reflected, bool collapsed = false);
 
     namespace detail {
+        // tag types for dispatching
         struct EnumType {};
         struct ReflectedType {};
 
@@ -130,7 +131,7 @@ namespace ImGui {
                         if (*field_int & (1 << i)) {
                             preview += enum_flags_mod->get_name(i);
                             if (i < enum_flags_mod->num_items - 1)
-                                preview += ",";
+                                preview.push_back(',');
                         }
                     }
                     if (ImGui::BeginCombo(field_info.var_name.data(), preview.c_str())) {

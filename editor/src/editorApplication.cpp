@@ -1,13 +1,17 @@
 #include "editorApplication.h"
 #include "debugDrawer.h"
 #include "editorResources.h"
+#include "editorRenderer.h"
+#include "sceneObject.h"
+#include "scene.h"
+#include "camera.h"
+#include "renderableObject.h"
+#include "light.h"
 
 #include "imgui/editorFields.h"
 #include "imgui/fileDialogue.h"
 #include "imgui/imhelper.h"
 #include "imgui/reflectedField.h"
-
-#include "editorRenderer.h"
 
 #include "vulkanRayTracingRenderer.h"
 #include "boundingVolume.h"
@@ -42,35 +46,35 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config)
     m_on_mouse_leave_scene_viewport_cb = [this] { on_mouse_leave_scene_viewport(); };
     m_on_mouse_enter_scene_viewport_cb = [this] { on_mouse_enter_scene_viewport(); };
     add_renderer(std::make_unique<EditorRenderer>(config));
-    add_renderer(std::make_unique<VulkanRayTracingRenderer>(config));
+    // add_renderer(std::make_unique<VulkanRayTracingRenderer>(config));
     create_input_actions();
 
     // register field change callbacks
-    Object::for_each_field([this](auto field) {
+    RenderableObject::for_each_field([this](auto field) {
         using type = typename decltype(field)::type;
         if constexpr (std::is_same_v<type, Material>) {
-            field.register_on_change_callback([this](Material& old_val, Material& new_val, Object& obj) {
+            field.register_on_change_callback([this](Material& old_val, Material& new_val, auto& obj) {
                 if (!m_control_state.get_cur_obj() || 
-                    m_control_state.get_cur_obj()->get_addr() != &obj) {
+                    m_control_state.get_cur_obj() != &obj) {
                     return;
                 }
-                on_editable_change(obj, EditableChangeType::MATERIAL);
+                on_editable_change(obj, SceneObjectChangeType::MATERIAL);
             });
         } else if constexpr (std::is_same_v<type, Transform>) {
-            field.register_on_change_callback([this](Transform& old_val, Transform& new_val, Object& obj) {
+            field.register_on_change_callback([this](Transform& old_val, Transform& new_val, auto& obj) {
                 if (!m_control_state.get_cur_obj() || 
-                    m_control_state.get_cur_obj()->get_addr() != &obj) {
+                    m_control_state.get_cur_obj() != &obj) {
                     return;
                 }
-                on_editable_change(obj, EditableChangeType::TRANSFORM);
+                on_editable_change(obj, SceneObjectChangeType::TRANSFORM);
             });
         } else if constexpr (std::is_same_v<type, EditFlags>) {
-            field.register_on_change_callback([this](EditFlags& old_val, EditFlags& new_val, Object& obj) {
+            field.register_on_change_callback([this](EditFlags& old_val, EditFlags& new_val, auto& obj) {
                 if (!m_control_state.get_cur_obj() || 
-                    m_control_state.get_cur_obj()->get_addr() != &obj) {
+                    m_control_state.get_cur_obj() != &obj) {
                     return;
                 }
-                on_editable_change(obj, EditableChangeType::EDIT_FLAGS);
+                on_editable_change(obj, SceneObjectChangeType::EDIT_FLAGS);
             });
         }
     });
@@ -78,20 +82,20 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config)
     Light::for_each_field([this](auto field) {
         using type = typename decltype(field)::type;
         if constexpr (std::is_same_v<type, Transform>) {
-            field.register_on_change_callback([this](Transform& old_val, Transform& new_val, Light& light) {
+            field.register_on_change_callback([this](Transform& old_val, Transform& new_val, auto& light) {
                 if (!m_control_state.get_cur_obj() || 
-                    m_control_state.get_cur_obj()->get_addr() != &light) {
+                    m_control_state.get_cur_obj() != &light) {
                     return;
                 }
-                on_editable_change(light, EditableChangeType::TRANSFORM);
+                on_editable_change(light, SceneObjectChangeType::TRANSFORM);
             });
         } else if constexpr (std::is_same_v<type, EditFlags>) {
-            field.register_on_change_callback([this](EditFlags& old_val, EditFlags& new_val, Light& light) {
+            field.register_on_change_callback([this](EditFlags& old_val, EditFlags& new_val, auto& light) {
                 if (!m_control_state.get_cur_obj() || 
-                    m_control_state.get_cur_obj()->get_addr() != &light) {
+                    m_control_state.get_cur_obj() != &light) {
                     return;
                 }
-                on_editable_change(light, EditableChangeType::EDIT_FLAGS);
+                on_editable_change(light, SceneObjectChangeType::EDIT_FLAGS);
             });
         }
     });
@@ -100,8 +104,8 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config)
 void EditorApplication::create_input_actions() noexcept {
     // initialize input actions
     auto obj_selected = InputActionConstraint { [this] (InputEvent const&) {
-        return m_control_state.get_cur_obj() && m_control_state.get_cur_obj().has_value();
-    }};
+        return m_control_state.get_cur_obj() && m_control_state.get_cur_obj();
+    }}; 
     auto using_gizmo = InputActionConstraint { [this] (InputEvent const&) {
         return ImGuizmo::IsUsing();
     }};
@@ -119,6 +123,12 @@ void EditorApplication::create_input_actions() noexcept {
     }};
 
     // object manipulation
+    auto get_cam_accel_factor = [this] () {
+        // zoom and move faster if we are far away from the origin
+        auto dist = glm::length(m_cam.get_eye());
+        auto accel_factor = dist / 3.0f * get_delta_time();
+        return accel_factor;
+    };
 
     auto translate_mode = InputAction {{ InputType::KEYBOARD, ActionType::PRESS, ImGuiKey_W },
         [this] (InputEvent const& event) {
@@ -147,16 +157,16 @@ void EditorApplication::create_input_actions() noexcept {
                 || get_cur_focused_widget() == k_scene_setting_win_name)
                 && get_cur_focused_widget() == get_cur_hovered_widget())
             {
-                remove_editable(m_control_state.get_cur_obj().value());
+                remove_editable(*m_control_state.get_cur_obj());
             }
         }
     };
     auto focus_on_obj = InputAction {{InputType::KEYBOARD, ActionType::PRESS, ImGuiKey_F },
         [this] (InputEvent const& event) {
             BoundingBox local_bound;
-            if (auto obj = m_control_state.get_cur_obj().value().as<Object>()) {
+            if (auto obj = dynamic_cast<RenderableObject*>(m_control_state.get_cur_obj())) {
                 local_bound = obj->get_bound();
-            } else if (auto light = m_control_state.get_cur_obj().value().as<Light>()) {
+            } else if (auto light = dynamic_cast<Light*>(m_control_state.get_cur_obj())) {
                 local_bound = BoundingBox{ glm::vec3 { -0.5f }, glm::vec3 { 0.5f } };
             }
             LookAtParams params;
@@ -176,24 +186,26 @@ void EditorApplication::create_input_actions() noexcept {
     };
     auto deselect_obj = InputAction {{InputType::KEYBOARD, ActionType::PRESS, ImGuiKey_Escape },
         [this] (InputEvent const& event) {
-            m_control_state.set_cur_obj(std::nullopt);
+            m_control_state.set_cur_obj(nullptr);
         }
     };
 
     auto cam_pedestal = InputAction {{InputType::MOUSE, ActionType::HOLD, ImGuiMouseButton_Middle}, 
-        [this] (InputEvent const& event) {
-            m_cam.set_delta_dolly({
+        [this, get_cam_accel_factor] (InputEvent const& event) {
+            auto pedestal = glm::vec3{
                 0, m_control_state.move_sensitivity * event.normalized_mouse_delta.y, 0
-            });
+            };
+            m_cam.set_delta_dolly(pedestal * get_cam_accel_factor());
         }
     };
     auto cam_pan = InputAction {{InputType::MOUSE, ActionType::HOLD, ImGuiMouseButton_Left },
-        [this] (InputEvent const& event) {
-            m_cam.set_delta_dolly({
+        [this, get_cam_accel_factor] (InputEvent const& event) {
+            auto dolly = glm::vec3{
                 -m_control_state.move_sensitivity * event.normalized_mouse_delta.x,
                 0,
                 m_control_state.move_sensitivity * event.normalized_mouse_delta.y
-            });
+            };
+            m_cam.set_delta_dolly(dolly * get_cam_accel_factor());
         }
     };
     auto cam_rotate = InputAction {{InputType::MOUSE, ActionType::HOLD, ImGuiMouseButton_Right},
@@ -206,8 +218,8 @@ void EditorApplication::create_input_actions() noexcept {
         }
     }; 
     auto cam_zoom = InputAction {{InputType::MOUSE, ActionType::SCROLL, ImGuiMouseButton_Middle },
-        [this] (InputEvent const& event) {
-            m_cam.set_delta_zoom(event.mouse_scroll_delta.y);
+        [this, get_cam_accel_factor] (InputEvent const& event) {
+            m_cam.set_delta_zoom(event.mouse_scroll_delta.y * get_cam_accel_factor());
         }
     };
 
@@ -265,8 +277,8 @@ void EditorApplication::add_renderer(std::unique_ptr<Renderer> renderer) noexcep
 
     // editor renderer-specific initialization
     if(auto p_editor_renderer = dynamic_cast<EditorRenderer*>(renderer.get()); p_editor_renderer) {
-        m_control_state.register_on_obj_change([p_editor_renderer](auto&& editable) {
-            p_editor_renderer->on_selected_editable_change(editable);
+        m_control_state.register_on_obj_change([p_editor_renderer](auto&& obj) {
+            p_editor_renderer->on_selected_editable_change(obj);
         });
     }
 
@@ -304,7 +316,7 @@ void EditorApplication::loop(float dt) {
     ImGuizmo::BeginFrame();
 
     ImGui::DockSpaceOverViewport(ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
-    auto const render_tex = check_error(get_cur_renderer().render_buffered(m_cam));
+    auto const render_tex = check_error(get_cur_renderer().render(m_cam));
 
     // draw left panel
     if (begin_imgui_window(k_scene_setting_win_name, ImGuiWindowFlags_NoMove))
@@ -363,12 +375,31 @@ void EditorApplication::draw_scene_panel() noexcept {
         }
     }
 
-    if (ImGui::CollapsingHeader("Camera Control", ImGuiTreeNodeFlags_DefaultOpen))
+    if (ImGui::CollapsingHeader("Editor Settings", ImGuiTreeNodeFlags_DefaultOpen))
     {
         ImGui::Text("Move Sensitivity");
         ImGui::SliderFloat("##Move Sensitivity", &m_control_state.move_sensitivity, 1.0f, 10.0f);
         ImGui::Text("Rotate Sensitivity");
         ImGui::SliderFloat("##Rotate Sensitivity", &m_control_state.rot_sensitivity, 2.0f, 100.0f);
+
+        bool prev_disable_log_flush = m_control_state.disable_log_flush;
+        ImGui::Checkbox("Disable Log Flush", &m_control_state.disable_log_flush);
+        if (m_control_state.disable_log_flush) {
+            m_log_flush_interval = std::numeric_limits<float>::infinity();
+        } else {
+            if (prev_disable_log_flush) {
+                m_log_flush_timer = 0.0f;
+            }
+        }
+
+        ImGui::BeginDisabled(m_control_state.disable_log_flush);
+        {
+            ImGui::Text("Log Flush Interval");
+            ImGui::SameLine();
+            
+            ImGui::SliderFloat("##Log Flush Interval", &m_log_flush_interval, 1.0f, 60.0f);
+        }
+        ImGui::EndDisabled();
     }
 
     if (ImGui::CollapsingHeader("Performance", ImGuiTreeNodeFlags_DefaultOpen))
@@ -400,9 +431,33 @@ void EditorApplication::draw_scene_panel() noexcept {
     {
         if (ImGui::BeginListBox("##Scene Objects", { 0, 200 }))
         {
-            for (auto&& editable : m_scene.get_editables()) {
-                if (ImGui::Selectable(editable.get_name().data(), m_control_state.get_cur_obj() == editable)) {
-                    m_control_state.set_cur_obj(editable);
+            for (auto editable_ref : m_scene.get_editables()) {
+                auto&& editable = editable_ref.get();
+                if (editable.get_edit_flags() & EditFlags::_NoEdit) {
+                    // should not be possible, objects with _NoEdit flag should not be in the editable list
+                    this->log(LogLevel::Error, "Editable with _NoEdit flag found in scene");
+                    continue;
+                }
+
+                auto display_name = std::string { editable.get_name() };
+                if (!(editable.get_edit_flags() & EditFlags::Visible)) {
+                    display_name += " (hidden)";
+                    ImGui::PushStyleColor(ImGuiCol_Text, { 0.5f, 0.5f, 0.5f, 1.0f });
+                }
+                if (!(editable.get_edit_flags() & EditFlags::Selectable)) {
+                    display_name += " (unselectable)";
+                    ImGui::PushStyleColor(ImGuiCol_Text, { 0.5f, 0.5f, 0.5f, 1.0f });
+                }
+
+                if (ImGui::Selectable(display_name.c_str(), m_control_state.get_cur_obj() == &editable)) {
+                    m_control_state.set_cur_obj(&editable);
+                }
+
+                if (!(editable.get_edit_flags() & EditFlags::Visible)) {
+                    ImGui::PopStyleColor();
+                }
+                if (!(editable.get_edit_flags() & EditFlags::Selectable)) {
+                    ImGui::PopStyleColor();
                 }
             }
 
@@ -412,30 +467,30 @@ void EditorApplication::draw_scene_panel() noexcept {
 
         if (ImGui::BeginMenu("Add Object")) {
             if (ImGui::MenuItem("Triangle")) {
-                add_object(Object::make_triangle_obj(m_scene, Material{}, Transform{}));
+                add_object(RenderableObject::make_triangle_obj(m_scene, Material{}, Transform{}));
             }
             if (ImGui::MenuItem("Cube")) {
-                add_object(Object::make_cube_obj(m_scene, Material{}, Transform{}));
+                add_object(RenderableObject::make_cube_obj(m_scene, Material{}, Transform{}));
             }
             if (ImGui::MenuItem("Sphere")) {
-                add_object(Object::make_sphere_obj(m_scene, Material{}, Transform{}));
+                add_object(RenderableObject::make_sphere_obj(m_scene, Material{}, Transform{}));
             }
             if (ImGui::MenuItem("Quad")) {
-                add_object(Object::make_quad_obj(m_scene, Material{}, Transform{}));
+                add_object(RenderableObject::make_quad_obj(m_scene, Material{}, Transform{}));
             }
 
             if (ImGui::MenuItem("Import .obj File")) {
                 auto const path = ImGui::FileDialogue(ImGui::FileDialogueMode::OPEN, "obj");
                 if(!path.empty()) {
                     std::string warning;
-                    auto const obj = check_error(Object::from_obj(m_scene, Material{}, path, &warning));
-                    add_object(obj);
+                    auto obj = check_error(RenderableObject::from_obj(m_scene, Material{}, path, &warning));
+                    add_object(std::move(obj));
 
                     this->log(LogLevel::Warning, warning);
                 }
             }
             if (ImGui::MenuItem("Add Light")) {
-                add_light(Light { m_scene,glm::vec3(1.0f), 1.0f, Transform{}});
+                add_light(Light { m_scene, Transform{}, glm::vec3(1.0f), 1.0f});
             }
 
             ImGui::EndMenu();
@@ -445,27 +500,24 @@ void EditorApplication::draw_scene_panel() noexcept {
 
 void EditorApplication::draw_object_panel() noexcept {
     if (ImGui::CollapsingHeader("Object Properties", ImGuiTreeNodeFlags_DefaultOpen)) {
-        if (m_control_state.get_cur_obj()) {
-            auto editable = m_control_state.get_cur_obj().value();
-
+        if (auto editable = m_control_state.get_cur_obj()) {
             // NOTE: no safety check here, cuz I'm lazy
             if (ImGui::InputText("Name", m_control_state.obj_name_buf.data(), m_control_state.obj_name_buf.size(),
-                ImGuiInputTextFlags_EnterReturnsTrue)) 
-            {
-                editable.set_name(m_control_state.obj_name_buf.data());
+                ImGuiInputTextFlags_EnterReturnsTrue)) {
+                editable->set_name(m_control_state.obj_name_buf.data());
             }
 
             auto&& gizmo_state = m_control_state.gizmo_state;
-            auto trans = editable.get_transform();
+            auto trans = editable->get_transform();
             if (ImGui::TransformField("Transform", trans, gizmo_state.op, gizmo_state.mode, gizmo_state.snap, gizmo_state.snap_scale)) {
-                editable.set_transform(trans);
-                on_editable_change(editable, EditableChangeType::TRANSFORM);
+                editable->set_transform(trans);
+                on_editable_change(*editable, SceneObjectChangeType::TRANSFORM);
             }
 
             // editable-specific fields
-            if (auto const obj = editable.as<Object>()) {
+            if (auto const obj = dynamic_cast<RenderableObject*>(editable)) {
                 ImGui::ReflectedField("Object Data", *obj);
-            } else if (auto const light = editable.as<Light>()) {
+            } else if (auto const light = dynamic_cast<Light*>(editable)) {
                 ImGui::ReflectedField("Light", *light);
             }
         } else {
@@ -558,7 +610,7 @@ void EditorApplication::draw_scene_viewport(TextureHandle render_buf) noexcept {
                 gizmo_state.snap ? glm::value_ptr(gizmo_state.snap_scale) : nullptr
             )) {
                 m_control_state.get_cur_obj()->set_transform(Transform{ mat });
-                on_editable_change(m_control_state.get_cur_obj().value(), EditableChangeType::TRANSFORM);
+                on_editable_change(*m_control_state.get_cur_obj(), SceneObjectChangeType::TRANSFORM);
             }
         }
     } else {
@@ -587,7 +639,7 @@ void EditorApplication::draw_console_panel() const noexcept {
 
 void EditorApplication::on_scene_opened(Scene const& scene) {
     m_cam.set_aspect(m_config.get_aspect());
-    m_control_state.set_cur_obj(std::nullopt);
+    m_control_state.set_cur_obj(nullptr);
 
     for (auto&& renderer : m_renderers) {
         check_error(renderer->open_scene(scene));
@@ -610,7 +662,7 @@ void EditorApplication::on_mouse_enter_scene_viewport() noexcept {
     m_control_state.is_outside_view = false;
 }
 
-void EditorApplication::on_obj_change(std::optional<EditableView> obj) noexcept {}
+void EditorApplication::on_obj_change(ObserverPtr<SceneObject> editable) noexcept {}
 
 void EditorApplication::try_select_object() noexcept {
     auto pos = ImGui::GetMousePos();
@@ -628,7 +680,7 @@ void EditorApplication::try_select_object() noexcept {
     pos = pos - win_pos.value();
     auto const ray = m_cam.viewport_to_ray(to_glm(pos), { m_config.width, m_config.height });
     if (auto const res = m_scene.ray_cast_editable(ray)) {
-        m_control_state.set_cur_obj(*res); // note: deselection is handled by key press
+        m_control_state.set_cur_obj(res); // note: deselection is handled by key press
     }
 }
 
@@ -638,7 +690,7 @@ void EditorApplication::handle_input(InputEvent const& event) noexcept {
     }
 }
 
-void EditorApplication::add_object(Object obj) noexcept {
+void EditorApplication::add_object(RenderableObject&& obj) noexcept {
     auto const pobj = m_scene.add_object(std::move(obj));
     if(!pobj) {
         this->log(LogLevel::Error, "failed to add object");
@@ -650,47 +702,52 @@ void EditorApplication::add_object(Object obj) noexcept {
     // if the scene bound is outside the sphere, move the camera to a better position
     auto const new_bbox = m_scene.get_scene_bound();
     auto const radius = glm::length(m_cam.get_eye() - m_cam.get_center());
-    auto const new_radius = new_bbox.get_extent().length();
+    auto const new_radius = glm::length(new_bbox.get_extent());
     if (new_radius > radius * 1.5f) {
         m_cam.set(m_scene.get_good_cam_start());
     }
 }
 
-void EditorApplication::add_light(Light light) noexcept {
+void EditorApplication::add_light(Light&& light) noexcept {
     auto const plight = m_scene.add_light(std::move(light));
     if (!plight) {
         this->log(LogLevel::Error, "failed to add object");
-    }
-    else {
+    } else {
         on_add_editable(*plight);
     }
 }
 
-void EditorApplication::remove_editable(EditableView editable) {
+void EditorApplication::remove_editable(Ref<SceneObject> editable) {
     for (auto&& renderer : m_renderers) {
-        check_error(renderer->on_remove_editable(editable));
+        check_error(renderer->on_remove_obj(editable));
     }
 
-    if (auto const obj = editable.as<Object>()) {
+    if (auto const obj = dynamic_cast<RenderableObject*>(&editable.get())) {
         m_scene.remove_object(*obj);
-    } else if (auto const light = editable.as<Light>()) {
+    } else if (auto const light = dynamic_cast<Light*>(&editable.get())) {
         m_scene.remove_light(*light);
     }
 
-    m_control_state.set_cur_obj(std::nullopt);
+    m_control_state.set_cur_obj(nullptr);
 }
 
-void EditorApplication::on_add_editable(EditableView editable) {
+void EditorApplication::on_add_editable(Ref<SceneObject> editable) {
     for (auto&& renderer : m_renderers) {
-        check_error(renderer->on_add_editable(editable));
+        check_error(renderer->on_add_obj(editable));
     }
     
-    m_control_state.set_cur_obj(editable);
+    m_control_state.set_cur_obj(&editable.get());
 }
 
-void EditorApplication::on_editable_change(EditableView editable, EditableChangeType type) {
+void EditorApplication::on_editable_change(Ref<SceneObject> editable, SceneObjectChangeType type) {
     for (auto&& renderer : m_renderers) {
-        check_error(renderer->on_editable_change(m_control_state.get_cur_obj().value(), type));
+        check_error(renderer->on_obj_change(editable, type));
+    }
+
+    if (type == SceneObjectChangeType::EDIT_FLAGS) {
+        if (editable.get().get_edit_flags() & EditFlags::_NoEdit) {
+            this->log(LogLevel::Error, "editable is set to no-edit through editor instead of code?");
+        }
     }
 }
 
@@ -705,7 +762,7 @@ auto EditorApplication::get_cur_renderer() noexcept -> Renderer& {
     return *m_renderers[m_control_state.cur_renderer_idx];
 }
 
-void EditorApplication::ControlState::set_cur_obj(std::optional<EditableView> obj) noexcept {
+void EditorApplication::ControlState::set_cur_obj(ObserverPtr<SceneObject> obj) noexcept {
     if (obj == m_cur_obj) {
         return;
     }

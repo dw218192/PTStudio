@@ -19,6 +19,8 @@ namespace PTS {
             MSerialize{});
         FIELD_MOD(glm::vec3, emission, glm::vec3{ 0.0f },
             MSerialize{}, MColor{});
+        FIELD_MOD(float, emission_intensity, 1.0f,
+            MSerialize{});
         END_REFLECT();
 
         bool operator==(Material const& other) const noexcept {

@@ -16,11 +16,10 @@ namespace PTS {
 		NO_COPY_MOVE(VulkanRayTracingRenderer);
 		VulkanRayTracingRenderer(RenderConfig config);
 	    [[nodiscard]] auto open_scene(View<Scene> scene) noexcept -> tl::expected<void, std::string> override;
-	    [[nodiscard]] auto on_add_editable(EditableView editable) noexcept -> tl::expected<void, std::string> override;
-	    [[nodiscard]] auto on_remove_editable(EditableView editable) noexcept -> tl::expected<void, std::string> override;
-        [[nodiscard]] auto on_editable_change(EditableView editable, EditableChangeType type) noexcept -> tl::expected<void, std::string> override;
-	    [[nodiscard]] auto render(View<Camera> camera) noexcept -> tl::expected<void, std::string> override;
-	    [[nodiscard]] auto render_buffered(View<Camera> camera) noexcept -> tl::expected<TextureHandle, std::string> override;
+	    [[nodiscard]] auto on_add_obj(Ref<SceneObject> obj) noexcept -> tl::expected<void, std::string> override;
+	    [[nodiscard]] auto on_remove_obj(Ref<SceneObject> obj) noexcept -> tl::expected<void, std::string> override;
+        [[nodiscard]] auto on_obj_change(Ref<SceneObject> obj, SceneObjectChangeType type) noexcept -> tl::expected<void, std::string> override;
+	    [[nodiscard]] auto render(View<Camera> camera) noexcept -> tl::expected<TextureHandle, std::string> override;
 	    [[nodiscard]] auto valid() const noexcept -> bool override;
 
     protected:
@@ -33,8 +32,8 @@ namespace PTS {
 
     private:
         [[nodiscard]] auto reset_path_tracing() noexcept -> tl::expected<void, std::string>;
-        [[nodiscard]] auto add_object(Object const& obj) -> tl::expected<void, std::string>;
-        [[nodiscard]] auto remove_object(Object const& obj) -> tl::expected<void, std::string>;
+        [[nodiscard]] auto add_object(RenderableObject const& obj) -> tl::expected<void, std::string>;
+        [[nodiscard]] auto remove_object(RenderableObject const& obj) -> tl::expected<void, std::string>;
 
 		VulkanInsInfo m_vk_ins;
 		VulkanDeviceInfo m_vk_device;
@@ -49,7 +48,7 @@ namespace PTS {
         struct PerObjectData {
             size_t gpu_idx{};
         };
-        std::unordered_map<ViewPtr<Object>, PerObjectData> m_obj_data;
+        std::unordered_map<ViewPtr<RenderableObject>, PerObjectData> m_obj_data;
 
         struct EditingData {
             BEGIN_REFLECT(EditingData);

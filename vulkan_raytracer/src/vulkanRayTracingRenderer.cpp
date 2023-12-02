@@ -373,7 +373,7 @@ auto PTS::VulkanRayTracingRenderer::open_scene(View<Scene> scene) noexcept
 
     if (*m_vk_pipeline) {
         // remove all objects
-        auto to_remove = std::vector<Object const*> (m_obj_data.size());
+        auto to_remove = std::vector<RenderableObject const*> (m_obj_data.size());
         std::transform(m_obj_data.begin(), m_obj_data.end(), to_remove.begin(),
             [](auto&& kvp) {
                 return kvp.first;
@@ -405,42 +405,42 @@ auto PTS::VulkanRayTracingRenderer::open_scene(View<Scene> scene) noexcept
     return {};
 }
 
-auto PTS::VulkanRayTracingRenderer::on_add_editable(EditableView editable) noexcept
+auto PTS::VulkanRayTracingRenderer::on_add_obj(Ref<SceneObject> obj) noexcept
 -> tl::expected<void, std::string> {
-	if(auto const& pobj = editable.as<Object>()) {
-        add_object(*pobj);
+	if(auto render_obj = dynamic_cast<RenderableObject*>(&obj.get())) {
+        TL_CHECK_AND_PASS(add_object(*render_obj));
     }
     return reset_path_tracing();
 }
 
 
-auto PTS::VulkanRayTracingRenderer::on_remove_editable(EditableView editable) noexcept
+auto PTS::VulkanRayTracingRenderer::on_remove_obj(Ref<SceneObject> obj) noexcept
 -> tl::expected<void, std::string> {
-	if(auto const& pobj = editable.as<Object>()) {
-        remove_object(*pobj);
+	if(auto render_obj = dynamic_cast<RenderableObject*>(&obj.get())) {
+        TL_CHECK_AND_PASS(remove_object(*render_obj));
     }
     return reset_path_tracing();
 }
 
-auto VulkanRayTracingRenderer::on_editable_change(EditableView editable, EditableChangeType type) noexcept
+auto VulkanRayTracingRenderer::on_obj_change(Ref<SceneObject> obj, SceneObjectChangeType type) noexcept
 -> tl::expected<void, std::string> {
-	if(auto const& pobj = editable.as<Object>()) {
-        auto it = m_obj_data.find(pobj);
+	if(auto render_obj = dynamic_cast<RenderableObject*>(&obj.get())) {
+        auto it = m_obj_data.find(render_obj);
         if (it == m_obj_data.end()) {
             return TL_ERROR("object not found");
         }
 
         switch (type) {
-        case EditableChangeType::TRANSFORM:
+        case SceneObjectChangeType::TRANSFORM:
             TL_CHECK_AND_PASS(
                 m_vk_pipeline.top_accel.update_instance_transform(
                     it->second.gpu_idx,
-                    pobj->get_transform().get_matrix()
+                    render_obj->get_transform().get_matrix()
                 )
             );
             break;
-        case EditableChangeType::MATERIAL: {
-            auto mat_data = MaterialData{ pobj->get_material() };
+        case SceneObjectChangeType::MATERIAL: {
+            auto mat_data = MaterialData{ render_obj->get_material() };
             TL_CHECK_AND_PASS(
                 m_vk_pipeline.materials_mem.upload(
                     mat_data,
@@ -453,12 +453,8 @@ auto VulkanRayTracingRenderer::on_editable_change(EditableView editable, Editabl
     }
     return reset_path_tracing();
 }
-auto PTS::VulkanRayTracingRenderer::render(View<Camera> camera) noexcept
-	-> tl::expected<void, std::string> {
-	return TL_ERROR("not implemented for direct rendering");
-}
 
-auto PTS::VulkanRayTracingRenderer::render_buffered(View<Camera> camera) noexcept
+auto PTS::VulkanRayTracingRenderer::render(View<Camera> camera) noexcept
 -> tl::expected<TextureHandle, std::string> {
     auto camera_data = CameraData { camera.get() };
     if(m_path_tracing_data.camera_data && camera_data != m_path_tracing_data.camera_data) {
@@ -607,7 +603,7 @@ auto PTS::VulkanRayTracingRenderer::init(ObserverPtr<Application> app) noexcept
     ));
 
     // set up texture layout transition
-    do_work_now(m_vk_device, m_vk_cmd_pool, [this](vk::CommandBuffer& cmd_buf) {
+    TL_CHECK_AND_PASS(do_work_now(m_vk_device, m_vk_cmd_pool, [this](vk::CommandBuffer& cmd_buf) {
         cmd_buf.pipelineBarrier(
             vk::PipelineStageFlagBits::eTopOfPipe,
             vk::PipelineStageFlagBits::eTransfer,
@@ -630,7 +626,7 @@ auto PTS::VulkanRayTracingRenderer::init(ObserverPtr<Application> app) noexcept
                     .setLayerCount(1)
             }
         );
-    });
+    }));
 	return {};
 }
 
@@ -658,7 +654,7 @@ auto VulkanRayTracingRenderer::reset_path_tracing() noexcept -> tl::expected<voi
     return {};
 }
 
-auto PTS::VulkanRayTracingRenderer::add_object(Object const& obj) -> tl::expected<void, std::string> {
+auto PTS::VulkanRayTracingRenderer::add_object(RenderableObject const& obj) -> tl::expected<void, std::string> {
     if (m_obj_data.count(&obj)) {
         return TL_ERROR("object already added");
     }
@@ -693,9 +689,11 @@ auto PTS::VulkanRayTracingRenderer::add_object(Object const& obj) -> tl::expecte
     );
 
     m_obj_data.emplace(&obj, PerObjectData{ id });
+
+    return {};
 }
 
-auto PTS::VulkanRayTracingRenderer::remove_object(Object const& obj) -> tl::expected<void, std::string> {
+auto PTS::VulkanRayTracingRenderer::remove_object(RenderableObject const& obj) -> tl::expected<void, std::string> {
     auto it = m_obj_data.find(&obj);
     if (it == m_obj_data.end()) {
         return TL_ERROR("object not found");

@@ -107,6 +107,8 @@ void GLFWApplication::run() {
         poll_input_events();
 
         m_delta_time = static_cast<float>(now - last_frame_time);
+        m_log_flush_timer += m_delta_time;
+
         if (m_delta_time >= m_min_frame_time) {
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
@@ -157,6 +159,11 @@ void GLFWApplication::run() {
                     it->second.on_enter_region.value()();
                 }
             }
+        }
+
+        if (m_log_flush_timer >= m_log_flush_interval) {
+            m_log_flush_timer = 0.0f;
+            clear_logs();
         }
     }
 }

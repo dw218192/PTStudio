@@ -34,6 +34,22 @@ namespace glm {
 
 namespace PTS {
 	template<typename Reflected, typename = std::enable_if_t<is_reflectable<Reflected>::value>>
+	auto to_json(nlohmann::json& json, ObserverPtr<Reflected> ptr) -> void {
+		to_json(json, ViewPtr<Reflected> { ptr });
+	}
+	template<typename Reflected, typename = std::enable_if_t<is_reflectable<Reflected>::value>>
+	auto from_json(nlohmann::json const& json, ObserverPtr<Reflected>& ptr) -> void {
+		from_json(json, ViewPtr<Reflected> { ptr });
+	}
+	template<typename Reflected, typename = std::enable_if_t<is_reflectable<Reflected>::value>>
+	auto to_json(nlohmann::json& json, ViewPtr<Reflected> ptr) -> void {
+		// TODO
+	}
+	template<typename Reflected, typename = std::enable_if_t<is_reflectable<Reflected>::value>>
+	auto from_json(nlohmann::json const& json, ViewPtr<Reflected>& ptr) -> void {
+		// TODO
+	}
+	template<typename Reflected, typename = std::enable_if_t<is_reflectable<Reflected>::value>>
 	auto to_json(nlohmann::json& json, Reflected const& reflected) -> void {
 		if constexpr (has_serialization_callback<Reflected>::value) {
 			reflected.on_serialize();
@@ -45,6 +61,9 @@ namespace PTS {
 		});
 	}
 	
+	// for compatibility:
+	// 1. if a new field is present in the json but not in the reflected type, it will be ignored
+	// 2. if a new field is present in the reflected type but not in the json, it will be initialized with the default value
 	template<typename Reflected, typename = std::enable_if_t<is_reflectable<Reflected>::value>>
 	auto from_json(nlohmann::json const& json, Reflected& reflected) -> void {
 		Reflected::for_each_field([&reflected, &json](auto field) {

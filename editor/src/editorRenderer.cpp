@@ -98,8 +98,29 @@ auto EditorRenderer::init(ObserverPtr<Application> app) noexcept -> tl::expected
         return {};
     }
 
-    // set up main frame buffer
-    MainFrameBuffer::set(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
+    // frame buffer
+    TL_TRY_ASSIGN(m_render_buf, GLFrameBuffer::create());
+    TL_CHECK(m_render_buf->bind());
+    {
+        TL_CHECK(m_render_buf->attach(m_config.width, m_config.height, {
+            {
+                GL_COLOR_ATTACHMENT0, GL_RGBA,
+                {
+                    { GL_TEXTURE_MIN_FILTER, GL_LINEAR },
+                    { GL_TEXTURE_MAG_FILTER, GL_LINEAR },
+                }
+            },
+            {
+                GL_DEPTH_ATTACHMENT, GL_DEPTH_COMPONENT,
+                {
+                    { GL_TEXTURE_MIN_FILTER, GL_LINEAR },
+                    { GL_TEXTURE_MAG_FILTER, GL_LINEAR },
+                }
+            }
+        }));
+        TL_CHECK(m_render_buf->set_draw_buffer(GL_COLOR_ATTACHMENT0));
+    }
+    m_render_buf->unbind();
 
 	// default shaders
     TL_TRY_ASSIGN(m_default_shader, ShaderProgram::from_srcs(k_default_shader_srcs));
@@ -156,7 +177,7 @@ auto EditorRenderer::open_scene(View<Scene> scene) noexcept -> tl::expected<void
     CHECK_GL_ERROR();
 
     for (auto&& editable : scene.get().get_editables()) {
-        TL_CHECK_AND_PASS(on_add_editable(editable));
+        TL_CHECK_AND_PASS(on_add_obj(editable));
     }
 
     // Set a few settings/modes in OpenGL rendering
@@ -170,39 +191,6 @@ auto EditorRenderer::open_scene(View<Scene> scene) noexcept -> tl::expected<void
     CHECK_GL_ERROR();
 
     return {};
-}
-
-auto EditorRenderer::render(View<Camera> cam) noexcept -> tl::expected<void, std::string> {
-    return render_internal(cam, 0);
-}
-
-auto EditorRenderer::render_buffered(View<Camera> cam) noexcept -> tl::expected<TextureHandle, std::string> {
-    if (!m_render_buf) {
-        TL_TRY_ASSIGN(m_render_buf, GLFrameBuffer::create());
-        TL_CHECK(m_render_buf->bind());
-        {
-	        TL_CHECK(m_render_buf->attach(m_config.width, m_config.height, {
-		        {
-					GL_COLOR_ATTACHMENT0, GL_RGB,
-			        {
-				        { GL_TEXTURE_MIN_FILTER, GL_LINEAR },
-				        { GL_TEXTURE_MAG_FILTER, GL_LINEAR },
-			        }
-		        },
-		        {
-		        	GL_DEPTH_ATTACHMENT, GL_DEPTH_COMPONENT,
-		        	{
-				        { GL_TEXTURE_MIN_FILTER, GL_LINEAR },
-				        { GL_TEXTURE_MAG_FILTER, GL_LINEAR },
-		        	}
-		        }
-		    }));
-            TL_CHECK(m_render_buf->set_draw_buffer(GL_COLOR_ATTACHMENT0));
-        }
-        m_render_buf->unbind();
-    }
-    TL_CHECK(render_internal(cam, m_render_buf->handle()));
-    return m_render_buf->get_texture(GL_COLOR_ATTACHMENT0);
 }
 
 auto EditorRenderer::on_change_render_config() noexcept -> tl::expected<void, std::string> {
@@ -225,13 +213,13 @@ auto EditorRenderer::on_change_render_config() noexcept -> tl::expected<void, st
 
 #pragma region Scene_Change_Callbacks
 
-auto EditorRenderer::on_add_editable(EditableView editable) noexcept -> tl::expected<void, std::string> {
-    if (auto const obj = editable.as<Object>()) {
-        if (m_obj_data.count(obj)) {
+auto EditorRenderer::on_add_obj(Ref<SceneObject> obj) noexcept -> tl::expected<void, std::string> {
+    if (auto const render_obj = dynamic_cast<RenderableObject*>(&obj.get())) {
+        if (m_obj_data.count(render_obj)) {
             return TL_ERROR("object added twice");
         }
-        TL_CHECK_AND_PASS(on_add_object_internal(m_obj_data[obj], *obj));
-    } else if(auto const light = editable.as<Light>()) {
+        TL_CHECK_AND_PASS(on_add_object_internal(m_obj_data[render_obj], *render_obj));
+    } else if(auto const light = dynamic_cast<Light*>(&obj.get())) {
         m_light_data.data.emplace_back(light->get_data());
         m_light_data.light_ptrs.emplace_back(light);
 
@@ -245,17 +233,17 @@ auto EditorRenderer::on_add_editable(EditableView editable) noexcept -> tl::expe
     return {};
 }
 
-auto EditorRenderer::on_remove_editable(EditableView editable) noexcept -> tl::expected<void, std::string> {
-    if (auto const obj = editable.as<Object>()) {
-        auto const it = m_obj_data.find(obj);
+auto EditorRenderer::on_remove_obj(Ref<SceneObject> obj) noexcept -> tl::expected<void, std::string> {
+    if (auto const render_obj = dynamic_cast<RenderableObject*>(&obj.get())) { 
+        auto const it = m_obj_data.find(render_obj);
         if (it == m_obj_data.end()) {
             return TL_ERROR("obj not found");
         }
         m_obj_data.erase(it);
-        if (obj == m_cur_outline_obj) {
+        if (render_obj == m_cur_outline_obj) {
             m_cur_outline_obj = nullptr;
         }
-    } else if (auto const light = editable.as<Light>()) {
+    } else if (auto const light = dynamic_cast<Light*>(&obj.get())) {
         auto const it = std::find_if(m_light_data.light_ptrs.begin(), m_light_data.light_ptrs.end(),
             [light](auto const& ptr) { return ptr == light; }
         );
@@ -276,10 +264,11 @@ auto EditorRenderer::on_remove_editable(EditableView editable) noexcept -> tl::e
     return {};
 }
 
-auto EditorRenderer::on_editable_change(EditableView editable, EditableChangeType type) noexcept
+auto EditorRenderer::on_obj_change(Ref<SceneObject> obj, SceneObjectChangeType type) noexcept
 -> tl::expected<void, std::string> {
-	if (auto const obj = editable.as<Object>()) {
-    } else if (auto const light = editable.as<Light>()) {
+	if (auto const render_obj = dynamic_cast<RenderableObject*>(&obj.get())) {
+        // data are fetched directly from the scene, so no need to update
+    } else if (auto const light = dynamic_cast<Light*>(&obj.get())) {
         auto const it = std::find_if(m_light_data.light_ptrs.begin(), m_light_data.light_ptrs.end(),
             [light](auto const& ptr) { return ptr == light; }
         );
@@ -298,12 +287,12 @@ auto EditorRenderer::on_editable_change(EditableView editable, EditableChangeTyp
     return {};
 }
 
-void EditorRenderer::on_selected_editable_change(std::optional<EditableView> editable) noexcept {
+void EditorRenderer::on_selected_editable_change(ObserverPtr<SceneObject> editable) noexcept {
     commit_cur_shader_code();
     m_cur_outline_obj = nullptr;
 
     if (!editable) {
-    } else if (auto const obj = editable->as<Object>()) {
+    } else if (auto const obj = dynamic_cast<RenderableObject*>(editable)) {
         auto const it = m_obj_data.find(obj);
         if (it == m_obj_data.end()) {
         	return;
@@ -321,7 +310,7 @@ void EditorRenderer::on_selected_editable_change(std::optional<EditableView> edi
     }
 }
 
-auto EditorRenderer::on_add_object_internal(PerObjectData& data, Object const& obj) noexcept -> tl::expected<void, std::string> {
+auto EditorRenderer::on_add_object_internal(PerObjectData& data, RenderableObject const& obj) noexcept -> tl::expected<void, std::string> {
     TL_TRY_ASSIGN(data.shader, ShaderProgram::clone(m_default_shader.get()));
 	TL_TRY_ASSIGN(data.render_data, GLVertexArray::create_indexed(obj.get_vertices(), obj.get_indices(), 
         GLAttributeInfo<glm::vec3> { VertexAttribBinding::Position,  sizeof(Vertex), offsetof(Vertex, position) },
@@ -344,212 +333,205 @@ auto EditorRenderer::on_add_object_internal(PerObjectData& data, Object const& o
 
 #pragma endregion Scene_Change_Callbacks
 
-auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> tl::expected<void, std::string> {
-    auto draw_outline = [this, cam, fbo](ViewPtr<Object> obj)-> tl::expected<void, std::string> {
-        if (!m_outline.render_buf) {
-            // initialize outline states
 
-            // render buffer
-            TL_TRY_ASSIGN(m_outline.render_buf, GLFrameBuffer::create());
-            TL_CHECK_AND_PASS(m_outline.render_buf->bind());
-            {
-                TL_CHECK_AND_PASS(m_outline.render_buf->attach(m_config.width, m_config.height, {
-                    {
-                    	GL_COLOR_ATTACHMENT0, GL_RGBA,
-                    	{
-                            { GL_TEXTURE_MIN_FILTER, GL_LINEAR },
-							{ GL_TEXTURE_MAG_FILTER, GL_LINEAR },
-                            { GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE },
-                    		{ GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE },
-                    	}
-                    },
-                    {
-                    	GL_COLOR_ATTACHMENT1, GL_RGBA,
-                    	{
-                            { GL_TEXTURE_MIN_FILTER, GL_LINEAR },
-                            { GL_TEXTURE_MAG_FILTER, GL_LINEAR },
-                            { GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE },
-                            { GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE },
-                        }
-                    }
-                }));
-                TL_CHECK_AND_PASS(m_outline.render_buf->set_draw_buffer(GL_COLOR_ATTACHMENT0));
-            }
-            m_outline.render_buf->unbind();
+auto EditorRenderer::draw_outline(View<Camera> cam_view, View<RenderableObject> obj) -> tl::expected<void, std::string> {
+    auto& cam = cam_view.get();
+    if (!m_outline.render_buf) {
+        // initialize outline states
 
-            // shaders
-            for (size_t i = 0; i < m_outline.shaders.size(); ++i) {
-                ShaderProgram::ShaderDesc descs{
-                    { ShaderType::Vertex, vs_outline_passes[i] },
-                    { ShaderType::Fragment, ps_outline_passes[i] }
-                };
-                TL_TRY_ASSIGN(m_outline.shaders[i], ShaderProgram::from_srcs(descs));
-            }
-
-            // full screen quad
-            TL_TRY_ASSIGN(m_outline.quad_render_data, GLVertexArray::create(
-                tcb::make_span(k_quad_data_pos_uv), 
-                GLAttributeInfo<glm::vec3>{0, 0, 0},
-                GLAttributeInfo<glm::vec2>{1, 0, 18 * sizeof(float)}
-            ));
-            m_outline.quad_render_data->unbind();
-        }
-
+        // render buffer
+        TL_TRY_ASSIGN(m_outline.render_buf, GLFrameBuffer::create());
         TL_CHECK_AND_PASS(m_outline.render_buf->bind());
         {
-            TL_CHECK_AND_PASS(m_outline.render_buf->clear(glm::vec3(0), 1.0f));
-
-            // draw to attachment 0
-            TL_CHECK(m_outline.render_buf->set_draw_buffer(GL_COLOR_ATTACHMENT0));
-
-            TL_CHECK_AND_PASS(m_outline.shaders[0]->bind());
-            {
-                TL_CHECK_AND_PASS(m_outline.shaders[0]->set_uniform(k_uniform_view, cam.get_view()));
-                TL_CHECK_AND_PASS(m_outline.shaders[0]->set_uniform(k_uniform_projection, cam.get_projection()));
-                TL_CHECK_AND_PASS(m_outline.shaders[0]->set_uniform(k_uniform_model, obj->get_transform().get_matrix()));
-
-                auto res = try_get_obj_data(obj);
-                if (!res) return TL_ERROR(res.error());
-
-                auto&& data = res.value().get();
-                auto&& vao = data.render_data;
-                TL_CHECK_AND_PASS(vao->bind());
-                TL_CHECK_AND_PASS(vao->draw(GL_TRIANGLES));
-            }
-            // draw to attachment 1 based on attachment 0
-            TL_CHECK(m_outline.render_buf->set_draw_buffer(GL_COLOR_ATTACHMENT1));
-            TL_CHECK_AND_PASS(m_outline.shaders[1]->bind());
-            {
-                TL_CHECK_AND_PASS(m_outline.shaders[1]->set_texture(k_uniform_screen_texture, m_outline.render_buf->get_texture(GL_COLOR_ATTACHMENT0), 0));
-                TL_CHECK_AND_PASS(m_outline.shaders[1]->set_uniform(k_uniform_outline_color, glm::vec3(1, 0, 0)));
-                TL_CHECK_AND_PASS(m_outline.shaders[1]->set_uniform(k_uniform_thickness, 0.9f));
-                TL_CHECK_AND_PASS(m_outline.shaders[1]->set_uniform(k_uniform_texel_size, 1.0f / glm::vec2(m_config.width, m_config.height)));
-                TL_CHECK_AND_PASS(m_outline.quad_render_data->bind());
-                TL_CHECK_AND_PASS(m_outline.quad_render_data->draw(GL_TRIANGLES));
-                m_outline.quad_render_data->unbind();
-            }
+            TL_CHECK_AND_PASS(m_outline.render_buf->attach(m_config.width, m_config.height, {
+                {
+                    GL_COLOR_ATTACHMENT0, GL_RGBA,
+                    {
+                        { GL_TEXTURE_MIN_FILTER, GL_LINEAR },
+                        { GL_TEXTURE_MAG_FILTER, GL_LINEAR },
+                        { GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE },
+                        { GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE },
+                    }
+                },
+                {
+                    GL_COLOR_ATTACHMENT1, GL_RGBA,
+                    {
+                        { GL_TEXTURE_MIN_FILTER, GL_LINEAR },
+                        { GL_TEXTURE_MAG_FILTER, GL_LINEAR },
+                        { GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE },
+                        { GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE },
+                    }
+                }
+            }));
+            TL_CHECK_AND_PASS(m_outline.render_buf->set_draw_buffer(GL_COLOR_ATTACHMENT0));
         }
         m_outline.render_buf->unbind();
 
-        // attachment 1 now contains the outline
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-        if (!fbo) {
-            TL_CHECK_AND_PASS(MainFrameBuffer::bind());
-        } else {
-            TL_CHECK_AND_PASS(m_render_buf->bind());
+        // shaders
+        for (size_t i = 0; i < m_outline.shaders.size(); ++i) {
+            ShaderProgram::ShaderDesc descs{
+                { ShaderType::Vertex, vs_outline_passes[i] },
+                { ShaderType::Fragment, ps_outline_passes[i] }
+            };
+            TL_TRY_ASSIGN(m_outline.shaders[i], ShaderProgram::from_srcs(descs));
         }
 
-        TL_CHECK_AND_PASS(m_outline.shaders[2]->bind());
+        // full screen quad
+        TL_TRY_ASSIGN(m_outline.quad_render_data, GLVertexArray::create(
+            tcb::make_span(k_quad_data_pos_uv), 
+            GLAttributeInfo<glm::vec3>{0, 0, 0},
+            GLAttributeInfo<glm::vec2>{1, 0, 18 * sizeof(float)}
+        ));
+        m_outline.quad_render_data->unbind();
+    }
+
+    TL_CHECK_AND_PASS(m_outline.render_buf->bind());
+    {
+        TL_CHECK_AND_PASS(m_outline.render_buf->clear(glm::vec3(0), 1.0f));
+
+        // draw to attachment 0
+        TL_CHECK(m_outline.render_buf->set_draw_buffer(GL_COLOR_ATTACHMENT0));
+
+        TL_CHECK_AND_PASS(m_outline.shaders[0]->bind());
         {
+            TL_CHECK_AND_PASS(m_outline.shaders[0]->set_uniform(k_uniform_view, cam.get_view()));
+            TL_CHECK_AND_PASS(m_outline.shaders[0]->set_uniform(k_uniform_projection, cam.get_projection()));
+            TL_CHECK_AND_PASS(m_outline.shaders[0]->set_uniform(k_uniform_model, obj.get().get_transform().get_matrix()));
+
+            auto res = try_get_obj_data(obj);
+            if (!res) return TL_ERROR(res.error());
+
+            auto&& data = res.value().get();
+            auto&& vao = data.render_data;
+            TL_CHECK_AND_PASS(vao->bind());
+            TL_CHECK_AND_PASS(vao->draw(GL_TRIANGLES));
+        }
+        // draw to attachment 1 based on attachment 0
+        TL_CHECK(m_outline.render_buf->set_draw_buffer(GL_COLOR_ATTACHMENT1));
+        TL_CHECK_AND_PASS(m_outline.shaders[1]->bind());
+        {
+            TL_CHECK_AND_PASS(m_outline.shaders[1]->set_texture(k_uniform_screen_texture, m_outline.render_buf->get_texture(GL_COLOR_ATTACHMENT0), 0));
+            TL_CHECK_AND_PASS(m_outline.shaders[1]->set_uniform(k_uniform_outline_color, glm::vec3(1, 0, 0)));
+            TL_CHECK_AND_PASS(m_outline.shaders[1]->set_uniform(k_uniform_thickness, 0.9f));
+            TL_CHECK_AND_PASS(m_outline.shaders[1]->set_uniform(k_uniform_texel_size, 1.0f / glm::vec2(m_config.width, m_config.height)));
             TL_CHECK_AND_PASS(m_outline.quad_render_data->bind());
-            {
-                TL_CHECK_AND_PASS(m_outline.shaders[2]->set_texture(k_uniform_screen_texture, m_outline.render_buf->get_texture(GL_COLOR_ATTACHMENT1), 0));
-                TL_CHECK_AND_PASS(m_outline.quad_render_data->draw(GL_TRIANGLES));
-            }
+            TL_CHECK_AND_PASS(m_outline.quad_render_data->draw(GL_TRIANGLES));
             m_outline.quad_render_data->unbind();
         }
-        m_outline.shaders[2]->unbind();
+    }
+    m_outline.render_buf->unbind();
 
-        glDisable(GL_BLEND);
+    // attachment 1 now contains the outline
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-        return {};
-    };
+    TL_CHECK_AND_PASS(m_render_buf->bind());
+    TL_CHECK_AND_PASS(m_outline.shaders[2]->bind());
+    {
+        TL_CHECK_AND_PASS(m_outline.quad_render_data->bind());
+        {
+            TL_CHECK_AND_PASS(m_outline.shaders[2]->set_texture(k_uniform_screen_texture, m_outline.render_buf->get_texture(GL_COLOR_ATTACHMENT1), 0));
+            TL_CHECK_AND_PASS(m_outline.quad_render_data->draw(GL_TRIANGLES));
+        }
+        m_outline.quad_render_data->unbind();
+    }
+    m_outline.shaders[2]->unbind();
+
+    glDisable(GL_BLEND);
+
+    return {};
+}
+
+auto EditorRenderer::render(View<Camera> cam_view) noexcept -> tl::expected<TextureHandle, std::string> {
+    auto& cam = cam_view.get();
 
     if (!valid()) {
         return TL_ERROR( "invalid EditorRenderer");
     }
 
-    if (!fbo) {
-        TL_CHECK_AND_PASS(MainFrameBuffer::bind());
-        TL_CHECK_AND_PASS(MainFrameBuffer::clear(k_clear_color, 1.0f));
-    } else {
-        TL_CHECK_AND_PASS(m_render_buf->bind());
-        TL_CHECK_AND_PASS(m_render_buf->clear(k_clear_color, 1.0f));
-    }
-
+    TL_CHECK(m_render_buf->bind());
+    TL_CHECK(m_render_buf->clear(k_clear_color, 1.0f));
+    
     glViewport(0, 0, static_cast<GLsizei>(get_config().width), static_cast<GLsizei>(get_config().height));
+    CHECK_GL_ERROR();
 
     // render objects
-    for (auto [it, i] = std::tuple{ m_scene->get_objects().begin(), 0 }; it != m_scene->get_objects().end(); ++it) {
-        auto&& obj = *it;
-        auto res = try_get_obj_data(&obj);
-        if (!res) return TL_ERROR(res.error());
+    for (auto const& obj : m_scene->get_objects()) {
+        auto res = try_get_obj_data(obj);
+        if (!res) {
+            return TL_ERROR(res.error());
+        }
 
-    	auto&& data = res.value().get();
-        auto&& shader = data.shader;
-        auto&& vao = data.render_data;
+    	auto& data = res.value().get();
+        auto& shader = data.shader;
+        auto& vao = data.render_data;
 
-        TL_CHECK_AND_PASS(shader->bind());
+        TL_CHECK(shader->bind());
 
-        auto&& uniforms = shader->get_uniform_map().get();
+        auto const& uniforms = shader->get_uniform_map().get();
         // light
         if (uniforms.count(k_uniform_light_count)) {
-            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_light_count, static_cast<int>(m_light_data.data.size())));
+            TL_CHECK(shader->set_uniform(k_uniform_light_count, static_cast<int>(m_light_data.data.size())));
+            
             glBindBufferBase(GL_UNIFORM_BUFFER, UBOBinding::LightBlock, m_light_data.ubo->handle());
             CHECK_GL_ERROR();
         }
         // material
         if (uniforms.count(k_uniform_object_color)) {
-            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_object_color, obj.get_material().albedo));
+            TL_CHECK(shader->set_uniform(k_uniform_object_color, obj.get_material().albedo));
         }
         // MVP
         if (uniforms.count(k_uniform_view)) {
-            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_view, cam.get_view()));
+            TL_CHECK(shader->set_uniform(k_uniform_view, cam.get_view()));
         }
         if (uniforms.count(k_uniform_projection)) {
-            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_projection, cam.get_projection()));
+            TL_CHECK(shader->set_uniform(k_uniform_projection, cam.get_projection()));
         }
         if (uniforms.count(k_uniform_model)) {
-            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_model, obj.get_transform().get_matrix()));
+            TL_CHECK(shader->set_uniform(k_uniform_model, obj.get_transform().get_matrix()));
         }
         // misc
         if (uniforms.count(k_uniform_time)) {
-            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_time, m_app->get_time()));
+            TL_CHECK(shader->set_uniform(k_uniform_time, m_app->get_time()));
         }
         if (uniforms.count(k_uniform_delta_time)) {
-            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_delta_time, m_app->get_delta_time()));
+            TL_CHECK(shader->set_uniform(k_uniform_delta_time, m_app->get_delta_time()));
         }
         if (uniforms.count(k_uniform_resolution)) {
-            TL_CHECK_AND_PASS(shader->set_uniform(k_uniform_resolution, glm::ivec2 { get_config().width, get_config().height }));
+            TL_CHECK(shader->set_uniform(k_uniform_resolution, glm::ivec2 { get_config().width, get_config().height }));
         }
 
-        TL_CHECK_AND_PASS(vao->bind());
-        TL_CHECK_AND_PASS(vao->draw(GL_TRIANGLES));
-
-        if (i == m_scene->size() - 1) {
-            shader->unbind();
-        }
+        TL_CHECK(vao->bind());
+        TL_CHECK(vao->draw(GL_TRIANGLES));
     }
 
 	// render grid
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    TL_CHECK_AND_PASS(m_grid_render_data->bind());
-    TL_CHECK_AND_PASS(m_grid_shader->bind());
+    TL_CHECK(m_grid_render_data->bind());
+    TL_CHECK(m_grid_shader->bind());
     {
-        TL_CHECK_AND_PASS(m_grid_shader->set_uniform(k_uniform_view, cam.get_view()));
-        TL_CHECK_AND_PASS(m_grid_shader->set_uniform(k_uniform_projection, cam.get_projection()));
-        TL_CHECK_AND_PASS(m_grid_render_data->draw(GL_LINES));
+        TL_CHECK(m_grid_shader->set_uniform(k_uniform_view, cam.get_view()));
+        TL_CHECK(m_grid_shader->set_uniform(k_uniform_projection, cam.get_projection()));
+        TL_CHECK(m_grid_render_data->draw(GL_LINES));
     }
 
     // render gizmo
     if (!m_scene->get_lights().empty()) {
         glDisable(GL_DEPTH_TEST);
-        TL_CHECK_AND_PASS(m_light_gizmo_data.render_data->bind());
-        TL_CHECK_AND_PASS(m_light_gizmo_data.shader->bind());
+        TL_CHECK(m_light_gizmo_data.render_data->bind());
+        TL_CHECK(m_light_gizmo_data.shader->bind());
         {
-            TL_CHECK_AND_PASS(m_light_gizmo_data.shader->set_uniform(k_uniform_view, cam.get_view()));
-            TL_CHECK_AND_PASS(m_light_gizmo_data.shader->set_uniform(k_uniform_projection, cam.get_projection()));
-            TL_CHECK_AND_PASS(m_light_gizmo_data.shader->set_texture(k_uniform_sprite_texture, m_light_gizmo_data.texture.get(), 0));
-            TL_CHECK_AND_PASS(m_light_gizmo_data.shader->set_uniform(k_uniform_sprite_scale, k_sprite_scale));
+            TL_CHECK(m_light_gizmo_data.shader->set_uniform(k_uniform_view, cam.get_view()));
+            TL_CHECK(m_light_gizmo_data.shader->set_uniform(k_uniform_projection, cam.get_projection()));
+            TL_CHECK(m_light_gizmo_data.shader->set_texture(k_uniform_sprite_texture, m_light_gizmo_data.texture.get(), 0));
+            TL_CHECK(m_light_gizmo_data.shader->set_uniform(k_uniform_sprite_scale, k_sprite_scale));
 
             // draw light gizmos
             for (auto&& light : m_scene->get_lights()) {
-                TL_CHECK_AND_PASS(m_light_gizmo_data.shader->set_uniform(k_uniform_sprite_world_pos, light.get_transform().get_position()));
-                TL_CHECK_AND_PASS(m_light_gizmo_data.render_data->draw(GL_TRIANGLES));
+                TL_CHECK(m_light_gizmo_data.shader->set_uniform(k_uniform_sprite_world_pos, light.get_transform().get_position()));
+                TL_CHECK(m_light_gizmo_data.render_data->draw(GL_TRIANGLES));
             }
         }
         glEnable(GL_DEPTH_TEST);
@@ -560,14 +542,11 @@ auto EditorRenderer::render_internal(Camera const& cam, GLuint fbo) noexcept -> 
 
     // render outline
     if (m_cur_outline_obj) {
-        TL_CHECK_AND_PASS(draw_outline(m_cur_outline_obj));
+        TL_CHECK(draw_outline(cam_view, *m_cur_outline_obj));
     }
 
-    // reset state
-    if (fbo) {
-        TL_CHECK_AND_PASS(MainFrameBuffer::bind());
-    }
-    return {};
+    m_render_buf->unbind();
+    return m_render_buf->get_texture(GL_COLOR_ATTACHMENT0);
 }
 
 void EditorRenderer::clear_render_data() {
@@ -810,8 +789,8 @@ auto EditorRenderer::draw_glsl_editor(ShaderType type, Ref<ShaderProgram> shader
     return {};
 }
 
-auto EditorRenderer::try_get_obj_data(ViewPtr<Object> obj) noexcept -> tl::expected<Ref<PerObjectData>, std::string> {
-    auto const it = m_obj_data.find(obj);
+auto EditorRenderer::try_get_obj_data(View<RenderableObject> obj) noexcept -> tl::expected<Ref<PerObjectData>, std::string> {
+    auto const it = m_obj_data.find(&obj.get());
     if (it == m_obj_data.end()) {
         return  TL_ERROR("obj not found in render data");
     }
@@ -828,8 +807,7 @@ auto EditorRenderer::draw_imgui() noexcept -> tl::expected<void, std::string> {
 
         if (!m_cur_outline_obj) {
             ImGui::Text("Please Select an object first");
-        }
-        else {
+        } else {
             switch (m_obj_data[m_cur_outline_obj].editing_data.compilation_status) {
             case PerObjectEditingData::CompilationStatus::FAILURE:
                 ImGui::GetForegroundDrawList()->AddRect(
@@ -853,7 +831,7 @@ auto EditorRenderer::draw_imgui() noexcept -> tl::expected<void, std::string> {
             if (ImGui::BeginTabBar("##tab")) {
                 for (auto const shader_type : EIter<ShaderType>{}) {
                     if (ImGui::BeginTabItem(to_string(shader_type))) {
-                        auto res = try_get_obj_data(m_cur_outline_obj);
+                        auto res = try_get_obj_data(*m_cur_outline_obj);
                         if (!res) return TL_ERROR(res.error());
 
                         draw_glsl_editor(shader_type, *(res.value().get().shader), m_shader_editor_data[shader_type]);
@@ -878,7 +856,7 @@ auto EditorRenderer::draw_imgui() noexcept -> tl::expected<void, std::string> {
     return {};
 }
 
-EditorRenderer::PerObjectEditingData::PerObjectEditingData() {
+PerObjectEditingData::PerObjectEditingData() {
     common_funcs = k_default_shader_funcs;
     for (auto const type : EIter<ShaderType>{}) {
         if (k_default_shader_srcs_unprocessed[type]) {
@@ -887,7 +865,7 @@ EditorRenderer::PerObjectEditingData::PerObjectEditingData() {
     }
 }
 
-void EditorRenderer::PerObjectEditingData::set_src(ShaderType type, std::string src) {
+void PerObjectEditingData::set_src(ShaderType type, std::string src) {
     auto in_out = GLSLHelper::get_in_out(type, src);
     m_shader_inputs[type] = std::move(in_out.inputs);
     m_shader_outputs[type] = std::move(in_out.outputs);
@@ -898,15 +876,15 @@ void EditorRenderer::PerObjectEditingData::set_src(ShaderType type, std::string 
     m_shader_srcs[type] = std::move(src);
 }
 
-auto EditorRenderer::PerObjectEditingData::get_src(ShaderType type) -> View<std::string> {
+auto PerObjectEditingData::get_src(ShaderType type) -> View<std::string> {
     return m_shader_srcs[type];
 }
 
-auto EditorRenderer::PerObjectEditingData::get_outputs(ShaderType type) -> std::string_view {
+auto PerObjectEditingData::get_outputs(ShaderType type) -> std::string_view {
     return m_shader_outputs[type];
 }
 
-auto EditorRenderer::PerObjectEditingData::get_inputs(ShaderType type) -> std::string_view {
+auto PerObjectEditingData::get_inputs(ShaderType type) -> std::string_view {
     return m_shader_inputs[type];
 }
 #pragma endregion Shader_Editing

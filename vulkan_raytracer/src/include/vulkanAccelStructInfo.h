@@ -29,7 +29,7 @@ namespace PTS {
         [[nodiscard]] static auto create(
             VulkanDeviceInfo const& dev,
             VulkanCmdPoolInfo const& cmd_pool,
-            Object const& obj
+            RenderableObject const& obj
         ) -> tl::expected<VulkanBottomAccelStructInfo, std::string>;
 
         VulkanAccelStructInfo accel {};
