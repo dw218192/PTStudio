@@ -5,6 +5,10 @@
 #include <optional>
 #include <vector>
 #include <functional>
+#include <memory>
+#include <string>
+
+#include "typeTraitsUtil.h"
 
 namespace PTS {
     /**
@@ -82,31 +86,76 @@ namespace PTS {
         int num_items;
         auto (*get_name)(int idx) -> char const*;
     };
-    
-#define STR(x) #x
-#define BEGIN_REFLECT_IMPL(_cls, _counter)\
-    template<int n, typename fake = void>\
-    struct _field_info;\
-    static constexpr std::string_view _type_name = STR(_cls);\
-    static constexpr bool _is_subclass = false;\
-    static constexpr int _init_count = _counter;\
-    using _my_type = _cls
-#define BEGIN_REFLECT_INHERIT_IMPL(_cls, _counter, _parent)\
-    template<int n, typename fake = void>\
-    struct _field_info;\
-    static constexpr std::string_view _type_name = STR(_cls);\
-    static constexpr bool _is_subclass = true;\
-    static constexpr int _init_count = _counter;\
-    using _my_type = _cls;\
-    using _parent_type = _parent
+    // used to dynamically get info about a class
+    struct ClassInfo {
+        std::string_view class_name;
+        int num_members;
+        ClassInfo const* parent;
+    };
+    /** @brief non-templated field info, not type-safe \n
+     * used to dynamically get info about a field or store a type-erased field pointer
+     * @note this is a workaround for the fact that we can't have a virtual template function
+    */
+    struct FieldInfo {
+        friend struct std::hash<FieldInfo>;
 
-#define FIELD_IMPL_MOD(_counter, _var_type, _var_name, _init, ...)\
+        std::string_view var_name;
+        std::string_view type_name;
+        int index;
+        
+        bool is_pointer;
+        auto operator==(FieldInfo const& other) const noexcept -> bool {
+            return var_name == other.var_name && type_name == other.type_name && index == other.index;
+        }
+
+        template<typename MemPtr>
+        struct Helper {
+            MemPtr mem_ptr;
+
+            template<typename = std::enable_if_t<std::is_member_pointer_v<MemPtr>>>
+            Helper(MemPtr mem_ptr) : mem_ptr(mem_ptr) {}
+        };
+
+        template<typename RetType, typename T>
+        auto get(T* obj) const -> RetType& {
+            auto mem_ptr = static_cast<Helper<RetType (T::*)>*>(m_any_mem_ptr.get())->mem_ptr;
+            return (obj->*mem_ptr);
+        }
+        template<typename RetType, typename T>
+        auto get(T const* obj) const -> RetType const& {
+            auto mem_ptr = static_cast<Helper<RetType (T::*)>*>(m_any_mem_ptr.get())->mem_ptr;
+            return (obj->*mem_ptr);
+        }
+        template<template <int, typename> typename TemplatedFieldInfo, int n>
+        FieldInfo(TemplatedFieldInfo<n, void> const& info) :
+            var_name(info.var_name),
+            type_name(info.type_name),
+            index(n),
+            is_pointer(std::is_pointer_v<typename TemplatedFieldInfo<n, void>::type>),
+            m_any_mem_ptr(std::make_shared<Helper<
+                decltype(TemplatedFieldInfo<n, void>::mem_pointer)>>
+            (info.mem_pointer)) {}
+    private:
+        std::shared_ptr<void> m_any_mem_ptr;
+    };
+
+#define STR(x) #x
+#define BEGIN_REFLECT_IMPL(_cls, _counter, _parent)\
+    using _my_type = _cls;\
+    using _parent_type = _parent;\
+    template<int n, typename fake = void>\
+    struct _field_info;\
+    static constexpr std::string_view _type_name = STR(_cls);\
+    static constexpr bool _is_subclass = Traits::is_reflectable<_parent_type>::value;\
+    static constexpr int _init_count = _counter
+
+#define FIELD_IMPL(_counter, _var_type, _var_name, _init, ...)\
     _var_type _var_name = _init;\
     template<typename fake> struct _field_info<(_counter) - _init_count - 1, fake> {\
         static constexpr std::string_view var_name = STR(_var_name);\
         static constexpr std::string_view type_name = STR(_var_type);\
         static constexpr auto modifiers = ModifierPack {__VA_ARGS__};\
-        static constexpr auto offset = offsetof(_my_type, _var_name);\
+        static constexpr auto mem_pointer = &_my_type::_var_name;\
         static inline _var_type default_value = _init;\
         using type = _var_type;\
         static constexpr type& get(_my_type& obj) {\
@@ -151,74 +200,91 @@ namespace PTS {
 private:\
         static inline std::vector<CallbackType> _on_change_callbacks;\
     }
+
 #define END_REFLECT_IMPL(_counter)\
 public:\
-    template<typename Callable, std::size_t... Is>\
-    static constexpr void for_each_field_impl(Callable&& callable, std::index_sequence<Is...>) {\
-		if constexpr (sizeof...(Is) == 0) return;\
-        (callable(_field_info<Is>{}), ...);\
+    template<typename Callable, typename U, std::size_t... Is>\
+    static constexpr\
+    std::enable_if_t<!std::is_same_v<U, void>>\
+    for_each_field_impl(Callable&& callable, std::index_sequence<Is...>) {\
+        U::for_each_field(std::forward<Callable>(callable));\
+		if constexpr (sizeof...(Is) > 0)\
+            (callable(_field_info<Is>{}), ...);\
+    }\
+    template<typename Callable, typename U, std::size_t... Is>\
+    static constexpr\
+    std::enable_if_t<std::is_same_v<U, void>>\
+    for_each_field_impl(Callable&& callable, std::index_sequence<Is...>) {\
+        if constexpr (sizeof...(Is) > 0)\
+            (callable(_field_info<Is>{}), ...);\
     }\
     template<typename Callable>\
     static constexpr void for_each_field(Callable&& callable) {\
-        for_each_field_impl(std::forward<Callable>(callable), std::make_index_sequence<num_members>{});\
+        for_each_field_impl<Callable, _parent_type>\
+            (std::forward<Callable>(callable), std::make_index_sequence<my_num_members>{});\
     }\
-    static constexpr bool is_reflectable() { return true; }\
-    static constexpr auto get_class_name() { return _type_name; }\
-    static constexpr int num_members = (_counter) - _init_count - 1;\
-    using parent_type = void
-
-#define END_REFLECT_INHERIT_IMPL(_counter)\
-public:\
-    template<typename Callable, std::size_t... Is>\
-    static constexpr void for_each_field_impl(Callable&& callable, std::index_sequence<Is...>) {\
-        if constexpr (_is_subclass && _parent_type::is_reflectable())\
-            _parent_type::for_each_field(std::forward<Callable>(callable));\
-		if constexpr (sizeof...(Is) == 0) return;\
-        (callable(_field_info<Is>{}), ...);\
-    }\
-    template<typename Callable>\
-    static constexpr void for_each_field(Callable&& callable) {\
-        for_each_field_impl(std::forward<Callable>(callable), std::make_index_sequence<my_num_members>{});\
-    }\
-    static constexpr bool is_reflectable() { return true; }\
-    static constexpr auto get_class_name() { return _type_name; }\
+    static constexpr std::string_view const& get_class_name() { return _type_name; }\
     static constexpr int my_num_members = (_counter) - _init_count - 1;\
-    static constexpr int num_members = my_num_members +\
-        (_parent_type::is_reflectable() ? _parent_type::num_members : 0);\
-    using parent_type = _parent_type
+    static constexpr int num_members = my_num_members + Traits::get_num_members<_parent_type>::value
 
-#define BEGIN_REFLECT(cls) BEGIN_REFLECT_IMPL(cls, __COUNTER__)
-#define FIELD_MOD(type, var_name, init, ...) FIELD_IMPL_MOD(__COUNTER__, type, var_name, init, __VA_ARGS__)
+#define DECL_DYNAMIC_INFO()\
+public:\
+    static constexpr ClassInfo _class_info = {\
+        _type_name,\
+        num_members,\
+        Traits::get_class_info<_parent_type>::value\
+    };\
+    virtual ClassInfo const& get_class_info() const {\
+        return _class_info;\
+    }\
+    virtual std::vector<FieldInfo> get_field_info() const {\
+        std::vector<FieldInfo> ret;\
+        _my_type::for_each_field([&ret](auto field) { ret.emplace_back(field); });\
+        return ret;\
+    }\
+    template<typename T>\
+    std::enable_if_t<Traits::has_dynamic_info<T>::value && std::is_base_of_v<_my_type, T>, T*>\
+    as() {\
+        if (get_class_info().class_name == T::get_class_name()) {\
+            return dynamic_cast<T*>(this);\
+        }\
+        return nullptr;\
+    }\
+    template<typename T>\
+    std::enable_if_t<Traits::has_dynamic_info<T>::value && std::is_base_of_v<_my_type, T>, T const*>\
+    as() const {\
+        if (get_class_info().class_name == T::get_class_name()) {\
+            return dynamic_cast<T const*>(this);\
+        }\
+        return nullptr;\
+    }
+#define BEGIN_REFLECT(cls, parent) BEGIN_REFLECT_IMPL(cls, __COUNTER__, parent)
+#define FIELD(type, var_name, init, ...) FIELD_IMPL(__COUNTER__, type, var_name, init, __VA_ARGS__)
 #define END_REFLECT() END_REFLECT_IMPL(__COUNTER__)
 
-#define BEGIN_REFLECT_INHERIT(cls, parent) BEGIN_REFLECT_INHERIT_IMPL(cls, __COUNTER__, parent)
-#define END_REFLECT_INHERIT() END_REFLECT_INHERIT_IMPL(__COUNTER__)
-
-    // type traits
-    template<typename T>
-    struct is_reflectable {
-        template<typename U>
-        static auto test(int) -> decltype(U::is_reflectable(), std::true_type{});
-        template<typename>
-        static auto test(...) -> std::false_type;
-        static constexpr bool value = decltype(test<T>(0))::value;
-    };
-
-    template<typename T>
-    struct has_serialization_callback {
-        template<typename U>
-        static auto test(int) -> decltype(std::declval<U>().on_serialize(), std::true_type{});
-        template<typename>
-        static auto test(...) -> std::false_type;
-        static constexpr bool value = decltype(test<T>(0))::value;
-    };
-
-    template<typename T>
-    struct has_deserialization_callback {
-        template<typename U>
-        static auto test(int) -> decltype(std::declval<U>().on_deserialize(), std::true_type{});
-        template<typename>
-        static auto test(...) -> std::false_type;
-        static constexpr bool value = decltype(test<T>(0))::value;
-    };
+    template<typename Reflected>
+    std::enable_if_t<Traits::is_reflectable<Reflected>::value && Traits::has_dynamic_info<Reflected>::value>
+    dynamic_for_each_field(Reflected& obj, std::function<void(FieldInfo const&)> callable) {
+        for (auto& info : obj.get_field_info()) {
+            callable(info);
+        }
+    }
 } // namespace PTS
+
+
+// provide hash functions for std::unordered_map
+namespace std {
+    template<>
+    struct hash<PTS::ClassInfo> {
+        auto operator()(PTS::ClassInfo const& info) const noexcept -> size_t {
+            return hash<std::string_view>{}(info.class_name);
+        }
+    };
+    template<>
+    struct hash<PTS::FieldInfo> {
+        auto operator()(PTS::FieldInfo const& info) const noexcept -> size_t {
+            return hash<std::string>{}(std::string{ info.type_name } + " " + 
+                std::string{ info.var_name } + " " + std::to_string(info.index));
+        }
+    };
+}; // namespace std

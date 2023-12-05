@@ -46,7 +46,7 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config)
     m_on_mouse_leave_scene_viewport_cb = [this] { on_mouse_leave_scene_viewport(); };
     m_on_mouse_enter_scene_viewport_cb = [this] { on_mouse_enter_scene_viewport(); };
     add_renderer(std::make_unique<EditorRenderer>(config));
-    // add_renderer(std::make_unique<VulkanRayTracingRenderer>(config));
+    add_renderer(std::make_unique<VulkanRayTracingRenderer>(config));
     create_input_actions();
 
     // register field change callbacks
@@ -363,7 +363,7 @@ void EditorApplication::draw_scene_panel() noexcept {
     if (ImGui::Button("Open Scene")) {
         auto const path = ImGui::FileDialogue(ImGui::FileDialogueMode::OPEN, m_archive->get_ext().data());
         if (!path.empty()) {
-            std::tie(m_scene, m_cam) = check_error(m_archive->load_file(path));
+            check_error(m_archive->load_file(path, m_scene, m_cam));
             on_scene_opened(m_scene);
         }
     }

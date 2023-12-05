@@ -6,10 +6,10 @@ namespace PTS {
         BoundingSphere() noexcept = default;
         BoundingSphere(glm::vec3 center, float radius) noexcept : center{ center }, radius{ radius } {}
 
-        BEGIN_REFLECT(BoundingSphere);
-        FIELD_MOD(glm::vec3, center, glm::vec3{ 0.0f },
+        BEGIN_REFLECT(BoundingSphere, void);
+        FIELD(glm::vec3, center, glm::vec3{ 0.0f },
             MSerialize{});
-        FIELD_MOD(float, radius, 1.0f,
+        FIELD(float, radius, 1.0f,
             MSerialize{});
         END_REFLECT();
     };

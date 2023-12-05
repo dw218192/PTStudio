@@ -120,20 +120,20 @@ namespace PTS {
         static constexpr float k_near = 0.1f, k_far = 100000.0f;
         static constexpr float k_min_fov = 20.0f, k_max_fov = 120.0f;
 
-        BEGIN_REFLECT(Camera);
-        FIELD_MOD(float, m_fov, {},
+        BEGIN_REFLECT(Camera, void);
+        FIELD(float, m_fov, {},
             MSerialize{});
-        FIELD_MOD(float, m_aspect, {},
+        FIELD(float, m_aspect, {},
             MSerialize{});
         // m_eye is the position of the camera
         // m_center is the point the camera is looking at
         // m_up is the up vector of the camera
         // m_arm_dir is the direction from m_eye to m_center
-        FIELD_MOD(glm::vec3, m_eye, {},
+        FIELD(glm::vec3, m_eye, {},
             MSerialize{});
-        FIELD_MOD(glm::vec3, m_center, {},
+        FIELD(glm::vec3, m_center, {},
             MSerialize{});
-        FIELD_MOD(glm::vec3, m_up, {},
+        FIELD(glm::vec3, m_up, {},
             MSerialize{});
         END_REFLECT();
         glm::vec3 m_arm_dir;

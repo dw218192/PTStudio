@@ -51,11 +51,11 @@ namespace PTS {
         std::unordered_map<ViewPtr<RenderableObject>, PerObjectData> m_obj_data;
 
         struct EditingData {
-            BEGIN_REFLECT(EditingData);
-            FIELD_MOD(bool, unlimited_samples, false);
-            FIELD_MOD(int, num_samples, 32,
+            BEGIN_REFLECT(EditingData, void);
+            FIELD(bool, unlimited_samples, false);
+            FIELD(int, num_samples, 32,
                 MRange { 1, 1000 });
-            FIELD_MOD(int, max_bounces, 4,
+            FIELD(int, max_bounces, 4,
                 MRange { 1, 100 });
             END_REFLECT();
         } m_editing_data;

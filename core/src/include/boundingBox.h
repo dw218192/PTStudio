@@ -11,10 +11,10 @@ namespace PTS {
         BoundingBox() noexcept : min_pos{ std::numeric_limits<float>::max() }, max_pos{ std::numeric_limits<float>::lowest() } { }
         BoundingBox(glm::vec3 min_pos, glm::vec3 max_pos) noexcept : min_pos{ min_pos }, max_pos{ max_pos } { }
 
-        BEGIN_REFLECT(BoundingBox);
-        FIELD_MOD(glm::vec3, min_pos, {},
+        BEGIN_REFLECT(BoundingBox, void);
+        FIELD(glm::vec3, min_pos, {},
             MSerialize{});
-        FIELD_MOD(glm::vec3, max_pos, {},
+        FIELD(glm::vec3, max_pos, {},
             MSerialize{});
         END_REFLECT();
 

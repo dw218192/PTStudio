@@ -43,7 +43,7 @@ git clone --recursive [repo url]
     - [ ] lights should be considered in vulkan ray tracer
     - [ ] fix sphere primitive uv bug
     - [ ] reflection system improvements
-        - [ ] support for inheritance
+        - [x] support for single inheritance
         - [ ] support for reference and pointer members
 - Medium Priority
     - [ ] implement undo/redo system

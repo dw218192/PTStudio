@@ -16,7 +16,7 @@
 
 namespace PTS {
     struct Scene : Object {
-        Scene() = default;
+        Scene() : Object("Scene") {}
 
         /**
          * \brief Creates a scene from an obj file.
@@ -57,13 +57,14 @@ namespace PTS {
         auto add_editable(Ref<SceneObject> obj_view) noexcept -> void;
         void remove_editable(View<SceneObject> obj_view) noexcept;
     private:
-        BEGIN_REFLECT_INHERIT(Scene, Object);
-        FIELD_MOD(std::list<RenderableObject>, m_objects, {},
+        BEGIN_REFLECT(Scene, Object);
+        FIELD(std::list<RenderableObject>, m_objects, {},
             MSerialize{});
-        FIELD_MOD(std::list<Light>, m_lights, {},
+        FIELD(std::list<Light>, m_lights, {},
             MSerialize{});
-        END_REFLECT_INHERIT();
-
+        END_REFLECT();
+        // enables dynamic retrieval of class info for polymorphic types
+        DECL_DYNAMIC_INFO();
     private:
         std::list<Ref<SceneObject>> m_editables;
     };

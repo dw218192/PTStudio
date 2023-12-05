@@ -38,7 +38,7 @@ namespace PTS {
     static_assert(sizeof(LightData) == 36, "LightData size mismatch");
 
     struct Light : SceneObject {
-        Light() noexcept = default;
+        Light(ObjectConstructorUsage usage = ObjectConstructorUsage::SERIALIZE) noexcept;
         Light(Scene const& scene, Transform transform, glm::vec3 color, float intensity) noexcept;
 
         NODISCARD auto get_color() const noexcept -> auto const& { return m_color; }
@@ -56,10 +56,10 @@ namespace PTS {
         }
 
     private:
-        BEGIN_REFLECT_INHERIT(Light, SceneObject);
-        FIELD_MOD(std::string, m_name, "Light",
+        BEGIN_REFLECT(Light, SceneObject);
+        FIELD(std::string, m_name, "Light",
             MSerialize{}, MNoInspect{}); // handled explicitly
-        FIELD_MOD(LightType, m_type, LightType::Point,
+        FIELD(LightType, m_type, LightType::Point,
             MSerialize{},
             MEnum {
                 4,
@@ -74,10 +74,13 @@ namespace PTS {
                 }
             }
         );
-        FIELD_MOD(glm::vec3, m_color, {},
+        FIELD(glm::vec3, m_color, {},
             MSerialize{}, MColor{});
-        FIELD_MOD(float, m_intensity, {},
+        FIELD(float, m_intensity, {},
             MSerialize{}, MRange{ 0.0f, 100.0f });
-        END_REFLECT_INHERIT();
+        END_REFLECT();
+
+        // enables dynamic retrieval of class info for polymorphic types
+        DECL_DYNAMIC_INFO();
     };
 }

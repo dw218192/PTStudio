@@ -5,6 +5,9 @@
 #include <tiny_obj_loader.h>
 #include <glm/ext/scalar_constants.hpp>
 
+PTS::RenderableObject::RenderableObject(ObjectConstructorUsage usage) noexcept
+    : SceneObject{ usage } {}
+
 PTS::RenderableObject::RenderableObject(
     Scene const& scene,
     std::string_view name,

@@ -29,7 +29,7 @@ namespace PTS {
     struct Scene;
 
     struct RenderableObject : SceneObject {
-        RenderableObject() noexcept = default;
+        RenderableObject(ObjectConstructorUsage usage = ObjectConstructorUsage::SERIALIZE) noexcept;
         RenderableObject(Scene const& scene, std::string_view name, Transform transform, Material mat, tcb::span<Vertex const> vertices, tcb::span<unsigned const> indices);
         RenderableObject(Scene const& scene, Transform transform, Material mat, tcb::span<Vertex const> vertices, tcb::span<unsigned const> indices);
 
@@ -60,17 +60,20 @@ namespace PTS {
         }
         auto set_material(Material mat) noexcept -> void;
     private:
-        BEGIN_REFLECT_INHERIT(RenderableObject, SceneObject);
-        FIELD_MOD(BoundingBox, m_local_bound, {},
+        BEGIN_REFLECT(RenderableObject, SceneObject);
+        FIELD(BoundingBox, m_local_bound, {},
             MSerialize{}, MNoInspect{}); // not editable
-        FIELD_MOD(Material, m_mat, {},
+        FIELD(Material, m_mat, {},
             MSerialize{});
-        FIELD_MOD(std::vector<Vertex>, m_vertices, {},
+        FIELD(std::vector<Vertex>, m_vertices, {},
             MSerialize{}, MNoInspect{}); // not editable
-        FIELD_MOD(std::vector<unsigned>, m_indices, {},
+        FIELD(std::vector<unsigned>, m_indices, {},
             MSerialize{}, MNoInspect{}); // not editable
-        FIELD_MOD(PrimitiveType, m_primitive_type, PrimitiveType::None,
+        FIELD(PrimitiveType, m_primitive_type, PrimitiveType::None,
             MSerialize{}, MNoInspect{}); // not editable
-        END_REFLECT_INHERIT();
+        END_REFLECT();
+        
+        // enables dynamic retrieval of class info for polymorphic types
+        DECL_DYNAMIC_INFO();
     };
 }

@@ -4,22 +4,22 @@
 namespace PTS {
     struct Material {
         // metallic-roughness workflow
-        BEGIN_REFLECT(Material);
-        FIELD_MOD(glm::vec3, albedo, glm::vec3{ 1.0f },
+        BEGIN_REFLECT(Material, void);
+        FIELD(glm::vec3, albedo, glm::vec3{ 1.0f },
             MSerialize{}, MColor{});
-        FIELD_MOD(float, roughness, 0.5f,
+        FIELD(float, roughness, 0.5f,
             MSerialize{});
-        FIELD_MOD(float, metallic, 0.0f,
+        FIELD(float, metallic, 0.0f,
             MSerialize{});
-        FIELD_MOD(float, ior, 1.0f,
+        FIELD(float, ior, 1.0f,
             MSerialize{});
-        FIELD_MOD(float, ao, 1.0f,
+        FIELD(float, ao, 1.0f,
             MSerialize{});
-        FIELD_MOD(float, transmission, 0.0f,
+        FIELD(float, transmission, 0.0f,
             MSerialize{});
-        FIELD_MOD(glm::vec3, emission, glm::vec3{ 0.0f },
+        FIELD(glm::vec3, emission, glm::vec3{ 0.0f },
             MSerialize{}, MColor{});
-        FIELD_MOD(float, emission_intensity, 1.0f,
+        FIELD(float, emission_intensity, 1.0f,
             MSerialize{});
         END_REFLECT();
 

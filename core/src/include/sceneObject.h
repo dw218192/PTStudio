@@ -14,7 +14,7 @@ namespace PTS {
     struct Scene;
 
     struct SceneObject : Object {
-        SceneObject() noexcept = default;
+        SceneObject(ObjectConstructorUsage usage = ObjectConstructorUsage::SERIALIZE) noexcept;
         SceneObject(Scene const& scene, std::string_view name, Transform transform);
         SceneObject(Scene const& scene, Transform transform);
 
@@ -31,13 +31,15 @@ namespace PTS {
             m_flags = static_cast<EditFlags>(flags);
         }
     private:
-        BEGIN_REFLECT_INHERIT(SceneObject, Object);
-        FIELD_MOD(Transform, m_transform, {},
+        BEGIN_REFLECT(SceneObject, Object);
+        FIELD(Transform, m_transform, {},
             MSerialize{}, MNoInspect{}); // handled explicitly
-        FIELD_MOD(EditFlags, m_flags, static_cast<EditFlags>(EditFlags::Visible | EditFlags::Selectable),
+        FIELD(EditFlags, m_flags, static_cast<EditFlags>(EditFlags::Visible | EditFlags::Selectable),
             MSerialize{}, edit_flags_modifier);
-        FIELD_MOD(ViewPtr<Scene>, m_scene, nullptr,
-            MSerialize{}, MNoInspect{}); // not editable
-        END_REFLECT_INHERIT();
+        FIELD(ViewPtr<Scene>, m_scene, nullptr,
+            MSerialize{}); // not editable
+        END_REFLECT();
+        // enables dynamic retrieval of class info for polymorphic types
+        DECL_DYNAMIC_INFO();
     };
 }

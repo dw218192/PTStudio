@@ -5,9 +5,10 @@
 #include <glm/glm.hpp>
 
 #include "reflection.h"
+#include "typeTraitsUtil.h"
 
 namespace ImGui {
-    template<typename Reflected, typename = std::enable_if_t<PTS::is_reflectable<Reflected>::value>>
+    template<typename Reflected, typename = std::enable_if_t<PTS::Traits::is_reflectable<Reflected>::value>>
     bool ReflectedField(const char* label, Reflected& reflected, bool collapsed = false);
 
     namespace detail {
@@ -18,7 +19,7 @@ namespace ImGui {
         template<typename T>
         struct Dispatch {
             using type = std::conditional_t<std::is_enum_v<T>, EnumType,
-                std::conditional_t<PTS::is_reflectable<T>::value, ReflectedType, T>>;
+                std::conditional_t<PTS::Traits::is_reflectable<T>::value, ReflectedType, T>>;
         };
         template<typename T>
         using Dispatch_t = typename Dispatch<T>::type;
@@ -32,6 +33,7 @@ namespace ImGui {
             }
         };
 
+
         template<>
         struct DoField<ReflectedType> {
             template<typename Reflected, typename FieldInfo>
@@ -41,6 +43,7 @@ namespace ImGui {
             }
         };
 
+        // ---------------------- primitive types ----------------------
         template<>
         struct DoField<float> {
             template<typename Reflected, typename FieldInfo>
@@ -53,7 +56,6 @@ namespace ImGui {
                 }
             }
         };
-
         template<>
         struct DoField<int> {
             template<typename Reflected, typename FieldInfo>
@@ -66,7 +68,6 @@ namespace ImGui {
                 }
             }
         };
-
         template<>
         struct DoField<bool> {
             template<typename Reflected, typename FieldInfo>
@@ -75,42 +76,31 @@ namespace ImGui {
                 return ImGui::Checkbox(field_info.var_name.data(), &field);
             }
         };
-
-        template<>
-        struct DoField<glm::vec2> {
+        template<typename T>
+        struct DoField<T*> {
             template<typename Reflected, typename FieldInfo>
             static auto impl(FieldInfo field_info, Reflected& reflected) -> bool {
-                auto&& field = field_info.get(reflected);
-                return ImGui::InputFloat2(field_info.var_name.data(), glm::value_ptr(field));
-            }
-        };
-
-        template<>
-        struct DoField<glm::vec3> {
-            template<typename Reflected, typename FieldInfo>
-            static auto impl(FieldInfo field_info, Reflected& reflected) -> bool {
-                auto&& field = field_info.get(reflected);
-                if (auto color_mod = field_info.template get_modifier<MColor>()) {
-                    return ImGui::ColorEdit3(field_info.var_name.data(), glm::value_ptr(field));
-                } else {
-                    return ImGui::InputFloat3(field_info.var_name.data(), glm::value_ptr(field));
+                ImGui::Text("pointer to object @ %p", field_info.get(reflected));
+                if constexpr (std::is_base_of_v<PTS::Object, T>) {
+                    if (field_info.get(reflected))
+                        ImGui::Text("Pointed-to Type: %s", field_info.get(reflected)->get_class_info().class_name.data());
                 }
+                return true;
             }
         };
-
-        template<>
-        struct DoField<glm::vec4> {
+        template<typename T>
+        struct DoField<T const*> {
             template<typename Reflected, typename FieldInfo>
             static auto impl(FieldInfo field_info, Reflected& reflected) -> bool {
-                auto&& field = field_info.get(reflected);
-                if (auto color_mod = field_info.template get_modifier<MColor>()) {
-                    return ImGui::ColorEdit4(field_info.var_name.data(), glm::value_ptr(field));
-                } else {
-                    return ImGui::InputFloat4(field_info.var_name.data(), glm::value_ptr(field));
+                ImGui::Text("pointer to object @ %p", field_info.get(reflected));
+                if constexpr (std::is_base_of_v<PTS::Object, T>) {
+                    if (field_info.get(reflected))
+                        ImGui::Text("Pointed-to Type: %s", field_info.get(reflected)->get_class_info().class_name.data());
                 }
+                return true;
             }
         };
-
+        
         template<>
         struct DoField<EnumType> {
             template<typename Reflected, typename FieldInfo>
@@ -152,6 +142,42 @@ namespace ImGui {
                     ImGui::Text("Enum type %s does not have a modifier", field_info.type_name.data());
                 }
                 return changed;
+            }
+        };
+
+        // ---------------------- glm types ----------------------
+        template<>
+        struct DoField<glm::vec2> {
+            template<typename Reflected, typename FieldInfo>
+            static auto impl(FieldInfo field_info, Reflected& reflected) -> bool {
+                auto&& field = field_info.get(reflected);
+                return ImGui::InputFloat2(field_info.var_name.data(), glm::value_ptr(field));
+            }
+        };
+
+        template<>
+        struct DoField<glm::vec3> {
+            template<typename Reflected, typename FieldInfo>
+            static auto impl(FieldInfo field_info, Reflected& reflected) -> bool {
+                auto&& field = field_info.get(reflected);
+                if (auto color_mod = field_info.template get_modifier<MColor>()) {
+                    return ImGui::ColorEdit3(field_info.var_name.data(), glm::value_ptr(field));
+                } else {
+                    return ImGui::InputFloat3(field_info.var_name.data(), glm::value_ptr(field));
+                }
+            }
+        };
+
+        template<>
+        struct DoField<glm::vec4> {
+            template<typename Reflected, typename FieldInfo>
+            static auto impl(FieldInfo field_info, Reflected& reflected) -> bool {
+                auto&& field = field_info.get(reflected);
+                if (auto color_mod = field_info.template get_modifier<MColor>()) {
+                    return ImGui::ColorEdit4(field_info.var_name.data(), glm::value_ptr(field));
+                } else {
+                    return ImGui::InputFloat4(field_info.var_name.data(), glm::value_ptr(field));
+                }
             }
         };
 

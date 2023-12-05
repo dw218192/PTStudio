@@ -41,10 +41,10 @@ namespace PTS {
         void on_trans_matrix_update() noexcept;
         void on_component_update() noexcept;
 
-        BEGIN_REFLECT(Transform);
-        FIELD_MOD(glm::vec3, m_pos, {}, MSerialize{});
-        FIELD_MOD(glm::vec3, m_rot, {}, MSerialize{});
-        FIELD_MOD(glm::vec3, m_scale, {}, MSerialize{});
+        BEGIN_REFLECT(Transform, void);
+        FIELD(glm::vec3, m_pos, {}, MSerialize{});
+        FIELD(glm::vec3, m_rot, {}, MSerialize{});
+        FIELD(glm::vec3, m_scale, {}, MSerialize{});
         END_REFLECT();
 
         glm::mat4 m_trans;

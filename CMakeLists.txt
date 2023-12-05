@@ -24,15 +24,15 @@ include("cmake/AutoDetectCudaArch.cmake")
 
 # CUDA and C++ compiler flags
 set(cxx_flags 
-	$<$<CXX_COMPILER_ID:MSVC>:-D_SCL_SECURE_NO_WARNINGS /std:c++17>
+	$<$<CXX_COMPILER_ID:MSVC>:-D_SCL_SECURE_NO_WARNINGS /std:c++17 /MP>
 	$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Debug>>:/MDd /Zi /Ob0 /Od /RTC1>
 	# Add MSVC-specific compiler flags here
 	
-	$<$<CXX_COMPILER_ID:GNU>:-Wall -m64 -O3 -std=c++17>
+	$<$<CXX_COMPILER_ID:GNU>:-Wall -m64 -O3 -std=c++17 -fmax-errors=1>
 	$<$<AND:$<CXX_COMPILER_ID:GNU>,$<CONFIG:Debug>>:-g -O0>
 	# Add GCC compiler flags here
 	
-	$<$<CXX_COMPILER_ID:Clang>:-Wall -m64 -O3 -std=c++17>
+	$<$<CXX_COMPILER_ID:Clang>:-Wall -m64 -O3 -std=c++17 -ferror-limit=1>
 	$<$<AND:$<CXX_COMPILER_ID:Clang>,$<CONFIG:Debug>>:-g -O0>
 	# Add Clang compiler flags here
 )

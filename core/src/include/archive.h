@@ -28,11 +28,14 @@ namespace PTS {
 
         /**
          * \brief Deserializes the scene and camera from a string.
-         * \return A pair containing the scene and camera. If an error occurs, an error message is returned.
+         * \param data The string containing the serialized scene and camera.
+         * \param scene The scene to deserialize into.
+         * \param cam The camera to deserialize into.
+         * \return Nothing if successful, otherwise an error message.
         */
-        virtual auto load(std::string_view data) -> tl::expected<std::pair<Scene, Camera>, std::string> = 0;
+        virtual auto load(std::string_view data, Ref<Scene> scene, Ref<Camera> cam) -> tl::expected<void, std::string> = 0;
 
-        auto load_file(std::string_view file) noexcept -> tl::expected<std::pair<Scene, Camera>, std::string>;
+        auto load_file(std::string_view file, Ref<Scene> scene, Ref<Camera> cam) noexcept -> tl::expected<void, std::string>;
         auto save_file(View<Scene> scene_view, View<Camera> camera_view, std::string_view file) noexcept -> tl::expected<void, std::string>;
     };
 }
