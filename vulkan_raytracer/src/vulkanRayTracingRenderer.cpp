@@ -94,9 +94,13 @@ auto has_layer(tcb::span<vk::LayerProperties const> props, tcb::span<std::string
         auto gl_exts = std::vector<std::string>{};
         auto no_gl_ext = 0u;
         glGetIntegerv(GL_NUM_EXTENSIONS, reinterpret_cast<GLint*>(&no_gl_ext));
+        CHECK_GL_ERROR();
+
         for (auto i = 0u; i < no_gl_ext; ++i) {
             gl_exts.emplace_back(reinterpret_cast<char const*>(glGetStringi(GL_EXTENSIONS, i)));
+            CHECK_GL_ERROR();
         }
+
         for (auto const& ext : required_gl_ext) {
             if (std::find(gl_exts.cbegin(), gl_exts.cend(), ext) == gl_exts.cend()) {
                 return TL_ERROR("GL extension not found: " + std::string{ext});
