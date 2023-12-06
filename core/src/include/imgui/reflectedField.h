@@ -80,7 +80,12 @@ namespace ImGui {
         struct DoField<T*> {
             template<typename Reflected, typename FieldInfo>
             static auto impl(FieldInfo field_info, Reflected& reflected) -> bool {
-                ImGui::Text("pointer to object @ %p", field_info.get(reflected));
+                ImGui::Text(
+                    "%s::%s: ptr to object @ %p",
+                    field_info.type_name.data(), 
+                    field_info.var_name.data(), 
+                    field_info.get(reflected)
+                );
                 if constexpr (std::is_base_of_v<PTS::Object, T>) {
                     if (field_info.get(reflected))
                         ImGui::Text("Pointed-to Type: %s", field_info.get(reflected)->get_class_info().class_name.data());
@@ -92,12 +97,7 @@ namespace ImGui {
         struct DoField<T const*> {
             template<typename Reflected, typename FieldInfo>
             static auto impl(FieldInfo field_info, Reflected& reflected) -> bool {
-                ImGui::Text("pointer to object @ %p", field_info.get(reflected));
-                if constexpr (std::is_base_of_v<PTS::Object, T>) {
-                    if (field_info.get(reflected))
-                        ImGui::Text("Pointed-to Type: %s", field_info.get(reflected)->get_class_info().class_name.data());
-                }
-                return true;
+                return DoField<T*>::impl(field_info, reflected);
             }
         };
         
