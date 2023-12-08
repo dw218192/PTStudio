@@ -164,9 +164,9 @@ void EditorApplication::create_input_actions() noexcept {
     auto focus_on_obj = InputAction {{InputType::KEYBOARD, ActionType::PRESS, ImGuiKey_F },
         [this] (InputEvent const& event) {
             BoundingBox local_bound;
-            if (auto obj = dynamic_cast<RenderableObject*>(m_control_state.get_cur_obj())) {
+            if (auto obj = m_control_state.get_cur_obj()->as<RenderableObject>()) {
                 local_bound = obj->get_bound();
-            } else if (auto light = dynamic_cast<Light*>(m_control_state.get_cur_obj())) {
+            } else if (auto light = m_control_state.get_cur_obj()->as<Light>()) {
                 local_bound = BoundingBox{ glm::vec3 { -0.5f }, glm::vec3 { 0.5f } };
             }
             LookAtParams params;
@@ -515,9 +515,9 @@ void EditorApplication::draw_object_panel() noexcept {
             }
 
             // editable-specific fields
-            if (auto const obj = dynamic_cast<RenderableObject*>(editable)) {
+            if (auto const obj = editable->as<RenderableObject>()) {
                 ImGui::ReflectedField("Object Data", *obj);
-            } else if (auto const light = dynamic_cast<Light*>(editable)) {
+            } else if (auto const light = editable->as<Light>()) {
                 ImGui::ReflectedField("Light", *light);
             }
         } else {
@@ -722,9 +722,9 @@ void EditorApplication::remove_editable(Ref<SceneObject> editable) {
         check_error(renderer->on_remove_obj(editable));
     }
 
-    if (auto const obj = dynamic_cast<RenderableObject*>(&editable.get())) {
+    if (auto const obj = editable.get().as<RenderableObject>()) {
         m_scene.remove_object(*obj);
-    } else if (auto const light = dynamic_cast<Light*>(&editable.get())) {
+    } else if (auto const light = editable.get().as<Light>()) {
         m_scene.remove_light(*light);
     }
 

@@ -15,11 +15,18 @@ namespace ImGui {
         // tag types for dispatching
         struct EnumType {};
         struct ReflectedType {};
+        struct ContainerType {};
+        struct PairType {};
+        struct TupleType {};
 
         template<typename T>
         struct Dispatch {
             using type = std::conditional_t<std::is_enum_v<T>, EnumType,
-                std::conditional_t<PTS::Traits::is_reflectable<T>::value, ReflectedType, T>>;
+                std::conditional_t<PTS::Traits::is_reflectable<T>::value, ReflectedType, 
+                std::conditional_t<PTS::Traits::is_container<T>::value, ContainerType,
+                std::conditional_t<PTS::Traits::is_pair<T>::value, PairType,
+                std::conditional_t<PTS::Traits::is_tuple<T>::value, TupleType,
+                T>>>>>;
         };
         template<typename T>
         using Dispatch_t = typename Dispatch<T>::type;
@@ -181,6 +188,98 @@ namespace ImGui {
             }
         };
 
+        // ---------------------- container types ----------------------
+        template<>
+        struct DoField<ContainerType> {
+            template<typename Reflected, typename FieldInfo>
+            static auto impl(FieldInfo field_info, Reflected& reflected) -> bool {
+                auto&& field = field_info.get(reflected);
+                bool changed = false;
+                if (ImGui::TreeNode(field_info.var_name.data())) {
+                    if (ImGui::Button("Add")) {
+                        field.emplace_back();
+                        changed = true;
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Remove")) {
+                        if (!field.empty()) {
+                            field.pop_back();
+                            changed = true;
+                        }
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Clear")) {
+                        field.clear();
+                        changed = true;
+                    }
+                    ImGui::Separator();
+                    auto it = field.begin();
+                    for (int i = 0; i < field.size(); ++i, ++it) {
+                        ImGui::PushID(i);
+                        if (ImGui::TreeNode(std::to_string(i).data())) {
+                            // TODO: this is ugly
+                            auto sub_var_name = std::string{ field_info.var_name.data() } + "[" + std::to_string(i) + "]";
+                            auto sub_type_name = std::string{ field_info.type_name.data() } + "::value_type";
+                            using ContainerType = typename FieldInfo::type;
+                            using ElementType = typename ContainerType::value_type;
+
+                            struct ContainerElementFieldInfo {
+                                std::string_view type_name;
+                                std::string_view var_name;
+                                ContainerElementFieldInfo(std::string_view type_name, std::string_view var_name, ContainerType& container,  int i)
+                                    : type_name{ type_name }, var_name{ var_name }, m_container{ container }, m_i{ i } {}
+                                auto get(Reflected& reflected) -> ElementType& {
+                                    (void) reflected;
+                                    return m_container[m_i];
+                                }
+                            private:
+                                ContainerType& m_container;
+                                int m_i;
+                            };
+
+                            auto sub_field_info = ContainerElementFieldInfo{ sub_type_name, sub_var_name, field, i };
+                            changed |= DoField<Dispatch_t<ElementType>>::impl(sub_field_info, reflected);
+                            ImGui::TreePop();
+                        }
+                        ImGui::PopID();
+                    }
+                    ImGui::TreePop();
+                }
+                return changed;
+            }
+        };
+
+        template<>
+        struct DoField<PairType> {
+            template<typename Reflected, typename FieldInfo>
+            static auto impl(FieldInfo field_info, Reflected& reflected) -> bool {
+                auto&& field = field_info.get(reflected);
+                bool changed = false;
+                if (ImGui::TreeNode(field_info.var_name.data())) {
+                    changed |= ImGui::ReflectedField("First", field.first);
+                    changed |= ImGui::ReflectedField("Second", field.second);
+                    ImGui::TreePop();
+                }
+                return changed;
+            }
+        };
+
+        template<>
+        struct DoField<TupleType> {
+            template<typename Reflected, typename FieldInfo>
+            static auto impl(FieldInfo field_info, Reflected& reflected) -> bool {
+                auto&& field = field_info.get(reflected);
+                bool changed = false;
+                if (ImGui::TreeNode(field_info.var_name.data())) {
+                    std::apply([&changed](auto&&... args) {
+                        (changed |= ImGui::ReflectedField("Element", args), ...);
+                    }, field);
+                    ImGui::TreePop();
+                }
+                return changed;
+            }
+        };
+
     } // namespace detail
 
 } // namespace ImGui
@@ -194,13 +293,12 @@ bool ImGui::ReflectedField(const char* label, Reflected& reflected, bool collaps
     if (ImGui::CollapsingHeader(label, collapsed ? 0 : ImGuiTreeNodeFlags_DefaultOpen)) {
         Reflected::for_each_field([&changed, &reflected](auto field_info) {
             using FieldType = typename decltype(field_info)::type;
-            if (auto no_inpsect_mod = field_info.template get_modifier<MNoInspect>()) {
-                return;
-            }
-            auto old_val = field_info.get(reflected);
-            if (detail::DoField<detail::Dispatch_t<FieldType>>::impl(field_info, reflected)) {
-                changed = true;
-                field_info.on_change(old_val, field_info.get(reflected), reflected);
+            if constexpr (!field_info.template has_modifier<MNoInspect>()) {
+                auto old_val = field_info.get(reflected);
+                if (detail::DoField<detail::Dispatch_t<FieldType>>::impl(field_info, reflected)) {
+                    changed = true;
+                    field_info.on_change(old_val, field_info.get(reflected), reflected);
+                }
             }
         });
     }

@@ -120,4 +120,3 @@ Ty& operator=(Ty const&) = delete
 
 #define DECL_ENUM(name, ...)\
 	enum class name { __VA_ARGS__, __COUNT }
-

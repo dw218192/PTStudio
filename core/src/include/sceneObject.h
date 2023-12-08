@@ -38,6 +38,11 @@ namespace PTS {
             MSerialize{}, edit_flags_modifier);
         FIELD(ViewPtr<Scene>, m_scene, nullptr,
             MSerialize{}); // not editable
+        FIELD(ViewPtr<SceneObject>, m_parent, nullptr,
+            MSerialize{}); // not editable
+        FIELD(std::vector<ViewPtr<SceneObject>>, m_children, {},
+            MSerialize{}); // not editable
+
         END_REFLECT();
         // enables dynamic retrieval of class info for polymorphic types
         DECL_DYNAMIC_INFO();

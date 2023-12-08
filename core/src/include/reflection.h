@@ -7,6 +7,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <cstddef>
 
 #include "typeTraitsUtil.h"
 
@@ -30,11 +31,22 @@ namespace PTS {
         std::tuple<Modifiers...> args;
         constexpr ModifierPack(Modifiers... args) : args(std::make_tuple(args...)) {}
 
-        template<typename Callable>
-        constexpr void for_each(Callable&& callable) const {
-            std::apply([&callable](auto&&... args) {
-                (callable(args), ...);
+        // not marked as constexpr because void* conversion is prohibited in constexpr
+        template<typename Mod>
+        auto get() const -> Mod const* {
+            void const* ret = nullptr;
+            std::apply([&](auto&&... args) {
+                ([&](auto&& arg) {
+                    if constexpr (std::is_same_v<std::decay_t<decltype(arg)>, Mod>) {
+                        ret = &arg;
+                    }
+                }(args), ...);
             }, args);
+            return static_cast<Mod const*>(ret);
+        }
+        template<typename Mod>
+        constexpr auto has() const {
+            return (std::is_same_v<Modifiers, Mod> || ...);
         }
     };
     /**
@@ -86,12 +98,76 @@ namespace PTS {
         int num_items;
         auto (*get_name)(int idx) -> char const*;
     };
+
     // used to dynamically get info about a class
     struct ClassInfo {
         std::string_view class_name;
         int num_members;
         ClassInfo const* parent;
     };
+
+    // interface for type-erased iterators
+    struct TypeErasedIteratorInterface {
+        virtual ~TypeErasedIteratorInterface() = default;
+        virtual auto operator++() -> TypeErasedIteratorInterface& = 0;
+        virtual auto operator*() const -> void const* = 0;
+        virtual auto operator*() -> void* = 0;
+        virtual auto operator==(TypeErasedIteratorInterface const& other) const -> bool = 0;
+        virtual auto operator!=(TypeErasedIteratorInterface const& other) const -> bool = 0;
+    };
+    // type-erased iterator
+    struct TypeErasedIterator {
+        template<typename Iterator, typename = std::enable_if_t<Traits::is_iterator<Iterator>::value>>
+        struct IteratorWrapper : TypeErasedIteratorInterface {
+            IteratorWrapper(Iterator it) : m_it(it) {}
+            auto operator++() -> TypeErasedIteratorInterface& override {
+                ++m_it;
+                return *this;
+            }
+            auto operator*() const -> void const* override {
+                return &(*m_it);
+            }
+            auto operator*() -> void* override {
+                return &(*m_it);
+            }
+            auto operator==(TypeErasedIteratorInterface const& other) const -> bool override {
+                if (auto* other_it = dynamic_cast<IteratorWrapper const*>(&other)) {
+                    return m_it == other_it->m_it;
+                }
+                return false;
+            }
+            auto operator!=(TypeErasedIteratorInterface const& other) const -> bool override {
+                return !(*this == other);
+            }
+        private:
+            Iterator m_it;
+        };
+        
+        template<typename Iterator, typename = std::enable_if_t<Traits::is_iterator<Iterator>::value>>
+        TypeErasedIterator(Iterator it) : m_impl(std::make_shared<IteratorWrapper<Iterator>>(it)) {}
+        template<typename T>
+        TypeErasedIterator(T* ptr) : m_impl(std::make_shared<IteratorWrapper<T*>>(ptr)) {}
+        TypeErasedIterator() : m_impl(nullptr) {}
+
+        auto operator++() -> TypeErasedIteratorInterface& {
+            return m_impl->operator++();
+        }
+        auto operator*() const -> void const* {
+            return m_impl->operator*();
+        }
+        auto operator*() -> void* {
+            return m_impl->operator*();
+        }
+        auto operator==(TypeErasedIterator const& other) const -> bool {
+            return m_impl->operator==(*other.m_impl);
+        }
+        auto operator!=(TypeErasedIterator const& other) const -> bool {
+            return m_impl->operator!=(*other.m_impl);
+        }
+    private:
+        std::shared_ptr<TypeErasedIteratorInterface> m_impl;
+    };
+
     /** @brief non-templated field info, not type-safe \n
      * used to dynamically get info about a field or store a type-erased field pointer
      * @note this is a workaround for the fact that we can't have a virtual template function
@@ -102,41 +178,57 @@ namespace PTS {
         std::string_view var_name;
         std::string_view type_name;
         int index;
-        
         bool is_pointer;
+        bool is_container;
+
         auto operator==(FieldInfo const& other) const noexcept -> bool {
             return var_name == other.var_name && type_name == other.type_name && index == other.index;
         }
-
-        template<typename MemPtr>
-        struct Helper {
-            MemPtr mem_ptr;
-
-            template<typename = std::enable_if_t<std::is_member_pointer_v<MemPtr>>>
-            Helper(MemPtr mem_ptr) : mem_ptr(mem_ptr) {}
-        };
-
-        template<typename RetType, typename T>
-        auto get(T* obj) const -> RetType& {
-            auto mem_ptr = static_cast<Helper<RetType (T::*)>*>(m_any_mem_ptr.get())->mem_ptr;
-            return (obj->*mem_ptr);
+        auto operator!=(FieldInfo const& other) const noexcept -> bool {
+            return !(*this == other);
         }
-        template<typename RetType, typename T>
-        auto get(T const* obj) const -> RetType const& {
-            auto mem_ptr = static_cast<Helper<RetType (T::*)>*>(m_any_mem_ptr.get())->mem_ptr;
-            return (obj->*mem_ptr);
+        auto operator<(FieldInfo const& other) const noexcept -> bool {
+            return std::tuple{ var_name, type_name, index } < std::tuple{ other.var_name, other.type_name, other.index };
         }
-        template<template <int, typename> typename TemplatedFieldInfo, int n>
-        FieldInfo(TemplatedFieldInfo<n, void> const& info) :
+        auto operator<=(FieldInfo const& other) const noexcept -> bool {
+            return *this < other || *this == other;
+        }
+        auto operator>(FieldInfo const& other) const noexcept -> bool {
+            return !(*this <= other);
+        }
+        auto operator>=(FieldInfo const& other) const noexcept -> bool {
+            return !(*this < other);
+        }
+        auto begin() const -> TypeErasedIterator {
+            return m_begin;
+        }
+        auto end() const -> TypeErasedIterator {
+            return m_end;
+        }
+
+        template<template <int, typename> typename TemplatedFieldInfo, int n, typename Reflected, 
+            typename = std::enable_if_t<Traits::is_reflectable<Reflected>::value>>
+        FieldInfo(TemplatedFieldInfo<n, void> const& info, Reflected& obj) :
             var_name(info.var_name),
             type_name(info.type_name),
             index(n),
             is_pointer(std::is_pointer_v<typename TemplatedFieldInfo<n, void>::type>),
-            m_any_mem_ptr(std::make_shared<Helper<
-                decltype(TemplatedFieldInfo<n, void>::mem_pointer)>>
-            (info.mem_pointer)) {}
+            is_container(Traits::is_container<typename TemplatedFieldInfo<n, void>::type>::value)
+        {
+            using FieldType = typename TemplatedFieldInfo<n, void>::type;
+            if constexpr (Traits::is_container<FieldType>::value) {
+                using Iter = typename FieldType::iterator;
+                auto& container = const_cast<FieldType&>(obj.*info.mem_pointer);
+                m_begin = TypeErasedIterator { container.begin() };
+                m_end = TypeErasedIterator { container.end() };
+            } else {
+                auto& member = const_cast<FieldType&>(obj.*info.mem_pointer);
+                m_begin = TypeErasedIterator { std::addressof(member) };
+                m_end = TypeErasedIterator { std::addressof(member) + 1 };
+            }
+        }
     private:
-        std::shared_ptr<void> m_any_mem_ptr;
+        TypeErasedIterator m_begin, m_end; // type-erased iterators if the field is a container
     };
 
 #define STR(x) #x
@@ -168,14 +260,12 @@ namespace PTS {
             return default_value;\
         }\
         template<typename Modifier>\
-        static constexpr auto get_modifier() -> std::optional<Modifier> {\
-            std::optional<Modifier> ret = std::nullopt;\
-            modifiers.for_each([&ret](auto mod) {\
-                if constexpr (std::is_same_v<decltype(mod), Modifier>) {\
-                    ret = mod;\
-                }\
-            });\
-            return ret;\
+        static auto get_modifier() {\
+            return modifiers.template get<Modifier>();\
+        }\
+        template<typename Modifier>\
+        static constexpr bool has_modifier() {\
+            return modifiers.template has<Modifier>();\
         }\
         using CallbackType = std::function<void(_var_type&, _var_type&, _my_type&)>;\
         static auto register_on_change_callback(CallbackType callback) {\
@@ -197,7 +287,7 @@ namespace PTS {
         static void set_default(type const& val) {\
             default_value = val;\
         }\
-private:\
+    private:\
         static inline std::vector<CallbackType> _on_change_callbacks;\
     }
 
@@ -239,7 +329,7 @@ public:\
     }\
     virtual std::vector<FieldInfo> get_field_info() const {\
         std::vector<FieldInfo> ret;\
-        _my_type::for_each_field([&ret](auto field) { ret.emplace_back(field); });\
+        _my_type::for_each_field([&ret, this](auto field) { ret.emplace_back(field, *this); });\
         return ret;\
     }\
     template<typename T>\
@@ -285,6 +375,12 @@ namespace std {
         auto operator()(PTS::FieldInfo const& info) const noexcept -> size_t {
             return hash<std::string>{}(std::string{ info.type_name } + " " + 
                 std::string{ info.var_name } + " " + std::to_string(info.index));
+        }
+    };
+    template<>
+    struct hash<PTS::TypeErasedIterator> {
+        auto operator()(PTS::TypeErasedIterator const& it) const noexcept -> size_t {
+            return hash<std::uintptr_t>{}(reinterpret_cast<std::uintptr_t>(*it));
         }
     };
 }; // namespace std

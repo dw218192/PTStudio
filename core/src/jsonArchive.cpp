@@ -7,16 +7,64 @@
 #include "utils.h"
 #include "typeTraitsUtil.h"
 
-#include <iostream>
+#include <unordered_map>
+#include <map>
 #include <glm/glm.hpp>
 
 namespace {
 	// used during deserialization
 	// this must only be filled after everything is deserialized and allocated in place
 	std::unordered_map<PTS::ObjectID, PTS::Object*> g_id_to_object;
-	// this is filled during deserialization,
+	
+	struct {
+		auto emplace(PTS::FieldInfo const& info, PTS::ObjectID id) {
+			m_data[{ info, m_timestamp++ }] = id;
+		}
+		auto clear() {
+			m_data.clear();
+			m_timestamp = 0;
+		}
+		auto get(PTS::FieldInfo const& info) const -> std::vector<PTS::ObjectID> {
+			auto result = std::vector<PTS::ObjectID> {};
+			auto it = m_data.lower_bound({ info, 0 });
+			while (it != m_data.end() && it->first.first == info) {
+				result.emplace_back(it->second);
+				++it;
+			}
+			return result;
+		}
+		auto count(PTS::FieldInfo const& info) const -> bool {
+			auto it = m_data.lower_bound({ info, 0 });
+			return it != m_data.end() && it->first.first == info;
+		}
+	private:
+		std::map<std::pair<PTS::FieldInfo, unsigned>, PTS::ObjectID> m_data;
+		unsigned m_timestamp = 0;
+	} g_pointer_to_id;
+	// g_pointer_to_id is filled during deserialization,
 	// so we can't map raw pointers to objects because memory might get reallocated
-	std::unordered_map<PTS::FieldInfo, PTS::ObjectID> g_pointer_to_id;
+	// g_pointer_to_id is also a multi-map because a field can be a pointer container
+
+
+
+	enum { POINTER, POINTER_CONTAINER, NEITHER };
+	template<typename T>
+	struct is_pointer_or_pointer_container {
+		template<typename U>
+		static constexpr auto test(int) -> std::enable_if_t<
+			PTS::Traits::is_container<U>::value
+			&& std::is_pointer_v<typename U::value_type>,
+			int
+		> { return POINTER_CONTAINER; }
+		template<typename U>
+		static constexpr auto test(int) -> std::enable_if_t<
+			std::is_pointer_v<U>,
+			int
+		> { return POINTER; }
+		template<typename>
+		static constexpr auto test(...) -> int { return NEITHER; }
+		static constexpr auto value = test<T>(0);
+	};
 
 	template<typename ObjectOrDerived>
 	std::enable_if_t<PTS::Traits::is_reflectable<ObjectOrDerived>::value
@@ -37,6 +85,19 @@ namespace {
 				gather_objects(field.get(obj));
 			}
 		});
+	}
+
+	template<typename ObjectOrDerived, int PointerOrPointerContainer, typename TemplatedFieldInfo>
+	std::enable_if_t<PTS::Traits::is_reflectable<ObjectOrDerived>::value
+		&& std::is_base_of_v<PTS::Object, ObjectOrDerived>>
+	from_json_handle_pointers(nlohmann::json const& json, ObjectOrDerived& obj, TemplatedFieldInfo const& info) {
+		if constexpr (PointerOrPointerContainer == POINTER) {
+			g_pointer_to_id.emplace(PTS::FieldInfo { info, obj }, json.get<PTS::ObjectID>());
+		} else if constexpr (PointerOrPointerContainer == POINTER_CONTAINER) {
+			for(auto const& id : json) {
+				g_pointer_to_id.emplace(PTS::FieldInfo { info, obj }, id.get<PTS::ObjectID>());
+			}
+		}
 	}
 }
 
@@ -95,7 +156,7 @@ namespace PTS {
 			reflected.on_serialize();
 		}
 		Reflected::for_each_field([&reflected, &json](auto field) {
-			if (field.template get_modifier<MSerialize>()) {
+			if constexpr (field.template has_modifier<MSerialize>()) {
 				json[field.var_name] = field.get(reflected);
 			}
 		});
@@ -108,28 +169,21 @@ namespace PTS {
 	std::enable_if_t<Traits::is_reflectable<Reflected>::value>
 	from_json(nlohmann::json const& json, Reflected& reflected) {
 		Reflected::for_each_field([&reflected, &json](auto field) {
-			if (field.template get_modifier<MSerialize>()) {
+			if constexpr (field.template has_modifier<MSerialize>()) {
+				if (!json.count(field.var_name)) {
+					// use default value if not present in json
+					field.get(reflected) = field.get_default();
+					return;
+				}
 
+				using type = typename decltype(field)::type;
 				// handle pointers explicitly, otherwise we can't get the type info
-				if constexpr (std::is_pointer_v<typename decltype(field)::type>) {
-					if (json.count(field.var_name)) {
-						auto const id = json.at(field.var_name).get<ObjectID>();
-						if (id == k_invalid_obj_id) {
-							field.get(reflected) = nullptr;
-						} else {
-							// register the pointer to id mapping
-							g_pointer_to_id[FieldInfo{field}] = id;
-						}
-					} else {
-						field.get(reflected) = nullptr;
-					}
+				if constexpr (is_pointer_or_pointer_container<type>::value != NEITHER) {
+					from_json_handle_pointers<Reflected, is_pointer_or_pointer_container<type>::value>(
+						json.at(field.var_name), reflected, field
+					);
 				} else {
-					if (json.count(field.var_name)) {
-						from_json(json.at(field.var_name), field.get(reflected));
-					} else {
-						// use default value if not present in json
-						field.get(reflected) = field.get_default();
-					}
+					from_json(json.at(field.var_name), field.get(reflected));
 				}
 			}
 		});
@@ -170,21 +224,18 @@ namespace PTS {
 				auto error = std::string {};
 				auto& obj = *kvp.second;
 				dynamic_for_each_field(obj, [this, &obj, &error](FieldInfo const& field) {
-					if (field.is_pointer) {
-						// should be ok to treat Object* T::* as U* T::* where U is a derived type of Object
-						// TODO: check the standard
-						auto&& ptr = field.get<Object*>(&obj);
+					if (g_pointer_to_id.count(field)) {
 						auto const ptr_name = std::string{ field.type_name } + "::" + std::string{ field.var_name };
-						if (g_pointer_to_id.count(field)) {
-							if (g_id_to_object.count(g_pointer_to_id.at(field))) {
-								ptr = g_id_to_object.at(g_pointer_to_id.at(field));
+						auto field_it = field.begin();
+						for (auto id : g_pointer_to_id.get(field)) {
+							if (g_id_to_object.count(id)) {
+								// TODO: I know this is crazy, will find a better way later
+								*reinterpret_cast<Object**>(*field_it) = g_id_to_object[id];
 							} else {
-								error += "Failed to deserialize: destination object for " + ptr_name + " not found";
-								error.push_back('\n');
+								*reinterpret_cast<Object**>(*field_it) = nullptr;
 							}
-						} else {
-							error += "Failed to deserialize: " + ptr_name + " not found";
-							error.push_back('\n');
+
+							++ field_it;
 						}
 					}
 				});
@@ -194,8 +245,7 @@ namespace PTS {
 			}
 
 			return {};
-		}
-		catch (nlohmann::json::exception const& e) {
+		} catch (nlohmann::json::exception const& e) {
 			return TL_ERROR("Failed to deserialize: " + std::string{ e.what() });
 		}
 	}

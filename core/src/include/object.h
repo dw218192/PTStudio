@@ -13,6 +13,8 @@ namespace PTS {
         DEFAULT,
     };
     struct Object {
+        DEFAULT_COPY_MOVE(Object);
+
         // set default arguments because serialization requires a "default" constructor
         Object(ObjectConstructorUsage usage = ObjectConstructorUsage::SERIALIZE) noexcept;
         explicit Object(std::string_view name) noexcept;
