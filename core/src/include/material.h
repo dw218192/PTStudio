@@ -20,7 +20,7 @@ namespace PTS {
         FIELD(glm::vec3, emission, glm::vec3{ 0.0f },
             MSerialize{}, MColor{});
         FIELD(float, emission_intensity, 1.0f,
-            MSerialize{});
+            MSerialize{}, MRange{ 0.0f, 100.0f });
         END_REFLECT();
 
         bool operator==(Material const& other) const noexcept {

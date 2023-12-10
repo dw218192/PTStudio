@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 #include <cstddef>
+#include <typeinfo>
 
 #include "typeTraitsUtil.h"
 
@@ -168,6 +169,95 @@ namespace PTS {
         std::shared_ptr<TypeErasedIteratorInterface> m_impl;
     };
 
+    /**
+     * @brief represents a type, used to dynamically get info about a field
+    */
+    struct Type {
+        std::size_t normalized_type_hash {0}; // no good way to get a readable name as of C++17
+        bool is_pointer {false};
+        bool is_container {false};
+        bool is_reflectable {false};
+        bool is_arithmetic {false};
+
+        template<typename T>
+        static auto of() -> Type {
+            auto ret = Type{};
+            using raw_t = Traits::extract_raw_type_t<T>;
+            ret.normalized_type_hash = typeid(raw_t).hash_code();
+            if constexpr (std::is_pointer_v<raw_t>) {
+                ret.is_pointer = true;
+                ret.m_pointed_to_type = std::make_shared<Type>(of<std::remove_pointer_t<raw_t>>());
+            }
+            if constexpr (Traits::is_container<raw_t>::value) {
+                ret.is_container = true;
+                ret.m_contained_type = std::make_shared<Type>(of<typename raw_t::value_type>());
+            }
+            if constexpr (Traits::is_reflectable<raw_t>::value) {
+                ret.is_reflectable = true;
+                if constexpr (!std::is_same_v<typename raw_t::parent_type, void>) {
+                    ret.m_inherited_from_type = std::make_shared<Type>(of<typename raw_t::parent_type>());
+                }
+            }
+            if constexpr (std::is_arithmetic_v<raw_t>) {
+                ret.is_arithmetic = true;
+            }
+            return ret;
+        }
+        
+        Type(Type const&) = default;
+        Type(Type&&) = default;
+        Type& operator=(Type const&) = default;
+        Type& operator=(Type&&) = default;
+        ~Type() = default;
+
+        auto is_valid() const noexcept {
+            return normalized_type_hash != 0;
+        }
+        auto pointed_to_type() const -> Type {
+            return m_pointed_to_type ? *m_pointed_to_type : Type{};
+        }
+        auto inherited_from_type() const -> Type {
+            return m_inherited_from_type ? *m_inherited_from_type : Type{};
+        }
+        auto contained_type() const -> Type {
+            return m_contained_type ? *m_contained_type : Type{};
+        }
+        auto has_common_base_with(Type const& other) const -> bool {
+            if (!is_valid() || !other.is_valid()) return false;
+            if (normalized_type_hash == other.normalized_type_hash) {
+                return true;
+            } else if (m_inherited_from_type) {
+                return m_inherited_from_type->has_common_base_with(other) ||
+                    has_common_base_with(other.inherited_from_type());
+            } else {
+                return false;
+            }
+        }
+        auto operator==(Type const& other) const noexcept -> bool {
+            return normalized_type_hash == other.normalized_type_hash;
+        }
+        auto operator<(Type const& other) const noexcept -> bool {
+            return normalized_type_hash < other.normalized_type_hash;
+        }
+        auto operator!=(Type const& other) const noexcept -> bool {
+            return !(*this == other);
+        }
+        auto operator<=(Type const& other) const noexcept -> bool {
+            return *this < other || *this == other;
+        }
+        auto operator>(Type const& other) const noexcept -> bool {
+            return !(*this <= other);
+        }
+        auto operator>=(Type const& other) const noexcept -> bool {
+            return !(*this < other);
+        }
+    private:
+        Type() = default;
+        std::shared_ptr<Type> m_pointed_to_type {};
+        std::shared_ptr<Type> m_inherited_from_type {};
+        std::shared_ptr<Type> m_contained_type {};
+    };
+
     /** @brief non-templated field info, not type-safe \n
      * used to dynamically get info about a field or store a type-erased field pointer
      * @note this is a workaround for the fact that we can't have a virtual template function
@@ -177,9 +267,11 @@ namespace PTS {
 
         std::string_view var_name;
         std::string_view type_name;
+        Type type;
+
+        // indicates how many fields come before this one in the class
+        // does not account for fields in parent classes
         int index;
-        bool is_pointer;
-        bool is_container;
 
         auto operator==(FieldInfo const& other) const noexcept -> bool {
             return var_name == other.var_name && type_name == other.type_name && index == other.index;
@@ -209,11 +301,10 @@ namespace PTS {
         template<template <int, typename> typename TemplatedFieldInfo, int n, typename Reflected, 
             typename = std::enable_if_t<Traits::is_reflectable<Reflected>::value>>
         FieldInfo(TemplatedFieldInfo<n, void> const& info, Reflected& obj) :
-            var_name(info.var_name),
-            type_name(info.type_name),
-            index(n),
-            is_pointer(std::is_pointer_v<typename TemplatedFieldInfo<n, void>::type>),
-            is_container(Traits::is_container<typename TemplatedFieldInfo<n, void>::type>::value)
+            var_name { info.var_name },
+            type_name { info.type_name },
+            type { Type::of<typename TemplatedFieldInfo<n, void>::type>() },
+            index { n }            
         {
             using FieldType = typename TemplatedFieldInfo<n, void>::type;
             if constexpr (Traits::is_container<FieldType>::value) {
@@ -239,7 +330,7 @@ namespace PTS {
     struct _field_info;\
     static constexpr std::string_view _type_name = STR(_cls);\
     static constexpr bool _is_subclass = Traits::is_reflectable<_parent_type>::value;\
-    static constexpr int _init_count = _counter
+    static constexpr int _init_count = _counter;\
 
 #define FIELD_IMPL(_counter, _var_type, _var_name, _init, ...)\
     _var_type _var_name = _init;\
@@ -315,7 +406,8 @@ public:\
     }\
     static constexpr std::string_view const& get_class_name() { return _type_name; }\
     static constexpr int my_num_members = (_counter) - _init_count - 1;\
-    static constexpr int num_members = my_num_members + Traits::get_num_members<_parent_type>::value
+    static constexpr int num_members = my_num_members + Traits::get_num_members<_parent_type>::value;\
+    using parent_type = _parent_type
 
 #define DECL_DYNAMIC_INFO()\
 public:\
@@ -324,10 +416,10 @@ public:\
         num_members,\
         Traits::get_class_info<_parent_type>::value\
     };\
-    virtual ClassInfo const& get_class_info() const {\
+    virtual ClassInfo const& dyn_get_class_info() const {\
         return _class_info;\
     }\
-    virtual std::vector<FieldInfo> get_field_info() const {\
+    virtual std::vector<FieldInfo> dyn_get_field_infos() const {\
         std::vector<FieldInfo> ret;\
         _my_type::for_each_field([&ret, this](auto field) { ret.emplace_back(field, *this); });\
         return ret;\
@@ -335,7 +427,7 @@ public:\
     template<typename T>\
     std::enable_if_t<Traits::has_dynamic_info<T>::value && std::is_base_of_v<_my_type, T>, T*>\
     as() {\
-        if (get_class_info().class_name == T::get_class_name()) {\
+        if (dyn_get_class_info().class_name == T::get_class_name()) {\
             return dynamic_cast<T*>(this);\
         }\
         return nullptr;\
@@ -343,22 +435,20 @@ public:\
     template<typename T>\
     std::enable_if_t<Traits::has_dynamic_info<T>::value && std::is_base_of_v<_my_type, T>, T const*>\
     as() const {\
-        if (get_class_info().class_name == T::get_class_name()) {\
+        if (dyn_get_class_info().class_name == T::get_class_name()) {\
             return dynamic_cast<T const*>(this);\
         }\
         return nullptr;\
+    }\
+    void dyn_for_each_field(std::function<void(FieldInfo const&)> callable) {\
+        for (auto& info : dyn_get_field_infos()) {\
+            callable(info);\
+        }\
     }
+
 #define BEGIN_REFLECT(cls, parent) BEGIN_REFLECT_IMPL(cls, __COUNTER__, parent)
 #define FIELD(type, var_name, init, ...) FIELD_IMPL(__COUNTER__, type, var_name, init, __VA_ARGS__)
 #define END_REFLECT() END_REFLECT_IMPL(__COUNTER__)
-
-    template<typename Reflected>
-    std::enable_if_t<Traits::is_reflectable<Reflected>::value && Traits::has_dynamic_info<Reflected>::value>
-    dynamic_for_each_field(Reflected& obj, std::function<void(FieldInfo const&)> callable) {
-        for (auto& info : obj.get_field_info()) {
-            callable(info);
-        }
-    }
 } // namespace PTS
 
 
@@ -381,6 +471,12 @@ namespace std {
     struct hash<PTS::TypeErasedIterator> {
         auto operator()(PTS::TypeErasedIterator const& it) const noexcept -> size_t {
             return hash<std::uintptr_t>{}(reinterpret_cast<std::uintptr_t>(*it));
+        }
+    };
+    template<>
+    struct hash<PTS::Type> {
+        auto operator()(PTS::Type const& type) const noexcept -> size_t {
+            return type.normalized_type_hash;
         }
     };
 }; // namespace std

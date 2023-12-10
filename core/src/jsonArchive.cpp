@@ -223,16 +223,29 @@ namespace PTS {
 			for (auto kvp : g_id_to_object) {
 				auto error = std::string {};
 				auto& obj = *kvp.second;
-				dynamic_for_each_field(obj, [this, &obj, &error](FieldInfo const& field) {
+				obj.dyn_for_each_field([&error](FieldInfo const& field) {
 					if (g_pointer_to_id.count(field)) {
-						auto const ptr_name = std::string{ field.type_name } + "::" + std::string{ field.var_name };
+						auto type = field.type.is_container ? field.type.contained_type() : field.type;
+
+						// ensure that the field is a pointer
+						if (!type.is_pointer) {
+							error += "Field " + std::string{ field.var_name } + ": is not a pointer, but is in g_pointer_to_id\n";
+							return;
+						// ensure that the field is a pointer to Object or derived type
+						} else if (type != Type::of<Object*>() && !type.pointed_to_type().has_common_base_with(Type::of<Object>())) {
+							error += "Field " + std::string{ field.var_name } + ": non-Object pointers are not supported\n";
+							return;
+						}
+
 						auto field_it = field.begin();
 						for (auto id : g_pointer_to_id.get(field)) {
 							if (g_id_to_object.count(id)) {
-								// TODO: I know this is crazy, will find a better way later
-								*reinterpret_cast<Object**>(*field_it) = g_id_to_object[id];
+								*static_cast<Object**>(*field_it) = g_id_to_object[id];
+							} else if (id == k_invalid_obj_id) {
+								*static_cast<Object**>(*field_it) = nullptr;
 							} else {
-								*reinterpret_cast<Object**>(*field_it) = nullptr;
+								auto const ptr_name = std::string{ field.type_name } + "::" + std::string{ field.var_name };
+								error += "Failed to find object with id " + std::to_string(id) + " for field " + ptr_name + "\n";
 							}
 
 							++ field_it;

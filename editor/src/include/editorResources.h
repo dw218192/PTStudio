@@ -4,7 +4,7 @@
 #include "shaderType.h"
 #include "stringManip.h"
 #include "enumArray.h"
-#include "light.h"
+#include "lightData.h"
 
 namespace PTS {
 constexpr auto k_editor_tutorial_text = R"(This is a simple editor.

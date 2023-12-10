@@ -1,7 +1,6 @@
 #pragma once
 
 #include <tl/expected.hpp>
-#include <tcb/span.hpp>
 #include <string>
 #include <optional>
 
@@ -12,7 +11,6 @@
 
 namespace PTS {
     struct Scene;
-
     struct SceneObject : Object {
         SceneObject(ObjectConstructorUsage usage = ObjectConstructorUsage::SERIALIZE) noexcept;
         SceneObject(Scene const& scene, std::string_view name, Transform transform);

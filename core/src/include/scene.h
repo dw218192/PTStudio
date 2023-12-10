@@ -11,6 +11,7 @@
 #include "reflection.h"
 
 #include "object.h"
+#include "sceneObject.h"
 #include "renderableObject.h"
 #include "light.h"
 

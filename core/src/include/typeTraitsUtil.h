@@ -58,7 +58,7 @@ namespace PTS {
         template<typename T>
         struct has_dynamic_info {
             template<typename U>
-            static auto test(int) -> decltype(std::declval<U>().get_class_info(), std::true_type{});
+            static auto test(int) -> decltype(std::declval<U>().dyn_get_class_info(), std::true_type{});
             template<typename>
             static auto test(...) -> std::false_type;
             static constexpr bool value = decltype(test<T>(0))::value;
@@ -106,29 +106,48 @@ namespace PTS {
             static constexpr bool value = decltype(test<T>(0))::value;
         };
 
+        template<typename T, typename...>
+        struct extract_raw_type {
+            using type = std::decay_t<T>;
+        };
+        template<typename T>
+        struct extract_raw_type<T*> {
+            using type = typename extract_raw_type<std::decay_t<T>>::type*;
+        };
+        template<typename T>
+        struct extract_raw_type<T* const> {
+            using type = typename extract_raw_type<std::decay_t<T>>::type*;
+        };
+        template<typename T>
+        struct extract_raw_type<T* volatile> {
+            using type = typename extract_raw_type<std::decay_t<T>>::type*;
+        };
+        template<typename T>
+        struct extract_raw_type<T* const volatile> {
+            using type = typename extract_raw_type<std::decay_t<T>>::type*;
+        };
+        template<template<typename...> typename T, typename... Args>
+        struct extract_raw_type<T<Args...>> {
+            using type = std::decay_t<T<typename extract_raw_type<Args>::type...>>;
+        };
+        template<template<typename...> typename T, typename... Args>
+        struct extract_raw_type<T<Args...> const> {
+            using type = std::decay_t<T<typename extract_raw_type<Args>::type...>>;
+        };
+        template<template<typename...> typename T, typename... Args>
+        struct extract_raw_type<T<Args...> volatile> {
+            using type = std::decay_t<T<typename extract_raw_type<Args>::type...>>;
+        };
+        template<template<typename...> typename T, typename... Args>
+        struct extract_raw_type<T<Args...> const volatile> {
+            using type = std::decay_t<T<typename extract_raw_type<Args>::type...>>;
+        };
+
         /**
          * @brief Removes all cv qualifiers from a pointer type
          * @tparam T The type to remove cv qualifiers from
          * @return The type with all cv qualifiers removed, e.g. `int const volatile* const*` becomes `int**`
         */
-        template<typename T>
-        struct extract_raw_type {
-            template<typename U, typename...>
-            static constexpr auto get_type(U*, std::enable_if_t<!is_container<U>::value>* = nullptr) {
-                using decayed = std::decay_t<U>;
-                if constexpr (std::is_pointer_v<decayed>) {
-                    return std::add_pointer_t<decltype(get_type(decayed{}))>{};
-                } else {
-                    return decayed {};
-                }
-            }
-            template<template<typename...> typename U, typename... Ts>
-            static constexpr auto get_type(U<Ts...>*) {
-                return U<decltype(get_type(std::add_pointer_t<Ts>{}))...>{};
-            }
-            using type = decltype(get_type(std::add_pointer_t<T>{}));
-        };
-
         template<typename T>
         using extract_raw_type_t = typename extract_raw_type<T>::type;
         

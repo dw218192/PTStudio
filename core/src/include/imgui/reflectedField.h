@@ -88,14 +88,14 @@ namespace ImGui {
             template<typename Reflected, typename FieldInfo>
             static auto impl(FieldInfo field_info, Reflected& reflected) -> bool {
                 ImGui::Text(
-                    "%s::%s: ptr to object @ %p",
+                    "%s::%s @ %p",
                     field_info.type_name.data(), 
                     field_info.var_name.data(), 
                     field_info.get(reflected)
                 );
                 if constexpr (std::is_base_of_v<PTS::Object, T>) {
                     if (field_info.get(reflected))
-                        ImGui::Text("Pointed-to Type: %s", field_info.get(reflected)->get_class_info().class_name.data());
+                        ImGui::Text("Pointed-to Type: %s", field_info.get(reflected)->dyn_get_class_info().class_name.data());
                 }
                 return true;
             }

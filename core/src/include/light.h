@@ -4,39 +4,9 @@
 #include "reflection.h"
 #include "utils.h"
 #include "sceneObject.h"
-
+#include "lightData.h"
 
 namespace PTS {
-    struct Scene;
-
-    enum class LightType {
-        Directional,
-        Point,
-        Spot,
-        Mesh, // Object with emissive material
-    };
-
-    // used in glsl
-    struct LightData {
-        glm::vec3 color;        // 0    base alignment: 16
-        float intensity;        // 12   base alignment: 4
-        glm::vec3 position;     // 16   base alignment: 16
-        int type;               // 28   base alignment: 4
-        unsigned char _pad1[4] = { 0, 0, 0, 0 }; // 32
-        // total size: 36
-
-        static constexpr auto glsl_def = std::string_view{
-            "struct LightData {\n"
-            "   vec3 color;\n"
-            "   float intensity;\n"
-            "   vec3 position;\n"
-            "   int type;\n"
-            "};\n"
-        };
-    };
-
-    static_assert(sizeof(LightData) == 36, "LightData size mismatch");
-
     struct Light : SceneObject {
         Light(ObjectConstructorUsage usage = ObjectConstructorUsage::SERIALIZE) noexcept;
         Light(Scene const& scene, Transform transform, glm::vec3 color, float intensity) noexcept;
@@ -57,8 +27,6 @@ namespace PTS {
 
     private:
         BEGIN_REFLECT(Light, SceneObject);
-        FIELD(std::string, m_name, "Light",
-            MSerialize{}, MNoInspect{}); // handled explicitly
         FIELD(LightType, m_type, LightType::Point,
             MSerialize{},
             MEnum {
