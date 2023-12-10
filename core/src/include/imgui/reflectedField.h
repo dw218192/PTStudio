@@ -56,7 +56,8 @@ namespace ImGui {
             template<typename Reflected, typename FieldInfo>
             static auto impl(FieldInfo field_info, Reflected& reflected) -> bool {
                 auto&& field = field_info.get(reflected);
-                if (auto range_mod = field_info.template get_modifier<MRange<typename FieldInfo::type>>()) {
+                constexpr auto range_mod = field_info.template get_modifier<MRange<typename FieldInfo::type>>();
+                if constexpr (range_mod) {
                     return ImGui::SliderFloat(field_info.var_name.data(), &field, range_mod->min, range_mod->max);
                 } else {
                     return ImGui::InputFloat(field_info.var_name.data(), &field);
@@ -68,7 +69,8 @@ namespace ImGui {
             template<typename Reflected, typename FieldInfo>
             static auto impl(FieldInfo field_info, Reflected& reflected) -> bool {
                 auto&& field = field_info.get(reflected);
-                if (auto range_mod = field_info.template get_modifier<MRange<typename FieldInfo::type>>()) {
+                constexpr auto range_mod = field_info.template get_modifier<MRange<typename FieldInfo::type>>();
+                if constexpr (range_mod) {
                     return ImGui::SliderInt(field_info.var_name.data(), &field, range_mod->min, range_mod->max);
                 } else {
                     return ImGui::InputInt(field_info.var_name.data(), &field);
@@ -113,13 +115,26 @@ namespace ImGui {
             template<typename Reflected, typename FieldInfo>
             static auto impl(FieldInfo field_info, Reflected& reflected) -> bool {
                 bool changed = false;
-                if (auto enum_mod = field_info.template get_modifier<MEnum>()) {
+
+                constexpr auto enum_mod = field_info.template get_modifier<MEnum>();
+                constexpr auto enum_flags_mod = field_info.template get_modifier<MEnumFlags>();
+
+                if constexpr (enum_mod) {
                     auto&& field = field_info.get(reflected);
-                    changed = ImGui::Combo(field_info.var_name.data(), reinterpret_cast<int*>(&field), 
-                        MEnum::imgui_callback_adapter,
-                        &enum_mod,
-                        enum_mod->num_items);
-                } else if (auto enum_flags_mod = field_info.template get_modifier<MEnumFlags>()) {
+                    auto field_int = reinterpret_cast<int*>(&field);
+
+                    auto preview = enum_mod->num_items == 0 ? "None" : enum_mod->get_name(*field_int);
+                    if (ImGui::BeginCombo(field_info.var_name.data(), preview)) {
+                        for (int i = 0; i < enum_mod->num_items; ++i) {
+                            bool is_selected = *field_int == i;
+                            if (ImGui::Selectable(enum_mod->get_name(i), is_selected)) {
+                                *field_int = i;
+                                changed = true;
+                            }
+                        }
+                        ImGui::EndCombo();
+                    }
+                } else if constexpr (enum_flags_mod) {
                     auto&& field = field_info.get(reflected);
                     auto field_int = reinterpret_cast<int*>(&field);
 
@@ -167,7 +182,8 @@ namespace ImGui {
             template<typename Reflected, typename FieldInfo>
             static auto impl(FieldInfo field_info, Reflected& reflected) -> bool {
                 auto&& field = field_info.get(reflected);
-                if (auto color_mod = field_info.template get_modifier<MColor>()) {
+                constexpr auto color_mod = field_info.template get_modifier<MColor>();
+                if constexpr (color_mod) {
                     return ImGui::ColorEdit3(field_info.var_name.data(), glm::value_ptr(field));
                 } else {
                     return ImGui::InputFloat3(field_info.var_name.data(), glm::value_ptr(field));
@@ -180,7 +196,8 @@ namespace ImGui {
             template<typename Reflected, typename FieldInfo>
             static auto impl(FieldInfo field_info, Reflected& reflected) -> bool {
                 auto&& field = field_info.get(reflected);
-                if (auto color_mod = field_info.template get_modifier<MColor>()) {
+                constexpr auto color_mod = field_info.template get_modifier<MColor>()
+                if constexpr (color_mod) {
                     return ImGui::ColorEdit4(field_info.var_name.data(), glm::value_ptr(field));
                 } else {
                     return ImGui::InputFloat4(field_info.var_name.data(), glm::value_ptr(field));

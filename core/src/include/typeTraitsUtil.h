@@ -150,13 +150,34 @@ namespace PTS {
         */
         template<typename T>
         using extract_raw_type_t = typename extract_raw_type<T>::type;
-        
-        template<typename Arg, typename... Args>
-        struct contains {
-            static constexpr bool value = (std::is_same_v<Arg, Args> || ...);
-        };
-        template<typename Arg, typename... Args>
-        constexpr bool contains_v = contains<Arg, Args...>::value;
 
+
+        // type searching utils
+        template<typename Haystack, typename Needle>
+        struct find;
+
+        template<template<typename...> typename Haystack, typename Needle, typename... Args>
+        struct find<Haystack<Args...>, Needle> : std::integral_constant<std::size_t, static_cast<std::size_t>(-1)> {
+            template<std::size_t I>
+            static constexpr auto impl() {
+                if constexpr (I == sizeof...(Args)) {
+                    return static_cast<std::size_t>(-1);
+                } else if constexpr (std::is_same_v<Needle, std::tuple_element_t<I, Haystack<Args...>>>) {
+                    return I;
+                } else {
+                    return impl<I + 1>();
+                }
+            }
+            static constexpr auto value = impl<0>();
+        };
+        
+        template<typename Haystack, typename Needle>
+        constexpr auto find_v = find<Haystack, Needle>::value;
+
+        template <typename Haystack, typename Needle>
+        struct contains
+            : std::bool_constant<find<Haystack, Needle>::value != static_cast<std::size_t>(-1)> {};
+        template<typename Haystack, typename Needle>
+        constexpr bool contains_v = contains<Haystack, Needle>::value;
     } // namespace Traits
 } // namespace PTS

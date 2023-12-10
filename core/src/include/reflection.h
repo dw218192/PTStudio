@@ -34,20 +34,17 @@ namespace PTS {
 
         // not marked as constexpr because void* conversion is prohibited in constexpr
         template<typename Mod>
-        auto get() const -> Mod const* {
-            void const* ret = nullptr;
-            std::apply([&](auto&&... args) {
-                ([&](auto&& arg) {
-                    if constexpr (std::is_same_v<std::decay_t<decltype(arg)>, Mod>) {
-                        ret = &arg;
-                    }
-                }(args), ...);
-            }, args);
-            return static_cast<Mod const*>(ret);
+        constexpr auto get() const -> Mod const* {
+            constexpr auto index = Traits::find_v<decltype(args), Mod>;
+            if constexpr (index != static_cast<std::size_t>(-1)) {
+                return &std::get<index>(args);
+            } else {
+                return nullptr;
+            }
         }
         template<typename Mod>
         constexpr auto has() const {
-            return (std::is_same_v<Modifiers, Mod> || ...);
+            return Traits::contains_v<decltype(args), Mod>;
         }
     };
     /**
@@ -83,11 +80,6 @@ namespace PTS {
     */
     struct MEnum {
         static constexpr std::string_view name = "enum";
-        static auto imgui_callback_adapter(void* data, int idx, char const** out_text) -> bool {
-            auto enum_info = reinterpret_cast<MEnum const*>(data);
-            *out_text = enum_info->get_name(idx);
-            return true;
-        }
         int num_items;
         auto (*get_name)(int idx) -> char const*;
     };
@@ -351,7 +343,7 @@ namespace PTS {
             return default_value;\
         }\
         template<typename Modifier>\
-        static auto get_modifier() {\
+        static constexpr auto get_modifier() {\
             return modifiers.template get<Modifier>();\
         }\
         template<typename Modifier>\
