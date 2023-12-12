@@ -129,6 +129,24 @@ namespace glm {
 }
 
 namespace PTS {
+	template<typename T>
+	std::enable_if_t<Traits::is_tuple_like_v<T>>
+	to_json(nlohmann::json& json, T const& tp) {
+		std::apply([&json](auto const&... args) {
+			(json.push_back(args), ...);
+		}, tp);
+	}
+	template<typename T>
+	std::enable_if_t<Traits::is_tuple_like_v<T>>
+	from_json(nlohmann::json const& json, T& tp) {
+		std::apply([&json](auto&... args) {
+			int i = 0;
+			([&json, &i, &args] {
+				json.at(i++).get_to(args);
+			}(), ...);
+		}, tp);
+	}
+
 	// serialization and deserialization for pointers and references
 	// Note: only pointers to objects or derived types are supported
 	// because otherwise we can't do dynamic reflection & uuid

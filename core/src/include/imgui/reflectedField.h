@@ -8,25 +8,28 @@
 #include "typeTraitsUtil.h"
 
 namespace ImGui {
-    template<typename Reflected, typename = std::enable_if_t<PTS::Traits::is_reflectable<Reflected>::value>>
-    bool ReflectedField(const char* label, Reflected& reflected, bool collapsed = false);
+    template<typename TemplatedFieldInfo, typename Reflected>
+    std::enable_if_t<PTS::Traits::has_tfield_interface_v<TemplatedFieldInfo>, bool>
+    Field(const char* label, TemplatedFieldInfo field_info, Reflected& reflected);
+
+    template<typename Reflected>
+    std::enable_if_t<PTS::Traits::is_reflectable_v<Reflected>, bool>
+    ReflectedField(const char* label, Reflected& reflected, bool collapsed = false);
 
     namespace detail {
         // tag types for dispatching
         struct EnumType {};
         struct ReflectedType {};
         struct ContainerType {};
-        struct PairType {};
-        struct TupleType {};
+        struct TupleLikeType {};
 
         template<typename T>
         struct Dispatch {
             using type = std::conditional_t<std::is_enum_v<T>, EnumType,
-                std::conditional_t<PTS::Traits::is_reflectable<T>::value, ReflectedType, 
-                std::conditional_t<PTS::Traits::is_container<T>::value, ContainerType,
-                std::conditional_t<PTS::Traits::is_pair<T>::value, PairType,
-                std::conditional_t<PTS::Traits::is_tuple<T>::value, TupleType,
-                T>>>>>;
+                std::conditional_t<PTS::Traits::is_reflectable_v<T>, ReflectedType, 
+                std::conditional_t<PTS::Traits::is_container_v<T>, ContainerType,
+                std::conditional_t<PTS::Traits::is_tuple_like_v<T>, TupleLikeType,
+                T>>>>;
         };
         template<typename T>
         using Dispatch_t = typename Dispatch<T>::type;
@@ -196,7 +199,7 @@ namespace ImGui {
             template<typename Reflected, typename FieldInfo>
             static auto impl(FieldInfo field_info, Reflected& reflected) -> bool {
                 auto&& field = field_info.get(reflected);
-                constexpr auto color_mod = field_info.template get_modifier<MColor>()
+                constexpr auto color_mod = field_info.template get_modifier<MColor>();
                 if constexpr (color_mod) {
                     return ImGui::ColorEdit4(field_info.var_name.data(), glm::value_ptr(field));
                 } else {
@@ -206,6 +209,42 @@ namespace ImGui {
         };
 
         // ---------------------- container types ----------------------
+        template<typename ClassType, typename ElementType, typename ContainerType>
+        struct ContainerElementFieldInfo {
+            using type = ElementType;
+
+            std::string_view type_name;
+            std::string_view var_name;
+            ContainerElementFieldInfo(std::string_view type_name, std::string_view var_name, ContainerType& container,  int i)
+                : type_name{ type_name }, var_name{ var_name }, m_container{ container }, m_i{ i } {}
+            auto get(ClassType& reflected) -> auto& {
+                (void) reflected;
+                return m_container[m_i];
+            }
+            template<typename Mod>
+            constexpr auto has_modifier() { return false; }
+            constexpr auto on_change(ElementType const& old_val, ElementType const& new_val, ClassType& reflected) {}
+        private:
+            ContainerType& m_container;
+            int m_i;
+        };
+        template<typename ClassType, typename ElementType, typename TupleType, int I>
+        struct TupleElementFieldInfo {
+            using type = ElementType;
+
+            std::string_view type_name;
+            std::string_view var_name;
+            TupleElementFieldInfo(std::string_view type_name, std::string_view var_name, TupleType& field)
+                : type_name{ type_name }, var_name{ var_name }, field{ field } {}
+            auto get(ClassType& reflected) -> auto& {
+                return std::get<I>(field);
+            }
+            template<typename Mod>
+            constexpr auto has_modifier() { return false; }
+            constexpr auto on_change(ElementType const& old_val, ElementType const& new_val, ClassType& reflected) {}
+        private:
+            TupleType& field;
+        };
         template<>
         struct DoField<ContainerType> {
             template<typename Reflected, typename FieldInfo>
@@ -239,23 +278,10 @@ namespace ImGui {
                             auto sub_type_name = std::string{ field_info.type_name.data() } + "::value_type";
                             using ContainerType = typename FieldInfo::type;
                             using ElementType = typename ContainerType::value_type;
-
-                            struct ContainerElementFieldInfo {
-                                std::string_view type_name;
-                                std::string_view var_name;
-                                ContainerElementFieldInfo(std::string_view type_name, std::string_view var_name, ContainerType& container,  int i)
-                                    : type_name{ type_name }, var_name{ var_name }, m_container{ container }, m_i{ i } {}
-                                auto get(Reflected& reflected) -> ElementType& {
-                                    (void) reflected;
-                                    return m_container[m_i];
-                                }
-                            private:
-                                ContainerType& m_container;
-                                int m_i;
-                            };
-
-                            auto sub_field_info = ContainerElementFieldInfo{ sub_type_name, sub_var_name, field, i };
-                            changed |= DoField<Dispatch_t<ElementType>>::impl(sub_field_info, reflected);
+                            static_assert(PTS::Traits::has_tfield_interface_v<ContainerElementFieldInfo<Reflected, ElementType, ContainerType>>);
+                            auto sub_field_info = ContainerElementFieldInfo<Reflected, ElementType, ContainerType>
+                                { sub_type_name, sub_var_name, field, i };
+                            changed |= ImGui::Field(sub_var_name.data(), sub_field_info, reflected);
                             ImGui::TreePop();
                         }
                         ImGui::PopID();
@@ -267,57 +293,47 @@ namespace ImGui {
         };
 
         template<>
-        struct DoField<PairType> {
+        struct DoField<TupleLikeType> {
             template<typename Reflected, typename FieldInfo>
             static auto impl(FieldInfo field_info, Reflected& reflected) -> bool {
-                auto&& field = field_info.get(reflected);
                 bool changed = false;
-                if (ImGui::TreeNode(field_info.var_name.data())) {
-                    changed |= ImGui::ReflectedField("First", field.first);
-                    changed |= ImGui::ReflectedField("Second", field.second);
-                    ImGui::TreePop();
-                }
-                return changed;
-            }
-        };
+                auto&& field = field_info.get(reflected);
+                constexpr auto sz = std::tuple_size_v<typename FieldInfo::type>;
 
-        template<>
-        struct DoField<TupleType> {
-            template<typename Reflected, typename FieldInfo>
-            static auto impl(FieldInfo field_info, Reflected& reflected) -> bool {
-                auto&& field = field_info.get(reflected);
-                bool changed = false;
-                if (ImGui::TreeNode(field_info.var_name.data())) {
-                    std::apply([&changed](auto&&... args) {
-                        (changed |= ImGui::ReflectedField("Element", args), ...);
-                    }, field);
-                    ImGui::TreePop();
-                }
                 return changed;
             }
         };
 
     } // namespace detail
 
+
+
+    template<typename TemplatedFieldInfo, typename Reflected>
+    std::enable_if_t<PTS::Traits::has_tfield_interface_v<TemplatedFieldInfo>, bool>
+    Field(const char* label, TemplatedFieldInfo field_info, Reflected& reflected) {
+        bool changed = false;
+        using FieldType = typename TemplatedFieldInfo::type;
+        if constexpr (!field_info.template has_modifier<MNoInspect>()) {
+            auto old_val = field_info.get(reflected);
+            if (detail::DoField<detail::Dispatch_t<FieldType>>::impl(field_info, reflected)) {
+                changed = true;
+                field_info.on_change(old_val, field_info.get(reflected), reflected);
+            }
+        }
+        return changed;
+    }
+
+    // reflectable types can be inspected in the editor and modified automatically
+    template<typename Reflected>
+    std::enable_if_t<PTS::Traits::is_reflectable_v<Reflected>, bool>
+    ReflectedField(const char* label, Reflected& reflected, bool collapsed) {        
+        bool changed = false;
+        if (CollapsingHeader(label, collapsed ? 0 : ImGuiTreeNodeFlags_DefaultOpen)) {
+            Reflected::for_each_field([&changed, &reflected](auto field_info) {
+                changed |= Field(field_info.var_name.data(), field_info, reflected);
+            });
+        }
+        return changed;
+    }
 } // namespace ImGui
 
-// reflectable types can be inspected in the editor and modified automatically
-template<typename Reflected, typename>
-bool ImGui::ReflectedField(const char* label, Reflected& reflected, bool collapsed) {
-    using namespace PTS;
-    
-    bool changed = false;
-    if (ImGui::CollapsingHeader(label, collapsed ? 0 : ImGuiTreeNodeFlags_DefaultOpen)) {
-        Reflected::for_each_field([&changed, &reflected](auto field_info) {
-            using FieldType = typename decltype(field_info)::type;
-            if constexpr (!field_info.template has_modifier<MNoInspect>()) {
-                auto old_val = field_info.get(reflected);
-                if (detail::DoField<detail::Dispatch_t<FieldType>>::impl(field_info, reflected)) {
-                    changed = true;
-                    field_info.on_change(old_val, field_info.get(reflected), reflected);
-                }
-            }
-        });
-    }
-    return changed;
-}

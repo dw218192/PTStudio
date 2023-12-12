@@ -53,7 +53,7 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config)
     RenderableObject::for_each_field([this](auto field) {
         using type = typename decltype(field)::type;
         if constexpr (std::is_same_v<type, Material>) {
-            field.register_on_change_callback([this](Material& old_val, Material& new_val, auto& obj) {
+            field.register_on_change_callback([this](auto&&, auto&&, auto&&, auto&& obj) {
                 if (!m_control_state.get_cur_obj() || 
                     m_control_state.get_cur_obj() != &obj) {
                     return;
@@ -61,7 +61,7 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config)
                 on_editable_change(obj, SceneObjectChangeType::MATERIAL);
             });
         } else if constexpr (std::is_same_v<type, Transform>) {
-            field.register_on_change_callback([this](Transform& old_val, Transform& new_val, auto& obj) {
+            field.register_on_change_callback([this](auto&&, auto&&, auto&&, auto&& obj) {
                 if (!m_control_state.get_cur_obj() || 
                     m_control_state.get_cur_obj() != &obj) {
                     return;
@@ -69,7 +69,7 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config)
                 on_editable_change(obj, SceneObjectChangeType::TRANSFORM);
             });
         } else if constexpr (std::is_same_v<type, EditFlags>) {
-            field.register_on_change_callback([this](EditFlags& old_val, EditFlags& new_val, auto& obj) {
+            field.register_on_change_callback([this](auto&&, auto&&, auto&&, auto&& obj) {
                 if (!m_control_state.get_cur_obj() || 
                     m_control_state.get_cur_obj() != &obj) {
                     return;
@@ -82,7 +82,7 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config)
     Light::for_each_field([this](auto field) {
         using type = typename decltype(field)::type;
         if constexpr (std::is_same_v<type, Transform>) {
-            field.register_on_change_callback([this](Transform& old_val, Transform& new_val, auto& light) {
+            field.register_on_change_callback([this](auto&&, auto&&, auto&&, auto&& light) {
                 if (!m_control_state.get_cur_obj() || 
                     m_control_state.get_cur_obj() != &light) {
                     return;
@@ -90,7 +90,7 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config)
                 on_editable_change(light, SceneObjectChangeType::TRANSFORM);
             });
         } else if constexpr (std::is_same_v<type, EditFlags>) {
-            field.register_on_change_callback([this](EditFlags& old_val, EditFlags& new_val, auto& light) {
+            field.register_on_change_callback([this](auto&&, auto&&, auto&&, auto&& light) {
                 if (!m_control_state.get_cur_obj() || 
                     m_control_state.get_cur_obj() != &light) {
                     return;
@@ -104,7 +104,7 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config)
 void EditorApplication::create_input_actions() noexcept {
     // initialize input actions
     auto obj_selected = InputActionConstraint { [this] (InputEvent const&) {
-        return m_control_state.get_cur_obj() && m_control_state.get_cur_obj();
+        return m_control_state.get_cur_obj();
     }}; 
     auto using_gizmo = InputActionConstraint { [this] (InputEvent const&) {
         return ImGuizmo::IsUsing();

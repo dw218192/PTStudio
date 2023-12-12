@@ -40,6 +40,9 @@ namespace PTS {
             MSerialize{}); // not editable
         FIELD(std::vector<ViewPtr<SceneObject>>, m_children, {},
             MSerialize{}); // not editable
+        using Test = std::pair<int, float>;
+        FIELD(Test, m_test, {},
+            MSerialize{}); // not editable
 
         END_REFLECT();
         // enables dynamic retrieval of class info for polymorphic types
