@@ -1,339 +1,427 @@
 #pragma once
 
 #include <imgui.h>
-#include <type_traits>
 #include <glm/glm.hpp>
+#include <type_traits>
 
 #include "reflection.h"
 #include "typeTraitsUtil.h"
 
 namespace ImGui {
-    template<typename TemplatedFieldInfo, typename Reflected>
-    std::enable_if_t<PTS::Traits::has_tfield_interface_v<TemplatedFieldInfo>, bool>
-    Field(const char* label, TemplatedFieldInfo field_info, Reflected& reflected);
+template <typename TemplatedFieldInfo, typename Reflected>
+std::enable_if_t<PTS::Traits::has_tfield_interface_v<TemplatedFieldInfo>, bool>
+Field(const char* label, TemplatedFieldInfo field_info, Reflected& reflected);
 
-    template<typename Reflected>
-    std::enable_if_t<PTS::Traits::is_reflectable_v<Reflected>, bool>
-    ReflectedField(const char* label, Reflected& reflected, bool collapsed = false);
+template <typename Reflected>
+std::enable_if_t<PTS::Traits::is_reflectable_v<Reflected>, bool>
+ReflectedField(const char* label, Reflected& reflected, bool collapsed = false);
 
-    namespace detail {
-        // tag types for dispatching
-        struct EnumType {};
-        struct ReflectedType {};
-        struct ContainerType {};
-        struct TupleLikeType {};
+namespace detail {
+// tag types for dispatching
+struct EnumType {};
+struct ReflectedType {};
+struct ContainerType {};
+struct TupleLikeType {};
 
-        template<typename T>
-        struct Dispatch {
-            using type = std::conditional_t<std::is_enum_v<T>, EnumType,
-                std::conditional_t<PTS::Traits::is_reflectable_v<T>, ReflectedType, 
-                std::conditional_t<PTS::Traits::is_container_v<T>, ContainerType,
-                std::conditional_t<PTS::Traits::is_tuple_like_v<T>, TupleLikeType,
-                T>>>>;
-        };
-        template<typename T>
-        using Dispatch_t = typename Dispatch<T>::type;
+template <typename T>
+struct Dispatch {
+    using type = std::conditional_t<
+        std::is_enum_v<T>,
+        EnumType,
+        std::conditional_t<
+            PTS::Traits::is_reflectable_v<T>,
+            ReflectedType,
+            std::conditional_t<
+                PTS::Traits::is_container_v<T>,
+                ContainerType,
+                std::conditional_t<PTS::Traits::is_tuple_like_v<T>,
+                                   TupleLikeType,
+                                   T>>>>;
+};
+template <typename T>
+using Dispatch_t = typename Dispatch<T>::type;
 
-        template<typename T>
-        struct DoField {
-            template<typename Reflected, typename FieldInfo>
-            static auto impl(FieldInfo field_info, Reflected& reflected) -> bool {
-                ImGui::Text("Unsupported type: %s", field_info.type_name.data());
-                return false;
-            }
-        };
+template <typename T>
+struct DoField {
+    template <typename Reflected, typename FieldInfo>
+    static auto impl(char const* label,
+                     FieldInfo field_info,
+                     Reflected& reflected) -> bool {
+        ImGui::Text("Unsupported type: %s", field_info.type_name.data());
+        return false;
+    }
+};
 
+template <>
+struct DoField<ReflectedType> {
+    template <typename Reflected, typename FieldInfo>
+    static auto impl(char const* label,
+                     FieldInfo field_info,
+                     Reflected& reflected) -> bool {
+        auto&& field = field_info.get(reflected);
+        return ImGui::ReflectedField(label, field);
+    }
+};
 
-        template<>
-        struct DoField<ReflectedType> {
-            template<typename Reflected, typename FieldInfo>
-            static auto impl(FieldInfo field_info, Reflected& reflected) -> bool {
-                auto&& field = field_info.get(reflected);
-                return ImGui::ReflectedField(field_info.var_name.data(), field);
-            }
-        };
+// ---------------------- primitive types ----------------------
+template <>
+struct DoField<float> {
+    template <typename Reflected, typename FieldInfo>
+    static auto impl(char const* label,
+                     FieldInfo field_info,
+                     Reflected& reflected) -> bool {
+        auto&& field = field_info.get(reflected);
+        constexpr auto range_mod =
+            field_info
+                .template get_modifier<MRange<typename FieldInfo::type>>();
+        if constexpr (range_mod) {
+            return ImGui::SliderFloat(label, &field, range_mod->min,
+                                      range_mod->max);
+        } else {
+            return ImGui::InputFloat(label, &field);
+        }
+    }
+};
+template <>
+struct DoField<int> {
+    template <typename Reflected, typename FieldInfo>
+    static auto impl(char const* label,
+                     FieldInfo field_info,
+                     Reflected& reflected) -> bool {
+        auto&& field = field_info.get(reflected);
+        constexpr auto range_mod =
+            field_info
+                .template get_modifier<MRange<typename FieldInfo::type>>();
+        if constexpr (range_mod) {
+            return ImGui::SliderInt(label, &field, range_mod->min,
+                                    range_mod->max);
+        } else {
+            return ImGui::InputInt(label, &field);
+        }
+    }
+};
+template <>
+struct DoField<bool> {
+    template <typename Reflected, typename FieldInfo>
+    static auto impl(char const* label,
+                     FieldInfo field_info,
+                     Reflected& reflected) -> bool {
+        auto&& field = field_info.get(reflected);
+        return ImGui::Checkbox(label, &field);
+    }
+};
+template <typename T>
+struct DoField<T*> {
+    template <typename Reflected, typename FieldInfo>
+    static auto impl(char const* label,
+                     FieldInfo field_info,
+                     Reflected& reflected) -> bool {
+        ImGui::Text("%s::%s @ %p", field_info.type_name.data(),
+                    field_info.var_name.data(), field_info.get(reflected));
+        if constexpr (std::is_base_of_v<PTS::Object, T>) {
+            if (field_info.get(reflected))
+                ImGui::Text("Pointed-to Type: %s", field_info.get(reflected)
+                                                       ->dyn_get_class_info()
+                                                       .class_name.data());
+        }
+        return true;
+    }
+};
+template <typename T>
+struct DoField<T const*> {
+    template <typename Reflected, typename FieldInfo>
+    static auto impl(char const* label,
+                     FieldInfo field_info,
+                     Reflected& reflected) -> bool {
+        return DoField<T*>::impl(label, field_info, reflected);
+    }
+};
 
-        // ---------------------- primitive types ----------------------
-        template<>
-        struct DoField<float> {
-            template<typename Reflected, typename FieldInfo>
-            static auto impl(FieldInfo field_info, Reflected& reflected) -> bool {
-                auto&& field = field_info.get(reflected);
-                constexpr auto range_mod = field_info.template get_modifier<MRange<typename FieldInfo::type>>();
-                if constexpr (range_mod) {
-                    return ImGui::SliderFloat(field_info.var_name.data(), &field, range_mod->min, range_mod->max);
-                } else {
-                    return ImGui::InputFloat(field_info.var_name.data(), &field);
-                }
-            }
-        };
-        template<>
-        struct DoField<int> {
-            template<typename Reflected, typename FieldInfo>
-            static auto impl(FieldInfo field_info, Reflected& reflected) -> bool {
-                auto&& field = field_info.get(reflected);
-                constexpr auto range_mod = field_info.template get_modifier<MRange<typename FieldInfo::type>>();
-                if constexpr (range_mod) {
-                    return ImGui::SliderInt(field_info.var_name.data(), &field, range_mod->min, range_mod->max);
-                } else {
-                    return ImGui::InputInt(field_info.var_name.data(), &field);
-                }
-            }
-        };
-        template<>
-        struct DoField<bool> {
-            template<typename Reflected, typename FieldInfo>
-            static auto impl(FieldInfo field_info, Reflected& reflected) -> bool {
-                auto&& field = field_info.get(reflected);
-                return ImGui::Checkbox(field_info.var_name.data(), &field);
-            }
-        };
-        template<typename T>
-        struct DoField<T*> {
-            template<typename Reflected, typename FieldInfo>
-            static auto impl(FieldInfo field_info, Reflected& reflected) -> bool {
-                ImGui::Text(
-                    "%s::%s @ %p",
-                    field_info.type_name.data(), 
-                    field_info.var_name.data(), 
-                    field_info.get(reflected)
-                );
-                if constexpr (std::is_base_of_v<PTS::Object, T>) {
-                    if (field_info.get(reflected))
-                        ImGui::Text("Pointed-to Type: %s", field_info.get(reflected)->dyn_get_class_info().class_name.data());
-                }
-                return true;
-            }
-        };
-        template<typename T>
-        struct DoField<T const*> {
-            template<typename Reflected, typename FieldInfo>
-            static auto impl(FieldInfo field_info, Reflected& reflected) -> bool {
-                return DoField<T*>::impl(field_info, reflected);
-            }
-        };
-        
-        template<>
-        struct DoField<EnumType> {
-            template<typename Reflected, typename FieldInfo>
-            static auto impl(FieldInfo field_info, Reflected& reflected) -> bool {
-                bool changed = false;
-
-                constexpr auto enum_mod = field_info.template get_modifier<MEnum>();
-                constexpr auto enum_flags_mod = field_info.template get_modifier<MEnumFlags>();
-
-                if constexpr (enum_mod) {
-                    auto&& field = field_info.get(reflected);
-                    auto field_int = reinterpret_cast<int*>(&field);
-
-                    auto preview = enum_mod->num_items == 0 ? "None" : enum_mod->get_name(*field_int);
-                    if (ImGui::BeginCombo(field_info.var_name.data(), preview)) {
-                        for (int i = 0; i < enum_mod->num_items; ++i) {
-                            bool is_selected = *field_int == i;
-                            if (ImGui::Selectable(enum_mod->get_name(i), is_selected)) {
-                                *field_int = i;
-                                changed = true;
-                            }
-                        }
-                        ImGui::EndCombo();
-                    }
-                } else if constexpr (enum_flags_mod) {
-                    auto&& field = field_info.get(reflected);
-                    auto field_int = reinterpret_cast<int*>(&field);
-
-                    std::string preview = *field_int == 0 ? "None" : "";
-                    for (int i = 0; i < enum_flags_mod->num_items; ++i) {
-                        if (*field_int & (1 << i)) {
-                            preview += enum_flags_mod->get_name(i);
-                            if (i < enum_flags_mod->num_items - 1)
-                                preview.push_back(',');
-                        }
-                    }
-                    if (ImGui::BeginCombo(field_info.var_name.data(), preview.c_str())) {
-                        if (ImGui::Selectable("None", *field_int == 0)) {
-                            *field_int = 0;
-                            changed = true;
-                        }
-                        for (int i = 0; i < enum_flags_mod->num_items; ++i) {
-                            bool is_selected = *field_int & (1 << i);
-                            if (ImGui::Selectable(enum_flags_mod->get_name(i), is_selected)) {
-                                *field_int ^= (1 << i);
-                                changed = true;
-                            }
-                        }
-                        ImGui::EndCombo();
-                    }
-                } else {
-                    ImGui::Text("Enum type %s does not have a modifier", field_info.type_name.data());
-                }
-                return changed;
-            }
-        };
-
-        // ---------------------- glm types ----------------------
-        template<>
-        struct DoField<glm::vec2> {
-            template<typename Reflected, typename FieldInfo>
-            static auto impl(FieldInfo field_info, Reflected& reflected) -> bool {
-                auto&& field = field_info.get(reflected);
-                return ImGui::InputFloat2(field_info.var_name.data(), glm::value_ptr(field));
-            }
-        };
-
-        template<>
-        struct DoField<glm::vec3> {
-            template<typename Reflected, typename FieldInfo>
-            static auto impl(FieldInfo field_info, Reflected& reflected) -> bool {
-                auto&& field = field_info.get(reflected);
-                constexpr auto color_mod = field_info.template get_modifier<MColor>();
-                if constexpr (color_mod) {
-                    return ImGui::ColorEdit3(field_info.var_name.data(), glm::value_ptr(field));
-                } else {
-                    return ImGui::InputFloat3(field_info.var_name.data(), glm::value_ptr(field));
-                }
-            }
-        };
-
-        template<>
-        struct DoField<glm::vec4> {
-            template<typename Reflected, typename FieldInfo>
-            static auto impl(FieldInfo field_info, Reflected& reflected) -> bool {
-                auto&& field = field_info.get(reflected);
-                constexpr auto color_mod = field_info.template get_modifier<MColor>();
-                if constexpr (color_mod) {
-                    return ImGui::ColorEdit4(field_info.var_name.data(), glm::value_ptr(field));
-                } else {
-                    return ImGui::InputFloat4(field_info.var_name.data(), glm::value_ptr(field));
-                }
-            }
-        };
-
-        // ---------------------- container types ----------------------
-        template<typename ClassType, typename ElementType, typename ContainerType>
-        struct ContainerElementFieldInfo {
-            using type = ElementType;
-
-            std::string_view type_name;
-            std::string_view var_name;
-            ContainerElementFieldInfo(std::string_view type_name, std::string_view var_name, ContainerType& container,  int i)
-                : type_name{ type_name }, var_name{ var_name }, m_container{ container }, m_i{ i } {}
-            auto get(ClassType& reflected) -> auto& {
-                (void) reflected;
-                return m_container[m_i];
-            }
-            template<typename Mod>
-            constexpr auto has_modifier() { return false; }
-            constexpr auto on_change(ElementType const& old_val, ElementType const& new_val, ClassType& reflected) {}
-        private:
-            ContainerType& m_container;
-            int m_i;
-        };
-        template<typename ClassType, typename ElementType, typename TupleType, int I>
-        struct TupleElementFieldInfo {
-            using type = ElementType;
-
-            std::string_view type_name;
-            std::string_view var_name;
-            TupleElementFieldInfo(std::string_view type_name, std::string_view var_name, TupleType& field)
-                : type_name{ type_name }, var_name{ var_name }, field{ field } {}
-            auto get(ClassType& reflected) -> auto& {
-                return std::get<I>(field);
-            }
-            template<typename Mod>
-            constexpr auto has_modifier() { return false; }
-            constexpr auto on_change(ElementType const& old_val, ElementType const& new_val, ClassType& reflected) {}
-        private:
-            TupleType& field;
-        };
-        template<>
-        struct DoField<ContainerType> {
-            template<typename Reflected, typename FieldInfo>
-            static auto impl(FieldInfo field_info, Reflected& reflected) -> bool {
-                auto&& field = field_info.get(reflected);
-                bool changed = false;
-                if (ImGui::TreeNode(field_info.var_name.data())) {
-                    if (ImGui::Button("Add")) {
-                        field.emplace_back();
-                        changed = true;
-                    }
-                    ImGui::SameLine();
-                    if (ImGui::Button("Remove")) {
-                        if (!field.empty()) {
-                            field.pop_back();
-                            changed = true;
-                        }
-                    }
-                    ImGui::SameLine();
-                    if (ImGui::Button("Clear")) {
-                        field.clear();
-                        changed = true;
-                    }
-                    ImGui::Separator();
-                    auto it = field.begin();
-                    for (int i = 0; i < field.size(); ++i, ++it) {
-                        ImGui::PushID(i);
-                        if (ImGui::TreeNode(std::to_string(i).data())) {
-                            // TODO: this is ugly
-                            auto sub_var_name = std::string{ field_info.var_name.data() } + "[" + std::to_string(i) + "]";
-                            auto sub_type_name = std::string{ field_info.type_name.data() } + "::value_type";
-                            using ContainerType = typename FieldInfo::type;
-                            using ElementType = typename ContainerType::value_type;
-                            static_assert(PTS::Traits::has_tfield_interface_v<ContainerElementFieldInfo<Reflected, ElementType, ContainerType>>);
-                            auto sub_field_info = ContainerElementFieldInfo<Reflected, ElementType, ContainerType>
-                                { sub_type_name, sub_var_name, field, i };
-                            changed |= ImGui::Field(sub_var_name.data(), sub_field_info, reflected);
-                            ImGui::TreePop();
-                        }
-                        ImGui::PopID();
-                    }
-                    ImGui::TreePop();
-                }
-                return changed;
-            }
-        };
-
-        template<>
-        struct DoField<TupleLikeType> {
-            template<typename Reflected, typename FieldInfo>
-            static auto impl(FieldInfo field_info, Reflected& reflected) -> bool {
-                bool changed = false;
-                auto&& field = field_info.get(reflected);
-                constexpr auto sz = std::tuple_size_v<typename FieldInfo::type>;
-
-                return changed;
-            }
-        };
-
-    } // namespace detail
-
-
-
-    template<typename TemplatedFieldInfo, typename Reflected>
-    std::enable_if_t<PTS::Traits::has_tfield_interface_v<TemplatedFieldInfo>, bool>
-    Field(const char* label, TemplatedFieldInfo field_info, Reflected& reflected) {
+template <>
+struct DoField<EnumType> {
+    template <typename Reflected, typename FieldInfo>
+    static auto impl(char const* label,
+                     FieldInfo field_info,
+                     Reflected& reflected) -> bool {
         bool changed = false;
-        using FieldType = typename TemplatedFieldInfo::type;
-        if constexpr (!field_info.template has_modifier<MNoInspect>()) {
-            auto old_val = field_info.get(reflected);
-            if (detail::DoField<detail::Dispatch_t<FieldType>>::impl(field_info, reflected)) {
+
+        constexpr auto enum_mod = field_info.template get_modifier<MEnum>();
+        constexpr auto enum_flags_mod =
+            field_info.template get_modifier<MEnumFlags>();
+
+        if constexpr (enum_mod) {
+            auto&& field = field_info.get(reflected);
+            auto field_int = reinterpret_cast<int*>(&field);
+
+            auto preview = enum_mod->num_items == 0
+                               ? "None"
+                               : enum_mod->get_name(*field_int);
+            if (ImGui::BeginCombo(label, preview)) {
+                for (int i = 0; i < enum_mod->num_items; ++i) {
+                    bool is_selected = *field_int == i;
+                    if (ImGui::Selectable(enum_mod->get_name(i), is_selected)) {
+                        *field_int = i;
+                        changed = true;
+                    }
+                }
+                ImGui::EndCombo();
+            }
+        } else if constexpr (enum_flags_mod) {
+            auto&& field = field_info.get(reflected);
+            auto field_int = reinterpret_cast<int*>(&field);
+
+            std::string preview = *field_int == 0 ? "None" : "";
+            for (int i = 0; i < enum_flags_mod->num_items; ++i) {
+                if (*field_int & (1 << i)) {
+                    preview += enum_flags_mod->get_name(i);
+                    if (i < enum_flags_mod->num_items - 1)
+                        preview.push_back(',');
+                }
+            }
+            if (ImGui::BeginCombo(label, preview.c_str())) {
+                if (ImGui::Selectable("None", *field_int == 0)) {
+                    *field_int = 0;
+                    changed = true;
+                }
+                for (int i = 0; i < enum_flags_mod->num_items; ++i) {
+                    bool is_selected = *field_int & (1 << i);
+                    if (ImGui::Selectable(enum_flags_mod->get_name(i),
+                                          is_selected)) {
+                        *field_int ^= (1 << i);
+                        changed = true;
+                    }
+                }
+                ImGui::EndCombo();
+            }
+        } else {
+            ImGui::Text("Enum type %s does not have a modifier",
+                        field_info.type_name.data());
+        }
+        return changed;
+    }
+};
+
+// ---------------------- glm types ----------------------
+template <>
+struct DoField<glm::vec2> {
+    template <typename Reflected, typename FieldInfo>
+    static auto impl(char const* label,
+                     FieldInfo field_info,
+                     Reflected& reflected) -> bool {
+        auto&& field = field_info.get(reflected);
+        return ImGui::InputFloat2(label, glm::value_ptr(field));
+    }
+};
+
+template <>
+struct DoField<glm::vec3> {
+    template <typename Reflected, typename FieldInfo>
+    static auto impl(char const* label,
+                     FieldInfo field_info,
+                     Reflected& reflected) -> bool {
+        auto&& field = field_info.get(reflected);
+        constexpr auto color_mod = field_info.template get_modifier<MColor>();
+        if constexpr (color_mod) {
+            return ImGui::ColorEdit3(label, glm::value_ptr(field));
+        } else {
+            return ImGui::InputFloat3(label, glm::value_ptr(field));
+        }
+    }
+};
+
+template <>
+struct DoField<glm::vec4> {
+    template <typename Reflected, typename FieldInfo>
+    static auto impl(char const* label,
+                     FieldInfo field_info,
+                     Reflected& reflected) -> bool {
+        auto&& field = field_info.get(reflected);
+        constexpr auto color_mod = field_info.template get_modifier<MColor>();
+        if constexpr (color_mod) {
+            return ImGui::ColorEdit4(label, glm::value_ptr(field));
+        } else {
+            return ImGui::InputFloat4(label, glm::value_ptr(field));
+        }
+    }
+};
+
+// ---------------------- container types ----------------------
+// adaptors to satisfy the interface
+template <typename ClassType, typename ElementType, typename ContainerType>
+struct ContainerElementFieldInfo {
+    using type = ElementType;
+
+    std::string_view type_name;
+    std::string_view var_name;
+    ContainerElementFieldInfo(std::string_view type_name,
+                              std::string_view var_name,
+                              ContainerType& container,
+                              int i)
+        : type_name{type_name},
+          var_name{var_name},
+          m_container{container},
+          m_i{i} {}
+    auto get(ClassType& reflected) -> auto& {
+        (void)reflected;
+        return m_container[m_i];
+    }
+    template <typename Mod>
+    constexpr auto has_modifier() {
+        return false;
+    }
+    template <typename Mod>
+    constexpr auto get_modifier() -> Mod const* {
+        return nullptr;
+    }
+
+   private:
+    ContainerType& m_container;
+    int m_i;
+};
+template <typename ClassType, typename ElementType, typename TupleType, int I>
+struct TupleElementFieldInfo {
+    using type = std::tuple_element_t<I, TupleType>;
+
+    std::string_view type_name;
+    std::string_view var_name;
+    TupleElementFieldInfo(std::string_view type_name,
+                          std::string_view var_name,
+                          TupleType& tuple)
+        : type_name{type_name}, var_name{var_name}, m_tuple{tuple} {}
+    auto get(ClassType& reflected) -> auto& { return std::get<I>(m_tuple); }
+    template <typename Mod>
+    constexpr auto has_modifier() {
+        return false;
+    }
+    template <typename Mod>
+    constexpr auto get_modifier() -> Mod const* {
+        return nullptr;
+    }
+
+   private:
+    TupleType& m_tuple;
+};
+
+template <>
+struct DoField<ContainerType> {
+    template <typename Reflected, typename FieldInfo>
+    static auto impl(char const* label,
+                     FieldInfo field_info,
+                     Reflected& reflected) -> bool {
+        using ContainerType = typename FieldInfo::type;
+        using ElementType = typename ContainerType::value_type;
+
+        auto&& field = field_info.get(reflected);
+        bool changed = false;
+        if (ImGui::CollapsingHeader(label, ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (ImGui::Button("Add")) {
+                field.emplace_back();
                 changed = true;
-                field_info.on_change(old_val, field_info.get(reflected), reflected);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Remove")) {
+                if (!field.empty()) {
+                    field.pop_back();
+                    changed = true;
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Clear")) {
+                field.clear();
+                changed = true;
+            }
+
+            auto it = field.begin();
+            for (int i = 0; i < field.size(); ++i, ++it) {
+                ImGui::Separator();
+                auto sub_var_name = std::string{field_info.var_name.data()} +
+                                    "[" + std::to_string(i) + "]";
+                auto sub_type_name =
+                    std::string{field_info.type_name.data()} + "::value_type";
+                auto sub_field_info =
+                    ContainerElementFieldInfo<Reflected, ElementType,
+                                              ContainerType>{
+                        sub_type_name, sub_var_name, field, i};
+                changed |= DoField<detail::Dispatch_t<ElementType>>::impl(
+                    sub_var_name.data(), sub_field_info, reflected);
             }
         }
         return changed;
     }
+};
 
-    // reflectable types can be inspected in the editor and modified automatically
-    template<typename Reflected>
-    std::enable_if_t<PTS::Traits::is_reflectable_v<Reflected>, bool>
-    ReflectedField(const char* label, Reflected& reflected, bool collapsed) {        
+template <>
+struct DoField<TupleLikeType> {
+    template <typename Reflected, typename FieldInfo>
+    static auto impl(char const* label,
+                     FieldInfo field_info,
+                     Reflected& reflected) -> bool {
+        using TupleType = typename FieldInfo::type;
+
         bool changed = false;
-        if (CollapsingHeader(label, collapsed ? 0 : ImGuiTreeNodeFlags_DefaultOpen)) {
-            Reflected::for_each_field([&changed, &reflected](auto field_info) {
-                changed |= Field(field_info.var_name.data(), field_info, reflected);
+        auto&& field = field_info.get(reflected);
+
+        if (ImGui::CollapsingHeader(label, ImGuiTreeNodeFlags_DefaultOpen)) {
+            PTS::Traits::for_each::element_in_tuple(field, [&changed,
+                                                            &reflected,
+                                                            &field_info, &field,
+                                                            label](auto&& arg) {
+                ImGui::Separator();
+
+                // this will return the first index of the type in the tuple
+                // TODO: make this work for multiple same types in the
+                // tuple?
+                constexpr auto I =
+                    PTS::Traits::find_v<TupleType, std::decay_t<decltype(arg)>>;
+                auto sub_var_name = std::string{field_info.var_name.data()} +
+                                    "[" + std::to_string(I) + "]";
+                auto sub_type_name = std::string{field_info.type_name.data()} +
+                                     "::" + std::to_string(I);
+                auto sub_field_info =
+                    TupleElementFieldInfo<Reflected,
+                                          std::tuple_element_t<I, TupleType>,
+                                          TupleType, I>{sub_type_name,
+                                                        sub_var_name, field};
+
+                changed |=
+                    DoField<Dispatch_t<std::tuple_element_t<I, TupleType>>>::
+                        impl(sub_var_name.c_str(), sub_field_info,
+                             reflected);
             });
         }
         return changed;
     }
-} // namespace ImGui
+};
 
+}  // namespace detail
+
+template <typename TemplatedFieldInfo, typename Reflected>
+std::enable_if_t<PTS::Traits::has_tfield_interface_v<TemplatedFieldInfo>, bool>
+Field(const char* label, TemplatedFieldInfo field_info, Reflected& reflected) {
+    bool changed = false;
+    using FieldType = typename TemplatedFieldInfo::type;
+    if constexpr (!field_info.template has_modifier<MNoInspect>()) {
+        auto old_val = field_info.get(reflected);
+        if (detail::DoField<detail::Dispatch_t<FieldType>>::impl(
+                label, field_info, reflected)) {
+            changed = true;
+            field_info.on_change(old_val, field_info.get(reflected), reflected);
+        }
+    }
+    return changed;
+}
+
+// reflectable types can be inspected in the editor and modified automatically
+template <typename Reflected>
+std::enable_if_t<PTS::Traits::is_reflectable_v<Reflected>, bool>
+ReflectedField(const char* label, Reflected& reflected, bool collapsed) {
+    bool changed = false;
+    if (CollapsingHeader(label,
+                         collapsed ? 0 : ImGuiTreeNodeFlags_DefaultOpen)) {
+        Reflected::for_each_field([&changed, &reflected](auto field_info) {
+            changed |= Field(field_info.var_name.data(), field_info, reflected);
+        });
+    }
+    return changed;
+}
+}  // namespace ImGui

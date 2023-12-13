@@ -194,15 +194,21 @@ struct contains : std::bool_constant<find<Haystack, Needle>::value !=
 template <typename Haystack, typename Needle>
 constexpr bool contains_v = contains<Haystack, Needle>::value;
 
-template <typename TupleLike, typename Callable>
-constexpr auto for_each(TupleLike&& tuple, Callable&& callable) {
-    if constexpr (is_tuple_like_v<std::decay_t<TupleLike>>) {
-        std::apply([&callable](auto&&... args) { (callable(std::forward(args)), ...); },
-                   std::forward<TupleLike>(tuple));
-    } else {
-        static_assert(is_tuple_like_v<std::decay_t<TupleLike>>,
-                      "for_each requires a tuple-like type");
+struct for_each {
+    template <typename TupleLike, typename Callable>
+    static constexpr auto element_in_tuple(TupleLike&& tuple, Callable&& callable) {
+        if constexpr (is_tuple_like_v<std::decay_t<TupleLike>>) {
+            std::apply(
+                [&callable](auto&&... args) {
+                    (callable(std::forward<decltype(args)>(args)), ...);
+                },
+                std::forward<TupleLike>(tuple));
+        } else {
+            static_assert(is_tuple_like_v<std::decay_t<TupleLike>>,
+                          "for_each requires a tuple-like type");
+        }
     }
-}
+};
+
 }  // namespace Traits
 }  // namespace PTS
