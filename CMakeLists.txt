@@ -15,6 +15,7 @@ endif ()
 
 # options
 option(PTSTUDIO_PATHTRACER "Build CUDA pathtracer" OFF)
+option(CORE_BUILD_TESTS "Build core unit tests" OFF)
 
 # Direct all output to /bin directory
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin)

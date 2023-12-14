@@ -31,3 +31,8 @@ set(PT_CORE_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/include PARENT_SCOPE)
 target_include_directories(${lib_name} PUBLIC
 	${CMAKE_CURRENT_SOURCE_DIR}/src/include
 )
+
+# Build unit tests if enabled
+if (CORE_BUILD_TESTS)
+	add_subdirectory(tests)
+endif()

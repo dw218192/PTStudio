@@ -6,7 +6,7 @@
 
 static constexpr auto k_default_fov = 45.0f;
 static constexpr auto k_default_aspect = 1.33f;
-static constexpr auto k_default_look_at = PTS::LookAtParams {
+static GLM_CONSTEXPR auto k_default_look_at = PTS::LookAtParams {
     glm::vec3{ 0.0f, 0.0f, 5.0f },
     glm::vec3{ 0.0f, 0.0f, 0.0f },
     glm::vec3{ 0.0f, 1.0f, 0.0f }

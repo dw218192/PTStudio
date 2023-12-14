@@ -3,16 +3,32 @@
 #include <functional>
 #include <memory>
 #include <optional>
-#include <string>
-#include <string_view>
 #include <tuple>
 #include <typeinfo>
 #include <utility>
+#include <variant>
+
+// data structures
+#include <array>
+#include <bitset>
+#include <deque>
+#include <list>
+#include <map>
+#include <queue>
+#include <set>
+#include <stack>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
+#include "stringManip.h"
 #include "typeTraitsUtil.h"
 
 namespace PTS {
+
+#pragma region Modifiers
 /**
  * simple reflection framework
  * limitations:
@@ -98,170 +114,9 @@ struct MEnumFlags {
     auto (*get_name)(int idx) -> char const*;
 };
 
-// used to dynamically get info about a class
-struct ClassInfo {
-    std::string_view class_name;
-    int num_members;
-    ClassInfo const* parent;
-};
+#pragma endregion Modifiers
 
-// interface for type-erased iterators
-struct TypeErasedIteratorInterface {
-    virtual ~TypeErasedIteratorInterface() = default;
-    virtual auto operator++() -> TypeErasedIteratorInterface& = 0;
-    virtual auto operator*() const -> void const* = 0;
-    virtual auto operator*() -> void* = 0;
-    virtual auto operator==(TypeErasedIteratorInterface const& other) const
-        -> bool = 0;
-    virtual auto operator!=(TypeErasedIteratorInterface const& other) const
-        -> bool = 0;
-};
-// type-erased iterator
-struct TypeErasedIterator {
-    template <typename Iterator,
-              typename = std::enable_if_t<Traits::is_iterator<Iterator>::value>>
-    struct IteratorWrapper : TypeErasedIteratorInterface {
-        IteratorWrapper(Iterator it) : m_it(it) {}
-        auto operator++() -> TypeErasedIteratorInterface& override {
-            ++m_it;
-            return *this;
-        }
-        auto operator*() const -> void const* override { return &(*m_it); }
-        auto operator*() -> void* override { return &(*m_it); }
-        auto operator==(TypeErasedIteratorInterface const& other) const
-            -> bool override {
-            if (auto* other_it = dynamic_cast<IteratorWrapper const*>(&other)) {
-                return m_it == other_it->m_it;
-            }
-            return false;
-        }
-        auto operator!=(TypeErasedIteratorInterface const& other) const
-            -> bool override {
-            return !(*this == other);
-        }
-
-       private:
-        Iterator m_it;
-    };
-
-    template <typename Iterator,
-              typename = std::enable_if_t<Traits::is_iterator<Iterator>::value>>
-    TypeErasedIterator(Iterator it)
-        : m_impl(std::make_shared<IteratorWrapper<Iterator>>(it)) {}
-    template <typename T>
-    TypeErasedIterator(T* ptr)
-        : m_impl(std::make_shared<IteratorWrapper<T*>>(ptr)) {}
-    TypeErasedIterator() : m_impl(nullptr) {}
-
-    auto operator++() -> TypeErasedIteratorInterface& {
-        return m_impl->operator++();
-    }
-    auto operator*() const -> void const* { return m_impl->operator*(); }
-    auto operator*() -> void* { return m_impl->operator*(); }
-    auto operator==(TypeErasedIterator const& other) const -> bool {
-        return m_impl->operator==(*other.m_impl);
-    }
-    auto operator!=(TypeErasedIterator const& other) const -> bool {
-        return m_impl->operator!=(*other.m_impl);
-    }
-
-   private:
-    std::shared_ptr<TypeErasedIteratorInterface> m_impl;
-};
-
-/**
- * @brief represents a type, used to dynamically get info about a field
- */
-struct Type {
-    std::size_t normalized_type_hash{
-        0};  // no good way to get a readable name as of C++17
-    bool is_pointer{false};
-    bool is_container{false};
-    bool is_reflectable{false};
-    bool is_arithmetic{false};
-
-    template <typename T>
-    static auto of() -> Type {
-        auto ret = Type{};
-        using raw_t = Traits::extract_raw_type_t<T>;
-        ret.normalized_type_hash = typeid(raw_t).hash_code();
-        if constexpr (std::is_pointer_v<raw_t>) {
-            ret.is_pointer = true;
-            ret.m_pointed_to_type =
-                std::make_shared<Type>(of<std::remove_pointer_t<raw_t>>());
-        }
-        if constexpr (Traits::is_container<raw_t>::value) {
-            ret.is_container = true;
-            ret.m_contained_type =
-                std::make_shared<Type>(of<typename raw_t::value_type>());
-        }
-        if constexpr (Traits::is_reflectable<raw_t>::value) {
-            ret.is_reflectable = true;
-            if constexpr (!std::is_same_v<typename raw_t::parent_type, void>) {
-                ret.m_inherited_from_type =
-                    std::make_shared<Type>(of<typename raw_t::parent_type>());
-            }
-        }
-        if constexpr (std::is_arithmetic_v<raw_t>) {
-            ret.is_arithmetic = true;
-        }
-        return ret;
-    }
-
-    Type(Type const&) = default;
-    Type(Type&&) = default;
-    Type& operator=(Type const&) = default;
-    Type& operator=(Type&&) = default;
-    ~Type() = default;
-
-    auto is_valid() const noexcept { return normalized_type_hash != 0; }
-    auto pointed_to_type() const -> Type {
-        return m_pointed_to_type ? *m_pointed_to_type : Type{};
-    }
-    auto inherited_from_type() const -> Type {
-        return m_inherited_from_type ? *m_inherited_from_type : Type{};
-    }
-    auto contained_type() const -> Type {
-        return m_contained_type ? *m_contained_type : Type{};
-    }
-    auto has_common_base_with(Type const& other) const -> bool {
-        if (!is_valid() || !other.is_valid())
-            return false;
-        if (normalized_type_hash == other.normalized_type_hash) {
-            return true;
-        } else if (m_inherited_from_type) {
-            return m_inherited_from_type->has_common_base_with(other) ||
-                   has_common_base_with(other.inherited_from_type());
-        } else {
-            return false;
-        }
-    }
-    auto operator==(Type const& other) const noexcept -> bool {
-        return normalized_type_hash == other.normalized_type_hash;
-    }
-    auto operator<(Type const& other) const noexcept -> bool {
-        return normalized_type_hash < other.normalized_type_hash;
-    }
-    auto operator!=(Type const& other) const noexcept -> bool {
-        return !(*this == other);
-    }
-    auto operator<=(Type const& other) const noexcept -> bool {
-        return *this < other || *this == other;
-    }
-    auto operator>(Type const& other) const noexcept -> bool {
-        return !(*this <= other);
-    }
-    auto operator>=(Type const& other) const noexcept -> bool {
-        return !(*this < other);
-    }
-
-   private:
-    Type() = default;
-    std::shared_ptr<Type> m_pointed_to_type{};
-    std::shared_ptr<Type> m_inherited_from_type{};
-    std::shared_ptr<Type> m_contained_type{};
-};
-
+#pragma region TField
 /**
  * @brief non-constexpr part of TField
  */
@@ -276,7 +131,9 @@ template <typename ClassType,
           typename ModifierPackType = ModifierPack<>>
 struct TField {
     using type = FieldType;
-    using callback_type = typename TFieldRuntime<ClassType, FieldType, ModifierPackType>::callback_type;
+    using callback_type =
+        typename TFieldRuntime<ClassType, FieldType, ModifierPackType>::
+            callback_type;
 
     constexpr TField(
         int member_index,
@@ -356,6 +213,8 @@ struct TFieldRuntime {
     std::vector<callback_type> on_change_callbacks;
 };
 
+#pragma endregion TField
+
 namespace Traits {
 // loose interface for TField
 template <typename T, typename = void>
@@ -364,7 +223,8 @@ template <template <typename, typename, typename...> typename T,
           typename ClassType,
           typename FieldType,
           typename... ExtraTypes>
-struct has_tfield_interface<T<ClassType, FieldType, ExtraTypes...>, 
+struct has_tfield_interface<
+    T<ClassType, FieldType, ExtraTypes...>,
     std::void_t<typename T<ClassType, FieldType, ExtraTypes...>::type,
                 decltype(std::declval<T<ClassType, FieldType, ExtraTypes...>>()
                              .get(std::declval<ClassType>())),
@@ -408,7 +268,345 @@ struct get_for_each_field_impl<T, F, std::enable_if_t<is_reflectable_v<T>>> {
     }
 };
 
+// type to name registeration
+template <typename T, typename = void>
+struct type_to_name {
+    static constexpr std::string_view value = "unknown";
+};
+template <typename T>
+struct type_to_name<T, std::enable_if_t<is_reflectable_v<T>>> {
+    static constexpr std::string_view value = T::get_class_name();
+};
+template <typename T>
+constexpr auto type_to_name_v = type_to_name<T>::value;
+
+// register common types
+#define DECL_TYPE_TO_NAME(_type)                          \
+    template <>                                           \
+    struct type_to_name<_type> {                          \
+        static constexpr std::string_view value = #_type; \
+    }
+// for template, we only care about the outer type name
+#define DECL_TYPE_TO_NAME_TEMPLATE(_type)                 \
+    template <typename... Args>                           \
+    struct type_to_name<_type<Args...>> {                 \
+        static constexpr std::string_view value = #_type; \
+    }
+
+DECL_TYPE_TO_NAME(int);
+DECL_TYPE_TO_NAME(float);
+DECL_TYPE_TO_NAME(double);
+DECL_TYPE_TO_NAME(bool);
+DECL_TYPE_TO_NAME(char);
+DECL_TYPE_TO_NAME(unsigned char);
+DECL_TYPE_TO_NAME(short);
+DECL_TYPE_TO_NAME(unsigned short);
+DECL_TYPE_TO_NAME(long);
+DECL_TYPE_TO_NAME(unsigned long);
+DECL_TYPE_TO_NAME(long long);
+DECL_TYPE_TO_NAME(unsigned long long);
+DECL_TYPE_TO_NAME(void);
+DECL_TYPE_TO_NAME(std::nullptr_t);
+
+DECL_TYPE_TO_NAME(std::string);
+DECL_TYPE_TO_NAME(std::string_view);
+DECL_TYPE_TO_NAME_TEMPLATE(std::vector);
+// std array is special because it has a non-templated argument
+template <typename T, std::size_t N>
+struct type_to_name<std::array<T, N>> {
+    static constexpr std::string_view value = "std::array";
+};
+DECL_TYPE_TO_NAME_TEMPLATE(std::unordered_map);
+DECL_TYPE_TO_NAME_TEMPLATE(std::unordered_set);
+DECL_TYPE_TO_NAME_TEMPLATE(std::map);
+DECL_TYPE_TO_NAME_TEMPLATE(std::set);
+DECL_TYPE_TO_NAME_TEMPLATE(std::queue);
+DECL_TYPE_TO_NAME_TEMPLATE(std::stack);
+DECL_TYPE_TO_NAME_TEMPLATE(std::list);
+DECL_TYPE_TO_NAME_TEMPLATE(std::deque);
+// bitset is special because it has a non-templated argument
+template <std::size_t N>
+struct type_to_name<std::bitset<N>> {
+    static constexpr std::string_view value = "std::bitset";
+};
+
+DECL_TYPE_TO_NAME_TEMPLATE(std::tuple);
+DECL_TYPE_TO_NAME_TEMPLATE(std::pair);
+DECL_TYPE_TO_NAME_TEMPLATE(std::optional);
+DECL_TYPE_TO_NAME_TEMPLATE(std::variant);
+DECL_TYPE_TO_NAME_TEMPLATE(std::function);
+
+DECL_TYPE_TO_NAME_TEMPLATE(std::unique_ptr);
+DECL_TYPE_TO_NAME_TEMPLATE(std::shared_ptr);
+DECL_TYPE_TO_NAME_TEMPLATE(std::weak_ptr);
+
+DECL_TYPE_TO_NAME_TEMPLATE(std::allocator);
+DECL_TYPE_TO_NAME_TEMPLATE(std::char_traits);
+
 }  // namespace Traits
+
+#pragma region DynamicTypeInfo
+// used to dynamically get info about a class
+struct ClassInfo {
+    std::string_view class_name;
+    int num_members;
+    ClassInfo const* parent;
+};
+
+// interface for type-erased iterators
+struct TypeErasedIteratorInterface {
+    virtual ~TypeErasedIteratorInterface() = default;
+    virtual auto operator++() -> TypeErasedIteratorInterface& = 0;
+    virtual auto operator*() const -> void const* = 0;
+    virtual auto operator*() -> void* = 0;
+    virtual auto operator==(TypeErasedIteratorInterface const& other) const
+        -> bool = 0;
+    virtual auto operator!=(TypeErasedIteratorInterface const& other) const
+        -> bool = 0;
+};
+// type-erased iterator
+struct TypeErasedIterator {
+    template <typename Iterator,
+              typename = std::enable_if_t<Traits::is_iterator<Iterator>::value>>
+    struct IteratorWrapper : TypeErasedIteratorInterface {
+        IteratorWrapper(Iterator it) : m_it(it) {}
+        auto operator++() -> TypeErasedIteratorInterface& override {
+            ++m_it;
+            return *this;
+        }
+        auto operator*() const -> void const* override { return &(*m_it); }
+        auto operator*() -> void* override { return &(*m_it); }
+        auto operator==(TypeErasedIteratorInterface const& other) const
+            -> bool override {
+            if (auto* other_it = dynamic_cast<IteratorWrapper const*>(&other)) {
+                return m_it == other_it->m_it;
+            }
+            return false;
+        }
+        auto operator!=(TypeErasedIteratorInterface const& other) const
+            -> bool override {
+            return !(*this == other);
+        }
+
+       private:
+        Iterator m_it;
+    };
+
+    template <typename Iterator,
+              typename = std::enable_if_t<Traits::is_iterator<Iterator>::value>>
+    TypeErasedIterator(Iterator it)
+        : m_impl(std::make_shared<IteratorWrapper<Iterator>>(it)) {}
+    template <typename T>
+    TypeErasedIterator(T* ptr)
+        : m_impl(std::make_shared<IteratorWrapper<T*>>(ptr)) {}
+    TypeErasedIterator() : m_impl(nullptr) {}
+
+    auto operator++() -> TypeErasedIteratorInterface& {
+        return m_impl->operator++();
+    }
+    auto operator*() const -> void const* { return m_impl->operator*(); }
+    auto operator*() -> void* { return m_impl->operator*(); }
+    auto operator==(TypeErasedIterator const& other) const -> bool {
+        return m_impl->operator==(*other.m_impl);
+    }
+    auto operator!=(TypeErasedIterator const& other) const -> bool {
+        return m_impl->operator!=(*other.m_impl);
+    }
+
+   private:
+    std::shared_ptr<TypeErasedIteratorInterface> m_impl;
+};
+
+/**
+ * @brief represents a type, used to dynamically get info about a field
+ * @note ignores cv qualifiers and references
+ */
+struct Type {
+    std::size_t normalized_type_hash{
+        0};  // no good way to get a readable name as of C++17
+
+    bool is_pointer{false};
+    bool is_function{false};
+    bool is_container{false};
+    bool is_templated{false};
+    bool is_reflectable{false};
+    bool is_arithmetic{false};
+
+    template <typename T>
+    static auto of() -> Type {
+        auto ret = Type{};
+        using raw_t = Traits::extract_raw_type_t<T>;
+        ret.normalized_type_hash = typeid(raw_t).hash_code();
+
+        if constexpr (std::is_pointer_v<raw_t>) {
+            ret.is_pointer = true;
+            ret.m_pointed_to_type =
+                std::make_shared<Type>(of<std::remove_pointer_t<raw_t>>());
+        }
+        if constexpr (std::is_function_v<raw_t>) {
+            ret.is_function = true;
+
+            int i = 0;
+            Traits::for_each::type_in_tuple<
+                Traits::get_function_params_t<raw_t>>([&ret, &i](auto type) {
+                using type_t = std::remove_pointer_t<decltype(type)>;
+                if (i == 0) {
+                    ret.m_func_return_type =
+                        std::make_shared<Type>(of<type_t>());
+                } else {
+                    ret.m_func_arg_types.emplace_back(
+                        std::make_shared<Type>(of<type_t>()));
+                }
+                ++i;
+            });
+        }
+        if constexpr (std::is_array_v<raw_t>) {
+            ret.is_container = true;
+            ret.m_contained_type =
+                std::make_shared<Type>(of<std::remove_pointer_t<std::decay_t<raw_t>>>());
+        }
+        if constexpr (Traits::is_container_v<raw_t>) {
+            ret.is_container = true;
+            ret.m_contained_type =
+                std::make_shared<Type>(of<typename raw_t::value_type>());
+        }
+        if constexpr (Traits::is_templated_v<raw_t>) {
+            ret.is_templated = true;
+            Traits::for_each::type_in_tuple<Traits::get_template_args_t<raw_t>>(
+                [&ret](auto type) {
+                    using type_t = std::remove_pointer_t<decltype(type)>;
+                    ret.m_template_args.emplace_back(
+                        std::make_shared<Type>(of<type_t>()));
+                });
+            ret.m_outer_type_name = Traits::type_to_name_v<raw_t>;
+        }
+        if constexpr (Traits::is_reflectable_v<raw_t>) {
+            ret.is_reflectable = true;
+            if constexpr (!std::is_same_v<typename raw_t::parent_type, void>) {
+                ret.m_inherited_from_type =
+                    std::make_shared<Type>(of<typename raw_t::parent_type>());
+            }
+        }
+        if constexpr (std::is_arithmetic_v<raw_t>) {
+            ret.is_arithmetic = true;
+        }
+        ret.m_type_name = Traits::type_to_name_v<raw_t>;
+
+        return ret;
+    }
+
+    Type(Type const&) = default;
+    Type(Type&&) = default;
+    Type& operator=(Type const&) = default;
+    Type& operator=(Type&&) = default;
+    ~Type() = default;
+    auto to_string() const -> std::string {
+        if (is_pointer) {
+            return m_pointed_to_type->to_string() + " *";
+        } else if (is_function) {
+            auto ret = m_func_return_type->to_string();
+            ret.push_back('(');
+            for (auto& arg : m_func_arg_types) {
+                ret += arg->to_string();
+                ret += ", ";
+            }
+            ret.pop_back();
+            ret.pop_back();
+            ret.push_back(')');
+            return ret;
+        } else if (is_templated) {
+            auto ret = std::string{m_outer_type_name};
+            ret.push_back('<');
+            for (auto& arg : m_template_args) {
+                ret += arg->to_string();
+                ret += ", ";
+            }
+            ret.pop_back();
+            ret.pop_back();
+            ret.push_back('>');
+            return ret;
+        } else {
+            return std::string{m_type_name};
+        }
+    }
+    auto is_valid() const noexcept { return normalized_type_hash != 0; }
+    auto pointed_to_type() const -> Type {
+        return m_pointed_to_type ? *m_pointed_to_type : Type{};
+    }
+    auto inherited_from_type() const -> Type {
+        return m_inherited_from_type ? *m_inherited_from_type : Type{};
+    }
+    auto func_return_type() const -> Type {
+        return m_func_return_type ? *m_func_return_type : Type{};
+    }
+    auto func_arg_types() const -> std::vector<Type> {
+        std::vector<Type> ret;
+        ret.reserve(m_func_arg_types.size());
+        for (auto& arg : m_func_arg_types) {
+            ret.emplace_back(*arg);
+        }
+        return ret;
+    }
+    auto contained_type() const -> Type {
+        return m_contained_type ? *m_contained_type : Type{};
+    }
+    auto template_args() const -> std::vector<Type> {
+        std::vector<Type> ret;
+        ret.reserve(m_template_args.size());
+        for (auto& arg : m_template_args) {
+            ret.emplace_back(*arg);
+        }
+        return ret;
+    }
+    auto has_common_base_with(Type const& other) const -> bool {
+        if (!is_valid() || !other.is_valid())
+            return false;
+        if (normalized_type_hash == other.normalized_type_hash) {
+            return true;
+        } else if (m_inherited_from_type) {
+            return m_inherited_from_type->has_common_base_with(other) ||
+                   has_common_base_with(other.inherited_from_type());
+        } else {
+            return false;
+        }
+    }
+    auto operator==(Type const& other) const noexcept -> bool {
+        return normalized_type_hash == other.normalized_type_hash;
+    }
+    auto operator<(Type const& other) const noexcept -> bool {
+        return normalized_type_hash < other.normalized_type_hash;
+    }
+    auto operator!=(Type const& other) const noexcept -> bool {
+        return !(*this == other);
+    }
+    auto operator<=(Type const& other) const noexcept -> bool {
+        return *this < other || *this == other;
+    }
+    auto operator>(Type const& other) const noexcept -> bool {
+        return !(*this <= other);
+    }
+    auto operator>=(Type const& other) const noexcept -> bool {
+        return !(*this < other);
+    }
+
+   private:
+    Type() = default;
+    std::string_view
+        m_outer_type_name{};  // if templated type, this is the outer type name
+    std::string_view m_type_name{};  // otherwise, this is the type name
+
+    std::shared_ptr<Type> m_pointed_to_type{};  // if pointer, this is the
+                                                // pointed to type
+    std::shared_ptr<Type>
+        m_inherited_from_type{};               // if reflectable
+                                               // type, this is the parent type
+    std::shared_ptr<Type> m_contained_type{};  // if array or container, this is
+                                               // the contained type
+
+    std::shared_ptr<Type> m_func_return_type{};
+    std::vector<std::shared_ptr<Type>> m_func_arg_types{};
+    std::vector<std::shared_ptr<Type>> m_template_args{};
+};
 
 /** @brief non-templated field info, not type-safe \n
  * used to dynamically get info about a field or store a type-erased field
@@ -475,6 +673,10 @@ struct FieldInfo {
    private:
     TypeErasedIterator m_begin, m_end;
 };
+
+#pragma endregion DynamicTypeInfo
+
+#pragma region Macros
 
 #define STR(x) #x
 #define BEGIN_REFLECT_IMPL(_cls, _counter, _parent)                      \
@@ -590,6 +792,9 @@ struct FieldInfo {
 #define FIELD(type, var_name, init, ...) \
     FIELD_IMPL(__COUNTER__, type, var_name, init, __VA_ARGS__)
 #define END_REFLECT() END_REFLECT_IMPL(__COUNTER__)
+
+#pragma endregion Macros
+
 }  // namespace PTS
 
 // provide hash functions for std::unordered_map

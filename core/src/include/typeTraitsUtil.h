@@ -135,6 +135,18 @@ template <typename T>
 struct extract_raw_type<T* const volatile> {
     using type = typename extract_raw_type<std::decay_t<T>>::type*;
 };
+// for references, lvalue references are treated as pointers
+// rvalue references are treated as values
+template <typename T>
+struct extract_raw_type<T&> {
+    using type = typename extract_raw_type<T>::type*;
+};
+template <typename T>
+struct extract_raw_type<T&&> {
+    using type = typename extract_raw_type<T>::type;
+};
+
+// templated types
 template <template <typename...> typename T, typename... Args>
 struct extract_raw_type<T<Args...>> {
     using type = std::decay_t<T<typename extract_raw_type<Args>::type...>>;
@@ -152,6 +164,90 @@ struct extract_raw_type<T<Args...> const volatile> {
     using type = std::decay_t<T<typename extract_raw_type<Args>::type...>>;
 };
 
+// function pointers
+template <typename R, typename... Args>
+struct extract_raw_type<R(*)(Args...)> {
+    using type = typename extract_raw_type<R>::type (*)(typename extract_raw_type<Args>::type...);
+};
+template <typename R, typename... Args>
+struct extract_raw_type<R(* const)(Args...)> {
+    using type = typename extract_raw_type<R>::type (*)(typename extract_raw_type<Args>::type...);
+};
+template <typename R, typename... Args>
+struct extract_raw_type<R(* volatile)(Args...)> {
+    using type = typename extract_raw_type<R>::type (*)(typename extract_raw_type<Args>::type...);
+};
+template <typename R, typename... Args>
+struct extract_raw_type<R(* const volatile)(Args...)> {
+    using type = typename extract_raw_type<R>::type (*)(typename extract_raw_type<Args>::type...);
+};
+template <typename R, typename... Args>
+struct extract_raw_type<R(&)(Args...)> {
+    using type = typename extract_raw_type<R(*)(Args...)>::type;
+};
+template <typename R, typename... Args>
+struct extract_raw_type<R(&&)(Args...)> {
+    using type = typename extract_raw_type<R(Args...)>::type;
+};
+
+// array pointers
+template <typename T, std::size_t N>
+struct extract_raw_type<T(*)[N]> {
+    using type = typename extract_raw_type<T>::type(*)[N];
+};
+template <typename T, std::size_t N>
+struct extract_raw_type<T(* const)[N]> {
+    using type = typename extract_raw_type<T>::type(*)[N];
+};
+template <typename T, std::size_t N>
+struct extract_raw_type<T(* volatile)[N]> {
+    using type = typename extract_raw_type<T>::type(*)[N];
+};
+template <typename T, std::size_t N>
+struct extract_raw_type<T(* const volatile)[N]> {
+    using type = typename extract_raw_type<T>::type(*)[N];
+};
+template <typename T, std::size_t N>
+struct extract_raw_type<T(&)[N]> {
+    using type = typename extract_raw_type<T(*)[N]>::type;
+};
+template <typename T, std::size_t N>
+struct extract_raw_type<T(&&)[N]> {
+    using type = typename extract_raw_type<T[N]>::type;
+};
+
+
+// member pointers and member function pointers are disallowed
+template <typename T, typename U>
+struct extract_raw_type<T U::*>;
+template <typename T, typename U>
+struct extract_raw_type<T U::* const>;
+template <typename T, typename U>
+struct extract_raw_type<T U::* volatile>;
+template <typename T, typename U>
+struct extract_raw_type<T U::* const volatile>;
+// member function pointers
+template <typename R, typename T, typename... Args>
+struct extract_raw_type<R(T::*)(Args...)>;
+template <typename R, typename T, typename... Args>
+struct extract_raw_type<R(T::* const)(Args...)>;
+template <typename R, typename T, typename... Args>
+struct extract_raw_type<R(T::* volatile)(Args...)>;
+template <typename R, typename T, typename... Args>
+struct extract_raw_type<R(T::* const volatile)(Args...)>;
+
+// array types are not decayed to pointers
+template <typename T, std::size_t N>
+struct extract_raw_type<T[N]> {
+    using type = typename extract_raw_type<T>::type[N];
+};
+
+// function types are not decayed to pointers
+template <typename R, typename... Args>
+struct extract_raw_type<R(Args...)> {
+    using type = typename extract_raw_type<R>::type (typename extract_raw_type<Args>::type...);
+};
+
 /**
  * @brief Removes all cv qualifiers from a pointer type
  * @tparam T The type to remove cv qualifiers from
@@ -160,6 +256,38 @@ struct extract_raw_type<T<Args...> const volatile> {
  */
 template <typename T>
 using extract_raw_type_t = typename extract_raw_type<T>::type;
+
+template <typename T, typename = void>
+struct is_templated : std::false_type {};
+template <template <typename...> typename T, typename... Args>
+struct is_templated<T<Args...>, std::void_t<T<Args...>>> : std::true_type {};
+template <typename T>
+constexpr auto is_templated_v = is_templated<T>::value;
+
+template <typename T>
+struct get_template_args {
+    using type = std::tuple<>;
+};
+template <template <typename...> typename T, typename... Args>
+struct get_template_args<T<Args...>> {
+    using type = std::tuple<Args...>;
+};
+
+template <typename T>
+using get_template_args_t = typename get_template_args<T>::type;
+
+template <typename T>
+struct get_function_params {
+    using type = std::tuple<>;
+};
+
+template <typename R, typename... Args>
+struct get_function_params<R(Args...)> {
+    using type = std::tuple<R, Args...>;
+};
+
+template <typename T>
+using get_function_params_t = typename get_function_params<T>::type;
 
 // type searching utils
 template <typename Haystack, typename Needle>
@@ -196,7 +324,8 @@ constexpr bool contains_v = contains<Haystack, Needle>::value;
 
 struct for_each {
     template <typename TupleLike, typename Callable>
-    static constexpr auto element_in_tuple(TupleLike&& tuple, Callable&& callable) {
+    static constexpr auto element_in_tuple(TupleLike&& tuple,
+                                           Callable&& callable) {
         if constexpr (is_tuple_like_v<std::decay_t<TupleLike>>) {
             std::apply(
                 [&callable](auto&&... args) {
@@ -207,6 +336,26 @@ struct for_each {
             static_assert(is_tuple_like_v<std::decay_t<TupleLike>>,
                           "for_each requires a tuple-like type");
         }
+    }
+
+    template <typename TupleLike, typename Callable>
+    static constexpr auto type_in_tuple(Callable&& callable) {
+        if constexpr (is_tuple_like_v<std::decay_t<TupleLike>>) {
+            type_in_tuple_impl<TupleLike>(std::forward<Callable>(callable),
+                                          std::make_index_sequence <
+                                              std::tuple_size_v < std::decay_t <
+                                              TupleLike >>> {});
+        } else {
+            static_assert(is_tuple_like_v<std::decay_t<TupleLike>>,
+                          "for_each requires a tuple-like type");
+        }
+    }
+   private:
+    template <typename TupleLike, typename Callable, std::size_t... Is>
+    static constexpr auto type_in_tuple_impl(Callable&& callable,
+                                             std::index_sequence<Is...>) {
+        // use pointer to avoid instantiation of any types
+        (callable(std::add_pointer_t<std::tuple_element_t<Is, std::decay_t<TupleLike>>>{nullptr}), ...);
     }
 };
 

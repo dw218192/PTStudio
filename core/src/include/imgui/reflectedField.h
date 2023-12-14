@@ -336,8 +336,7 @@ struct DoField<ContainerType> {
                 ImGui::Separator();
                 auto sub_var_name = std::string{field_info.var_name.data()} +
                                     "[" + std::to_string(i) + "]";
-                auto sub_type_name =
-                    std::string{field_info.type_name.data()} + "::value_type";
+                auto sub_type_name = Type::of<ElementType>().to_string();
                 auto sub_field_info =
                     ContainerElementFieldInfo<Reflected, ElementType,
                                               ContainerType>{
@@ -364,8 +363,9 @@ struct DoField<TupleLikeType> {
         if (ImGui::CollapsingHeader(label, ImGuiTreeNodeFlags_DefaultOpen)) {
             PTS::Traits::for_each::element_in_tuple(field, [&changed,
                                                             &reflected,
-                                                            &field_info, &field,
-                                                            label](auto&& arg) {
+                                                            &field_info,
+                                                            &field](
+                                                               auto&& arg) {
                 ImGui::Separator();
 
                 // this will return the first index of the type in the tuple
@@ -375,8 +375,8 @@ struct DoField<TupleLikeType> {
                     PTS::Traits::find_v<TupleType, std::decay_t<decltype(arg)>>;
                 auto sub_var_name = std::string{field_info.var_name.data()} +
                                     "[" + std::to_string(I) + "]";
-                auto sub_type_name = std::string{field_info.type_name.data()} +
-                                     "::" + std::to_string(I);
+                auto sub_type_name =
+                    Type::of<std::tuple_element_t<I, TupleType>>().to_string();
                 auto sub_field_info =
                     TupleElementFieldInfo<Reflected,
                                           std::tuple_element_t<I, TupleType>,
@@ -385,8 +385,7 @@ struct DoField<TupleLikeType> {
 
                 changed |=
                     DoField<Dispatch_t<std::tuple_element_t<I, TupleType>>>::
-                        impl(sub_var_name.c_str(), sub_field_info,
-                             reflected);
+                        impl(sub_var_name.c_str(), sub_field_info, reflected);
             });
         }
         return changed;

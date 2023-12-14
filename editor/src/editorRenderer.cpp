@@ -12,9 +12,9 @@ using namespace PTS::Editor;
 
 constexpr auto k_grid_dim = 100.0f;
 constexpr auto k_grid_spacing = 1.0f;
-constexpr auto k_clear_color = glm::vec3{ 0 };
+GLM_CONSTEXPR auto k_clear_color = glm::vec3{ 0 };
 constexpr auto k_outline_scale = 1.02f;
-constexpr auto k_outline_color = glm::vec3{ 1, 0, 0 };
+GLM_CONSTEXPR auto k_outline_color = glm::vec3{ 1, 0, 0 };
 constexpr auto k_sprite_scale = 0.35f;
 
 constexpr float k_quad_data_pos_uv[] = {
