@@ -250,9 +250,12 @@ auto PTS::RenderableObject::static_init() -> void {
 					*self.get_scene(), Transform{}, self.m_mat.emission,
 					self.m_mat.emission_intensity);
 				self.add_child(*self.m_proxy_light);
+				self.m_proxy_light->set_transform(Transform{}, TransformSpace::LOCAL);
+				self.m_proxy_light->set_edit_flags(EditFlags::_NoEdit);
+			} else {
+				self.m_proxy_light->set_color(self.m_mat.emission);
+				self.m_proxy_light->set_intensity(self.m_mat.emission_intensity);
 			}
-			self.m_proxy_light->set_transform(Transform{}, TransformSpace::LOCAL);
-			self.m_proxy_light->set_edit_flags(EditFlags::_NoEdit);
 		} else {
 			if (self.m_proxy_light) {
 				self.get_scene()->remove_object(*self.m_proxy_light);

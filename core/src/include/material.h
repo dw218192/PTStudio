@@ -28,13 +28,13 @@ namespace PTS {
 		FIELD(glm::vec3, emission, glm::vec3{ 0.0f },
 		      MSerialize{}, MColor{});
 
-		FIELD(float, emission_intensity, 1.0f,
+		FIELD(float, emission_intensity, 0.0f,
 		      MSerialize{}, MRange{ 0.0f, 100.0f });
 
 		END_REFLECT();
 
 		auto operator==(Material const& other) const noexcept -> bool {
-			#define FLOAT_EQ(a, b) (std::abs((a) - (b)) <= std::numeric_limits<float>::epsilon())
+#define FLOAT_EQ(a, b) (std::abs((a) - (b)) <= std::numeric_limits<float>::epsilon())
 
 			return albedo == other.albedo
 				&& FLOAT_EQ(roughness, other.roughness)
@@ -44,7 +44,7 @@ namespace PTS {
 				&& FLOAT_EQ(transmission, other.transmission)
 				&& emission == other.emission;
 
-			#undef FLOAT_EQ
+#undef FLOAT_EQ
 		}
 
 		auto operator!=(Material const& other) const noexcept -> bool {
@@ -52,7 +52,7 @@ namespace PTS {
 		}
 
 		auto is_emissive() const noexcept -> bool {
-			return glm::length(emission) > 0.0f;
+			return emission_intensity > 0.0f;
 		}
 	};
 }
