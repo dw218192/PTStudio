@@ -129,6 +129,12 @@ auto Transform::world_to_local_len(float len) const noexcept -> float {
     return len / glm::length(m_scale);
 }
 
+auto Transform::operator*=(Transform const& rhs) noexcept -> Transform& {
+    m_trans *= rhs.get_matrix();
+    on_trans_matrix_update();
+    return *this;
+}
+
 void Transform::on_deserialize() noexcept {
     on_component_update();
 }

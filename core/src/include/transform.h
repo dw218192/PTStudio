@@ -36,6 +36,13 @@ namespace PTS {
         NODISCARD auto local_to_world_len(float len) const noexcept -> float;
         NODISCARD auto world_to_local_len(float len) const noexcept -> float;
 
+        auto operator*=(Transform const& rhs) noexcept -> Transform&;
+        auto operator*(Transform const& rhs) const noexcept -> Transform {
+            Transform ret{ *this };
+            ret *= rhs;
+            return ret;
+        }
+
         void on_deserialize() noexcept;
     private:
         void on_trans_matrix_update() noexcept;

@@ -399,7 +399,7 @@ auto PTS::VulkanRayTracingRenderer::open_scene(View<Scene> scene) noexcept
     }
 
     // add objects
-    for (auto& obj : scene.get().get_objects()) {
+    for (auto& obj : scene.get().get_objects_of_type<RenderableObject>()) {
         TL_CHECK_AND_PASS(add_object(obj));
     }
 
@@ -439,7 +439,7 @@ auto VulkanRayTracingRenderer::on_obj_change(Ref<SceneObject> obj, SceneObjectCh
             TL_CHECK_AND_PASS(
                 m_vk_pipeline.top_accel.update_instance_transform(
                     it->second.gpu_idx,
-                    render_obj->get_transform().get_matrix()
+                    render_obj->get_transform(TransformSpace::WORLD).get_matrix()
                 )
             );
             break;
@@ -672,7 +672,7 @@ auto PTS::VulkanRayTracingRenderer::add_object(RenderableObject const& obj) -> t
     TL_TRY_ASSIGN(id,
         m_vk_pipeline.top_accel.add_instance(
             std::move(vk_bottom_accel),
-            obj.get_transform().get_matrix()
+            obj.get_transform(TransformSpace::WORLD).get_matrix()
         )
     );
 

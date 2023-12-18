@@ -79,8 +79,75 @@ struct is_container<T,
                     std::void_t<decltype(std::declval<T>().begin()),
                                 decltype(std::declval<T>().end())>>
     : std::true_type {};
+
 template <typename T>
 constexpr bool is_container_v = is_container<T>::value;
+
+template <typename T, typename = void>
+struct is_associative_container : std::false_type {};
+template <typename T>
+struct is_associative_container<
+    T,
+    std::void_t<decltype(std::declval<T>().find(std::declval<typename T::key_type>())),
+                decltype(std::declval<T>().count(std::declval<typename T::key_type>()))>>
+    : std::enable_if_t<is_container_v<T>, std::true_type> {};
+template <typename T>
+constexpr bool is_associative_container_v = is_associative_container<T>::value;
+
+template <typename T, typename = void>
+struct is_sequence_container : std::false_type {};
+template <typename T>
+struct is_sequence_container<
+    T,
+    std::void_t<decltype(std::declval<T>().size()),
+                decltype(std::declval<T>().empty()),
+                decltype(std::declval<T>().rbegin()),
+                decltype(std::declval<T>().rend()),
+                decltype(std::declval<T>().cbegin()),
+                decltype(std::declval<T>().cend()),
+                decltype(std::declval<T>().crbegin()),
+                decltype(std::declval<T>().crend()),
+                decltype(std::declval<T>().front()),
+                decltype(std::declval<T>().back()),
+                decltype(std::declval<T>().push_back(std::declval<typename T::value_type>())),
+                decltype(std::declval<T>().pop_back()),
+                decltype(std::declval<T>().resize(std::declval<typename T::size_type>())),
+                decltype(std::declval<T>().resize(std::declval<typename T::size_type>(),
+                                                   std::declval<typename T::value_type>()))>>
+    : std::enable_if_t<is_container_v<T>, std::true_type> {};
+
+template <typename T>
+constexpr bool is_sequence_container_v = is_sequence_container<T>::value;
+
+template <typename L, typename R, typename = void>
+struct is_equitable : std::false_type {};
+
+template <typename L, typename R>
+struct is_equitable<L, R, std::void_t<decltype(std::declval<L>() == std::declval<R>())>>
+    : std::true_type {};
+
+template <typename L, typename R>
+constexpr bool is_equitable_v = is_equitable<L, R>::value;
+
+template <typename L, typename R, typename = void>
+struct is_less_than_comparable : std::false_type {};
+
+template <typename L, typename R>
+struct is_less_than_comparable<L, R, std::void_t<decltype(std::declval<L>() < std::declval<R>())>>
+    : std::true_type {};
+
+template <typename L, typename R>
+constexpr bool is_less_than_comparable_v = is_less_than_comparable<L, R>::value;
+
+template <typename L, typename R, typename = void>
+struct is_greater_than_comparable : std::false_type {};
+
+template <typename L, typename R>
+struct is_greater_than_comparable<L, R, std::void_t<decltype(std::declval<L>() > std::declval<R>())>>
+    : std::true_type {};
+
+template <typename L, typename R>
+constexpr bool is_greater_than_comparable_v = is_greater_than_comparable<L, R>::value;
 
 template <typename T>
 struct is_pair : std::false_type {};

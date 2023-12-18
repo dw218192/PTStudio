@@ -396,7 +396,7 @@ auto EditorRenderer::draw_outline(View<Camera> cam_view, View<RenderableObject> 
         {
             TL_CHECK_AND_PASS(m_outline.shaders[0]->set_uniform(k_uniform_view, cam.get_view()));
             TL_CHECK_AND_PASS(m_outline.shaders[0]->set_uniform(k_uniform_projection, cam.get_projection()));
-            TL_CHECK_AND_PASS(m_outline.shaders[0]->set_uniform(k_uniform_model, obj.get().get_transform().get_matrix()));
+            TL_CHECK_AND_PASS(m_outline.shaders[0]->set_uniform(k_uniform_model, obj.get().get_transform(TransformSpace::WORLD).get_matrix()));
 
             auto res = try_get_obj_data(obj);
             if (!res) return TL_ERROR(res.error());
@@ -456,7 +456,7 @@ auto EditorRenderer::render(View<Camera> cam_view) noexcept -> tl::expected<Text
     CHECK_GL_ERROR();
 
     // render objects
-    for (auto const& obj : m_scene->get_objects()) {
+    for (auto const& obj : m_scene->get_objects_of_type<RenderableObject>()) {
         auto res = try_get_obj_data(obj);
         if (!res) {
             return TL_ERROR(res.error());
@@ -488,7 +488,7 @@ auto EditorRenderer::render(View<Camera> cam_view) noexcept -> tl::expected<Text
             TL_CHECK(shader->set_uniform(k_uniform_projection, cam.get_projection()));
         }
         if (uniforms.count(k_uniform_model)) {
-            TL_CHECK(shader->set_uniform(k_uniform_model, obj.get_transform().get_matrix()));
+            TL_CHECK(shader->set_uniform(k_uniform_model, obj.get_transform(TransformSpace::WORLD).get_matrix()));
         }
         // misc
         if (uniforms.count(k_uniform_time)) {
@@ -518,7 +518,7 @@ auto EditorRenderer::render(View<Camera> cam_view) noexcept -> tl::expected<Text
     }
 
     // render gizmo
-    if (!m_scene->get_lights().empty()) {
+    if (!m_scene->get_objects_of_type<Light>().empty()) {
         glDisable(GL_DEPTH_TEST);
         TL_CHECK(m_light_gizmo_data.render_data->bind());
         TL_CHECK(m_light_gizmo_data.shader->bind());
@@ -529,8 +529,8 @@ auto EditorRenderer::render(View<Camera> cam_view) noexcept -> tl::expected<Text
             TL_CHECK(m_light_gizmo_data.shader->set_uniform(k_uniform_sprite_scale, k_sprite_scale));
 
             // draw light gizmos
-            for (auto&& light : m_scene->get_lights()) {
-                TL_CHECK(m_light_gizmo_data.shader->set_uniform(k_uniform_sprite_world_pos, light.get_transform().get_position()));
+            for (auto&& light : m_scene->get_objects_of_type<Light>()) {
+                TL_CHECK(m_light_gizmo_data.shader->set_uniform(k_uniform_sprite_world_pos, light.get_transform(TransformSpace::WORLD).get_position()));
                 TL_CHECK(m_light_gizmo_data.render_data->draw(GL_TRIANGLES));
             }
         }

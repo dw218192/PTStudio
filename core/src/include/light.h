@@ -9,7 +9,7 @@
 namespace PTS {
     struct Light : SceneObject {
         Light(ObjectConstructorUsage usage = ObjectConstructorUsage::SERIALIZE) noexcept;
-        Light(Scene const& scene, Transform transform, glm::vec3 color, float intensity) noexcept;
+        Light(Scene& scene, Transform transform, glm::vec3 color, float intensity) noexcept;
 
         NODISCARD auto get_color() const noexcept -> auto const& { return m_color; }
         NODISCARD auto get_intensity() const noexcept { return m_intensity; }
@@ -20,7 +20,7 @@ namespace PTS {
             return {
                 m_color,
                 m_intensity,
-                get_transform().get_position(),
+                get_transform(TransformSpace::WORLD).get_position(),
                 static_cast<int>(m_type),
             };
         }

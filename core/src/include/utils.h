@@ -24,9 +24,9 @@
 #define KERN_PARAM(x,y) <<< x,y >>>
 #endif
 
-template<typename T>
+template <typename T>
 constexpr T div_up(T x, T y) {
-    return (x + y - 1) / y;
+	return (x + y - 1) / y;
 }
 
 // c++23 expected
@@ -65,13 +65,12 @@ constexpr T div_up(T x, T y) {
 } while (0)
 
 
-
 // non-fatal errors
 #define CHECK_GL_ERROR_NON_FATAL(app, level) do { \
 	auto err = glGetError(); \
 	if (err != GL_NO_ERROR) (app).log(level, glewGetErrorString(err)); \
 } while (0)
- 
+
 #define TL_CHECK_NON_FATAL(app, level, func_call) do { \
 	auto res = func_call;\
 	if (!res) (app)->log(level, res.error()); \
@@ -84,22 +83,25 @@ constexpr T div_up(T x, T y) {
 } while (0)
 
 
-
 // useful typedefs
 // TODO: may implement these as classes later
 // because raw ptrs are not zero default-init'ed
 namespace PTS {
 	// non-owning ptr
-	template<typename T> using ObserverPtr = T*;
+	template <typename T>
+	using ObserverPtr = T*;
 
 	// non-owning ptr to a const, essentially a view
-	template<typename T> using ViewPtr = T const*;
+	template <typename T>
+	using ViewPtr = T const*;
 
 	// non-owning view
-	template<typename T> using Ref = std::reference_wrapper<T>;
+	template <typename T>
+	using Ref = std::reference_wrapper<T>;
 
 	// non-owning view to a const
-	template<typename T> using View = std::reference_wrapper<T const>;
+	template <typename T>
+	using View = std::reference_wrapper<T const>;
 }
 
 #define NO_COPY_MOVE(Ty)\
@@ -120,3 +122,15 @@ Ty& operator=(Ty const&) = delete
 
 #define DECL_ENUM(name, ...)\
 	enum class name { __VA_ARGS__, __COUNT }
+
+#define DECL_DEFERRED_STATIC_INIT(method_name)\
+	static auto method_name() -> void;\
+	static inline int _static_init_if_not() {\
+		static bool s_init = false;\
+		if (!s_init) {\
+			method_name();\
+			s_init = true;\
+		}\
+		return 0;\
+	}\
+	int m_static_init_helper = [] { return _static_init_if_not(); }()

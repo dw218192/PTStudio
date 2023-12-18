@@ -15,58 +15,64 @@ namespace {
 	// used during deserialization
 	// this must only be filled after everything is deserialized and allocated in place
 	std::unordered_map<PTS::ObjectID, PTS::Object*> g_id_to_object;
-	
+
 	struct {
 		auto emplace(PTS::FieldInfo const& info, PTS::ObjectID id) {
-			m_data[{ info, m_timestamp++ }] = id;
+			m_data[{info, m_timestamp++}] = id;
 		}
+
 		auto clear() {
 			m_data.clear();
 			m_timestamp = 0;
 		}
+
 		auto get(PTS::FieldInfo const& info) const -> std::vector<PTS::ObjectID> {
-			auto result = std::vector<PTS::ObjectID> {};
-			auto it = m_data.lower_bound({ info, 0 });
+			auto result = std::vector<PTS::ObjectID>{};
+			auto it = m_data.lower_bound({info, 0});
 			while (it != m_data.end() && it->first.first == info) {
 				result.emplace_back(it->second);
 				++it;
 			}
 			return result;
 		}
+
 		auto count(PTS::FieldInfo const& info) const -> bool {
-			auto it = m_data.lower_bound({ info, 0 });
+			auto it = m_data.lower_bound({info, 0});
 			return it != m_data.end() && it->first.first == info;
 		}
+
 	private:
 		std::map<std::pair<PTS::FieldInfo, unsigned>, PTS::ObjectID> m_data;
 		unsigned m_timestamp = 0;
 	} g_pointer_to_id;
+
 	// g_pointer_to_id is filled during deserialization,
 	// so we can't map raw pointers to objects because memory might get reallocated
 	// g_pointer_to_id is also a multi-map because a field can be a pointer container
 
 
-
 	enum { POINTER, POINTER_CONTAINER, NEITHER };
-	template<typename T>
+
+	template <typename T>
 	struct is_pointer_or_pointer_container {
-		template<typename U>
+		template <typename U>
 		static constexpr auto test(int) -> std::enable_if_t<
 			PTS::Traits::is_container<U>::value
 			&& std::is_pointer_v<typename U::value_type>,
-			int
-		> { return POINTER_CONTAINER; }
-		template<typename U>
+			int> { return POINTER_CONTAINER; }
+
+		template <typename U>
 		static constexpr auto test(int) -> std::enable_if_t<
 			std::is_pointer_v<U>,
-			int
-		> { return POINTER; }
-		template<typename>
+			int> { return POINTER; }
+
+		template <typename>
 		static constexpr auto test(...) -> int { return NEITHER; }
+
 		static constexpr auto value = test<T>(0);
 	};
 
-	template<typename ObjectOrDerived>
+	template <typename ObjectOrDerived>
 	std::enable_if_t<PTS::Traits::is_reflectable<ObjectOrDerived>::value
 		&& std::is_base_of_v<PTS::Object, ObjectOrDerived>>
 	gather_objects(ObjectOrDerived& obj) {
@@ -76,7 +82,8 @@ namespace {
 			using type = typename decltype(field)::type;
 			if constexpr (PTS::Traits::is_container<type>::value) {
 				using value_type = typename std::iterator_traits<typename type::iterator>::value_type;
-				if constexpr (PTS::Traits::is_reflectable<value_type>::value && std::is_base_of_v<PTS::Object, value_type>) {
+				if constexpr (PTS::Traits::is_reflectable<value_type>::value && std::is_base_of_v<
+					PTS::Object, value_type>) {
 					for (auto& elem : field.get(obj)) {
 						gather_objects(elem);
 					}
@@ -87,40 +94,43 @@ namespace {
 		});
 	}
 
-	template<typename ObjectOrDerived, int PointerOrPointerContainer, typename TemplatedFieldInfo>
+	template <typename ObjectOrDerived, int PointerOrPointerContainer, typename TemplatedFieldInfo>
 	std::enable_if_t<PTS::Traits::is_reflectable<ObjectOrDerived>::value
 		&& std::is_base_of_v<PTS::Object, ObjectOrDerived>>
 	from_json_handle_pointers(nlohmann::json const& json, ObjectOrDerived& obj, TemplatedFieldInfo const& info) {
 		if constexpr (PointerOrPointerContainer == POINTER) {
-			g_pointer_to_id.emplace(PTS::FieldInfo { info, obj }, json.get<PTS::ObjectID>());
+			g_pointer_to_id.emplace(PTS::FieldInfo{info, obj}, json.get<PTS::ObjectID>());
 		} else if constexpr (PointerOrPointerContainer == POINTER_CONTAINER) {
-			for(auto const& id : json) {
-				g_pointer_to_id.emplace(PTS::FieldInfo { info, obj }, id.get<PTS::ObjectID>());
+			for (auto const& id : json) {
+				g_pointer_to_id.emplace(PTS::FieldInfo{info, obj}, id.get<PTS::ObjectID>());
 			}
 		}
 	}
 }
 
 namespace glm {
-	template<length_t L, typename T, qualifier Q>
+	template <length_t L, typename T, qualifier Q>
 	auto to_json(nlohmann::json& json, vec<L, T, Q> const& vec) -> void {
 		for (length_t i = 0; i < L; ++i) {
 			json.push_back(vec[i]);
 		}
 	}
-	template<length_t L, typename T, qualifier Q>
+
+	template <length_t L, typename T, qualifier Q>
 	auto to_json(nlohmann::json& json, mat<L, L, T, Q> const& mat) -> void {
 		for (length_t i = 0; i < L; ++i) {
 			json.push_back(mat[i]);
 		}
 	}
-	template<length_t L, typename T>
+
+	template <length_t L, typename T>
 	auto from_json(nlohmann::json const& json, vec<L, T>& vec) -> void {
 		for (length_t i = 0; i < L; ++i) {
 			json.at(i).get_to(vec[i]);
 		}
 	}
-	template<length_t L, typename T>
+
+	template <length_t L, typename T>
 	auto from_json(nlohmann::json const& json, mat<L, L, T>& mat) -> void {
 		for (length_t i = 0; i < L; ++i) {
 			json.at(i).get_to(mat[i]);
@@ -129,28 +139,26 @@ namespace glm {
 }
 
 namespace PTS {
-	template<typename T>
-	std::enable_if_t<Traits::is_tuple_like_v<T>>
-	to_json(nlohmann::json& json, T const& tp) {
+	template <typename T>
+	auto
+	to_json(nlohmann::json& json, T const& tp) -> std::enable_if_t<Traits::is_tuple_like_v<T>> {
 		std::apply([&json](auto const&... args) {
 			(json.push_back(args), ...);
 		}, tp);
 	}
-	template<typename T>
-	std::enable_if_t<Traits::is_tuple_like_v<T>>
-	from_json(nlohmann::json const& json, T& tp) {
+
+	template <typename T>
+	auto from_json(nlohmann::json const& json, T& tp) -> std::enable_if_t<Traits::is_tuple_like_v<T>> {
 		std::apply([&json](auto&... args) {
-			int i = 0;
-			([&json, &i, &args] {
-				json.at(i++).get_to(args);
-			}(), ...);
+			auto i = 0;
+			(json.at(i++).get_to(args), ...);
 		}, tp);
 	}
 
 	// serialization and deserialization for pointers and references
 	// Note: only pointers to objects or derived types are supported
 	// because otherwise we can't do dynamic reflection & uuid
-	template<typename ObjectOrDerived>
+	template <typename ObjectOrDerived>
 	std::enable_if_t<std::is_base_of_v<Object, ObjectOrDerived>>
 	to_json(nlohmann::json& json, ViewPtr<ObjectOrDerived> ptr) {
 		if (!ptr) {
@@ -159,15 +167,16 @@ namespace PTS {
 			json = ptr->get_id();
 		}
 	}
-	template<typename ObjectOrDerived>
+
+	template <typename ObjectOrDerived>
 	std::enable_if_t<std::is_base_of_v<Object, ObjectOrDerived>>
 	to_json(nlohmann::json& json, ObserverPtr<ObjectOrDerived> ptr) {
-		to_json(json, ViewPtr<Object> { ptr });
+		to_json(json, ViewPtr<Object>{ptr});
 	}
 
 	// from_json for pointers are handled in from_json(nlohmann::json const& json, Reflected& reflected)
 
-	template<typename Reflected>
+	template <typename Reflected>
 	std::enable_if_t<Traits::is_reflectable<Reflected>::value>
 	to_json(nlohmann::json& json, Reflected const& reflected) {
 		if constexpr (Traits::has_serialization_callback<Reflected>::value) {
@@ -179,11 +188,11 @@ namespace PTS {
 			}
 		});
 	}
-	
+
 	// for compatibility:
 	// 1. if a new field is present in the json but not in the reflected type, it will be ignored
 	// 2. if a new field is present in the reflected type but not in the json, it will be initialized with the default value
-	template<typename Reflected>
+	template <typename Reflected>
 	std::enable_if_t<Traits::is_reflectable<Reflected>::value>
 	from_json(nlohmann::json const& json, Reflected& reflected) {
 		Reflected::for_each_field([&reflected, &json](auto field) {
@@ -225,10 +234,11 @@ namespace PTS {
 		return json.dump();
 	}
 
-	auto JsonArchive::load(std::string_view data, Ref<Scene> scene, Ref<Camera> cam) -> tl::expected<void, std::string> {
+	auto JsonArchive::load(std::string_view data, Ref<Scene> scene,
+	                       Ref<Camera> cam) -> tl::expected<void, std::string> {
 		try {
 			auto json = nlohmann::json::parse(data);
-	
+
 			g_id_to_object.clear();
 			g_pointer_to_id.clear();
 
@@ -239,7 +249,7 @@ namespace PTS {
 
 			// handle pointers and references
 			for (auto kvp : g_id_to_object) {
-				auto error = std::string {};
+				auto error = std::string{};
 				auto& obj = *kvp.second;
 				obj.dyn_for_each_field([&error](FieldInfo const& field) {
 					if (g_pointer_to_id.count(field)) {
@@ -247,11 +257,14 @@ namespace PTS {
 
 						// ensure that the field is a pointer
 						if (!type.is_pointer) {
-							error += "Field " + std::string{ field.var_name } + ": is not a pointer, but is in g_pointer_to_id\n";
+							error += "Field " + std::string{field.var_name} +
+								": is not a pointer, but is in g_pointer_to_id\n";
 							return;
-						// ensure that the field is a pointer to Object or derived type
-						} else if (type != Type::of<Object*>() && !type.pointed_to_type().has_common_base_with(Type::of<Object>())) {
-							error += "Field " + std::string{ field.var_name } + ": non-Object pointers are not supported\n";
+							// ensure that the field is a pointer to Object or derived type
+						} else if (type != Type::of<Object*>() && !type.pointed_to_type().has_common_base_with(
+							Type::of<Object>())) {
+							error += "Field " + std::string{field.var_name} +
+								": non-Object pointers are not supported\n";
 							return;
 						}
 
@@ -262,11 +275,12 @@ namespace PTS {
 							} else if (id == k_invalid_obj_id) {
 								*static_cast<Object**>(*field_it) = nullptr;
 							} else {
-								auto const ptr_name = std::string{ field.type_name } + "::" + std::string{ field.var_name };
-								error += "Failed to find object with id " + std::to_string(id) + " for field " + ptr_name + "\n";
+								auto const ptr_name = std::string{field.type_name} + "::" + std::string{field.var_name};
+								error += "Failed to find object with id " + std::to_string(id) + " for field " +
+									ptr_name + "\n";
 							}
 
-							++ field_it;
+							++field_it;
 						}
 					}
 				});
