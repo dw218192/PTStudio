@@ -161,31 +161,7 @@ struct Base {
 	FIELD(float, z, 0);
 
 	END_REFLECT();
-
-	~Base() {
-		if (m_callback) {
-			get_field_info<0>().unregister_on_change_callback(m_callback.value());
-		}
-	}
-
-	int m_init = [this] {
-		get_field_info<0>().register_on_change_callback([this](auto data) {
-			if (&data.obj != this) {
-				return;
-			}
-			data.field_info.get(*this) = data.new_val / 2;
-		});
-		return 0;
-	}();
-	std::optional<size_t> m_callback;
 };
-
-template <typename FieldInfo, typename T>
-void set_field(Base& b, FieldInfo&& info, T&& val) {
-	auto old_val = val;
-	info.get(b) = std::forward<T>(val);
-	info.on_change(old_val, info.get(b), b);
-}
 
 TEST_CASE("Reflection Macros", "Reflection") {
 	SECTION("basic member looping") {
@@ -204,34 +180,42 @@ TEST_CASE("Reflection Macros", "Reflection") {
 	}
 
 	SECTION("field info") {
-		Base b;
 		{
-			auto info = Base::get_field_info<0>();
-			info.get(b) = 10;
+			Base b;
+			Base::get_field_info<0>().get(b) = 10;
 			REQUIRE(b.x == 10);
-		}
-		{
-			auto info = Base::get_field_info<1>();
-			info.get(b).push_back(10);
-			REQUIRE(b.y[0] == 10);
-		}
-		{
-			auto info = Base::get_field_info<2>();
-			info.get(b) = 10;
+			Base::get_field_info<2>().get(b) = 10;
 			REQUIRE(std::abs(b.z - 10.0) < std::numeric_limits<float>::epsilon());
+		}
+		{
+			Base b;
+			auto info = Base::get_field_info<1>();
+			info.get(b) = {10};
+			REQUIRE(b.y == std::vector<int>{10});
+			info.get(b).push_back(30);
+			REQUIRE(b.y == std::vector<int>{10, 30});
 		}
 	}
 
 	SECTION("on change callback") {
-		auto bs = std::array<Base, 3>{};
-		set_field(bs[0], Base::get_field_info<0>(), 100);
-		REQUIRE(bs[0].x == 50);
-		REQUIRE(bs[1].x == 0);
-		REQUIRE(bs[2].x == 0);
+		{
+			Base b;
+			Base::get_field_info<&Base::x>().get_on_change_callback_list() += [&](auto data) {
+				data.obj.y.push_back(data.new_val);
+			};
+			Base::get_field_info<&Base::x>().get_proxy(b) = 2;
 
-		set_field(bs[1], Base::get_field_info<0>(), 200);
-		REQUIRE(bs[0].x == 50);
-		REQUIRE(bs[1].x == 100);
-		REQUIRE(bs[2].x == 0);
+			REQUIRE(b.x == 2);
+			REQUIRE(b.y == std::vector<int>{2});
+
+			Base::get_field_info<&Base::x>().get_on_change_callback_list() += [&](auto data) {
+				for (auto& x : data.obj.y) {
+					x *= 2;
+				}
+			};
+			Base::get_field_info<&Base::x>().get_proxy(b) = 3;
+			REQUIRE(b.x == 3);
+			REQUIRE(b.y == std::vector<int> {4, 6});
+		}
 	}
 }

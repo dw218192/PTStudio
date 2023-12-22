@@ -149,6 +149,20 @@ struct is_greater_than_comparable<L, R, std::void_t<decltype(std::declval<L>() >
 template <typename L, typename R>
 constexpr bool is_greater_than_comparable_v = is_greater_than_comparable<L, R>::value;
 
+template <auto MemFunc, typename ClassType, typename... Args>
+struct is_const_callable_method {
+    template <auto U>
+    static constexpr auto test(int) -> decltype((std::declval<const ClassType>().*U)(std::declval<Args>()...), std::true_type{});
+    template <auto U>
+    static constexpr auto test(...) -> std::false_type;
+    static constexpr bool value = decltype(test<MemFunc>(0))::value;
+    constexpr operator bool() const { return value; }
+    constexpr bool operator()() const { return value; }
+};
+
+template <auto MemFunc, typename ClassType, typename... Args>
+constexpr bool is_const_callable_method_v = is_const_callable_method<MemFunc, ClassType, Args...>::value;
+
 template <typename T>
 struct is_pair : std::false_type {};
 template <typename T, typename U>

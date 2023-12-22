@@ -14,8 +14,8 @@ namespace PTS {
 
 	struct SceneObject : Object {
 		SceneObject(ObjectConstructorUsage usage = ObjectConstructorUsage::SERIALIZE) noexcept;
-		SceneObject(Scene& scene, std::string_view name, Transform transform);
-		SceneObject(Scene& scene, Transform transform);
+		SceneObject(Scene& scene, std::string_view name, Transform transform, EditFlags edit_flags);
+		SceneObject(Scene& scene, Transform transform, EditFlags edit_flags);
 
 		NODISCARD auto get_scene() const noexcept -> ObserverPtr<Scene> {
 			return m_scene;
@@ -31,8 +31,13 @@ namespace PTS {
 		 * @return The transform of this object in the given space.
 		*/
 		NODISCARD auto get_transform(TransformSpace space) const noexcept -> Transform const&;
+
 		NODISCARD auto get_edit_flags() const noexcept {
 			return m_flags;
+		}
+
+		NODISCARD auto is_editable() const noexcept -> bool {
+			return !(m_flags & _NoEdit);
 		}
 
 		auto has_child(View<SceneObject> child) noexcept -> bool;
@@ -42,13 +47,20 @@ namespace PTS {
 		auto set_parent(ObserverPtr<SceneObject> parent) noexcept -> void;
 		auto get_parent() const noexcept -> ObserverPtr<SceneObject>;
 
-		auto set_edit_flags(int flags) noexcept -> void;
+		auto set_edit_flags(EditFlags flags) noexcept -> void;
+
+		struct FieldTag {
+			static constexpr int WORLD_TRANSFORM = 0;
+			static constexpr int LOCAL_TRANSFORM = 1;
+			static constexpr int FLAGS = 2;
+			static constexpr int SCENE = 3;
+			static constexpr int PARENT = 4;
+			static constexpr int CHILDREN = 5;
+		};
 
 	private:
 		auto find_child(View<SceneObject> child) const -> std::vector<ObserverPtr<SceneObject>>::const_iterator;
 		auto update_transform() noexcept -> void;
-
-		DECL_DEFERRED_STATIC_INIT(static_init);
 
 		BEGIN_REFLECT(SceneObject, Object);
 		FIELD(Transform, m_world_transform, {},
@@ -56,8 +68,8 @@ namespace PTS {
 		FIELD(Transform, m_local_transform, {},
 		      MSerialize{}, MNoInspect{}); // handled explicitly
 
-		FIELD(EditFlags, m_flags, static_cast<EditFlags>(EditFlags::Visible | EditFlags::Selectable),
-		      MSerialize{}, edit_flags_modifier);
+		FIELD(EditFlags, m_flags, k_editable_flags,
+		      MSerialize{}, k_edit_flags_modifier);
 
 		FIELD(ObserverPtr<Scene>, m_scene, nullptr,
 		      MSerialize{}, MReadOnly{}); // not editable

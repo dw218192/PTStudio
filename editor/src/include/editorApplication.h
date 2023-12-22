@@ -14,6 +14,7 @@
 #include "glTexture.h"
 #include "inputAction.h"
 #include "singleton.h"
+#include "callbackList.h"
 
 namespace PTS::Editor {
 	constexpr auto k_init_move_sensitivity = 5.0f;
@@ -56,7 +57,7 @@ namespace PTS::Editor {
 		auto draw_console_panel() const noexcept -> void;
 
 		// events
-		auto on_scene_opened(Scene const& scene) -> void;
+		auto on_scene_opened(Scene& scene) -> void;
 		auto on_render_config_change(RenderConfig const& conf) -> void;
 		auto on_mouse_leave_scene_viewport() noexcept -> void;
 		auto on_mouse_enter_scene_viewport() noexcept -> void;
@@ -64,21 +65,12 @@ namespace PTS::Editor {
 		// other helpers
 		auto try_select_object() noexcept -> void;
 		auto handle_input(InputEvent const& event) noexcept -> void override;
-		auto remove_editable(Ref<SceneObject> editable) -> void;
+		auto on_remove_object(Ref<SceneObject> obj) -> void;
+		auto on_remove_editable(Ref<SceneObject> editable) -> void;
+		auto on_add_oject(Ref<SceneObject> obj) -> void;
 		auto on_add_editable(Ref<SceneObject> editable) -> void;
-		auto on_editable_change(Ref<SceneObject> editable, SceneObjectChangeType type) -> void;
 		auto on_log_added() -> void override;
 		auto get_cur_renderer() noexcept -> Renderer&;
-
-		// event handlers
-		template <auto SceneObjectChangeType, typename T>
-		auto on_scene_obj_change(T data) {
-			if (!m_control_state.get_cur_obj() ||
-				m_control_state.get_cur_obj() != &data.obj) {
-				return;
-			}
-			on_editable_change(data.obj, SceneObjectChangeType);
-		}
 
 		std::string m_console_text;
 
@@ -104,7 +96,10 @@ namespace PTS::Editor {
 
 			auto set_cur_obj(ObserverPtr<SceneObject> obj) noexcept -> void;
 			auto get_cur_obj() const noexcept { return m_cur_obj; }
-			auto register_on_obj_change(ObjChangeCallback const& callback) noexcept -> void;
+
+			auto get_on_selected_obj_change_callback_list() -> auto& {
+				return m_on_selected_obj_change_callback_list;
+			}
 
 			float move_sensitivity = k_init_move_sensitivity;
 			float rot_sensitivity = k_init_rot_sensitivity;
@@ -125,7 +120,7 @@ namespace PTS::Editor {
 
 		private:
 			ObserverPtr<SceneObject> m_cur_obj{nullptr};
-			std::vector<ObjChangeCallback> m_obj_change_callbacks;
+			CallbackList<void(ObserverPtr<SceneObject>)> m_on_selected_obj_change_callback_list;
 		} m_control_state;
 	};
 

@@ -23,6 +23,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "callbackList.h"
 #include "stringManip.h"
 #include "typeTraitsUtil.h"
 
@@ -96,13 +97,13 @@ namespace PTS {
 		static constexpr std::string_view name = "no inspect";
 	};
 
-    /**
-     * @brief mark the field as read only, can be used to prevent editing of fields
-     * that are calculated from other fields or for debugging purposes
-    */
-    struct MReadOnly {
-        static constexpr std::string_view name = "read only";
-    };
+	/**
+	 * @brief mark the field as read only, can be used to prevent editing of fields
+	 * that are calculated from other fields or for debugging purposes
+	 */
+	struct MReadOnly {
+		static constexpr std::string_view name = "read only";
+	};
 
 	/**
 	 * @brief displays a color picker, only works for glm::vec3 and glm::vec4
@@ -129,16 +130,138 @@ namespace PTS {
 		auto (*get_name)(int idx) -> char const*;
 	};
 
-
 #pragma endregion Modifiers
 
 #pragma region TField
 	template <typename FieldInfoType, typename ClassType, typename FieldType>
 	struct OnChangeCallbackData {
 		FieldInfoType const& field_info;
-		FieldType const& old_val;
 		FieldType const& new_val;
 		ClassType& obj;
+	};
+
+	/**
+	 * @brief proxy for a field instance, used to intercept field access and
+	 * modification
+	 */
+	template <typename T, typename FieldInfoType>
+	struct FieldProxy {
+		using value_type = T;
+		using field_info_type = FieldInfoType;
+		using class_type = typename FieldInfoType::class_type;
+
+		template <typename U>
+		FieldProxy(
+			U& ref,
+			field_info_type& field_info,
+			class_type& obj,
+			std::enable_if_t<!std::is_same_v<std::remove_cv_t<U>, FieldProxy>>* =
+				nullptr)
+			: m_ref{ref}, m_field_info{field_info}, m_obj{obj} {}
+
+		FieldProxy(FieldProxy&& other) = default;
+		FieldProxy(FieldProxy const& other) = default;
+		auto operator=(FieldProxy&& other) -> FieldProxy& = default;
+		auto operator=(FieldProxy const& other) -> FieldProxy& = default;
+		~FieldProxy() = default;
+
+		template <typename U>
+		auto operator=(U&& new_val) -> std::enable_if_t<
+			std::conjunction_v<std::negation<std::is_same<
+				                   std::remove_cv_t<std::remove_reference_t<U>>,
+				                   FieldProxy>>,
+			                   std::negation<std::is_const<T>>,
+			                   std::is_assignable<T&, U&&>>,
+			FieldProxy&> {
+			m_ref.get() = std::forward<U>(new_val);
+			m_field_info.get().on_change(m_ref.get(), m_obj.get());
+			return *this;
+		}
+
+		template <typename U>
+		auto operator=(std::initializer_list<U> new_val) -> std::enable_if_t<
+			std::conjunction_v<std::negation<std::is_const<T>>,
+			                   std::is_assignable<T&, std::initializer_list<U>>>,
+			FieldProxy&> {
+			m_ref.get() = new_val;
+			m_field_info.get().on_change(m_ref.get(), m_obj.get());
+			return *this;
+		}
+
+		// arithmetic operators
+#define DEFINE_ASSIGN_OP(op)                                              \
+    template <typename U,                                                 \
+              typename = std::void_t<decltype(std::declval<T>()           \
+                                                  op std::declval<U>())>> \
+    auto operator op##=(U&& other)                                        \
+        -> std::enable_if_t<!std::is_const_v<T>, FieldProxy&> {           \
+        decltype(auto) res{m_ref.get() op std::forward<U>(other)};        \
+        *this = res;                                                      \
+        return *this;                                                     \
+    }
+		DEFINE_ASSIGN_OP(+)
+		DEFINE_ASSIGN_OP(-)
+		DEFINE_ASSIGN_OP(*)
+		DEFINE_ASSIGN_OP(/)
+		DEFINE_ASSIGN_OP(%)
+		DEFINE_ASSIGN_OP(&)
+		DEFINE_ASSIGN_OP(|)
+		DEFINE_ASSIGN_OP(^)
+		DEFINE_ASSIGN_OP(<<)
+		DEFINE_ASSIGN_OP(>>)
+
+#undef DEFINE_ASSIGN_OP
+
+		auto operator->() -> std::enable_if_t<!std::is_const_v<T>, T*> {
+			return &m_ref.get();
+		}
+
+		auto operator->() const -> const T* { return &m_ref.get(); }
+
+		auto operator*() -> std::enable_if_t<!std::is_const_v<T>, T&> {
+			return m_ref.get();
+		}
+
+		auto operator*() const -> const T& { return m_ref.get(); }
+
+		template <auto MemFunc, typename... Args>
+		auto invoke(Args&&... args) -> decltype(auto) {
+			if constexpr (std::is_const_v<T>) {
+				return std::invoke(MemFunc, m_ref.get(),
+				                   std::forward<Args>(args)...);
+			} else {
+				if constexpr (std::is_void_v<decltype(std::invoke(
+					MemFunc, std::declval<T>(),
+					std::declval<Args>()...))>) {
+					std::invoke(MemFunc, m_ref.get(), std::forward<Args>(args)...);
+					if constexpr (!Traits::is_const_callable_method_v<MemFunc, T,
+					                                                  Args...>) {
+						m_field_info.get().on_change(m_ref.get(), m_obj.get());
+					}
+				} else {
+					decltype(auto) ret{
+						std::invoke(MemFunc, m_ref.get(),
+						            std::forward<Args>(args)...)
+					};
+					if constexpr (!Traits::is_const_callable_method_v<MemFunc, T,
+					                                                  Args...>) {
+						m_field_info.get().on_change(m_ref.get(), m_obj.get());
+					}
+					return ret;
+				}
+			}
+		}
+
+		auto get() const -> T const& { return m_ref.get(); }
+
+		auto get() -> std::enable_if_t<!std::is_const_v<T>, T&> {
+			return m_ref.get();
+		}
+
+	private:
+		std::reference_wrapper<value_type> m_ref;
+		std::reference_wrapper<field_info_type> m_field_info;
+		std::reference_wrapper<class_type> m_obj;
 	};
 
 	/**
@@ -155,10 +278,14 @@ namespace PTS {
 	          typename ModifierPackType = ModifierPack<>>
 	struct TField {
 		using type = FieldType;
+		using class_type = ClassType;
+		using modifier_pack_type = ModifierPackType;
 		using callback_type =
-		typename TFieldRuntime<ClassType, FieldType, ModifierPackType>::callback_type;
+		typename TFieldRuntime<ClassType, FieldType, ModifierPackType>::
+		callback_type;
 		using callback_data_type =
-		typename TFieldRuntime<ClassType, FieldType, ModifierPackType>::callback_data_type;
+		typename TFieldRuntime<ClassType, FieldType, ModifierPackType>::
+		callback_data_type;
 
 		constexpr TField(
 			int member_index,
@@ -189,49 +316,80 @@ namespace PTS {
 		}
 
 		// -----------------  runtime only -----------------
-		auto get(ClassType const& obj) const -> FieldType const& {
+
+		/**
+		 * @brief get the value of the field given an instance of the class
+		 * @param obj the instance of the class
+		 * @return the value of the field
+		 */
+		auto get(ClassType const& obj) const -> auto const& {
 			return obj.*(runtime_info.mem_pointer);
 		}
 
-		auto get(ClassType& obj) const -> FieldType& {
+		/**
+		 * @brief get the value of the field given an instance of the class
+		 * @param obj the instance of the class
+		 * @return the value of the field
+		 */
+		auto get(ClassType& obj) -> auto& {
 			return obj.*(runtime_info.mem_pointer);
 		}
 
+		/**
+		 * @brief get a proxy for the field given an instance of the class,
+		 * on_change callbacks will be called when the proxy is modified
+		 * @param obj the instance of the class
+		 * @return a proxy for the field
+		 */
+		auto get_proxy(ClassType const& obj) const {
+			return FieldProxy<FieldType const, TField const>{
+				obj.*(runtime_info.mem_pointer), *this, obj
+			};
+		}
+
+		/**
+		 * @brief get a proxy for the field given an instance of the class,
+		 * on_change callbacks will be called when the proxy is modified
+		 * @param obj the instance of the class
+		 * @return a proxy for the field
+		 */
+		auto get_proxy(ClassType& obj) const {
+			return FieldProxy<FieldType, TField const>{
+				obj.*(runtime_info.mem_pointer), *this, obj
+			};
+		}
+
+		/**
+		 * @brief returns the default value of the field specified in the in-class
+		 * field initializer
+		 * @return the default value of the field
+		 */
 		auto get_default() const -> FieldType { return runtime_info.default_val; }
 
-		auto register_on_change_callback(callback_type callback) const {
-			runtime_info.on_change_callbacks.emplace_back(std::move(callback));
-			return runtime_info.on_change_callbacks.size() - 1;
+		auto get_on_change_callback_list() const -> auto& {
+			return runtime_info.on_change_callbacks;
 		}
 
-		auto on_change(FieldType const& old_val,
-		               FieldType const& new_val,
-		               ClassType& obj) const -> void {
-			for (auto& callback : runtime_info.on_change_callbacks) {
-				callback(callback_data_type{*this, old_val, new_val, obj});
-			}
-		}
-
-		auto unregister_on_change_callback(size_t idx) const -> void {
-			if (idx < 0 || idx >= runtime_info.on_change_callbacks.size())
-				return;
-			runtime_info.on_change_callbacks.erase(
-				runtime_info.on_change_callbacks.begin() + idx);
-		}
-
-		auto unregister_all_on_change_callbacks() const -> void {
-			runtime_info.on_change_callbacks.clear();
+		/**
+		 * @brief calls all registered on_change callbacks
+		 * @param new_val the new value of the field
+		 * @param obj the instance of the class
+		 * @return void
+		 */
+		auto on_change(FieldType const& new_val, ClassType& obj) const -> void {
+			runtime_info.on_change_callbacks(
+				callback_data_type{*this, new_val, obj});
 		}
 	};
 
 	template <typename ClassType, typename FieldType, typename ModifierPackType>
 	struct TFieldRuntime {
 		friend struct TField<ClassType, FieldType, ModifierPackType>;
-		using callback_data_type = OnChangeCallbackData<
-			TField<ClassType, FieldType, ModifierPackType>,
-			ClassType, FieldType
-		>;
-		using callback_type = std::function<void(callback_data_type)>;
+		using callback_data_type =
+		OnChangeCallbackData<TField<ClassType, FieldType, ModifierPackType>,
+		                     ClassType,
+		                     FieldType>;
+		using callback_type = void(callback_data_type);
 
 		TFieldRuntime(int member_index,
 		              FieldType default_val,
@@ -244,7 +402,7 @@ namespace PTS {
 		int member_index;
 		FieldType default_val;
 		FieldType ClassType::* mem_pointer;
-		std::vector<callback_type> on_change_callbacks;
+		CallbackList<callback_type> on_change_callbacks;
 	};
 
 #pragma endregion TField
@@ -802,8 +960,8 @@ namespace PTS {
             }                                                                 \
         }                                                                     \
     };                                                                        \
-    template <int N, typename>                                                \
-    struct _get_field_info_imp
+    template <int N, auto>                                                    \
+    struct _get_field_info_impl
 
 #define FIELD_IMPL(_counter, _var_type, _var_name, _init, ...)               \
     _var_type _var_name = _init;                                             \
@@ -834,39 +992,58 @@ namespace PTS {
             func(_##_var_name##_field_info);                                 \
         }                                                                    \
     };                                                                       \
-    template <typename Dummy>                                                \
-    struct _get_field_info_imp<_counter - _init_count - 1, Dummy> {          \
+    template <int N>                                                         \
+    struct _get_field_info_impl<_counter - _init_count - 1, N> {             \
+        static constexpr auto do_it() {                                      \
+            return _##_var_name##_field_info;                                \
+        }                                                                    \
+    };                                                                       \
+    template <int N>                                                         \
+    struct _get_field_info_impl<N, &_my_type::_var_name> {                   \
         static constexpr auto do_it() {                                      \
             return _##_var_name##_field_info;                                \
         }                                                                    \
     }
 
-#define END_REFLECT_IMPL(_counter)                                   \
-    static constexpr auto _field_count = _counter - _init_count - 1; \
-                                                                     \
-   public:                                                           \
-    static constexpr auto field_count() {                            \
-        return _field_count;                                         \
-    }                                                                \
-    static constexpr auto total_field_count() {                      \
-        return field_count() +                                       \
-               PTS::Traits::get_num_members<_parent_type>::value;    \
-    }                                                                \
-    template <typename F>                                            \
-    static constexpr auto for_each_field(F&& func) {                 \
-        _for_each_field_impl<_field_count - 1, F>::do_it(            \
-            std::forward<F>(func));                                  \
-    }                                                                \
-    template <int N>                                                 \
-    static constexpr auto get_field_info() {                         \
-        return _get_field_info_imp<N, void>::do_it();                \
-    }                                                                \
-    static constexpr auto is_reflectable() {                         \
-        return true;                                                 \
-    }                                                                \
-    static constexpr std::string_view const& get_class_name() {      \
-        return _type_name;                                           \
-    }                                                                \
+#define END_REFLECT_IMPL(_counter)                                      \
+    static constexpr auto _field_count = _counter - _init_count - 1;    \
+                                                                        \
+   public:                                                              \
+    static constexpr auto field_count() {                               \
+        return _field_count;                                            \
+    }                                                                   \
+    static constexpr auto total_field_count() {                         \
+        return field_count() +                                          \
+               PTS::Traits::get_num_members<_parent_type>::value;       \
+    }                                                                   \
+    template <typename F>                                               \
+    static constexpr auto for_each_field(F&& func) {                    \
+        _for_each_field_impl<_field_count - 1, F>::do_it(               \
+            std::forward<F>(func));                                     \
+    }                                                                   \
+    template <int N>                                                    \
+    static constexpr auto get_field_info() {                            \
+        return _get_field_info_impl<N, N>::do_it();                     \
+    }                                                                   \
+    template <int N>                                                    \
+    struct callback_data {                                              \
+        using type =                                                    \
+            typename decltype(get_field_info<N>())::callback_data_type; \
+    };                                                                  \
+    template <int N>                                                    \
+    using callback_data_t = typename callback_data<N>::type;            \
+    template <auto MemPtr,                                              \
+              typename = std::enable_if_t<                              \
+                  std::is_member_object_pointer_v<decltype(MemPtr)>>>   \
+    static constexpr auto get_field_info() {                            \
+        return _get_field_info_impl<-1, MemPtr>::do_it();               \
+    }                                                                   \
+    static constexpr auto is_reflectable() {                            \
+        return true;                                                    \
+    }                                                                   \
+    static constexpr std::string_view const& get_class_name() {         \
+        return _type_name;                                              \
+    }                                                                   \
     using parent_type = _parent_type
 
 #define DECL_DYNAMIC_INFO()                                                   \
@@ -914,6 +1091,11 @@ namespace PTS {
 #define FIELD(type, var_name, init, ...) \
     FIELD_IMPL(__COUNTER__, type, var_name, init, __VA_ARGS__)
 #define END_REFLECT() END_REFLECT_IMPL(__COUNTER__)
+
+
+#define DECL_FIELD_EVENT_MEMBERS(method_name, cls, tag)\
+	void method_name(cls::callback_data_t<tag> data);\
+	PTS::Callback<void(cls::callback_data_t<tag>)> m_##method_name { [this] (cls::callback_data_t<tag> data) { this->method_name(data); } }
 
 #pragma endregion Macros
 

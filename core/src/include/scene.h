@@ -7,6 +7,7 @@
 
 #include "boundingBox.h"
 #include "camera.h"
+#include "enumArray.h"
 #include "reflection.h"
 #include "utils.h"
 
@@ -15,16 +16,16 @@
 #include "renderableObject.h"
 #include "sceneObject.h"
 
+#include "callbackList.h"
+
 namespace PTS {
+	DECL_ENUM(SceneChangeType,
+	          OBJECT_ADDED,
+	          OBJECT_REMOVED
+	);
+
 	struct Scene : Object {
 		Scene() : Object("Scene") {}
-
-		/**
-		 * \brief Creates a scene from an obj file.
-		 * \param filename the path to the obj file
-		 * \return nothing if the file was loaded successfully, an error otherwise
-		 */
-		NODISCARD static auto from_obj_file(std::string_view filename) noexcept -> tl::expected<Scene, std::string>;
 
 		// compute good positions to place light and camera
 		NODISCARD auto get_good_cam_start() const noexcept -> LookAtParams;
@@ -99,6 +100,8 @@ namespace PTS {
 		auto try_add_editable(Ref<SceneObject> obj_view) noexcept -> void;
 		auto try_remove_editable(View<SceneObject> obj_view) noexcept -> void;
 
+		auto get_callback_list(SceneChangeType type) -> CallbackList<void(Ref<SceneObject>)>&;
+
 	private:
 		BEGIN_REFLECT(Scene, Object);
 
@@ -124,6 +127,8 @@ namespace PTS {
 
 		// objects that are currently added to the scene
 		std::unordered_set<ViewPtr<SceneObject>> m_alive_objs;
+
+		EArray<SceneChangeType, CallbackList<void(Ref<SceneObject>)>> m_scene_callbacks;
 	};
 
 	template <typename T, typename>
@@ -142,12 +147,16 @@ namespace PTS {
 
 		m_alive_objs.emplace(ret);
 		try_add_editable(*ret);
+
+		m_scene_callbacks[SceneChangeType::OBJECT_ADDED](*ret);
 		return ret;
 	}
 
 	template <typename T, typename>
 	auto Scene::remove_object(T& obj) noexcept -> void {
 		if (is_valid_obj(obj)) {
+			m_scene_callbacks[SceneChangeType::OBJECT_REMOVED](obj);
+
 			if (auto const par = obj.get_parent()) {
 				par->remove_child(obj);
 			}

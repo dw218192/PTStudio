@@ -178,7 +178,7 @@ namespace ImGui {
 					}
 				} else if constexpr (enum_flags_mod) {
 					auto&& field = field_info.get(reflected);
-					auto field_int = reinterpret_cast<int*>(&field);
+					auto const field_int = reinterpret_cast<int*>(&field);
 
 					std::string preview = *field_int == 0 ? "None" : "";
 					for (auto i = 0; i < enum_flags_mod->num_items; ++i) {
@@ -273,8 +273,7 @@ namespace ImGui {
 				  m_container{container},
 				  m_i{i} {}
 
-			auto get(ClassType& reflected) -> auto& {
-				(void)reflected;
+			auto get(ClassType&) -> auto& {
 				return m_container[m_i];
 			}
 
@@ -431,14 +430,11 @@ namespace ImGui {
 			if constexpr (field_info.template has_modifier<MReadOnly>()) {
 				ImGui::BeginDisabled();
 			}
-
-			auto old_val = field_info.get(reflected);
 			if (detail::DoField<detail::Dispatch_t<FieldType>>::impl(
 				label, field_info, reflected)) {
 				changed = true;
-				field_info.on_change(old_val, field_info.get(reflected), reflected);
+				field_info.on_change(field_info.get(reflected), reflected);
 			}
-
 			if constexpr (field_info.template has_modifier<MReadOnly>()) {
 				ImGui::EndDisabled();
 			}

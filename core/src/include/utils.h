@@ -123,6 +123,11 @@ Ty& operator=(Ty const&) = delete
 #define DECL_ENUM(name, ...)\
 	enum class name { __VA_ARGS__, __COUNT }
 
+/**
+ * \brief Declares a static init method that will be called the first time the class is instantiated.
+ * \param method_name The name of the static init method.
+ * \note The static init method must be static and return void.
+*/
 #define DECL_DEFERRED_STATIC_INIT(method_name)\
 	static auto method_name() -> void;\
 	static inline int _static_init_if_not() {\

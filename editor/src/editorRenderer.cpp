@@ -50,21 +50,50 @@ EditorRenderer::EditorRenderer(RenderConfig config) noexcept : Renderer{std::mov
 		data.editor.SetLanguageDefinition(lang);
 	}
 	m_extra_func_editor_data.editor.SetLanguageDefinition(lang);
+
+	Light::get_field_info<Light::FieldTag::INTENSITY>().get_on_change_callback_list()
+		+= m_on_light_intensity_change;
+
+	Light::get_field_info<Light::FieldTag::COLOR>().get_on_change_callback_list()
+		+= m_on_light_color_change;
+
+	SceneObject::get_field_info<SceneObject::FieldTag::WORLD_TRANSFORM>().get_on_change_callback_list()
+		+= m_on_obj_world_trans_change;
+
+	SceneObject::get_field_info<SceneObject::FieldTag::LOCAL_TRANSFORM>().get_on_change_callback_list()
+		+= m_on_obj_local_trans_change;
 }
 
-EditorRenderer::~EditorRenderer() noexcept = default;
+EditorRenderer::~EditorRenderer() noexcept {
+	Light::get_field_info<Light::FieldTag::INTENSITY>().get_on_change_callback_list()
+		-= m_on_light_intensity_change;
+
+	Light::get_field_info<Light::FieldTag::COLOR>().get_on_change_callback_list()
+		-= m_on_light_color_change;
+
+	SceneObject::get_field_info<SceneObject::FieldTag::WORLD_TRANSFORM>().get_on_change_callback_list()
+		-= m_on_obj_world_trans_change;
+
+	SceneObject::get_field_info<SceneObject::FieldTag::LOCAL_TRANSFORM>().get_on_change_callback_list()
+		-= m_on_obj_local_trans_change;
+
+	if (m_scene) {
+		m_scene->get_callback_list(SceneChangeType::OBJECT_ADDED) -= m_on_add_obj;
+		m_scene->get_callback_list(SceneChangeType::OBJECT_REMOVED) -= m_on_remove_obj;
+	}
+}
 
 auto EditorRenderer::init(ObserverPtr<Application> app) noexcept -> tl::expected<void, std::string> {
 	TL_CHECK_AND_PASS(Renderer::init(app));
 
 	auto create_grid = [this](float grid_dim, float spacing) -> tl::expected<void, std::string> {
 		std::vector<glm::vec3> vertices;
-		float const half_dim = grid_dim / 2.0f;
-		for (float x = -half_dim; x <= half_dim; x += spacing) {
+		auto const half_dim = grid_dim / 2.0f;
+		for (auto x = -half_dim; x <= half_dim; x += spacing) {
 			vertices.emplace_back(x, 0.0f, -half_dim);
 			vertices.emplace_back(x, 0.0f, half_dim);
 		}
-		for (float z = -half_dim; z <= half_dim; z += spacing) {
+		for (auto z = -half_dim; z <= half_dim; z += spacing) {
 			vertices.emplace_back(-half_dim, 0.0f, z);
 			vertices.emplace_back(half_dim, 0.0f, z);
 		}
@@ -169,15 +198,23 @@ auto EditorRenderer::init(ObserverPtr<Application> app) noexcept -> tl::expected
 }
 
 
-auto EditorRenderer::open_scene(View<Scene> scene) noexcept -> tl::expected<void, std::string> {
+auto EditorRenderer::open_scene(Ref<Scene> scene) noexcept -> tl::expected<void, std::string> {
 	m_cur_outline_obj = nullptr;
+
+	if (m_scene) {
+		m_scene->get_callback_list(SceneChangeType::OBJECT_ADDED) -= m_on_add_obj;
+		m_scene->get_callback_list(SceneChangeType::OBJECT_REMOVED) -= m_on_remove_obj;
+	}
 	m_scene = &scene.get();
+	m_scene->get_callback_list(SceneChangeType::OBJECT_ADDED) += m_on_add_obj;
+	m_scene->get_callback_list(SceneChangeType::OBJECT_REMOVED) += m_on_remove_obj;
+
 	clear_render_data();
 
 	CHECK_GL_ERROR();
 
 	for (auto&& editable : scene.get().get_editables()) {
-		TL_CHECK_AND_PASS(on_add_obj(editable));
+		on_add_obj(editable);
 	}
 
 	// Set a few settings/modes in OpenGL rendering
@@ -213,85 +250,110 @@ auto EditorRenderer::on_change_render_config() noexcept -> tl::expected<void, st
 
 #pragma region Scene_Change_Callbacks
 
-auto EditorRenderer::on_add_obj(Ref<SceneObject> obj) noexcept -> tl::expected<void, std::string> {
-	if (auto const render_obj = dynamic_cast<RenderableObject*>(&obj.get())) {
+auto EditorRenderer::on_add_obj(Ref<SceneObject> obj) noexcept -> void {
+	if (auto const render_obj = obj.get().as<RenderableObject>()) {
 		if (m_obj_data.count(render_obj)) {
-			return TL_ERROR("object added twice");
+			m_app->log(LogLevel::Error, "object added twice");
+			return;
 		}
-		TL_CHECK_AND_PASS(on_add_object_internal(m_obj_data[render_obj], *render_obj));
-	} else if (auto const light = dynamic_cast<Light*>(&obj.get())) {
+		TL_CHECK_NON_FATAL(
+			m_app, LogLevel::Error,
+			on_add_object_internal(m_obj_data[render_obj], *render_obj)
+		);
+	} else if (auto const light = obj.get().as<Light>()) {
 		m_light_data.data.emplace_back(light->get_data());
 		m_light_data.light_ptrs.emplace_back(light);
 
-		TL_CHECK_AND_PASS(m_light_data.ubo->bind());
+		TL_CHECK_NON_FATAL(m_app, LogLevel::Error, m_light_data.ubo->bind());
 		{
-			TL_CHECK_AND_PASS(m_light_data.ubo->set_data(tcb::make_span(m_light_data.data), GL_DYNAMIC_DRAW));
+			TL_CHECK_NON_FATAL(m_app, LogLevel::Error,
+			                   m_light_data.ubo->set_data(tcb::make_span(m_light_data.data), GL_DYNAMIC_DRAW));
 		}
 		m_light_data.ubo->unbind();
 	}
-
-	return {};
 }
 
-auto EditorRenderer::on_remove_obj(Ref<SceneObject> obj) noexcept -> tl::expected<void, std::string> {
-	if (auto const render_obj = dynamic_cast<RenderableObject*>(&obj.get())) {
+auto EditorRenderer::on_remove_obj(Ref<SceneObject> obj) noexcept -> void {
+	if (auto const render_obj = obj.get().as<RenderableObject>()) {
 		auto const it = m_obj_data.find(render_obj);
 		if (it == m_obj_data.end()) {
-			return TL_ERROR("obj not found");
+			m_app->log(LogLevel::Error, "object not found");
+			return;
 		}
 		m_obj_data.erase(it);
 		if (render_obj == m_cur_outline_obj) {
 			m_cur_outline_obj = nullptr;
 		}
-	} else if (auto const light = dynamic_cast<Light*>(&obj.get())) {
+	} else if (auto const light = obj.get().as<Light>()) {
 		auto const it = std::find_if(m_light_data.light_ptrs.begin(), m_light_data.light_ptrs.end(),
 		                             [light](auto const& ptr) { return ptr == light; }
 		);
 		if (it == m_light_data.light_ptrs.end()) {
-			return TL_ERROR("light not found");
+			m_app->log(LogLevel::Error, "light not found");
+			return;
 		}
 		auto const idx = std::distance(m_light_data.light_ptrs.begin(), it);
 		m_light_data.data.erase(m_light_data.data.begin() + idx);
 		m_light_data.light_ptrs.erase(it);
 
-		TL_CHECK_AND_PASS(m_light_data.ubo->bind());
+		TL_CHECK_NON_FATAL(m_app, LogLevel::Error, m_light_data.ubo->bind());
 		{
-			TL_CHECK_AND_PASS(m_light_data.ubo->set_data(tcb::make_span(m_light_data.data), GL_DYNAMIC_DRAW));
+			TL_CHECK_NON_FATAL(m_app, LogLevel::Error,
+			                   m_light_data.ubo->set_data(tcb::make_span(m_light_data.data), GL_DYNAMIC_DRAW));
 		}
 		m_light_data.ubo->unbind();
 	}
-
-	return {};
 }
 
-auto EditorRenderer::on_obj_change(Ref<SceneObject> obj, SceneObjectChangeType type) noexcept
-	-> tl::expected<void, std::string> {
-	if (auto const render_obj = dynamic_cast<RenderableObject*>(&obj.get())) {
-		// data are fetched directly from the scene, so no need to update
-	} else if (auto const light = dynamic_cast<Light*>(&obj.get())) {
-		auto const it = std::find_if(m_light_data.light_ptrs.begin(), m_light_data.light_ptrs.end(),
-		                             [light](auto const& ptr) { return ptr == light; }
+auto EditorRenderer::update_light(Light const& light) -> void {
+	auto const it =
+		std::find_if(m_light_data.light_ptrs.begin(), m_light_data.light_ptrs.end(),
+		             [&light](auto const& ptr) {
+			             return ptr == &light;
+		             }
 		);
-		if (it == m_light_data.light_ptrs.end()) {
-			return TL_ERROR("light not found");
-		}
+	if (it != m_light_data.light_ptrs.end()) {
 		auto const idx = std::distance(m_light_data.light_ptrs.begin(), it);
-		m_light_data.data[idx] = light->get_data();
-		TL_CHECK_AND_PASS(m_light_data.ubo->bind());
+		m_light_data.data[idx] = light.get_data();
+		TL_CHECK_NON_FATAL(m_app, LogLevel::Error, m_light_data.ubo->bind());
 		{
 			// TODO: only need to update the light that changed
-			TL_CHECK_AND_PASS(m_light_data.ubo->set_data(tcb::make_span(m_light_data.data), GL_DYNAMIC_DRAW));
+			TL_CHECK_NON_FATAL(m_app, LogLevel::Error,
+			                   m_light_data.ubo->set_data(tcb::make_span(m_light_data.data), GL_DYNAMIC_DRAW));
 		}
 		m_light_data.ubo->unbind();
+	} else {
+		m_app->log(LogLevel::Error, "cannot find light");
 	}
-	return {};
+}
+
+auto EditorRenderer::on_light_color_change(Light::callback_data_t<Light::FieldTag::COLOR> data) -> void {
+	update_light(data.obj);
+}
+
+auto EditorRenderer::on_light_intensity_change(Light::callback_data_t<Light::FieldTag::INTENSITY> data) -> void {
+	update_light(data.obj);
+}
+
+auto EditorRenderer::on_obj_world_trans_change(
+	SceneObject::callback_data_t<SceneObject::FieldTag::WORLD_TRANSFORM> data) -> void {
+	if (auto const light = data.obj.as<Light>()) {
+		update_light(*light);
+	}
+}
+
+auto EditorRenderer::on_obj_local_trans_change(
+	SceneObject::callback_data_t<SceneObject::FieldTag::LOCAL_TRANSFORM> data) -> void {
+	if (auto const light = data.obj.as<Light>()) {
+		update_light(*light);
+	}
 }
 
 void EditorRenderer::on_selected_editable_change(ObserverPtr<SceneObject> editable) noexcept {
 	commit_cur_shader_code();
 	m_cur_outline_obj = nullptr;
 
-	if (!editable) { } else if (auto const obj = dynamic_cast<RenderableObject*>(editable)) {
+	if (!editable) { } else if (auto const obj = editable->as<RenderableObject>()) {
 		auto const it = m_obj_data.find(obj);
 		if (it == m_obj_data.end()) {
 			return;

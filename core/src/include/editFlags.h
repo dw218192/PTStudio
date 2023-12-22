@@ -19,7 +19,11 @@ namespace PTS {
 		// disallows any editing, used for objects managed by another object
 	};
 
-	auto constexpr edit_flags_modifier = MEnumFlags{
+	inline constexpr auto operator|(EditFlags lhs, EditFlags rhs) -> EditFlags {
+		return static_cast<EditFlags>(static_cast<int>(lhs) | static_cast<int>(rhs));
+	}
+
+	constexpr auto k_edit_flags_modifier = MEnumFlags{
 		2,
 		[](int idx) -> char const* {
 			switch (idx) {
@@ -29,4 +33,6 @@ namespace PTS {
 			}
 		}
 	};
+
+	constexpr auto k_editable_flags = EditFlags::Visible | EditFlags::Selectable;
 } // namespace PTS

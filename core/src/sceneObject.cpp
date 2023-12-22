@@ -5,13 +5,13 @@
 PTS::SceneObject::SceneObject(ObjectConstructorUsage usage) noexcept
 	: Object{usage} {}
 
-PTS::SceneObject::SceneObject(Scene& scene, std::string_view name, Transform transform)
-	: Object{name}, m_local_transform{std::move(transform)}, m_scene{&scene} {
+PTS::SceneObject::SceneObject(Scene& scene, std::string_view name, Transform transform, EditFlags edit_flags)
+	: Object{name}, m_local_transform{std::move(transform)}, m_flags{edit_flags}, m_scene{&scene} {
 	m_world_transform = m_local_transform;
 }
 
-PTS::SceneObject::SceneObject(Scene& scene, Transform transform)
-	: Object{scene.next_obj_name()}, m_local_transform{std::move(transform)}, m_scene{&scene} {
+PTS::SceneObject::SceneObject(Scene& scene, Transform transform, EditFlags edit_flags)
+	: Object{scene.next_obj_name()}, m_local_transform{std::move(transform)}, m_flags{edit_flags}, m_scene{&scene} {
 	m_world_transform = m_local_transform;
 }
 
@@ -64,6 +64,8 @@ auto PTS::SceneObject::set_transform(Transform transform, TransformSpace space) 
 			m_local_transform = m_world_transform;
 		}
 	}
+	get_field_info<&SceneObject::m_world_transform>().on_change(m_world_transform, *this);
+	get_field_info<&SceneObject::m_local_transform>().on_change(m_local_transform, *this);
 
 	for (auto const& ch : m_children) {
 		ch->update_transform();
@@ -76,6 +78,7 @@ auto PTS::SceneObject::set_parent(ObserverPtr<SceneObject> parent) noexcept -> v
 			m_parent->remove_child(*this);
 		}
 		m_parent = parent;
+		get_field_info<&SceneObject::m_parent>().on_change(m_parent, *this);
 	} else {
 		if (m_scene->is_valid_obj(*parent)) {
 			if (!parent->has_child(*this)) {
@@ -84,6 +87,7 @@ auto PTS::SceneObject::set_parent(ObserverPtr<SceneObject> parent) noexcept -> v
 				}
 				parent->add_child(*this);
 				m_parent = parent;
+				get_field_info<&SceneObject::m_parent>().on_change(m_parent, *this);
 			}
 		}
 	}
@@ -97,12 +101,13 @@ auto PTS::SceneObject::get_parent() const noexcept -> ObserverPtr<SceneObject> {
 	}
 }
 
-auto PTS::SceneObject::set_edit_flags(int flags) noexcept -> void {
+auto PTS::SceneObject::set_edit_flags(EditFlags flags) noexcept -> void {
 	auto const prev_flags = m_flags;
-	m_flags = static_cast<EditFlags>(flags);
+	m_flags = flags;
 	if (!(prev_flags & EditFlags::_NoEdit) && (m_flags & EditFlags::_NoEdit)) {
 		get_scene()->try_remove_editable(*this);
 	}
+	get_field_info<&SceneObject::m_flags>().on_change(m_flags, *this);
 }
 
 auto PTS::SceneObject::find_child(
@@ -116,18 +121,10 @@ auto PTS::SceneObject::find_child(
 auto PTS::SceneObject::update_transform() noexcept -> void {
 	if (auto const par = get_parent()) {
 		m_world_transform = par->get_transform(TransformSpace::WORLD) * m_local_transform;
+		get_field_info<&SceneObject::m_world_transform>().on_change(m_world_transform, *this);
 
 		for (auto const& ch : m_children) {
 			ch->update_transform();
 		}
 	}
-}
-
-auto PTS::SceneObject::static_init() -> void {
-	auto const id = get_field_info<2>().register_on_change_callback([](auto data) {
-		if (data.new_val & EditFlags::_NoEdit) {
-			data.obj.get_scene()->try_remove_editable(data.obj);
-		}
-	});
-	static_cast<void>(id);
 }

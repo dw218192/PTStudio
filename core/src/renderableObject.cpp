@@ -12,10 +12,11 @@ PTS::RenderableObject::RenderableObject(
 	Scene& scene,
 	std::string_view name,
 	Transform transform,
+	EditFlags edit_flags,
 	Material mat,
 	tcb::span<Vertex const> vertices,
 	tcb::span<unsigned const> indices)
-	: SceneObject{scene, name, std::move(transform)},
+	: SceneObject{scene, name, std::move(transform), edit_flags},
 	  m_mat{std::move(mat)},
 	  m_vertices{vertices.begin(), vertices.end()},
 	  m_indices{indices.begin(), indices.end()} {
@@ -25,17 +26,18 @@ PTS::RenderableObject::RenderableObject(
 PTS::RenderableObject::RenderableObject(
 	Scene& scene,
 	Transform transform,
+	EditFlags edit_flags,
 	Material mat,
 	tcb::span<Vertex const> vertices,
 	tcb::span<unsigned const> indices)
-	: SceneObject{scene, std::move(transform)},
+	: SceneObject{scene, std::move(transform), edit_flags},
 	  m_mat{std::move(mat)},
 	  m_vertices{vertices.begin(), vertices.end()},
 	  m_indices{indices.begin(), indices.end()} {
 	m_local_bound = BoundingBox::from_vertices(m_vertices);
 }
 
-auto PTS::RenderableObject::from_obj(Scene& scene, Material mat, std::string_view filename,
+auto PTS::RenderableObject::from_obj(Scene& scene, EditFlags edit_flags, Material mat, std::string_view filename,
                                      std::string* warning) noexcept
 	-> tl::expected<RenderableObject, std::string> {
 	std::vector<Vertex> vertices;
@@ -105,10 +107,10 @@ auto PTS::RenderableObject::from_obj(Scene& scene, Material mat, std::string_vie
 			}
 		}
 	}
-	return RenderableObject{scene, Transform{}, std::move(mat), std::move(vertices), std::move(indices)};
+	return RenderableObject{scene, Transform{}, edit_flags, std::move(mat), std::move(vertices), std::move(indices)};
 }
 
-auto PTS::RenderableObject::make_triangle_obj(Scene& scene, Material mat,
+auto PTS::RenderableObject::make_triangle_obj(Scene& scene, EditFlags edit_flags, Material mat,
                                               Transform trans) noexcept -> RenderableObject {
 	std::vector<Vertex> vertices = {
 		Vertex{glm::vec3{-0.5, -0.5, 0}, glm::vec3{0, 0, 1}, glm::vec2{0, 0}},
@@ -117,12 +119,15 @@ auto PTS::RenderableObject::make_triangle_obj(Scene& scene, Material mat,
 	};
 	std::vector<unsigned> indices = {0, 1, 2};
 
-	auto ret = RenderableObject{scene, std::move(trans), std::move(mat), std::move(vertices), std::move(indices)};
+	auto ret = RenderableObject{
+		scene, std::move(trans), edit_flags, std::move(mat), std::move(vertices), std::move(indices)
+	};
 	ret.m_primitive_type = PrimitiveType::Triangle;
 	return ret;
 }
 
-auto PTS::RenderableObject::make_quad_obj(Scene& scene, Material mat, Transform trans) noexcept -> RenderableObject {
+auto PTS::RenderableObject::make_quad_obj(Scene& scene, EditFlags edit_flags, Material mat,
+                                          Transform trans) noexcept -> RenderableObject {
 	std::vector<Vertex> vertices = {
 		Vertex{glm::vec3{-0.5, -0.5, 0}, glm::vec3{0, 0, 1}, glm::vec2{0, 0}},
 		Vertex{glm::vec3{0.5, -0.5, 0}, glm::vec3{0, 0, 1}, glm::vec2{1, 0}},
@@ -131,12 +136,15 @@ auto PTS::RenderableObject::make_quad_obj(Scene& scene, Material mat, Transform 
 	};
 	std::vector<unsigned> indices = {0, 1, 2, 1, 3, 2};
 
-	auto ret = RenderableObject{scene, std::move(trans), std::move(mat), std::move(vertices), std::move(indices)};
+	auto ret = RenderableObject{
+		scene, std::move(trans), edit_flags, std::move(mat), std::move(vertices), std::move(indices)
+	};
 	ret.m_primitive_type = PrimitiveType::Quad;
 	return ret;
 }
 
-auto PTS::RenderableObject::make_cube_obj(Scene& scene, Material mat, Transform trans) noexcept -> RenderableObject {
+auto PTS::RenderableObject::make_cube_obj(Scene& scene, EditFlags edit_flags, Material mat,
+                                          Transform trans) noexcept -> RenderableObject {
 	std::vector<Vertex> vertices = {
 		// front
 		Vertex{glm::vec3{-0.5, -0.5, 0.5}, glm::vec3{0, 0, 1}, glm::vec2{0, 0}},
@@ -184,12 +192,15 @@ auto PTS::RenderableObject::make_cube_obj(Scene& scene, Material mat, Transform 
 		20, 21, 22, 21, 23, 22
 	};
 
-	auto ret = RenderableObject{scene, std::move(trans), std::move(mat), std::move(vertices), std::move(indices)};
+	auto ret = RenderableObject{
+		scene, std::move(trans), edit_flags, std::move(mat), std::move(vertices), std::move(indices)
+	};
 	ret.m_primitive_type = PrimitiveType::Cube;
 	return ret;
 }
 
-auto PTS::RenderableObject::make_sphere_obj(Scene& scene, Material mat, Transform trans) noexcept -> RenderableObject {
+auto PTS::RenderableObject::make_sphere_obj(Scene& scene, EditFlags edit_flags, Material mat,
+                                            Transform trans) noexcept -> RenderableObject {
 	// see http://www.songho.ca/opengl/gl_sphere.html
 	std::vector<Vertex> vertices;
 
@@ -236,25 +247,28 @@ auto PTS::RenderableObject::make_sphere_obj(Scene& scene, Material mat, Transfor
 		}
 	}
 
-	auto ret = RenderableObject{scene, std::move(trans), std::move(mat), std::move(vertices), std::move(indices)};
+	auto ret = RenderableObject{
+		scene, std::move(trans), edit_flags, std::move(mat), std::move(vertices), std::move(indices)
+	};
 	ret.m_primitive_type = PrimitiveType::Sphere;
 	return ret;
 }
 
 auto PTS::RenderableObject::static_init() -> void {
-	auto const id = get_field_info<1>().register_on_change_callback([](auto data) {
+	get_field_info<1>().get_on_change_callback_list() += [](auto data) {
 		auto& self = data.obj;
 		if (data.new_val.is_emissive()) {
 			if (!self.m_proxy_light) {
 				self.m_proxy_light = self.get_scene()->template emplace_object<Light>(
-					*self.get_scene(), Transform{}, self.m_mat.emission,
-					self.m_mat.emission_intensity);
+					*self.get_scene(), Transform{},
+					EditFlags::_NoEdit,
+					data.new_val.emission,
+					data.new_val.emission_intensity);
 				self.add_child(*self.m_proxy_light);
 				self.m_proxy_light->set_transform(Transform{}, TransformSpace::LOCAL);
-				self.m_proxy_light->set_edit_flags(EditFlags::_NoEdit);
 			} else {
-				self.m_proxy_light->set_color(self.m_mat.emission);
-				self.m_proxy_light->set_intensity(self.m_mat.emission_intensity);
+				self.m_proxy_light->set_color(data.new_val.emission);
+				self.m_proxy_light->set_intensity(data.new_val.emission_intensity);
 			}
 		} else {
 			if (self.m_proxy_light) {
@@ -262,6 +276,5 @@ auto PTS::RenderableObject::static_init() -> void {
 				self.m_proxy_light = nullptr;
 			}
 		}
-	});
-	static_cast<void>(id);
+	};
 }

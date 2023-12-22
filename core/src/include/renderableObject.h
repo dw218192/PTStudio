@@ -30,19 +30,23 @@ namespace PTS {
 
 	struct RenderableObject : SceneObject {
 		RenderableObject(ObjectConstructorUsage usage = ObjectConstructorUsage::SERIALIZE) noexcept;
-		RenderableObject(Scene& scene, std::string_view name, Transform transform, Material mat,
+		RenderableObject(Scene& scene, std::string_view name, Transform transform, EditFlags edit_flags, Material mat,
 		                 tcb::span<Vertex const> vertices, tcb::span<unsigned const> indices);
-		RenderableObject(Scene& scene, Transform transform, Material mat, tcb::span<Vertex const> vertices,
+		RenderableObject(Scene& scene, Transform transform, EditFlags edit_flags, Material mat,
+		                 tcb::span<Vertex const> vertices,
 		                 tcb::span<unsigned const> indices);
 
-		NODISCARD static auto from_obj(Scene& scene, Material mat, std::string_view filename,
+		NODISCARD static auto from_obj(Scene& scene, EditFlags edit_flags, Material mat, std::string_view filename,
 		                               std::string* warning = nullptr) noexcept
 			-> tl::expected<RenderableObject, std::string>;
-		NODISCARD static auto make_triangle_obj(Scene& scene, Material mat,
+		NODISCARD static auto make_triangle_obj(Scene& scene, EditFlags edit_flags, Material mat,
 		                                        Transform trans) noexcept -> RenderableObject;
-		NODISCARD static auto make_quad_obj(Scene& scene, Material mat, Transform trans) noexcept -> RenderableObject;
-		NODISCARD static auto make_cube_obj(Scene& scene, Material mat, Transform trans) noexcept -> RenderableObject;
-		NODISCARD static auto make_sphere_obj(Scene& scene, Material mat, Transform trans) noexcept -> RenderableObject;
+		NODISCARD static auto make_quad_obj(Scene& scene, EditFlags edit_flags, Material mat,
+		                                    Transform trans) noexcept -> RenderableObject;
+		NODISCARD static auto make_cube_obj(Scene& scene, EditFlags edit_flags, Material mat,
+		                                    Transform trans) noexcept -> RenderableObject;
+		NODISCARD static auto make_sphere_obj(Scene& scene, EditFlags edit_flags, Material mat,
+		                                      Transform trans) noexcept -> RenderableObject;
 
 		NODISCARD auto get_bound() const noexcept -> auto const& {
 			return m_local_bound;
@@ -67,6 +71,19 @@ namespace PTS {
 		auto is_primitive() const noexcept -> bool {
 			return m_primitive_type != PrimitiveType::None;
 		}
+
+		auto get_proxy_light() const noexcept -> auto const& {
+			return m_proxy_light;
+		}
+
+		struct FieldTag {
+			static constexpr int LOCAL_BOUND = 0;
+			static constexpr int MAT = 1;
+			static constexpr int VERTICES = 2;
+			static constexpr int INDICES = 3;
+			static constexpr int PROXY_LIGHT = 4;
+			static constexpr int PRIMITIVE_TYPE = 5;
+		};
 
 	private:
 		DECL_DEFERRED_STATIC_INIT(static_init);

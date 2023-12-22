@@ -8,17 +8,9 @@
 #include <glm/ext/matrix_transform.hpp>
 #include <algorithm>
 
-auto PTS::Scene::from_obj_file(std::string_view filename) noexcept -> tl::expected<Scene, std::string> {
-	auto ret = Scene{};
-	auto obj = RenderableObject{};
-	TL_TRY_ASSIGN(obj, RenderableObject::from_obj(ret, Material{}, filename));
-	ret.add_object(std::move(obj));
-	return ret;
-}
-
 // here we assume +y is up
 auto PTS::Scene::get_good_cam_start() const noexcept -> LookAtParams {
-	constexpr float tan_alpha = 0.4663f;
+	constexpr auto tan_alpha = 0.4663f;
 
 	if (m_renderable_objects.empty()) {
 		return {glm::vec3{0, 2, 2}, glm::vec3{0}, glm::vec3{0, 1, 0}};
@@ -28,7 +20,7 @@ auto PTS::Scene::get_good_cam_start() const noexcept -> LookAtParams {
 	auto const extent = bound.get_extent();
 
 	// local means relative to the bounding box
-	float const cam_y_local = extent.y + 2;
+	auto const cam_y_local = extent.y + 2;
 	// tan(view_angle) = y_local / (extent.z + z_local)
 
 	return {
@@ -71,7 +63,7 @@ auto PTS::Scene::ray_cast_editable(Ray const& ray, float t_min, float t_max) noe
 	auto closest_t = t_max;
 	auto const light_bound = BoundingSphere{};
 	for (auto&& light : m_lights) {
-		if ((light.get_edit_flags() & EditFlags::_NoEdit) ||
+		if (!light.is_editable() ||
 			!(light.get_edit_flags() & EditFlags::Selectable)) {
 			continue;
 		}
@@ -95,7 +87,7 @@ auto PTS::Scene::ray_cast(Ray const& ray, float t_min, float t_max) noexcept -> 
 	auto ret = ObserverPtr<SceneObject>{nullptr};
 	auto closest_t = t_max;
 	for (auto&& obj : m_renderable_objects) {
-		if ((obj.get_edit_flags() & EditFlags::_NoEdit) ||
+		if (!obj.is_editable() ||
 			!(obj.get_edit_flags() & EditFlags::Selectable)) {
 			continue;
 		}
@@ -144,11 +136,15 @@ void PTS::Scene::on_deserialize() noexcept {
 }
 
 auto PTS::Scene::try_add_editable(Ref<SceneObject> obj_view) noexcept -> void {
-	if (!(obj_view.get().get_edit_flags() & EditFlags::_NoEdit)) {
+	if (obj_view.get().is_editable()) {
 		m_editables.emplace_back(obj_view);
 	}
 }
 
 auto PTS::Scene::try_remove_editable(View<SceneObject> obj_view) noexcept -> void {
 	m_editables.remove_if([&](auto&& obj) { return &obj.get() == &obj_view.get(); });
+}
+
+auto PTS::Scene::get_callback_list(SceneChangeType type) -> CallbackList<void(Ref<SceneObject>)>& {
+	return m_scene_callbacks[type];
 }

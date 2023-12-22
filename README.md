@@ -30,8 +30,10 @@ git clone --recursive [repo url]
     - [x] implement renderer switcher
     - [x] implement performance display
         - [x] fix FPS display bug
-    - [ ] implement child object
-        - [ ] a child object's transform is updated when its parent's transform is updated
+    - [x] implement child object
+        - [x] a child object's transform is updated when its parent's transform is updated
+    - [ ] implement object handle and change object container from list to vector
+        - currently object handle is just the address of the object, which will be invalidated when a vector resize happens
     - [ ] Editing Improvements
         - [ ] put mesh loading in a separate thread
         - [ ] adaptive grid resizing
@@ -42,9 +44,9 @@ git clone --recursive [repo url]
     - [ ] emissive material should be considered as a light source in editor renderer
     - [ ] lights should be considered in vulkan ray tracer
     - [ ] fix sphere primitive uv bug
-    - [ ] reflection system improvements
+    - [x] reflection system improvements
         - [x] support for single inheritance
-        - [ ] support for reference and pointer members
+        - [x] support for pointer members; reference not supported, reference members are bad anyways
 - Medium Priority
     - [ ] implement undo/redo system
     - [ ] fix GLTexture::save() bug
@@ -59,6 +61,7 @@ git clone --recursive [repo url]
                 - must be reflectable
                 - can be constructed given its class name
 - Low Priority
-    - [ ] implement scene object hierarchy
+    - [x] implement scene object hierarchy
+        - [ ] UI part
     - [ ] implement asset system
     - [ ] implement dynamic renderer DLL loading & unloading
