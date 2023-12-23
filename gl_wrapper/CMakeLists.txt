@@ -17,6 +17,7 @@ target_link_libraries(${lib_name}
     glm
     libglew_static
     expected
+    fmt-header-only
     span
 )
 target_include_directories(${lib_name} PUBLIC

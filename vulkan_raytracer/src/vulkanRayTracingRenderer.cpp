@@ -12,8 +12,6 @@
 #include "application.h"
 #include "imgui/reflectedField.h"
 
-using namespace PTS;
-
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 
 static constexpr auto k_desc_pool_sizes = std::array{
@@ -23,7 +21,7 @@ static constexpr auto k_desc_pool_sizes = std::array{
 	},
 	vk::DescriptorPoolSize{
 		vk::DescriptorType::eStorageBuffer,
-		3 + 2 * k_max_instances
+		3 + 2 * PTS::k_max_instances
 	},
 	vk::DescriptorPoolSize{
 		vk::DescriptorType::eStorageImage,
@@ -82,7 +80,7 @@ auto has_layer(tcb::span<vk::LayerProperties const> props, tcb::span<std::string
 [[nodiscard]] auto create_instance(
 	tcb::span<std::string_view> required_ins_ext,
 	tcb::span<std::string_view> required_gl_ext
-) -> tl::expected<VulkanInsInfo, std::string> {
+) -> tl::expected<PTS::VulkanInsInfo, std::string> {
 	auto glfw_extensions_count = 0u;
 	auto glfw_exts_raw = glfwGetRequiredInstanceExtensions(&glfw_extensions_count);
 	auto ins_exts = std::vector<std::string_view>{
@@ -153,7 +151,7 @@ auto has_layer(tcb::span<vk::LayerProperties const> props, tcb::span<std::string
 		);
 
 		VULKAN_HPP_DEFAULT_DISPATCHER.init(*ins);
-		return VulkanInsInfo{{std::move(ins)}, std::move(ins_exts), std::move(layers)};
+		return PTS::VulkanInsInfo{{std::move(ins)}, std::move(ins_exts), std::move(layers)};
 	} catch (vk::SystemError& err) {
 		return TL_ERROR(err.what());
 	}
@@ -161,10 +159,10 @@ auto has_layer(tcb::span<vk::LayerProperties const> props, tcb::span<std::string
 
 template <typename CreateInfoChainType>
 [[nodiscard]] auto create_device(
-	VulkanInsInfo const& ins,
+	PTS::VulkanInsInfo const& ins,
 	tcb::span<std::string_view> required_device_ext,
 	std::function<CreateInfoChainType(vk::DeviceCreateInfo)> create_info_chain
-) -> tl::expected<VulkanDeviceInfo, std::string> {
+) -> tl::expected<PTS::VulkanDeviceInfo, std::string> {
 	try {
 		// get a physical device
 		auto const physical_devices = ins->enumeratePhysicalDevices();
@@ -225,13 +223,14 @@ template <typename CreateInfoChainType>
 		auto dev = physical_device.createDeviceUnique(info_chain.get<vk::DeviceCreateInfo>());
 		VULKAN_HPP_DEFAULT_DISPATCHER.init(*dev);
 
-		return VulkanDeviceInfo{{std::move(dev)}, physical_device, queue_family_index};
+		return PTS::VulkanDeviceInfo{{std::move(dev)}, physical_device, queue_family_index};
 	} catch (vk::SystemError& err) {
 		return TL_ERROR(err.what());
 	}
 }
 
-[[nodiscard]] auto create_cmd_pool(VulkanDeviceInfo const& dev) -> tl::expected<VulkanCmdPoolInfo, std::string> {
+[[nodiscard]] auto create_cmd_pool(
+	PTS::VulkanDeviceInfo const& dev) -> tl::expected<PTS::VulkanCmdPoolInfo, std::string> {
 	try {
 		auto cmd_pool = dev->createCommandPoolUnique(
 			vk::CommandPoolCreateInfo{
@@ -243,31 +242,31 @@ template <typename CreateInfoChainType>
 		);
 		auto const queue = dev->getQueue(dev.queue_family_idx, 0);
 
-		return VulkanCmdPoolInfo{{std::move(cmd_pool)}, queue};
+		return PTS::VulkanCmdPoolInfo{{std::move(cmd_pool)}, queue};
 	} catch (vk::SystemError& err) {
 		return TL_ERROR(err.what());
 	}
 }
 
 [[nodiscard]] auto
-create_desc_set_pool(VulkanDeviceInfo const& dev) -> tl::expected<VulkanDescSetPoolInfo, std::string> {
+create_desc_set_pool(PTS::VulkanDeviceInfo const& dev) -> tl::expected<PTS::VulkanDescSetPoolInfo, std::string> {
 	try {
 		auto pool = dev->createDescriptorPoolUnique(
 			vk::DescriptorPoolCreateInfo{}
 			.setFlags(
 				vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet |
 				vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind)
-			.setMaxSets(RayTracingBindings::k_num_sets)
+			.setMaxSets(PTS::RayTracingBindings::k_num_sets)
 			.setPoolSizes(k_desc_pool_sizes)
 		);
-		return VulkanDescSetPoolInfo{{std::move(pool)}};
+		return PTS::VulkanDescSetPoolInfo{{std::move(pool)}};
 	} catch (vk::SystemError& err) {
 		return TL_ERROR(err.what());
 	}
 }
 
 [[nodiscard]] auto create_tex(
-	VulkanDeviceInfo& dev,
+	PTS::VulkanDeviceInfo& dev,
 	vk::Format fmt,
 	unsigned width, unsigned height,
 	vk::ImageUsageFlags usage_flags,
@@ -277,7 +276,7 @@ create_desc_set_pool(VulkanDeviceInfo const& dev) -> tl::expected<VulkanDescSetP
 	vk::ImageLayout layout,
 	vk::SamplerCreateInfo sampler_info,
 	bool shared
-) -> tl::expected<VulkanImageInfo, std::string> {
+) -> tl::expected<PTS::VulkanImageInfo, std::string> {
 	try {
 		auto img_info = vk::ImageCreateInfo{
 			vk::ImageCreateFlags{},
@@ -294,11 +293,11 @@ create_desc_set_pool(VulkanDeviceInfo const& dev) -> tl::expected<VulkanDescSetP
 			nullptr,
 			initial_layout
 		};
-		auto shared_img = VulkanGLInteropUtils::SharedImage{};
+		auto shared_img = PTS::VulkanGLInteropUtils::SharedImage{};
 
 		if (shared) {
 			TL_TRY_ASSIGN(shared_img,
-			              VulkanGLInteropUtils::create_shared_image(
+			              PTS::VulkanGLInteropUtils::create_shared_image(
 				              *dev,
 				              img_info,
 				              prop_flags,
@@ -331,7 +330,7 @@ create_desc_set_pool(VulkanDeviceInfo const& dev) -> tl::expected<VulkanDescSetP
 		);
 
 		auto sampler = dev->createSamplerUnique(sampler_info);
-		return VulkanImageInfo{
+		return PTS::VulkanImageInfo{
 			std::move(shared_img),
 			std::move(view),
 			layout,
@@ -344,9 +343,9 @@ create_desc_set_pool(VulkanDeviceInfo const& dev) -> tl::expected<VulkanDescSetP
 
 
 [[nodiscard]] auto create_cmd_buf(
-	VulkanDeviceInfo const& dev,
-	VulkanCmdPoolInfo const& cmd_pool
-) -> tl::expected<VulkanCmdBufInfo, std::string> {
+	PTS::VulkanDeviceInfo const& dev,
+	PTS::VulkanCmdPoolInfo const& cmd_pool
+) -> tl::expected<PTS::VulkanCmdBufInfo, std::string> {
 	auto cmd_buf = vk::UniqueCommandBuffer{};
 	try {
 		auto cmd_bufs = dev->allocateCommandBuffersUnique(
@@ -361,13 +360,13 @@ create_desc_set_pool(VulkanDeviceInfo const& dev) -> tl::expected<VulkanDescSetP
 		return TL_ERROR(err.what());
 	}
 
-	return VulkanCmdBufInfo{{std::move(cmd_buf)}};
+	return PTS::VulkanCmdBufInfo{{std::move(cmd_buf)}};
 }
 
 PTS::VulkanRayTracingRenderer::VulkanRayTracingRenderer(RenderConfig config)
 	: Renderer{config, "Vulkan Ray Tracer"} {
 	SceneObject::get_field_info<SceneObject::FieldTag::LOCAL_TRANSFORM>().get_on_change_callback_list()
-		+= m_on_trans_change;
+		+= m_on_obj_local_trans_change;
 
 	RenderableObject::get_field_info<RenderableObject::FieldTag::MAT>().get_on_change_callback_list()
 		+= m_on_mat_change;
@@ -375,10 +374,11 @@ PTS::VulkanRayTracingRenderer::VulkanRayTracingRenderer(RenderConfig config)
 
 PTS::VulkanRayTracingRenderer::~VulkanRayTracingRenderer() noexcept {
 	SceneObject::get_field_info<SceneObject::FieldTag::LOCAL_TRANSFORM>().get_on_change_callback_list()
-		-= m_on_trans_change;
+		-= m_on_obj_local_trans_change;
 
 	RenderableObject::get_field_info<RenderableObject::FieldTag::MAT>().get_on_change_callback_list()
 		-= m_on_mat_change;
+
 	if (m_scene) {
 		m_scene->get_callback_list(SceneChangeType::OBJECT_ADDED) -= m_on_add_obj;
 		m_scene->get_callback_list(SceneChangeType::OBJECT_REMOVED) -= m_on_remove_obj;
@@ -457,8 +457,8 @@ auto PTS::VulkanRayTracingRenderer::on_remove_obj(Ref<SceneObject> obj) noexcept
 	TL_CHECK_NON_FATAL(m_app, LogLevel::Error, reset_path_tracing());
 }
 
-auto VulkanRayTracingRenderer::on_trans_change(
-	SceneObject::callback_data_t<SceneObject::FieldTag::LOCAL_TRANSFORM> data) noexcept -> void {
+auto PTS::VulkanRayTracingRenderer::on_obj_local_trans_change(
+	SceneObject::callback_data_t<SceneObject::FieldTag::LOCAL_TRANSFORM> data) -> void {
 	if (auto const render_obj = data.obj.as<RenderableObject>()) {
 		auto const it = m_obj_data.find(render_obj);
 		if (it != m_obj_data.end()) {
@@ -473,8 +473,8 @@ auto VulkanRayTracingRenderer::on_trans_change(
 	TL_CHECK_NON_FATAL(m_app, LogLevel::Error, reset_path_tracing());
 }
 
-auto VulkanRayTracingRenderer::on_mat_change(
-	RenderableObject::callback_data_t<RenderableObject::FieldTag::MAT> data) noexcept -> void {
+auto PTS::VulkanRayTracingRenderer::on_mat_change(
+	RenderableObject::callback_data_t<RenderableObject::FieldTag::MAT> data) -> void {
 	auto const it = m_obj_data.find(&data.obj);
 	if (it != m_obj_data.end()) {
 		auto mat_data = MaterialData{data.obj.get_material()};
@@ -683,7 +683,7 @@ auto PTS::VulkanRayTracingRenderer::draw_imgui() noexcept -> tl::expected<void, 
 	return {};
 }
 
-auto VulkanRayTracingRenderer::reset_path_tracing() noexcept -> tl::expected<void, std::string> {
+auto PTS::VulkanRayTracingRenderer::reset_path_tracing() noexcept -> tl::expected<void, std::string> {
 	m_path_tracing_data.iteration = 0;
 
 	return {};

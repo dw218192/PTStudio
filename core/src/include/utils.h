@@ -29,14 +29,15 @@ constexpr T div_up(T x, T y) {
 	return (x + y - 1) / y;
 }
 
-// c++23 expected
+// c++23 expected, fmt
 #include <tl/expected.hpp>
+#include <fmt/core.h>
 
 // convenience helpers
 #ifdef NDEBUG
-#define TL_ERROR(msg) tl::unexpected { msg }
+#define TL_ERROR(msg, ...) tl::unexpected { fmt::format(msg, __VA_ARGS__) }
 #else
-#define TL_ERROR(msg) tl::unexpected { std::string{__FILE__} + ":" + std::to_string(__LINE__) + ": " + (msg) }
+#define TL_ERROR(msg, ...) tl::unexpected { std::string{__FILE__} + ":" + std::to_string(__LINE__) + ": " + fmt::format(msg, __VA_ARGS__) }
 #endif
 
 

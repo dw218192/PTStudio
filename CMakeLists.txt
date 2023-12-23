@@ -82,6 +82,7 @@ add_subdirectory(${EXT_DIR}/tinyobjloader EXCLUDE_FROM_ALL)
 add_subdirectory(${EXT_DIR}/stb EXCLUDE_FROM_ALL)
 add_subdirectory(${EXT_DIR}/nativefiledialog EXCLUDE_FROM_ALL)
 add_subdirectory(${EXT_DIR}/span EXCLUDE_FROM_ALL)
+add_subdirectory(${EXT_DIR}/fmt EXCLUDE_FROM_ALL)
 
 set(EXPECTED_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 add_subdirectory(${EXT_DIR}/expected EXCLUDE_FROM_ALL)

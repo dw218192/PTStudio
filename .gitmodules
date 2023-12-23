@@ -37,3 +37,6 @@
 	path = ext/Catch2
 	url = https://github.com/catchorg/Catch2.git
 	branch = v2.x
+[submodule "ext/fmt"]
+	path = ext/fmt
+	url = https://github.com/fmtlib/fmt.git

@@ -21,6 +21,7 @@ target_link_libraries(${lib_name}
 	stb
 	imgui
 	expected
+	fmt-header-only
 	nativefiledialog
 	span
 	nlohmann_json

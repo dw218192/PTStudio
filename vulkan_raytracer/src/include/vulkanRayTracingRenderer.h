@@ -33,9 +33,6 @@ namespace PTS {
 		[[nodiscard]] auto remove_object(RenderableObject const& obj) -> tl::expected<void, std::string>;
 		auto on_add_obj(Ref<SceneObject> obj) noexcept -> void;
 		auto on_remove_obj(Ref<SceneObject> obj) noexcept -> void;
-		auto on_trans_change(
-			SceneObject::callback_data_t<SceneObject::FieldTag::LOCAL_TRANSFORM> data) noexcept -> void;
-		auto on_mat_change(RenderableObject::callback_data_t<RenderableObject::FieldTag::MAT> data) noexcept -> void;
 
 		Callback<void(Ref<SceneObject>)> m_on_add_obj{
 			[this](Ref<SceneObject> data) { this->on_add_obj(data); }
@@ -43,12 +40,9 @@ namespace PTS {
 		Callback<void(Ref<SceneObject>)> m_on_remove_obj{
 			[this](Ref<SceneObject> data) { this->on_remove_obj(data); }
 		};
-		Callback<void(SceneObject::callback_data_t<SceneObject::FieldTag::LOCAL_TRANSFORM>)> m_on_trans_change{
-			[this](auto data) { this->on_trans_change(data); }
-		};
-		Callback<void(RenderableObject::callback_data_t<RenderableObject::FieldTag::MAT>)> m_on_mat_change{
-			[this](auto data) { this->on_mat_change(data); }
-		};
+
+		DECL_FIELD_EVENT_MEMBERS(on_obj_local_trans_change, SceneObject, SceneObject::FieldTag::LOCAL_TRANSFORM);
+		DECL_FIELD_EVENT_MEMBERS(on_mat_change, RenderableObject, RenderableObject::FieldTag::MAT);
 
 		ObserverPtr<Scene> m_scene{nullptr};
 		VulkanInsInfo m_vk_ins;

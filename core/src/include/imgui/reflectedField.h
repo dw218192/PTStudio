@@ -79,7 +79,7 @@ namespace ImGui {
 				auto&& field = field_info.get(reflected);
 				constexpr auto range_mod =
 					field_info
-					.template get_modifier<MRange<typename FieldInfo::type>>();
+					.template get_modifier<PTS::MRange<typename FieldInfo::type>>();
 				if constexpr (range_mod) {
 					return ImGui::SliderFloat(label, &field, range_mod->min,
 					                          range_mod->max);
@@ -98,7 +98,7 @@ namespace ImGui {
 				auto&& field = field_info.get(reflected);
 				constexpr auto range_mod =
 					field_info
-					.template get_modifier<MRange<typename FieldInfo::type>>();
+					.template get_modifier<PTS::MRange<typename FieldInfo::type>>();
 				if constexpr (range_mod) {
 					return ImGui::SliderInt(label, &field, range_mod->min,
 					                        range_mod->max);
@@ -155,9 +155,9 @@ namespace ImGui {
 			                 Reflected& reflected) -> bool {
 				auto changed = false;
 
-				constexpr auto enum_mod = field_info.template get_modifier<MEnum>();
+				constexpr auto enum_mod = field_info.template get_modifier<PTS::MEnum>();
 				constexpr auto enum_flags_mod =
-					field_info.template get_modifier<MEnumFlags>();
+					field_info.template get_modifier<PTS::MEnumFlags>();
 
 				if constexpr (enum_mod) {
 					auto&& field = field_info.get(reflected);
@@ -230,7 +230,7 @@ namespace ImGui {
 			                 FieldInfo field_info,
 			                 Reflected& reflected) -> bool {
 				auto&& field = field_info.get(reflected);
-				constexpr auto color_mod = field_info.template get_modifier<MColor>();
+				constexpr auto color_mod = field_info.template get_modifier<PTS::MColor>();
 				if constexpr (color_mod) {
 					return ImGui::ColorEdit3(label, glm::value_ptr(field));
 				} else {
@@ -246,7 +246,7 @@ namespace ImGui {
 			                 FieldInfo field_info,
 			                 Reflected& reflected) -> bool {
 				auto&& field = field_info.get(reflected);
-				constexpr auto color_mod = field_info.template get_modifier<MColor>();
+				constexpr auto color_mod = field_info.template get_modifier<PTS::MColor>();
 				if constexpr (color_mod) {
 					return ImGui::ColorEdit4(label, glm::value_ptr(field));
 				} else {
@@ -398,7 +398,7 @@ namespace ImGui {
 							                                        } +
 							                                        "[" + std::to_string(I) + "]";
 						                                        auto sub_type_name =
-							                                        Type::of<std::tuple_element_t<I, TupleType>>().
+							                                        PTS::Type::of<std::tuple_element_t<I, TupleType>>().
 							                                        to_string();
 						                                        auto sub_field_info =
 							                                        TupleElementFieldInfo<Reflected,
@@ -426,8 +426,8 @@ namespace ImGui {
 		PTS::Traits::has_tfield_interface_v<TemplatedFieldInfo>, bool> {
 		auto changed = false;
 		using FieldType = typename TemplatedFieldInfo::type;
-		if constexpr (!field_info.template has_modifier<MNoInspect>()) {
-			if constexpr (field_info.template has_modifier<MReadOnly>()) {
+		if constexpr (!field_info.template has_modifier<PTS::MNoInspect>()) {
+			if constexpr (field_info.template has_modifier<PTS::MReadOnly>()) {
 				ImGui::BeginDisabled();
 			}
 			if (detail::DoField<detail::Dispatch_t<FieldType>>::impl(
@@ -435,7 +435,7 @@ namespace ImGui {
 				changed = true;
 				field_info.on_change(field_info.get(reflected), reflected);
 			}
-			if constexpr (field_info.template has_modifier<MReadOnly>()) {
+			if constexpr (field_info.template has_modifier<PTS::MReadOnly>()) {
 				ImGui::EndDisabled();
 			}
 		}
