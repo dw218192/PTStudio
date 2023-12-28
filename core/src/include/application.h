@@ -9,7 +9,9 @@ namespace PTS {
 	          Debug,
 	          Info,
 	          Warning,
-	          Error
+	          Error,
+	          StdOut,
+	          StdErr
 	);
 
 	/**
@@ -32,21 +34,33 @@ namespace PTS {
 
 		template <typename... Args>
 		void log(LogLevel level, std::string_view fmt, Args&&... args) noexcept {
-#if NDEBUG
+#ifdef NDEBUG
             if (level == LogLevel::Debug) {
                 return;
             }
 #endif
-			++m_line_cnt;
-
-			if (m_line_cnt > m_max_line_cnt) {
-				if (!m_logs.empty()) {
-					m_logs.pop_front();
-					--m_line_cnt;
+			try {
+				if (level == LogLevel::StdOut) {
+					fmt::println(fmt, std::forward<Args>(args)...);
+					return;
+				} else if (level == LogLevel::StdErr) {
+					fmt::println(stderr, fmt, std::forward<Args>(args)...);
 				}
-			}
 
-			m_logs.emplace_back(level, fmt::format(fmt, std::forward<Args>(args)...));
+				++m_line_cnt;
+
+				if (m_line_cnt > m_max_line_cnt) {
+					if (!m_logs.empty()) {
+						m_logs.pop_front();
+						--m_line_cnt;
+					}
+				}
+
+				m_logs.emplace_back(level, fmt::format(fmt, std::forward<Args>(args)...));
+			} catch (fmt::format_error const& err) {
+				m_logs.clear();
+				std::cerr << err.what() << std::endl;
+			}
 			on_log_added();
 		}
 

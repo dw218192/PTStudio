@@ -111,6 +111,8 @@
         "typeindex": "cpp",
         "*.hpp11": "cpp",
         "*.rh": "cpp",
-        "*.def": "cpp"
+        "*.def": "cpp",
+        "complex": "cpp",
+        "source_location": "cpp"
     }
 }

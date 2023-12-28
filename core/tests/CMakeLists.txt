@@ -8,6 +8,7 @@ add_subdirectory(${EXT_DIR}/Catch2 ${CMAKE_BINARY_DIR}/Catch2)
 list(APPEND TEST_NAMES
     test_reflection    
     test_type_traits
+    test_compiletime_str
 )
 
 foreach(TEST_NAME IN LISTS TEST_NAMES)
@@ -16,3 +17,5 @@ foreach(TEST_NAME IN LISTS TEST_NAMES)
     target_include_directories(${TEST_NAME} PRIVATE ../src/include ${EXT_DIR}/Catch2/single_include)
     target_link_libraries(${TEST_NAME} PRIVATE Catch2::Catch2)
 endforeach()
+
+target_link_libraries(test_compiletime_str PRIVATE fmt-header-only)

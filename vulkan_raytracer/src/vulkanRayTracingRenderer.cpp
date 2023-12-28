@@ -256,7 +256,7 @@ create_desc_set_pool(PTS::VulkanDeviceInfo const& dev) -> tl::expected<PTS::Vulk
 			.setFlags(
 				vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet |
 				vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind)
-			.setMaxSets(PTS::RayTracingBindings::k_num_sets)
+			.setMaxSets(PTS::VulkanRayTracingShaders::RayTracingBindings::k_num_sets)
 			.setPoolSizes(k_desc_pool_sizes)
 		);
 		return PTS::VulkanDescSetPoolInfo{{std::move(pool)}};
@@ -370,6 +370,23 @@ PTS::VulkanRayTracingRenderer::VulkanRayTracingRenderer(RenderConfig config)
 
 	RenderableObject::get_field_info<RenderableObject::FieldTag::MAT>().get_on_change_callback_list()
 		+= m_on_mat_change;
+
+	m_light_data_link.get_on_push_back_callbacks() += [this](VulkanBufferInfo* buf, Light const*, LightData const&) {
+		TL_CHECK_NON_FATAL(m_app, LogLevel::Error,
+		                   buf->upload(tcb::span{ m_light_data_link.data(), m_light_data_link.size() }));
+	};
+
+	m_light_data_link.get_on_erase_callbacks() += [this](VulkanBufferInfo* buf, Light const*, LightData const&) {
+		TL_CHECK_NON_FATAL(m_app, LogLevel::Error,
+		                   buf->upload(tcb::span{ m_light_data_link.data(), m_light_data_link.size() }));
+	};
+
+	m_light_data_link.get_on_update_callbacks() += [this](VulkanBufferInfo* buf, Light const* light,
+	                                                      LightData const& data) {
+		auto id = size_t{};
+		TL_TRY_ASSIGN_NON_FATAL(id, m_app, LogLevel::Error, m_light_data_link.get_idx(light));
+		TL_CHECK_NON_FATAL(m_app, LogLevel::Info, buf->upload(data, id * sizeof(LightData)));
+	};
 }
 
 PTS::VulkanRayTracingRenderer::~VulkanRayTracingRenderer() noexcept {
@@ -410,13 +427,8 @@ auto PTS::VulkanRayTracingRenderer::open_scene(Ref<Scene> scene) noexcept
 
 	if (*m_vk_pipeline) {
 		// remove all objects
-		auto to_remove = std::vector<RenderableObject const*>(m_obj_data.size());
-		std::transform(m_obj_data.begin(), m_obj_data.end(), to_remove.begin(),
-		               [](auto&& kvp) {
-			               return kvp.first;
-		               });
-		for (auto const pobj : to_remove) {
-			TL_CHECK_AND_PASS(remove_object(*pobj));
+		for (auto const& kvp : m_rend_obj_data) {
+			TL_CHECK_AND_PASS(remove_object(*kvp.first));
 		}
 	} else {
 		// continue first time initialization, following init() call
@@ -431,11 +443,16 @@ auto PTS::VulkanRayTracingRenderer::open_scene(Ref<Scene> scene) noexcept
 		TL_TRY_ASSIGN(m_vk_render_cmd_buf, create_cmd_buf(m_vk_device, m_vk_cmd_pool));
 	}
 
+	// set link to the light data
+	m_light_data_link.get_user_data() = &m_vk_pipeline.lights_mem;
+
 	// add objects
 	for (auto& obj : scene.get().get_objects_of_type<RenderableObject>()) {
 		TL_CHECK_AND_PASS(add_object(obj));
 	}
-
+	for (auto& obj : scene.get().get_objects_of_type<Light>()) {
+		TL_CHECK_AND_PASS(add_object(obj));
+	}
 	// clear output image
 	TL_CHECK_AND_PASS(reset_path_tracing());
 
@@ -443,25 +460,21 @@ auto PTS::VulkanRayTracingRenderer::open_scene(Ref<Scene> scene) noexcept
 }
 
 auto PTS::VulkanRayTracingRenderer::on_add_obj(Ref<SceneObject> obj) noexcept -> void {
-	if (auto const render_obj = dynamic_cast<RenderableObject*>(&obj.get())) {
-		TL_CHECK_NON_FATAL(m_app, LogLevel::Error, add_object(*render_obj));
-	}
+	TL_CHECK_NON_FATAL(m_app, LogLevel::Error, add_object(obj));
 	TL_CHECK_NON_FATAL(m_app, LogLevel::Error, reset_path_tracing());
 }
 
 
 auto PTS::VulkanRayTracingRenderer::on_remove_obj(Ref<SceneObject> obj) noexcept -> void {
-	if (auto const render_obj = dynamic_cast<RenderableObject*>(&obj.get())) {
-		TL_CHECK_NON_FATAL(m_app, LogLevel::Error, remove_object(*render_obj));
-	}
+	TL_CHECK_NON_FATAL(m_app, LogLevel::Error, remove_object(obj));
 	TL_CHECK_NON_FATAL(m_app, LogLevel::Error, reset_path_tracing());
 }
 
 auto PTS::VulkanRayTracingRenderer::on_obj_local_trans_change(
 	SceneObject::callback_data_t<SceneObject::FieldTag::LOCAL_TRANSFORM> data) -> void {
 	if (auto const render_obj = data.obj.as<RenderableObject>()) {
-		auto const it = m_obj_data.find(render_obj);
-		if (it != m_obj_data.end()) {
+		auto const it = m_rend_obj_data.find(render_obj);
+		if (it != m_rend_obj_data.end()) {
 			TL_CHECK_NON_FATAL(m_app, LogLevel::Error,
 			                   m_vk_pipeline.top_accel.update_instance_transform(
 				                   it->second.gpu_idx,
@@ -475,22 +488,24 @@ auto PTS::VulkanRayTracingRenderer::on_obj_local_trans_change(
 
 auto PTS::VulkanRayTracingRenderer::on_mat_change(
 	RenderableObject::callback_data_t<RenderableObject::FieldTag::MAT> data) -> void {
-	auto const it = m_obj_data.find(&data.obj);
-	if (it != m_obj_data.end()) {
-		auto mat_data = MaterialData{data.obj.get_material()};
+	auto const it = m_rend_obj_data.find(&data.obj);
+	if (it != m_rend_obj_data.end()) {
+		auto mat_data = VulkanRayTracingShaders::MaterialData{data.obj.get_material()};
 		TL_CHECK_NON_FATAL(m_app, LogLevel::Error,
 		                   m_vk_pipeline.materials_mem.upload(
 			                   mat_data,
-			                   it->second.gpu_idx * sizeof(MaterialData)
+			                   it->second.gpu_idx * sizeof(VulkanRayTracingShaders::MaterialData)
 		                   )
 		);
+	} else {
+		m_app->log(LogLevel::Error, "cannot find object {}", data.obj.get_name());
 	}
 	TL_CHECK_NON_FATAL(m_app, LogLevel::Error, reset_path_tracing());
 }
 
 auto PTS::VulkanRayTracingRenderer::render(View<Camera> camera) noexcept
 	-> tl::expected<TextureHandle, std::string> {
-	auto camera_data = CameraData{camera.get()};
+	auto camera_data = VulkanRayTracingShaders::CameraData{camera.get()};
 	if (m_path_tracing_data.camera_data && camera_data != m_path_tracing_data.camera_data) {
 		if (*m_path_tracing_data.camera_data != camera_data) {
 			TL_CHECK(reset_path_tracing());
@@ -501,7 +516,7 @@ auto PTS::VulkanRayTracingRenderer::render(View<Camera> camera) noexcept
 	if (m_editing_data.unlimited_samples ||
 		m_path_tracing_data.iteration < m_editing_data.num_samples) {
 		// update per frame data
-		auto per_frame_data = PerFrameData{
+		auto const per_frame_data = VulkanRayTracingShaders::PerFrameData{
 			camera_data,
 			m_path_tracing_data.iteration,
 			m_editing_data.num_samples,
@@ -518,7 +533,7 @@ auto PTS::VulkanRayTracingRenderer::render(View<Camera> camera) noexcept
 					*m_vk_pipeline.layout,
 					vk::ShaderStageFlagBits::eRaygenKHR,
 					0,
-					sizeof(PerFrameData),
+					sizeof(VulkanRayTracingShaders::PerFrameData),
 					&per_frame_data
 				);
 
@@ -689,52 +704,62 @@ auto PTS::VulkanRayTracingRenderer::reset_path_tracing() noexcept -> tl::expecte
 	return {};
 }
 
-auto PTS::VulkanRayTracingRenderer::add_object(RenderableObject const& obj) -> tl::expected<void, std::string> {
-	if (m_obj_data.count(&obj)) {
-		return TL_ERROR("object already added");
+auto PTS::VulkanRayTracingRenderer::add_object(SceneObject const& obj) -> tl::expected<void, std::string> {
+	if (auto render_obj = obj.as<RenderableObject>()) {
+		if (m_rend_obj_data.count(render_obj)) {
+			return TL_ERROR("object already added");
+		}
+		// create bottom level acceleration structure
+		auto vk_bottom_accel = VulkanBottomAccelStructInfo{};
+		TL_TRY_ASSIGN(vk_bottom_accel, VulkanBottomAccelStructInfo::create(m_vk_device, m_vk_cmd_pool, *render_obj));
+
+		// add instance to top level acceleration structure
+		auto id = size_t{0};
+		TL_TRY_ASSIGN(id,
+		              m_vk_pipeline.top_accel.add_instance(
+			              std::move(vk_bottom_accel),
+			              obj.get_transform(TransformSpace::WORLD).get_matrix()
+		              )
+		);
+
+		// bind the vertex attributes and indices to the corresponding buffers
+		auto const& vertex_attribs = render_obj->get_vertices();
+		auto const& indices = render_obj->get_indices();
+
+		TL_CHECK_AND_PASS(m_vk_pipeline.bind_vertex_attribs(m_vk_device, id, vertex_attribs));
+		TL_CHECK_AND_PASS(m_vk_pipeline.bind_indices(m_vk_device, id, indices));
+
+		// update material buffer
+		auto mat_data = VulkanRayTracingShaders::MaterialData{render_obj->get_material()};
+		TL_CHECK_AND_PASS(
+			m_vk_pipeline.materials_mem.upload(
+				mat_data,
+				id * sizeof(VulkanRayTracingShaders::MaterialData)
+			)
+		);
+		m_rend_obj_data.emplace(render_obj, PerObjectData{id});
+	} else if (auto const light = obj.as<Light>()) {
+		TL_CHECK(m_light_data_link.push_back(light, light->get_data()));
+	} else {
+		return TL_ERROR("unknown object of type: {}", obj.get_class_name());
 	}
-
-	// create bottom level acceleration structure
-	auto vk_bottom_accel = VulkanBottomAccelStructInfo{};
-	TL_TRY_ASSIGN(vk_bottom_accel, VulkanBottomAccelStructInfo::create(m_vk_device, m_vk_cmd_pool, obj));
-
-	// add instance to top level acceleration structure
-	auto id = size_t{0};
-	TL_TRY_ASSIGN(id,
-	              m_vk_pipeline.top_accel.add_instance(
-		              std::move(vk_bottom_accel),
-		              obj.get_transform(TransformSpace::WORLD).get_matrix()
-	              )
-	);
-
-	// bind the vertex attributes and indices to the corresponding buffers
-	auto const& vertex_attribs = obj.get_vertices();
-	auto const& indices = obj.get_indices();
-
-	TL_CHECK_AND_PASS(m_vk_pipeline.bind_vertex_attribs(m_vk_device, id, vertex_attribs));
-	TL_CHECK_AND_PASS(m_vk_pipeline.bind_indices(m_vk_device, id, indices));
-
-	// update material buffer
-	auto mat_data = MaterialData{obj.get_material()};
-	TL_CHECK_AND_PASS(
-		m_vk_pipeline.materials_mem.upload(
-			mat_data,
-			id * sizeof(MaterialData)
-		)
-	);
-
-	m_obj_data.emplace(&obj, PerObjectData{id});
 
 	return {};
 }
 
-auto PTS::VulkanRayTracingRenderer::remove_object(RenderableObject const& obj) -> tl::expected<void, std::string> {
-	auto it = m_obj_data.find(&obj);
-	if (it == m_obj_data.end()) {
-		return TL_ERROR("object not found");
+auto PTS::VulkanRayTracingRenderer::remove_object(SceneObject const& obj) -> tl::expected<void, std::string> {
+	if (auto const render_obj = obj.as<RenderableObject>()) {
+		auto const it = m_rend_obj_data.find(render_obj);
+		if (it == m_rend_obj_data.end()) {
+			return TL_ERROR("object not found");
+		}
+		TL_CHECK_AND_PASS(m_vk_pipeline.top_accel.remove_instance(it->second.gpu_idx));
+		m_rend_obj_data.erase(it);
+	} else if (auto const light = obj.as<Light>()) {
+		TL_CHECK_AND_PASS(m_light_data_link.erase(light));
+	} else {
+		return TL_ERROR("unknown object of type: {}", obj.get_class_name());
 	}
-	TL_CHECK_AND_PASS(m_vk_pipeline.top_accel.remove_instance(it->second.gpu_idx));
-	m_obj_data.erase(it);
 
 	// no need to remove vertex attributes and indices because they will be overwritten
 	return {};

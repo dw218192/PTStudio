@@ -32,16 +32,15 @@ git clone --recursive [repo url]
         - [x] fix FPS display bug
     - [x] implement child object
         - [x] a child object's transform is updated when its parent's transform is updated
-    - [ ] implement object handle and change object container from list to vector
-        - currently object handle is just the address of the object, which will be invalidated when a vector resize happens
     - [ ] Editing Improvements
         - [ ] put mesh loading in a separate thread
         - [ ] adaptive grid resizing
         - [ ] Ctrl+S to save scene (first time a file dialog will pop up, then subsequent saves will save to the same file)
         - [ ] Ctrl+D and Ctrl+C to duplicate selected objects
         - [ ] Ctrl+Z and Ctrl+Y to undo/redo
-        - [ ] camera should move faster the further away it is from the center
-    - [ ] emissive material should be considered as a light source in editor renderer
+        - [x] camera should move faster the further away it is from the center
+    - [x] emissive material should be considered as a light source in editor renderer
+        - [ ] make it a mesh light source, consider using LTC for area light
     - [ ] lights should be considered in vulkan ray tracer
     - [ ] fix sphere primitive uv bug
     - [x] reflection system improvements

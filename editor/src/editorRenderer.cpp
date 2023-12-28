@@ -62,6 +62,18 @@ EditorRenderer::EditorRenderer(RenderConfig config) noexcept : Renderer{std::mov
 
 	SceneObject::get_field_info<SceneObject::FieldTag::LOCAL_TRANSFORM>().get_on_change_callback_list()
 		+= m_on_obj_local_trans_change;
+
+	auto upload_light_data = [this](GLBufferRef& buf, Light const*, LightData const&) {
+		TL_CHECK_NON_FATAL(m_app, LogLevel::Error, buf->bind());
+		TL_CHECK_NON_FATAL(m_app, LogLevel::Error,
+		                   buf->set_data(tcb::span{ m_light_data_link.data(), m_light_data_link.size() },
+			                   GL_DYNAMIC_DRAW));
+		buf->unbind();
+	};
+
+	m_light_data_link.get_on_push_back_callbacks() += upload_light_data;
+	m_light_data_link.get_on_erase_callbacks() += upload_light_data;
+	m_light_data_link.get_on_update_callbacks() += upload_light_data;
 }
 
 EditorRenderer::~EditorRenderer() noexcept {
@@ -162,7 +174,7 @@ auto EditorRenderer::init(ObserverPtr<Application> app) noexcept -> tl::expected
 	}
 
 	// set up light ubo
-	TL_TRY_ASSIGN(m_light_data.ubo, GLBuffer::create(GL_UNIFORM_BUFFER));
+	TL_TRY_ASSIGN(m_light_data_link.get_user_data(), GLBuffer::create(GL_UNIFORM_BUFFER));
 
 	// set up gizmo sprite data
 	TL_TRY_ASSIGN(m_light_gizmo_data.texture, GLTexture::create(light_icon_png_data, FileFormat::PNG));
@@ -182,13 +194,13 @@ auto EditorRenderer::init(ObserverPtr<Application> app) noexcept -> tl::expected
 	// set up fonts for text editor
 	// ImGui will use Font[0] as the default font
 	ImGui::GetIO().Fonts->AddFontDefault();
-	for (int sz = SharedTextEditorData::min_font_size; sz <= SharedTextEditorData::max_font_size; ++sz) {
+	for (auto sz = SharedTextEditorData::min_font_size; sz <= SharedTextEditorData::max_font_size; ++sz) {
 		auto& font = SharedTextEditorData::fonts[sz - SharedTextEditorData::min_font_size];
 		font = ImGui::GetIO().Fonts->AddFontFromMemoryCompressedBase85TTF(
 			consolas_compressed_data_base85, static_cast<float>(sz)
 		);
 	}
-	for (int sz = SharedTextEditorData::min_font_size; sz <= SharedTextEditorData::max_font_size; ++sz) {
+	for (auto sz = SharedTextEditorData::min_font_size; sz <= SharedTextEditorData::max_font_size; ++sz) {
 		auto& str = SharedTextEditorData::font_size_strs[sz - SharedTextEditorData::min_font_size];
 		str = std::to_string(sz) + "px";
 	}
@@ -261,15 +273,10 @@ auto EditorRenderer::on_add_obj(Ref<SceneObject> obj) noexcept -> void {
 			on_add_object_internal(m_obj_data[render_obj], *render_obj)
 		);
 	} else if (auto const light = obj.get().as<Light>()) {
-		m_light_data.data.emplace_back(light->get_data());
-		m_light_data.light_ptrs.emplace_back(light);
-
-		TL_CHECK_NON_FATAL(m_app, LogLevel::Error, m_light_data.ubo->bind());
-		{
-			TL_CHECK_NON_FATAL(m_app, LogLevel::Error,
-			                   m_light_data.ubo->set_data(tcb::make_span(m_light_data.data), GL_DYNAMIC_DRAW));
-		}
-		m_light_data.ubo->unbind();
+		TL_CHECK_NON_FATAL(
+			m_app, LogLevel::Error,
+			m_light_data_link.push_back(light, light->get_data())
+		);
 	}
 }
 
@@ -285,45 +292,17 @@ auto EditorRenderer::on_remove_obj(Ref<SceneObject> obj) noexcept -> void {
 			m_cur_outline_obj = nullptr;
 		}
 	} else if (auto const light = obj.get().as<Light>()) {
-		auto const it = std::find_if(m_light_data.light_ptrs.begin(), m_light_data.light_ptrs.end(),
-		                             [light](auto const& ptr) { return ptr == light; }
-		);
-		if (it == m_light_data.light_ptrs.end()) {
-			m_app->log(LogLevel::Error, "light not found");
-			return;
-		}
-		auto const idx = std::distance(m_light_data.light_ptrs.begin(), it);
-		m_light_data.data.erase(m_light_data.data.begin() + idx);
-		m_light_data.light_ptrs.erase(it);
-
-		TL_CHECK_NON_FATAL(m_app, LogLevel::Error, m_light_data.ubo->bind());
-		{
-			TL_CHECK_NON_FATAL(m_app, LogLevel::Error,
-			                   m_light_data.ubo->set_data(tcb::make_span(m_light_data.data), GL_DYNAMIC_DRAW));
-		}
-		m_light_data.ubo->unbind();
+		TL_CHECK_NON_FATAL(m_app, LogLevel::Error, m_light_data_link.erase(light));
 	}
 }
 
 auto EditorRenderer::update_light(Light const& light) -> void {
-	auto const it =
-		std::find_if(m_light_data.light_ptrs.begin(), m_light_data.light_ptrs.end(),
-		             [&light](auto const& ptr) {
-			             return ptr == &light;
-		             }
-		);
-	if (it != m_light_data.light_ptrs.end()) {
-		auto const idx = std::distance(m_light_data.light_ptrs.begin(), it);
-		m_light_data.data[idx] = light.get_data();
-		TL_CHECK_NON_FATAL(m_app, LogLevel::Error, m_light_data.ubo->bind());
-		{
-			// TODO: only need to update the light that changed
-			TL_CHECK_NON_FATAL(m_app, LogLevel::Error,
-			                   m_light_data.ubo->set_data(tcb::make_span(m_light_data.data), GL_DYNAMIC_DRAW));
-		}
-		m_light_data.ubo->unbind();
-	} else {
-		m_app->log(LogLevel::Error, "cannot find light");
+	auto idx = size_t{};
+	TL_TRY_ASSIGN_NON_FATAL(idx, m_app, LogLevel::Error, m_light_data_link.get_idx(&light));
+	try {
+		m_light_data_link[idx] = light.get_data();
+	} catch (std::out_of_range const& err) {
+		m_app->log(LogLevel::Error, err.what());
 	}
 }
 
@@ -545,9 +524,9 @@ auto EditorRenderer::render(View<Camera> cam_view) noexcept -> tl::expected<Text
 		auto const& uniforms = shader->get_uniform_map().get();
 		// light
 		if (uniforms.count(k_uniform_light_count)) {
-			TL_CHECK(shader->set_uniform(k_uniform_light_count, static_cast<int>(m_light_data.data.size())));
+			TL_CHECK(shader->set_uniform(k_uniform_light_count, static_cast<int>(m_light_data_link.size())));
 
-			glBindBufferBase(GL_UNIFORM_BUFFER, UBOBinding::LightBlock, m_light_data.ubo->handle());
+			glBindBufferBase(GL_UNIFORM_BUFFER, UBOBinding::LightBlock, m_light_data_link.get_user_data()->handle());
 			CHECK_GL_ERROR();
 		}
 		// material

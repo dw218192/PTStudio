@@ -49,6 +49,7 @@ namespace PTS::Editor {
 		~EditorApplication() override = default;
 
 		auto create_input_actions() noexcept -> void;
+		auto wrap_mouse_pos() noexcept -> void;
 
 		// imgui rendering
 		auto draw_scene_panel() noexcept -> void;
@@ -66,9 +67,7 @@ namespace PTS::Editor {
 		auto try_select_object() noexcept -> void;
 		auto handle_input(InputEvent const& event) noexcept -> void override;
 		auto on_remove_object(Ref<SceneObject> obj) -> void;
-		auto on_remove_editable(Ref<SceneObject> editable) -> void;
 		auto on_add_oject(Ref<SceneObject> obj) -> void;
-		auto on_add_editable(Ref<SceneObject> editable) -> void;
 		auto on_log_added() -> void override;
 		auto get_cur_renderer() noexcept -> Renderer&;
 
@@ -106,7 +105,6 @@ namespace PTS::Editor {
 			std::array<char, 1024> obj_name_buf{};
 			bool is_outside_view{false};
 			int cur_renderer_idx{k_default_renderer_idx};
-			std::optional<glm::vec2> last_mouse_pos{std::nullopt};
 
 			struct GizmoState {
 				ImGuizmo::OPERATION op{ImGuizmo::OPERATION::TRANSLATE};
@@ -117,6 +115,7 @@ namespace PTS::Editor {
 
 			bool unlimited_fps{true};
 			bool disable_log_flush{true};
+			int is_changing_scene_cam{0};
 
 		private:
 			ObserverPtr<SceneObject> m_cur_obj{nullptr};

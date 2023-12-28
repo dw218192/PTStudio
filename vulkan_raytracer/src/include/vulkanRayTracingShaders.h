@@ -1,13 +1,15 @@
 #pragma once
 #include "stringManip.h"
 #include "camera.h"
+#include "lightData.h"
 #include "object.h"
 #include "params.h"
 #include "shaderCommon.h"
 
 namespace PTS {
-namespace _private {
-auto constexpr k_common_src = R"(
+	namespace VulkanRayTracingShaders {
+		namespace _private {
+			auto constexpr k_common_src = R"(
 #version 460
 
 #extension GL_EXT_ray_tracing : require
@@ -99,7 +101,7 @@ vec3 baryLerp(vec3 a, vec3 b, vec3 c, vec3 bary) {
 }
 )"sv;
 
-auto constexpr _k_ray_gen_shader_src_glsl = R"(
+			auto constexpr _k_ray_gen_shader_src_glsl = R"(
 // intersection data
 layout(location = 0) rayPayloadEXT Payload payload;
 
@@ -159,7 +161,7 @@ void main() {
 }
 )"sv;
 
-auto constexpr _k_miss_shader_src_glsl = R"(
+			auto constexpr _k_miss_shader_src_glsl = R"(
 layout(location = 0) rayPayloadInEXT Payload payload;
 
 void main() {
@@ -168,8 +170,8 @@ void main() {
 }
 )"sv;
 
-// https://github.com/KhronosGroup/GLSL/blob/master/extensions/ext/GLSL_EXT_ray_tracing.txt
-auto constexpr _k_closest_hit_shader_src_glsl = R"(
+			// https://github.com/KhronosGroup/GLSL/blob/master/extensions/ext/GLSL_EXT_ray_tracing.txt
+			auto constexpr _k_closest_hit_shader_src_glsl = R"(
 layout(location = 0) rayPayloadInEXT Payload payload;
 hitAttributeEXT vec3 attribs;
 
@@ -230,37 +232,39 @@ void main() {
     }
 }
 )"sv;
-} // namespace _private
+		} // namespace _private
 
-// produce the final shader source
-auto constexpr k_ray_gen_shader_src_glsl = PTS::join_v<
-    _private::k_common_src,
-    CameraData::k_glsl_decl,
-    PerFrameData::k_glsl_decl,
-    MaterialData::k_glsl_decl,
-    VertexAttribData::k_glsl_decl,
-    _private::k_vertex_attribs_decl,
-    _private::k_indices_decl,
-    _private::k_accel_struct_decl,
-    _private::k_per_frame_data_decl,
-    _private::k_material_uniform_decl,
-    _private::k_output_image_decl,
-    _private::_k_ray_gen_shader_src_glsl
->;
+		// produce the final shader source
+		auto constexpr k_ray_gen_shader_src_glsl = PTS::join_v<
+			_private::k_common_src,
+			CameraData::k_glsl_decl,
+			PerFrameData::k_glsl_decl,
+			MaterialData::k_glsl_decl,
+			VertexAttribData::k_glsl_decl,
+			_private::k_vertex_attribs_decl,
+			_private::k_indices_decl,
+			_private::k_accel_struct_decl,
+			_private::k_per_frame_data_decl,
+			_private::k_material_uniform_decl,
+			_private::k_output_image_decl,
+			_private::_k_ray_gen_shader_src_glsl
+		>;
 
-auto constexpr k_miss_shader_src_glsl = PTS::join_v<
-    _private::k_common_src,
-    _private::_k_miss_shader_src_glsl
->;
+		auto constexpr k_miss_shader_src_glsl = PTS::join_v<
+			_private::k_common_src,
+			_private::_k_miss_shader_src_glsl
+		>;
 
-auto constexpr k_closest_hit_shader_src_glsl = PTS::join_v<
-    _private::k_common_src,
-    MaterialData::k_glsl_decl,
-    VertexAttribData::k_glsl_decl,
-    _private::k_vertex_attribs_decl,
-    _private::k_indices_decl,
-    _private::k_material_uniform_decl,
-    _private::_k_closest_hit_shader_src_glsl
->;
-
+		auto constexpr k_closest_hit_shader_src_glsl = PTS::join_v<
+			_private::k_common_src,
+			MaterialData::k_glsl_decl,
+			VertexAttribData::k_glsl_decl,
+			LightData::glsl_def,
+			_private::k_vertex_attribs_decl,
+			_private::k_indices_decl,
+			_private::k_material_uniform_decl,
+			_private::k_light_uniform_decl,
+			_private::_k_closest_hit_shader_src_glsl
+		>;
+	} // namespace VulkanRayTracingShaders
 } // namespace PTS

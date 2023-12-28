@@ -14,6 +14,7 @@
 #include "TextEditor.h"
 #include "enumArray.h"
 #include "callbackList.h"
+#include "continuousGPUBufferLink.h"
 
 namespace PTS {
 	namespace Editor {
@@ -28,13 +29,6 @@ namespace PTS {
 			GLTextureRef texture{nullptr};
 			GLVertexArrayRef render_data{nullptr};
 			ShaderProgramRef shader{nullptr};
-		};
-
-		struct LightDataStates {
-			GLBufferRef ubo{nullptr};
-			// data[i] and light_ptrs[i] should correspond to the same light
-			std::vector<LightData> data;
-			std::vector<ViewPtr<Light>> light_ptrs;
 		};
 
 		// for shader editing
@@ -160,7 +154,7 @@ namespace PTS {
 			// default shader, should be initialized in init()
 			ShaderProgramRef m_default_shader{nullptr};
 			// light data
-			LightDataStates m_light_data;
+			ContinuousGPUBufferLink<LightData, Light, GLBufferRef, k_maxLights> m_light_data_link{};
 			std::unordered_map<ViewPtr<RenderableObject>, PerObjectData> m_obj_data;
 			ViewPtr<RenderableObject> m_cur_outline_obj{nullptr};
 			bool m_valid{false};

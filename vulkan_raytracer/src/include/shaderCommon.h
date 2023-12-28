@@ -8,7 +8,7 @@
 
 
 namespace PTS {
-
+namespace VulkanRayTracingShaders {
 struct CameraData {
     glm::mat4 inv_view_proj; // 0
     glm::vec3 cam_pos;       // 64
@@ -127,11 +127,13 @@ struct RayTracingBindings {
     static constexpr Binding ACCEL_STRUCT_BINDING { 0, 0 };
     static constexpr Binding MATERIALS_BINDING { 0, 1 };
     static constexpr Binding OUTPUT_IMAGE_BINDING { 0, 2 };
+    static constexpr Binding LIGHTS_BINDING { 0, 3 };
 
+    // variable sized SSBO must be in a separate descriptor set
     static constexpr Binding VERTEX_ATTRIBS_BINDING { 1, 0 };
     static constexpr Binding INDICES_BINDING { 2, 0 };
 
-    static constexpr int k_num_bindings = 5;
+    static constexpr int k_num_bindings = 6;
     static constexpr int k_num_sets = 3;
 };
 
@@ -207,6 +209,24 @@ auto constexpr k_material_uniform_decl = gen_glsl_decl<
     _k_material_uniform_decl
 >::value;
 
+// light uniform declaration
+auto constexpr _k_light_uniform_decl_0 = R"(
+uniform LightBlock {
+    LightData lights[)"sv;
+auto constexpr _k_light_uniform_decl_1 = R"(];
+};
+)"sv;
+auto constexpr _k_light_uniform_decl = PTS::join_v<
+    _k_light_uniform_decl_0,
+    PTS::to_str_v<k_max_lights>,
+    _k_light_uniform_decl_1
+>;
+auto constexpr k_light_uniform_decl = gen_glsl_decl<
+    RayTracingBindings::LIGHTS_BINDING.set,
+    RayTracingBindings::LIGHTS_BINDING.binding,
+    _k_light_uniform_decl
+>::value;
+
 // camera uniform declaration
 auto constexpr k_per_frame_data_decl = R"(
 layout (push_constant) uniform PerFrameDataBlock {
@@ -238,4 +258,5 @@ auto constexpr k_accel_struct_decl = gen_glsl_decl<
 >::value;
 
 } // namespace _private
+} // namespace VulkanRayTracingShaders
 } // namespace PTS

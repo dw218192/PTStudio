@@ -20,7 +20,7 @@ namespace PTS {
 			return {
 				m_color,
 				m_intensity,
-				get_transform(TransformSpace::WORLD).get_position(),
+				get_transform(TransformSpace::WORLD).get_matrix(),
 				static_cast<int>(m_type),
 			};
 		}
@@ -53,7 +53,7 @@ namespace PTS {
 		      MSerialize{}, MColor{});
 
 		FIELD(float, m_intensity, {},
-		      MSerialize{}, MRange{ 0.0f, 100.0f });
+		      MSerialize{}, MRange{ 0.0f, 2.0f });
 
 		END_REFLECT();
 

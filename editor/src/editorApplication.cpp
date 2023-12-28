@@ -45,9 +45,9 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config)
 
 	// scene callbacks
 	m_scene.get_callback_list(SceneChangeType::OBJECT_ADDED)
-		+= Callback<void(Ref<SceneObject>)>{[this](Ref<SceneObject> obj) { this->on_add_oject(obj); }};
+		+= [this](Ref<SceneObject> obj) { this->on_add_oject(obj); };
 	m_scene.get_callback_list(SceneChangeType::OBJECT_REMOVED)
-		+= Callback<void(Ref<SceneObject>)>{[this](Ref<SceneObject> obj) { this->on_remove_object(obj); }};
+		+= [this](Ref<SceneObject> obj) { this->on_remove_object(obj); };
 
 	// input actions
 	create_input_actions();
@@ -58,11 +58,6 @@ auto EditorApplication::create_input_actions() noexcept -> void {
 	auto obj_selected = InputActionConstraint{
 		[this](InputEvent const&) {
 			return m_control_state.get_cur_obj();
-		}
-	};
-	auto using_gizmo = InputActionConstraint{
-		[this](InputEvent const&) {
-			return ImGuizmo::IsUsing();
 		}
 	};
 	auto not_using_gizmo = InputActionConstraint{
@@ -129,6 +124,7 @@ auto EditorApplication::create_input_actions() noexcept -> void {
 			}
 		}
 	};
+
 	auto focus_on_obj = InputAction{
 		{InputType::KEYBOARD, ActionType::PRESS, ImGuiKey_F},
 		[this](InputEvent const& event) {
@@ -198,20 +194,62 @@ auto EditorApplication::create_input_actions() noexcept -> void {
 		}
 	};
 
+
+	auto on_begin_cam_pedestal = InputAction{
+		{InputType::MOUSE, ActionType::PRESS, cam_pedestal.get_input().key_or_button},
+		[this](InputEvent const&) {
+			++m_control_state.is_changing_scene_cam;
+		}
+	};
+	auto on_begin_cam_pan = InputAction{
+		{InputType::MOUSE, ActionType::PRESS, cam_pan.get_input().key_or_button},
+		[this](InputEvent const&) {
+			++m_control_state.is_changing_scene_cam;
+		}
+	};
+	auto on_begin_cam_rotate = InputAction{
+		{InputType::MOUSE, ActionType::PRESS, cam_rotate.get_input().key_or_button},
+		[this](InputEvent const&) {
+			++m_control_state.is_changing_scene_cam;
+		}
+	};
+	auto on_end_cam_pedestal = InputAction{
+		{InputType::MOUSE, ActionType::RELEASE, cam_pedestal.get_input().key_or_button},
+		[this](InputEvent const&) {
+			m_control_state.is_changing_scene_cam = std::max(
+				m_control_state.is_changing_scene_cam - 1,
+				0
+			);
+		}
+	};
+	auto on_end_cam_pan = InputAction{
+		{InputType::MOUSE, ActionType::RELEASE, cam_pan.get_input().key_or_button},
+		[this](InputEvent const&) {
+			m_control_state.is_changing_scene_cam = std::max(
+				m_control_state.is_changing_scene_cam - 1,
+				0
+			);
+		}
+	};
+	auto on_end_cam_rotate = InputAction{
+		{InputType::MOUSE, ActionType::RELEASE, cam_rotate.get_input().key_or_button},
+		[this](InputEvent const&) {
+			m_control_state.is_changing_scene_cam = std::max(
+				m_control_state.is_changing_scene_cam - 1,
+				0
+			);
+		}
+	};
+
 	m_input_actions = {
 		translate_mode
-		.add_constraint(scene_view_focused)
-		.add_constraint(scene_view_hovered),
+		.add_constraint(obj_selected),
 		rotate_mode
-		.add_constraint(scene_view_focused)
-		.add_constraint(scene_view_hovered),
+		.add_constraint(obj_selected),
 		scale_mode
-		.add_constraint(scene_view_focused)
-		.add_constraint(scene_view_hovered),
+		.add_constraint(obj_selected),
 		toggle_snap
-		.add_constraint(scene_view_focused)
-		.add_constraint(scene_view_hovered)
-		.add_constraint(using_gizmo),
+		.add_constraint(obj_selected),
 		delete_obj
 		.add_constraint(obj_selected),
 		focus_on_obj
@@ -237,7 +275,57 @@ auto EditorApplication::create_input_actions() noexcept -> void {
 		.add_constraint(scene_view_focused)
 		.add_constraint(scene_view_hovered)
 		.add_constraint(not_using_gizmo),
+		on_begin_cam_pedestal
+		.add_constraint(initiated_in_scene_view)
+		.add_constraint(not_using_gizmo),
+		on_begin_cam_pan
+		.add_constraint(initiated_in_scene_view)
+		.add_constraint(not_using_gizmo),
+		on_begin_cam_rotate
+		.add_constraint(initiated_in_scene_view)
+		.add_constraint(not_using_gizmo),
+		on_end_cam_pedestal
+		.add_constraint(initiated_in_scene_view)
+		.add_constraint(not_using_gizmo),
+		on_end_cam_pan
+		.add_constraint(initiated_in_scene_view)
+		.add_constraint(not_using_gizmo),
+		on_end_cam_rotate
+		.add_constraint(initiated_in_scene_view)
+		.add_constraint(not_using_gizmo),
 	};
+}
+
+auto EditorApplication::wrap_mouse_pos() noexcept -> void {
+	if (m_control_state.is_changing_scene_cam) {
+		auto iwx = int{}, iwy = int{};
+		glfwGetWindowSize(m_window, &iwx, &iwy);
+		auto const wx = static_cast<float>(iwx);
+		auto const wy = static_cast<float>(iwy);
+		static constexpr auto eps = 0.1f;
+
+		auto changed{false};
+		if (m_mouse_pos.x > wx + eps) {
+			m_mouse_pos.x = 0;
+			changed = true;
+		}
+		if (m_mouse_pos.y > wy + eps) {
+			m_mouse_pos.y = 0;
+			changed = true;
+		}
+		if (m_mouse_pos.x < -eps) {
+			m_mouse_pos.x = wx;
+			changed = true;
+		}
+		if (m_mouse_pos.y < -eps) {
+			m_mouse_pos.y = wy;
+			changed = true;
+		}
+
+		if (changed) {
+			glfwSetCursorPos(m_window, m_mouse_pos.x, m_mouse_pos.y);
+		}
+	}
 }
 
 auto EditorApplication::add_renderer(std::unique_ptr<Renderer> renderer) noexcept -> void {
@@ -321,6 +409,8 @@ auto EditorApplication::loop(float dt) -> void {
 	end_imgui_window();
 
 	check_error(get_cur_renderer().draw_imgui());
+
+	wrap_mouse_pos();
 }
 
 auto EditorApplication::quit(int code) -> void {
@@ -662,31 +752,22 @@ auto EditorApplication::handle_input(InputEvent const& event) noexcept -> void {
 
 auto EditorApplication::on_remove_object(Ref<SceneObject> obj) -> void {
 	if (obj.get().is_editable()) {
-		on_remove_editable(obj);
+		m_control_state.set_cur_obj(nullptr);
 	}
-}
-
-auto EditorApplication::on_remove_editable(Ref<SceneObject> editable) -> void {
-	m_scene.remove_object(editable.get());
-	m_control_state.set_cur_obj(nullptr);
 }
 
 auto EditorApplication::on_add_oject(Ref<SceneObject> obj) -> void {
 	if (obj.get().is_editable()) {
-		on_add_editable(obj);
-	}
-}
-
-auto EditorApplication::on_add_editable(Ref<SceneObject> editable) -> void {
-	m_control_state.set_cur_obj(&editable.get());
-	// adjust camera if needed
-	// imagine that the camera view is a sphere
-	// if the scene bound is outside the sphere, move the camera to a better position
-	auto const new_bbox = m_scene.get_scene_bound();
-	auto const radius = length(m_cam.get_eye() - m_cam.get_center());
-	auto const new_radius = length(new_bbox.get_extent());
-	if (new_radius > radius * 1.5f) {
-		m_cam.set(m_scene.get_good_cam_start());
+		m_control_state.set_cur_obj(&obj.get());
+		// adjust camera if needed
+		// imagine that the camera view is a sphere
+		// if the scene bound is outside the sphere, move the camera to a better position
+		auto const new_bbox = m_scene.get_scene_bound();
+		auto const radius = length(m_cam.get_eye() - m_cam.get_center());
+		auto const new_radius = length(new_bbox.get_extent());
+		if (new_radius > radius * 1.5f) {
+			m_cam.set(m_scene.get_good_cam_start());
+		}
 	}
 }
 

@@ -11,6 +11,8 @@
 #include <unordered_map>
 #include <optional>
 
+#include "continuousGPUBufferLink.h"
+
 namespace PTS {
 	struct VulkanRayTracingRenderer final : Renderer {
 		NO_COPY_MOVE(VulkanRayTracingRenderer);
@@ -29,11 +31,14 @@ namespace PTS {
 
 	private:
 		[[nodiscard]] auto reset_path_tracing() noexcept -> tl::expected<void, std::string>;
-		[[nodiscard]] auto add_object(RenderableObject const& obj) -> tl::expected<void, std::string>;
-		[[nodiscard]] auto remove_object(RenderableObject const& obj) -> tl::expected<void, std::string>;
+
+		// these funcs are called by on_add_obj & on_remove_obj or in the open_scene func
+		[[nodiscard]] auto add_object(SceneObject const& obj) -> tl::expected<void, std::string>;
+		[[nodiscard]] auto remove_object(SceneObject const& obj) -> tl::expected<void, std::string>;
+
+		// callbacks
 		auto on_add_obj(Ref<SceneObject> obj) noexcept -> void;
 		auto on_remove_obj(Ref<SceneObject> obj) noexcept -> void;
-
 		Callback<void(Ref<SceneObject>)> m_on_add_obj{
 			[this](Ref<SceneObject> data) { this->on_add_obj(data); }
 		};
@@ -44,6 +49,7 @@ namespace PTS {
 		DECL_FIELD_EVENT_MEMBERS(on_obj_local_trans_change, SceneObject, SceneObject::FieldTag::LOCAL_TRANSFORM);
 		DECL_FIELD_EVENT_MEMBERS(on_mat_change, RenderableObject, RenderableObject::FieldTag::MAT);
 
+		// fields
 		ObserverPtr<Scene> m_scene{nullptr};
 		VulkanInsInfo m_vk_ins;
 		VulkanDeviceInfo m_vk_device;
@@ -54,12 +60,14 @@ namespace PTS {
 		VulkanTopAccelStructInfo m_vk_top_accel;
 		VulkanRTPipelineInfo m_vk_pipeline;
 
+		ContinuousGPUBufferLink<LightData, Light, VulkanBufferInfo*, k_max_lights> m_light_data_link;
+
 		// extra object data
 		struct PerObjectData {
 			size_t gpu_idx{};
 		};
 
-		std::unordered_map<ViewPtr<RenderableObject>, PerObjectData> m_obj_data;
+		std::unordered_map<ViewPtr<RenderableObject>, PerObjectData> m_rend_obj_data;
 
 		struct EditingData {
 			BEGIN_REFLECT(EditingData, void);
@@ -76,7 +84,7 @@ namespace PTS {
 
 		struct PathTracingData {
 			int iteration{};
-			std::optional<CameraData> camera_data{};
+			std::optional<VulkanRayTracingShaders::CameraData> camera_data{};
 		} m_path_tracing_data;
 	};
 }
