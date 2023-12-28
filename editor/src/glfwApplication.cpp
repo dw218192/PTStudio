@@ -148,15 +148,15 @@ void GLFWApplication::run() {
                 if (m_prev_hovered_widget != k_no_hovered_widget) {
                     // call on_leave_region on the previous widget
                     auto it = m_imgui_window_info.find(m_prev_hovered_widget);
-                    if (it != m_imgui_window_info.end() && it->second.on_leave_region.has_value()) {
-                        it->second.on_leave_region.value()();
+                    if (it != m_imgui_window_info.end()) {
+                        it->second.on_leave_region();
                     }
                 }
 
                 // call on_enter_region on the current widget
                 auto it = m_imgui_window_info.find(m_cur_hovered_widget);
-                if (it != m_imgui_window_info.end() && it->second.on_enter_region.has_value()) {
-                    it->second.on_enter_region.value()();
+                if (it != m_imgui_window_info.end()) {
+                    it->second.on_enter_region();
                 }
             }
         }
@@ -306,17 +306,8 @@ auto GLFWApplication::get_window_width() const noexcept->int {
 
 auto GLFWApplication::begin_imgui_window(
     std::string_view name, 
-    ImGuiWindowFlags flags,
-    std::optional<std::function<void()>> const& on_leave_region,
-    std::optional<std::function<void()>> const& on_enter_region
+    ImGuiWindowFlags flags
 ) noexcept -> bool {
-    if (!m_imgui_window_info.count(name)) {
-        m_imgui_window_info[name] = ImGuiWindowInfo {
-            on_leave_region,
-            on_enter_region
-        };
-    }
-
     auto const ret = ImGui::Begin(name.data(), nullptr, flags);
     if (ImGui::IsWindowHovered(ImGuiItemStatusFlags_HoveredRect)) {
         m_cur_hovered_widget = name;

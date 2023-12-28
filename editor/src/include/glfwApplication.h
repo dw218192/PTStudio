@@ -11,12 +11,19 @@
 #include "debugDrawer.h"
 #include "application.h"
 #include "inputAction.h"
+#include "callbackList.h"
 
 namespace PTS {
 	/**
 	 * \brief abstract GLFW application. Responsible for creating the window and polling events.
 	*/
 	struct GLFWApplication : Application {
+		// used to help detect if the mouse enters/leaves certain imgui windows
+		struct ImGuiWindowInfo {
+			CallbackList<void()> on_leave_region;
+			CallbackList<void()> on_enter_region;
+		};
+
 		friend static void click_func(GLFWwindow* window, int button, int action, int mods);
 		friend static void motion_func(GLFWwindow* window, double x, double y);
 		friend static void scroll_func(GLFWwindow* window, double x, double y);
@@ -52,11 +59,14 @@ namespace PTS {
 		[[nodiscard]] auto get_cur_focused_widget() const noexcept { return m_cur_focused_widget; }
 
 		// imgui helpers
+		auto get_imgui_window_info(std::string_view name) noexcept -> ImGuiWindowInfo& {
+			// doesn't really care if the window exists or not
+			return m_imgui_window_info[name];
+		}
+
 		auto begin_imgui_window(
 			std::string_view name,
-			ImGuiWindowFlags flags = 0,
-			std::optional<std::function<void()>> const& on_leave_region = std::nullopt,
-			std::optional<std::function<void()>> const& on_enter_region = std::nullopt
+			ImGuiWindowFlags flags = 0
 		) noexcept -> bool;
 
 		void end_imgui_window() noexcept;
@@ -85,12 +95,6 @@ namespace PTS {
 		float m_log_flush_interval{ 5.0f };
 		float m_log_flush_timer{ 0.0f };
 		float m_delta_time{0.0f};
-
-		// used to help detect if the mouse enters/leaves certain imgui windows
-		struct ImGuiWindowInfo {
-			std::optional<std::function<void()>> on_leave_region, on_enter_region;
-		};
-
 		std::unordered_map<std::string_view, ImGuiWindowInfo> m_imgui_window_info;
 
 		std::string_view m_cur_hovered_widget, m_prev_hovered_widget;

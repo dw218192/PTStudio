@@ -36,14 +36,18 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config)
 	  m_archive{new JsonArchive} {
 	// initialize gizmo icon textures
 	m_light_icon_tex = check_error(GLTexture::create(light_icon_png_data, FileFormat::PNG));
-	m_on_mouse_leave_scene_viewport_cb = [this] { on_mouse_leave_scene_viewport(); };
-	m_on_mouse_enter_scene_viewport_cb = [this] { on_mouse_enter_scene_viewport(); };
 
 	// default renderers
 	add_renderer(std::make_unique<EditorRenderer>(config));
 	add_renderer(std::make_unique<VulkanRayTracingRenderer>(config));
 
-	// scene callbacks
+
+	// callbacks
+	get_imgui_window_info(k_scene_view_win_name).on_enter_region
+		+= [this] { on_mouse_leave_scene_viewport(); };
+	get_imgui_window_info(k_scene_view_win_name).on_leave_region
+		+= [this] { on_mouse_enter_scene_viewport(); };
+
 	m_scene.get_callback_list(SceneChangeType::OBJECT_ADDED)
 		+= [this](Ref<SceneObject> obj) { this->on_add_oject(obj); };
 	m_scene.get_callback_list(SceneChangeType::OBJECT_REMOVED)
@@ -401,9 +405,7 @@ auto EditorApplication::loop(float dt) -> void {
 
 	// draw the scene view
 	if (begin_imgui_window(k_scene_view_win_name,
-	                       ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_MenuBar,
-	                       m_on_mouse_leave_scene_viewport_cb,
-	                       m_on_mouse_enter_scene_viewport_cb)) {
+	                       ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_MenuBar)) {
 		draw_scene_viewport(render_tex);
 	}
 	end_imgui_window();

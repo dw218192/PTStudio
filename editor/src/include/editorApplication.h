@@ -30,12 +30,12 @@ namespace PTS::Editor {
 		auto loop(float dt) -> void override;
 		auto quit(int code) -> void override;
 		/**
-			 * \brief Checks a result returned from some function. Prints the error and Terminates the program on error.
-			 * \tparam T Type of the real return value
-			 * \tparam E Type of the error return value
-			 * \param res the result
-			 * \return The real return value if no error
-			 */
+		 * @brief Checks a result returned from some function. Prints the error and Terminates the program on error.
+		 * @tparam T Type of the real return value
+		 * @tparam E Type of the error return value
+		 * @param res the result
+		 * @return The real return value if no error
+		 */
 		template <typename T, typename E>
 		static constexpr auto check_error(tl::expected<T, E> const& res) -> decltype(auto);
 		template <typename T, typename E>
@@ -72,10 +72,6 @@ namespace PTS::Editor {
 		auto get_cur_renderer() noexcept -> Renderer&;
 
 		std::string m_console_text;
-
-		std::function<void()> m_on_mouse_leave_scene_viewport_cb;
-		std::function<void()> m_on_mouse_enter_scene_viewport_cb;
-
 		// rendering
 		RenderConfig m_config;
 		Scene m_scene;

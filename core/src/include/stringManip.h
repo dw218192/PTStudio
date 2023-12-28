@@ -8,6 +8,8 @@
  * @brief Compile time string manipulation utilities.
 */
 namespace PTS {
+
+
 	// from https://stackoverflow.com/questions/38955940/how-to-concatenate-static-strings-at-compile-time/62823211#62823211
 	template <std::string_view const&... Strs>
 	struct join {
