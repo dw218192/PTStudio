@@ -372,20 +372,27 @@ PTS::VulkanRayTracingRenderer::VulkanRayTracingRenderer(RenderConfig config)
 		+= m_on_mat_change;
 
 	m_light_data_link.get_on_push_back_callbacks() += [this](VulkanBufferInfo* buf, Light const*, LightData const&) {
-		TL_CHECK_NON_FATAL(m_app, LogLevel::Error,
-		                   buf->upload(tcb::span{ m_light_data_link.data(), m_light_data_link.size() }));
+		auto const data = VulkanRayTracingShaders::LightBlock::get_mem(
+			static_cast<int>(m_light_data_link.size()),
+			tcb::span{m_light_data_link.data(), m_light_data_link.size()}
+		);
+		TL_CHECK_NON_FATAL(m_app, LogLevel::Error, buf->upload(data));
 	};
 
 	m_light_data_link.get_on_erase_callbacks() += [this](VulkanBufferInfo* buf, Light const*, LightData const&) {
-		TL_CHECK_NON_FATAL(m_app, LogLevel::Error,
-		                   buf->upload(tcb::span{ m_light_data_link.data(), m_light_data_link.size() }));
+		auto const data = VulkanRayTracingShaders::LightBlock::get_mem(
+			static_cast<int>(m_light_data_link.size()),
+			tcb::span{m_light_data_link.data(), m_light_data_link.size()}
+		);
+		TL_CHECK_NON_FATAL(m_app, LogLevel::Error, buf->upload(data));
 	};
 
 	m_light_data_link.get_on_update_callbacks() += [this](VulkanBufferInfo* buf, Light const* light,
 	                                                      LightData const& data) {
 		auto id = size_t{};
 		TL_TRY_ASSIGN_NON_FATAL(id, m_app, LogLevel::Error, m_light_data_link.get_idx(light));
-		TL_CHECK_NON_FATAL(m_app, LogLevel::Info, buf->upload(data, id * sizeof(LightData)));
+		TL_CHECK_NON_FATAL(m_app, LogLevel::Error,
+		                   buf->upload(data, VulkanRayTracingShaders::LightBlock::get_offset(id)));
 	};
 }
 

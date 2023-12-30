@@ -93,6 +93,9 @@ add_subdirectory(${EXT_DIR}/json EXCLUDE_FROM_ALL)
 # some manual configuration for imgui and imguizmo
 add_subdirectory(${EXT_DIR})
 
+# add resource compiler
+include(${EXT_DIR}/cmrc/CMakeRC.cmake)
+
 # add subprojects
 add_subdirectory(core)
 

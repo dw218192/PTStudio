@@ -97,8 +97,25 @@ EditorRenderer::~EditorRenderer() noexcept {
 
 auto EditorRenderer::init(ObserverPtr<Application> app) noexcept -> tl::expected<void, std::string> {
 	TL_CHECK_AND_PASS(Renderer::init(app));
-
-	auto create_grid = [this](float grid_dim, float spacing) -> tl::expected<void, std::string> {
+	// load shader sources
+	auto const embedded_fs = cmrc::editor_resources::get_filesystem();
+	static constexpr auto required_shaders = std::array{
+		k_grid_vs_path,
+		k_grid_fs_path,
+		k_billboard_vs_path,
+		k_billboard_fs_path
+	};
+	for (auto const path : required_shaders) {
+		if (!embedded_fs.exists(path)) {
+			return TL_ERROR("build-in shader {} not found", path);
+		}
+	}
+	auto const grid_vs_src = embedded_fs.open(k_grid_vs_path);
+	auto const grid_fs_src = embedded_fs.open(k_grid_fs_path);
+	auto const billboard_vs_src = embedded_fs.open(k_billboard_vs_path);
+	auto const billboard_fs_src = embedded_fs.open(k_billboard_fs_path);
+	auto create_grid = [this, &grid_vs_src, &grid_fs_src]
+	(float grid_dim, float spacing) -> tl::expected<void, std::string> {
 		std::vector<glm::vec3> vertices;
 		auto const half_dim = grid_dim / 2.0f;
 		for (auto x = -half_dim; x <= half_dim; x += spacing) {
@@ -121,8 +138,8 @@ auto EditorRenderer::init(ObserverPtr<Application> app) noexcept -> tl::expected
 		// grid shaders
 		{
 			ShaderProgram::ShaderDesc descs{
-				{ShaderType::Vertex, vs_grid_src},
-				{ShaderType::Fragment, ps_grid_src},
+				{ShaderType::Vertex, std::string_view{grid_vs_src.begin(), grid_vs_src.size()}},
+				{ShaderType::Fragment, std::string_view{grid_fs_src.begin(), grid_fs_src.size()}},
 			};
 			TL_TRY_ASSIGN(m_grid_shader, ShaderProgram::from_srcs(descs));
 		}
@@ -177,7 +194,13 @@ auto EditorRenderer::init(ObserverPtr<Application> app) noexcept -> tl::expected
 	TL_TRY_ASSIGN(m_light_data_link.get_user_data(), GLBuffer::create(GL_UNIFORM_BUFFER));
 
 	// set up gizmo sprite data
-	TL_TRY_ASSIGN(m_light_gizmo_data.texture, GLTexture::create(light_icon_png_data, FileFormat::PNG));
+	if (!embedded_fs.exists(k_light_icon_png_path)) {
+		return TL_ERROR("builtin icon {} not found", k_light_icon_png_path);
+	}
+	auto const light_icon_png_data = embedded_fs.open(k_light_icon_png_path);
+	TL_TRY_ASSIGN(m_light_gizmo_data.texture,
+	              GLTexture::create(tcb::span{ light_icon_png_data.begin(), light_icon_png_data.end() }, FileFormat::PNG
+	              ));
 	TL_TRY_ASSIGN(m_light_gizmo_data.render_data, GLVertexArray::create(
 		              tcb::make_span(k_quad_data_pos_uv),
 		              GLAttributeInfo<glm::vec3> { 0, 0, 0 },
@@ -185,8 +208,8 @@ auto EditorRenderer::init(ObserverPtr<Application> app) noexcept -> tl::expected
 	              ));
 	{
 		ShaderProgram::ShaderDesc descs{
-			{ShaderType::Vertex, vs_billboard_src},
-			{ShaderType::Fragment, ps_billboard_src},
+			{ShaderType::Vertex, std::string_view{billboard_vs_src.begin(), billboard_vs_src.size()}},
+			{ShaderType::Fragment, std::string_view{billboard_fs_src.begin(), billboard_fs_src.size()}},
 		};
 		TL_TRY_ASSIGN(m_light_gizmo_data.shader, ShaderProgram::from_srcs(descs));
 	}
@@ -413,10 +436,21 @@ auto EditorRenderer::draw_outline(View<Camera> cam_view,
 		m_outline.render_buf->unbind();
 
 		// shaders
+		auto const embedded_fs = cmrc::editor_resources::get_filesystem();
 		for (size_t i = 0; i < m_outline.shaders.size(); ++i) {
+			if (!embedded_fs.exists(k_outline_vs_paths[i])) {
+				return TL_ERROR("built-in shader {} not found", k_outline_vs_paths[i]);
+			}
+			if (!embedded_fs.exists(k_outline_fs_paths[i])) {
+				return TL_ERROR("built-in shader {} not found", k_outline_fs_paths[i]);
+			}
+
+			auto const vs_src = embedded_fs.open(k_outline_vs_paths[i]);
+			auto const fs_src = embedded_fs.open(k_outline_fs_paths[i]);
+
 			ShaderProgram::ShaderDesc descs{
-				{ShaderType::Vertex, vs_outline_passes[i]},
-				{ShaderType::Fragment, ps_outline_passes[i]}
+				{ShaderType::Vertex, std::string_view{vs_src.begin(), vs_src.size()}},
+				{ShaderType::Fragment, std::string_view{fs_src.begin(), fs_src.size()}}
 			};
 			TL_TRY_ASSIGN(m_outline.shaders[i], ShaderProgram::from_srcs(descs));
 		}

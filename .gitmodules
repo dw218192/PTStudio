@@ -40,3 +40,6 @@
 [submodule "ext/fmt"]
 	path = ext/fmt
 	url = https://github.com/fmtlib/fmt.git
+[submodule "ext/cmrc"]
+	path = ext/cmrc
+	url = https://github.com/vector-of-bool/cmrc.git

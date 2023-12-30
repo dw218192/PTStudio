@@ -34,19 +34,15 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config)
 	: GLFWApplication{name, config.width, config.height, config.min_frame_time},
 	  m_config{config}, m_cam{config.fovy, config.get_aspect(), LookAtParams{}},
 	  m_archive{new JsonArchive} {
-	// initialize gizmo icon textures
-	m_light_icon_tex = check_error(GLTexture::create(light_icon_png_data, FileFormat::PNG));
-
 	// default renderers
 	add_renderer(std::make_unique<EditorRenderer>(config));
 	add_renderer(std::make_unique<VulkanRayTracingRenderer>(config));
 
-
 	// callbacks
 	get_imgui_window_info(k_scene_view_win_name).on_enter_region
-		+= [this] { on_mouse_leave_scene_viewport(); };
-	get_imgui_window_info(k_scene_view_win_name).on_leave_region
 		+= [this] { on_mouse_enter_scene_viewport(); };
+	get_imgui_window_info(k_scene_view_win_name).on_leave_region
+		+= [this] { on_mouse_leave_scene_viewport(); };
 
 	m_scene.get_callback_list(SceneChangeType::OBJECT_ADDED)
 		+= [this](Ref<SceneObject> obj) { this->on_add_oject(obj); };

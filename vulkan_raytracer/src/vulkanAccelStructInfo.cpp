@@ -1,6 +1,6 @@
 #include "vulkanAccelStructInfo.h"
 #include "params.h"
-#include "vulkanRayTracingShaders.h"
+#include "shaderCommon.h"
 
 #ifndef NDEBUG
 #include <glm/gtx/string_cast.hpp>

@@ -24,7 +24,7 @@ namespace PTS {
 			std::reference_wrapper<GPUType> gpu_handle;
 
 			Proxy(ContinuousGPUBufferLink& link, cpu_handle_t cpu_handle, GPUType& gpu_handle) noexcept :
-				link{link}, cpu_handle{cpu_handle}, gpu_handle{gpu_handle} {}
+				cpu_handle{cpu_handle}, link{link}, gpu_handle{gpu_handle} {}
 
 			auto operator=(GPUType& value) noexcept -> Proxy& {
 				gpu_handle.get() = value;

@@ -29,15 +29,30 @@ constexpr T div_up(T x, T y) {
 	return (x + y - 1) / y;
 }
 
+#include <sstream>
 // c++23 expected, fmt
 #include <tl/expected.hpp>
 #include <fmt/core.h>
+
+namespace PTS {
+	template <typename Str, typename... Args>
+	auto do_format(Str str, Args&&... args) noexcept {
+		try {
+			return fmt::format(str, std::forward<Args>(args)...);
+		} catch (fmt::format_error const&) {
+			std::ostringstream ss;
+			ss << str << '\n';
+			(ss << ... << std::forward<Args>(args));
+			return ss.str();
+		}
+	}
+} // namespace PTS
 
 // convenience helpers
 #ifdef NDEBUG
 #define TL_ERROR(msg, ...) tl::unexpected { fmt::format(msg, __VA_ARGS__) }
 #else
-#define TL_ERROR(msg, ...) tl::unexpected { std::string{__FILE__} + ":" + std::to_string(__LINE__) + ": " + fmt::format(msg, __VA_ARGS__) }
+#define TL_ERROR(msg, ...) tl::unexpected { std::string{__FILE__} + ":" + std::to_string(__LINE__) + ": " + PTS::do_format(msg, __VA_ARGS__) }
 #endif
 
 
@@ -125,9 +140,9 @@ Ty& operator=(Ty const&) = delete
 	enum class name { __VA_ARGS__, __COUNT }
 
 /**
- * \brief Declares a static init method that will be called the first time the class is instantiated.
- * \param method_name The name of the static init method.
- * \note The static init method must be static and return void.
+ * @brief Declares a static init method that will be called the first time the class is instantiated.
+ * @param method_name The name of the static init method.
+ * @note The static init method must be static and return void.
 */
 #define DECL_DEFERRED_STATIC_INIT(method_name)\
 	static auto method_name() -> void;\

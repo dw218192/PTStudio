@@ -4,7 +4,6 @@
 #include "vulkanHelper.h"
 #include "vulkanAccelStructInfo.h"
 #include "vulkanRTPipelineInfo.h"
-#include "vulkanRayTracingShaders.h"
 
 #include <vulkan/vulkan.hpp>
 #include <tcb/span.hpp>

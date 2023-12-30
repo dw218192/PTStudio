@@ -1,6 +1,6 @@
 #pragma once
 #include "params.h"
-#include "vulkanRayTracingShaders.h"
+#include "shaderCommon.h"
 #include "vulkanHelper.h"
 #include "vulkanAccelStructInfo.h"
 #include "vulkanBufferInfo.h"

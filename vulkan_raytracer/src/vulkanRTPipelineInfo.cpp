@@ -1,14 +1,66 @@
 #include "vulkanRTPipelineInfo.h"
-#include <shaderc/shaderc.hpp>
 
-#ifndef NDEBUG
-#include "vulkanRayTracingTestShaders.h"
-#endif
+#include <vector>
+#include <shaderc/shaderc.hpp>
+#include <cmrc/cmrc.hpp>
+CMRC_DECLARE(vulkan_raytracer_resources);
+
+namespace {
+	[[nodiscard]] auto try_get_res(std::string const& path) -> tl::expected<std::string, std::string> {
+		auto const embedded_fs = cmrc::vulkan_raytracer_resources::get_filesystem();
+		if (!embedded_fs.exists(path)) {
+			return TL_ERROR("built-in resource {} does not exist", path);
+		}
+		auto const raw = embedded_fs.open(path);
+		return std::string{raw.begin(), raw.end()};
+	}
+
+	struct EmbeddedFsIncluder : shaderc::CompileOptions::IncluderInterface {
+		~EmbeddedFsIncluder() override = default;
+		EmbeddedFsIncluder() = default;
+		DEFAULT_COPY_MOVE(EmbeddedFsIncluder);
+
+		auto GetInclude(char const* requested_source, shaderc_include_type type,
+		                char const* requesting_source, size_t include_depth) -> shaderc_include_result* override {
+			auto const file_path = "shaders/" + std::string{requested_source};
+			auto inc_src_res = try_get_res(file_path);
+			if (!inc_src_res) {
+				m_res.source_name = "";
+				m_res.source_name_length = 0;
+
+				auto const content = copy_str(inc_src_res.error().c_str());
+				m_res.content = content.data();
+				m_res.content_length = content.size();
+			} else {
+				m_res.source_name = requested_source;
+				m_res.source_name_length = strlen(requested_source);
+
+				auto const content = copy_str(inc_src_res.value().c_str());
+				m_res.content = content.data();
+				m_res.content_length = content.size();
+			}
+			return &m_res;
+		}
+
+		auto ReleaseInclude(shaderc_include_result* data) -> void override { }
+
+	private:
+		auto copy_str(char const* src) -> std::string_view {
+			auto const size = strlen(src) + 1;
+			m_owned_mem.emplace_back(std::make_unique<char[]>(size));
+			std::memcpy(m_owned_mem.back().get(), src, size);
+			return std::string_view{m_owned_mem.back().get(), size - 1};
+		}
+
+		std::vector<std::unique_ptr<char[]>> m_owned_mem;
+		shaderc_include_result m_res{};
+	};
+}
 
 namespace PTS {
 	[[nodiscard]] auto create_shader_glsl(
 		VulkanDeviceInfo const& dev,
-		std::string_view src,
+		std::string const& src,
 		std::string_view name,
 		vk::ShaderStageFlagBits stage
 	) -> tl::expected<VulkanShaderInfo, std::string> {
@@ -38,22 +90,35 @@ namespace PTS {
 		};
 
 		try {
-			auto compiler = shaderc::Compiler{};
+			auto const compiler = shaderc::Compiler{};
 			auto options = shaderc::CompileOptions{};
 			options.SetSourceLanguage(shaderc_source_language_glsl);
 			options.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_2);
 			options.SetTargetSpirv(shaderc_spirv_version_1_5);
 			options.SetOptimizationLevel(shaderc_optimization_level_performance);
+			options.SetIncluder(std::make_unique<EmbeddedFsIncluder>());
+			auto const prep_res = compiler.PreprocessGlsl(
+				src,
+				to_shaderc_stage(stage),
+				name.data(),
+				options
+			);
+			if (prep_res.GetCompilationStatus() != shaderc_compilation_status_success) {
+				return TL_ERROR("shader preprocessing failed:\n{}", prep_res.GetErrorMessage());
+			}
+
+			auto const prepped_src = std::string{prep_res.begin(), prep_res.end()};
 			auto const res = compiler.CompileGlslToSpv(
-				src.data(),
+				prepped_src,
 				to_shaderc_stage(stage),
 				name.data(),
 				options
 			);
 			if (res.GetCompilationStatus() != shaderc_compilation_status_success) {
-				return TL_ERROR(res.GetErrorMessage());
+				return TL_ERROR("shader compilation failed:\n{}\n{}", res.GetErrorMessage(),
+				                prepped_src);
 			}
-			auto sprv_code = std::vector<uint32_t>{res.cbegin(), res.cend()};
+			auto const sprv_code = std::vector<uint32_t>{res.cbegin(), res.cend()};
 			auto shader = dev->createShaderModuleUnique(
 				vk::ShaderModuleCreateInfo{
 					vk::ShaderModuleCreateFlags{},
@@ -63,7 +128,7 @@ namespace PTS {
 			);
 			return VulkanShaderInfo{{std::move(shader)}, stage};
 		} catch (vk::SystemError& err) {
-			return TL_ERROR(err.what());
+			return TL_ERROR("vulkan error:\n{} ", err.what());
 		}
 	}
 }
@@ -82,21 +147,30 @@ auto PTS::VulkanRTPipelineInfo::create(
 	auto chit_shader = VulkanShaderInfo{};
 
 	auto shader_infos = std::array<VulkanShaderInfo, 3>{};
+
+	auto rgen_shader_src = std::string{};
+	auto miss_shader_src = std::string{};
+	auto chit_shader_src = std::string{};
+
+	TL_TRY_ASSIGN(rgen_shader_src, try_get_res(k_rgen_shader_path));
+	TL_TRY_ASSIGN(miss_shader_src, try_get_res(k_miss_shader_path));
+	TL_TRY_ASSIGN(chit_shader_src, try_get_res(k_chit_shader_path));
+
 	TL_TRY_ASSIGN(shader_infos[0], create_shader_glsl(
 		              dev,
-		              VulkanRayTracingShaders::k_ray_gen_shader_src_glsl,
+		              rgen_shader_src,
 		              "ray_gen_shader",
 		              vk::ShaderStageFlagBits::eRaygenKHR
 	              ));
 	TL_TRY_ASSIGN(shader_infos[1], create_shader_glsl(
 		              dev,
-		              VulkanRayTracingShaders::k_miss_shader_src_glsl,
+		              miss_shader_src,
 		              "miss_shader",
 		              vk::ShaderStageFlagBits::eMissKHR
 	              ));
 	TL_TRY_ASSIGN(shader_infos[2], create_shader_glsl(
 		              dev,
-		              VulkanRayTracingShaders::k_closest_hit_shader_src_glsl,
+		              chit_shader_src,
 		              "chit_shader",
 		              vk::ShaderStageFlagBits::eClosestHitKHR
 	              ));
@@ -166,7 +240,7 @@ auto PTS::VulkanRTPipelineInfo::create(
 		TL_TRY_ASSIGN(lights_buf, VulkanBufferInfo::create(
 			              dev,
 			              VulkanBufferInfo::Type::Uniform,
-			              sizeof(LightData) * k_max_lights
+			              VulkanRayTracingShaders::LightBlock::get_offset(k_max_lights)
 		              ));
 		auto lights_buf_info = lights_buf.get_desc_info();
 
@@ -183,7 +257,7 @@ auto PTS::VulkanRTPipelineInfo::create(
 
 		// create descriptor sets
 		auto desc_sets = std::array<VulkanDescSetInfo, VulkanRayTracingShaders::RayTracingBindings::k_num_sets>{};
-		int cur_set = 0;
+		auto cur_set = 0;
 
 		// set 0
 		desc_sets[cur_set++]

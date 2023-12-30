@@ -84,8 +84,6 @@ namespace PTS::Editor {
 		std::vector<std::unique_ptr<Renderer>> m_renderers;
 		std::unique_ptr<Archive> m_archive;
 
-		GLTextureRef m_light_icon_tex;
-
 		struct ControlState {
 			using ObjChangeCallback = std::function<void(ObserverPtr<SceneObject>)>;
 

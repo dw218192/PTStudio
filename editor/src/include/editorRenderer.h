@@ -21,7 +21,7 @@ namespace PTS {
 		// outline drawing states
 		struct OutlineDrawingStates {
 			GLFrameBufferRef render_buf{nullptr};
-			std::array<ShaderProgramRef, std::size(vs_outline_passes)> shaders{};
+			std::array<ShaderProgramRef, std::size(k_outline_vs_paths)> shaders{};
 			GLVertexArrayRef quad_render_data{nullptr};
 		};
 
