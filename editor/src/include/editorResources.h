@@ -8,8 +8,22 @@
 
 #include <cmrc/cmrc.hpp>
 CMRC_DECLARE(editor_resources);
+CMRC_DECLARE(core_resources);
 
 namespace PTS {
+	constexpr auto k_maxLights = 100u;
+
+	enum VertexAttribBinding {
+		Position = 0,
+		Normal = 1,
+		TexCoords = 2,
+	};
+
+	enum UBOBinding {
+		LightBlock = 0,
+	};
+
+
 	constexpr auto k_editor_tutorial_text = R"(This is a simple editor.
 Basic Operations:
 - Left click to select object
@@ -77,18 +91,6 @@ Basic Operations:
 		k_uniform_time,
 		k_uniform_delta_time,
 		k_uniform_resolution
-	};
-
-	constexpr auto k_maxLights = 100u;
-
-	enum VertexAttribBinding {
-		Position = 0,
-		Normal = 1,
-		TexCoords = 2,
-	};
-
-	enum UBOBinding {
-		LightBlock = 0,
 	};
 
 	namespace _private {

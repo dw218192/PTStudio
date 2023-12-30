@@ -10,12 +10,25 @@ file(GLOB_RECURSE src_files
 	${CMAKE_CURRENT_SOURCE_DIR}/src/include/imgui/*.*
 )
 
+#GLOB resource files
+file(GLOB_RECURSE res_files
+	${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.*
+)
+
 #Executable
 add_library(${lib_name} STATIC ${src_files})
 
+#Resources
+cmrc_add_resource_library(${lib_name}_resources
+	ALIAS ${lib_name}::rc
+	${res_files}
+)
+
 #Libs linked to the executable
-target_link_libraries(${lib_name}   
+target_link_libraries(${lib_name}
+PUBLIC
 	$<BUILD_INTERFACE:developer_flags>
+	${lib_name}::rc
 	glm
 	tinyobjloader
 	stb

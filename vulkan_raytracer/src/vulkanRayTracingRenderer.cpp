@@ -367,9 +367,14 @@ PTS::VulkanRayTracingRenderer::VulkanRayTracingRenderer(RenderConfig config)
 	: Renderer{config, "Vulkan Ray Tracer"} {
 	SceneObject::get_field_info<SceneObject::FieldTag::LOCAL_TRANSFORM>().get_on_change_callback_list()
 		+= m_on_obj_local_trans_change;
-
 	RenderableObject::get_field_info<RenderableObject::FieldTag::MAT>().get_on_change_callback_list()
 		+= m_on_mat_change;
+	Light::get_field_info<Light::FieldTag::LIGHT_TYPE>().get_on_change_callback_list()
+		+= m_on_light_type_change;
+	Light::get_field_info<Light::FieldTag::COLOR>().get_on_change_callback_list()
+		+= m_on_light_color_change;
+	Light::get_field_info<Light::FieldTag::INTENSITY>().get_on_change_callback_list()
+		+= m_on_light_intensity_change;
 
 	m_light_data_link.get_on_push_back_callbacks() += [this](VulkanBufferInfo* buf, Light const*, LightData const&) {
 		auto const data = VulkanRayTracingShaders::LightBlock::get_mem(
@@ -399,10 +404,14 @@ PTS::VulkanRayTracingRenderer::VulkanRayTracingRenderer(RenderConfig config)
 PTS::VulkanRayTracingRenderer::~VulkanRayTracingRenderer() noexcept {
 	SceneObject::get_field_info<SceneObject::FieldTag::LOCAL_TRANSFORM>().get_on_change_callback_list()
 		-= m_on_obj_local_trans_change;
-
 	RenderableObject::get_field_info<RenderableObject::FieldTag::MAT>().get_on_change_callback_list()
 		-= m_on_mat_change;
-
+	Light::get_field_info<Light::FieldTag::LIGHT_TYPE>().get_on_change_callback_list()
+		-= m_on_light_type_change;
+	Light::get_field_info<Light::FieldTag::COLOR>().get_on_change_callback_list()
+		-= m_on_light_color_change;
+	Light::get_field_info<Light::FieldTag::INTENSITY>().get_on_change_callback_list()
+		-= m_on_light_intensity_change;
 	if (m_scene) {
 		m_scene->get_callback_list(SceneChangeType::OBJECT_ADDED) -= m_on_add_obj;
 		m_scene->get_callback_list(SceneChangeType::OBJECT_REMOVED) -= m_on_remove_obj;
@@ -466,6 +475,8 @@ auto PTS::VulkanRayTracingRenderer::open_scene(Ref<Scene> scene) noexcept
 	return {};
 }
 
+#pragma region Callbacks
+
 auto PTS::VulkanRayTracingRenderer::on_add_obj(Ref<SceneObject> obj) noexcept -> void {
 	TL_CHECK_NON_FATAL(m_app, LogLevel::Error, add_object(obj));
 	TL_CHECK_NON_FATAL(m_app, LogLevel::Error, reset_path_tracing());
@@ -489,6 +500,8 @@ auto PTS::VulkanRayTracingRenderer::on_obj_local_trans_change(
 			                   )
 			);
 		}
+	} else if (auto const light = data.obj.as<Light>()) {
+		TL_CHECK_NON_FATAL(m_app, LogLevel::Error, update_light(*light));
 	}
 	TL_CHECK_NON_FATAL(m_app, LogLevel::Error, reset_path_tracing());
 }
@@ -510,6 +523,36 @@ auto PTS::VulkanRayTracingRenderer::on_mat_change(
 	TL_CHECK_NON_FATAL(m_app, LogLevel::Error, reset_path_tracing());
 }
 
+auto PTS::VulkanRayTracingRenderer::update_light(Light const& light) noexcept -> tl::expected<void, std::string> {
+	auto idx = size_t{};
+	TL_TRY_ASSIGN(idx, m_light_data_link.get_idx(&light));
+	try {
+		m_light_data_link[idx] = light.get_data();
+	} catch (std::out_of_range const& err) {
+		m_app->log(LogLevel::Error, err.what());
+	}
+	return {};
+}
+
+auto PTS::VulkanRayTracingRenderer::on_light_type_change(
+	Light::callback_data_t<Light::FieldTag::LIGHT_TYPE> data) -> void {
+	TL_CHECK_NON_FATAL(m_app, LogLevel::Error, update_light(data.obj));
+	TL_CHECK_NON_FATAL(m_app, LogLevel::Error, reset_path_tracing());
+}
+
+auto PTS::VulkanRayTracingRenderer::on_light_color_change(
+	Light::callback_data_t<Light::FieldTag::COLOR> data) -> void {
+	TL_CHECK_NON_FATAL(m_app, LogLevel::Error, update_light(data.obj));
+	TL_CHECK_NON_FATAL(m_app, LogLevel::Error, reset_path_tracing());
+}
+
+auto PTS::VulkanRayTracingRenderer::on_light_intensity_change(
+	Light::callback_data_t<Light::FieldTag::INTENSITY> data) -> void {
+	TL_CHECK_NON_FATAL(m_app, LogLevel::Error, update_light(data.obj));
+	TL_CHECK_NON_FATAL(m_app, LogLevel::Error, reset_path_tracing());
+}
+
+#pragma endregion Callbacks
 auto PTS::VulkanRayTracingRenderer::render(View<Camera> camera) noexcept
 	-> tl::expected<TextureHandle, std::string> {
 	auto camera_data = VulkanRayTracingShaders::CameraData{camera.get()};
@@ -527,7 +570,8 @@ auto PTS::VulkanRayTracingRenderer::render(View<Camera> camera) noexcept
 			camera_data,
 			m_path_tracing_data.iteration,
 			m_editing_data.num_samples,
-			m_editing_data.max_bounces
+			m_editing_data.max_bounces,
+			m_editing_data.direct_lighting_only
 		};
 		try {
 			m_vk_render_cmd_buf->reset(vk::CommandBufferResetFlags{});

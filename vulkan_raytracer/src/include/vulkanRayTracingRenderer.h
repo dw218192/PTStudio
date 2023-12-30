@@ -36,6 +36,7 @@ namespace PTS {
 		[[nodiscard]] auto remove_object(SceneObject const& obj) -> tl::expected<void, std::string>;
 
 		// callbacks
+		[[nodiscard]] auto update_light(Light const& light) noexcept -> tl::expected<void, std::string>;
 		auto on_add_obj(Ref<SceneObject> obj) noexcept -> void;
 		auto on_remove_obj(Ref<SceneObject> obj) noexcept -> void;
 		Callback<void(Ref<SceneObject>)> m_on_add_obj{
@@ -47,6 +48,10 @@ namespace PTS {
 
 		DECL_FIELD_EVENT_MEMBERS(on_obj_local_trans_change, SceneObject, SceneObject::FieldTag::LOCAL_TRANSFORM);
 		DECL_FIELD_EVENT_MEMBERS(on_mat_change, RenderableObject, RenderableObject::FieldTag::MAT);
+		DECL_FIELD_EVENT_MEMBERS(on_light_type_change, Light, Light::FieldTag::LIGHT_TYPE);
+		DECL_FIELD_EVENT_MEMBERS(on_light_color_change, Light, Light::FieldTag::COLOR);
+		DECL_FIELD_EVENT_MEMBERS(on_light_intensity_change, Light, Light::FieldTag::INTENSITY);
+
 
 		// fields
 		ObserverPtr<Scene> m_scene{nullptr};
@@ -77,6 +82,8 @@ namespace PTS {
 
 			FIELD(int, max_bounces, 4,
 			      MRange { 1, 100 });
+
+			FIELD(bool, direct_lighting_only, false);
 
 			END_REFLECT();
 		} m_editing_data;

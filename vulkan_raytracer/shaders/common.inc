@@ -3,17 +3,22 @@
 
 // https://github.com/KhronosGroup/GLSL/blob/master/extensions/ext/GLSL_EXT_ray_tracing.txt
 
+// a payload can be in one of the following states:
+// done:    done = true
+// valid but not done: invalid = false && done = false
+// invalid: invalid = true or any other state not mentioned above
+
 struct Payload {
     // output from closest hit shader
     vec3 Li;  // sampled radiance
     vec3 pos; // intersection pos, world space
     vec3 wi;  // incoming dir, world space
-    bool done;
-    bool hit;
+    bool done, invalid; // state of the payload
 
-    // input to closest hit shader
+    // input to chit shader, because push_constant is not usable in chit
     int iteration;
     int level;
+    bool direct_lighting_only;
 };
 
 // utility functions and constants
@@ -38,7 +43,7 @@ vec3 random_pcg3d(uvec3 v) {
   v.x += v.y*v.z; v.y += v.z*v.x; v.z += v.x*v.y;
   v ^= v >> 16u;
   v.x += v.y*v.z; v.y += v.z*v.x; v.z += v.x*v.y;
-  return vec3(v) * (1.0/float(0xffffffffu));
+  return normalize(vec3(v) * (1.0/float(0xffffffffu)));
 }
 
 mat3 normalToWorldSpace(in vec3 normal) {

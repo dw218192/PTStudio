@@ -6,10 +6,14 @@
 #include "common.inc"
 #include "perframe_data.inc"
 
-layout(location = 0) rayPayloadInEXT Payload payload;
+layout(location = 0)
+rayPayloadInEXT Payload payload;
+
+layout(location = 1)
+rayPayloadInEXT bool vis_test;
 
 void main() {
     payload.Li = vec3(0.0);
     payload.done = true;
-    payload.hit = false;
+    vis_test = false;
 }

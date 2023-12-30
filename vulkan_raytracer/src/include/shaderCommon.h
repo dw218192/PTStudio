@@ -3,6 +3,8 @@
 #include <tcb/span.hpp>
 
 #include <string_view>
+#include <cstdint>
+
 #include "camera.h"
 #include "lightData.h"
 #include "vertex.h"
@@ -31,7 +33,7 @@ namespace PTS {
 		struct CameraData {
 			glm::mat4 inv_view_proj; // 0
 			glm::vec3 cam_pos; // 64
-			unsigned char _pad[4] = {0, 0, 0, 0};
+			uint8_t _pad[4] = {0, 0, 0, 0};
 			// total size: 80
 
 			CameraData() = default;
@@ -60,11 +62,20 @@ namespace PTS {
 		static_assert(sizeof(CameraData) == 80, "CameraData size mismatch");
 
 		struct PerFrameData {
-			CameraData camera; // 0
-			int iteration; // 80
-			int num_samples; // 84
-			int max_bounces; // 88
+			CameraData camera; // 0  base alignment: 16
+			uint32_t iteration; // 80 base alignment: 4
+			uint32_t num_samples; // 84 base alignment: 4
+			uint32_t max_bounces; // 88 base alignment: 4
+			uint32_t direct_lighting_only; // 92 base alignment: 4
 			// total size: 96
+
+			PerFrameData(CameraData const& camera, int iteration, int num_samples, int max_bounces,
+			             bool direct_lighting_only) :
+				camera{camera},
+				iteration{static_cast<uint32_t>(iteration)},
+				num_samples{static_cast<uint32_t>(num_samples)},
+				max_bounces{static_cast<uint32_t>(max_bounces)},
+				direct_lighting_only{direct_lighting_only} {}
 
 			static constexpr auto k_glsl_decl = std::string_view{
 				"\
@@ -73,9 +84,18 @@ namespace PTS {
             int iteration;\n\
             int num_samples;\n\
             int max_bounces;\n\
+			bool direct_lighting_only;\n\
         };\n"
 			};
 		};
+
+		static_assert(offsetof(PerFrameData, camera) == 0, "PerFrameData::camera offset mismatch");
+		static_assert(offsetof(PerFrameData, iteration) == 80, "PerFrameData::iteration offset mismatch");
+		static_assert(offsetof(PerFrameData, num_samples) == 84, "PerFrameData::num_samples offset mismatch");
+		static_assert(offsetof(PerFrameData, max_bounces) == 88, "PerFrameData::max_bounces offset mismatch");
+		static_assert(
+			offsetof(PerFrameData, direct_lighting_only) == 92, "PerFrameData::direct_lighting_only offset mismatch");
+		static_assert(sizeof(PerFrameData) == 96, "PerFrameData size mismatch");
 
 		struct VertexData {
 			glm::vec3 position;
@@ -86,19 +106,21 @@ namespace PTS {
 
 		struct MaterialData {
 			glm::vec3 base_color; // 0    base alignment: 16
-			unsigned char _pad1[4] = {0, 0, 0, 0}; // 12
+			uint8_t _pad1[4] = {0, 0, 0, 0}; // 12
 			glm::vec3 emissive_color; // 16   base alignment: 16
-			unsigned char _pad2[4] = {0, 0, 0, 0}; // 28
+			float emission_intensity; // 28   base alignment: 4
 			// total size: 32
 
 			MaterialData() = default;
 
 			explicit MaterialData(Material const& material) :
-				base_color{material.albedo}, emissive_color{material.emission} {}
+				base_color{material.albedo}, emissive_color{material.emission},
+				emission_intensity{material.emission_intensity} {}
 
 			auto operator==(MaterialData const& other) const noexcept -> bool {
 				return base_color == other.base_color
-					&& emissive_color == other.emissive_color;
+					&& emissive_color == other.emissive_color
+					&& std::abs(emission_intensity - other.emission_intensity) <= 0.001f;
 			}
 
 			auto operator!=(MaterialData const& other) const noexcept -> bool {
@@ -110,6 +132,7 @@ namespace PTS {
         struct MaterialData {\n\
             vec3 base_color;\n\
             vec3 emissive_color;\n\
+			float emission_intensity;\n\
         };\n"
 			};
 		};
@@ -130,8 +153,8 @@ namespace PTS {
 
 		private:
 			struct MemLayout {
-				int num_lights; // 0   base alignment: 4
-				unsigned char _pad[12]; // 4
+				uint32_t num_lights; // 0   base alignment: 4
+				uint8_t _pad[12]; // 4
 				LightData lights[1]; // 16  base alignment: 16
 			};
 
@@ -140,9 +163,9 @@ namespace PTS {
 
 		struct VertexAttribData {
 			glm::vec3 normal; // 0   base alignment: 16
-			unsigned char _pad1[4] = {0, 0, 0, 0};
+			uint8_t _pad1[4] = {0, 0, 0, 0};
 			glm::vec2 tex_coord; // 16  base alignment: 8
-			unsigned char _pad2[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+			uint8_t _pad2[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 
 			VertexAttribData() = default;
 
@@ -171,7 +194,7 @@ namespace PTS {
 
 		struct FaceIndexData {
 			glm::uvec3 indices;
-			unsigned char _pad[4] = {0, 0, 0, 0};
+			uint8_t _pad[4] = {0, 0, 0, 0};
 
 			FaceIndexData() = default;
 

@@ -9,27 +9,27 @@
 #include "mesh_attrs.inc"
 #include "light.inc"
 
-#include "perframe_data.inc"
-
 layout(set = TOP_LEVEL_ACC_SET, binding = TOP_LEVEL_ACC_BINDING)
 uniform accelerationStructureEXT topLevelAS;
 
 layout(location = 0)
 rayPayloadInEXT Payload payload;
 
+layout(location = 1)
+rayPayloadEXT bool vis_test;
+
 hitAttributeEXT vec3 attribs;
 
 bool is_visible(in vec3 p, in vec3 q) {
-    return true;
     vec3 dir = q - p;
     float dist = length(dir);
     dir = normalize(dir);
     vec3 ro = p + dir * RayEpsilon;
     vec3 rd = dir;
-    Payload payload;
+    vis_test = true;
     traceRayEXT(
         topLevelAS,
-        gl_RayFlagsOpaqueEXT | gl_RayFlagsTerminateOnFirstHitEXT,
+        gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT | gl_RayFlagsTerminateOnFirstHitEXT,
         0xFF,  // cull mask
         0, // sbt record offset
         0, // sbt record stride
@@ -38,9 +38,9 @@ bool is_visible(in vec3 p, in vec3 q) {
         0.001, // ray tmin
         rd, // ray direction
         dist + 0.01, // ray tmax
-        0 // payload location
+        1 // payload location
     );
-    return payload.hit;
+    return !vis_test;
 }
 
 // area integration for light sampling
@@ -51,6 +51,10 @@ float power_heuristic(float nf, float fPdf, float ng, float gPdf) {
 }
 
 float pdf_light(in vec3 p, in vec3 n, in vec3 wiW, int light_idx) {
+    if (light_idx < 0 || light_idx >= num_lights) {
+        return 0.0;
+    }
+
     LightData light = lights[light_idx];
     // point light
     if (light.type == POINT_LIGHT) {
@@ -58,18 +62,22 @@ float pdf_light(in vec3 p, in vec3 n, in vec3 wiW, int light_idx) {
     }
     return 0.0;
 }
-vec3 sample_light(in vec3 p, in vec3 n, out vec3 wiW, out float pdf) {
+vec3 sample_light(in vec3 p, in vec3 n, out vec3 wiW, out float pdf, out int idx) {
     wiW = vec3(0.0);
     pdf = 0.0;
-    int random_light_idx = int(random_pcg3d(uvec3(gl_LaunchIDEXT.xy, payload.iteration + payload.level)).x * float(num_lights));
-    LightData light = lights[random_light_idx];
+    if (num_lights == 0) {
+        return vec3(0.0);
+    }
+
+    idx = int(random_pcg3d(uvec3(gl_LaunchIDEXT.xy, payload.iteration + payload.level)).x * float(num_lights));
+    LightData light = lights[idx];
     vec3 light_pos = vec3(light.transform[3]);
     vec3 light_dir = light_pos - p;
     if (!is_visible(p, light_pos)) {
         return vec3(0.0);
     }
 
-    pdf = pdf_light(p, n, wiW, random_light_idx);
+    pdf = pdf_light(p, n, wiW, idx);
     // point light
     if (light.type == POINT_LIGHT) {
         wiW = normalize(light_dir);
@@ -133,22 +141,24 @@ void main() {
     vec3 posW = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT;
     mat3 invTrans = transpose(inverse(mat3(gl_ObjectToWorldEXT)));
     vec3 nW = normalize(invTrans * n);
-
     MaterialData material = materials[nonuniformEXT(gl_InstanceCustomIndexEXT)];
+    
     if (material.emissive_color != vec3(0.0)) {
-        payload.Li = material.emissive_color;
+        payload.Li = material.emissive_color * material.emission_intensity;
         payload.done = true;
-        payload.hit = true;
     } else {
         vec3 wo = worldToNormalSpace(nW) * (-gl_WorldRayDirectionEXT);
         float weight_light = 0.0;
         float weight_brdf = 0.0;
         vec3 light_Li = vec3(0.0);
+        int light_idx = 0;
+
+        if (num_lights > 0)
         {
             // direct lighting
             vec3 wi;
             vec3 wiW; float pdf;
-            vec3 Li = sample_light(posW, nW, wiW, pdf);
+            vec3 Li = sample_light(posW, nW, wiW, pdf, light_idx);
             wi = worldToNormalSpace(nW) * wiW;
             if (Li != vec3(0.0) && pdf != 0.0f) {
                 Li *= brdf_diffuse(wo, wi, material);
@@ -156,18 +166,26 @@ void main() {
                 light_Li = Li;
             }
         }
-        
-        vec3 wi; float pdf;
-        vec3 Li = diffuse(wo, material, wi, pdf);
-        vec3 wiW = normalToWorldSpace(nW) * wi;
+        if (payload.direct_lighting_only) {
+            payload.Li = light_Li;
+            payload.done = true;
+        } else {
+            vec3 wi; float pdf;
+            vec3 Li = diffuse(wo, material, wi, pdf);
+            vec3 wiW = normalToWorldSpace(nW) * wi;
 
-        Li *= abs(dot(wiW, nW)) / pdf;
-        weight_brdf = power_heuristic(1.0, pdf, 1.0, pdf_light(posW, nW, wiW, 0));
+            if (pdf == 0.0) {
+                payload.invalid = true;
+                return;
+            }
+            
+            Li *= abs(dot(wiW, nW)) / pdf;
+            weight_brdf = power_heuristic(1.0, pdf, 1.0, pdf_light(posW, nW, wiW, light_idx));
+            payload.Li = weight_light * light_Li + weight_brdf * Li;
+            payload.pos = posW;
+            payload.wi = wiW;
+            payload.done = false;
+        }
 
-        payload.Li = weight_light * light_Li + weight_brdf * Li;
-        payload.pos = posW;
-        payload.wi = wiW;
-        payload.done = false;
-        payload.hit = true;
     }
 } 

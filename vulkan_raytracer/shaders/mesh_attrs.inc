@@ -2,11 +2,7 @@
 #define MESH_ATTRS_INC
 
 #include "bindings.inc"
-
-struct MaterialData {
-    vec3 base_color;
-    vec3 emissive_color;
-};
+#include <material.inc>
 
 struct VertexAttribData {
     vec3 normal;

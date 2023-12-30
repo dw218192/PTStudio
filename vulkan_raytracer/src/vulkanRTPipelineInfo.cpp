@@ -1,20 +1,16 @@
 #include "vulkanRTPipelineInfo.h"
+#include "embeddedRes.h"
 
 #include <vector>
 #include <shaderc/shaderc.hpp>
 #include <cmrc/cmrc.hpp>
+
 CMRC_DECLARE(vulkan_raytracer_resources);
+CMRC_DECLARE(core_resources);
 
+// utility functions
 namespace {
-	[[nodiscard]] auto try_get_res(std::string const& path) -> tl::expected<std::string, std::string> {
-		auto const embedded_fs = cmrc::vulkan_raytracer_resources::get_filesystem();
-		if (!embedded_fs.exists(path)) {
-			return TL_ERROR("built-in resource {} does not exist", path);
-		}
-		auto const raw = embedded_fs.open(path);
-		return std::string{raw.begin(), raw.end()};
-	}
-
+	// includer for compiling glsl shaders
 	struct EmbeddedFsIncluder : shaderc::CompileOptions::IncluderInterface {
 		~EmbeddedFsIncluder() override = default;
 		EmbeddedFsIncluder() = default;
@@ -23,7 +19,13 @@ namespace {
 		auto GetInclude(char const* requested_source, shaderc_include_type type,
 		                char const* requesting_source, size_t include_depth) -> shaderc_include_result* override {
 			auto const file_path = "shaders/" + std::string{requested_source};
-			auto inc_src_res = try_get_res(file_path);
+			auto inc_src_res = tl::expected<std::string, std::string>{};
+			if (type == shaderc_include_type_standard) {
+				inc_src_res = PTS::try_get_embedded_res(cmrc::core_resources::get_filesystem(), file_path);
+			} else {
+				inc_src_res = PTS::try_get_embedded_res(cmrc::vulkan_raytracer_resources::get_filesystem(), file_path);
+			}
+
 			if (!inc_src_res) {
 				m_res.source_name = "";
 				m_res.source_name_length = 0;
@@ -55,15 +57,13 @@ namespace {
 		std::vector<std::unique_ptr<char[]>> m_owned_mem;
 		shaderc_include_result m_res{};
 	};
-}
 
-namespace PTS {
 	[[nodiscard]] auto create_shader_glsl(
-		VulkanDeviceInfo const& dev,
+		PTS::VulkanDeviceInfo const& dev,
 		std::string const& src,
 		std::string_view name,
 		vk::ShaderStageFlagBits stage
-	) -> tl::expected<VulkanShaderInfo, std::string> {
+	) -> tl::expected<PTS::VulkanShaderInfo, std::string> {
 		auto to_shaderc_stage = [](vk::ShaderStageFlagBits stage) {
 			switch (stage) {
 			case vk::ShaderStageFlagBits::eVertex:
@@ -126,12 +126,13 @@ namespace PTS {
 					sprv_code.data()
 				}
 			);
-			return VulkanShaderInfo{{std::move(shader)}, stage};
+			return PTS::VulkanShaderInfo{{std::move(shader)}, stage};
 		} catch (vk::SystemError& err) {
 			return TL_ERROR("vulkan error:\n{} ", err.what());
 		}
 	}
 }
+
 
 auto PTS::VulkanRTPipelineInfo::create(
 	VulkanDeviceInfo const& dev,
@@ -152,14 +153,15 @@ auto PTS::VulkanRTPipelineInfo::create(
 	auto miss_shader_src = std::string{};
 	auto chit_shader_src = std::string{};
 
-	TL_TRY_ASSIGN(rgen_shader_src, try_get_res(k_rgen_shader_path));
-	TL_TRY_ASSIGN(miss_shader_src, try_get_res(k_miss_shader_path));
-	TL_TRY_ASSIGN(chit_shader_src, try_get_res(k_chit_shader_path));
+	auto const fs = cmrc::vulkan_raytracer_resources::get_filesystem();
+	TL_TRY_ASSIGN(rgen_shader_src, PTS::try_get_embedded_res(fs, k_rgen_shader_path));
+	TL_TRY_ASSIGN(miss_shader_src, PTS::try_get_embedded_res(fs, k_miss_shader_path));
+	TL_TRY_ASSIGN(chit_shader_src, PTS::try_get_embedded_res(fs, k_chit_shader_path));
 
 	TL_TRY_ASSIGN(shader_infos[0], create_shader_glsl(
 		              dev,
 		              rgen_shader_src,
-		              "ray_gen_shader",
+		              "rgen_shader",
 		              vk::ShaderStageFlagBits::eRaygenKHR
 	              ));
 	TL_TRY_ASSIGN(shader_infos[1], create_shader_glsl(
@@ -196,30 +198,30 @@ auto PTS::VulkanRTPipelineInfo::create(
 			*shader_infos[2],
 			"main",
 			nullptr
-		}
+		},
 	};
 	auto shader_groups = std::array{
-		vk::RayTracingShaderGroupCreateInfoKHR{
-			vk::RayTracingShaderGroupTypeKHR::eGeneral,
-			0,
-			VK_SHADER_UNUSED_KHR,
-			VK_SHADER_UNUSED_KHR,
-			VK_SHADER_UNUSED_KHR
-		},
-		vk::RayTracingShaderGroupCreateInfoKHR{
-			vk::RayTracingShaderGroupTypeKHR::eGeneral,
-			1,
-			VK_SHADER_UNUSED_KHR,
-			VK_SHADER_UNUSED_KHR,
-			VK_SHADER_UNUSED_KHR
-		},
-		vk::RayTracingShaderGroupCreateInfoKHR{
-			vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
-			2,
-			VK_SHADER_UNUSED_KHR,
-			VK_SHADER_UNUSED_KHR,
-			VK_SHADER_UNUSED_KHR
-		}
+		// group0  raygen 
+		vk::RayTracingShaderGroupCreateInfoKHR{}
+		.setType(vk::RayTracingShaderGroupTypeKHR::eGeneral)
+		.setGeneralShader(0)
+		.setClosestHitShader(VK_SHADER_UNUSED_KHR)
+		.setAnyHitShader(VK_SHADER_UNUSED_KHR)
+		.setIntersectionShader(VK_SHADER_UNUSED_KHR),
+		// group1 miss
+		vk::RayTracingShaderGroupCreateInfoKHR{}
+		.setType(vk::RayTracingShaderGroupTypeKHR::eGeneral)
+		.setGeneralShader(1)
+		.setClosestHitShader(VK_SHADER_UNUSED_KHR)
+		.setAnyHitShader(VK_SHADER_UNUSED_KHR)
+		.setIntersectionShader(VK_SHADER_UNUSED_KHR),
+		// group2 chit
+		vk::RayTracingShaderGroupCreateInfoKHR{}
+		.setType(vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup)
+		.setGeneralShader(VK_SHADER_UNUSED_KHR)
+		.setClosestHitShader(2)
+		.setAnyHitShader(VK_SHADER_UNUSED_KHR)
+		.setIntersectionShader(VK_SHADER_UNUSED_KHR)
 	};
 
 	try {
@@ -342,7 +344,8 @@ auto PTS::VulkanRTPipelineInfo::create(
 		TL_CHECK(desc_sets[cur_set - 1].create(dev, desc_set_pool));
 
 		if (cur_set != VulkanRayTracingShaders::RayTracingBindings::k_num_sets) {
-			return TL_ERROR("not creating all descriptor sets");
+			return TL_ERROR("not creating all descriptor sets, expected: {}, created: {}",
+			                VulkanRayTracingShaders::RayTracingBindings::k_num_sets, cur_set);
 		}
 
 		// push constants
@@ -369,7 +372,7 @@ auto PTS::VulkanRTPipelineInfo::create(
 			vk::RayTracingPipelineCreateInfoKHR{}
 			.setStages(shader_stages)
 			.setGroups(shader_groups)
-			.setMaxPipelineRayRecursionDepth(0)
+			.setMaxPipelineRayRecursionDepth(1) // for possible visibility tests in the chit shader
 			.setLayout(*pipeline_layout)
 		);
 		if (pipeline.result != vk::Result::eSuccess) {
@@ -387,6 +390,8 @@ auto PTS::VulkanRTPipelineInfo::create(
 		auto group_count = static_cast<uint32_t>(shader_groups.size());
 		auto sbt_size = handle_size_aligned * group_count;
 
+
+		// create SBT
 		auto handles = std::vector<uint8_t>(sbt_size);
 		if (dev->getRayTracingShaderGroupHandlesKHR(
 			*pipeline.value,
@@ -419,21 +424,18 @@ auto PTS::VulkanRTPipelineInfo::create(
 			              tcb::span{ handles.data() + handle_size_aligned * 2, 1 }
 		              ));
 
-		auto raygen_region = vk::StridedDeviceAddressRegionKHR{
-			raygen_buf.get_device_addr(),
-			handle_size_aligned,
-			handle_size_aligned
-		};
-		auto miss_region = vk::StridedDeviceAddressRegionKHR{
-			miss_buf.get_device_addr(),
-			handle_size_aligned,
-			handle_size_aligned
-		};
-		auto hit_region = vk::StridedDeviceAddressRegionKHR{
-			hit_buf.get_device_addr(),
-			handle_size_aligned,
-			handle_size_aligned
-		};
+		auto raygen_region = vk::StridedDeviceAddressRegionKHR{}
+		                     .setDeviceAddress(raygen_buf.get_device_addr())
+		                     .setSize(handle_size_aligned)
+		                     .setStride(handle_size_aligned);
+		auto miss_region = vk::StridedDeviceAddressRegionKHR{}
+		                   .setDeviceAddress(miss_buf.get_device_addr())
+		                   .setSize(handle_size_aligned)
+		                   .setStride(handle_size_aligned);
+		auto hit_region = vk::StridedDeviceAddressRegionKHR{}
+		                  .setDeviceAddress(hit_buf.get_device_addr())
+		                  .setSize(handle_size_aligned)
+		                  .setStride(handle_size_aligned);
 
 		return VulkanRTPipelineInfo{
 			{std::move(pipeline.value)},

@@ -10,6 +10,7 @@ struct PerFrameData {
     int iteration;
     int num_samples;
     int max_bounces;
+    bool direct_lighting_only;
 };
 layout (push_constant) uniform PerFrameDataBlock {
     PerFrameData perFrameData;

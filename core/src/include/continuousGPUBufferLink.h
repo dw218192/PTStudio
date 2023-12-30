@@ -68,7 +68,19 @@ namespace PTS {
 			return Proxy{*this, m_idx_to_ins.at(idx), m_data.at(idx)};
 		}
 
+		NODISCARD auto operator[](cpu_handle_t cpu_handle) -> Proxy {
+			auto const idx_res = get_idx(cpu_handle);
+			auto const idx = idx_res ? idx_res.value() : m_size;
+			return operator[](idx);
+		}
+
 		NODISCARD auto at(size_t idx) const -> GPUType const& { return m_data.at(idx); }
+		NODISCARD auto at(cpu_handle_t cpu_handle) const -> GPUType const& {
+			auto const idx_res = get_idx(cpu_handle);
+			auto const idx = idx_res ? idx_res.value() : m_size;
+			return at(idx);
+		}
+
 		NODISCARD auto get_on_erase_callbacks() noexcept -> auto& { return m_on_erase_callbacks; }
 		NODISCARD auto get_on_push_back_callbacks() noexcept -> auto& { return m_on_push_back_callbacks; }
 		NODISCARD auto get_on_update_callbacks() noexcept -> auto& { return m_on_update_callbacks; }

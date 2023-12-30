@@ -30,7 +30,9 @@ void main() {
     vec3 color = vec3(1.0);
     for (int i = 0; i < perFrameData.max_bounces; ++i) {
         payload = Payload(vec3(0.0), vec3(0.0), vec3(0.0), false, false,
-            perFrameData.iteration, i);
+            perFrameData.iteration,
+            i,
+            perFrameData.direct_lighting_only);
 
         traceRayEXT(
             topLevelAS,
@@ -50,14 +52,15 @@ void main() {
             color *= payload.Li * 2.;
             break;
         } else {
-            if (payload.Li == vec3(0.0) || payload.wi == vec3(0.0)) {
-                // invalid path
+            if (!payload.invalid && !payload.done) {
+                color *= payload.Li;
+                ro = payload.pos;
+                rd = payload.wi;
+            } else {
+                // invalid sample
                 color = vec3(0.0);
                 break;
             }
-            color *= payload.Li;
-            ro = payload.pos;
-            rd = payload.wi;
         }
     }
 

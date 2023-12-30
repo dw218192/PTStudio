@@ -7,6 +7,8 @@
 
 #include <algorithm>
 
+#include "embeddedRes.h"
+
 using namespace PTS;
 using namespace PTS::Editor;
 
@@ -99,21 +101,16 @@ auto EditorRenderer::init(ObserverPtr<Application> app) noexcept -> tl::expected
 	TL_CHECK_AND_PASS(Renderer::init(app));
 	// load shader sources
 	auto const embedded_fs = cmrc::editor_resources::get_filesystem();
-	static constexpr auto required_shaders = std::array{
-		k_grid_vs_path,
-		k_grid_fs_path,
-		k_billboard_vs_path,
-		k_billboard_fs_path
-	};
-	for (auto const path : required_shaders) {
-		if (!embedded_fs.exists(path)) {
-			return TL_ERROR("build-in shader {} not found", path);
-		}
-	}
-	auto const grid_vs_src = embedded_fs.open(k_grid_vs_path);
-	auto const grid_fs_src = embedded_fs.open(k_grid_fs_path);
-	auto const billboard_vs_src = embedded_fs.open(k_billboard_vs_path);
-	auto const billboard_fs_src = embedded_fs.open(k_billboard_fs_path);
+	auto grid_vs_src = std::string{};
+	auto grid_fs_src = std::string{};
+	auto billboard_vs_src = std::string{};
+	auto billboard_fs_src = std::string{};
+
+	TL_TRY_ASSIGN(grid_vs_src, try_get_embedded_res(embedded_fs, k_grid_vs_path));
+	TL_TRY_ASSIGN(grid_fs_src, try_get_embedded_res(embedded_fs, k_grid_fs_path));
+	TL_TRY_ASSIGN(billboard_vs_src, try_get_embedded_res(embedded_fs, k_billboard_vs_path));
+	TL_TRY_ASSIGN(billboard_fs_src, try_get_embedded_res(embedded_fs, k_billboard_fs_path));
+
 	auto create_grid = [this, &grid_vs_src, &grid_fs_src]
 	(float grid_dim, float spacing) -> tl::expected<void, std::string> {
 		std::vector<glm::vec3> vertices;
@@ -138,8 +135,8 @@ auto EditorRenderer::init(ObserverPtr<Application> app) noexcept -> tl::expected
 		// grid shaders
 		{
 			ShaderProgram::ShaderDesc descs{
-				{ShaderType::Vertex, std::string_view{grid_vs_src.begin(), grid_vs_src.size()}},
-				{ShaderType::Fragment, std::string_view{grid_fs_src.begin(), grid_fs_src.size()}},
+				{ShaderType::Vertex, grid_vs_src},
+				{ShaderType::Fragment, grid_fs_src},
 			};
 			TL_TRY_ASSIGN(m_grid_shader, ShaderProgram::from_srcs(descs));
 		}
@@ -197,9 +194,12 @@ auto EditorRenderer::init(ObserverPtr<Application> app) noexcept -> tl::expected
 	if (!embedded_fs.exists(k_light_icon_png_path)) {
 		return TL_ERROR("builtin icon {} not found", k_light_icon_png_path);
 	}
-	auto const light_icon_png_data = embedded_fs.open(k_light_icon_png_path);
+
+	auto light_icon_png_data = std::string{};
+	TL_TRY_ASSIGN(light_icon_png_data, try_get_embedded_res(embedded_fs, k_light_icon_png_path));
 	TL_TRY_ASSIGN(m_light_gizmo_data.texture,
-	              GLTexture::create(tcb::span{ light_icon_png_data.begin(), light_icon_png_data.end() }, FileFormat::PNG
+	              GLTexture::create(tcb::span{ light_icon_png_data.data(), light_icon_png_data.data() +
+		              light_icon_png_data.size() }, FileFormat::PNG
 	              ));
 	TL_TRY_ASSIGN(m_light_gizmo_data.render_data, GLVertexArray::create(
 		              tcb::make_span(k_quad_data_pos_uv),
@@ -208,8 +208,8 @@ auto EditorRenderer::init(ObserverPtr<Application> app) noexcept -> tl::expected
 	              ));
 	{
 		ShaderProgram::ShaderDesc descs{
-			{ShaderType::Vertex, std::string_view{billboard_vs_src.begin(), billboard_vs_src.size()}},
-			{ShaderType::Fragment, std::string_view{billboard_fs_src.begin(), billboard_fs_src.size()}},
+			{ShaderType::Vertex, billboard_vs_src},
+			{ShaderType::Fragment, billboard_fs_src},
 		};
 		TL_TRY_ASSIGN(m_light_gizmo_data.shader, ShaderProgram::from_srcs(descs));
 	}
