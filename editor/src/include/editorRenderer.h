@@ -81,8 +81,6 @@ namespace PTS {
 			int cur_font_size{16};
 			bool show_built_in_uniform{false};
 			bool show_uniform{false};
-			bool show_input{false};
-			bool show_output{false};
 			bool show_uniform_decl{false};
 		};
 

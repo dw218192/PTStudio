@@ -78,6 +78,7 @@ Basic Operations:
 	constexpr auto k_uniform_resolution = "u_resolution";
 
 	constexpr auto k_built_in_uniforms = std::array{
+		k_uniform_light_count,
 		k_uniform_model,
 		k_uniform_view,
 		k_uniform_projection,

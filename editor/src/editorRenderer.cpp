@@ -937,9 +937,6 @@ PerObjectEditingData::PerObjectEditingData() {
 }
 
 void PerObjectEditingData::set_src(ShaderType type, std::string src) {
-	// NOTE: see TextEditor.cpp: 107 an extra newline will be added every time you call GetText()
-	// GetText(SetText(GetText) ...
-	// src.pop_back();
 	m_shader_srcs[type] = std::move(src);
 }
 

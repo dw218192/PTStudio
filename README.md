@@ -41,11 +41,13 @@ git clone --recursive [repo url]
         - [x] camera should move faster the further away it is from the center
     - [x] emissive material should be considered as a light source in editor renderer
         - [ ] make it a mesh light source, consider using LTC for area light
-    - [ ] lights should be considered in vulkan ray tracer
+    - [x] lights should be considered in vulkan ray tracer
+        - [ ] fix MIS bugs
     - [ ] fix sphere primitive uv bug
     - [x] reflection system improvements
         - [x] support for single inheritance
         - [x] support for pointer members; reference not supported, reference members are bad anyways
+    - [ ] EditFlags::Visible should be considered in vulkan ray tracer and editor renderer
 - Medium Priority
     - [ ] implement undo/redo system
     - [ ] fix GLTexture::save() bug
@@ -64,3 +66,5 @@ git clone --recursive [repo url]
         - [ ] UI part
     - [ ] implement asset system
     - [ ] implement dynamic renderer DLL loading & unloading
+    - [ ] GLSLHelper improvements
+        - [ ] cache include files to avoid reloading the same file multiple times? (might not be necessary since emrc is in-memory)
