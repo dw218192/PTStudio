@@ -21,7 +21,7 @@ static constexpr auto k_desc_pool_sizes = std::array{
 	},
 	vk::DescriptorPoolSize{
 		vk::DescriptorType::eStorageBuffer,
-		3 + 2 * PTS::k_max_instances
+		3 + 2 * PTS::k_max_objs
 	},
 	vk::DescriptorPoolSize{
 		vk::DescriptorType::eStorageImage,

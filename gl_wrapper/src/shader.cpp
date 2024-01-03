@@ -271,8 +271,7 @@ auto ShaderProgram::recompile(View<ShaderDesc> new_srcs) noexcept -> tl::expecte
 	}
 
 	for (auto const type : EIter<ShaderType>{}) {
-		auto&& src = new_srcs.get()[type];
-		if (src) {
+		if (auto& src = new_srcs.get()[type]) {
 			// modify or create
 			if (!m_shaders[type]) {
 				TL_TRY_ASSIGN(m_shaders[type], Shader::from_src(type, *src));
@@ -350,8 +349,7 @@ auto ShaderProgram::clone(ViewPtr<ShaderProgram> other) noexcept -> tl::expected
 auto ShaderProgram::from_files(View<ShaderDesc> files) noexcept -> tl::expected<ShaderProgramRef, std::string> {
 	EArray<ShaderType, ShaderRef> shaders{};
 	for (auto const type : EIter<ShaderType>{}) {
-		auto&& file = files.get()[type];
-		if (file) {
+		if (auto& file = files.get()[type]) {
 			TL_TRY_ASSIGN(shaders[type], Shader::from_file(type, *file));
 		}
 	}
@@ -362,8 +360,7 @@ auto ShaderProgram::from_files(View<ShaderDesc> files) noexcept -> tl::expected<
 auto ShaderProgram::from_srcs(View<ShaderDesc> srcs) noexcept -> tl::expected<ShaderProgramRef, std::string> {
 	EArray<ShaderType, ShaderRef> shaders{};
 	for (auto const type : EIter<ShaderType>{}) {
-		auto&& src = srcs.get()[type];
-		if (src) {
+		if (auto& src = srcs.get()[type]) {
 			TL_TRY_ASSIGN(shaders[type], Shader::from_src(type, *src));
 		}
 	}

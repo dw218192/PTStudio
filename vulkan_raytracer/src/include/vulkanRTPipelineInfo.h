@@ -71,7 +71,7 @@ namespace PTS {
 		VulkanBufferInfo m_null_buffer{};
 
 		// Unbounded arrays
-		std::array<VulkanBufferInfo, k_max_instances> vertex_attribs_ssbos{};
-		std::array<VulkanBufferInfo, k_max_instances> index_ssbos{};
+		std::array<VulkanBufferInfo, k_max_objs> vertex_attribs_ssbos{};
+		std::array<VulkanBufferInfo, k_max_objs> index_ssbos{};
 	};
 } // namespace PTS

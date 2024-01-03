@@ -2,6 +2,8 @@
 #define LIGHT_INC
 
 #include "bindings.inc"
+
+#include <consts.inc>
 #include <light.inc>
 
 layout (set = LIGHTS_SET, binding = LIGHTS_BINDING)

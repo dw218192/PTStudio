@@ -14,6 +14,7 @@
 #include "TextEditor.h"
 #include "enumArray.h"
 #include "callbackList.h"
+#include "consts.h"
 #include "continuousGPUBufferLink.h"
 
 namespace PTS {
@@ -35,8 +36,6 @@ namespace PTS {
 		// param passing here is a little weird because we have to work with
 		// TextEditor
 		struct PerObjectEditingData {
-			std::string common_funcs;
-
 			enum class CompilationStatus {
 				UNKNOWN,
 				SUCCESS,
@@ -46,13 +45,9 @@ namespace PTS {
 			PerObjectEditingData();
 			void set_src(ShaderType type, std::string src);
 			auto get_src(ShaderType type) -> View<std::string>;
-			auto get_outputs(ShaderType type) -> std::string_view;
-			auto get_inputs(ShaderType type) -> std::string_view;
 
 		private:
-			EArray<ShaderType, std::string> m_shader_inputs;
-			EArray<ShaderType, std::string> m_shader_outputs;
-			EArray<ShaderType, std::string> m_shader_srcs; // unprocessed src
+			EArray<ShaderType, std::string> m_shader_srcs;
 		};
 
 		// extra object data
@@ -154,14 +149,15 @@ namespace PTS {
 			// default shader, should be initialized in init()
 			ShaderProgramRef m_default_shader{nullptr};
 			// light data
-			ContinuousGPUBufferLink<LightData, Light, GLBufferRef, k_maxLights> m_light_data_link{};
+			ContinuousGPUBufferLink<LightData, Light, GLBufferRef, k_max_lights> m_light_data_link{};
 			std::unordered_map<ViewPtr<RenderableObject>, PerObjectData> m_obj_data;
 			ViewPtr<RenderableObject> m_cur_outline_obj{nullptr};
 			bool m_valid{false};
 			SharedTextEditorData m_shared_editor_data;
 
 			EArray<ShaderType, PerTextEditorData> m_shader_editor_data{};
-			PerTextEditorData m_extra_func_editor_data{};
+			// for information only, glsl sources that are built-in and cannot be edited
+			std::unordered_map<std::string_view, PerTextEditorData> m_fixed_glsl_src_editor_data;
 		};
 	}
 }

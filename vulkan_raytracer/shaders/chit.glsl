@@ -89,39 +89,47 @@ vec3 sample_light(in vec3 p, in vec3 n, out vec3 wiW, out float pdf, out int idx
 }
 
 // these functions operate in normal space
-#define BRDF(name) vec3 brdf_##name(in vec3 wo, in vec3 wi, in MaterialData material)
-#define PDF(name) float pdf_##name(in vec3 wo, in vec3 wi, in MaterialData material)
-#define SAMPLE_F(name) vec3 name(in vec3 wo, in MaterialData material, out vec3 wi, out float pdf)
-
-BRDF(diffuse) {
-    return material.base_color * INV_PI;
-}
-PDF(diffuse) {
-    return squareToHemisphereCosinePDF(wi);
-}
-SAMPLE_F(diffuse) {
-    vec2 xi = random_pcg3d(uvec3(gl_LaunchIDEXT.xy, payload.iteration + payload.level)).xy;
-    wi = squareToHemisphereCosine(xi);
-    pdf = pdf_diffuse(wo, wi, material);
-    return brdf_diffuse(wo, wi, material);
-}
-
-BRDF(specular) {
-    return material.base_color / abs(wi.z);
-}
-PDF(specular) {
-    return 1.0;
-}
-SAMPLE_F(specular) {
-    wi = vec3(wo.x, wo.y, -wo.z);
-    pdf = pdf_specular(wo, wi, material);
-
-    float absCosTheta = abs(wi.z);
-    if (absCosTheta <= Epsilon) {
-        // total internal reflection
+vec3 mat_brdf(in vec3 wo, in vec3 wi, in MaterialData material) {
+    int type = get_material_type(material);
+    if (type == DIFFUSE) {
+        return material.base_color * INV_PI;
+    } else if (type == PERFECT_SPECULAR) {
+        return material.base_color / abs(wi.z);
+    } else {
         return vec3(0.0);
     }
-    return brdf_specular(wo, wi, material);
+}
+
+float mat_pdf(in vec3 wo, in vec3 wi, in MaterialData material) {
+    int type = get_material_type(material);
+    if (type == DIFFUSE) {
+        return squareToHemisphereCosinePDF(wi);
+    } else if (type == PERFECT_SPECULAR) {
+        return 1.0;
+    } else {
+        return 0.0;
+    }
+}
+
+vec3 sample_f(in vec3 wo, in MaterialData material, out vec3 wi, out float pdf) {
+    int type = get_material_type(material);
+    vec3 ret = mat_brdf(wo, wi, material);
+
+    wi = vec3(0.0);
+    pdf = mat_pdf(wo, wi, material);
+
+    if (type == DIFFUSE) {
+        vec2 xi = random_pcg3d(uvec3(gl_LaunchIDEXT.xy, payload.iteration + payload.level)).xy;
+        wi = squareToHemisphereCosine(xi);
+    } else if (type == PERFECT_SPECULAR) {
+        wi = vec3(wo.x, wo.y, -wo.z);
+        float absCosTheta = abs(wi.z);
+        if (absCosTheta <= Epsilon) {
+            // total internal reflection
+            return vec3(0.0);
+        }
+    }
+    return ret;
 }
 
 void main() {
@@ -161,8 +169,8 @@ void main() {
             vec3 Li = sample_light(posW, nW, wiW, pdf, light_idx);
             wi = worldToNormalSpace(nW) * wiW;
             if (Li != vec3(0.0) && pdf != 0.0f) {
-                Li *= brdf_diffuse(wo, wi, material);
-                weight_light = power_heuristic(1.0, pdf, 1.0, pdf_diffuse(wo, wi, material));
+                Li *= mat_brdf(wo, wi, material);
+                weight_light = power_heuristic(1.0, pdf, 1.0, mat_pdf(wo, wi, material));
                 light_Li = Li;
             }
         }
@@ -171,7 +179,7 @@ void main() {
             payload.done = true;
         } else {
             vec3 wi; float pdf;
-            vec3 Li = diffuse(wo, material, wi, pdf);
+            vec3 Li = sample_f(wo, material, wi, pdf);
             vec3 wiW = normalToWorldSpace(nW) * wi;
 
             if (pdf == 0.0) {

@@ -57,9 +57,8 @@ namespace PTS {
 				}
 
 				m_logs.emplace_back(level, fmt::format(fmt, std::forward<Args>(args)...));
-			} catch (fmt::format_error const& err) {
-				m_logs.clear();
-				std::cerr << err.what() << std::endl;
+			} catch (fmt::format_error const&) {
+				m_logs.emplace_back(level, std::string{fmt});
 			}
 			on_log_added();
 		}

@@ -147,7 +147,7 @@
 	TL_TRY_ASSIGN(accel_ins_buf, VulkanBufferInfo::create(
 		              dev,
 		              VulkanBufferInfo::Type::AccelInput,
-		              sizeof(decltype(accel_ins_vec)::value_type) * k_max_instances,
+		              sizeof(decltype(accel_ins_vec)::value_type) * k_max_objs,
 		              tcb::make_span(accel_ins_vec)
 	              ));
 	auto ins_cnt = static_cast<uint32_t>(accel_ins_vec.size());
@@ -170,7 +170,7 @@
 		              dev, cmd_pool,
 		              build_info,
 		              ins_cnt,
-		              k_max_instances
+		              k_max_objs
 	              ));
 	return VulkanTopAccelStructInfo{
 		std::move(accel),
@@ -185,7 +185,7 @@
 	VulkanBottomAccelStructInfo&& bottom_accel,
 	glm::mat4 const& transform
 ) noexcept -> tl::expected<size_t, std::string> {
-	if (m_instances.size() >= k_max_instances) {
+	if (m_instances.size() >= k_max_objs) {
 		return TL_ERROR("max instances reached");
 	}
 	auto accel_ins = vk::AccelerationStructureInstanceKHR{}

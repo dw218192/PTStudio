@@ -2,7 +2,6 @@
 #include <optional>
 
 #include "shaderType.h"
-#include "stringManip.h"
 #include "enumArray.h"
 #include "lightData.h"
 
@@ -11,19 +10,6 @@ CMRC_DECLARE(editor_resources);
 CMRC_DECLARE(core_resources);
 
 namespace PTS {
-	constexpr auto k_maxLights = 100u;
-
-	enum VertexAttribBinding {
-		Position = 0,
-		Normal = 1,
-		TexCoords = 2,
-	};
-
-	enum UBOBinding {
-		LightBlock = 0,
-	};
-
-
 	constexpr auto k_editor_tutorial_text = R"(This is a simple editor.
 Basic Operations:
 - Left click to select object
@@ -59,9 +45,17 @@ Basic Operations:
 	// grid shaders
 	constexpr auto k_grid_vs_path = "shaders/grid_vs.glsl";
 	constexpr auto k_grid_fs_path = "shaders/grid_fs.glsl";
-
 	constexpr auto k_billboard_vs_path = "shaders/billboard_vs.glsl";
 	constexpr auto k_billboard_fs_path = "shaders/billboard_fs.glsl";
+
+	// user shaders
+	constexpr auto k_light_inc_path = "shaders/user/light.inc";
+	constexpr auto k_uniform_inc_path = "shaders/user/uniforms.inc";
+
+	constexpr auto k_user_shader_paths = EArray<ShaderType, char const*>{
+		{ShaderType::Vertex, "shaders/user/default_vs.glsl"},
+		{ShaderType::Fragment, "shaders/user/default_fs.glsl"}
+	};
 
 	// uniforms
 	constexpr auto k_uniform_half_grid_dim = "halfGridDim";
@@ -93,173 +87,8 @@ Basic Operations:
 		k_uniform_resolution
 	};
 
-	namespace _private {
-		// silence MSVC warning C4455 which is a bug
-#if defined(_MSC_VER)
-#pragma warning(push)
-#pragma warning(disable: 4455)
-		using std::literals::string_view_literals::operator""sv;
-#pragma warning(pop)
-#endif
-
-		constexpr auto k_glsl_ver = "#version 420 core\n"sv;
-
-		constexpr auto k_vertex_attribute_pos_decl_0 = R"(
-layout (location = )"sv;
-		constexpr auto k_vertex_attribute_pos_decl_1 = R"() in vec3 aPos;
-)"sv;
-		constexpr auto k_vertex_attribute_pos_decl = PTS::join_v<
-			k_vertex_attribute_pos_decl_0,
-			PTS::to_str_v<VertexAttribBinding::Position>,
-			k_vertex_attribute_pos_decl_1
-		>;
-
-		constexpr auto k_vertex_attribute_normal_decl_0 = R"(
-layout (location = )"sv;
-		constexpr auto k_vertex_attribute_normal_decl_1 = R"() in vec3 aNormal;
-)"sv;
-		constexpr auto k_vertex_attribute_normal_decl = PTS::join_v<
-			k_vertex_attribute_normal_decl_0,
-			PTS::to_str_v<VertexAttribBinding::Normal>,
-			k_vertex_attribute_normal_decl_1
-		>;
-
-		constexpr auto k_vertex_attribute_tex_coords_decl_0 = R"(
-layout (location = )"sv;
-		constexpr auto k_vertex_attribute_tex_coords_decl_1 = R"() in vec2 aTexCoords;
-)"sv;
-		constexpr auto k_vertex_attribute_tex_coords_decl = PTS::join_v<
-			k_vertex_attribute_tex_coords_decl_0,
-			PTS::to_str_v<VertexAttribBinding::TexCoords>,
-			k_vertex_attribute_tex_coords_decl_1
-		>;
-
-		constexpr auto k_vertex_attributes_decl = PTS::join_v<
-			k_vertex_attribute_pos_decl,
-			k_vertex_attribute_normal_decl,
-			k_vertex_attribute_tex_coords_decl
-		>;
-
-		constexpr auto _k_uniform_decl = R"(
-uniform int u_lightCount;
-uniform mat4 u_model;
-uniform mat4 u_view;
-uniform mat4 u_projection;
-uniform vec3 u_objectColor;
-uniform float u_time;
-uniform float u_deltaTime;
-uniform ivec2 u_resolution;
-)"sv;
-
-		constexpr auto _k_uniform_light_decl_0 = R"(layout (std140, binding = )"sv;
-		constexpr auto _k_uniform_light_decl_1 = R"()
-uniform LightBlock {
-    LightData u_lights[)"sv;
-		constexpr auto _k_uniform_light_decl_2 = R"(];
-};
-)"sv;
-		constexpr auto k_uniform_light_decl = PTS::join_v<
-			PTS::LightData::glsl_def,
-			_k_uniform_light_decl_0,
-			PTS::to_str_v<UBOBinding::LightBlock>,
-			_k_uniform_light_decl_1,
-			PTS::to_str_v<k_maxLights>,
-			_k_uniform_light_decl_2
-		>;
-
-		constexpr auto k_uniform_decl = PTS::join_v<
-			_k_uniform_decl,
-			k_uniform_light_decl
-		>;
-
-		constexpr auto k_default_shader_funcs = "// add common functions here\n"sv;
-		constexpr auto k_default_vs_obj_src_unprocessed = R"(
-out vec2 TexCoords;
-out vec3 Normal;
-out vec3 FragPos;
-void main() {
-    TexCoords = aTexCoords;
-    Normal = mat3(transpose(inverse(u_model))) * aNormal;
-    FragPos = vec3(u_model * vec4(aPos, 1.0));
-    gl_Position = u_projection * u_view * vec4(FragPos, 1.0);
-}
-)"sv;
-
-		constexpr auto k_default_ps_obj_src_unprocessed =
-			R"(
-in vec2 TexCoords;
-in vec3 Normal;
-in vec3 FragPos;
-out vec4 FragColor;
-void main() {
-    vec3 camPos = u_view[3].xyz;
-    vec3 result = vec3(0.0);
-    for (int i=0; i<u_lightCount; ++i) {
-        vec3 norm = normalize(Normal);
-        vec3 lightDir = normalize(u_lights[i].transform[3].xyz - FragPos);
-        float diff = max(dot(norm, lightDir), 0.0);
-        vec3 diffuse = diff * u_lights[i].color;
-        float specularStrength = 0.5;
-        vec3 viewDir = normalize(camPos - FragPos);
-        vec3 reflectDir = reflect(-lightDir, norm);
-        float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32);
-        vec3 specular = specularStrength * spec * u_lights[i].color;
-
-        // attenuation
-        float distance = length(u_lights[i].transform[3].xyz - FragPos);
-        float attenuation = 1.0 / (1.0 + 0.09 * distance + 0.032 * distance * distance);
-        result += (diffuse + specular) * u_lights[i].intensity * attenuation * u_objectColor;
-    }
-    // ambient
-    result += vec3(0.2);
-    FragColor = vec4(result, 1.0);
-}
-)"sv;
-	} // namespace _private
-
-	constexpr PTS::EArray<PTS::ShaderType, std::string_view> k_default_shader_header = {
-		{
-			PTS::ShaderType::Vertex, PTS::join_v<
-				_private::k_glsl_ver,
-				_private::k_uniform_decl,
-				_private::k_vertex_attributes_decl
-			>
-		},
-		{
-			PTS::ShaderType::Fragment, PTS::join_v<
-				_private::k_glsl_ver,
-				_private::k_uniform_decl
-			>
-		}
-	};
-
-	using _private::k_uniform_decl;
-	using _private::k_default_shader_funcs;
-	using _private::k_vertex_attributes_decl;
-
-	constexpr PTS::EArray<PTS::ShaderType, std::optional<std::string_view>> k_default_shader_srcs_unprocessed = {
-		{PTS::ShaderType::Vertex, _private::k_default_vs_obj_src_unprocessed},
-		{PTS::ShaderType::Fragment, _private::k_default_ps_obj_src_unprocessed}
-	};
-	constexpr PTS::EArray<PTS::ShaderType, std::optional<std::string_view>> k_default_shader_srcs = {
-		{
-			PTS::ShaderType::Vertex, PTS::join_v<
-				_private::k_glsl_ver,
-				_private::k_uniform_decl,
-				_private::k_vertex_attributes_decl,
-				_private::k_default_vs_obj_src_unprocessed
-			>
-		},
-		{
-			PTS::ShaderType::Fragment, PTS::join_v<
-				_private::k_glsl_ver,
-				_private::k_uniform_decl,
-				_private::k_default_ps_obj_src_unprocessed
-			>
-		}
-	};
 	// for shader editor https://github.com/BalazsJako/ImGuiColorTextEdit/issues/121
-	static const char* const glsl_keywords[] = {
+	static const char* const k_glsl_keywords[] = {
 		"const", "uniform", "buffer", "shared", "attribute", "varying",
 		"coherent", "volatile", "restrict", "readonly", "writeonly",
 		"atomic_uint",
@@ -311,7 +140,7 @@ void main() {
 		"struct"
 	};
 
-	static const char* const glsl_identifiers[] = {
+	static const char* const k_glsl_identifiers[] = {
 		"radians", "degrees", "sin", "cos", "tan", "asin", "acos", "atan", "sinh", "cosh", "tanh", "asinh", "acosh",
 		"atanh",
 		"pow", "exp", "log", "exp2", "log2", "sqrt", "inversesqrt",

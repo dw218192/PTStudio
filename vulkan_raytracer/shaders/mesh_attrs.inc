@@ -2,6 +2,8 @@
 #define MESH_ATTRS_INC
 
 #include "bindings.inc"
+
+#include <consts.inc>
 #include <material.inc>
 
 struct VertexAttribData {

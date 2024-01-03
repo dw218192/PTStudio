@@ -233,7 +233,7 @@ auto PTS::VulkanRTPipelineInfo::create(
 		TL_TRY_ASSIGN(mat_buf, VulkanBufferInfo::create(
 			              dev,
 			              VulkanBufferInfo::Type::Uniform,
-			              sizeof(VulkanRayTracingShaders::MaterialData) * k_max_instances
+			              sizeof(VulkanRayTracingShaders::MaterialData) * k_max_objs
 		              ));
 		auto mat_buf_info = mat_buf.get_desc_info();
 
@@ -254,7 +254,7 @@ auto PTS::VulkanRTPipelineInfo::create(
 			              VulkanBufferInfo::Type::Storage,
 			              min_alignment
 		              ));
-		auto null_buf_infos = std::array<vk::DescriptorBufferInfo, k_max_instances>{};
+		auto null_buf_infos = std::array<vk::DescriptorBufferInfo, k_max_objs>{};
 		std::fill(null_buf_infos.begin(), null_buf_infos.end(), null_buf.get_desc_info());
 
 		// create descriptor sets
@@ -312,7 +312,7 @@ auto PTS::VulkanRTPipelineInfo::create(
 				vk::DescriptorSetLayoutBinding{}
 				.setBinding(VulkanRayTracingShaders::RayTracingBindings::VERTEX_ATTRIBS_BINDING.binding)
 				.setDescriptorType(vk::DescriptorType::eStorageBuffer)
-				.setDescriptorCount(k_max_instances)
+				.setDescriptorCount(k_max_objs)
 				.setStageFlags(vk::ShaderStageFlagBits::eClosestHitKHR),
 				vk::DescriptorBindingFlags{
 					vk::DescriptorBindingFlagBits::ePartiallyBound |
@@ -330,7 +330,7 @@ auto PTS::VulkanRTPipelineInfo::create(
 				vk::DescriptorSetLayoutBinding{}
 				.setBinding(VulkanRayTracingShaders::RayTracingBindings::INDICES_BINDING.binding)
 				.setDescriptorType(vk::DescriptorType::eStorageBuffer)
-				.setDescriptorCount(k_max_instances)
+				.setDescriptorCount(k_max_objs)
 				.setStageFlags(vk::ShaderStageFlagBits::eClosestHitKHR),
 				vk::DescriptorBindingFlags{
 					vk::DescriptorBindingFlagBits::ePartiallyBound |
@@ -462,7 +462,7 @@ auto PTS::VulkanRTPipelineInfo::bind_indices(
 	int index,
 	tcb::span<unsigned const> indices
 ) noexcept -> tl::expected<void, std::string> {
-	if (index >= k_max_instances || index < 0) {
+	if (index >= k_max_objs || index < 0) {
 		return TL_ERROR("index out of bounds");
 	}
 	if (indices.size() % 3 != 0) {
@@ -507,7 +507,7 @@ auto PTS::VulkanRTPipelineInfo::bind_vertex_attribs(
 	int index,
 	tcb::span<Vertex const> vertices
 ) noexcept -> tl::expected<void, std::string> {
-	if (index >= k_max_instances || index < 0) {
+	if (index >= k_max_objs || index < 0) {
 		return TL_ERROR("index out of bounds");
 	}
 
