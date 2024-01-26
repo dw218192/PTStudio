@@ -9,8 +9,9 @@
 namespace PTS {
 	struct Light : SceneObject {
 		Light(ObjectConstructorUsage usage = ObjectConstructorUsage::SERIALIZE) noexcept;
-		Light(Scene& scene, Transform transform, EditFlags edit_flags, glm::vec3 color, float intensity) noexcept;
-
+		Light(Scene& scene, Transform transform, EditFlags edit_flags, LightType type, glm::vec3 color,
+		      float intensity) noexcept;
+		NODISCARD auto get_type() const noexcept { return m_type; }
 		NODISCARD auto get_color() const noexcept -> auto const& { return m_color; }
 		NODISCARD auto get_intensity() const noexcept { return m_intensity; }
 		void set_color(glm::vec3 color) noexcept;

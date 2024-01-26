@@ -367,6 +367,8 @@ PTS::VulkanRayTracingRenderer::VulkanRayTracingRenderer(RenderConfig config)
 	: Renderer{config, "Vulkan Ray Tracer"} {
 	SceneObject::get_field_info<SceneObject::FieldTag::LOCAL_TRANSFORM>().get_on_change_callback_list()
 		+= m_on_obj_local_trans_change;
+	SceneObject::get_field_info<SceneObject::FieldTag::WORLD_TRANSFORM>().get_on_change_callback_list()
+		+= m_on_obj_world_trans_change;
 	RenderableObject::get_field_info<RenderableObject::FieldTag::MAT>().get_on_change_callback_list()
 		+= m_on_mat_change;
 	Light::get_field_info<Light::FieldTag::LIGHT_TYPE>().get_on_change_callback_list()
@@ -404,6 +406,8 @@ PTS::VulkanRayTracingRenderer::VulkanRayTracingRenderer(RenderConfig config)
 PTS::VulkanRayTracingRenderer::~VulkanRayTracingRenderer() noexcept {
 	SceneObject::get_field_info<SceneObject::FieldTag::LOCAL_TRANSFORM>().get_on_change_callback_list()
 		-= m_on_obj_local_trans_change;
+	SceneObject::get_field_info<SceneObject::FieldTag::WORLD_TRANSFORM>().get_on_change_callback_list()
+		-= m_on_obj_world_trans_change;
 	RenderableObject::get_field_info<RenderableObject::FieldTag::MAT>().get_on_change_callback_list()
 		-= m_on_mat_change;
 	Light::get_field_info<Light::FieldTag::LIGHT_TYPE>().get_on_change_callback_list()
@@ -488,21 +492,15 @@ auto PTS::VulkanRayTracingRenderer::on_remove_obj(Ref<SceneObject> obj) noexcept
 	TL_CHECK_NON_FATAL(m_app, LogLevel::Error, reset_path_tracing());
 }
 
+auto PTS::VulkanRayTracingRenderer::on_obj_world_trans_change(
+	SceneObject::callback_data_t<SceneObject::FieldTag::WORLD_TRANSFORM> data) -> void {
+	TL_CHECK_NON_FATAL(m_app, LogLevel::Error, update_obj(data.obj));
+	TL_CHECK_NON_FATAL(m_app, LogLevel::Error, reset_path_tracing());
+}
+
 auto PTS::VulkanRayTracingRenderer::on_obj_local_trans_change(
 	SceneObject::callback_data_t<SceneObject::FieldTag::LOCAL_TRANSFORM> data) -> void {
-	if (auto const render_obj = data.obj.as<RenderableObject>()) {
-		auto const it = m_rend_obj_data.find(render_obj);
-		if (it != m_rend_obj_data.end()) {
-			TL_CHECK_NON_FATAL(m_app, LogLevel::Error,
-			                   m_vk_pipeline.top_accel.update_instance_transform(
-				                   it->second.gpu_idx,
-				                   render_obj->get_transform(TransformSpace::WORLD).get_matrix()
-			                   )
-			);
-		}
-	} else if (auto const light = data.obj.as<Light>()) {
-		TL_CHECK_NON_FATAL(m_app, LogLevel::Error, update_light(*light));
-	}
+	TL_CHECK_NON_FATAL(m_app, LogLevel::Error, update_obj(data.obj));
 	TL_CHECK_NON_FATAL(m_app, LogLevel::Error, reset_path_tracing());
 }
 
@@ -523,7 +521,29 @@ auto PTS::VulkanRayTracingRenderer::on_mat_change(
 	TL_CHECK_NON_FATAL(m_app, LogLevel::Error, reset_path_tracing());
 }
 
+auto PTS::VulkanRayTracingRenderer::update_obj(SceneObject const& obj) noexcept -> tl::expected<void, std::string> {
+	if (auto const render_obj = obj.as<RenderableObject>()) {
+		auto const it = m_rend_obj_data.find(render_obj);
+		if (it != m_rend_obj_data.end()) {
+			TL_CHECK_AND_PASS(
+				m_vk_pipeline.top_accel.update_instance_transform(
+					it->second.gpu_idx,
+					render_obj->get_transform(TransformSpace::WORLD).get_matrix()
+				)
+			);
+		}
+	} else if (auto const light = obj.as<Light>()) {
+		TL_CHECK_AND_PASS(update_light(*light));
+	}
+	return {};
+}
+
 auto PTS::VulkanRayTracingRenderer::update_light(Light const& light) noexcept -> tl::expected<void, std::string> {
+	if (light.get_type() == LightType::Mesh) {
+		// ignore mesh light, let it be handled by angular integration
+		return {};
+	}
+
 	auto idx = size_t{};
 	TL_TRY_ASSIGN(idx, m_light_data_link.get_idx(&light));
 	try {
@@ -536,7 +556,15 @@ auto PTS::VulkanRayTracingRenderer::update_light(Light const& light) noexcept ->
 
 auto PTS::VulkanRayTracingRenderer::on_light_type_change(
 	Light::callback_data_t<Light::FieldTag::LIGHT_TYPE> data) -> void {
-	TL_CHECK_NON_FATAL(m_app, LogLevel::Error, update_light(data.obj));
+	if (data.obj.get_type() == LightType::Mesh) {
+		TL_CHECK_NON_FATAL(m_app, LogLevel::Error, m_light_data_link.erase(&data.obj));
+	} else {
+		if (m_light_data_link.get_idx(&data.obj)) {
+			TL_CHECK_NON_FATAL(m_app, LogLevel::Error, update_light(data.obj));
+		} else {
+			TL_CHECK_NON_FATAL(m_app, LogLevel::Error, m_light_data_link.push_back(&data.obj, data.obj.get_data()));
+		}
+	}
 	TL_CHECK_NON_FATAL(m_app, LogLevel::Error, reset_path_tracing());
 }
 
@@ -758,7 +786,7 @@ auto PTS::VulkanRayTracingRenderer::reset_path_tracing() noexcept -> tl::expecte
 auto PTS::VulkanRayTracingRenderer::add_object(SceneObject const& obj) -> tl::expected<void, std::string> {
 	if (auto render_obj = obj.as<RenderableObject>()) {
 		if (m_rend_obj_data.count(render_obj)) {
-			return TL_ERROR("object already added");
+			return TL_ERROR("object already added: {}", obj.get_name());
 		}
 		// create bottom level acceleration structure
 		auto vk_bottom_accel = VulkanBottomAccelStructInfo{};
@@ -802,7 +830,7 @@ auto PTS::VulkanRayTracingRenderer::remove_object(SceneObject const& obj) -> tl:
 	if (auto const render_obj = obj.as<RenderableObject>()) {
 		auto const it = m_rend_obj_data.find(render_obj);
 		if (it == m_rend_obj_data.end()) {
-			return TL_ERROR("object not found");
+			return TL_ERROR("object not found: {}", obj.get_name());
 		}
 		TL_CHECK_AND_PASS(m_vk_pipeline.top_accel.remove_instance(it->second.gpu_idx));
 		m_rend_obj_data.erase(it);

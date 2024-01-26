@@ -262,6 +262,7 @@ auto PTS::RenderableObject::static_init() -> void {
 				self.m_proxy_light = self.get_scene()->template emplace_object<Light>(
 					*self.get_scene(), Transform{},
 					EditFlags::_NoEdit,
+					LightType::Mesh,
 					data.new_val.emission,
 					data.new_val.emission_intensity);
 				self.add_child(*self.m_proxy_light);

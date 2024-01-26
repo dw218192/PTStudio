@@ -49,7 +49,7 @@ float power_heuristic(float nf, float fPdf, float ng, float gPdf) {
     float f = nf * fPdf, g = ng * gPdf;
     return (f * f) / (f * f + g * g);
 }
-
+// probability of sampling a point on the light of index light_idx
 float pdf_light(in vec3 p, in vec3 n, in vec3 wiW, int light_idx) {
     if (light_idx < 0 || light_idx >= num_lights) {
         return 0.0;
@@ -66,6 +66,7 @@ vec3 sample_light(in vec3 p, in vec3 n, out vec3 wiW, out float pdf, out int idx
     wiW = vec3(0.0);
     pdf = 0.0;
     if (num_lights == 0) {
+        idx = -1;
         return vec3(0.0);
     }
 
@@ -115,9 +116,6 @@ vec3 sample_f(in vec3 wo, in MaterialData material, out vec3 wi, out float pdf) 
     int type = get_material_type(material);
     vec3 ret = mat_brdf(wo, wi, material);
 
-    wi = vec3(0.0);
-    pdf = mat_pdf(wo, wi, material);
-
     if (type == DIFFUSE) {
         vec2 xi = random_pcg3d(uvec3(gl_LaunchIDEXT.xy, payload.iteration + payload.level)).xy;
         wi = squareToHemisphereCosine(xi);
@@ -128,8 +126,14 @@ vec3 sample_f(in vec3 wo, in MaterialData material, out vec3 wi, out float pdf) 
             // total internal reflection
             return vec3(0.0);
         }
+    } else {
+        wi = vec3(0.0);
+        pdf = 0.0;
+        return vec3(0.0);
     }
-    return ret;
+
+    pdf = mat_pdf(wo, wi, material);
+    return mat_brdf(wo, wi, material);
 }
 
 void main() {
@@ -169,7 +173,7 @@ void main() {
             vec3 Li = sample_light(posW, nW, wiW, pdf, light_idx);
             wi = worldToNormalSpace(nW) * wiW;
             if (Li != vec3(0.0) && pdf != 0.0f) {
-                Li *= mat_brdf(wo, wi, material);
+                Li *= mat_brdf(wo, wi, material) / pdf;
                 weight_light = power_heuristic(1.0, pdf, 1.0, mat_pdf(wo, wi, material));
                 light_Li = Li;
             }
@@ -183,7 +187,7 @@ void main() {
             vec3 wiW = normalToWorldSpace(nW) * wi;
 
             if (pdf == 0.0) {
-                payload.invalid = true;
+                payload.Li = vec3(0.0);
                 return;
             }
             

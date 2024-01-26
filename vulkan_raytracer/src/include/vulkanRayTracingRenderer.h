@@ -36,6 +36,7 @@ namespace PTS {
 		[[nodiscard]] auto remove_object(SceneObject const& obj) -> tl::expected<void, std::string>;
 
 		// callbacks
+		[[nodiscard]] auto update_obj(SceneObject const& obj) noexcept -> tl::expected<void, std::string>;
 		[[nodiscard]] auto update_light(Light const& light) noexcept -> tl::expected<void, std::string>;
 		auto on_add_obj(Ref<SceneObject> obj) noexcept -> void;
 		auto on_remove_obj(Ref<SceneObject> obj) noexcept -> void;
@@ -45,7 +46,7 @@ namespace PTS {
 		Callback<void(Ref<SceneObject>)> m_on_remove_obj{
 			[this](Ref<SceneObject> data) { this->on_remove_obj(data); }
 		};
-
+		DECL_FIELD_EVENT_MEMBERS(on_obj_world_trans_change, SceneObject, SceneObject::FieldTag::WORLD_TRANSFORM);
 		DECL_FIELD_EVENT_MEMBERS(on_obj_local_trans_change, SceneObject, SceneObject::FieldTag::LOCAL_TRANSFORM);
 		DECL_FIELD_EVENT_MEMBERS(on_mat_change, RenderableObject, RenderableObject::FieldTag::MAT);
 		DECL_FIELD_EVENT_MEMBERS(on_light_type_change, Light, Light::FieldTag::LIGHT_TYPE);

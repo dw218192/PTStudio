@@ -5,15 +5,15 @@
 
 // a payload can be in one of the following states:
 // done:    done = true
-// valid but not done: invalid = false && done = false
-// invalid: invalid = true or any other state not mentioned above
+// valid but not done: Li != vec3(0.) && done = false
+// invalid: Li == vec3(0.) && done = false
 
 struct Payload {
     // output from closest hit shader
     vec3 Li;  // sampled radiance
     vec3 pos; // intersection pos, world space
     vec3 wi;  // incoming dir, world space
-    bool done, invalid; // state of the payload
+    bool done; // state of the payload
 
     // input to chit shader, because push_constant is not usable in chit
     int iteration;

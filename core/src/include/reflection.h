@@ -595,23 +595,35 @@ namespace PTS {
 
 	// type-erased iterator
 	struct TypeErasedIterator {
-		template <typename Iterator,
-		          typename = std::enable_if_t<Traits::is_iterator<Iterator>::value>>
+		template <typename Where>
 		struct IteratorWrapper : TypeErasedIteratorInterface {
-			IteratorWrapper(Iterator it) : m_it(it) {}
+			IteratorWrapper(Where& where, size_t idx) : m_where(where), m_it(idx) {}
 
 			auto operator++() -> TypeErasedIteratorInterface& override {
 				++m_it;
 				return *this;
 			}
 
-			auto operator*() const -> void const* override { return &(*m_it); }
-			auto operator*() -> void* override { return &(*m_it); }
+			auto operator*() const -> void const* override {
+				return const_cast<IteratorWrapper*>(this)->operator*();
+			}
+
+			auto operator*() -> void* override {
+				if constexpr (Traits::is_sequence_container_v<Where>) {
+					if (m_where.get().size() <= m_it) {
+						m_where.get().resize(m_it + 1);
+					}
+					return &*std::next(m_where.get().begin(), m_it);
+				} else {
+					return &*(&m_where.get() + m_it);
+				}
+			}
 
 			auto operator==(TypeErasedIteratorInterface const& other) const
 				-> bool override {
 				if (auto* other_it = dynamic_cast<IteratorWrapper const*>(&other)) {
-					return m_it == other_it->m_it;
+					return m_it == other_it->m_it &&
+						&m_where.get() == &other_it->m_where.get();
 				}
 				return false;
 			}
@@ -622,17 +634,13 @@ namespace PTS {
 			}
 
 		private:
-			Iterator m_it;
+			std::reference_wrapper<Where> m_where;
+			size_t m_it{0};
 		};
 
-		template <typename Iterator,
-		          typename = std::enable_if_t<Traits::is_iterator<Iterator>::value>>
-		TypeErasedIterator(Iterator it)
-			: m_impl(std::make_shared<IteratorWrapper<Iterator>>(it)) {}
-
-		template <typename T>
-		TypeErasedIterator(T* ptr)
-			: m_impl(std::make_shared<IteratorWrapper<T*>>(ptr)) {}
+		template <typename Where>
+		TypeErasedIterator(Where& where, size_t idx)
+			: m_impl(std::make_shared<IteratorWrapper<Where>>(where, idx)) {}
 
 		TypeErasedIterator() : m_impl(nullptr) {}
 
@@ -910,6 +918,11 @@ namespace PTS {
 			return !(*this < other);
 		}
 
+		template <typename FieldType, typename Reflected>
+		auto get(Reflected& obj) -> FieldType& {
+			return *static_cast<FieldType*>(m_get(static_cast<void*>(&obj)));
+		}
+
 		auto begin() const -> TypeErasedIterator { return m_begin; }
 		auto end() const -> TypeErasedIterator { return m_end; }
 
@@ -923,19 +936,25 @@ namespace PTS {
 			  type{Type::of<typename TemplatedFieldInfo::type>()},
 			  index{info.member_index} {
 			using FieldType = typename TemplatedFieldInfo::type;
+
+			m_get = [&info](void* any_obj) {
+				auto ret = const_cast<FieldType&>(info.get(*static_cast<Reflected*>(any_obj)));
+				return static_cast<void*>(&ret);
+			};
+
 			if constexpr (Traits::is_container<FieldType>::value) {
-				using Iter = typename FieldType::iterator;
 				auto& container = const_cast<FieldType&>(info.get(obj));
-				m_begin = TypeErasedIterator{container.begin()};
-				m_end = TypeErasedIterator{container.end()};
+				m_begin = TypeErasedIterator{container, 0};
+				m_end = TypeErasedIterator{container, container.size()};
 			} else {
 				auto& member = const_cast<FieldType&>(info.get(obj));
-				m_begin = TypeErasedIterator{std::addressof(member)};
-				m_end = TypeErasedIterator{std::addressof(member) + 1};
+				m_begin = TypeErasedIterator{member, 0};
+				m_end = TypeErasedIterator{member, 1};
 			}
 		}
 
 	private:
+		std::function<void*(void*)> m_get;
 		TypeErasedIterator m_begin, m_end;
 	};
 
@@ -1056,6 +1075,7 @@ namespace PTS {
     }                                                                         \
     virtual std::vector<FieldInfo> dyn_get_field_infos() const {              \
         std::vector<FieldInfo> ret;                                           \
+		ret.reserve(_field_count);                                            \
         _my_type::for_each_field(                                             \
             [&ret, this](auto field) { ret.emplace_back(field, *this); });    \
         return ret;                                                           \

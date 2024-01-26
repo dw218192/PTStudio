@@ -29,7 +29,7 @@ void main() {
 
     vec3 color = vec3(1.0);
     for (int i = 0; i < perFrameData.max_bounces; ++i) {
-        payload = Payload(vec3(0.0), vec3(0.0), vec3(0.0), false, false,
+        payload = Payload(vec3(0.0), vec3(0.0), vec3(0.0), false,
             perFrameData.iteration,
             i,
             perFrameData.direct_lighting_only);
@@ -49,16 +49,16 @@ void main() {
         );
         if (payload.done) {
             // TODO: remove this hack
-            color *= payload.Li * 2.;
+            color *= payload.Li;
             break;
-        } else {
-            if (!payload.invalid && !payload.done) {
+        } else { // !payload.done
+            if (payload.Li != vec3(0.0)) {
                 color *= payload.Li;
                 ro = payload.pos;
                 rd = payload.wi;
             } else {
                 // invalid sample
-                color = vec3(0.0);
+                color = vec3(1.0, 0.0, 1.0);
                 break;
             }
         }

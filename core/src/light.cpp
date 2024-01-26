@@ -4,8 +4,9 @@
 PTS::Light::Light(ObjectConstructorUsage usage) noexcept
 	: SceneObject{usage} {}
 
-PTS::Light::Light(Scene& scene, Transform transform, EditFlags edit_flags, glm::vec3 color, float intensity) noexcept
-	: SceneObject{scene, std::move(transform), edit_flags}, m_color{color}, m_intensity{intensity} {}
+PTS::Light::Light(Scene& scene, Transform transform, EditFlags edit_flags, LightType type, glm::vec3 color,
+                  float intensity) noexcept
+	: SceneObject{scene, std::move(transform), edit_flags}, m_type{type}, m_color{color}, m_intensity{intensity} {}
 
 void PTS::Light::set_color(glm::vec3 color) noexcept {
 	m_color = color;

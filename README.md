@@ -48,6 +48,8 @@ git clone --recursive [repo url]
         - [x] support for single inheritance
         - [x] support for pointer members; reference not supported, reference members are bad anyways
     - [ ] EditFlags::Visible should be considered in vulkan ray tracer and editor renderer
+    - [ ] fix bugs in jsonArchive's pointer deserialization
+        -  [ ] when deserializing a vector of pointers, the reference to vector is corrupted
 - Medium Priority
     - [ ] implement undo/redo system
     - [ ] fix GLTexture::save() bug

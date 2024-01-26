@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <map>
 #include <glm/glm.hpp>
+#include <fmt/format.h>
 
 namespace {
 	// used during deserialization
@@ -248,26 +249,28 @@ namespace PTS {
 			gather_objects(scene.get());
 
 			// handle pointers and references
-			for (auto kvp : g_id_to_object) {
+			for (auto const kvp : g_id_to_object) {
 				auto error = std::string{};
 				auto& obj = *kvp.second;
 				obj.dyn_for_each_field([&error](FieldInfo const& field) {
 					if (g_pointer_to_id.count(field)) {
-						auto type = field.type.is_container ? field.type.contained_type() : field.type;
-
+						auto const type = field.type.is_container ? field.type.contained_type() : field.type;
 						// ensure that the field is a pointer
 						if (!type.is_pointer) {
-							error += "Field " + std::string{field.var_name} +
-								": is not a pointer, but is in g_pointer_to_id\n";
+							error += fmt::format(
+								FMT_STRING("Field {} of type {}: is not a pointer but is in g_pointer_to_id\n"),
+								field.var_name, field.type.to_string());
 							return;
 							// ensure that the field is a pointer to Object or derived type
 						} else if (type != Type::of<Object*>() && !type.pointed_to_type().has_common_base_with(
 							Type::of<Object>())) {
-							error += "Field " + std::string{field.var_name} +
-								": non-Object pointers are not supported\n";
+							error += fmt::format(
+								FMT_STRING("Field {} of type {}: non-Object pointers are not supported\n"),
+								field.var_name, field.type.to_string());
 							return;
 						}
 
+						// if the field is a pointer container or a pointer, link it to the proper object
 						auto field_it = field.begin();
 						for (auto id : g_pointer_to_id.get(field)) {
 							if (g_id_to_object.count(id)) {
@@ -275,9 +278,9 @@ namespace PTS {
 							} else if (id == k_invalid_obj_id) {
 								*static_cast<Object**>(*field_it) = nullptr;
 							} else {
-								auto const ptr_name = std::string{field.type_name} + "::" + std::string{field.var_name};
-								error += "Failed to find object with id " + std::to_string(id) + " for field " +
-									ptr_name + "\n";
+								error += fmt::format(
+									FMT_STRING("Failed to find object with id {} for field {} of type {}\n"),
+									id, field.var_name, field.type.to_string());
 							}
 
 							++field_it;

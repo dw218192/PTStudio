@@ -550,7 +550,8 @@ auto EditorApplication::draw_scene_panel() noexcept -> void {
 				}
 			}
 			if (ImGui::MenuItem("Add Light")) {
-				m_scene.emplace_object<Light>(m_scene, Transform{}, k_editable_flags, glm::vec3(1.0f), 1.0f);
+				m_scene.emplace_object<Light>(m_scene, Transform{}, k_editable_flags, LightType::Point, glm::vec3(1.0f),
+				                              1.0f);
 			}
 
 			ImGui::EndMenu();
