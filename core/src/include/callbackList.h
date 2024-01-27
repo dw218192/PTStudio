@@ -73,9 +73,9 @@ namespace PTS {
 
 		template <typename T, typename = std::enable_if_t<
 			          std::conjunction_v<
-				          std::is_constructible<std::function<Ret(Args...)>, T&&>>,
-			          std::negation<std::is_same<Callback<Ret(Args...)>, std::decay_t<T>>>
-		          >>
+						  std::negation<std::is_same<Callback<Ret(Args...)>, std::decay_t<T>>>,
+				          std::is_constructible<Callback<Ret(Args...)>, T&&>
+		          >>>
 		auto operator+=(T&& arg) {
 			m_callbacks.emplace_front(std::forward<T>(arg));
 			++m_size;

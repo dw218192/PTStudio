@@ -365,10 +365,10 @@ create_desc_set_pool(PTS::VulkanDeviceInfo const& dev) -> tl::expected<PTS::Vulk
 
 PTS::VulkanRayTracingRenderer::VulkanRayTracingRenderer(RenderConfig config)
 	: Renderer{config, "Vulkan Ray Tracer"} {
-	SceneObject::get_field_info<SceneObject::FieldTag::LOCAL_TRANSFORM>().get_on_change_callback_list()
-		+= m_on_obj_local_trans_change;
 	SceneObject::get_field_info<SceneObject::FieldTag::WORLD_TRANSFORM>().get_on_change_callback_list()
 		+= m_on_obj_world_trans_change;
+	SceneObject::get_field_info<SceneObject::FieldTag::LOCAL_TRANSFORM>().get_on_change_callback_list()
+		+= m_on_obj_local_trans_change;
 	RenderableObject::get_field_info<RenderableObject::FieldTag::MAT>().get_on_change_callback_list()
 		+= m_on_mat_change;
 	Light::get_field_info<Light::FieldTag::LIGHT_TYPE>().get_on_change_callback_list()
