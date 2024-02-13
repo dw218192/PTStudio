@@ -48,8 +48,33 @@ git clone --recursive [repo url]
         - [x] support for single inheritance
         - [x] support for pointer members; reference not supported, reference members are bad anyways
     - [ ] EditFlags::Visible should be considered in vulkan ray tracer and editor renderer
-    - [ ] fix bugs in jsonArchive's pointer deserialization
-        -  [ ] when deserializing a vector of pointers, the reference to vector is corrupted
+    - [ ] implement object registry
+    - [ ] implement arena and arena registry
+    - [ ] refactor Archive
+        - [ ] Archive now uses a stream-like serialization & deserialization interface
+
+    - Problem:
+        - Object Handle is currently its address; objects are stored in std::list so that the address remains valid
+        - Adding new object types is difficult
+            - Serialization relies on template which forces the layout of object storage to be known at compile time
+            - Scene contains a list of renderable objects, then a list of lights, ...
+        - Pointer/reference serialization is difficult and insanely difficult to debug
+        - Solution:
+            - make object a heap-only (reference-only) type
+            - proposed steps:
+                1. refactor Archive; get rid of polymorphism, use switch + enum
+                    (because we want template for its serialization & deserialization methods)
+                2. refactor object
+                    - construction/destruction can only be done through factory methods
+                    - object address is still its handle
+                    - implement an object pool (scene owns one, app owns one)
+                        - object lifetime tied to application
+                        - scene object lifetime tied to scene
+                    - object registry
+                        - maps object id to object instance
+                        - checks if an object is alive
+                        - construction of an object through its type name (for deserialization)
+
 - Medium Priority
     - [ ] implement undo/redo system
     - [ ] fix GLTexture::save() bug

@@ -105,6 +105,7 @@ namespace PTS {
 	private:
 		BEGIN_REFLECT(Scene, Object);
 
+		// RenderableObject and Light are directly stored in Scene
 		FIELD(std::list<RenderableObject>,
 		      m_renderable_objects,
 		      {},
@@ -115,6 +116,15 @@ namespace PTS {
 		      {},
 		      MSerialize{},
 		      MNoInspect{}); // not editable
+
+		// for all other objects that are not renderable and not light
+		// they are stored on the heap and ref-counted
+		FIELD(std::list<SceneObject>,
+			m_objs,
+			{},
+			MSerialize{},
+			MNoInspect{}); // not editable
+
 		FIELD(std::size_t, m_size, {}, MSerialize{}, MNoInspect{}); // not editable
 		END_REFLECT();
 		// enables dynamic retrieval of class info for polymorphic types
@@ -143,6 +153,8 @@ namespace PTS {
 			ret = &m_renderable_objects.emplace_back(std::forward<Args>(args)...);
 		} else if constexpr (std::is_same_v<T, Light>) {
 			ret = &m_lights.emplace_back(std::forward<Args>(args)...);
+		} else {
+
 		}
 
 		m_alive_objs.emplace(ret);
@@ -169,6 +181,7 @@ namespace PTS {
 				m_renderable_objects.remove_if([&](RenderableObject const& o) { return &o == prender_obj; });
 			} else if (auto const plight = dynamic_cast<Light const*>(&obj)) {
 				m_lights.remove_if([&](Light const& o) { return &o == plight; });
+			} else {
 			}
 		}
 	}

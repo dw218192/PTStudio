@@ -133,6 +133,9 @@ void PTS::Scene::on_deserialize() noexcept {
 	for (auto&& obj : m_renderable_objects) {
 		try_add_editable(obj);
 	}
+	for (auto&& obj : m_objs) {
+		try_add_editable(obj);
+	}
 }
 
 auto PTS::Scene::try_add_editable(Ref<SceneObject> obj_view) noexcept -> void {

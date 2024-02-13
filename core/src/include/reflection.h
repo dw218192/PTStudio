@@ -918,11 +918,6 @@ namespace PTS {
 			return !(*this < other);
 		}
 
-		template <typename FieldType, typename Reflected>
-		auto get(Reflected& obj) -> FieldType& {
-			return *static_cast<FieldType*>(m_get(static_cast<void*>(&obj)));
-		}
-
 		auto begin() const -> TypeErasedIterator { return m_begin; }
 		auto end() const -> TypeErasedIterator { return m_end; }
 
@@ -937,11 +932,6 @@ namespace PTS {
 			  index{info.member_index} {
 			using FieldType = typename TemplatedFieldInfo::type;
 
-			m_get = [&info](void* any_obj) {
-				auto ret = const_cast<FieldType&>(info.get(*static_cast<Reflected*>(any_obj)));
-				return static_cast<void*>(&ret);
-			};
-
 			if constexpr (Traits::is_container<FieldType>::value) {
 				auto& container = const_cast<FieldType&>(info.get(obj));
 				m_begin = TypeErasedIterator{container, 0};
@@ -954,7 +944,6 @@ namespace PTS {
 		}
 
 	private:
-		std::function<void*(void*)> m_get;
 		TypeErasedIterator m_begin, m_end;
 	};
 

@@ -7,35 +7,73 @@
 
 #include "scene.h"
 #include "camera.h"
+#include "jsonArchive.h"
+
+
 namespace PTS {
+    enum class ArchiveFormat {
+        JSON,
+    };
+
     /**
      * \brief Interface for any serializer that can be used to save/load a scene.
     */
     struct Archive {
         DEFAULT_COPY_MOVE(Archive);
-        Archive() = default;
-        virtual ~Archive() noexcept = default;
+        ~Archive() = default;
 
-        virtual auto get_ext() -> std::string_view = 0;
+        Archive(std::string_view path, ArchiveFormat format) 
+            : m_format(format), m_path(path)
+        {
+            switch (m_format) {
+            case ArchiveFormat::JSON:
+                m_json_archive = std::make_unique<JsonArchive>();
+                break;
+            default:
+                throw std::runtime_error("Unknown archive format");
+            }
+        }
+        
+        auto get_path() const -> std::string_view {
+            return m_path;
+        }
 
-        /**
-         * \brief Serializes the scene and camera to a string.
-         * \param scene_view The scene to serialize.
-         * \param camera_view The camera to serialize.
-         * \return A string containing the serialized scene and camera. If an error occurs, an error message is returned.
-        */
-        virtual auto save(View<Scene> scene_view, View<Camera> camera_view) -> tl::expected<std::string, std::string> = 0;
+        auto get_format() const -> ArchiveFormat {
+            return m_format;
+        }
+        
+        auto get_ext() const -> std::string_view {
+            switch (m_format) {
+            case ArchiveFormat::JSON:
+                return m_json_archive->get_ext();
+            default:
+                throw std::runtime_error("Unknown archive format");
+            }
+        }
 
-        /**
-         * \brief Deserializes the scene and camera from a string.
-         * \param data The string containing the serialized scene and camera.
-         * \param scene The scene to deserialize into.
-         * \param cam The camera to deserialize into.
-         * \return Nothing if successful, otherwise an error message.
-        */
-        virtual auto load(std::string_view data, Ref<Scene> scene, Ref<Camera> cam) -> tl::expected<void, std::string> = 0;
+        template<typename T>
+        auto get(std::string_view key) -> tl::expected<T, std::string> {
+            switch (m_format) {
+            case ArchiveFormat::JSON:
+                return m_json_archive->get<T>(key);
+            default:
+                return tl::unexpected("Unknown archive format");
+            }
+        }
 
-        auto load_file(std::string_view file, Ref<Scene> scene, Ref<Camera> cam) noexcept -> tl::expected<void, std::string>;
-        auto save_file(View<Scene> scene_view, View<Camera> camera_view, std::string_view file) noexcept -> tl::expected<void, std::string>;
+        template<typename T>
+        auto set(std::string_view key, T const& value) -> tl::expected<void, std::string> {
+            switch (m_format) {
+            case ArchiveFormat::JSON:
+                return m_json_archive->set(key, value);
+            default:
+                return tl::unexpected("Unknown archive format");
+            }
+        }
+
+    private:
+        ArchiveFormat m_format;
+        std::string m_path;
+        std::unique_ptr<JsonArchive> m_json_archive;
     };
 }

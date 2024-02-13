@@ -4,22 +4,39 @@
 #include "reflection.h"
 #include "utils.h"
 #include "objectID.h"
+#include "objectRegistry.h"
+#include "archive.h"
 
 namespace PTS {
     struct Scene;
-
-    enum class ObjectConstructorUsage {
-        SERIALIZE,
-        DEFAULT,
-    };
+    struct Arena;
+    
+    /**
+     * @brief Base class for all objects in the engine;
+     * Provides basic functionality for 
+     * - Serialization
+     * - Deserialization
+     * - UUID
+     * - Name
+     * - Static and dynamic reflection
+    */
     struct Object {
+        friend struct Arena;
+
         DEFAULT_COPY_MOVE(Object);
 
         // set default arguments because serialization requires a "default" constructor
-        Object(ObjectConstructorUsage usage = ObjectConstructorUsage::SERIALIZE) noexcept;
         explicit Object(std::string_view name) noexcept;
-        virtual ~Object() noexcept;
         
+        NODISCARD auto get_arena() -> Arena& {
+            return const_cast<Arena&>(static_cast<Object const*>(this)->get_arena());
+        }
+        NODISCARD auto get_arena() const -> Arena const& {
+            if (!m_arena) {
+                throw std::runtime_error("Object not properly initialized");
+            }
+            return *m_arena;
+        }
         NODISCARD auto get_name() const noexcept -> std::string_view {
             return m_name;
         }
@@ -30,8 +47,10 @@ namespace PTS {
             return m_id;
         }
 
-        auto on_deserialize() noexcept -> void;
-        
+        virtual auto serialize(Archive& archive) const -> void;
+        virtual auto on_deserialize() noexcept -> void;
+
+    protected:
         BEGIN_REFLECT(Object, void);
         FIELD(std::string, m_name, "Object",
             MSerialize{}, MNoInspect{}); // handled explicitly
@@ -41,5 +60,15 @@ namespace PTS {
 
         // enables dynamic retrieval of class info for polymorphic types
         DECL_DYNAMIC_INFO();
+
+        DECL_CREATOR(Object) {
+            
+        }
+
+    protected:
+        virtual ~Object() noexcept;
+
+    private:
+        Arena* m_arena;
     };
 } // namespace PTS

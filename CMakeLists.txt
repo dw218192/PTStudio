@@ -108,5 +108,54 @@ add_subdirectory(vulkan_raytracer)
 
 add_subdirectory(editor)
 
+
+# IDE configuration
+# group everything in ${EXT_DIR} into an IDE folder called "External"
+# Enable the use of folders in IDEs
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+
+# copied from https://stackoverflow.com/questions/37434946/how-do-i-iterate-over-all-cmake-targets-programmatically
+function(get_all_targets var)
+    set(targets)
+    get_all_targets_recursive(targets ${CMAKE_CURRENT_SOURCE_DIR})
+    set(${var} ${targets} PARENT_SCOPE)
+endfunction()
+
+macro(get_all_targets_recursive targets dir)
+    get_property(subdirectories DIRECTORY ${dir} PROPERTY SUBDIRECTORIES)
+    foreach(subdir ${subdirectories})
+        get_all_targets_recursive(${targets} ${subdir})
+    endforeach()
+
+    get_property(current_targets DIRECTORY ${dir} PROPERTY BUILDSYSTEM_TARGETS)
+    list(APPEND ${targets} ${current_targets})
+endmacro()
+
+get_all_targets(all_targets)
+
+# Function to group targets based on their source directory if they've been added as targets
+function(group_targets_by_directory_if_added root_dir group_name)
+  # Get all targets defined in the current CMake project
+  foreach(target IN LISTS all_targets)
+    # Attempt to get the target's SOURCE_DIR property
+    get_target_property(target_source_dir ${target} SOURCE_DIR)
+    # If the target does not have a SOURCE_DIR property, skip it
+    if(NOT target_source_dir)
+      continue()
+    endif()
+    # Normalize paths to ensure consistent comparison
+    file(TO_CMAKE_PATH "${target_source_dir}" normalized_target_source_dir)
+    file(TO_CMAKE_PATH "${root_dir}" normalized_root_dir)
+    # Check if the normalized target source directory starts with the normalized root directory path
+    if("${normalized_target_source_dir}" MATCHES "^${normalized_root_dir}")
+      # message(STATUS "Grouping target ${target} in folder ${group_name}")
+      set_target_properties(${target} PROPERTIES FOLDER "${group_name}")
+    endif()
+  endforeach()
+endfunction()
+
+# Use the function for your external libraries, starting from the 'ext' directory
+group_targets_by_directory_if_added(${CMAKE_CURRENT_SOURCE_DIR}/ext External)
+
 # set editor as the start-up project
 set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT editor)

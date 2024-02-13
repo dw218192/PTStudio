@@ -8,7 +8,7 @@ add_subdirectory(${EXT_DIR}/Catch2 ${CMAKE_BINARY_DIR}/Catch2)
 list(APPEND TEST_NAMES
     test_reflection    
     test_type_traits
-    test_compiletime_str
+    test_serialization
 )
 
 foreach(TEST_NAME IN LISTS TEST_NAMES)
@@ -16,6 +16,7 @@ foreach(TEST_NAME IN LISTS TEST_NAMES)
     add_executable(${TEST_NAME} ${TEST_NAME}.cpp)
     target_include_directories(${TEST_NAME} PRIVATE ../src/include ${EXT_DIR}/Catch2/single_include)
     target_link_libraries(${TEST_NAME} PRIVATE Catch2::Catch2)
+    set_target_properties(${TEST_NAME} PROPERTIES FOLDER "Tests/Core")
 endforeach()
 
-target_link_libraries(test_compiletime_str PRIVATE fmt-header-only)
+target_link_libraries(test_serialization PRIVATE nlohmann_json core)
