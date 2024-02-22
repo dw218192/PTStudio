@@ -4,13 +4,13 @@
 #include "reflection.h"
 #include "utils.h"
 #include "objectID.h"
-#include "objectRegistry.h"
-#include "archive.h"
+#include "memory/memTypes.h"
 
 namespace PTS {
     struct Scene;
+    struct Archive;
     struct Arena;
-    
+
     /**
      * @brief Base class for all objects in the engine;
      * Provides basic functionality for 
@@ -31,12 +31,7 @@ namespace PTS {
         NODISCARD auto get_arena() -> Arena& {
             return const_cast<Arena&>(static_cast<Object const*>(this)->get_arena());
         }
-        NODISCARD auto get_arena() const -> Arena const& {
-            if (!m_arena) {
-                throw std::runtime_error("Object not properly initialized");
-            }
-            return *m_arena;
-        }
+        NODISCARD auto get_arena() const->Arena const&;
         NODISCARD auto get_name() const noexcept -> std::string_view {
             return m_name;
         }
@@ -61,14 +56,10 @@ namespace PTS {
         // enables dynamic retrieval of class info for polymorphic types
         DECL_DYNAMIC_INFO();
 
-        DECL_CREATOR(Object) {
-            
-        }
-
     protected:
         virtual ~Object() noexcept;
 
     private:
-        Arena* m_arena;
+        ArenaID m_arena_id;
     };
 } // namespace PTS

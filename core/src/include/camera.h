@@ -1,7 +1,7 @@
 #pragma once
 #include "ray.h"
 #include "utils.h"
-#include "reflection.h"
+#include "object/reflection.h"
 
 namespace PTS {
     struct LookAtParams {

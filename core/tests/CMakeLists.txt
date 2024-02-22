@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD 17)
 
 add_subdirectory(${EXT_DIR}/Catch2 ${CMAKE_BINARY_DIR}/Catch2)
 list(APPEND TEST_NAMES
+    test_memory
     test_reflection    
     test_type_traits
     test_serialization
@@ -19,4 +20,6 @@ foreach(TEST_NAME IN LISTS TEST_NAMES)
     set_target_properties(${TEST_NAME} PROPERTIES FOLDER "Tests/Core")
 endforeach()
 
+# additional dependencies
+target_link_libraries(test_memory PRIVATE core::memory core::object)
 target_link_libraries(test_serialization PRIVATE nlohmann_json core)

@@ -1,7 +1,8 @@
 #pragma once
 #include "singleton.h"
 #include "utils.h"
-#include "objectHandle.h"
+#include "memory/handle.h"
+#include "object/object.h"
 #include "objectID.h"
 #include <unordered_map>
 #include <tl/expected.hpp>

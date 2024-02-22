@@ -5,7 +5,9 @@
 #include <limits>
 #include "vertex.h"
 #include "utils.h"
-#include "reflection.h"
+
+#include "object/reflection.h"
+
 namespace PTS {
     struct BoundingBox {
         BoundingBox() noexcept : min_pos{ std::numeric_limits<float>::max() }, max_pos{ std::numeric_limits<float>::lowest() } { }

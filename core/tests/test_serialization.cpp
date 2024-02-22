@@ -23,7 +23,12 @@ TEST_CASE("simple", "[serialization]") {
     auto scene = PTS::Scene{};
     auto cam = PTS::Camera{};
     scene.add_object(Simple{});
-    auto res = archive.save(scene, cam);
+
+    auto res = archive.set("scene", scene);
     REQUIRE(res.has_value());
+
+    res = archive.set("camera", cam);
+    REQUIRE(res.has_value());
+
     INFO("serialized = \n", res.value());
 }

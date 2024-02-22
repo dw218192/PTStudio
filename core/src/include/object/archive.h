@@ -22,12 +22,15 @@ namespace PTS {
         DEFAULT_COPY_MOVE(Archive);
         ~Archive() = default;
 
-        Archive(std::string_view path, ArchiveFormat format) 
-            : m_format(format), m_path(path)
-        {
+        Archive(ArchiveFormat format) : m_format(format) {}
+
+        auto open(std::string_view path) -> tl::expected<void, std::string> {
+            m_path = path;
+
             switch (m_format) {
             case ArchiveFormat::JSON:
                 m_json_archive = std::make_unique<JsonArchive>();
+                TL_CHECK_AND_PASS(m_json_archive->open(path));
                 break;
             default:
                 throw std::runtime_error("Unknown archive format");
@@ -72,8 +75,8 @@ namespace PTS {
         }
 
     private:
-        ArchiveFormat m_format;
         std::string m_path;
+        ArchiveFormat m_format;
         std::unique_ptr<JsonArchive> m_json_archive;
     };
 }

@@ -1,6 +1,7 @@
 #pragma once
 #include <glm/glm.hpp>
-#include "reflection.h"
+#include "object/reflection.h"
+
 namespace PTS {
 	struct Vertex {
 		BEGIN_REFLECT(Vertex, void);
