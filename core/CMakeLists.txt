@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.19 FATAL_ERROR)
 
 set(lib_name "core")
+set(core_util "core_util")
 set(src_dir "${CMAKE_CURRENT_SOURCE_DIR}/src")
 #GLOB source files 
 file(GLOB_RECURSE src_files
@@ -18,6 +19,18 @@ file(GLOB_RECURSE res_files
 #Whole library
 add_library(${lib_name} STATIC ${src_files})
 
+#Util library to bundle all the utility libraries
+add_library(${core_util} INTERFACE)
+add_library(${lib_name}::util ALIAS ${core_util})
+target_link_libraries(${core_util} INTERFACE
+	$<BUILD_INTERFACE:developer_flags>
+	expected
+	span
+	fmt-header-only
+	nlohmann_json
+	glm
+)
+
 #Sub-modules
 function(create_core_submodule module_name)
 	set(module_src_path "${src_dir}/${module_name}")
@@ -34,11 +47,7 @@ function(create_core_submodule module_name)
 	)
 	target_link_libraries(core_${module_name} PUBLIC
 		$<BUILD_INTERFACE:developer_flags>
-		${lib_name}
-		expected
-		span
-		fmt-header-only
-		nlohmann_json
+		${core_util}
 	)
 endfunction()
 
@@ -68,15 +77,11 @@ target_link_libraries(${lib_name}
 PUBLIC
 	$<BUILD_INTERFACE:developer_flags>
 	${lib_name}::rc
-	glm
+	${core_util}
 	tinyobjloader
 	stb
 	imgui
-	expected
-	fmt-header-only
 	nativefiledialog
-	span
-	nlohmann_json
 )
 
 set(PT_CORE_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/include PARENT_SCOPE)

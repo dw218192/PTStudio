@@ -1,71 +1,199 @@
 #define CATCH_CONFIG_MAIN
 #include <catch2/catch.hpp>
-#include <arena.h>
+#include <array>
+#include <bitset>
+#include <algorithm>
+
 #include <vector>
 #include <unordered_map>
+
 #include <cstdlib> // For rand()
+#include <arena.h>
+
+using Acc = PTS::FixedSizePoolAllocator::Accessor;
+
+namespace {
+	auto check_invariant(PTS::FixedSizePoolAllocator& alloc) {
+		auto current = Acc::free_list(alloc);
+		auto num_free = 0u;
+		while (current < Acc::num_initialized(alloc)) {
+			++num_free;
+			auto const p = Acc::addr_from_index(alloc, current);
+			auto const next = *static_cast<size_t*>(p);
+			REQUIRE(next != current);
+			current = next;
+		}
+
+		REQUIRE(current == Acc::num_initialized(alloc));
+		REQUIRE(num_free == Acc::num_initialized(alloc) - Acc::num_used(alloc));
+	}
+}
+
 
 struct A {
-    A() : data{ new int[123] } {}
-    virtual ~A() {
-        delete[] data;
-    }
+	A() : data{new int[size()]} {}
+
+	A(A const& other) : data{new int[size()]} {
+		std::copy(other.data, other.data + size(), data);
+	}
+
+	virtual ~A() {
+		delete[] data;
+	}
+
+	auto set(size_t i, int j) const -> void {
+		REQUIRE(i < size());
+		data[i] = j;
+	}
+
+	auto get(size_t i) const -> int {
+		return data[i];
+	}
+
+	static auto size() -> size_t {
+		return 123u;
+	}
 
 protected:
-    int* data;
+	int* data;
 };
 
-struct B : A {
-    B() : A() {
-        data = malloc(100);
-    }
-    ~B() override {
-        free(data);
-    }
-
-    void* data;
-    std::vector<int> v;
-    std::unordered_map<int, int> ump;
+struct B final : A {
+	std::vector<int> v;
+	std::unordered_map<int, int> ump;
 };
 
-TEST_CASE("stress alloc and dealloc with random access", "[PTS::FixedSizePoolAllocator]") {
-    auto alloc = PTS::FixedSizePoolAllocator{ sizeof(B) };
-    struct Deleter {
-        Deleter(PTS::Address addr) : addr(addr) {}
-        ~Deleter() {
-            auto const a = static_cast<A*>(addr.get());
-            a->~A();
-        	addr.deallocate();
-        }
-        PTS::Address addr;
-    };
+static constexpr int k_test_size = 1000;
 
-    auto allocated = std::vector<Deleter>{};
-    // Randomly keep some objects alive to access later
-    std::vector<B*> keepAlive;
-    for (int i = 0; i < 1000; ++i) {
-        auto mem = alloc.allocate();
-        auto raw = mem.get();
-        auto b = new (raw) B();
-        allocated.emplace_back(mem);
+TEST_CASE("basic alloc and dealloc", "[PTS::FixedSizePoolAllocator]") {
+	auto alloc = PTS::FixedSizePoolAllocator{40};
+	auto allocated = std::array<PTS::Address, k_test_size>{};
+	for (auto i = 0; i < k_test_size; ++i) {
+		auto mem = alloc.allocate();
+		auto raw = mem.get();
 
-        // Randomly decide to keep this object alive for later access
-        if (rand() % 3) {
-            keepAlive.push_back(b);
-        }
+		REQUIRE(raw != nullptr);
+		allocated[i] = mem;
 
-        // Randomly deallocate an object
-        if (!allocated.empty() && rand() % 5 == 0) {
-            allocated.erase(allocated.begin() + (rand() % allocated.size()));
-        }
-    }
+		check_invariant(alloc);
+	}
 
-    // Access some data in the kept alive objects to ensure validity
-    for (auto b : keepAlive) {
-        b->v.push_back(42); // Example access
-        REQUIRE(b->v.front() == 42); // Verify access doesn't cause a crash
-    }
+	REQUIRE(Acc::num_used(alloc) == k_test_size);
+	for (auto addr : allocated) {
+		addr.deallocate();
+		check_invariant(alloc);
+	}
+	REQUIRE(Acc::num_used(alloc) == 0);
+}
 
-    // At this point, destructors for B objects will be called automatically for any remaining objects in `allocated`.
-    // The `FixedSizePoolAllocator` should ensure no memory leaks occur during deallocation.
+TEST_CASE("interleaved alloc and dealloc", "[PTS::FixedSizePoolAllocator]") {
+	auto alloc = PTS::FixedSizePoolAllocator{40};
+	auto allocated = std::array<PTS::Address, k_test_size>{};
+	auto freed = 0;
+	for (auto i = 0; i < k_test_size; ++i) {
+		auto mem = alloc.allocate();
+		auto raw = mem.get();
+		REQUIRE(raw != nullptr);
+		allocated[i] = mem;
+
+		if (rand() % 5 == 0) {
+			mem = allocated[rand() % (i + 1)];
+			if (mem) {
+				mem.deallocate();
+				++freed;
+			}
+		}
+
+		check_invariant(alloc);
+	}
+	REQUIRE(Acc::num_used(alloc) == k_test_size - freed);
+
+	for (auto addr : allocated) {
+		// test double-free
+		addr.deallocate();
+		check_invariant(alloc);
+	}
+	REQUIRE(Acc::num_used(alloc) == 0);
+}
+
+TEST_CASE("basic alloc and dealloc with access", "[PTS::FixedSizePoolAllocator]") {
+	auto alloc = PTS::FixedSizePoolAllocator{sizeof(B)};
+	auto allocated = std::array<PTS::Address, k_test_size>{};
+	for (auto i = 0; i < k_test_size; ++i) {
+		auto mem = alloc.allocate();
+		auto raw = mem.get();
+		REQUIRE(raw != nullptr);
+		allocated[i] = mem;
+
+		auto const b = new(raw) B();
+		b->set(i % B::size(), i);
+		b->v.emplace_back(i);
+
+		check_invariant(alloc);
+	}
+	REQUIRE(Acc::num_used(alloc) == allocated.size());
+
+	for (auto i = 0; i < k_test_size; ++i) {
+		auto const b = static_cast<B*>(allocated[i].get());
+
+		REQUIRE(b->get(i % B::size()) == i);
+		REQUIRE(b->v.size() == 1);
+		REQUIRE(b->v.front() == i);
+
+		b->~B();
+		allocated[i].deallocate();
+		check_invariant(alloc);
+	}
+	REQUIRE(Acc::num_used(alloc) == 0);
+}
+
+TEST_CASE("interleaved alloc and dealloc with access", "[PTS::FixedSizePoolAllocator]") {
+	auto alloc = PTS::FixedSizePoolAllocator{sizeof(B)};
+	auto allocated = std::array<PTS::Address, k_test_size>{};
+	auto freed = std::bitset<k_test_size>{};
+
+	for (auto i = 0; i < k_test_size; ++i) {
+		auto mem = alloc.allocate();
+		REQUIRE(mem.get() != nullptr);
+		allocated[i] = mem;
+
+		auto const b = new(mem.get()) B();
+		b->set(i % B::size(), i);
+		b->v.emplace_back(i);
+		b->v.emplace_back(rand());
+		b->ump[b->v.back()] = b->v.front();
+
+		if (rand() % 5 == 0) {
+			auto j = rand() % (i + 1);
+			auto& mem_ref = allocated[j];
+			if (mem_ref) {
+				static_cast<B*>(mem_ref.get())->~B();
+				mem_ref.deallocate();
+				freed[j] = true;
+			}
+			REQUIRE(!mem_ref);
+		}
+
+		check_invariant(alloc);
+	}
+	REQUIRE(Acc::num_used(alloc) == k_test_size - freed.count());
+
+	for (auto i = 0; i < k_test_size; ++i) {
+		if (allocated[i]) {
+			REQUIRE(!freed[i]);
+
+			auto const b = static_cast<B*>(allocated[i].get());
+
+			REQUIRE(b->get(i % B::size()) == i);
+			REQUIRE(b->v.size() == 2);
+			REQUIRE(b->v.front() == i);
+			REQUIRE(b->ump.count(b->v.back()));
+			REQUIRE(b->ump[b->v.back()] == b->v.front());
+
+			b->~B();
+			allocated[i].deallocate();
+			check_invariant(alloc);
+		}
+	}
+	REQUIRE(Acc::num_used(alloc) == 0);
 }

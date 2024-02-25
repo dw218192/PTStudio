@@ -4,9 +4,6 @@
 #include <string>
 #include <utils.h>
 #include <tl/expected.hpp>
-
-#include "scene.h"
-#include "camera.h"
 #include "jsonArchive.h"
 
 

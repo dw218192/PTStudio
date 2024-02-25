@@ -1,12 +1,12 @@
 #pragma once
 
-#include <vector>
 #include <typeindex>
 
 #include "_arena_fwd.h"
 
 #include "fixedSizePoolAllocator.h"
 #include "handle.h"
+#include "object/object.h"
 
 template <typename T, typename... Args>
 auto PTS::Arena::allocate(Args&&... args) -> Handle<T>  {

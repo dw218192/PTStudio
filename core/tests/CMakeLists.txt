@@ -18,6 +18,7 @@ foreach(TEST_NAME IN LISTS TEST_NAMES)
     target_include_directories(${TEST_NAME} PRIVATE ../src/include ${EXT_DIR}/Catch2/single_include)
     target_link_libraries(${TEST_NAME} PRIVATE Catch2::Catch2)
     set_target_properties(${TEST_NAME} PROPERTIES FOLDER "Tests/Core")
+    target_compile_options(${TEST_NAME} PRIVATE "-DUNIT_TEST")
 endforeach()
 
 # additional dependencies

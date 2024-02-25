@@ -3,6 +3,7 @@
 #include "../utils.h"
 #include "memTypes.h"
 #include "object/objectID.h"
+#include <typeindex>
 
 namespace PTS {
 
@@ -16,20 +17,30 @@ struct Handle;
  * It assigns a unique ID to each object and keeps track of the alive objects.
 */
 struct Arena {
+    friend struct Allocator;
     static constexpr auto k_default_block_num = 5;
 
     static auto get_or_create(size_t id) -> Arena&;
-    auto get_id() const noexcept -> ArenaID;
-    auto is_alive(ObjectID id) const noexcept -> bool;
-    auto is_alive(Handle<Object> const& handle) const noexcept -> bool;
-    auto get(ObjectID id) const noexcept -> Object const*;
-    auto get(ObjectID id) noexcept -> Object*;
+    NODISCARD auto get_id() const noexcept -> ArenaID;
+    NODISCARD auto is_alive(ObjectID id) const noexcept -> bool;
+    NODISCARD auto is_alive(Handle<Object> const& handle) const noexcept -> bool;
+    NODISCARD auto get(ObjectID id) const noexcept -> Object const*;
+    NODISCARD auto get(ObjectID id) noexcept -> Object*;
     template <typename T, typename... Args>
-    auto allocate(Args&&... args) -> Handle<T>;
+    NODISCARD auto allocate(Args&&... args) -> Handle<T>;
     auto deallocate(ObjectID id) noexcept -> void;
+    ~Arena() = default;
 
 private:
-    static std::vector<Arena> s_arenas;
+    struct Allocator : std::allocator<Arena> {
+        template< class U, class... Args >
+        void construct(U* p, Args&&... args) {
+            ::new(p) U(std::forward<Args>(args)...);
+        }
+        template< class U > struct rebind { typedef Allocator other; };
+    };
+
+    static std::vector<Arena, Allocator> s_arenas;
 
     Arena() = default;
     DEFAULT_COPY_MOVE(Arena);
