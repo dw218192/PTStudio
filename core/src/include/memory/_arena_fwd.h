@@ -6,8 +6,11 @@
 #include <typeindex>
 
 namespace PTS {
+	namespace detail {
+		struct ArenaWrapper;
+	}
 
-struct Object;
+	struct Object;
 
 template <typename T, typename = std::enable_if_t<std::is_base_of_v<Object, T>>>
 struct Handle;
@@ -17,7 +20,7 @@ struct Handle;
  * It assigns a unique ID to each object and keeps track of the alive objects.
 */
 struct Arena {
-    friend struct Allocator;
+    friend struct detail::ArenaWrapper;
     static constexpr auto k_default_block_num = 5;
 
     static auto get_or_create(size_t id) -> Arena&;
@@ -29,19 +32,10 @@ struct Arena {
     template <typename T, typename... Args>
     NODISCARD auto allocate(Args&&... args) -> Handle<T>;
     auto deallocate(ObjectID id) noexcept -> void;
+    auto deallocate(Handle<Object> const& handle) noexcept -> void;
     ~Arena() = default;
 
 private:
-    struct Allocator : std::allocator<Arena> {
-        template< class U, class... Args >
-        void construct(U* p, Args&&... args) {
-            ::new(p) U(std::forward<Args>(args)...);
-        }
-        template< class U > struct rebind { typedef Allocator other; };
-    };
-
-    static std::vector<Arena, Allocator> s_arenas;
-
     Arena() = default;
     DEFAULT_COPY_MOVE(Arena);
 
@@ -51,5 +45,16 @@ private:
     std::unordered_map<std::type_index, FixedSizePoolAllocator> m_memory;
     std::unordered_map<ObjectID, Address> m_alive_objects;
 };
+
+namespace detail {
+    struct ArenaWrapper {
+        ArenaWrapper() = default;
+        ArenaWrapper(ArenaWrapper const& other) = default;
+        ArenaWrapper(Arena const& val) : val{ val } {}
+    	Arena val;
+    };
+
+    static inline std::vector<ArenaWrapper> s_arenas;
+}
 
 } // namespace PTS

@@ -1,12 +1,12 @@
 #include "memory/arena.h"
 
 auto PTS::Arena::get_or_create(size_t id) -> Arena& {
-    if (id < s_arenas.size()) {
-        return s_arenas[id];
+    if (id < detail::s_arenas.size()) {
+        return detail::s_arenas[id].val;
     } else {
         // create a new arena
-        s_arenas.resize(id + 1);
-        return s_arenas[id];
+        detail::s_arenas.resize(id + 1);
+        return detail::s_arenas[id].val;
     }
 }
 
@@ -36,12 +36,18 @@ auto PTS::Arena::get(ObjectID id) noexcept -> Object* {
 }
 
 auto PTS::Arena::deallocate(ObjectID id) noexcept -> void {
-    auto it = m_alive_objects.find(id);
+    auto const it = m_alive_objects.find(id);
     if (it != m_alive_objects.end()) {
         auto* obj = static_cast<Object*>(it->second.get());
         obj->~Object();
 
         it->second.deallocate();
         m_alive_objects.erase(it);
+    }
+}
+
+auto PTS::Arena::deallocate(Handle<Object> const& handle) noexcept -> void {
+    if (handle.valid()) {
+        deallocate(handle->get_id());
     }
 }

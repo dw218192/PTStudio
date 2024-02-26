@@ -23,11 +23,6 @@ namespace PTS {
     struct Object {
         friend struct Arena;
 
-        DEFAULT_COPY_MOVE(Object);
-
-        // set default arguments because serialization requires a "default" constructor
-        explicit Object(std::string_view name) noexcept;
-        
         NODISCARD auto get_arena() -> Arena& {
             return const_cast<Arena&>(static_cast<Object const*>(this)->get_arena());
         }
@@ -42,8 +37,8 @@ namespace PTS {
             return m_id;
         }
 
-        virtual auto serialize(Archive& archive) const -> void;
-        virtual auto on_deserialize() noexcept -> void;
+        virtual auto serialize(Archive& archive) const -> void {}
+        virtual auto on_deserialize() noexcept -> void {}
 
     protected:
         BEGIN_REFLECT(Object, void);
@@ -57,6 +52,8 @@ namespace PTS {
         DECL_DYNAMIC_INFO();
 
     protected:
+        explicit Object(std::string_view name) noexcept;
+        DEFAULT_COPY_MOVE(Object);
         virtual ~Object() noexcept;
 
     private:

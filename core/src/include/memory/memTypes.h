@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 
 namespace PTS {
 struct FixedSizePoolAllocator;
@@ -15,6 +16,17 @@ struct Address {
     }
     operator bool() const {
         return valid();
+    }
+
+    template<typename T>
+    auto operator==(T* ptr) const noexcept -> bool {
+        return get() == ptr;
+    }
+    auto operator==(std::nullptr_t) const noexcept -> bool {
+        return !valid();
+    }
+    auto operator!=(std::nullptr_t null) const noexcept -> bool {
+        return !operator==(null);
     }
     auto operator==(Address const& other) const noexcept -> bool {
         return m_offset == other.m_offset;

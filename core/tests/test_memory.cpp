@@ -6,9 +6,12 @@
 
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 
 #include <cstdlib> // For rand()
-#include <arena.h>
+
+#include <memory/arena.h>
+#include <object/object.h>
 
 using Acc = PTS::FixedSizePoolAllocator::Accessor;
 
@@ -65,6 +68,8 @@ struct B final : A {
 
 static constexpr int k_test_size = 1000;
 
+
+#pragma region PoolAllocatorTest
 TEST_CASE("basic alloc and dealloc", "[PTS::FixedSizePoolAllocator]") {
 	auto alloc = PTS::FixedSizePoolAllocator{40};
 	auto allocated = std::array<PTS::Address, k_test_size>{};
@@ -196,4 +201,43 @@ TEST_CASE("interleaved alloc and dealloc with access", "[PTS::FixedSizePoolAlloc
 		}
 	}
 	REQUIRE(Acc::num_used(alloc) == 0);
+}
+
+#pragma endregion PoolAllocatorTest
+
+
+struct TestObj final : PTS::Object {
+	TestObj(int x, int y, int z) : Object{""}, x(x), y(y), z(z) {}
+	int x, y, z;
+};
+
+TEST_CASE("basic arena alloc and dealloc with access", "[PTS::Arena]") {
+	auto& arena = PTS::Arena::get_or_create(0);
+	auto objects = std::array<PTS::Handle<TestObj>, k_test_size>{};
+	auto ids = std::unordered_set<PTS::ObjectID>{};
+
+	for (auto i = 0; i < k_test_size; ++i) {
+		auto pobj = arena.allocate<TestObj>(1, 2, 3);
+
+		objects[i] = pobj;
+		ids.emplace(pobj->get_id());
+
+		REQUIRE(&pobj.get_arena() == &arena);
+		REQUIRE(pobj.is_alive());
+		REQUIRE(arena.get(pobj->get_id()) == pobj.get());
+		REQUIRE(pobj.get() != nullptr);
+
+		auto base_handle = PTS::Handle<PTS::Object>{pobj};
+		REQUIRE(base_handle.as<TestObj>() == pobj);
+	}
+
+	REQUIRE(ids.size() == k_test_size);
+	for (auto pobj : objects) {
+		REQUIRE(pobj.is_alive());
+		auto const id = pobj->get_id();
+
+		arena.deallocate(pobj->get_id());
+		REQUIRE(!pobj.is_alive());
+		REQUIRE(!arena.get(id));
+	}
 }

@@ -2,8 +2,7 @@
 
 namespace PTS {
     namespace ObjectIDGenerator {
-        using IDType = unsigned long long;
-
+        using IDType = size_t;
         auto register_id(IDType id) -> void;
         auto unregister_id(IDType id) -> void;
         auto exists(IDType id) -> bool;
