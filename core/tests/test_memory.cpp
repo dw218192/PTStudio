@@ -67,7 +67,10 @@ struct B final : A {
 };
 
 static constexpr int k_test_size = 1000;
-
+static auto init = []() {
+	srand(time(nullptr));
+	return 0;
+}();
 
 #pragma region PoolAllocatorTest
 TEST_CASE("basic alloc and dealloc", "[PTS::FixedSizePoolAllocator]") {
@@ -206,18 +209,79 @@ TEST_CASE("interleaved alloc and dealloc with access", "[PTS::FixedSizePoolAlloc
 #pragma endregion PoolAllocatorTest
 
 
-struct TestObj final : PTS::Object {
-	TestObj(int x, int y, int z) : Object{""}, x(x), y(y), z(z) {}
+namespace {
+	auto ensure_destruct = 0ull;
+}
+
+struct TestObj : PTS::Object {
+	TestObj(int x, int y, int z) : Object{""}, x(x), y(y), z(z) {
+		++ensure_destruct;
+	}
+
+	~TestObj() override {
+		--ensure_destruct;
+	}
+
 	int x, y, z;
+};
+
+struct TestObj2 : TestObj {
+	TestObj2(int x, int y, int z) : TestObj{x, y, z} {
+		save = rand();
+		ensure_destruct += save;
+	}
+
+	~TestObj2() override {
+		ensure_destruct -= save;
+	}
+
+	int save;
+};
+
+struct TestObj3 : TestObj {
+	TestObj3(int x) : TestObj{x, 0, 0} {
+		save = ensure_destruct;
+		ensure_destruct += ensure_destruct;
+	}
+
+	~TestObj3() override {
+		ensure_destruct -= save;
+	}
+
+	decltype(ensure_destruct) save;
 };
 
 TEST_CASE("basic arena alloc and dealloc with access", "[PTS::Arena]") {
 	auto& arena = PTS::Arena::get_or_create(0);
-	auto objects = std::array<PTS::Handle<TestObj>, k_test_size>{};
+	auto objects = std::array<PTS::Handle<PTS::Object>, k_test_size>{};
 	auto ids = std::unordered_set<PTS::ObjectID>{};
 
 	for (auto i = 0; i < k_test_size; ++i) {
-		auto pobj = arena.allocate<TestObj>(1, 2, 3);
+		auto pobj = PTS::Handle<PTS::Object>{};
+		switch (rand() % 3) {
+		case 0: {
+			pobj = arena.allocate<TestObj>(1, 2, 3);
+			REQUIRE(!pobj.as<TestObj2>());
+			REQUIRE(!pobj.as<TestObj3>());
+			break;
+		}
+		case 1: {
+			auto pobj2 = arena.allocate<TestObj2>(1, 2, 3);
+			REQUIRE(pobj2.as<TestObj2>() == pobj2);
+			pobj = pobj2;
+			REQUIRE(pobj.as<TestObj2>() == pobj2);
+			REQUIRE(!pobj.as<TestObj3>());
+			break;
+		}
+		default: {
+			auto pobj3 = arena.allocate<TestObj3>(1);
+			REQUIRE(pobj3.as<TestObj3>() == pobj3);
+			pobj = pobj3;
+			REQUIRE(pobj.as<TestObj3>() == pobj3);
+			REQUIRE(!pobj.as<TestObj2>());
+			break;
+		}
+		}
 
 		objects[i] = pobj;
 		ids.emplace(pobj->get_id());
@@ -226,9 +290,6 @@ TEST_CASE("basic arena alloc and dealloc with access", "[PTS::Arena]") {
 		REQUIRE(pobj.is_alive());
 		REQUIRE(arena.get(pobj->get_id()) == pobj.get());
 		REQUIRE(pobj.get() != nullptr);
-
-		auto base_handle = PTS::Handle<PTS::Object>{pobj};
-		REQUIRE(base_handle.as<TestObj>() == pobj);
 	}
 
 	REQUIRE(ids.size() == k_test_size);
@@ -240,4 +301,69 @@ TEST_CASE("basic arena alloc and dealloc with access", "[PTS::Arena]") {
 		REQUIRE(!pobj.is_alive());
 		REQUIRE(!arena.get(id));
 	}
+
+	REQUIRE(!ensure_destruct);
+}
+
+TEST_CASE("interleaved arena alloc and dealloc with access", "[PTS::Arena]") {
+	auto& arena = PTS::Arena::get_or_create(0);
+	auto objects = std::array<PTS::Handle<PTS::Object>, k_test_size>{};
+	auto ids = std::unordered_set<PTS::ObjectID>{};
+	auto freed = 0;
+
+	for (auto i = 0; i < k_test_size; ++i) {
+		auto pobj = PTS::Handle<PTS::Object>{};
+		switch (rand() % 3) {
+		case 0: {
+			pobj = arena.allocate<TestObj>(1, 2, 3);
+			REQUIRE(!pobj.as<TestObj2>());
+			REQUIRE(!pobj.as<TestObj3>());
+			break;
+		}
+		case 1: {
+			auto pobj2 = arena.allocate<TestObj2>(1, 2, 3);
+			REQUIRE(pobj2.as<TestObj2>() == pobj2);
+			pobj = pobj2;
+			REQUIRE(pobj.as<TestObj2>() == pobj2);
+			REQUIRE(!pobj.as<TestObj3>());
+			break;
+		}
+		default: {
+			auto pobj3 = arena.allocate<TestObj3>(1);
+			REQUIRE(pobj3.as<TestObj3>() == pobj3);
+			pobj = pobj3;
+			REQUIRE(pobj.as<TestObj3>() == pobj3);
+			REQUIRE(!pobj.as<TestObj2>());
+			break;
+		}
+		}
+
+		objects[i] = pobj;
+		ids.emplace(pobj->get_id());
+
+		REQUIRE(&pobj.get_arena() == &arena);
+		REQUIRE(pobj.is_alive());
+		REQUIRE(arena.get(pobj->get_id()) == pobj.get());
+		REQUIRE(pobj.get() != nullptr);
+
+		if (rand() % 5 == 0) {
+			auto j = rand() % (i + 1);
+			if (objects[j].is_alive()) {
+				ids.erase(objects[j]->get_id());
+				arena.deallocate(objects[j]->get_id());
+				REQUIRE(!objects[j].is_alive());
+				++freed;
+			}
+		}
+	}
+
+	REQUIRE(ids.size() == k_test_size - freed);
+	for (auto pobj : objects) {
+		if (pobj.is_alive()) {
+			arena.deallocate(pobj->get_id());
+			REQUIRE(!pobj.is_alive());
+		}
+	}
+
+	REQUIRE(!ensure_destruct);
 }

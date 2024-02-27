@@ -11,6 +11,7 @@ namespace PTS {
 template <typename T, typename>
 struct Handle {
     Handle() = default;
+    ~Handle() = default;
     Handle(Arena& arena, Address addr) : m_addr{addr}, m_arena {&arena} {}
     Handle(Handle const& other) = default;
     Handle(Handle&& other) = default;
@@ -28,6 +29,7 @@ struct Handle {
         return *m_arena;
     }
     auto operator->() const -> T* {
+        if (!m_addr) return nullptr;
         return dynamic_cast<T*>(m_arena->get(
 			static_cast<Object*>(m_addr.get())->get_id()
         ));
@@ -50,18 +52,13 @@ struct Handle {
     auto operator!() const noexcept -> bool {
         return !m_addr;
     }
-    // no implicit conversion to bool because it's error-prone
-    auto valid() const noexcept -> bool {
-        return !operator!();
-    }
     auto get() const -> T* {
         return operator->();
     }
 
+    // no implicit conversion to bool because it's error-prone
     auto is_alive() const -> bool {
-        return m_arena->is_alive(
-            static_cast<Object*>(m_addr.get())->get_id()
-        );
+        return operator->() && m_arena->is_alive(operator->()->get_id());
     }
 
     template <typename Derived, typename = std::enable_if_t<std::is_base_of_v<T, Derived>>>

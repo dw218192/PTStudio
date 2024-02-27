@@ -47,7 +47,7 @@ auto PTS::Arena::deallocate(ObjectID id) noexcept -> void {
 }
 
 auto PTS::Arena::deallocate(Handle<Object> const& handle) noexcept -> void {
-    if (handle.valid()) {
+    if (handle.is_alive()) {
         deallocate(handle->get_id());
     }
 }
