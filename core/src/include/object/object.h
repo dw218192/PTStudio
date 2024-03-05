@@ -46,17 +46,14 @@ namespace PTS {
             MSerialize{}, MNoInspect{}); // handled explicitly
         FIELD(ObjectID, m_id, k_invalid_obj_id,
             MSerialize{}, MNoInspect{}); // not editable
+        FIELD(ArenaID, m_arena_id, k_invalid_arena_id,
+            MSerialize{}, MNoInspect{});
         END_REFLECT();
 
-        // enables dynamic retrieval of class info for polymorphic types
-        DECL_DYNAMIC_INFO();
 
     protected:
         explicit Object(std::string_view name) noexcept;
         DEFAULT_COPY_MOVE(Object);
         virtual ~Object() noexcept;
-
-    private:
-        ArenaID m_arena_id;
     };
 } // namespace PTS

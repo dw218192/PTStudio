@@ -32,6 +32,9 @@ namespace PTS {
             default:
                 throw std::runtime_error("Unknown archive format");
             }
+
+
+            return {};
         }
         
         auto get_path() const -> std::string_view {

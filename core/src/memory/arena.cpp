@@ -1,13 +1,19 @@
 #include "memory/arena.h"
 
-auto PTS::Arena::get_or_create(size_t id) -> Arena& {
+auto PTS::Arena::get_arena(size_t id) -> Arena* {
+    if (id < detail::s_arenas.size()) {
+        return &detail::s_arenas[id].val;
+    }
+    return nullptr;
+}
+
+auto PTS::Arena::get_or_create_arena(size_t id) -> Arena& {
     if (id < detail::s_arenas.size()) {
         return detail::s_arenas[id].val;
-    } else {
-        // create a new arena
-        detail::s_arenas.resize(id + 1);
-        return detail::s_arenas[id].val;
     }
+    // create a new arena
+    detail::s_arenas.resize(id + 1);
+    return detail::s_arenas[id].val;
 }
 
 auto PTS::Arena::get_id() const noexcept -> ArenaID {

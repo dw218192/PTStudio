@@ -22,8 +22,8 @@ struct Handle;
 struct Arena {
     friend struct detail::ArenaWrapper;
     static constexpr auto k_default_block_num = 5;
-
-    static auto get_or_create(size_t id) -> Arena&;
+    static auto get_arena(size_t id) -> Arena*;
+    NODISCARD static auto get_or_create_arena(size_t id) -> Arena&;
     NODISCARD auto get_id() const noexcept -> ArenaID;
     NODISCARD auto is_alive(ObjectID id) const noexcept -> bool;
     NODISCARD auto is_alive(Handle<Object> const& handle) const noexcept -> bool;
@@ -56,5 +56,4 @@ namespace detail {
 
     static inline std::vector<ArenaWrapper> s_arenas;
 }
-
 } // namespace PTS

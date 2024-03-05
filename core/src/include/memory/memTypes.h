@@ -53,4 +53,5 @@ private:
 };
 
 using ArenaID = size_t;
+constexpr auto k_invalid_arena_id = ArenaID{ 0xdeadbeef };
 }

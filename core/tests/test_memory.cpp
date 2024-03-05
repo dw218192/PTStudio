@@ -252,7 +252,7 @@ struct TestObj3 : TestObj {
 };
 
 TEST_CASE("basic arena alloc and dealloc with access", "[PTS::Arena]") {
-	auto& arena = PTS::Arena::get_or_create(0);
+	auto& arena = PTS::Arena::get_or_create_arena(0);
 	auto objects = std::array<PTS::Handle<PTS::Object>, k_test_size>{};
 	auto ids = std::unordered_set<PTS::ObjectID>{};
 
@@ -306,7 +306,7 @@ TEST_CASE("basic arena alloc and dealloc with access", "[PTS::Arena]") {
 }
 
 TEST_CASE("interleaved arena alloc and dealloc with access", "[PTS::Arena]") {
-	auto& arena = PTS::Arena::get_or_create(0);
+	auto& arena = PTS::Arena::get_or_create_arena(0);
 	auto objects = std::array<PTS::Handle<PTS::Object>, k_test_size>{};
 	auto ids = std::unordered_set<PTS::ObjectID>{};
 	auto freed = 0;
