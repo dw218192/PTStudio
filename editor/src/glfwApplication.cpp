@@ -2,39 +2,40 @@
 
 #include <imgui_internal.h>
 
-#include "imgui/imhelper.h"
 #include <iostream>
+
+#include "imgui/imhelper.h"
 
 using namespace PTS;
 
 // stubs for callbacks
 namespace PTS {
-    static void click_func(GLFWwindow* window, int button, int action, int mods) {
-        // auto const app = static_cast<GLFWApplication*>(glfwGetWindowUserPointer(window));
-        // check if ImGui is using the mouse
-        //static_cast<void>(mods);
-        //app->m_mouse_states[button] = action == GLFW_PRESS;
-    }
-    static void motion_func(GLFWwindow* window, double x, double y) {
-
-    }
-    static void scroll_func(GLFWwindow* window, double x, double y) {
-        auto const app = static_cast<GLFWApplication*>(glfwGetWindowUserPointer(window));
-        app->m_mouse_scroll_delta = { x, y };
-    }
-    static void key_func(GLFWwindow* window, int key, int scancode, int action, int mods) {
-        //auto const app = static_cast<GLFWApplication*>(glfwGetWindowUserPointer(window));
-        //static_cast<void>(scancode);
-        //static_cast<void>(mods);
-        //app->m_key_states[key] = action == GLFW_PRESS;
-    }
-    static void error_func(int error, const char* description) {
-        std::cerr << "GLFW error: " << error << ": " << description << std::endl;
-        std::exit(-1);
-    }
+static void click_func(GLFWwindow* window, int button, int action, int mods) {
+    // auto const app = static_cast<GLFWApplication*>(glfwGetWindowUserPointer(window));
+    // check if ImGui is using the mouse
+    // static_cast<void>(mods);
+    // app->m_mouse_states[button] = action == GLFW_PRESS;
 }
+static void motion_func(GLFWwindow* window, double x, double y) {
+}
+static void scroll_func(GLFWwindow* window, double x, double y) {
+    auto const app = static_cast<GLFWApplication*>(glfwGetWindowUserPointer(window));
+    app->m_mouse_scroll_delta = {x, y};
+}
+static void key_func(GLFWwindow* window, int key, int scancode, int action, int mods) {
+    // auto const app = static_cast<GLFWApplication*>(glfwGetWindowUserPointer(window));
+    // static_cast<void>(scancode);
+    // static_cast<void>(mods);
+    // app->m_key_states[key] = action == GLFW_PRESS;
+}
+static void error_func(int error, const char* description) {
+    std::cerr << "GLFW error: " << error << ": " << description << std::endl;
+    std::exit(-1);
+}
+}  // namespace PTS
 
-GLFWApplication::GLFWApplication(std::string_view name, unsigned width, unsigned height, float min_frame_time) {
+GLFWApplication::GLFWApplication(std::string_view name, unsigned width, unsigned height,
+                                 float min_frame_time) {
     set_min_frame_time(min_frame_time);
     glfwSetErrorCallback(error_func);
 
@@ -52,7 +53,7 @@ GLFWApplication::GLFWApplication(std::string_view name, unsigned width, unsigned
         std::cerr << "Failed to create window" << std::endl;
         std::exit(-1);
     }
-    
+
     glfwMakeContextCurrent(m_window);
     glfwSwapInterval(1);
 
@@ -73,11 +74,11 @@ GLFWApplication::GLFWApplication(std::string_view name, unsigned width, unsigned
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;  // Enable Keyboard Controls
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;   // Enable Gamepad Controls
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;      // Enable Docking
     io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
-    
+
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
 
@@ -101,7 +102,7 @@ void GLFWApplication::run() {
         auto const now = glfwGetTime();
 
         // Poll and handle events (inputs, window resize, etc.)
-        m_mouse_scroll_delta = glm::vec2{ 0.0f };
+        m_mouse_scroll_delta = glm::vec2{0.0f};
 
         glfwPollEvents();
         poll_input_events();
@@ -124,7 +125,7 @@ void GLFWApplication::run() {
 
             if (!s_once) {
                 on_begin_first_loop();
-            	s_once = true;
+                s_once = true;
             }
 
             // User Rendering
@@ -135,8 +136,8 @@ void GLFWApplication::run() {
 
             ImGui::Render();
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-            
-        	ImGui::UpdatePlatformWindows();
+
+            ImGui::UpdatePlatformWindows();
             ImGui::RenderPlatformWindowsDefault();
             glfwMakeContextCurrent(m_window);
 
@@ -168,57 +169,40 @@ void GLFWApplication::run() {
     }
 }
 
-auto GLFWApplication::on_begin_first_loop() -> void {}
+auto GLFWApplication::on_begin_first_loop() -> void {
+}
 
 auto GLFWApplication::poll_input_events() noexcept -> void {
-    auto screen_dim = glm::ivec2{ get_window_width(), get_window_height() };
+    auto screen_dim = glm::ivec2{get_window_width(), get_window_height()};
     double x, y;
     glfwGetCursorPos(m_window, &x, &y);
-    if(!m_last_mouse_pos) {
-        m_last_mouse_pos = m_mouse_pos = { x, y };
+    if (!m_last_mouse_pos) {
+        m_last_mouse_pos = m_mouse_pos = {x, y};
     } else {
         m_last_mouse_pos = m_mouse_pos;
-        m_mouse_pos = { x, y };
+        m_mouse_pos = {x, y};
     }
 
     // key events
-    for(int i=0; i<m_key_states.size(); ++i) {
+    for (int i = 0; i < m_key_states.size(); ++i) {
         std::optional<Input> input;
         auto key_state = ImGui::IsKeyDown(static_cast<ImGuiKey>(i));
         if (key_state) {
             if (m_key_states[i]) {
-                input = Input {
-                    InputType::KEYBOARD,
-                    ActionType::HOLD,
-                    i
-                };
+                input = Input{InputType::KEYBOARD, ActionType::HOLD, i};
             } else {
-                input = Input {
-                    InputType::KEYBOARD,
-                    ActionType::PRESS,
-                    i
-                };
+                input = Input{InputType::KEYBOARD, ActionType::PRESS, i};
                 m_key_initiated_window[i] = m_cur_hovered_widget;
             }
         } else {
             if (m_key_states[i]) {
-                input = Input {
-                    InputType::KEYBOARD,
-                    ActionType::RELEASE,
-                    i
-                };
+                input = Input{InputType::KEYBOARD, ActionType::RELEASE, i};
             }
         }
-        if(input) {
-            auto event = InputEvent {
-                *input,
-                m_mouse_pos,
-                *m_last_mouse_pos,
-                screen_dim,
-                m_mouse_scroll_delta,
-                m_cur_hovered_widget,
-                get_time()
-            };
+        if (input) {
+            auto event = InputEvent{*input,     m_mouse_pos,          *m_last_mouse_pos,
+                                    screen_dim, m_mouse_scroll_delta, m_cur_hovered_widget,
+                                    get_time()};
             handle_input(event);
             if (input->action_type == ActionType::RELEASE) {
                 m_key_initiated_window[i] = k_no_hovered_widget;
@@ -231,57 +215,31 @@ auto GLFWApplication::poll_input_events() noexcept -> void {
 
     // scroll
     if (glm::length(m_mouse_scroll_delta) > 0) {
-        auto input = Input{
-            InputType::MOUSE, ActionType::SCROLL, GLFW_MOUSE_BUTTON_MIDDLE
-        };
-        handle_input(InputEvent{
-            input,
-            m_mouse_pos,
-            screen_dim,
-            m_mouse_scroll_delta,
-            m_mouse_initiated_window[ImGuiMouseButton_Middle],
-            get_time()
-        });
+        auto input = Input{InputType::MOUSE, ActionType::SCROLL, GLFW_MOUSE_BUTTON_MIDDLE};
+        handle_input(InputEvent{input, m_mouse_pos, screen_dim, m_mouse_scroll_delta,
+                                m_mouse_initiated_window[ImGuiMouseButton_Middle], get_time()});
     }
 
-    for(int i=0; i<m_mouse_states.size(); ++i) {
+    for (int i = 0; i < m_mouse_states.size(); ++i) {
         std::optional<Input> input;
         auto mouse_state = ImGui::IsMouseDown(i);
         if (mouse_state) {
             if (m_mouse_states[i]) {
-                input = Input {
-                    InputType::MOUSE,
-                    ActionType::HOLD,
-                    i
-                };
+                input = Input{InputType::MOUSE, ActionType::HOLD, i};
             } else {
-                input = Input {
-                    InputType::MOUSE,
-                    ActionType::PRESS,
-                    i
-                };
+                input = Input{InputType::MOUSE, ActionType::PRESS, i};
                 m_mouse_initiated_window[i] = m_cur_hovered_widget;
             }
         } else {
-	        if (m_mouse_states[i]) {
-		        input = Input{
-			        InputType::MOUSE,
-			        ActionType::RELEASE,
-			        i
-		        };
-	        }
+            if (m_mouse_states[i]) {
+                input = Input{InputType::MOUSE, ActionType::RELEASE, i};
+            }
         }
 
         if (input) {
-            auto event = InputEvent {
-                *input,
-                m_mouse_pos,
-                *m_last_mouse_pos,
-                screen_dim,
-                m_mouse_scroll_delta,
-                m_mouse_initiated_window[i],
-                get_time()
-            };
+            auto event = InputEvent{*input,     m_mouse_pos,          *m_last_mouse_pos,
+                                    screen_dim, m_mouse_scroll_delta, m_mouse_initiated_window[i],
+                                    get_time()};
             handle_input(event);
             if (input->action_type == ActionType::RELEASE) {
                 m_mouse_initiated_window[i] = k_no_hovered_widget;
@@ -289,25 +247,22 @@ auto GLFWApplication::poll_input_events() noexcept -> void {
         }
         m_mouse_states[i] = mouse_state;
     }
-
 }
 
-auto GLFWApplication::get_window_height() const noexcept->int {
+auto GLFWApplication::get_window_height() const noexcept -> int {
     int display_h;
     glfwGetFramebufferSize(m_window, nullptr, &display_h);
     return display_h;
 }
 
-auto GLFWApplication::get_window_width() const noexcept->int {
+auto GLFWApplication::get_window_width() const noexcept -> int {
     int display_w;
     glfwGetFramebufferSize(m_window, &display_w, nullptr);
     return display_w;
 }
 
-auto GLFWApplication::begin_imgui_window(
-    std::string_view name, 
-    ImGuiWindowFlags flags
-) noexcept -> bool {
+auto GLFWApplication::begin_imgui_window(std::string_view name, ImGuiWindowFlags flags) noexcept
+    -> bool {
     auto const ret = ImGui::Begin(name.data(), nullptr, flags);
     if (ImGui::IsWindowHovered(ImGuiItemStatusFlags_HoveredRect)) {
         m_cur_hovered_widget = name;
@@ -322,7 +277,8 @@ void GLFWApplication::end_imgui_window() noexcept {
     ImGui::End();
 }
 
-auto GLFWApplication::get_window_content_pos(std::string_view name) const noexcept -> std::optional<ImVec2> {
+auto GLFWApplication::get_window_content_pos(std::string_view name) const noexcept
+    -> std::optional<ImVec2> {
     auto const win = ImGui::FindWindowByName(name.data());
     if (!win) {
         return std::nullopt;
