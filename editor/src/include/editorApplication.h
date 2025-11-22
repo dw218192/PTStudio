@@ -1,8 +1,5 @@
 #pragma once
 
-#include <ImGuizmo.h>
-#include <imgui.h>
-
 #include <array>
 #include <iostream>
 
@@ -12,6 +9,7 @@
 #include "editorRenderer.h"
 #include "glTexture.h"
 #include "glfwApplication.h"
+#include "imgui/includes.h"
 #include "inputAction.h"
 #include "scene.h"
 #include "singleton.h"

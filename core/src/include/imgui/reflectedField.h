@@ -64,9 +64,9 @@ struct DoField<float> {
     template <typename Reflected, typename FieldInfo>
     static auto impl(char const* label, FieldInfo field_info, Reflected& reflected) -> bool {
         auto&& field = field_info.get(reflected);
-        constexpr auto range_mod =
-            field_info.template get_modifier<PTS::MRange<typename FieldInfo::type>>();
-        if constexpr (range_mod) {
+        // TODO: fix constexpr
+        auto range_mod = field_info.template get_modifier<PTS::MRange<typename FieldInfo::type>>();
+        if (range_mod) {
             return ImGui::SliderFloat(label, &field, range_mod->min, range_mod->max);
         } else {
             return ImGui::InputFloat(label, &field);
@@ -79,9 +79,9 @@ struct DoField<int> {
     template <typename Reflected, typename FieldInfo>
     static auto impl(char const* label, FieldInfo field_info, Reflected& reflected) -> bool {
         auto&& field = field_info.get(reflected);
-        constexpr auto range_mod =
-            field_info.template get_modifier<PTS::MRange<typename FieldInfo::type>>();
-        if constexpr (range_mod) {
+        // TODO: fix constexpr
+        auto range_mod = field_info.template get_modifier<PTS::MRange<typename FieldInfo::type>>();
+        if (range_mod) {
             return ImGui::SliderInt(label, &field, range_mod->min, range_mod->max);
         } else {
             return ImGui::InputInt(label, &field);
@@ -127,10 +127,11 @@ struct DoField<EnumType> {
     static auto impl(char const* label, FieldInfo field_info, Reflected& reflected) -> bool {
         auto changed = false;
 
-        constexpr auto enum_mod = field_info.template get_modifier<PTS::MEnum>();
-        constexpr auto enum_flags_mod = field_info.template get_modifier<PTS::MEnumFlags>();
+        // TODO: fix constexpr
+        auto enum_mod = field_info.template get_modifier<PTS::MEnum>();
+        auto enum_flags_mod = field_info.template get_modifier<PTS::MEnumFlags>();
 
-        if constexpr (enum_mod) {
+        if (enum_mod) {
             auto&& field = field_info.get(reflected);
             auto field_int = reinterpret_cast<int*>(&field);
 
@@ -145,7 +146,7 @@ struct DoField<EnumType> {
                 }
                 ImGui::EndCombo();
             }
-        } else if constexpr (enum_flags_mod) {
+        } else if (enum_flags_mod) {
             auto&& field = field_info.get(reflected);
             auto const field_int = reinterpret_cast<int*>(&field);
 
@@ -192,8 +193,9 @@ struct DoField<glm::vec3> {
     template <typename Reflected, typename FieldInfo>
     static auto impl(char const* label, FieldInfo field_info, Reflected& reflected) -> bool {
         auto&& field = field_info.get(reflected);
-        constexpr auto color_mod = field_info.template get_modifier<PTS::MColor>();
-        if constexpr (color_mod) {
+        // TODO: fix constexpr
+        auto color_mod = field_info.template get_modifier<PTS::MColor>();
+        if (color_mod) {
             return ImGui::ColorEdit3(label, glm::value_ptr(field));
         } else {
             return ImGui::InputFloat3(label, glm::value_ptr(field));
@@ -206,8 +208,9 @@ struct DoField<glm::vec4> {
     template <typename Reflected, typename FieldInfo>
     static auto impl(char const* label, FieldInfo field_info, Reflected& reflected) -> bool {
         auto&& field = field_info.get(reflected);
-        constexpr auto color_mod = field_info.template get_modifier<PTS::MColor>();
-        if constexpr (color_mod) {
+        // TODO: fix constexpr
+        auto color_mod = field_info.template get_modifier<PTS::MColor>();
+        if (color_mod) {
             return ImGui::ColorEdit4(label, glm::value_ptr(field));
         } else {
             return ImGui::InputFloat4(label, glm::value_ptr(field));

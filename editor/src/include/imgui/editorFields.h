@@ -1,9 +1,6 @@
 #pragma once
-
-#include <ImGuizmo.h>
-#include <imgui.h>
-
 #include "UniformVar.h"
+#include "includes.h"
 #include "material.h"
 #include "reflection.h"
 #include "transform.h"

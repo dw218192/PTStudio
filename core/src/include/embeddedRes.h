@@ -2,6 +2,8 @@
 #include <cmrc/cmrc.hpp>
 #include <tl/expected.hpp>
 
+#include "utils.h"
+
 namespace PTS {
 [[nodiscard]] auto inline try_get_embedded_res(cmrc::embedded_filesystem const& embedded_fs,
                                                std::string const& path)

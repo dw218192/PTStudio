@@ -185,13 +185,13 @@ struct FieldProxy {
     }
 
     // arithmetic operators
-#define DEFINE_ASSIGN_OP(op)                                                               \
-    template <typename U,                                                                  \
-              typename = std::void_t<decltype(std::declval<T>() op std::declval<U>())>>    \
-    auto operator op##=(U&& other) -> std::enable_if_t<!std::is_const_v<T>, FieldProxy&> { \
-        decltype(auto) res{m_ref.get() op std::forward<U>(other)};                         \
-        *this = res;                                                                       \
-        return *this;                                                                      \
+#define DEFINE_ASSIGN_OP(op)                                                             \
+    template <typename U,                                                                \
+              typename = std::void_t<decltype(std::declval<T>() op std::declval<U>())>>  \
+    auto operator op##=(U&& other)->std::enable_if_t<!std::is_const_v<T>, FieldProxy&> { \
+        decltype(auto) res{m_ref.get() op std::forward<U>(other)};                       \
+        *this = res;                                                                     \
+        return *this;                                                                    \
     }
     DEFINE_ASSIGN_OP(+)
     DEFINE_ASSIGN_OP(-)
@@ -374,7 +374,7 @@ struct TFieldRuntime {
         OnChangeCallbackData<TField<ClassType, FieldType, ModifierPackType>, ClassType, FieldType>;
     using callback_type = void(callback_data_type);
 
-    TFieldRuntime(int member_index, FieldType default_val, FieldType ClassType::*mem_pointer)
+    TFieldRuntime(int member_index, FieldType default_val, FieldType ClassType::* mem_pointer)
         : member_index(member_index),
           default_val(std::move(default_val)),
           mem_pointer(mem_pointer) {
@@ -383,7 +383,7 @@ struct TFieldRuntime {
    private:
     int member_index;
     FieldType default_val;
-    FieldType ClassType::*mem_pointer;
+    FieldType ClassType::* mem_pointer;
     CallbackList<callback_type> on_change_callbacks;
 };
 
@@ -903,7 +903,7 @@ struct FieldInfo {
         using FieldType = typename TemplatedFieldInfo::type;
 
         m_get = [&info](void* any_obj) {
-            auto ret = const_cast<FieldType&>(info.get(*static_cast<Reflected*>(any_obj)));
+            auto& ret = const_cast<FieldType&>(info.get(*static_cast<Reflected*>(any_obj)));
             return static_cast<void*>(&ret);
         };
 
@@ -949,7 +949,7 @@ struct FieldInfo {
 
 #define FIELD_IMPL(_counter, _var_type, _var_name, _init, ...)                                     \
     _var_type _var_name = _init;                                                                   \
-    static constexpr _var_type _my_type::*_##_var_name##_proxy() {                                 \
+    static constexpr _var_type _my_type::* _##_var_name##_proxy() {                                \
         return &_my_type::_var_name;                                                               \
     }                                                                                              \
     static constexpr auto _##_var_name##_name = #_var_name;                                        \
