@@ -1,24 +1,26 @@
 #include "../include/imgui/editorFields.h"
 
 #include <imgui.h>
+
 #include <glm/gtc/type_ptr.hpp>
 
-bool ImGui::TransformField(const char* label, PTS::Transform& transform, ImGuizmo::OPERATION& op, ImGuizmo::MODE& mode, bool& snap, glm::vec3& snap_scale) {
+bool ImGui::TransformField(const char* label, PTS::Transform& transform, ImGuizmo::OPERATION& op,
+                           ImGuizmo::MODE& mode, bool& snap, glm::vec3& snap_scale) {
     bool changed = false;
-    if(ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto pos = transform.get_position();
         auto rot = transform.get_rotation();
         auto scale = transform.get_scale();
 
-        if(ImGui::InputFloat3("position", glm::value_ptr(pos))) {
+        if (ImGui::InputFloat3("position", glm::value_ptr(pos))) {
             changed = true;
             transform.set_position(PTS::TransformSpace::WORLD, pos);
         }
-        if(ImGui::InputFloat3("rotation", glm::value_ptr(rot))) {
+        if (ImGui::InputFloat3("rotation", glm::value_ptr(rot))) {
             changed = true;
             transform.set_rotation(PTS::TransformSpace::WORLD, rot);
         }
-        if(ImGui::InputFloat3("scale", glm::value_ptr(scale))) {
+        if (ImGui::InputFloat3("scale", glm::value_ptr(scale))) {
             changed = true;
             transform.set_scale(PTS::TransformSpace::WORLD, scale);
         }
@@ -33,16 +35,16 @@ bool ImGui::TransformField(const char* label, PTS::Transform& transform, ImGuizm
             op = ImGuizmo::ROTATE;
         }
         if (ImGui::RadioButton("Scale", op == ImGuizmo::SCALE)) {
-        	changed = true;
+            changed = true;
             op = ImGuizmo::SCALE;
         }
-        
-        if(ImGui::Checkbox("snap to grid", &snap)) {
+
+        if (ImGui::Checkbox("snap to grid", &snap)) {
             changed = true;
         }
 
         if (snap) {
-            if(ImGui::InputFloat3("snap distance", glm::value_ptr(snap_scale))) {
+            if (ImGui::InputFloat3("snap distance", glm::value_ptr(snap_scale))) {
                 changed = true;
                 snap_scale = glm::clamp(snap_scale, glm::vec3(0.02f), glm::vec3(100.0f));
             }
@@ -73,18 +75,20 @@ bool ImGui::ShaderVariableField(const char* label, PTS::UniformVar& variable) {
 
             auto value = variable.get_value<glm::mat3>().get();
             for (int i = 0; i < 3; ++i) {
-                if (changed |= ImGui::InputFloat3(std::to_string(i).c_str(), glm::value_ptr(value[i]))) {
+                if (changed |=
+                    ImGui::InputFloat3(std::to_string(i).c_str(), glm::value_ptr(value[i]))) {
                     variable.set_value(value);
                 }
             }
             break;
         }
-        case PTS::ShaderVariableType::Mat4:{
+        case PTS::ShaderVariableType::Mat4: {
             ImGui::Text("%s (Mat4)", label);
 
             auto value = variable.get_value<glm::mat4>().get();
             for (int i = 0; i < 4; ++i) {
-                if (changed |= ImGui::InputFloat4(std::to_string(i).c_str(), glm::value_ptr(value[i]))) {
+                if (changed |=
+                    ImGui::InputFloat4(std::to_string(i).c_str(), glm::value_ptr(value[i]))) {
                     variable.set_value(value);
                 }
             }
@@ -97,7 +101,7 @@ bool ImGui::ShaderVariableField(const char* label, PTS::UniformVar& variable) {
             if (changed |= ImGui::InputFloat2("value", glm::value_ptr(value))) {
                 variable.set_value(value);
             }
-            
+
             break;
         }
         case PTS::ShaderVariableType::Vec3:
@@ -107,7 +111,7 @@ bool ImGui::ShaderVariableField(const char* label, PTS::UniformVar& variable) {
             if (changed |= ImGui::InputFloat3("value", glm::value_ptr(value))) {
                 variable.set_value(value);
             }
-        
+
             break;
         case PTS::ShaderVariableType::Vec4: {
             ImGui::Text("%s (Vec4)", label);
@@ -123,22 +127,22 @@ bool ImGui::ShaderVariableField(const char* label, PTS::UniformVar& variable) {
             ImGui::Text("%s (Float)", label);
 
             auto value = variable.get_value<float>().get();
-            if(changed |= ImGui::InputFloat("value", &value)) {
+            if (changed |= ImGui::InputFloat("value", &value)) {
                 variable.set_value(value);
             }
             break;
         }
         case PTS::ShaderVariableType::Int: {
             ImGui::Text("%s (Int)", label);
-            
+
             auto value = variable.get_value<int>().get();
-            if(changed |= ImGui::InputInt("value", &value)) {
+            if (changed |= ImGui::InputInt("value", &value)) {
                 variable.set_value(value);
-            }   
+            }
             break;
         }
-    default:
-        ImGui::TextUnformatted("Unsupported Uniform Type");
+        default:
+            ImGui::TextUnformatted("Unsupported Uniform Type");
     }
 
     return changed;

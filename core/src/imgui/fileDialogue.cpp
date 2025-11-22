@@ -3,8 +3,8 @@
 #include <imgui.h>
 #include <nfd.h>
 
-
-auto ImGui::FileDialogue(FileDialogueMode mode, const char* filter, const char* defaultPath) -> std::string {
+auto ImGui::FileDialogue(FileDialogueMode mode, const char* filter, const char* defaultPath)
+    -> std::string {
     nfdchar_t* outPath = nullptr;
     nfdresult_t result;
     if (mode == FileDialogueMode::OPEN) {
@@ -14,14 +14,12 @@ auto ImGui::FileDialogue(FileDialogueMode mode, const char* filter, const char* 
     }
 
     if (result == NFD_OKAY) {
-	    std::string path = outPath;
+        std::string path = outPath;
         free(outPath);
         return path;
-    }
-    else if (result == NFD_CANCEL) {
+    } else if (result == NFD_CANCEL) {
         return {};
-    }
-    else {
+    } else {
         ImGui::OpenPopup("Error");
     }
     if (ImGui::BeginPopupModal("Error", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
