@@ -56,3 +56,22 @@ target_link_libraries(ImGuiColorTextEdit
     PUBLIC
         imgui
 )
+
+# Manually add nativefiledialog
+include(CheckIncludeFile)
+set(SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/nativefiledialog/src/nfd_common.c)
+
+# add specific implementations
+if (WIN32)
+    list(APPEND SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/nativefiledialog/src/nfd_win.cpp)
+elseif (APPLE)
+    list(APPEND SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/nativefiledialog/src/nfd_cocoa.m)
+elseif (UNIX)
+    list(APPEND SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/nativefiledialog/src/nfd_gtk.c)
+else ()
+    message(FATAL_ERROR "Unsupported platform: ${CMAKE_SYSTEM_NAME}")
+endif ()
+
+add_library(nativefiledialog ${SOURCES})
+
+target_include_directories(nativefiledialog PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/nativefiledialog/src/include)

@@ -9,6 +9,14 @@ class PTStudioConan(ConanFile):
     name = "ptstudio"
     version = "1.0.0"
     settings = "os", "compiler", "build_type", "arch"
+    options = {
+        "pathtracer": [True, False],
+        "build_tests": [True, False],
+    }
+    default_options = {
+        "pathtracer": False,
+        "build_tests": False,
+    }
     generators = "CMakeDeps"
 
     def requirements(self):
@@ -25,6 +33,8 @@ class PTStudioConan(ConanFile):
         # Utility libraries
         self.requires("stb/[>=0]")
         self.requires("tinyobjloader/[>=0]")
+        self.requires("tcb-span/[>=0]")
+        self.requires("tl-expected/[>=0]")
 
         # Vulkan support
         self.requires("vulkan-headers/[>=0]")
@@ -35,10 +45,7 @@ class PTStudioConan(ConanFile):
         # - imgui (custom build with docking branch)
         # - imguizmo
         # - ImGuiColorTextEdit
-        # - expected (header-only)
-        # - span (header-only)
         # - nativefiledialog
-        # These will be handled in Meson build files
 
     def configure(self):
         # Configure package options
@@ -47,9 +54,8 @@ class PTStudioConan(ConanFile):
 
     def generate(self):
         tc = CMakeToolchain(self)
-        tc.cache_variables["glew-cmake_BUILD_SHARED"] = False
-        tc.cache_variables["glew-cmake_BUILD_STATIC"] = True
-        tc.cache_variables["EXPECTED_BUILD_TESTS"] = False
-        tc.cache_variables["JSON_BuildTests"] = False
+        # forward options to CMakeLists.txt
+        tc.cache_variables["PTSTUDIO_PATHTRACER"] = self.options.pathtracer
+        tc.cache_variables["CORE_BUILD_TESTS"] = self.options.build_tests
 
         tc.generate()

@@ -2,19 +2,12 @@
 	path = ext/imgui
 	url = https://github.com/ocornut/imgui.git
 	branch = docking
-[submodule "ext/expected"]
-	path = ext/expected
-	url = https://github.com/TartanLlama/expected.git
-[submodule "ext/nativefiledialog"]
-	path = ext/nativefiledialog
-	url = https://github.com/AlvaroBarua/nativefiledialog.git
-	branch = CMakeLists
-[submodule "ext/span"]
-	path = ext/span
-	url = https://github.com/tcbrindle/span.git
 [submodule "ext/ImGuizmo"]
 	path = ext/ImGuizmo
 	url = https://github.com/CedricGuillemet/ImGuizmo.git
 [submodule "ext/cmrc"]
 	path = ext/cmrc
 	url = https://github.com/vector-of-bool/cmrc.git
+[submodule "ext/nativefiledialog"]
+	path = ext/nativefiledialog
+	url = https://github.com/mlabbe/nativefiledialog.git

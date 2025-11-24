@@ -20,8 +20,10 @@ option(CORE_BUILD_TESTS "Build core unit tests" OFF)
 # Direct all output to /bin directory
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin)
 
-# Auto-detect GPU architecture
-include("cmake/AutoDetectCudaArch.cmake")
+# Auto-detect GPU architecture (only if building path tracer)
+if (PTSTUDIO_PATHTRACER)
+    include("cmake/AutoDetectCudaArch.cmake")
+endif ()
 
 # CUDA and C++ compiler flags
 set(cxx_flags 
@@ -65,7 +67,10 @@ target_compile_options(developer_flags INTERFACE
     $<$<COMPILE_LANGUAGE:CXX>:${cxx_flags}>
     $<$<COMPILE_LANGUAGE:CUDA>:${cuda_flags}>
 )
-target_include_directories(developer_flags INTERFACE ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
+# Only include CUDA toolkit directories if CUDA is available (when building path tracer)
+if (PTSTUDIO_PATHTRACER)
+    target_include_directories(developer_flags INTERFACE ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
+endif ()
 
 target_compile_features(developer_flags INTERFACE cxx_std_17)
 
@@ -76,13 +81,12 @@ find_package(glew REQUIRED)
 find_package(glm REQUIRED)
 find_package(tinyobjloader REQUIRED)
 find_package(stb REQUIRED)
+find_package(tcb-span REQUIRED)
 find_package(fmt REQUIRED)
+find_package(tl-expected REQUIRED)
 find_package(nlohmann_json REQUIRED)
 
-add_subdirectory(${EXT_DIR}/span EXCLUDE_FROM_ALL)
-add_subdirectory(${EXT_DIR}/expected EXCLUDE_FROM_ALL)
-add_subdirectory(${EXT_DIR}/nativefiledialog EXCLUDE_FROM_ALL)
-# some manual configuration for imgui and imguizmo
+# external dependencies that are built from source
 add_subdirectory(${EXT_DIR})
 
 # add resource compiler
