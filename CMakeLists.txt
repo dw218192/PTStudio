@@ -71,25 +71,17 @@ target_compile_features(developer_flags INTERFACE cxx_std_17)
 
 set(EXT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ext")
 
-# OpenGL and common stuff
-add_subdirectory(${EXT_DIR}/glfw EXCLUDE_FROM_ALL)
+find_package(glfw3 REQUIRED)
+find_package(glew REQUIRED)
+find_package(glm REQUIRED)
+find_package(tinyobjloader REQUIRED)
+find_package(stb REQUIRED)
+find_package(fmt REQUIRED)
+find_package(nlohmann_json REQUIRED)
 
-set(glew-cmake_BUILD_SHARED OFF CACHE BOOL "" FORCE)
-set(glew-cmake_BUILD_STATIC ON CACHE BOOL "" FORCE)
-add_subdirectory(${EXT_DIR}/glew-cmake EXCLUDE_FROM_ALL)
-add_subdirectory(${EXT_DIR}/glm EXCLUDE_FROM_ALL)
-add_subdirectory(${EXT_DIR}/tinyobjloader EXCLUDE_FROM_ALL)
-add_subdirectory(${EXT_DIR}/stb EXCLUDE_FROM_ALL)
-add_subdirectory(${EXT_DIR}/nativefiledialog EXCLUDE_FROM_ALL)
 add_subdirectory(${EXT_DIR}/span EXCLUDE_FROM_ALL)
-add_subdirectory(${EXT_DIR}/fmt EXCLUDE_FROM_ALL)
-
-set(EXPECTED_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 add_subdirectory(${EXT_DIR}/expected EXCLUDE_FROM_ALL)
-
-set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
-add_subdirectory(${EXT_DIR}/json EXCLUDE_FROM_ALL)
-
+add_subdirectory(${EXT_DIR}/nativefiledialog EXCLUDE_FROM_ALL)
 # some manual configuration for imgui and imguizmo
 add_subdirectory(${EXT_DIR})
 

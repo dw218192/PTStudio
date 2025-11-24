@@ -3,3 +3,4 @@ _files/
 _plan.md
 .vs/
 .vscode/
+CMakeUserPresets.json
