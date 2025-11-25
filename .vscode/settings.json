@@ -1,5 +1,11 @@
 {
     "cmake.configureOnOpen": false,
+    "cmake.configureOnEdit": false,
+    "cmake.buildDirectory": "${workspaceFolder}/build",
+    "cmake.buildBeforeRun": false,
+    "cmake.useCMakePresets": "always",
+    "cmake.skipConfigureIfCachePresent": true,
+    "cmake.generator": "Ninja",
     "files.associations": {
         "algorithm": "cpp",
         "any": "cpp",

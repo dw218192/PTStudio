@@ -93,16 +93,16 @@ add_subdirectory(${EXT_DIR})
 include(${EXT_DIR}/cmrc/CMakeRC.cmake)
 
 # add subprojects
-add_subdirectory(core)
+# add_subdirectory(core)
 
 # renderers
 add_subdirectory(gl_wrapper)
-if (PTSTUDIO_PATHTRACER)
-    add_subdirectory(cuda_pt_renderer)
-endif ()
-add_subdirectory(vulkan_raytracer)
+# if (PTSTUDIO_PATHTRACER)
+#     add_subdirectory(cuda_pt_renderer)
+# endif ()
+# add_subdirectory(vulkan_raytracer)
 
-add_subdirectory(editor)
+# add_subdirectory(editor)
 
-# set editor as the start-up project
-set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT editor)
+# # set editor as the start-up project
+# set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT editor)

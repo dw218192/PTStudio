@@ -3,6 +3,7 @@ from conan.tools.cmake import CMakeToolchain, CMakeDeps, CMake
 from conan.tools.files import get, copy
 from conan.tools.scm import Git
 import os
+import shutil
 
 
 class PTStudioConan(ConanFile):
@@ -53,7 +54,15 @@ class PTStudioConan(ConanFile):
             del self.options.shared
 
     def generate(self):
-        tc = CMakeToolchain(self)
+        # Use Ninja generator if available
+        if shutil.which("ninja") is not None:
+            self.output.info("Using Ninja generator")
+            tc = CMakeToolchain(self, generator="Ninja")
+            tc.cache_variables["CMAKE_EXPORT_COMPILE_COMMANDS"] = "ON"
+        else:
+            self.output.info("Ninja not found, using default CMake generator")
+            tc = CMakeToolchain(self)
+
         # forward options to CMakeLists.txt
         tc.cache_variables["PTSTUDIO_PATHTRACER"] = self.options.pathtracer
         tc.cache_variables["CORE_BUILD_TESTS"] = self.options.build_tests
