@@ -1,33 +1,35 @@
-{
-    "version": 4,
-    "configurations": [
-        {
-            "name": "PTStudio",
-            "includePath": [
-                "${workspaceFolder}/core/src/include",
-                "${workspaceFolder}/editor/src/include",
-                "${workspaceFolder}/gl_wrapper/src/include",
-                "${workspaceFolder}/cuda_pt_renderer/src/include",
-                "${workspaceFolder}/vulkan_raytracer/src/include",
-                "${workspaceFolder}/ext/**",
-                "${workspaceFolder}/_build/deps/full_deploy/host/**/include"
-            ],
-            "defines": [],
-            "compilerPath": "cl.exe",
-            "cStandard": "c17",
-            "cppStandard": "c++20",
-            "intelliSenseMode": "windows-msvc-x64",
-            "browse": {
-                "path": [
-                    "${workspaceFolder}/core/src/include",
-                    "${workspaceFolder}/editor/src/include",
-                    "${workspaceFolder}/gl_wrapper/src/include",
-                    "${workspaceFolder}/cuda_pt_renderer/src/include",
-                    "${workspaceFolder}/vulkan_raytracer/src/include",
-                    "${workspaceFolder}/ext/**",
-                    "${workspaceFolder}/_build/deps/full_deploy/host/**/include"
-                ]
-            }
-        }
-    ]
+﻿{
+    "version":  4,
+    "configurations":  [
+                           {
+                               "browse":  {
+                                              "path":  [
+                                                           "${workspaceFolder}/core/src/include",
+                                                           "${workspaceFolder}/editor/src/include",
+                                                           "${workspaceFolder}/gl_wrapper/src/include",
+                                                           "${workspaceFolder}/cuda_pt_renderer/src/include",
+                                                           "${workspaceFolder}/vulkan_raytracer/src/include",
+                                                           "${workspaceFolder}/ext/**",
+                                                           "${workspaceFolder}/_build/deps/full_deploy/host/**/include"
+                                                       ]
+                                          },
+                               "includePath":  [
+                                                   "${workspaceFolder}/core/src/include",
+                                                   "${workspaceFolder}/editor/src/include",
+                                                   "${workspaceFolder}/gl_wrapper/src/include",
+                                                   "${workspaceFolder}/cuda_pt_renderer/src/include",
+                                                   "${workspaceFolder}/vulkan_raytracer/src/include",
+                                                   "${workspaceFolder}/ext/**",
+                                                   "${workspaceFolder}/_build/deps/full_deploy/host/**/include"
+                                               ],
+                               "name":  "PTStudio",
+                               "intelliSenseMode":  "windows-msvc-x64",
+                               "cppStandard":  "c++20",
+                               "defines":  [
+
+                                           ],
+                               "cStandard":  "c17",
+                               "compilerPath":  ""
+                           }
+                       ]
 }
