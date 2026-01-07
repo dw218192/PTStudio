@@ -18,9 +18,3 @@ target_link_libraries(gl_wrapper_test PRIVATE
     gl_wrapper
     doctest::doctest
 )
-
-# Set output directory
-set_target_properties(gl_wrapper_test PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
-)
-

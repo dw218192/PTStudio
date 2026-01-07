@@ -23,7 +23,14 @@ if(NOT DEFINED CORE_BUILD_TESTS)
 endif()
 
 # Direct all output to /bin directory
+# Since we organize builds by configuration (build/Debug, build/Release) -- see build.ps1,
+# we don't want CMake to append the config name again
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin)
+# Prevent multi-config generators from adding config suffix
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
 
 # Auto-detect GPU architecture (only if building path tracer)
 if (PTSTUDIO_PATHTRACER)

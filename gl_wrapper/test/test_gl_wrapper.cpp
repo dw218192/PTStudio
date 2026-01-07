@@ -15,16 +15,14 @@
 
 using namespace PTS;
 
-// Note: These tests require an OpenGL context to be created before running.
-// In a real test environment, you would need to initialize GLFW/GLEW first.
+namespace {
+struct TestResource : GLResource {
+    TestResource() : GLResource(0) {
+    }
+};
+}  // namespace
 
 TEST_CASE("GLResource basic functionality") {
-    // Test that GLResource has expected interface
-    struct TestResource : GLResource {
-        TestResource() : GLResource(0) {
-        }
-    };
-
     TestResource res;
     CHECK_FALSE(res.valid());
     CHECK(res.handle() == 0);
@@ -42,11 +40,6 @@ TEST_CASE("GLBuffer interface") {
 }
 
 TEST_CASE("GLResourceDeleter") {
-    struct TestResource : GLResource {
-        TestResource() : GLResource(0) {
-        }
-    };
-
     GLResourceDeleter deleter;
     auto* res = new TestResource();
 
