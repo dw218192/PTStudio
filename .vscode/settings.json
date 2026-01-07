@@ -3,9 +3,13 @@
     "cmake.configureOnEdit": false,
     "cmake.buildDirectory": "${workspaceFolder}/build",
     "cmake.buildBeforeRun": false,
-    "cmake.useCMakePresets": "always",
+    "cmake.useCMakePresets": "never",
     "cmake.skipConfigureIfCachePresent": true,
     "cmake.generator": "Ninja",
+    "cmake.configureSettings": {
+        "CMAKE_TOOLCHAIN_FILE": "${workspaceFolder}/build/conan_toolchain.cmake",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+    },
     "files.associations": {
         "algorithm": "cpp",
         "any": "cpp",
@@ -120,5 +124,6 @@
         "*.def": "cpp",
         "complex": "cpp",
         "source_location": "cpp"
-    }
+    },
+    "C_Cpp.default.compilerPath": "cl.exe"
 }

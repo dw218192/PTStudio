@@ -23,21 +23,98 @@ function Ensure-ConanProfile {
     }
 }
 
+function Get-IntelliSenseIncludePaths {
+    $projectRelativePaths = @(
+        "core/src/include",
+        "editor/src/include",
+        "gl_wrapper/src/include",
+        "cuda_pt_renderer/src/include",
+        "vulkan_raytracer/src/include"
+    )
+
+    $paths = foreach ($relativePath in $projectRelativePaths) {
+        '${workspaceFolder}/' + ($relativePath -replace '\\', '/')
+    }
+
+    $paths += '${workspaceFolder}/ext/**'
+    $paths += '${workspaceFolder}/_build/deps/full_deploy/host/**/include'
+
+    return $paths
+}
+
+function Update-VSCodeCppProperties {
+    param(
+        [string]$WorkspaceRoot
+    )
+
+    $includePaths = Get-IntelliSenseIncludePaths
+    if (-not $includePaths -or $includePaths.Count -eq 0) {
+        Write-Warning "Skipping VS Code include path update: no include paths were resolved."
+        return
+    }
+
+    $vscodeDir = Join-Path $WorkspaceRoot ".vscode"
+    if (-not (Test-Path $vscodeDir)) {
+        New-Item -ItemType Directory -Path $vscodeDir | Out-Null
+    }
+
+    $configPath = Join-Path $vscodeDir "c_cpp_properties.json"
+
+    $configuration = @{
+        name             = "PTStudio"
+        includePath      = $includePaths
+        defines          = @()
+        compilerPath     = ""
+        cStandard        = "c17"
+        cppStandard      = "c++20"
+        intelliSenseMode = "windows-msvc-x64"
+        browse           = @{
+            path = $includePaths
+        }
+    }
+
+    $config = @{
+        version        = 4
+        configurations = @($configuration)
+    }
+
+    $json = $config | ConvertTo-Json -Depth 5
+    $normalizedJson = $json -replace "`r`n", "`n"
+
+    $needsUpdate = $true
+    if (Test-Path $configPath) {
+        $existing = Get-Content -Path $configPath -Raw
+        if (($existing -replace "`r`n", "`n") -eq $normalizedJson) {
+            $needsUpdate = $false
+        }
+    }
+
+    if ($needsUpdate) {
+        $json | Set-Content -Path $configPath -Encoding UTF8
+        Write-Host "Updated VS Code include paths for IntelliSense."
+    }
+    else {
+        Write-Host "VS Code include paths already up to date."
+    }
+}
+
 
 Push-Location
 try {
+    $BuildFolder = "_build"
+
     # Remove build directory if -x flag is provided
-    if ($x -and (Test-Path build)) {
+    if ($x -and (Test-Path $BuildFolder)) {
         Write-Host "Rebuild flag (-x) detected. Removing build folder..." -ForegroundColor Yellow
-        Remove-Item -Path build -Recurse -Force
+        Remove-Item -Path $BuildFolder -Recurse -Force
     }
 
     # Create build directory if missing
-    if (-not (Test-Path build)) {
-        New-Item -ItemType Directory -Path build | Out-Null
+    if (-not (Test-Path $BuildFolder)) {
+        New-Item -ItemType Directory -Path $BuildFolder | Out-Null
     }
 
-    Set-Location build
+    Set-Location $BuildFolder
     Ensure-ConanProfile
 
     # Create logs directory
@@ -73,20 +150,25 @@ try {
     
     $installLogFile = Join-Path $logsDir "conan_install.log"
     conan install .. --lockfile $lockFile `
-        --build=missing --output-folder . `
+        --output-folder=$BuildType `
+        --deployer-folder=deps `
+        --deployer=full_deploy `
+        --build=missing `
         --profile:host=$ConanProfile `
         --profile:build=$ConanProfile `
         -s build_type=$BuildType | Tee-Object -FilePath $installLogFile
 
     $configureLogFile = Join-Path $logsDir "cmake_configure.log"
-    cmake .. `
+    cmake -S .. -B $BuildType `
         "-DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake" `
         -DCMAKE_BUILD_TYPE=$BuildType `
         -DCMAKE_EXPORT_COMPILE_COMMANDS=ON | Tee-Object -FilePath $configureLogFile
 
+    Update-VSCodeCppProperties -WorkspaceRoot $PSScriptRoot
+
     if (-not $c) {
         $buildLogFile = Join-Path $logsDir "cmake_build.log"
-        cmake --build . --config $BuildType | Tee-Object -FilePath $buildLogFile
+        cmake --build $BuildType --config $BuildType | Tee-Object -FilePath $buildLogFile
     }
     else {
         Write-Host "Configure only mode (-c): Skipping build step" -ForegroundColor Yellow

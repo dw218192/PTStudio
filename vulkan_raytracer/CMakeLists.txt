@@ -22,13 +22,6 @@ add_library(${lib_name} STATIC ${src_files})
 target_include_directories(${lib_name} 
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/src/include
-        ${GLFW_SOURCE_DIR}/include
-        ${Vulkan_INCLUDE_DIRS}
-)
-# enable dynamic dispatch loader for vulkan hpp
-target_compile_definitions(${lib_name} 
-    PRIVATE
-        VULKAN_HPP_DISPATCH_LOADER_DYNAMIC = 1
 )
 
 if (WIN32)
@@ -50,7 +43,8 @@ target_link_libraries( ${lib_name}
         $<BUILD_INTERFACE:developer_flags>
         core
         gl_wrapper
-        Vulkan::Vulkan
-        shaderc
+        vulkan-headers::vulkan-headers
+        Vulkan::Loader
+        shaderc::shaderc
         ${lib_name}::rc
 )
