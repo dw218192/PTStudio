@@ -16,7 +16,7 @@ class PTStudioConan(ConanFile):
     }
     default_options = {
         "pathtracer": False,
-        "build_tests": False,
+        "build_tests": True,
     }
     generators = "CMakeDeps"
 
@@ -36,6 +36,7 @@ class PTStudioConan(ConanFile):
         self.requires("tinyobjloader/[>=0]")
         self.requires("tcb-span/[>=0]")
         self.requires("tl-expected/[>=0]")
+        self.requires("doctest/[>=0]")
 
         # Vulkan support
         self.requires("vulkan-headers/[>=0]")

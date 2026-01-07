@@ -14,8 +14,13 @@ if (CMAKE_BUILD_TYPE STREQUAL "")
 endif ()
 
 # options
-option(PTSTUDIO_PATHTRACER "Build CUDA pathtracer" OFF)
-option(CORE_BUILD_TESTS "Build core unit tests" OFF)
+# Use if(NOT DEFINED) to allow Conan cache variables to take precedence
+if(NOT DEFINED PTSTUDIO_PATHTRACER)
+    option(PTSTUDIO_PATHTRACER "Build CUDA pathtracer" OFF)
+endif()
+if(NOT DEFINED CORE_BUILD_TESTS)
+    option(CORE_BUILD_TESTS "Build core unit tests" ON)
+endif()
 
 # Direct all output to /bin directory
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin)
