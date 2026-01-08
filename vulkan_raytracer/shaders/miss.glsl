@@ -10,7 +10,7 @@ layout(location = 0)
 rayPayloadInEXT Payload payload;
 
 layout(location = 1)
-rayPayloadInEXT bool vis_test;
+rayPayloadEXT bool vis_test;
 
 void main() {
     payload.Li = vec3(0.0);
