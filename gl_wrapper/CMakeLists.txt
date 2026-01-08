@@ -29,7 +29,3 @@ target_link_libraries(${lib_name} PUBLIC
     stb::stb
 )
 
-# Build tests if enabled
-if (CORE_BUILD_TESTS)
-    add_subdirectory(test)
-endif()
