@@ -1,8 +1,5 @@
 # PTStudio: Simple 3D scene editor and renderer written in C++17
-PTStudio is a light-weight, modular, and extensible 3D scene editor and renderer written in C++17. It is my personal hobby project to learn modern C++, OpenGL, CUDA, Vulkan, and other graphics-related technologies. It is also a playground for me to experiment with new ideas and techniques.
-
-## Disclaimer
-This project is still in its early stage and might be quite buggy. I am still **actively** working on the basic functionalities. See the section below for the current roadmap and feature overview of this project. As the project matures, I will add more documentation, examples, demos, and tests. The source code structure is still undergoing major changes, so I may not be able to accept pull requests at this time. However, I am always open to suggestions and minor fixes. Please feel free to open an issue if you have any questions or suggestions.
+PTStudio is a light-weight, modular, and extensible 3D scene editor and renderer written in C++17. It is my personal hobby project to learn modern C++, OpenGL, Vulkan, and other graphics-related technologies. It is also a playground for me to experiment with new ideas and techniques.
 
 ## Screenshots and Demos
 https://github.com/dw218192/PTStudio/assets/31294154/4116308d-ee31-4d20-a449-f130d11fe253
@@ -13,25 +10,31 @@ https://github.com/dw218192/PTStudio/assets/31294154/4116308d-ee31-4d20-a449-f13
 
 
 ## Build Instructions
+- This project uses conan as the package manager and cmake as the build system generator.
+- Run the convenience script `build.ps1` to build the project. (Not yet tested on Linux)
 
 ### Prerequisites
 - CMake 3.19
 - C++17 compiler
-- CUDA, Vulkan, OpenGL
+- Vulkan, OpenGL
 
 ### Dependencies
-- make sure to recursively clone the submodules using
+- Make sure to clone the repository with all submodules:
 ```bash
 git clone --recursive [repo url]
 ```
+- If you've already cloned without `--recursive`, you can fetch submodules afterward with:
+```bash
+git submodule update --init --recursive
+```
 
-## Roadmap (As of 2023/11/26)
-- High Priority
-    - [x] implement renderer switcher
-    - [x] implement performance display
-        - [x] fix FPS display bug
-    - [x] implement child object
-        - [x] a child object's transform is updated when its parent's transform is updated
+## TODOs
+### Feature
+    - [ ] Rework the crazy reflection system
+    - [ ] Better scene graph (consider OpenUSD)
+### Code Improvement
+    - [ ] Reduce the cumbersome use of `tl::expected` and use exceptions in subsystem internals
+    - [ ] Renderers should be DLLs (this might be moot if moving to OpenUSD)
     - [ ] Editing Improvements
         - [ ] put mesh loading in a separate thread
         - [ ] adaptive grid resizing
@@ -39,34 +42,3 @@ git clone --recursive [repo url]
         - [ ] Ctrl+D and Ctrl+C to duplicate selected objects
         - [ ] Ctrl+Z and Ctrl+Y to undo/redo
         - [x] camera should move faster the further away it is from the center
-    - [x] emissive material should be considered as a light source in editor renderer
-        - [ ] make it a mesh light source, consider using LTC for area light
-    - [x] lights should be considered in vulkan ray tracer
-        - [ ] fix MIS bugs
-    - [ ] fix sphere primitive uv bug
-    - [x] reflection system improvements
-        - [x] support for single inheritance
-        - [x] support for pointer members; reference not supported, reference members are bad anyways
-    - [ ] EditFlags::Visible should be considered in vulkan ray tracer and editor renderer
-    - [ ] fix bugs in jsonArchive's pointer deserialization
-        -  [ ] when deserializing a vector of pointers, the reference to vector is corrupted
-- Medium Priority
-    - [ ] implement undo/redo system
-    - [ ] fix GLTexture::save() bug
-    - [ ] fix potential bugs in GL wrapper classes (usage of std::swap in move might swap in uninitialized data)
-    - [x] log flush timer
-    - [ ] add the ability to append custom data to scene objects
-        - [ ] possible strategy: a component system, we can attach a component to a scene object
-        - [ ] problem: how to handle dynamically registered component types? 
-            - requirement for component class:
-                - no inheritance (our reflection system doesn't support inheritance)
-                - must be serializable (i.e. must have a default constructor)
-                - must be reflectable
-                - can be constructed given its class name
-- Low Priority
-    - [x] implement scene object hierarchy
-        - [ ] UI part
-    - [ ] implement asset system
-    - [ ] implement dynamic renderer DLL loading & unloading
-    - [ ] GLSLHelper improvements
-        - [ ] cache include files to avoid reloading the same file multiple times? (might not be necessary since emrc is in-memory)
