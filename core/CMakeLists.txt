@@ -32,7 +32,7 @@ PUBLIC
 	${lib_name}::rc
 	glm::glm
 	tinyobjloader
-	stb::stb
+	pts_stb
 	imgui
 	tl::expected
 	fmt::fmt

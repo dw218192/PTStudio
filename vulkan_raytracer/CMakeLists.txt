@@ -27,6 +27,11 @@ if (WIN32)
     )
 endif()
 
+target_compile_definitions(${lib_name}
+    PRIVATE
+        VULKAN_HPP_DISPATCH_LOADER_DYNAMIC
+)
+
 # add resources
 cmrc_add_resource_library(${lib_name}_resources
 	ALIAS ${lib_name}::rc

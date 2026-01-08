@@ -24,7 +24,9 @@
             ],
             "name": "PTStudio",
             "cppStandard": "c++17",
-            "defines": [],
+            "defines": [
+                "VULKAN_HPP_DISPATCH_LOADER_DYNAMIC"
+            ],
             "cStandard": "c17"
         }
     ]

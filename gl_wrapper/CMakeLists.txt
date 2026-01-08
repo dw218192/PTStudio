@@ -26,6 +26,6 @@ target_link_libraries(${lib_name} PUBLIC
     tl::expected
     fmt::fmt
     tcb-span::tcb-span
-    stb::stb
+    pts_stb
 )
 

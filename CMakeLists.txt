@@ -119,7 +119,7 @@ add_subdirectory(gl_wrapper)
 # endif ()
 add_subdirectory(vulkan_raytracer)
 
-# add_subdirectory(editor)
+add_subdirectory(editor)
 
 # set editor as the start-up project
 set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT editor)

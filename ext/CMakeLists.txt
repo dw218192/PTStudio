@@ -75,3 +75,6 @@ endif ()
 add_library(nativefiledialog ${SOURCES})
 
 target_include_directories(nativefiledialog PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/nativefiledialog/src/include)
+
+# stb project (uses headers from Conan's stb package)
+add_subdirectory(stb)
