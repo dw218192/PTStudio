@@ -5,7 +5,6 @@ cmake_minimum_required(VERSION 3.19 FATAL_ERROR)
 set(project_name "PTStudio")
 project(${project_name} LANGUAGES CXX C)
 
-# CUDA and C++ standard
 set(CMAKE_CXX_STANDARD 17)
 
 #default build type is Debug
@@ -15,9 +14,6 @@ endif ()
 
 # options
 # Use if(NOT DEFINED) to allow Conan cache variables to take precedence
-if(NOT DEFINED PTSTUDIO_PATHTRACER)
-    option(PTSTUDIO_PATHTRACER "Build CUDA pathtracer" OFF)
-endif()
 if(NOT DEFINED CORE_BUILD_TESTS)
     option(CORE_BUILD_TESTS "Build core unit tests" ON)
 endif()
@@ -33,12 +29,9 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${CMAKE_RUNTIME_OUTPUT_DIRECTO
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
 
 # Auto-detect GPU architecture (only if building path tracer)
-if (PTSTUDIO_PATHTRACER)
-    include("cmake/AutoDetectCudaArch.cmake")
-endif ()
 
-# CUDA and C++ compiler flags
-set(cxx_flags 
+# C++ compiler flags
+set(cxx_flags
 	$<$<CXX_COMPILER_ID:MSVC>:-D_SCL_SECURE_NO_WARNINGS /std:c++17 /MP>
 	$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Debug>>:/MDd /Zi /Ob0 /Od /RTC1>
 	# Add MSVC-specific compiler flags here
@@ -57,32 +50,10 @@ set(MSVC_XCOMPILER_FLAGS
 	$<$<CONFIG:Debug>:/MDd /Zi /Ob0 /Od /RTC1>
 )
 
-set(cuda_flags
-    -std=c++17
-    $<$<AND:$<CXX_COMPILER_ID:GNU>,$<CONFIG:Debug>>:-Xcompiler -Wall -g -O0>
-    $<$<AND:$<CXX_COMPILER_ID:GNU>,$<NOT:$<CONFIG:Debug>>>:-Xcompiler -Wall -O3>
-    $<$<AND:$<CXX_COMPILER_ID:Clang>,$<CONFIG:Debug>>:-Xcompiler -Wall -g -O0>
-    $<$<AND:$<CXX_COMPILER_ID:Clang>,$<NOT:$<CONFIG:Debug>>>:-Xcompiler -Wall -O3>
-    $<$<CXX_COMPILER_ID:MSVC>:-Xcompiler ${MSVC_XCOMPILER_FLAGS}>
-    -Xcudafe=--display_error_number    
-    -lineinfo    
-    --expt-extended-lambda    
-    -use_fast_math        
-    --expt-relaxed-constexpr    
-    -Xptxas -warn-spills -res-usage   
-    --ptxas-options=-v    
-)
-
-# used to switch between cuda and cxx flags depending on the target
 add_library(developer_flags INTERFACE)
 target_compile_options(developer_flags INTERFACE
     $<$<COMPILE_LANGUAGE:CXX>:${cxx_flags}>
-    $<$<COMPILE_LANGUAGE:CUDA>:${cuda_flags}>
 )
-# Only include CUDA toolkit directories if CUDA is available (when building path tracer)
-if (PTSTUDIO_PATHTRACER)
-    target_include_directories(developer_flags INTERFACE ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
-endif ()
 
 target_compile_features(developer_flags INTERFACE cxx_std_17)
 
@@ -114,9 +85,6 @@ add_subdirectory(core)
 
 # renderers
 add_subdirectory(gl_wrapper)
-# if (PTSTUDIO_PATHTRACER)
-#     add_subdirectory(cuda_pt_renderer)
-# endif ()
 add_subdirectory(vulkan_raytracer)
 
 add_subdirectory(editor)
