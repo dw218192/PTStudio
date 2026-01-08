@@ -12,11 +12,6 @@ file(GLOB_RECURSE res_files
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.*
 )
 
-find_package(shaderc REQUIRED)
-find_package(Vulkan REQUIRED)
-
-message(STATUS "Vulkan found: ${Vulkan_FOUND}, include: ${Vulkan_INCLUDE_DIRS}, lib: ${Vulkan_LIBRARIES}")
-
 add_library(${lib_name} STATIC ${src_files})
 
 target_include_directories(${lib_name} 
@@ -39,12 +34,14 @@ cmrc_add_resource_library(${lib_name}_resources
 )
 
 target_link_libraries( ${lib_name}
-    PUBLIC
+    PRIVATE
         $<BUILD_INTERFACE:developer_flags>
+    PUBLIC
         core
         gl_wrapper
-        vulkan-headers::vulkan-headers
-        Vulkan::Loader
+        glfw
+        Vulkan::Headers
+        Vulkan::Vulkan
         shaderc::shaderc
         ${lib_name}::rc
 )

@@ -3,6 +3,8 @@
 #include <optional>
 #include <tcb/span.hpp>
 #include <unordered_map>
+
+#define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
 #include <vulkan/vulkan.hpp>
 
 #include "continuousGPUBufferLink.h"
