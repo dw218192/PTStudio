@@ -1,11 +1,18 @@
-cmake_minimum_required(VERSION 3.2)
-project(stb)
+cmake_minimum_required(VERSION 3.19 FATAL_ERROR)
 
-file(GLOB_RECURSE src_files 
-  ${CMAKE_CURRENT_SOURCE_DIR}/stb_*.*
+set(lib_name "pts_stb")
+
+add_library(${lib_name} STATIC stb_impl.cpp)
+
+# Use headers from the Conan-provided stb package
+target_link_libraries(${lib_name}
+    PUBLIC
+        stb::stb
 )
 
-add_library(stb ${src_files})
-target_include_directories(stb INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(${lib_name}
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}
+)
 
-set(STB_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR} PARENT_SCOPE)
+

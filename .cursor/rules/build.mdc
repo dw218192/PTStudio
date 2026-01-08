@@ -1,0 +1,18 @@
+---
+alwaysApply: true
+---
+## Build System Overview
+This project uses conan as the package manager and cmake as the build system generator. Conan fetches dependencies based on the `conanfile.py` file, generates cmake modules in `_build/<configuration>`. Cmake is then invoked to generate the build system.
+
+## Build System Commands
+There is a convenience script `build.ps1` that can be used to pull deps, configure, and build the project.
+```powershell
+./build.ps1
+```
+
+## Build System Flags
+-x: Rebuild the build folder before building
+-u: Update the lock file before building
+-c: Configure only mode: runs conan install and cmake configure, but skips building
+-BuildType: The build configuration type, defaults to Debug
+-ConanProfile: The conan profile, defaults to default

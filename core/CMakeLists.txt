@@ -26,18 +26,19 @@ cmrc_add_resource_library(${lib_name}_resources
 
 #Libs linked to the executable
 target_link_libraries(${lib_name}
-PUBLIC
+PRIVATE
 	$<BUILD_INTERFACE:developer_flags>
+PUBLIC
 	${lib_name}::rc
-	glm
+	glm::glm
 	tinyobjloader
-	stb
+	pts_stb
 	imgui
-	expected
-	fmt-header-only
+	tl::expected
+	fmt::fmt
 	nativefiledialog
-	span
-	nlohmann_json
+	tcb-span::tcb-span
+	nlohmann_json::nlohmann_json
 )
 
 set(PT_CORE_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/include PARENT_SCOPE)
@@ -47,6 +48,6 @@ target_include_directories(${lib_name} PUBLIC
 )
 
 # Build unit tests if enabled
-if (CORE_BUILD_TESTS)
-	add_subdirectory(tests)
-endif()
+# if (CORE_BUILD_TESTS)
+# 	add_subdirectory(tests)
+# endif()

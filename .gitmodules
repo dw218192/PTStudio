@@ -1,45 +1,13 @@
-[submodule "ext/glew-cmake"]
-	path = ext/glew-cmake
-	url = https://github.com/Perlmint/glew-cmake.git
-[submodule "ext/glfw"]
-	path = ext/glfw
-	url = https://github.com/glfw/glfw.git
-[submodule "ext/glm"]
-	path = ext/glm
-	url = https://github.com/g-truc/glm.git
-[submodule "ext/tinyobjloader"]
-	path = ext/tinyobjloader
-	url = https://github.com/tinyobjloader/tinyobjloader.git
 [submodule "ext/imgui"]
 	path = ext/imgui
 	url = https://github.com/ocornut/imgui.git
 	branch = docking
-[submodule "ext/expected"]
-	path = ext/expected
-	url = https://github.com/TartanLlama/expected.git
-[submodule "ext/nativefiledialog"]
-	path = ext/nativefiledialog
-	url = https://github.com/AlvaroBarua/nativefiledialog.git
-	branch = CMakeLists
-[submodule "ext/span"]
-	path = ext/span
-	url = https://github.com/tcbrindle/span.git
 [submodule "ext/ImGuizmo"]
 	path = ext/ImGuizmo
 	url = https://github.com/CedricGuillemet/ImGuizmo.git
-[submodule "ext/json"]
-	path = ext/json
-	url = https://github.com/nlohmann/json.git
-[submodule "ext/shaderc"]
-	path = ext/shaderc
-	url = https://github.com/google/shaderc.git
-[submodule "ext/Catch2"]
-	path = ext/Catch2
-	url = https://github.com/catchorg/Catch2.git
-	branch = v2.x
-[submodule "ext/fmt"]
-	path = ext/fmt
-	url = https://github.com/fmtlib/fmt.git
 [submodule "ext/cmrc"]
 	path = ext/cmrc
 	url = https://github.com/vector-of-bool/cmrc.git
+[submodule "ext/nativefiledialog"]
+	path = ext/nativefiledialog
+	url = https://github.com/mlabbe/nativefiledialog.git

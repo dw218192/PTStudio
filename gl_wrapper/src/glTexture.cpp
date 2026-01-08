@@ -157,7 +157,7 @@ inline void GLTexture::swap(GLTexture&& other) noexcept {
 }
 
 auto GLTexture::get_id() const noexcept -> void* {
-    return reinterpret_cast<void*>(m_handle);
+    return reinterpret_cast<void*>(static_cast<uintptr_t>(m_handle));
 }
 
 auto GLTexture::resize(unsigned width, unsigned height) noexcept

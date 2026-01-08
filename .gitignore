@@ -1,5 +1,4 @@
-build/
-_files/
-_plan.md
+_*
 .vs/
-.vscode/
+CMakeUserPresets.json
+imgui.ini

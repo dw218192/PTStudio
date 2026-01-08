@@ -31,7 +31,7 @@ constexpr T div_up(T x, T y) {
 
 #include <sstream>
 // c++23 expected, fmt
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 #include <tl/expected.hpp>
 
