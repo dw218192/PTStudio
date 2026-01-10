@@ -25,7 +25,8 @@
             "name": "PTStudio",
             "cppStandard": "c++17",
             "defines": [
-                "VULKAN_HPP_DISPATCH_LOADER_DYNAMIC"
+                "VULKAN_HPP_DISPATCH_LOADER_DYNAMIC",
+                "SPDLOG_FMT_EXTERNAL"
             ],
             "cStandard": "c17"
         }

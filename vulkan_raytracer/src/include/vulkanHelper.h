@@ -12,6 +12,7 @@
 
 // TODO: refactor this file
 namespace PTS {
+namespace Vk {
 /**
  * @brief A wrapper for vulkan unique handles; used to logically bundle a handle with other related
  * data
@@ -81,4 +82,5 @@ struct VulkanCmdBufInfo : VulkanInfo<vk::UniqueCommandBuffer> {};
 [[nodiscard]] auto do_work_now(VulkanDeviceInfo const& dev, VulkanCmdPoolInfo const& cmd_pool,
                                std::function<void(vk::CommandBuffer&)> work)
     -> tl::expected<void, std::string>;
+}  // namespace Vk
 }  // namespace PTS

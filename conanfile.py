@@ -67,5 +67,7 @@ class PTStudioConan(ConanFile):
         # forward options to CMakeLists.txt
         tc.cache_variables["PTSTUDIO_PATHTRACER"] = self.options.pathtracer
         tc.cache_variables["CORE_BUILD_TESTS"] = self.options.build_tests
+        # Ensure spdlog uses external fmt library
+        tc.cache_variables["SPDLOG_FMT_EXTERNAL"] = "ON"
 
         tc.generate()

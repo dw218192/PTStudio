@@ -4,7 +4,7 @@
 
 #include "utils.h"
 
-auto PTS::VulkanGLInteropUtils::to_gl_fmt(vk::Format fmt) noexcept -> std::optional<GLenum> {
+auto PTS::Vk::VulkanGLInteropUtils::to_gl_fmt(vk::Format fmt) noexcept -> std::optional<GLenum> {
     // TODO: add more formats if needed
     switch (fmt) {
         // single component
@@ -94,10 +94,10 @@ auto PTS::VulkanGLInteropUtils::to_gl_fmt(vk::Format fmt) noexcept -> std::optio
     }
 }
 
-PTS::VulkanGLInteropUtils::UniqueSystemHandle::UniqueSystemHandle(HandleType handle) noexcept
+PTS::Vk::VulkanGLInteropUtils::UniqueSystemHandle::UniqueSystemHandle(HandleType handle) noexcept
     : handle{handle} {
 }
-PTS::VulkanGLInteropUtils::UniqueSystemHandle::~UniqueSystemHandle() noexcept {
+PTS::Vk::VulkanGLInteropUtils::UniqueSystemHandle::~UniqueSystemHandle() noexcept {
 #if defined(_WIN32)
     if (handle != INVALID_HANDLE_VALUE) {
         CloseHandle(handle);
@@ -108,53 +108,53 @@ PTS::VulkanGLInteropUtils::UniqueSystemHandle::~UniqueSystemHandle() noexcept {
     }
 #endif
 }
-PTS::VulkanGLInteropUtils::UniqueSystemHandle::UniqueSystemHandle(
+PTS::Vk::VulkanGLInteropUtils::UniqueSystemHandle::UniqueSystemHandle(
     UniqueSystemHandle&& other) noexcept {
     std::swap(handle, other.handle);
 }
 
-auto PTS::VulkanGLInteropUtils::UniqueSystemHandle::operator=(UniqueSystemHandle&& other) noexcept
+auto PTS::Vk::VulkanGLInteropUtils::UniqueSystemHandle::operator=(UniqueSystemHandle&& other) noexcept
     -> UniqueSystemHandle& {
     std::swap(handle, other.handle);
     return *this;
 }
 
-auto PTS::VulkanGLInteropUtils::UniqueSystemHandle::get() const noexcept -> HandleType {
+auto PTS::Vk::VulkanGLInteropUtils::UniqueSystemHandle::get() const noexcept -> HandleType {
     return handle;
 }
 
-PTS::VulkanGLInteropUtils::UniqueGLMemObject::UniqueGLMemObject(GLuint mem_obj) noexcept
+PTS::Vk::VulkanGLInteropUtils::UniqueGLMemObject::UniqueGLMemObject(GLuint mem_obj) noexcept
     : mem_obj{mem_obj} {
 }
 
-PTS::VulkanGLInteropUtils::UniqueGLMemObject::~UniqueGLMemObject() noexcept {
+PTS::Vk::VulkanGLInteropUtils::UniqueGLMemObject::~UniqueGLMemObject() noexcept {
     if (mem_obj && glIsMemoryObjectEXT(mem_obj)) {
         glDeleteMemoryObjectsEXT(1, &mem_obj);
     }
 }
 
-PTS::VulkanGLInteropUtils::UniqueGLMemObject::UniqueGLMemObject(
+PTS::Vk::VulkanGLInteropUtils::UniqueGLMemObject::UniqueGLMemObject(
     UniqueGLMemObject&& other) noexcept {
     std::swap(mem_obj, other.mem_obj);
 }
 
-auto PTS::VulkanGLInteropUtils::UniqueGLMemObject::operator=(UniqueGLMemObject&& other) noexcept
+auto PTS::Vk::VulkanGLInteropUtils::UniqueGLMemObject::operator=(UniqueGLMemObject&& other) noexcept
     -> UniqueGLMemObject& {
     std::swap(mem_obj, other.mem_obj);
     return *this;
 }
-auto PTS::VulkanGLInteropUtils::UniqueGLMemObject::get() const noexcept -> GLuint {
+auto PTS::Vk::VulkanGLInteropUtils::UniqueGLMemObject::get() const noexcept -> GLuint {
     return mem_obj;
 }
 
-auto PTS::VulkanGLInteropUtils::get_vk_ins_exts() noexcept -> std::vector<std::string_view> {
+auto PTS::Vk::VulkanGLInteropUtils::get_vk_ins_exts() noexcept -> std::vector<std::string_view> {
     auto ret = std::vector<std::string_view>{};
     ret.emplace_back(VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME);
 
     return ret;
 }
 
-auto PTS::VulkanGLInteropUtils::get_vk_dev_exts() noexcept -> std::vector<std::string_view> {
+auto PTS::Vk::VulkanGLInteropUtils::get_vk_dev_exts() noexcept -> std::vector<std::string_view> {
     auto ret = std::vector<std::string_view>{};
     ret.emplace_back(VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME);
 
@@ -169,7 +169,7 @@ auto PTS::VulkanGLInteropUtils::get_vk_dev_exts() noexcept -> std::vector<std::s
     return ret;
 }
 
-auto PTS::VulkanGLInteropUtils::get_gl_exts() noexcept -> std::vector<std::string_view> {
+auto PTS::Vk::VulkanGLInteropUtils::get_gl_exts() noexcept -> std::vector<std::string_view> {
     auto ret = std::vector<std::string_view>{};
     ret.emplace_back("GL_EXT_memory_object");
 
@@ -183,7 +183,7 @@ auto PTS::VulkanGLInteropUtils::get_gl_exts() noexcept -> std::vector<std::strin
     return ret;
 }
 
-auto PTS::VulkanGLInteropUtils::create_shared_image(
+auto PTS::Vk::VulkanGLInteropUtils::create_shared_image(
     vk::Device& dev, vk::ImageCreateInfo& img_info, vk::MemoryPropertyFlags mem_flags,
     vk::PhysicalDeviceMemoryProperties mem_info) noexcept
     -> tl::expected<SharedImage, std::string> {

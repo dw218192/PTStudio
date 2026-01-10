@@ -10,6 +10,7 @@
 #include "vertex.h"
 
 namespace PTS {
+namespace Vk {
 namespace VulkanRayTracingShaders {
 struct Binding {
     int set, binding;
@@ -203,4 +204,5 @@ struct FaceIndexData {
 
 static_assert(sizeof(FaceIndexData) == 16, "FaceIndexData size mismatch");
 }  // namespace VulkanRayTracingShaders
+}  // namespace Vk
 }  // namespace PTS

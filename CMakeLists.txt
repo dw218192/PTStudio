@@ -66,6 +66,7 @@ find_package(tinyobjloader REQUIRED)
 find_package(stb REQUIRED)
 find_package(tcb-span REQUIRED)
 find_package(fmt REQUIRED)
+find_package(spdlog REQUIRED)
 find_package(tl-expected REQUIRED)
 find_package(nlohmann_json REQUIRED)
 

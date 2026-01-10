@@ -36,6 +36,7 @@ PUBLIC
 	imgui
 	tl::expected
 	fmt::fmt
+	spdlog::spdlog
 	nativefiledialog
 	tcb-span::tcb-span
 	nlohmann_json::nlohmann_json

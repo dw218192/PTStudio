@@ -63,9 +63,9 @@ struct EmbeddedFsIncluder : shaderc::CompileOptions::IncluderInterface {
     shaderc_include_result m_res{};
 };
 
-[[nodiscard]] auto create_shader_glsl(PTS::VulkanDeviceInfo const& dev, std::string const& src,
+[[nodiscard]] auto create_shader_glsl(PTS::Vk::VulkanDeviceInfo const& dev, std::string const& src,
                                       std::string_view name, vk::ShaderStageFlagBits stage)
-    -> tl::expected<PTS::VulkanShaderInfo, std::string> {
+    -> tl::expected<PTS::Vk::VulkanShaderInfo, std::string> {
     auto to_shaderc_stage = [](vk::ShaderStageFlagBits stage) {
         switch (stage) {
             case vk::ShaderStageFlagBits::eVertex:
@@ -117,17 +117,17 @@ struct EmbeddedFsIncluder : shaderc::CompileOptions::IncluderInterface {
             vk::ShaderModuleCreateFlags{},
             std::distance(sprv_code.cbegin(), sprv_code.cend()) * sizeof(uint32_t),
             sprv_code.data()});
-        return PTS::VulkanShaderInfo{{std::move(shader)}, stage};
+        return PTS::Vk::VulkanShaderInfo{{std::move(shader)}, stage};
     } catch (vk::SystemError& err) {
         return TL_ERROR("vulkan error:\n{} ", err.what());
     }
 }
 }  // namespace
 
-auto PTS::VulkanRTPipelineInfo::create(VulkanDeviceInfo const& dev,
-                                       VulkanCmdPoolInfo const& cmd_pool,
-                                       VulkanImageInfo const& output_img,
-                                       VulkanDescSetPoolInfo const& desc_set_pool)
+auto PTS::Vk::VulkanRTPipelineInfo::create(VulkanDeviceInfo const& dev,
+                                           VulkanCmdPoolInfo const& cmd_pool,
+                                           VulkanImageInfo const& output_img,
+                                           VulkanDescSetPoolInfo const& desc_set_pool)
     -> tl::expected<VulkanRTPipelineInfo, std::string> {
     auto vk_top_accel = VulkanTopAccelStructInfo{};
     TL_TRY_ASSIGN(vk_top_accel, VulkanTopAccelStructInfo::create(dev, cmd_pool));
@@ -194,9 +194,10 @@ auto PTS::VulkanRTPipelineInfo::create(VulkanDeviceInfo const& dev,
 
         // create material buffer
         auto mat_buf = VulkanBufferInfo{};
-        TL_TRY_ASSIGN(mat_buf, VulkanBufferInfo::create(
-                                   dev, VulkanBufferInfo::Type::Uniform,
-                                   sizeof(VulkanRayTracingShaders::MaterialData) * k_max_objs));
+        TL_TRY_ASSIGN(mat_buf,
+                      VulkanBufferInfo::create(
+                          dev, VulkanBufferInfo::Type::Uniform,
+                          sizeof(VulkanRayTracingShaders::MaterialData) * PTS::k_max_objs));
         auto mat_buf_info = mat_buf.get_desc_info();
 
         // create lights buffer
@@ -204,7 +205,7 @@ auto PTS::VulkanRTPipelineInfo::create(VulkanDeviceInfo const& dev,
         TL_TRY_ASSIGN(lights_buf,
                       VulkanBufferInfo::create(
                           dev, VulkanBufferInfo::Type::Uniform,
-                          VulkanRayTracingShaders::LightBlock::get_offset(k_max_lights)));
+                          VulkanRayTracingShaders::LightBlock::get_offset(PTS::k_max_lights)));
         auto lights_buf_info = lights_buf.get_desc_info();
 
         // null buffer for unbounded arrays
@@ -213,7 +214,7 @@ auto PTS::VulkanRTPipelineInfo::create(VulkanDeviceInfo const& dev,
         auto null_buf = VulkanBufferInfo{};
         TL_TRY_ASSIGN(null_buf, VulkanBufferInfo::create(dev, VulkanBufferInfo::Type::Storage,
                                                          min_alignment));
-        auto null_buf_infos = std::array<vk::DescriptorBufferInfo, k_max_objs>{};
+        auto null_buf_infos = std::array<vk::DescriptorBufferInfo, PTS::k_max_objs>{};
         std::fill(null_buf_infos.begin(), null_buf_infos.end(), null_buf.get_desc_info());
 
         // create descriptor sets
@@ -265,7 +266,7 @@ auto PTS::VulkanRTPipelineInfo::create(VulkanDeviceInfo const& dev,
                 .setBinding(
                     VulkanRayTracingShaders::RayTracingBindings::VERTEX_ATTRIBS_BINDING.binding)
                 .setDescriptorType(vk::DescriptorType::eStorageBuffer)
-                .setDescriptorCount(k_max_objs)
+                .setDescriptorCount(PTS::k_max_objs)
                 .setStageFlags(vk::ShaderStageFlagBits::eClosestHitKHR),
             vk::DescriptorBindingFlags{vk::DescriptorBindingFlagBits::ePartiallyBound |
                                        vk::DescriptorBindingFlagBits::eVariableDescriptorCount |
@@ -278,7 +279,7 @@ auto PTS::VulkanRTPipelineInfo::create(VulkanDeviceInfo const& dev,
             vk::DescriptorSetLayoutBinding{}
                 .setBinding(VulkanRayTracingShaders::RayTracingBindings::INDICES_BINDING.binding)
                 .setDescriptorType(vk::DescriptorType::eStorageBuffer)
-                .setDescriptorCount(k_max_objs)
+                .setDescriptorCount(PTS::k_max_objs)
                 .setStageFlags(vk::ShaderStageFlagBits::eClosestHitKHR),
             vk::DescriptorBindingFlags{vk::DescriptorBindingFlagBits::ePartiallyBound |
                                        vk::DescriptorBindingFlagBits::eVariableDescriptorCount |
@@ -382,10 +383,10 @@ auto PTS::VulkanRTPipelineInfo::create(VulkanDeviceInfo const& dev,
     }
 }
 
-auto PTS::VulkanRTPipelineInfo::bind_indices(VulkanDeviceInfo const& dev, int index,
-                                             tcb::span<unsigned const> indices) noexcept
+auto PTS::Vk::VulkanRTPipelineInfo::bind_indices(VulkanDeviceInfo const& dev, int index,
+                                                 tcb::span<unsigned const> indices) noexcept
     -> tl::expected<void, std::string> {
-    if (index >= k_max_objs || index < 0) {
+    if (index >= PTS::k_max_objs || index < 0) {
         return TL_ERROR("index out of bounds");
     }
     if (indices.size() % 3 != 0) {
@@ -424,10 +425,10 @@ auto PTS::VulkanRTPipelineInfo::bind_indices(VulkanDeviceInfo const& dev, int in
     return {};
 }
 
-auto PTS::VulkanRTPipelineInfo::bind_vertex_attribs(VulkanDeviceInfo const& dev, int index,
-                                                    tcb::span<Vertex const> vertices) noexcept
+auto PTS::Vk::VulkanRTPipelineInfo::bind_vertex_attribs(VulkanDeviceInfo const& dev, int index,
+                                                        tcb::span<Vertex const> vertices) noexcept
     -> tl::expected<void, std::string> {
-    if (index >= k_max_objs || index < 0) {
+    if (index >= PTS::k_max_objs || index < 0) {
         return TL_ERROR("index out of bounds");
     }
 

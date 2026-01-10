@@ -2,6 +2,7 @@
 #include "vulkanHelper.h"
 
 namespace PTS {
+namespace Vk {
 struct VulkanDescSetInfo : VulkanInfo<vk::UniqueDescriptorSet> {
     auto add_binding(vk::DescriptorSetLayoutBinding binding, vk::DescriptorBindingFlags flags,
                      vk::WriteDescriptorSet how_to_write) -> VulkanDescSetInfo&;
@@ -23,4 +24,5 @@ struct VulkanDescSetInfo : VulkanInfo<vk::UniqueDescriptorSet> {
     uint32_t m_max_desc_count{0};  // max desc count of any binding, for variable desc count feature
 };
 
+}  // namespace Vk
 }  // namespace PTS

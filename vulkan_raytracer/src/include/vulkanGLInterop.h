@@ -22,6 +22,7 @@
 #endif
 
 namespace PTS {
+namespace Vk {
 namespace VulkanGLInteropUtils {
 auto to_gl_fmt(vk::Format fmt) noexcept -> std::optional<GLenum>;
 
@@ -88,4 +89,5 @@ auto create_shared_image(vk::Device& dev, vk::ImageCreateInfo& img_info,
                          vk::PhysicalDeviceMemoryProperties mem_info) noexcept
     -> tl::expected<SharedImage, std::string>;
 }  // namespace VulkanGLInteropUtils
+}  // namespace Vk
 }  // namespace PTS

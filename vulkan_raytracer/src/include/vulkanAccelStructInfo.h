@@ -5,6 +5,7 @@
 #include "vulkanHelper.h"
 
 namespace PTS {
+namespace Vk {
 struct VulkanAccelStructInfo : VulkanInfo<vk::UniqueAccelerationStructureKHR> {
     [[nodiscard]] static auto create(VulkanDeviceInfo const& dev, VulkanCmdPoolInfo const& cmd_pool,
                                      vk::AccelerationStructureBuildGeometryInfoKHR geom_build_info,
@@ -120,4 +121,5 @@ struct VulkanTopAccelStructInfo {
     // free index
     std::vector<size_t> m_free_idx{};
 };
+}  // namespace Vk
 }  // namespace PTS

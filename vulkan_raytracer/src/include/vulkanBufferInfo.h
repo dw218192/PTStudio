@@ -3,6 +3,7 @@
 #include "vulkanHelper.h"
 
 namespace PTS {
+namespace Vk {
 struct VulkanBufferInfo : VulkanInfo<vk::UniqueBuffer> {
     enum class Type {
         Scratch,       // for building an accel struct
@@ -91,10 +92,10 @@ struct VulkanBufferInfo : VulkanInfo<vk::UniqueBuffer> {
 };
 
 template <typename ElementType, std::size_t Extent>
-[[nodiscard]] auto PTS::VulkanBufferInfo::create(VulkanDeviceInfo const& dev,
-                                                 VulkanBufferInfo::Type type, vk::DeviceSize size,
-                                                 tcb::span<ElementType, Extent> data,
-                                                 size_t offset_bytes)
+[[nodiscard]] auto PTS::Vk::VulkanBufferInfo::create(VulkanDeviceInfo const& dev,
+                                                     VulkanBufferInfo::Type type, vk::DeviceSize size,
+                                                     tcb::span<ElementType, Extent> data,
+                                                     size_t offset_bytes)
     -> tl::expected<VulkanBufferInfo, std::string> {
     if (!size) {
         return TL_ERROR("buffer size must be greater than 0");
@@ -178,7 +179,7 @@ template <typename ElementType, std::size_t Extent>
 }
 
 template <typename ElementType, std::size_t Extent>
-auto VulkanBufferInfo::upload(tcb::span<ElementType, Extent> data, size_t offset_bytes)
+auto PTS::Vk::VulkanBufferInfo::upload(tcb::span<ElementType, Extent> data, size_t offset_bytes)
     -> tl::expected<void, std::string> {
     if (!m_dev || !*m_dev) {
         return TL_ERROR("device is not valid");
@@ -205,4 +206,5 @@ auto VulkanBufferInfo::upload(tcb::span<ElementType, Extent> data, size_t offset
         return TL_ERROR(err.what());
     }
 }
+}  // namespace Vk
 }  // namespace PTS

@@ -36,7 +36,7 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config)
       m_archive{new JsonArchive} {
     // default renderers
     add_renderer(std::make_unique<EditorRenderer>(config));
-    add_renderer(std::make_unique<VulkanRayTracingRenderer>(config));
+    add_renderer(std::make_unique<Vk::VulkanRayTracingRenderer>(config));
 
     // callbacks
     get_imgui_window_info(k_scene_view_win_name).on_enter_region +=
