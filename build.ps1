@@ -80,12 +80,15 @@ try {
         --build=missing `
         --profile:host=$ConanProfile `
         --profile:build=$ConanProfile `
+        -s compiler.cppstd=17 `
         -s build_type=$BuildType | Tee-Object -FilePath $installLogFile
 
     $configureLogFile = Join-Path $logsDir "cmake_configure.log"
     cmake -S .. -B $BuildType `
         "-DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake" `
         -DCMAKE_BUILD_TYPE=$BuildType `
+        -DCMAKE_CXX_STANDARD=17 `
+        -DCMAKE_CXX_STANDARD_REQUIRED=ON `
         -DCMAKE_EXPORT_COMPILE_COMMANDS=ON | Tee-Object -FilePath $configureLogFile
 
     if (-not $c) {
