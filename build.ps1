@@ -2,6 +2,7 @@ param(
     [switch]$x,  # Rebuild flag: removes build folder before building
     [switch]$u,  # Update lock flag: forces regeneration of conan.lock
     [switch]$c,  # Configure only flag: runs conan install and cmake configure, but skips building
+    [switch]$b,  # Build only flag: skips conan install and cmake configure, only runs build
     [ValidateSet("Debug", "Release", "RelWithDebInfo", "MinSizeRel")]
     [string]$BuildType = "Debug",  # Build configuration type, defaults to Debug
     [string]$ConanProfile = "default"  # Conan profile, defaults to default
@@ -39,7 +40,6 @@ try {
     }
 
     Set-Location $BuildFolder
-    Ensure-ConanProfile
 
     # Create logs directory
     $logsDir = "..\_logs"
@@ -47,49 +47,57 @@ try {
         New-Item -ItemType Directory -Path $logsDir | Out-Null
     }
 
-    if ($c) {
-        Write-Host "Configuring with configuration: $BuildType" -ForegroundColor Cyan
-    }
-    else {
+    if ($b) {
+        Write-Host "Build only mode (-b): Skipping configuration steps" -ForegroundColor Yellow
         Write-Host "Building with configuration: $BuildType" -ForegroundColor Cyan
     }
+    else {
+        Ensure-ConanProfile
 
-    # Handle lock file generation and usage
-    $lockFile = "..\conan.lock"    
-    $shouldCreateLock = $u -or -not (Test-Path $lockFile)
-    
-    if ($shouldCreateLock) {
-        if ($u) {
-            Write-Host "Update lock flag (-u) detected. Regenerating lock file..." -ForegroundColor Yellow
+        if ($c) {
+            Write-Host "Configuring with configuration: $BuildType" -ForegroundColor Cyan
         }
         else {
-            Write-Host "Lock file not found. Generating new lock file..." -ForegroundColor Yellow
+            Write-Host "Building with configuration: $BuildType" -ForegroundColor Cyan
         }
-        $lockLogFile = Join-Path $logsDir "conan_lock_create.log"
-        conan lock create .. --lockfile-out $lockFile | Tee-Object -FilePath $lockLogFile
-    }
-    else {
-        Write-Host "Lock file found. Using existing lock file: $lockFile" -ForegroundColor Green
-    }
-    
-    $installLogFile = Join-Path $logsDir "conan_install.log"
-    conan install .. --lockfile $lockFile `
-        --output-folder=$BuildType `
-        --deployer-folder=deps `
-        --deployer=full_deploy `
-        --build=missing `
-        --profile:host=$ConanProfile `
-        --profile:build=$ConanProfile `
-        -s compiler.cppstd=17 `
-        -s build_type=$BuildType | Tee-Object -FilePath $installLogFile
 
-    $configureLogFile = Join-Path $logsDir "cmake_configure.log"
-    cmake -S .. -B $BuildType `
-        "-DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake" `
-        -DCMAKE_BUILD_TYPE=$BuildType `
-        -DCMAKE_CXX_STANDARD=17 `
-        -DCMAKE_CXX_STANDARD_REQUIRED=ON `
-        -DCMAKE_EXPORT_COMPILE_COMMANDS=ON | Tee-Object -FilePath $configureLogFile
+        # Handle lock file generation and usage
+        $lockFile = "..\conan.lock"    
+        $shouldCreateLock = $u -or -not (Test-Path $lockFile)
+        
+        if ($shouldCreateLock) {
+            if ($u) {
+                Write-Host "Update lock flag (-u) detected. Regenerating lock file..." -ForegroundColor Yellow
+            }
+            else {
+                Write-Host "Lock file not found. Generating new lock file..." -ForegroundColor Yellow
+            }
+            $lockLogFile = Join-Path $logsDir "conan_lock_create.log"
+            conan lock create .. --lockfile-out $lockFile | Tee-Object -FilePath $lockLogFile
+        }
+        else {
+            Write-Host "Lock file found. Using existing lock file: $lockFile" -ForegroundColor Green
+        }
+        
+        $installLogFile = Join-Path $logsDir "conan_install.log"
+        conan install .. --lockfile $lockFile `
+            --output-folder=$BuildType `
+            --deployer-folder=deps `
+            --deployer=full_deploy `
+            --build=missing `
+            --profile:host=$ConanProfile `
+            --profile:build=$ConanProfile `
+            -s compiler.cppstd=17 `
+            -s build_type=$BuildType | Tee-Object -FilePath $installLogFile
+
+        $configureLogFile = Join-Path $logsDir "cmake_configure.log"
+        cmake -S .. -B $BuildType `
+            "-DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake" `
+            -DCMAKE_BUILD_TYPE=$BuildType `
+            -DCMAKE_CXX_STANDARD=17 `
+            -DCMAKE_CXX_STANDARD_REQUIRED=ON `
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON | Tee-Object -FilePath $configureLogFile
+    }
 
     if (-not $c) {
         $buildLogFile = Join-Path $logsDir "cmake_build.log"
