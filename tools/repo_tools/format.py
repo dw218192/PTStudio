@@ -8,6 +8,10 @@ from pathlib import Path
 from repo_tools import find_venv_executable, logger
 
 
+TARGET_EXTENSIONS = {".cpp", ".h", ".hpp", ".c", ".cc", ".cxx", ".hxx"}
+EXCLUDE_DIRS = {"_build", "_tools", "_logs", "ext", ".git", ".vs", "build"}
+
+
 def format_command(args: argparse.Namespace) -> None:
     """Format subcommand implementation."""
     root = Path(__file__).parent.parent.parent
@@ -19,15 +23,12 @@ def format_command(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     # Find all C/C++ source files
-    extensions = {".cpp", ".h", ".hpp", ".c", ".cc", ".cxx", ".hxx"}
-    exclude_dirs = {"_build", "_tools", "_logs", "ext", ".git", ".vs", "build"}
-
     source_files = []
     for path in root.rglob("*"):
-        if path.is_file() and path.suffix in extensions:
+        if path.is_file() and path.suffix in TARGET_EXTENSIONS:
             # Check if path is in any excluded directory
             parts = path.parts
-            if not any(excluded in parts for excluded in exclude_dirs):
+            if not any(excluded in parts for excluded in EXCLUDE_DIRS):
                 source_files.append(path)
 
     if not source_files:
