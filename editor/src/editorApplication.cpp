@@ -56,9 +56,9 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config)
     create_input_actions();
 
     // logging
-    auto console_log_sink =
+    m_console_log_sink =
         std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(k_console_log_buffer_size);
-    Logging::add_sink(console_log_sink);
+    Logging::add_sink(m_console_log_sink);
 
     log(Logging::LogLevel::Info, "EditorApplication created");
 }
@@ -585,34 +585,35 @@ auto EditorApplication::draw_scene_viewport(TextureHandle render_buf) noexcept -
 }
 
 auto EditorApplication::draw_console_panel() const noexcept -> void {
-    auto color = [](Logging::LogLevel lvl) -> ImVec4 {
+    auto color = [](spdlog::level::level_enum lvl) -> ImVec4 {
         switch (lvl) {
-            case Logging::LogLevel::Error:
+            case spdlog::level::err:
                 return {1, 0, 0, 1};
-            case Logging::LogLevel::Warning:
+            case spdlog::level::warn:
                 return {1, 1, 0, 1};
-            case Logging::LogLevel::Info:
+            case spdlog::level::info:
                 return {1, 1, 1, 1};
-            case Logging::LogLevel::Debug:
+            case spdlog::level::debug:
                 return {0, 1, 1, 1};
-            case Logging::LogLevel::Trace:
+            case spdlog::level::trace:
                 return {0.7f, 0.7f, 0.7f, 1};
-            case Logging::LogLevel::Critical:
+            case spdlog::level::critical:
                 return {1, 0, 1, 1};
             default:
                 return {1, 1, 1, 1};
         }
     };
 
-    // ImGui::BeginChild("##scroll");
-    // {
-    //     for (auto&& [level, msg] : get_logs().get()) {
-    //         ImGui::PushStyleColor(ImGuiCol_Text, color(level));
-    //         ImGui::TextUnformatted(msg.data());
-    //         ImGui::PopStyleColor();
-    //     }
-    // }
-    // ImGui::EndChild();
+    ImGui::BeginChild("##scroll");
+    {
+        auto msgs = m_console_log_sink->last_raw();
+        for (auto&& m : msgs) {
+            ImGui::PushStyleColor(ImGuiCol_Text, color(m.level));
+            ImGui::TextUnformatted(m.payload.data(), m.payload.data() + m.payload.size());
+            ImGui::PopStyleColor();
+        }
+    }
+    ImGui::EndChild();
 }
 
 auto EditorApplication::on_scene_opened(Scene& scene) -> void {

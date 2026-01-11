@@ -6,6 +6,7 @@
 #include <core/scene.h>
 #include <core/singleton.h>
 #include <gl_utils/glTexture.h>
+#include <spdlog/sinks/ringbuffer_sink.h>
 
 #include <array>
 #include <iostream>
@@ -71,6 +72,8 @@ struct EditorApplication final : GLFWApplication, Singleton<EditorApplication> {
     auto get_cur_renderer() noexcept -> Renderer&;
 
     std::string m_console_text;
+    std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> m_console_log_sink;
+
     // rendering
     RenderConfig m_config;
     Scene m_scene;
