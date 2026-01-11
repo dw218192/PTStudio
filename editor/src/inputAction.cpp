@@ -1,4 +1,4 @@
-#include "include/inputAction.h"
+#include "inputAction.h"
 
 using namespace PTS;
 

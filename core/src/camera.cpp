@@ -1,4 +1,4 @@
-#include "include/camera.h"
+#include <core/camera.h>
 
 #include <glm/gtc/matrix_access.hpp>
 #include <glm/gtx/euler_angles.hpp>

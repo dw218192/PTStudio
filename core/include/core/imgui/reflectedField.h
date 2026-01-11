@@ -5,8 +5,8 @@
 #include <glm/glm.hpp>
 #include <type_traits>
 
-#include "reflection.h"
-#include "typeTraitsUtil.h"
+#include "../reflection.h"
+#include "../typeTraitsUtil.h"
 
 namespace ImGui {
 template <typename TemplatedFieldInfo, typename Reflected>

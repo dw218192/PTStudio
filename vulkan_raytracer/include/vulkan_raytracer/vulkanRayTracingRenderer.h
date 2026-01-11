@@ -1,17 +1,20 @@
 #pragma once
 
+#include <core/continuousGPUBufferLink.h>
+#include <core/renderer.h>
+
 #include <optional>
 #include <tcb/span.hpp>
 #include <unordered_map>
 #include <vulkan/vulkan.hpp>
 
-#include "continuousGPUBufferLink.h"
-#include "renderer.h"
-#include "vulkanAccelStructInfo.h"
-#include "vulkanHelper.h"
-#include "vulkanRTPipelineInfo.h"
+// TODO: use pointer to impl to avoid exposing implementation details
+#include "../../src/include/vulkanAccelStructInfo.h"
+#include "../../src/include/vulkanHelper.h"
+#include "../../src/include/vulkanRTPipelineInfo.h"
 
 namespace PTS {
+namespace Vk {
 struct VulkanRayTracingRenderer final : Renderer {
     NO_COPY_MOVE(VulkanRayTracingRenderer);
     VulkanRayTracingRenderer(RenderConfig config);
@@ -68,7 +71,8 @@ struct VulkanRayTracingRenderer final : Renderer {
     VulkanTopAccelStructInfo m_vk_top_accel;
     VulkanRTPipelineInfo m_vk_pipeline;
 
-    ContinuousGPUBufferLink<LightData, Light, VulkanBufferInfo*, k_max_lights> m_light_data_link;
+    ContinuousGPUBufferLink<LightData, Light, VulkanBufferInfo*, PTS::k_max_lights>
+        m_light_data_link;
 
     // extra object data
     struct PerObjectData {
@@ -92,7 +96,9 @@ struct VulkanRayTracingRenderer final : Renderer {
 
     struct PathTracingData {
         int iteration{};
-        std::optional<VulkanRayTracingShaders::CameraData> camera_data{};
+        std::optional<VulkanRayTracingShaders::CameraData>
+            camera_data{};  // Already in PTS::Vk namespace
     } m_path_tracing_data;
 };
+}  // namespace Vk
 }  // namespace PTS

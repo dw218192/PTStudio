@@ -1,25 +1,27 @@
 #include "editorApplication.h"
 
+#include <core/boundingVolume.h>
+#include <core/camera.h>
+#include <core/imgui/fileDialogue.h>
+#include <core/imgui/imhelper.h>
+#include <core/imgui/reflectedField.h>
+#include <core/intersection.h>
+#include <core/jsonArchive.h>
+#include <core/light.h>
+#include <core/logging.h>
+#include <core/renderableObject.h>
+#include <core/scene.h>
+#include <core/sceneObject.h>
 #include <imgui_internal.h>
+#include <spdlog/sinks/ringbuffer_sink.h>
+#include <vulkan_raytracer/vulkanRayTracingRenderer.h>
 
 #include <filesystem>
 
-#include "boundingVolume.h"
-#include "camera.h"
 #include "debugDrawer.h"
 #include "editorRenderer.h"
 #include "editorResources.h"
 #include "imgui/editorFields.h"
-#include "imgui/fileDialogue.h"
-#include "imgui/imhelper.h"
-#include "imgui/reflectedField.h"
-#include "intersection.h"
-#include "jsonArchive.h"
-#include "light.h"
-#include "renderableObject.h"
-#include "scene.h"
-#include "sceneObject.h"
-#include "vulkanRayTracingRenderer.h"
 
 using namespace PTS;
 using namespace PTS::Editor;
@@ -28,6 +30,7 @@ static constexpr auto k_scene_setting_win_name = "Scene Settings";
 static constexpr auto k_inspector_win_name = "Inspector";
 static constexpr auto k_scene_view_win_name = "Scene";
 static constexpr auto k_console_win_name = "Console";
+static constexpr auto k_console_log_buffer_size = 1024;
 
 EditorApplication::EditorApplication(std::string_view name, RenderConfig config)
     : GLFWApplication{name, config.width, config.height, config.min_frame_time},
@@ -36,7 +39,7 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config)
       m_archive{new JsonArchive} {
     // default renderers
     add_renderer(std::make_unique<EditorRenderer>(config));
-    add_renderer(std::make_unique<VulkanRayTracingRenderer>(config));
+    add_renderer(std::make_unique<Vk::VulkanRayTracingRenderer>(config));
 
     // callbacks
     get_imgui_window_info(k_scene_view_win_name).on_enter_region +=
@@ -51,6 +54,13 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config)
 
     // input actions
     create_input_actions();
+
+    // logging
+    m_console_log_sink =
+        std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(k_console_log_buffer_size);
+    Logging::add_sink(m_console_log_sink);
+
+    log(Logging::LogLevel::Info, "EditorApplication created");
 }
 
 auto EditorApplication::create_input_actions() noexcept -> void {
@@ -245,7 +255,7 @@ auto EditorApplication::wrap_mouse_pos() noexcept -> void {
 
 auto EditorApplication::add_renderer(std::unique_ptr<Renderer> renderer) noexcept -> void {
     if (!renderer) {
-        this->log(LogLevel::Error, "add_renderer(): renderer is null");
+        this->log(Logging::LogLevel::Error, "add_renderer(): renderer is null");
         return;
     }
 
@@ -357,25 +367,6 @@ auto EditorApplication::draw_scene_panel() noexcept -> void {
         ImGui::SliderFloat("##Move Sensitivity", &m_control_state.move_sensitivity, 1.0f, 10.0f);
         ImGui::Text("Rotate Sensitivity");
         ImGui::SliderFloat("##Rotate Sensitivity", &m_control_state.rot_sensitivity, 2.0f, 100.0f);
-
-        auto const prev_disable_log_flush = m_control_state.disable_log_flush;
-        ImGui::Checkbox("Disable Log Flush", &m_control_state.disable_log_flush);
-        if (m_control_state.disable_log_flush) {
-            m_log_flush_interval = std::numeric_limits<float>::infinity();
-        } else {
-            if (prev_disable_log_flush) {
-                m_log_flush_timer = 0.0f;
-            }
-        }
-
-        ImGui::BeginDisabled(m_control_state.disable_log_flush);
-        {
-            ImGui::Text("Log Flush Interval");
-            ImGui::SameLine();
-
-            ImGui::SliderFloat("##Log Flush Interval", &m_log_flush_interval, 1.0f, 60.0f);
-        }
-        ImGui::EndDisabled();
     }
 
     if (ImGui::CollapsingHeader("Performance", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -409,7 +400,7 @@ auto EditorApplication::draw_scene_panel() noexcept -> void {
                 if (!editable.is_editable()) {
                     // should not be possible, objects with _NoEdit flag should not be in the
                     // editable list
-                    this->log(LogLevel::Error,
+                    this->log(Logging::LogLevel::Error,
                               "Editable with _NoEdit flag found in m_scene.get_editables()");
                     continue;
                 }
@@ -466,7 +457,7 @@ auto EditorApplication::draw_scene_panel() noexcept -> void {
                     auto obj = check_error(RenderableObject::from_obj(m_scene, k_editable_flags,
                                                                       Material{}, path, &warning));
                     m_scene.emplace_object<RenderableObject>(std::move(obj));
-                    this->log(LogLevel::Warning, warning);
+                    this->log(Logging::LogLevel::Warning, warning);
                 }
             }
             if (ImGui::MenuItem("Add Light")) {
@@ -594,16 +585,31 @@ auto EditorApplication::draw_scene_viewport(TextureHandle render_buf) noexcept -
 }
 
 auto EditorApplication::draw_console_panel() const noexcept -> void {
-    static EArray<LogLevel, ImVec4> const s_log_colors{{LogLevel::Error, ImVec4{1, 0, 0, 1}},
-                                                       {LogLevel::Debug, ImVec4{0, 1, 1, 0}},
-                                                       {LogLevel::Info, ImVec4{1, 1, 1, 1}},
-                                                       {LogLevel::Warning, ImVec4{1, 1, 0, 1}}};
+    auto color = [](spdlog::level::level_enum lvl) -> ImVec4 {
+        switch (lvl) {
+            case spdlog::level::err:
+                return {1, 0, 0, 1};
+            case spdlog::level::warn:
+                return {1, 1, 0, 1};
+            case spdlog::level::info:
+                return {1, 1, 1, 1};
+            case spdlog::level::debug:
+                return {0, 1, 1, 1};
+            case spdlog::level::trace:
+                return {0.7f, 0.7f, 0.7f, 1};
+            case spdlog::level::critical:
+                return {1, 0, 1, 1};
+            default:
+                return {1, 1, 1, 1};
+        }
+    };
 
     ImGui::BeginChild("##scroll");
     {
-        for (auto&& [level, msg] : get_logs().get()) {
-            ImGui::PushStyleColor(ImGuiCol_Text, s_log_colors[level]);
-            ImGui::TextUnformatted(msg.data());
+        auto msgs = m_console_log_sink->last_raw();
+        for (auto&& m : msgs) {
+            ImGui::PushStyleColor(ImGuiCol_Text, color(m.level));
+            ImGui::TextUnformatted(m.payload.data(), m.payload.data() + m.payload.size());
             ImGui::PopStyleColor();
         }
     }
@@ -639,7 +645,7 @@ auto EditorApplication::try_select_object() noexcept -> void {
     auto pos = ImGui::GetMousePos();
     auto const win_pos = get_window_content_pos(k_scene_view_win_name);
     if (!win_pos) {
-        this->log(LogLevel::Error, "scene view not found");
+        this->log(Logging::LogLevel::Error, "scene view not found");
         return;
     }
     if (get_cur_hovered_widget() != k_scene_view_win_name) {
@@ -684,13 +690,10 @@ auto EditorApplication::on_add_oject(Ref<SceneObject> obj) -> void {
     }
 }
 
-auto EditorApplication::on_log_added() -> void {
-}
-
 auto EditorApplication::get_cur_renderer() noexcept -> Renderer& {
     if (m_control_state.cur_renderer_idx >= m_renderers.size() ||
         m_control_state.cur_renderer_idx < 0) {
-        this->log(LogLevel::Error, "the current renderer is no longer valid");
+        this->log(Logging::LogLevel::Error, "the current renderer is no longer valid");
         m_control_state.cur_renderer_idx = k_default_renderer_idx;
     }
 

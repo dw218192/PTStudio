@@ -15,38 +15,37 @@ using GLVertexArrayRef = UniqueGLResRef<GLVertexArray>;
 struct GLVertexArray final : GLResource {
     NO_COPY(GLVertexArray);
     template <typename VertexType, std::size_t Extent, typename... GLAttributeInfos>
-    [[nodiscard]] static auto create(tcb::span<VertexType const, Extent> vertex_data,
-                                     GLAttributeInfos... attris)
+    NODISCARD static auto create(tcb::span<VertexType const, Extent> vertex_data,
+                                 GLAttributeInfos... attris)
         -> tl::expected<GLVertexArrayRef, std::string>;
 
     template <typename VertexType, std::size_t Extent0, std::size_t Extent1,
               typename... GLAttributeInfos>
-    [[nodiscard]] static auto create_indexed(tcb::span<VertexType const, Extent0> vertex_data,
-                                             tcb::span<unsigned const, Extent1> index_data,
-                                             GLAttributeInfos... attris)
+    NODISCARD static auto create_indexed(tcb::span<VertexType const, Extent0> vertex_data,
+                                         tcb::span<unsigned const, Extent1> index_data,
+                                         GLAttributeInfos... attris)
         -> tl::expected<GLVertexArrayRef, std::string>;
 
     GLVertexArray(GLVertexArray&& other) noexcept;
     auto operator=(GLVertexArray&& other) noexcept -> GLVertexArray&;
 
-    [[nodiscard]] auto bind() const noexcept -> tl::expected<void, std::string>;
+    NODISCARD auto bind() const noexcept -> tl::expected<void, std::string>;
     static void unbind() noexcept;
-    [[nodiscard]] auto num_vertices() const noexcept -> GLsizei {
+    NODISCARD auto num_vertices() const noexcept -> GLsizei {
         return m_num_vertices;
     }
     /**
      * @brief Draw the vertex array, using index buffer if it is set.
      */
-    [[nodiscard]] auto draw(GLenum mode) const noexcept -> tl::expected<void, std::string>;
+    NODISCARD auto draw(GLenum mode) const noexcept -> tl::expected<void, std::string>;
 
    private:
     /**
      * @brief Specifies the layout of the vertex data.
      */
     template <typename VertexType, std::size_t Extent, typename... GLAttributeInfos>
-    [[nodiscard]] auto connect(tcb::span<VertexType const, Extent> raw_data,
-                               GLAttributeInfos... attris) noexcept
-        -> tl::expected<void, std::string>;
+    NODISCARD auto connect(tcb::span<VertexType const, Extent> raw_data,
+                           GLAttributeInfos... attris) noexcept -> tl::expected<void, std::string>;
 
     void swap(GLVertexArray&& other) noexcept;
     GLVertexArray(GLuint handle, GLsizei num_vertices) noexcept;
@@ -105,7 +104,9 @@ auto GLVertexArray::create(tcb::span<VertexType const, Extent> vertex_data,
 
     glBindVertexArray(vao);
     CHECK_GL_ERROR();
-    { TL_CHECK(ret->connect(vertex_data, attris...)); }
+    {
+        TL_CHECK(ret->connect(vertex_data, attris...));
+    }
     glBindVertexArray(0);
 
     return std::move(ret);

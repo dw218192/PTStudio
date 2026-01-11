@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.19 FATAL_ERROR)
 
-set(lib_name "gl_wrapper")
+set(lib_name "gl_utils")
 
 # GLOB source files 
 file(GLOB_RECURSE src_files
@@ -13,8 +13,9 @@ add_library(${lib_name} STATIC ${src_files})
 
 target_include_directories(${lib_name}
     PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/../core/src/include
+      ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/gl_utils
 )
 
 target_link_libraries(${lib_name} PRIVATE
@@ -27,5 +28,6 @@ target_link_libraries(${lib_name} PUBLIC
     fmt::fmt
     tcb-span::tcb-span
     pts_stb
+    core
 )
 

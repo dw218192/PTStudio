@@ -1,6 +1,8 @@
 #pragma once
 
 #include <GL/glew.h>
+#include <core/enumArray.h>
+#include <core/utils.h>
 
 #include <any>
 #include <glm/glm.hpp>
@@ -12,11 +14,9 @@
 #include <tl/expected.hpp>
 #include <unordered_map>
 
-#include "enumArray.h"
 #include "glResource.h"
 #include "shaderType.h"
 #include "uniformVar.h"
-#include "utils.h"
 
 namespace PTS {
 using ShaderProgramRef = UniqueGLResRef<ShaderProgram>;
@@ -26,21 +26,21 @@ struct Shader final : GLResource {
     friend struct GLResourceDeleter;
     NO_COPY(Shader);
 
-    [[nodiscard]] static auto from_file(ShaderType type, std::string_view file) noexcept
+    NODISCARD static auto from_file(ShaderType type, std::string_view file) noexcept
         -> tl::expected<ShaderRef, std::string>;
-    [[nodiscard]] static auto from_src(ShaderType type, std::string_view src) noexcept
+    NODISCARD static auto from_src(ShaderType type, std::string_view src) noexcept
         -> tl::expected<ShaderRef, std::string>;
-    [[nodiscard]] static auto clone(ViewPtr<Shader> other) noexcept
+    NODISCARD static auto clone(ViewPtr<Shader> other) noexcept
         -> tl::expected<ShaderRef, std::string>;
 
     Shader(Shader&& other) noexcept;
     auto operator=(Shader&& other) noexcept -> Shader&;
 
-    [[nodiscard]] auto recompile(std::string_view new_src) -> tl::expected<void, std::string>;
-    [[nodiscard]] auto get_src() const noexcept -> std::string_view {
+    NODISCARD auto recompile(std::string_view new_src) -> tl::expected<void, std::string>;
+    NODISCARD auto get_src() const noexcept -> std::string_view {
         return m_src;
     }
-    [[nodiscard]] auto get_type() const noexcept -> ShaderType;
+    NODISCARD auto get_type() const noexcept -> ShaderType;
 
    private:
     void swap(Shader&& other) noexcept;
@@ -56,16 +56,16 @@ struct ShaderProgram final : GLResource {
     using ShaderDesc = EArray<ShaderType, std::optional<std::string>>;
 
     NO_COPY(ShaderProgram);
-    [[nodiscard]] static auto from_srcs(View<ShaderDesc> srcs) noexcept
+    NODISCARD static auto from_srcs(View<ShaderDesc> srcs) noexcept
         -> tl::expected<ShaderProgramRef, std::string>;
 
-    [[nodiscard]] static auto from_files(View<ShaderDesc> files) noexcept
+    NODISCARD static auto from_files(View<ShaderDesc> files) noexcept
         -> tl::expected<ShaderProgramRef, std::string>;
 
-    [[nodiscard]] static auto from_shaders(EArray<ShaderType, ShaderRef> shaders) noexcept
+    NODISCARD static auto from_shaders(EArray<ShaderType, ShaderRef> shaders) noexcept
         -> tl::expected<ShaderProgramRef, std::string>;
 
-    [[nodiscard]] static auto clone(ViewPtr<ShaderProgram> other) noexcept
+    NODISCARD static auto clone(ViewPtr<ShaderProgram> other) noexcept
         -> tl::expected<ShaderProgramRef, std::string>;
 
     ShaderProgram(ShaderProgram&&) noexcept;
@@ -76,27 +76,26 @@ struct ShaderProgram final : GLResource {
      */
     template <typename UniformType,
               typename = std::enable_if_t<!std::is_same_v<std::decay_t<UniformType>, UniformVar>>>
-    [[nodiscard]] auto set_uniform(std::string_view name, UniformType&& value) noexcept
+    NODISCARD auto set_uniform(std::string_view name, UniformType&& value) noexcept
         -> tl::expected<void, std::string>;
-    [[nodiscard]] auto set_uniform(std::string_view name, UniformVar var) noexcept
+    NODISCARD auto set_uniform(std::string_view name, UniformVar var) noexcept
         -> tl::expected<void, std::string>;
 
-    [[nodiscard]] auto get_uniform_map() const noexcept -> View<UniformMap>;
+    NODISCARD auto get_uniform_map() const noexcept -> View<UniformMap>;
 
-    [[nodiscard]] auto set_texture(std::string_view name, ViewPtr<struct GLTexture> tex,
-                                   GLuint slot) noexcept -> tl::expected<void, std::string>;
+    NODISCARD auto set_texture(std::string_view name, ViewPtr<struct GLTexture> tex,
+                               GLuint slot) noexcept -> tl::expected<void, std::string>;
 
-    [[nodiscard]] auto bind() const noexcept -> tl::expected<void, std::string>;
+    NODISCARD auto bind() const noexcept -> tl::expected<void, std::string>;
     static void unbind() noexcept;
 
-    [[nodiscard]] auto try_recompile(View<ShaderDesc> new_srcs) noexcept
+    NODISCARD auto try_recompile(View<ShaderDesc> new_srcs) noexcept
         -> tl::expected<void, std::string>;
 
-    [[nodiscard]] auto get_stage(ShaderType type) const noexcept -> ViewPtr<Shader>;
+    NODISCARD auto get_stage(ShaderType type) const noexcept -> ViewPtr<Shader>;
 
    private:
-    [[nodiscard]] auto recompile(View<ShaderDesc> new_srcs) noexcept
-        -> tl::expected<void, std::string>;
+    NODISCARD auto recompile(View<ShaderDesc> new_srcs) noexcept -> tl::expected<void, std::string>;
 
     void swap(ShaderProgram&& other) noexcept;
 

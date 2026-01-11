@@ -1,10 +1,9 @@
-#include "include/glfwApplication.h"
+#include "glfwApplication.h"
 
+#include <core/imgui/imhelper.h>
 #include <imgui_internal.h>
 
 #include <iostream>
-
-#include "imgui/imhelper.h"
 
 using namespace PTS;
 
@@ -35,7 +34,8 @@ static void error_func(int error, const char* description) {
 }  // namespace PTS
 
 GLFWApplication::GLFWApplication(std::string_view name, unsigned width, unsigned height,
-                                 float min_frame_time) {
+                                 float min_frame_time)
+    : Application{name} {
     set_min_frame_time(min_frame_time);
     glfwSetErrorCallback(error_func);
 
@@ -108,7 +108,6 @@ void GLFWApplication::run() {
         poll_input_events();
 
         m_delta_time = static_cast<float>(now - last_frame_time);
-        m_log_flush_timer += m_delta_time;
 
         if (m_delta_time >= m_min_frame_time) {
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -160,11 +159,6 @@ void GLFWApplication::run() {
                     it->second.on_enter_region();
                 }
             }
-        }
-
-        if (m_log_flush_timer >= m_log_flush_interval) {
-            m_log_flush_timer = 0.0f;
-            clear_logs();
         }
     }
 }

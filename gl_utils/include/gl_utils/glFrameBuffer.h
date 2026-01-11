@@ -25,8 +25,8 @@ struct AttachmentDesc {
  * rendering\N only supports color render buffers and depth render buffers for now
  */
 struct GLFrameBuffer final : GLResource {
-    [[nodiscard]] static auto create() -> tl::expected<GLFrameBufferRef, std::string>;
-    [[nodiscard]] auto bind() const noexcept -> tl::expected<void, std::string>;
+    NODISCARD static auto create() -> tl::expected<GLFrameBufferRef, std::string>;
+    NODISCARD auto bind() const noexcept -> tl::expected<void, std::string>;
 
     GLFrameBuffer(GLFrameBuffer const&) = delete;
     auto operator=(GLFrameBuffer const&) -> GLFrameBuffer& = delete;
@@ -36,10 +36,10 @@ struct GLFrameBuffer final : GLResource {
 
     static void unbind() noexcept;
 
-    [[nodiscard]] auto attach(unsigned width, unsigned height,
-                              std::initializer_list<AttachmentDesc> descs)
+    NODISCARD auto attach(unsigned width, unsigned height,
+                          std::initializer_list<AttachmentDesc> descs)
         -> tl::expected<void, std::string>;
-    [[nodiscard]] auto set_draw_buffer(GLenum attachment) const -> tl::expected<void, std::string>;
+    NODISCARD auto set_draw_buffer(GLenum attachment) const -> tl::expected<void, std::string>;
 
     /**
      * @brief resize the frame buffer, including any attachment if necessary
@@ -47,10 +47,10 @@ struct GLFrameBuffer final : GLResource {
      * @param height the new height
      * @return error message on failure
      */
-    [[nodiscard]] auto resize(unsigned width, unsigned height) noexcept
+    NODISCARD auto resize(unsigned width, unsigned height) noexcept
         -> tl::expected<void, std::string>;
-    [[nodiscard]] auto get_texture(GLenum attachment) const noexcept -> GLTexture const*;
-    [[nodiscard]] auto get_render_buffer(GLenum attachment) const noexcept -> GLRenderBuffer const*;
+    NODISCARD auto get_texture(GLenum attachment) const noexcept -> GLTexture const*;
+    NODISCARD auto get_render_buffer(GLenum attachment) const noexcept -> GLRenderBuffer const*;
 
     /**
      * @brief swap the render buffer attached to the given attachment point

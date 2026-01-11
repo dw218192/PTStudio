@@ -1,9 +1,10 @@
 #pragma once
-#include "UniformVar.h"
+#include <core/material.h>
+#include <core/reflection.h>
+#include <core/transform.h>
+#include <gl_utils/UniformVar.h>
+
 #include "includes.h"
-#include "material.h"
-#include "reflection.h"
-#include "transform.h"
 
 namespace ImGui {
 bool TransformField(const char* label, PTS::Transform& transform, ImGuizmo::OPERATION& op,

@@ -1,20 +1,21 @@
 #pragma once
 
+#include <core/callbackList.h>
+#include <core/consts.h>
+#include <core/continuousGPUBufferLink.h>
+#include <core/enumArray.h>
+#include <core/renderer.h>
+#include <gl_utils/glFrameBuffer.h>
+#include <gl_utils/glTexture.h>
+#include <gl_utils/glVertexArray.h>
+#include <gl_utils/shader.h>
+
 #include <array>
 #include <unordered_map>
 
 #include "TextEditor.h"
-#include "callbackList.h"
-#include "consts.h"
-#include "continuousGPUBufferLink.h"
 #include "editorRenderer.h"
 #include "editorResources.h"
-#include "enumArray.h"
-#include "glFrameBuffer.h"
-#include "glTexture.h"
-#include "glVertexArray.h"
-#include "renderer.h"
-#include "shader.h"
 
 namespace PTS {
 namespace Editor {

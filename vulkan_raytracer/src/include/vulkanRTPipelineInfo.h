@@ -7,6 +7,7 @@
 #include "vulkanHelper.h"
 
 namespace PTS {
+namespace Vk {
 struct VulkanRTPipelineInfo : VulkanInfo<vk::UniquePipeline> {
     [[nodiscard]] static auto create(VulkanDeviceInfo const& dev, VulkanCmdPoolInfo const& cmd_pool,
                                      VulkanImageInfo const& output_img,
@@ -65,7 +66,8 @@ struct VulkanRTPipelineInfo : VulkanInfo<vk::UniquePipeline> {
     VulkanBufferInfo m_null_buffer{};
 
     // Unbounded arrays
-    std::array<VulkanBufferInfo, k_max_objs> vertex_attribs_ssbos{};
-    std::array<VulkanBufferInfo, k_max_objs> index_ssbos{};
+    std::array<VulkanBufferInfo, PTS::k_max_objs> vertex_attribs_ssbos{};
+    std::array<VulkanBufferInfo, PTS::k_max_objs> index_ssbos{};
 };
+}  // namespace Vk
 }  // namespace PTS

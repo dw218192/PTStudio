@@ -1,12 +1,11 @@
 #pragma once
 #include <GL/glew.h>
+#include <core/utils.h>
 
 #include <glm/glm.hpp>
 #include <string>
 #include <tcb/span.hpp>
 #include <variant>
-
-#include "utils.h"
 
 namespace PTS {
 enum ShaderVariableType {

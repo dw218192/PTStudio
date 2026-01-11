@@ -27,4 +27,5 @@ jobs:
       - name: Configure Conan + build
         shell: pwsh
         run: |
-          .\build.ps1
+          .\build.ps1 -BuildType Release
+          .\build.ps1 -BuildType Debug

@@ -1,9 +1,9 @@
 #include "debugDrawer.h"
 
-#include "boundingBox.h"
-#include "camera.h"
-#include "imgui/imhelper.h"
-#include "ray.h"
+#include <core/boundingBox.h>
+#include <core/camera.h>
+#include <core/imgui/imhelper.h>
+#include <core/ray.h>
 
 using namespace PTS;
 
@@ -58,16 +58,16 @@ void DebugDrawer::draw_line(glm::vec2 from, glm::vec2 to, glm::vec3 color, float
 void DebugDrawer::draw_img(glm::vec2 pos, glm::vec2 size, TextureHandle tex, float time) noexcept {
     pos += m_offset;
 
-    m_draw_calls.emplace_back(DrawCallInfo{time, [=](Ref<Application> app) {
-                                               if (auto res = tex->bind(); !res) {
-                                                   app.get().log(LogLevel::Error, res.error());
-                                                   return;
-                                               }
-                                               ImGui::GetForegroundDrawList()->AddImage(
-                                                   tex->get_id(), ImVec2(pos.x, pos.y),
-                                                   ImVec2(pos.x + size.x, pos.y + size.y));
-                                               tex->unbind();
-                                           }});
+    m_draw_calls.emplace_back(DrawCallInfo{
+        time, [=](Ref<Application> app) {
+            if (auto res = tex->bind(); !res) {
+                app.get().log(Logging::LogLevel::Error, res.error());
+                return;
+            }
+            ImGui::GetForegroundDrawList()->AddImage(tex->get_id(), ImVec2(pos.x, pos.y),
+                                                     ImVec2(pos.x + size.x, pos.y + size.y));
+            tex->unbind();
+        }});
 }
 
 void DebugDrawer::draw_rect_3d(View<Camera> cam, glm::ivec2 vp_size, glm::vec3 center,

@@ -1,10 +1,10 @@
 #pragma once
+#include <core/enumArray.h>
+#include <core/lightData.h>
+#include <gl_utils/shaderType.h>
+
 #include <cmrc/cmrc.hpp>
 #include <optional>
-
-#include "enumArray.h"
-#include "lightData.h"
-#include "shaderType.h"
 CMRC_DECLARE(editor_resources);
 CMRC_DECLARE(core_resources);
 

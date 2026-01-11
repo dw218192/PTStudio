@@ -1,6 +1,6 @@
-#include "include/glVertexArray.h"
+#include "glVertexArray.h"
 
-#include "utils.h"
+#include <core/utils.h>
 
 using namespace PTS;
 
