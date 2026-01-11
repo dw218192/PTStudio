@@ -7,7 +7,27 @@ on:
   workflow_dispatch:
 
 jobs:
+  check:
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: windows-latest
+    steps:
+       # intentionally without submodules since all the checking commands won't need stuff in /ext
+       # if this assumption changes, we need to add submodules here
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Bootstrap tooling
+        shell: pwsh
+        run: |
+          .\tools\bootstrap.ps1
+
+      - name: Check formatting
+        shell: pwsh
+        run: |
+          .\pts.cmd format --verify
+
   build:
+    needs: check
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: windows-latest
     steps:
@@ -16,16 +36,13 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install Conan
-        run: python -m pip install --upgrade pip conan
+      - name: Bootstrap tooling
+        shell: pwsh
+        run: |
+          .\tools\bootstrap.ps1
 
       - name: Configure Conan + build
         shell: pwsh
         run: |
-          .\build.ps1 -BuildType Release
-          .\build.ps1 -BuildType Debug
+          .\pts.cmd build --build-type Release
+          .\pts.cmd build --build-type Debug
