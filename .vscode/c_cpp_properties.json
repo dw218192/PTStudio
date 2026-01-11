@@ -10,7 +10,8 @@
                     "${workspaceFolder}/cuda_pt_renderer/src/include",
                     "${workspaceFolder}/vulkan_raytracer/src/include",
                     "${workspaceFolder}/ext/**",
-                    "${workspaceFolder}/_build/deps/full_deploy/host/**/include"
+                    "${workspaceFolder}/_build/deps/full_deploy/host/**/include",
+                    "${workspaceFolder}/_build/*/_cmrc/include"
                 ]
             },
             "includePath": [
@@ -20,7 +21,8 @@
                 "${workspaceFolder}/cuda_pt_renderer/src/include",
                 "${workspaceFolder}/vulkan_raytracer/src/include",
                 "${workspaceFolder}/ext/**",
-                "${workspaceFolder}/_build/deps/full_deploy/host/**/include"
+                "${workspaceFolder}/_build/deps/full_deploy/host/**/include",
+                "${workspaceFolder}/_build/*/_cmrc/include"
             ],
             "name": "PTStudio",
             "cppStandard": "c++17",

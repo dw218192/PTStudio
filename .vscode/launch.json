@@ -2,7 +2,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Vulkan (Windows) Debug + RenderDoc",
+            "name": "Windows (Debug + RenderDoc)",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/_build/Debug/bin/editor.exe",
@@ -19,6 +19,16 @@
                     "value": "all"
                 }
             ]
+        },
+        {
+            "name": "Windows (Debug)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/_build/Debug/bin/editor.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "environment": []
         }
     ]
 }

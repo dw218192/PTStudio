@@ -11,8 +11,9 @@ There is a convenience script `build.ps1` that can be used to pull deps, configu
 ```
 
 ## Build System Flags
--x: Rebuild the build folder before building
+-x: Remove the build folder before building
 -u: Update the lock file before building
 -c: Configure only mode: runs conan install and cmake configure, but skips building
+-b: Build only mode: skips conan install and cmake configure, only runs build
 -BuildType: The build configuration type, defaults to Debug
 -ConanProfile: The conan profile, defaults to default
