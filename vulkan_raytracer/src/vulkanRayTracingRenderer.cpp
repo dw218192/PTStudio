@@ -33,8 +33,8 @@ auto has_ext(tcb::span<vk::ExtensionProperties const> props, std::string_view ex
            }) != props.end();
 }
 
-auto has_ext(tcb::span<vk::ExtensionProperties const> props, tcb::span<std::string_view> exts)
-    -> bool {
+auto has_ext(tcb::span<vk::ExtensionProperties const> props,
+             tcb::span<std::string_view> exts) -> bool {
     return std::all_of(exts.begin(), exts.end(),
                        [&](std::string_view ext) { return has_ext(props, ext); });
 }
@@ -45,8 +45,8 @@ auto has_layer(tcb::span<vk::LayerProperties const> props, std::string_view laye
            }) != props.end();
 }
 
-auto has_layer(tcb::span<vk::LayerProperties const> props, tcb::span<std::string_view> layers)
-    -> bool {
+auto has_layer(tcb::span<vk::LayerProperties const> props,
+               tcb::span<std::string_view> layers) -> bool {
     return std::all_of(layers.begin(), layers.end(),
                        [&](std::string_view layer) { return has_layer(props, layer); });
 }
@@ -217,8 +217,8 @@ template <typename CreateInfoChainType>
                               unsigned height, vk::ImageUsageFlags usage_flags,
                               vk::MemoryPropertyFlags prop_flags, vk::ImageAspectFlags aspect_flags,
                               vk::ImageLayout initial_layout, vk::ImageLayout layout,
-                              vk::SamplerCreateInfo sampler_info, bool shared)
-    -> tl::expected<PTS::Vk::VulkanImageInfo, std::string> {
+                              vk::SamplerCreateInfo sampler_info,
+                              bool shared) -> tl::expected<PTS::Vk::VulkanImageInfo, std::string> {
     try {
         auto img_info = vk::ImageCreateInfo{vk::ImageCreateFlags{},
                                             vk::ImageType::e2D,

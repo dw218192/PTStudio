@@ -34,8 +34,8 @@ auto PTS::Camera::world_to_ndc(glm::vec3 world) const noexcept -> glm::vec3 {
     return ret;
 }
 
-auto PTS::Camera::world_to_viewport(glm::vec3 world, glm::ivec2 vp_size) const noexcept
-    -> glm::vec2 {
+auto PTS::Camera::world_to_viewport(glm::vec3 world,
+                                    glm::ivec2 vp_size) const noexcept -> glm::vec2 {
     auto ndc = world_to_ndc(world);
     // convert to (0, 1) and invert y
     ndc = (ndc + 1.0f) / 2.0f;
@@ -43,8 +43,8 @@ auto PTS::Camera::world_to_viewport(glm::vec3 world, glm::ivec2 vp_size) const n
     return glm::vec2{ndc.x * vp_size.x, ndc.y * vp_size.y};
 }
 
-auto PTS::Camera::viewport_to_world(glm::vec2 screen, glm::ivec2 vp_size, float z) const noexcept
-    -> glm::vec3 {
+auto PTS::Camera::viewport_to_world(glm::vec2 screen, glm::ivec2 vp_size,
+                                    float z) const noexcept -> glm::vec3 {
     auto ndc = glm::vec2{screen.x / vp_size.x, screen.y / vp_size.y};
     // invert y and convert to (-1, 1)
     ndc.y = 1 - ndc.y;

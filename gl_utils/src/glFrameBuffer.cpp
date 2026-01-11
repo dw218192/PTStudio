@@ -85,8 +85,8 @@ auto GLFrameBuffer::set_draw_buffer(GLenum attachment) const -> tl::expected<voi
     return {};
 }
 
-auto GLFrameBuffer::resize(unsigned width, unsigned height) noexcept
-    -> tl::expected<void, std::string> {
+auto GLFrameBuffer::resize(unsigned width,
+                           unsigned height) noexcept -> tl::expected<void, std::string> {
     for (auto&& [attachment, rbo] : m_rbo_attchs) {
         TL_CHECK_AND_PASS(rbo->bind());
         TL_CHECK_AND_PASS(rbo->resize(width, height));
@@ -166,8 +166,8 @@ auto GLFrameBuffer::swap_texture(GLenum attachment, GLTextureRef tex) noexcept
     return TL_ERROR("attachment not found");
 }
 
-auto GLFrameBuffer::swap_texture(GLenum attachment1, GLenum attachment2) noexcept
-    -> tl::expected<void, std::string> {
+auto GLFrameBuffer::swap_texture(GLenum attachment1,
+                                 GLenum attachment2) noexcept -> tl::expected<void, std::string> {
     if (auto const it1 = m_tex_attchs.find(attachment1); it1 != m_tex_attchs.end()) {
         if (auto const it2 = m_tex_attchs.find(attachment2); it2 != m_tex_attchs.end()) {
             std::swap(it1->second, it2->second);
@@ -178,8 +178,8 @@ auto GLFrameBuffer::swap_texture(GLenum attachment1, GLenum attachment2) noexcep
     return TL_ERROR("attachment not found");
 }
 
-auto GLFrameBuffer::clear(glm::vec3 color, float depth) const noexcept
-    -> tl::expected<void, std::string> {
+auto GLFrameBuffer::clear(glm::vec3 color,
+                          float depth) const noexcept -> tl::expected<void, std::string> {
     glClearColor(color.r, color.g, color.b, 1.0f);
     CHECK_GL_ERROR();
 
@@ -207,8 +207,8 @@ auto GLFrameBuffer::clear(glm::vec3 color, float depth) const noexcept
     return {};
 }
 
-auto GLFrameBuffer::clear_color(GLenum attachment, glm::vec3 color) const noexcept
-    -> tl::expected<void, std::string> {
+auto GLFrameBuffer::clear_color(GLenum attachment,
+                                glm::vec3 color) const noexcept -> tl::expected<void, std::string> {
     // save the draw buffer
     GLint draw_buffer;
     glGetIntegerv(GL_DRAW_BUFFER, &draw_buffer);

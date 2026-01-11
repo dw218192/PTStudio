@@ -94,8 +94,8 @@ struct VulkanTopAccelStructInfo {
      * @return void on success, error string on failure
      */
     [[nodiscard]] auto update_accel_gpu(vk::BuildAccelerationStructureModeKHR build_type,
-                                        size_t from, size_t to) noexcept
-        -> tl::expected<void, std::string>;
+                                        size_t from,
+                                        size_t to) noexcept -> tl::expected<void, std::string>;
 
    private:
     VulkanTopAccelStructInfo(VulkanAccelStructInfo accel, VulkanBufferInfo ins_mem,

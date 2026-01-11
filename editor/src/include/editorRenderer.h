@@ -109,8 +109,8 @@ struct EditorRenderer final : Renderer {
     [[nodiscard]] auto on_add_object_internal(PerObjectData& data,
                                               RenderableObject const& obj) noexcept
         -> tl::expected<void, std::string>;
-    [[nodiscard]] auto draw_outline(View<Camera> cam_view, View<RenderableObject> obj)
-        -> tl::expected<void, std::string>;
+    [[nodiscard]] auto draw_outline(View<Camera> cam_view,
+                                    View<RenderableObject> obj) -> tl::expected<void, std::string>;
     auto clear_render_data() -> void;
 
     auto commit_cur_shader_code() noexcept -> void;

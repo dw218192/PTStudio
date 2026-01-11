@@ -21,11 +21,11 @@ struct GLBuffer final : GLResource {
 
     // TODO: might be helpful to store the element type as well
     template <typename T, size_t Extent>
-    NODISCARD auto set_data(tcb::span<T const, Extent> data, GLenum usage = GL_STATIC_DRAW)
-        -> tl::expected<void, std::string>;
+    NODISCARD auto set_data(tcb::span<T const, Extent> data,
+                            GLenum usage = GL_STATIC_DRAW) -> tl::expected<void, std::string>;
     template <typename T, size_t Extent>
-    NODISCARD auto set_data(tcb::span<T, Extent> data, GLenum usage = GL_STATIC_DRAW)
-        -> tl::expected<void, std::string>;
+    NODISCARD auto set_data(tcb::span<T, Extent> data,
+                            GLenum usage = GL_STATIC_DRAW) -> tl::expected<void, std::string>;
 
     NODISCARD auto bind() const noexcept -> tl::expected<void, std::string>;
     void unbind() const noexcept;
@@ -44,8 +44,8 @@ struct GLBuffer final : GLResource {
 };
 
 template <typename T, size_t Extent>
-auto GLBuffer::set_data(tcb::span<T const, Extent> data, GLenum usage)
-    -> tl::expected<void, std::string> {
+auto GLBuffer::set_data(tcb::span<T const, Extent> data,
+                        GLenum usage) -> tl::expected<void, std::string> {
     if (data.empty()) {
         return {};
     }
@@ -56,8 +56,8 @@ auto GLBuffer::set_data(tcb::span<T const, Extent> data, GLenum usage)
     return {};
 }
 template <typename T, size_t Extent>
-auto GLBuffer::set_data(tcb::span<T, Extent> data, GLenum usage)
-    -> tl::expected<void, std::string> {
+auto GLBuffer::set_data(tcb::span<T, Extent> data,
+                        GLenum usage) -> tl::expected<void, std::string> {
     if (data.empty()) {
         return {};
     }

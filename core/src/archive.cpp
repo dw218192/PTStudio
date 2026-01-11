@@ -2,8 +2,8 @@
 
 #include <fstream>
 
-auto PTS::Archive::load_file(std::string_view file, Ref<Scene> scene, Ref<Camera> cam) noexcept
-    -> tl::expected<void, std::string> {
+auto PTS::Archive::load_file(std::string_view file, Ref<Scene> scene,
+                             Ref<Camera> cam) noexcept -> tl::expected<void, std::string> {
     std::ifstream stream{file.data()};
     if (!stream.is_open()) {
         return TL_ERROR("Failed to open archive file " + std::string{file});

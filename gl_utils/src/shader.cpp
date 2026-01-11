@@ -30,8 +30,8 @@ auto to_shader_type(GLenum type) noexcept -> ShaderType {
     return ShaderType::Vertex;
 }
 
-auto compile_shader(GLuint handle, std::string_view src) noexcept
-    -> tl::expected<void, std::string> {
+auto compile_shader(GLuint handle,
+                    std::string_view src) noexcept -> tl::expected<void, std::string> {
     auto const src_ptr = src.data();
     glShaderSource(handle, 1, &src_ptr, nullptr);
     glCompileShader(handle);
@@ -49,8 +49,8 @@ auto compile_shader(GLuint handle, std::string_view src) noexcept
     return {};
 }
 
-auto create_shader(GLenum type, std::string_view src) noexcept
-    -> tl::expected<GLuint, std::string> {
+auto create_shader(GLenum type,
+                   std::string_view src) noexcept -> tl::expected<GLuint, std::string> {
     GLuint handle{0};
     TransactionScope transaction{[handle]() {
         if (handle) {
@@ -176,8 +176,8 @@ void Shader::swap(Shader&& other) noexcept {
     this->GLResource::swap(std::move(other));
 }
 
-auto Shader::from_file(ShaderType type, std::string_view file) noexcept
-    -> tl::expected<ShaderRef, std::string> {
+auto Shader::from_file(ShaderType type,
+                       std::string_view file) noexcept -> tl::expected<ShaderRef, std::string> {
     std::ifstream stream(file.data());
     if (!stream.is_open()) {
         return TL_ERROR("Failed to open vetex shader file");
@@ -194,8 +194,8 @@ auto Shader::clone(ViewPtr<Shader> other) noexcept -> tl::expected<ShaderRef, st
     return from_src(to_shader_type(other->m_type), other->m_src);
 }
 
-auto Shader::from_src(ShaderType type, std::string_view src) noexcept
-    -> tl::expected<ShaderRef, std::string> {
+auto Shader::from_src(ShaderType type,
+                      std::string_view src) noexcept -> tl::expected<ShaderRef, std::string> {
     auto const gltype = to_gl_type(type);
     GLuint handle;
     TL_TRY_ASSIGN(handle, create_shader(gltype, src));
@@ -223,8 +223,8 @@ ShaderProgram& ShaderProgram::operator=(ShaderProgram&& other) noexcept {
     return *this;
 }
 
-auto ShaderProgram::set_uniform(std::string_view name, UniformVar var) noexcept
-    -> tl::expected<void, std::string> {
+auto ShaderProgram::set_uniform(std::string_view name,
+                                UniformVar var) noexcept -> tl::expected<void, std::string> {
     auto const it = m_uniforms.find(name.data());
     if (it == m_uniforms.end()) {
         return TL_ERROR("Uniform not found");
@@ -239,8 +239,8 @@ auto ShaderProgram::get_uniform_map() const noexcept -> View<UniformMap> {
     return m_uniforms;
 }
 
-auto ShaderProgram::set_texture(std::string_view name, ViewPtr<GLTexture> tex, GLuint slot) noexcept
-    -> tl::expected<void, std::string> {
+auto ShaderProgram::set_texture(std::string_view name, ViewPtr<GLTexture> tex,
+                                GLuint slot) noexcept -> tl::expected<void, std::string> {
     if (!valid()) {
         return TL_ERROR("Invalid shader program");
     }

@@ -57,10 +57,9 @@
                                      geom_build_info.pGeometries + geom_build_info.geometryCount}};
 }
 
-[[nodiscard]] auto PTS::Vk::VulkanBottomAccelStructInfo::create(VulkanDeviceInfo const& dev,
-                                                            VulkanCmdPoolInfo const& cmd_pool,
-                                                            RenderableObject const& obj)
-    -> tl::expected<VulkanBottomAccelStructInfo, std::string> {
+[[nodiscard]] auto PTS::Vk::VulkanBottomAccelStructInfo::create(
+    VulkanDeviceInfo const& dev, VulkanCmdPoolInfo const& cmd_pool,
+    RenderableObject const& obj) -> tl::expected<VulkanBottomAccelStructInfo, std::string> {
     // note: transform will be later applied to the instances of the acceleration structure
     // so it's not needed here
     auto vert_buf = PTS::Vk::VulkanBufferInfo{};
@@ -68,13 +67,14 @@
 
     auto vertices = std::vector<PTS::Vk::VulkanRayTracingShaders::VertexData>{};
     vertices.reserve(obj.get_vertices().size());
-    std::transform(obj.get_vertices().begin(), obj.get_vertices().end(),
-                   std::back_inserter(vertices),
-                   [](auto const& vert) { return PTS::Vk::VulkanRayTracingShaders::VertexData{vert}; });
-    TL_TRY_ASSIGN(vert_buf, PTS::Vk::VulkanBufferInfo::create(
-                                dev, PTS::Vk::VulkanBufferInfo::Type::AccelInput,
-                                vertices.size() * sizeof(PTS::Vk::VulkanRayTracingShaders::VertexData),
-                                tcb::make_span(vertices)));
+    std::transform(
+        obj.get_vertices().begin(), obj.get_vertices().end(), std::back_inserter(vertices),
+        [](auto const& vert) { return PTS::Vk::VulkanRayTracingShaders::VertexData{vert}; });
+    TL_TRY_ASSIGN(vert_buf,
+                  PTS::Vk::VulkanBufferInfo::create(
+                      dev, PTS::Vk::VulkanBufferInfo::Type::AccelInput,
+                      vertices.size() * sizeof(PTS::Vk::VulkanRayTracingShaders::VertexData),
+                      tcb::make_span(vertices)));
     TL_TRY_ASSIGN(index_buf,
                   PTS::Vk::VulkanBufferInfo::create(
                       dev, PTS::Vk::VulkanBufferInfo::Type::AccelInput,
@@ -100,8 +100,8 @@
                           .setType(vk::AccelerationStructureTypeKHR::eBottomLevel);
 
     auto accel = PTS::Vk::VulkanAccelStructInfo{};
-    TL_TRY_ASSIGN(accel,
-                  PTS::Vk::VulkanAccelStructInfo::create(dev, cmd_pool, build_info, prim_cnt, prim_cnt));
+    TL_TRY_ASSIGN(accel, PTS::Vk::VulkanAccelStructInfo::create(dev, cmd_pool, build_info, prim_cnt,
+                                                                prim_cnt));
 
     return VulkanBottomAccelStructInfo{
         std::move(accel),
@@ -111,15 +111,15 @@
 }
 
 [[nodiscard]] auto PTS::Vk::VulkanTopAccelStructInfo::create(VulkanDeviceInfo const& dev,
-                                                         VulkanCmdPoolInfo const& cmd_pool)
+                                                             VulkanCmdPoolInfo const& cmd_pool)
     -> tl::expected<VulkanTopAccelStructInfo, std::string> {
     auto accel_ins_vec = std::vector<vk::AccelerationStructureInstanceKHR>{};
     auto bottom_accels = std::vector<PTS::Vk::VulkanBottomAccelStructInfo>{};
     auto accel_ins_buf = PTS::Vk::VulkanBufferInfo{};
-    TL_TRY_ASSIGN(accel_ins_buf,
-                  PTS::Vk::VulkanBufferInfo::create(dev, PTS::Vk::VulkanBufferInfo::Type::AccelInput,
-                                           sizeof(decltype(accel_ins_vec)::value_type) * PTS::k_max_objs,
-                                           tcb::make_span(accel_ins_vec)));
+    TL_TRY_ASSIGN(accel_ins_buf, PTS::Vk::VulkanBufferInfo::create(
+                                     dev, PTS::Vk::VulkanBufferInfo::Type::AccelInput,
+                                     sizeof(decltype(accel_ins_vec)::value_type) * PTS::k_max_objs,
+                                     tcb::make_span(accel_ins_vec)));
     auto ins_cnt = static_cast<uint32_t>(accel_ins_vec.size());
     auto instance_data =
         vk::AccelerationStructureGeometryInstancesDataKHR{}.setArrayOfPointers(false).setData(
@@ -136,8 +136,8 @@
                           .setMode(vk::BuildAccelerationStructureModeKHR::eBuild)
                           .setType(vk::AccelerationStructureTypeKHR::eTopLevel);
     auto accel = PTS::Vk::VulkanAccelStructInfo{};
-    TL_TRY_ASSIGN(accel,
-                  PTS::Vk::VulkanAccelStructInfo::create(dev, cmd_pool, build_info, ins_cnt, PTS::k_max_objs));
+    TL_TRY_ASSIGN(accel, PTS::Vk::VulkanAccelStructInfo::create(dev, cmd_pool, build_info, ins_cnt,
+                                                                PTS::k_max_objs));
     return VulkanTopAccelStructInfo{std::move(accel),
                                     std::move(accel_ins_buf),
                                     std::move(bottom_accels),
@@ -147,8 +147,8 @@
 }
 
 [[nodiscard]] auto PTS::Vk::VulkanTopAccelStructInfo::add_instance(
-    VulkanBottomAccelStructInfo&& bottom_accel, glm::mat4 const& transform) noexcept
-    -> tl::expected<size_t, std::string> {
+    VulkanBottomAccelStructInfo&& bottom_accel,
+    glm::mat4 const& transform) noexcept -> tl::expected<size_t, std::string> {
     if (m_instances.size() >= PTS::k_max_objs) {
         return TL_ERROR("max instances reached");
     }
@@ -230,8 +230,8 @@
 }
 
 [[nodiscard]] auto PTS::Vk::VulkanTopAccelStructInfo::update_accel_gpu(
-    vk::BuildAccelerationStructureModeKHR build_type, size_t from, size_t to) noexcept
-    -> tl::expected<void, std::string> {
+    vk::BuildAccelerationStructureModeKHR build_type, size_t from,
+    size_t to) noexcept -> tl::expected<void, std::string> {
     if (from >= m_instances.size() || to >= m_instances.size() || from > to) {
         return TL_ERROR("invalid instance index");
     }

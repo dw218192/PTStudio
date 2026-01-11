@@ -44,14 +44,13 @@ struct GLTexture final : Texture, GLResource {
     NODISCARD auto format() const noexcept -> GLenum {
         return m_format;
     }
-    NODISCARD auto resize(unsigned width, unsigned height) noexcept
-        -> tl::expected<void, std::string> override;
+    NODISCARD auto resize(unsigned width,
+                          unsigned height) noexcept -> tl::expected<void, std::string> override;
 
    private:
-    NODISCARD static auto create_tex(unsigned width, unsigned height, GLenum format,
-                                     unsigned char const* data,
-                                     std::initializer_list<GLParam> params) noexcept
-        -> tl::expected<GLuint, std::string>;
+    NODISCARD static auto create_tex(
+        unsigned width, unsigned height, GLenum format, unsigned char const* data,
+        std::initializer_list<GLParam> params) noexcept -> tl::expected<GLuint, std::string>;
 
     void swap(GLTexture&& other) noexcept;
     GLTexture(unsigned width, unsigned height, unsigned channels, GLenum format, GLuint handle);

@@ -164,11 +164,12 @@ struct FieldProxy {
     ~FieldProxy() = default;
 
     template <typename U>
-    auto operator=(U&& new_val) -> std::enable_if_t<
-        std::conjunction_v<
-            std::negation<std::is_same<std::remove_cv_t<std::remove_reference_t<U>>, FieldProxy>>,
-            std::negation<std::is_const<T>>, std::is_assignable<T&, U&&>>,
-        FieldProxy&> {
+    auto operator=(U&& new_val)
+        -> std::enable_if_t<
+            std::conjunction_v<std::negation<std::is_same<
+                                   std::remove_cv_t<std::remove_reference_t<U>>, FieldProxy>>,
+                               std::negation<std::is_const<T>>, std::is_assignable<T&, U&&>>,
+            FieldProxy&> {
         m_ref.get() = std::forward<U>(new_val);
         m_field_info.get().on_change(m_ref.get(), m_obj.get());
         return *this;
@@ -374,7 +375,7 @@ struct TFieldRuntime {
         OnChangeCallbackData<TField<ClassType, FieldType, ModifierPackType>, ClassType, FieldType>;
     using callback_type = void(callback_data_type);
 
-    TFieldRuntime(int member_index, FieldType default_val, FieldType ClassType::* mem_pointer)
+    TFieldRuntime(int member_index, FieldType default_val, FieldType ClassType::*mem_pointer)
         : member_index(member_index),
           default_val(std::move(default_val)),
           mem_pointer(mem_pointer) {
@@ -383,7 +384,7 @@ struct TFieldRuntime {
    private:
     int member_index;
     FieldType default_val;
-    FieldType ClassType::* mem_pointer;
+    FieldType ClassType::*mem_pointer;
     CallbackList<callback_type> on_change_callbacks;
 };
 
@@ -949,7 +950,7 @@ struct FieldInfo {
 
 #define FIELD_IMPL(_counter, _var_type, _var_name, _init, ...)                                     \
     _var_type _var_name = _init;                                                                   \
-    static constexpr _var_type _my_type::* _##_var_name##_proxy() {                                \
+    static constexpr _var_type _my_type::*_##_var_name##_proxy() {                                 \
         return &_my_type::_var_name;                                                               \
     }                                                                                              \
     static constexpr auto _##_var_name##_name = #_var_name;                                        \

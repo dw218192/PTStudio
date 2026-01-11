@@ -47,8 +47,8 @@ struct GLFrameBuffer final : GLResource {
      * @param height the new height
      * @return error message on failure
      */
-    NODISCARD auto resize(unsigned width, unsigned height) noexcept
-        -> tl::expected<void, std::string>;
+    NODISCARD auto resize(unsigned width,
+                          unsigned height) noexcept -> tl::expected<void, std::string>;
     NODISCARD auto get_texture(GLenum attachment) const noexcept -> GLTexture const*;
     NODISCARD auto get_render_buffer(GLenum attachment) const noexcept -> GLRenderBuffer const*;
 
@@ -67,8 +67,8 @@ struct GLFrameBuffer final : GLResource {
      * @param tex the new texture; if nullptr, the attachment point will be cleared
      * @return the old texture
      */
-    auto swap_texture(GLenum attachment, GLTextureRef tex) noexcept
-        -> tl::expected<GLTextureRef, std::string>;
+    auto swap_texture(GLenum attachment,
+                      GLTextureRef tex) noexcept -> tl::expected<GLTextureRef, std::string>;
 
     /**
      * @brief swap the textures attached to the given attachment points
@@ -76,8 +76,8 @@ struct GLFrameBuffer final : GLResource {
      * @param attachment2 the second attachment point
      * @return error message on failure
      */
-    auto swap_texture(GLenum attachment1, GLenum attachment2) noexcept
-        -> tl::expected<void, std::string>;
+    auto swap_texture(GLenum attachment1,
+                      GLenum attachment2) noexcept -> tl::expected<void, std::string>;
 
     /**
      * @brief clear the frame buffer, including all attachments
@@ -92,8 +92,8 @@ struct GLFrameBuffer final : GLResource {
      * @param depth the depth to clear to
      * @return error message on failure
      */
-    auto clear_color(GLenum attachment, glm::vec3 color) const noexcept
-        -> tl::expected<void, std::string>;
+    auto clear_color(GLenum attachment,
+                     glm::vec3 color) const noexcept -> tl::expected<void, std::string>;
 
    private:
     void swap(GLFrameBuffer&& other) noexcept;

@@ -10,8 +10,8 @@ struct GLRenderBuffer;
 using GLRenderBufferRef = UniqueGLResRef<GLRenderBuffer>;
 
 struct GLRenderBuffer final : GLResource {
-    NODISCARD static auto create(unsigned width, unsigned height, GLenum format)
-        -> tl::expected<GLRenderBufferRef, std::string>;
+    NODISCARD static auto create(unsigned width, unsigned height,
+                                 GLenum format) -> tl::expected<GLRenderBufferRef, std::string>;
 
     GLRenderBuffer(GLRenderBuffer const&) = delete;
     auto operator=(GLRenderBuffer const&) -> GLRenderBuffer& = delete;
@@ -19,8 +19,8 @@ struct GLRenderBuffer final : GLResource {
     GLRenderBuffer(GLRenderBuffer&& other) noexcept;
     auto operator=(GLRenderBuffer&& other) noexcept -> GLRenderBuffer&;
 
-    NODISCARD auto resize(unsigned width, unsigned height) noexcept
-        -> tl::expected<void, std::string>;
+    NODISCARD auto resize(unsigned width,
+                          unsigned height) noexcept -> tl::expected<void, std::string>;
     NODISCARD auto bind() const noexcept -> tl::expected<void, std::string>;
     static void unbind() noexcept;
 
@@ -35,8 +35,8 @@ struct GLRenderBuffer final : GLResource {
     }
 
    private:
-    NODISCARD static auto create_buf(unsigned width, unsigned height, GLenum format) noexcept
-        -> tl::expected<GLuint, std::string>;
+    NODISCARD static auto create_buf(unsigned width, unsigned height,
+                                     GLenum format) noexcept -> tl::expected<GLuint, std::string>;
     void swap(GLRenderBuffer&& other) noexcept;
     GLRenderBuffer(unsigned width, unsigned height, GLenum format, GLuint handle) noexcept;
     ~GLRenderBuffer() noexcept override;

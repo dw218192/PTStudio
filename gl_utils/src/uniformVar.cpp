@@ -51,8 +51,8 @@ auto to_variable_type(GLenum type, std::string_view name) noexcept
     }
 }
 
-auto UniformVar::create(GLenum gltype, GLint loc, std::string_view name) noexcept
-    -> tl::expected<UniformVar, std::string> {
+auto UniformVar::create(GLenum gltype, GLint loc,
+                        std::string_view name) noexcept -> tl::expected<UniformVar, std::string> {
     ShaderVariableType type;
     TL_TRY_ASSIGN(type, to_variable_type(gltype, name));
     switch (type) {

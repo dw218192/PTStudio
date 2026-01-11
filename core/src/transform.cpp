@@ -46,8 +46,8 @@ Transform::Transform(glm::mat4 const& matrix) noexcept : m_trans{matrix} {
     on_trans_matrix_update();
 }
 
-auto Transform::look_at(glm::vec3 const& pos, glm::vec3 const& target, glm::vec3 const& up) noexcept
-    -> Transform {
+auto Transform::look_at(glm::vec3 const& pos, glm::vec3 const& target,
+                        glm::vec3 const& up) noexcept -> Transform {
     Transform ret;
     ret.m_trans = glm::lookAt(pos, target, up);
     decompose(ret.m_trans, ret.m_pos, ret.m_rot, ret.m_scale);

@@ -7,8 +7,8 @@ struct VulkanDescSetInfo : VulkanInfo<vk::UniqueDescriptorSet> {
     auto add_binding(vk::DescriptorSetLayoutBinding binding, vk::DescriptorBindingFlags flags,
                      vk::WriteDescriptorSet how_to_write) -> VulkanDescSetInfo&;
 
-    [[nodiscard]] auto create(VulkanDeviceInfo const& dev, VulkanDescSetPoolInfo const& pool)
-        -> tl::expected<void, std::string>;
+    [[nodiscard]] auto create(VulkanDeviceInfo const& dev,
+                              VulkanDescSetPoolInfo const& pool) -> tl::expected<void, std::string>;
 
     [[nodiscard]] auto get_layout() const {
         return *m_layout;

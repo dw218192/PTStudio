@@ -255,8 +255,8 @@ auto GLFWApplication::get_window_width() const noexcept -> int {
     return display_w;
 }
 
-auto GLFWApplication::begin_imgui_window(std::string_view name, ImGuiWindowFlags flags) noexcept
-    -> bool {
+auto GLFWApplication::begin_imgui_window(std::string_view name,
+                                         ImGuiWindowFlags flags) noexcept -> bool {
     auto const ret = ImGui::Begin(name.data(), nullptr, flags);
     if (ImGui::IsWindowHovered(ImGuiItemStatusFlags_HoveredRect)) {
         m_cur_hovered_widget = name;

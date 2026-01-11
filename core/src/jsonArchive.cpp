@@ -58,8 +58,9 @@ enum { POINTER, POINTER_CONTAINER, NEITHER };
 template <typename T>
 struct is_pointer_or_pointer_container {
     template <typename U>
-    static constexpr auto test(int) -> std::enable_if_t<
-        PTS::Traits::is_container<U>::value && std::is_pointer_v<typename U::value_type>, int> {
+    static constexpr auto test(int)
+        -> std::enable_if_t<
+            PTS::Traits::is_container<U>::value && std::is_pointer_v<typename U::value_type>, int> {
         return POINTER_CONTAINER;
     }
 
@@ -224,8 +225,8 @@ std::enable_if_t<Traits::is_reflectable<Reflected>::value> from_json(nlohmann::j
     }
 }
 
-auto JsonArchive::save(View<Scene> scene_view, View<Camera> camera_view)
-    -> tl::expected<std::string, std::string> {
+auto JsonArchive::save(View<Scene> scene_view,
+                       View<Camera> camera_view) -> tl::expected<std::string, std::string> {
     auto&& scene = scene_view.get();
     auto&& camera = camera_view.get();
     nlohmann::json json;
@@ -240,8 +241,8 @@ auto JsonArchive::save(View<Scene> scene_view, View<Camera> camera_view)
     return json.dump();
 }
 
-auto JsonArchive::load(std::string_view data, Ref<Scene> scene, Ref<Camera> cam)
-    -> tl::expected<void, std::string> {
+auto JsonArchive::load(std::string_view data, Ref<Scene> scene,
+                       Ref<Camera> cam) -> tl::expected<void, std::string> {
     try {
         auto json = nlohmann::json::parse(data);
 

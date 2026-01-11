@@ -2,8 +2,8 @@
 #include <imgui.h>
 #include <nfd.h>
 
-auto ImGui::FileDialogue(FileDialogueMode mode, const char* filter, const char* defaultPath)
-    -> std::string {
+auto ImGui::FileDialogue(FileDialogueMode mode, const char* filter,
+                         const char* defaultPath) -> std::string {
     nfdchar_t* outPath = nullptr;
     nfdresult_t result;
     if (mode == FileDialogueMode::OPEN) {

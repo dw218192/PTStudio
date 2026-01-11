@@ -136,9 +136,9 @@ constexpr bool is_greater_than_comparable_v = is_greater_than_comparable<L, R>::
 template <auto MemFunc, typename ClassType, typename... Args>
 struct is_const_callable_method {
     template <auto U>
-    static constexpr auto test(int)
-        -> decltype((std::declval<const ClassType>().*U)(std::declval<Args>()...),
-                    std::true_type{});
+    static constexpr auto test(int) -> decltype((std::declval<const ClassType>().*
+                                                 U)(std::declval<Args>()...),
+                                                std::true_type{});
     template <auto U>
     static constexpr auto test(...) -> std::false_type;
     static constexpr bool value = decltype(test<MemFunc>(0))::value;

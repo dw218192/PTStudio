@@ -80,8 +80,8 @@ struct Camera {
      * \param vp_size the size of viewport
      * \return the point in screen space; top left is (0,0), bottom right is (width, height)
      */
-    NODISCARD auto world_to_viewport(glm::vec3 world, glm::ivec2 vp_size) const noexcept
-        -> glm::vec2;
+    NODISCARD auto world_to_viewport(glm::vec3 world,
+                                     glm::ivec2 vp_size) const noexcept -> glm::vec2;
     /**
      * \brief Converts a point in screen space to world space
      * \param screen the point in screen space; top left is (0,0), bottom right is (width, height)

@@ -50,8 +50,8 @@ auto PTS::Scene::get_scene_bound() const noexcept -> BoundingBox {
     return ret;
 }
 
-auto PTS::Scene::ray_cast_editable(Ray const& ray, float t_min, float t_max) noexcept
-    -> ObserverPtr<SceneObject> {
+auto PTS::Scene::ray_cast_editable(Ray const& ray, float t_min,
+                                   float t_max) noexcept -> ObserverPtr<SceneObject> {
     auto ret = ray_cast(ray, t_min, t_max);
     if (ret) {
         return ret;
@@ -77,8 +77,8 @@ auto PTS::Scene::ray_cast_editable(Ray const& ray, float t_min, float t_max) noe
     return ret;
 }
 
-auto PTS::Scene::ray_cast(Ray const& ray, float t_min, float t_max) noexcept
-    -> ObserverPtr<SceneObject> {
+auto PTS::Scene::ray_cast(Ray const& ray, float t_min,
+                          float t_max) noexcept -> ObserverPtr<SceneObject> {
     auto ret = ObserverPtr<SceneObject>{nullptr};
     auto closest_t = t_max;
     for (auto&& obj : m_renderable_objects) {
