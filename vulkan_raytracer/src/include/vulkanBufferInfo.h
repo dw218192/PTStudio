@@ -57,17 +57,17 @@ struct VulkanBufferInfo : VulkanInfo<vk::UniqueBuffer> {
      * @return void on success, error message on failure
      */
     template <typename ElementType = int, std::size_t Extent = 0u>
-    [[nodiscard]] auto upload(tcb::span<ElementType, Extent> data, size_t offset_bytes = 0)
-        -> tl::expected<void, std::string>;
+    [[nodiscard]] auto upload(tcb::span<ElementType, Extent> data,
+                              size_t offset_bytes = 0) -> tl::expected<void, std::string>;
 
     template <typename ElementType>
-    [[nodiscard]] auto upload(ElementType const& data, size_t offset_bytes = 0)
-        -> tl::expected<void, std::string> {
+    [[nodiscard]] auto upload(ElementType const& data,
+                              size_t offset_bytes = 0) -> tl::expected<void, std::string> {
         return upload(tcb::span{&data, 1}, offset_bytes);
     }
     template <typename ElementType>
-    [[nodiscard]] auto upload(ElementType& data, size_t offset_bytes = 0)
-        -> tl::expected<void, std::string> {
+    [[nodiscard]] auto upload(ElementType& data,
+                              size_t offset_bytes = 0) -> tl::expected<void, std::string> {
         return upload(tcb::span{&data, 1}, offset_bytes);
     }
     // disallow temporary objects
@@ -93,12 +93,10 @@ struct VulkanBufferInfo : VulkanInfo<vk::UniqueBuffer> {
 };
 
 template <typename ElementType, std::size_t Extent>
-[[nodiscard]] auto PTS::Vk::VulkanBufferInfo::create(VulkanDeviceInfo const& dev,
-                                                     VulkanBufferInfo::Type type,
-                                                     vk::DeviceSize size,
-                                                     tcb::span<ElementType, Extent> data,
-                                                     size_t offset_bytes)
-    -> tl::expected<VulkanBufferInfo, std::string> {
+[[nodiscard]] auto PTS::Vk::VulkanBufferInfo::create(
+    VulkanDeviceInfo const& dev, VulkanBufferInfo::Type type, vk::DeviceSize size,
+    tcb::span<ElementType, Extent> data,
+    size_t offset_bytes) -> tl::expected<VulkanBufferInfo, std::string> {
     if (!size) {
         return TL_ERROR("buffer size must be greater than 0");
     }
@@ -181,8 +179,8 @@ template <typename ElementType, std::size_t Extent>
 }
 
 template <typename ElementType, std::size_t Extent>
-auto PTS::Vk::VulkanBufferInfo::upload(tcb::span<ElementType, Extent> data, size_t offset_bytes)
-    -> tl::expected<void, std::string> {
+auto PTS::Vk::VulkanBufferInfo::upload(tcb::span<ElementType, Extent> data,
+                                       size_t offset_bytes) -> tl::expected<void, std::string> {
     if (!m_dev || !*m_dev) {
         return TL_ERROR("device is not valid");
     }

@@ -151,9 +151,7 @@ auto EditorRenderer::init(ObserverPtr<Application> app) noexcept
             TL_TRY_ASSIGN(m_grid_shader, ShaderProgram::from_srcs(descs));
         }
         TL_CHECK_AND_PASS(m_grid_shader->bind());
-        {
-            TL_CHECK_AND_PASS(m_grid_shader->set_uniform(k_uniform_half_grid_dim, half_dim));
-        }
+        { TL_CHECK_AND_PASS(m_grid_shader->set_uniform(k_uniform_half_grid_dim, half_dim)); }
         m_grid_shader->unbind();
 
         return {};
@@ -283,16 +281,12 @@ auto EditorRenderer::open_scene(Ref<Scene> scene) noexcept -> tl::expected<void,
 auto EditorRenderer::on_change_render_config() noexcept -> tl::expected<void, std::string> {
     if (m_render_buf) {
         TL_CHECK_AND_PASS(m_render_buf->bind());
-        {
-            TL_CHECK_AND_PASS(m_render_buf->resize(m_config.width, m_config.height));
-        }
+        { TL_CHECK_AND_PASS(m_render_buf->resize(m_config.width, m_config.height)); }
         m_render_buf->unbind();
     }
     if (m_outline.render_buf) {
         TL_CHECK_AND_PASS(m_outline.render_buf->bind());
-        {
-            TL_CHECK_AND_PASS(m_outline.render_buf->resize(m_config.width, m_config.height));
-        }
+        { TL_CHECK_AND_PASS(m_outline.render_buf->resize(m_config.width, m_config.height)); }
         m_outline.render_buf->unbind();
     }
     return {};
@@ -386,9 +380,8 @@ void EditorRenderer::on_selected_editable_change(ObserverPtr<SceneObject> editab
     }
 }
 
-auto EditorRenderer::on_add_object_internal(PerObjectData& data,
-                                            RenderableObject const& obj) noexcept
-    -> tl::expected<void, std::string> {
+auto EditorRenderer::on_add_object_internal(
+    PerObjectData& data, RenderableObject const& obj) noexcept -> tl::expected<void, std::string> {
     TL_TRY_ASSIGN(data.shader, ShaderProgram::clone(m_default_shader.get()));
     TL_TRY_ASSIGN(data.render_data,
                   GLVertexArray::create_indexed(
@@ -410,8 +403,8 @@ auto EditorRenderer::on_add_object_internal(PerObjectData& data,
 
 #pragma endregion Scene_Change_Callbacks
 
-auto EditorRenderer::draw_outline(View<Camera> cam_view, View<RenderableObject> obj)
-    -> tl::expected<void, std::string> {
+auto EditorRenderer::draw_outline(View<Camera> cam_view,
+                                  View<RenderableObject> obj) -> tl::expected<void, std::string> {
     auto& cam = cam_view.get();
     if (!m_outline.render_buf) {
         // initialize outline states

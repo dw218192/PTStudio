@@ -1,8 +1,8 @@
 #include "vulkanHelper.h"
 
-[[nodiscard]] auto PTS::Vk::do_work_now(VulkanDeviceInfo const& dev, VulkanCmdPoolInfo const& cmd_pool,
-                                        std::function<void(vk::CommandBuffer&)> work)
-    -> tl::expected<void, std::string> {
+[[nodiscard]] auto PTS::Vk::do_work_now(
+    VulkanDeviceInfo const& dev, VulkanCmdPoolInfo const& cmd_pool,
+    std::function<void(vk::CommandBuffer&)> work) -> tl::expected<void, std::string> {
     try {
         auto cmd_bufs = dev->allocateCommandBuffersUnique(
             vk::CommandBufferAllocateInfo{*cmd_pool, vk::CommandBufferLevel::ePrimary, 1});

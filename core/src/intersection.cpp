@@ -48,8 +48,8 @@ HOST DEVICE auto Intersection::ray_box(BoundingBox const& box, Ray const& r) noe
     return Result{true, tmin < 0 ? tmax : tmin};
 }
 
-HOST DEVICE auto Intersection::ray_triangle(glm::vec3 const (&triangle)[3], Ray const& r) noexcept
-    -> Result {
+HOST DEVICE auto Intersection::ray_triangle(glm::vec3 const (&triangle)[3],
+                                            Ray const& r) noexcept -> Result {
     glm::vec2 bary_pos;
     float dist = 0;
     auto const hit = glm::intersectRayTriangle(r.origin, r.direction, triangle[0], triangle[1],
@@ -57,8 +57,8 @@ HOST DEVICE auto Intersection::ray_triangle(glm::vec3 const (&triangle)[3], Ray 
     return Result{hit, dist};
 }
 
-HOST DEVICE auto Intersection::ray_sphere(BoundingSphere const& sphere, Ray const& r) noexcept
-    -> Result {
+HOST DEVICE auto Intersection::ray_sphere(BoundingSphere const& sphere,
+                                          Ray const& r) noexcept -> Result {
     float dist = 0;
     auto const hit = glm::intersectRaySphere(r.origin, r.direction, sphere.center,
                                              sphere.radius * sphere.radius, dist);

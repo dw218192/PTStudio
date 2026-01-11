@@ -1,9 +1,8 @@
 #include "vulkanDescSetInfo.h"
 
-auto PTS::Vk::VulkanDescSetInfo::add_binding(vk::DescriptorSetLayoutBinding binding,
-                                             vk::DescriptorBindingFlags flags,
-                                             vk::WriteDescriptorSet how_to_write)
-    -> VulkanDescSetInfo& {
+auto PTS::Vk::VulkanDescSetInfo::add_binding(
+    vk::DescriptorSetLayoutBinding binding, vk::DescriptorBindingFlags flags,
+    vk::WriteDescriptorSet how_to_write) -> VulkanDescSetInfo& {
     m_bindings.push_back(binding);
     m_flags.push_back(flags);
     m_writes.push_back(how_to_write);

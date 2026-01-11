@@ -4,8 +4,8 @@
 
 using namespace PTS;
 
-auto GLRenderBuffer::create(unsigned width, unsigned height, GLenum format)
-    -> tl::expected<GLRenderBufferRef, std::string> {
+auto GLRenderBuffer::create(unsigned width, unsigned height,
+                            GLenum format) -> tl::expected<GLRenderBufferRef, std::string> {
     GLuint rbo;
     TL_TRY_ASSIGN(rbo, create_buf(width, height, format));
     auto ret =
@@ -20,8 +20,8 @@ auto GLRenderBuffer::operator=(GLRenderBuffer&& other) noexcept -> GLRenderBuffe
     swap(std::move(other));
     return *this;
 }
-auto GLRenderBuffer::resize(unsigned width, unsigned height) noexcept
-    -> tl::expected<void, std::string> {
+auto GLRenderBuffer::resize(unsigned width,
+                            unsigned height) noexcept -> tl::expected<void, std::string> {
     m_width = width;
     m_height = height;
     glRenderbufferStorage(GL_RENDERBUFFER, m_format, width, height);
@@ -43,8 +43,8 @@ void GLRenderBuffer::unbind() noexcept {
     glBindRenderbuffer(GL_RENDERBUFFER, 0);
 }
 
-auto GLRenderBuffer::create_buf(unsigned width, unsigned height, GLenum format) noexcept
-    -> tl::expected<GLuint, std::string> {
+auto GLRenderBuffer::create_buf(unsigned width, unsigned height,
+                                GLenum format) noexcept -> tl::expected<GLuint, std::string> {
     GLuint rbo;
     // create both depth and stencil buffers
     glGenRenderbuffers(1, &rbo);

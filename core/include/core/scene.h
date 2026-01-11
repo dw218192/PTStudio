@@ -28,8 +28,8 @@ struct Scene : Object {
     NODISCARD auto get_good_light_pos() const noexcept -> glm::vec3;
     NODISCARD auto get_scene_bound() const noexcept -> BoundingBox;
 
-    NODISCARD auto ray_cast(Ray const& ray, float t_min = 0.0f, float t_max = 1e5f) noexcept
-        -> ObserverPtr<SceneObject>;
+    NODISCARD auto ray_cast(Ray const& ray, float t_min = 0.0f,
+                            float t_max = 1e5f) noexcept -> ObserverPtr<SceneObject>;
     NODISCARD auto ray_cast_editable(Ray const& ray, float t_min = 0.0f,
                                      float t_max = 1e5f) noexcept -> ObserverPtr<SceneObject>;
     NODISCARD auto size() const noexcept {

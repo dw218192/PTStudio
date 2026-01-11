@@ -106,8 +106,8 @@ constexpr auto get_type_str(ShaderVariableType type) {
 struct UniformVar {
     friend struct ShaderProgram;
 
-    static auto create(GLenum type, GLint loc, std::string_view name) noexcept
-        -> tl::expected<UniformVar, std::string>;
+    static auto create(GLenum type, GLint loc,
+                       std::string_view name) noexcept -> tl::expected<UniformVar, std::string>;
 
     UniformVar() = default;
 

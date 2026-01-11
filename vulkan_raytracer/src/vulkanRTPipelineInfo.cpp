@@ -18,8 +18,8 @@ struct EmbeddedFsIncluder : shaderc::CompileOptions::IncluderInterface {
     DEFAULT_COPY_MOVE(EmbeddedFsIncluder);
 
     auto GetInclude(char const* requested_source, shaderc_include_type type,
-                    char const* requesting_source, size_t include_depth)
-        -> shaderc_include_result* override {
+                    char const* requesting_source,
+                    size_t include_depth) -> shaderc_include_result* override {
         auto const file_path = "shaders/" + std::string{requested_source};
         auto inc_src_res = tl::expected<std::string, std::string>{};
         if (type == shaderc_include_type_standard) {
@@ -124,11 +124,10 @@ struct EmbeddedFsIncluder : shaderc::CompileOptions::IncluderInterface {
 }
 }  // namespace
 
-auto PTS::Vk::VulkanRTPipelineInfo::create(VulkanDeviceInfo const& dev,
-                                           VulkanCmdPoolInfo const& cmd_pool,
-                                           VulkanImageInfo const& output_img,
-                                           VulkanDescSetPoolInfo const& desc_set_pool)
-    -> tl::expected<VulkanRTPipelineInfo, std::string> {
+auto PTS::Vk::VulkanRTPipelineInfo::create(
+    VulkanDeviceInfo const& dev, VulkanCmdPoolInfo const& cmd_pool,
+    VulkanImageInfo const& output_img,
+    VulkanDescSetPoolInfo const& desc_set_pool) -> tl::expected<VulkanRTPipelineInfo, std::string> {
     auto vk_top_accel = VulkanTopAccelStructInfo{};
     TL_TRY_ASSIGN(vk_top_accel, VulkanTopAccelStructInfo::create(dev, cmd_pool));
 

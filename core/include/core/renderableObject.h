@@ -30,10 +30,9 @@ struct RenderableObject : SceneObject {
     RenderableObject(Scene& scene, Transform transform, EditFlags edit_flags, Material mat,
                      tcb::span<Vertex const> vertices, tcb::span<unsigned const> indices);
 
-    NODISCARD static auto from_obj(Scene& scene, EditFlags edit_flags, Material mat,
-                                   std::string_view filename,
-                                   std::string* warning = nullptr) noexcept
-        -> tl::expected<RenderableObject, std::string>;
+    NODISCARD static auto from_obj(
+        Scene& scene, EditFlags edit_flags, Material mat, std::string_view filename,
+        std::string* warning = nullptr) noexcept -> tl::expected<RenderableObject, std::string>;
     NODISCARD static auto make_triangle_obj(Scene& scene, EditFlags edit_flags, Material mat,
                                             Transform trans) noexcept -> RenderableObject;
     NODISCARD static auto make_quad_obj(Scene& scene, EditFlags edit_flags, Material mat,

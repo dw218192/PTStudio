@@ -21,8 +21,8 @@ auto Texture::resize(unsigned width, unsigned height) noexcept -> tl::expected<v
     return {};
 }
 
-auto Texture::save(FileFormat fmt, std::string_view file_path) const noexcept
-    -> tl::expected<void, std::string> {
+auto Texture::save(FileFormat fmt,
+                   std::string_view file_path) const noexcept -> tl::expected<void, std::string> {
     auto res = fetch_pixels();
     if (!res) {
         return tl::make_unexpected(res.error());

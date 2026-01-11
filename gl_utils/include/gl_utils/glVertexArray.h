@@ -104,9 +104,7 @@ auto GLVertexArray::create(tcb::span<VertexType const, Extent> vertex_data,
 
     glBindVertexArray(vao);
     CHECK_GL_ERROR();
-    {
-        TL_CHECK(ret->connect(vertex_data, attris...));
-    }
+    { TL_CHECK(ret->connect(vertex_data, attris...)); }
     glBindVertexArray(0);
 
     return std::move(ret);
@@ -114,10 +112,9 @@ auto GLVertexArray::create(tcb::span<VertexType const, Extent> vertex_data,
 
 template <typename VertexType, std::size_t Extent0, std::size_t Extent1,
           typename... GLAttributeInfos>
-auto GLVertexArray::create_indexed(tcb::span<VertexType const, Extent0> vertex_data,
-                                   tcb::span<unsigned const, Extent1> index_data,
-                                   GLAttributeInfos... attris)
-    -> tl::expected<GLVertexArrayRef, std::string> {
+auto GLVertexArray::create_indexed(
+    tcb::span<VertexType const, Extent0> vertex_data, tcb::span<unsigned const, Extent1> index_data,
+    GLAttributeInfos... attris) -> tl::expected<GLVertexArrayRef, std::string> {
     auto vao = GLuint{};
     glGenVertexArrays(1, &vao);
     CHECK_GL_ERROR();

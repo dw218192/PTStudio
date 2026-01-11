@@ -43,8 +43,8 @@ struct Texture {
      * \param height the new height
      * \return on failure, an error message\n
      */
-    NODISCARD virtual auto resize(unsigned width, unsigned height) noexcept
-        -> tl::expected<void, std::string>;
+    NODISCARD virtual auto resize(unsigned width,
+                                  unsigned height) noexcept -> tl::expected<void, std::string>;
 
     /**
      * \brief Saves the render result to a file
@@ -52,8 +52,8 @@ struct Texture {
      * \param file_path The path to the file to be saved
      * \return on failure, an error message
      */
-    auto save(FileFormat fmt, std::string_view file_path) const noexcept
-        -> tl::expected<void, std::string>;
+    auto save(FileFormat fmt,
+              std::string_view file_path) const noexcept -> tl::expected<void, std::string>;
 
     virtual auto bind() const noexcept -> tl::expected<void, std::string> = 0;
     virtual void unbind() const noexcept = 0;

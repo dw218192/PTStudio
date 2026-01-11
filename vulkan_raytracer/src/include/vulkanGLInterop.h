@@ -83,10 +83,9 @@ auto get_vk_ins_exts() noexcept -> std::vector<std::string_view>;
 auto get_vk_dev_exts() noexcept -> std::vector<std::string_view>;
 auto get_gl_exts() noexcept -> std::vector<std::string_view>;
 
-auto create_shared_image(vk::Device& dev, vk::ImageCreateInfo& img_info,
-                         vk::MemoryPropertyFlags mem_flags,
-                         vk::PhysicalDeviceMemoryProperties mem_info) noexcept
-    -> tl::expected<SharedImage, std::string>;
+auto create_shared_image(
+    vk::Device& dev, vk::ImageCreateInfo& img_info, vk::MemoryPropertyFlags mem_flags,
+    vk::PhysicalDeviceMemoryProperties mem_info) noexcept -> tl::expected<SharedImage, std::string>;
 }  // namespace VulkanGLInteropUtils
 }  // namespace Vk
 }  // namespace PTS

@@ -76,10 +76,10 @@ struct ShaderProgram final : GLResource {
      */
     template <typename UniformType,
               typename = std::enable_if_t<!std::is_same_v<std::decay_t<UniformType>, UniformVar>>>
-    NODISCARD auto set_uniform(std::string_view name, UniformType&& value) noexcept
-        -> tl::expected<void, std::string>;
-    NODISCARD auto set_uniform(std::string_view name, UniformVar var) noexcept
-        -> tl::expected<void, std::string>;
+    NODISCARD auto set_uniform(std::string_view name,
+                               UniformType&& value) noexcept -> tl::expected<void, std::string>;
+    NODISCARD auto set_uniform(std::string_view name,
+                               UniformVar var) noexcept -> tl::expected<void, std::string>;
 
     NODISCARD auto get_uniform_map() const noexcept -> View<UniformMap>;
 
@@ -108,8 +108,8 @@ struct ShaderProgram final : GLResource {
 };
 
 template <typename UniformType, typename>
-auto ShaderProgram::set_uniform(std::string_view name, UniformType&& value) noexcept
-    -> tl::expected<void, std::string> {
+auto ShaderProgram::set_uniform(std::string_view name,
+                                UniformType&& value) noexcept -> tl::expected<void, std::string> {
     using ValueType = std::decay_t<UniformType>;
 
     if (!valid()) {

@@ -52,10 +52,9 @@ auto GLTexture::fetch_pixels() const noexcept -> tl::expected<void, std::string>
     return {};
 }
 
-auto GLTexture::create_tex(unsigned width, unsigned height, GLenum format,
-                           unsigned char const* data,
-                           std::initializer_list<GLParam> params) noexcept
-    -> tl::expected<GLuint, std::string> {
+auto GLTexture::create_tex(
+    unsigned width, unsigned height, GLenum format, unsigned char const* data,
+    std::initializer_list<GLParam> params) noexcept -> tl::expected<GLuint, std::string> {
     GLuint tex;
     glGenTextures(1, &tex);
     CHECK_GL_ERROR();
@@ -103,8 +102,8 @@ auto GLTexture::create(std::string_view img_file, FileFormat type,
     return create(tcb::make_span(img_mem), type, params);
 }
 
-auto GLTexture::create(unsigned width, unsigned height, GLenum format, GLuint handle) noexcept
-    -> tl::expected<GLTextureRef, std::string> {
+auto GLTexture::create(unsigned width, unsigned height, GLenum format,
+                       GLuint handle) noexcept -> tl::expected<GLTextureRef, std::string> {
     auto const channels = get_num_channels(format);
     if (!channels) {
         return TL_ERROR("unsupported image format");
@@ -160,8 +159,8 @@ auto GLTexture::get_id() const noexcept -> void* {
     return reinterpret_cast<void*>(static_cast<uintptr_t>(m_handle));
 }
 
-auto GLTexture::resize(unsigned width, unsigned height) noexcept
-    -> tl::expected<void, std::string> {
+auto GLTexture::resize(unsigned width,
+                       unsigned height) noexcept -> tl::expected<void, std::string> {
     TL_CHECK_AND_PASS(Texture::resize(width, height));
     glTexImage2D(GL_TEXTURE_2D, 0, m_format,  // RGB color format
                  width, height, 0, m_format, GL_UNSIGNED_BYTE, nullptr);
