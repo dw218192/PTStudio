@@ -1,8 +1,8 @@
 #include "vulkanGLInterop.h"
 
-#include <iostream>
+#include <core/utils.h>
 
-#include "utils.h"
+#include <iostream>
 
 auto PTS::Vk::VulkanGLInteropUtils::to_gl_fmt(vk::Format fmt) noexcept -> std::optional<GLenum> {
     // TODO: add more formats if needed
@@ -113,8 +113,8 @@ PTS::Vk::VulkanGLInteropUtils::UniqueSystemHandle::UniqueSystemHandle(
     std::swap(handle, other.handle);
 }
 
-auto PTS::Vk::VulkanGLInteropUtils::UniqueSystemHandle::operator=(UniqueSystemHandle&& other) noexcept
-    -> UniqueSystemHandle& {
+auto PTS::Vk::VulkanGLInteropUtils::UniqueSystemHandle::operator=(
+    UniqueSystemHandle&& other) noexcept -> UniqueSystemHandle& {
     std::swap(handle, other.handle);
     return *this;
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/texture.h>
 #include <stb_image.h>
 
 #include <tcb/span.hpp>
@@ -7,7 +8,6 @@
 #include <type_traits>
 
 #include "glResource.h"
-#include "texture.h"
 
 namespace PTS {
 struct GLTexture;
@@ -17,24 +17,20 @@ struct GLTexture final : Texture, GLResource {
     static constexpr std::initializer_list<GLParam> k_default_params = {
         {GL_TEXTURE_MIN_FILTER, GL_LINEAR}, {GL_TEXTURE_MAG_FILTER, GL_LINEAR}};
 
-    [[nodiscard]] static auto create(
-        unsigned width, unsigned height, GLenum format,
-        std::initializer_list<GLParam> params = k_default_params) noexcept
+    NODISCARD static auto create(unsigned width, unsigned height, GLenum format,
+                                 std::initializer_list<GLParam> params = k_default_params) noexcept
         -> tl::expected<GLTextureRef, std::string>;
 
     template <typename Byte, size_t Extent,
               typename = std::enable_if_t<std::is_integral_v<Byte> && sizeof(Byte) == 1>>
-    [[nodiscard]] static auto create(
-        tcb::span<Byte, Extent> img_mem, FileFormat type,
-        std::initializer_list<GLParam> params = k_default_params) noexcept
+    NODISCARD static auto create(tcb::span<Byte, Extent> img_mem, FileFormat type,
+                                 std::initializer_list<GLParam> params = k_default_params) noexcept
         -> tl::expected<GLTextureRef, std::string>;
-    [[nodiscard]] static auto create(
-        std::string_view img_file, FileFormat type,
-        std::initializer_list<GLParam> params = k_default_params) noexcept
+    NODISCARD static auto create(std::string_view img_file, FileFormat type,
+                                 std::initializer_list<GLParam> params = k_default_params) noexcept
         -> tl::expected<GLTextureRef, std::string>;
-    [[nodiscard]] static auto create(unsigned width, unsigned height, GLenum format,
-                                     GLuint handle) noexcept
-        -> tl::expected<GLTextureRef, std::string>;
+    NODISCARD static auto create(unsigned width, unsigned height, GLenum format,
+                                 GLuint handle) noexcept -> tl::expected<GLTextureRef, std::string>;
 
     GLTexture(GLTexture const&) = delete;
     auto operator=(GLTexture const&) -> GLTexture& = delete;
@@ -42,25 +38,25 @@ struct GLTexture final : Texture, GLResource {
     GLTexture(GLTexture&& other) noexcept;
     auto operator=(GLTexture&& other) noexcept -> GLTexture&;
 
-    [[nodiscard]] auto bind() const noexcept -> tl::expected<void, std::string> override;
+    NODISCARD auto bind() const noexcept -> tl::expected<void, std::string> override;
     void unbind() const noexcept override;
-    [[nodiscard]] auto get_id() const noexcept -> void* override;
-    [[nodiscard]] auto format() const noexcept -> GLenum {
+    NODISCARD auto get_id() const noexcept -> void* override;
+    NODISCARD auto format() const noexcept -> GLenum {
         return m_format;
     }
-    [[nodiscard]] auto resize(unsigned width, unsigned height) noexcept
+    NODISCARD auto resize(unsigned width, unsigned height) noexcept
         -> tl::expected<void, std::string> override;
 
    private:
-    [[nodiscard]] static auto create_tex(unsigned width, unsigned height, GLenum format,
-                                         unsigned char const* data,
-                                         std::initializer_list<GLParam> params) noexcept
+    NODISCARD static auto create_tex(unsigned width, unsigned height, GLenum format,
+                                     unsigned char const* data,
+                                     std::initializer_list<GLParam> params) noexcept
         -> tl::expected<GLuint, std::string>;
 
     void swap(GLTexture&& other) noexcept;
     GLTexture(unsigned width, unsigned height, unsigned channels, GLenum format, GLuint handle);
     ~GLTexture() noexcept override;
-    [[nodiscard]] auto fetch_pixels() const noexcept -> tl::expected<void, std::string> override;
+    NODISCARD auto fetch_pixels() const noexcept -> tl::expected<void, std::string> override;
 
     GLenum m_format;
 };

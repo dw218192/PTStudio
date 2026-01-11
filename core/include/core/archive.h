@@ -1,13 +1,12 @@
 #pragma once
 
-#include <utils.h>
-
 #include <string>
 #include <string_view>
 #include <tl/expected.hpp>
 
 #include "camera.h"
 #include "scene.h"
+#include "utils.h"
 namespace PTS {
 /**
  * \brief Interface for any serializer that can be used to save/load a scene.

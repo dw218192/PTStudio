@@ -6,8 +6,7 @@
                 "path": [
                     "${workspaceFolder}/core/src/include",
                     "${workspaceFolder}/editor/src/include",
-                    "${workspaceFolder}/gl_wrapper/src/include",
-                    "${workspaceFolder}/cuda_pt_renderer/src/include",
+                    "${workspaceFolder}/gl_utils/src/include",
                     "${workspaceFolder}/vulkan_raytracer/src/include",
                     "${workspaceFolder}/ext/**",
                     "${workspaceFolder}/_build/deps/full_deploy/host/**/include",
@@ -15,11 +14,10 @@
                 ]
             },
             "includePath": [
-                "${workspaceFolder}/core/src/include",
-                "${workspaceFolder}/editor/src/include",
-                "${workspaceFolder}/gl_wrapper/src/include",
-                "${workspaceFolder}/cuda_pt_renderer/src/include",
-                "${workspaceFolder}/vulkan_raytracer/src/include",
+                "${workspaceFolder}/core/**/include",
+                "${workspaceFolder}/editor/**/include",
+                "${workspaceFolder}/gl_utils/**/include",
+                "${workspaceFolder}/vulkan_raytracer/**/include",
                 "${workspaceFolder}/ext/**",
                 "${workspaceFolder}/_build/deps/full_deploy/host/**/include",
                 "${workspaceFolder}/_build/*/_cmrc/include"

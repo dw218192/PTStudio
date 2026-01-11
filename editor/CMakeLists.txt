@@ -29,7 +29,7 @@ target_link_libraries(${exec_name}
 PRIVATE
 	$<BUILD_INTERFACE:developer_flags>
 	core
-	gl_wrapper
+	gl_utils
 	glfw
 	imguizmo
 	ImGuiColorTextEdit

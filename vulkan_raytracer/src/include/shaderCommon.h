@@ -1,13 +1,13 @@
 #pragma once
+#include <core/camera.h>
+#include <core/lightData.h>
+#include <core/material.h>
+#include <core/vertex.h>
+
 #include <cstdint>
 #include <glm/glm.hpp>
 #include <string_view>
 #include <tcb/span.hpp>
-
-#include "camera.h"
-#include "lightData.h"
-#include "material.h"
-#include "vertex.h"
 
 namespace PTS {
 namespace Vk {

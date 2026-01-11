@@ -1,5 +1,6 @@
 #pragma once
-#include "utils.h"
+#include <stdexcept>
+
 namespace PTS {
 template <class Derived>
 struct Singleton {
@@ -10,12 +11,12 @@ struct Singleton {
     }
     // Create the singleton instance
     template <typename... Args>
-    static auto create(Args&&... args) noexcept -> tl::expected<void, std::string> {
+    static auto create(Args&&... args) -> Derived& {
         if (p) {
-            return TL_ERROR("Cannot create more than one instance of a singleton type");
+            throw std::runtime_error("Cannot create more than one instance of a singleton type");
         }
-        p = new Derived(std::forward<Args>(args)...);
-        return {};
+        p = new Derived{std::forward<Args>(args)...};
+        return *p;
     }
 
    protected:

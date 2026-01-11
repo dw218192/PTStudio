@@ -1,15 +1,14 @@
 #pragma once
 
+#include <core/application.h>
+#include <core/texture.h>
+#include <core/utils.h>
 #include <imgui.h>
 
 #include <functional>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 #include <list>
-
-#include "application.h"
-#include "texture.h"
-#include "utils.h"
 
 namespace PTS {
 struct BoundingBox;

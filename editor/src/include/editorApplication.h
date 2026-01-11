@@ -1,18 +1,19 @@
 #pragma once
 
+#include <core/archive.h>
+#include <core/callbackList.h>
+#include <core/camera.h>
+#include <core/scene.h>
+#include <core/singleton.h>
+#include <gl_utils/glTexture.h>
+
 #include <array>
 #include <iostream>
 
-#include "archive.h"
-#include "callbackList.h"
-#include "camera.h"
 #include "editorRenderer.h"
-#include "glTexture.h"
 #include "glfwApplication.h"
 #include "imgui/includes.h"
 #include "inputAction.h"
-#include "scene.h"
-#include "singleton.h"
 
 namespace PTS::Editor {
 constexpr auto k_init_move_sensitivity = 5.0f;
@@ -67,7 +68,6 @@ struct EditorApplication final : GLFWApplication, Singleton<EditorApplication> {
     auto handle_input(InputEvent const& event) noexcept -> void override;
     auto on_remove_object(Ref<SceneObject> obj) -> void;
     auto on_add_oject(Ref<SceneObject> obj) -> void;
-    auto on_log_added() -> void override;
     auto get_cur_renderer() noexcept -> Renderer&;
 
     std::string m_console_text;
@@ -109,7 +109,6 @@ struct EditorApplication final : GLFWApplication, Singleton<EditorApplication> {
         } gizmo_state{};
 
         bool unlimited_fps{true};
-        bool disable_log_flush{true};
         int is_changing_scene_cam{0};
 
        private:

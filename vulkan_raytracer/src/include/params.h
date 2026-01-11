@@ -1,7 +1,7 @@
 #pragma once
-#include <glm/glm.hpp>
+#include <core/consts.h>
 
-#include "consts.h"
+#include <glm/glm.hpp>
 
 namespace PTS {
 namespace Vk {

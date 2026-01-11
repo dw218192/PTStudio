@@ -1,11 +1,12 @@
 #include "include/glslHelper.h"
 
+#include <core/embeddedRes.h>
+
 #include <optional>
 #include <regex>
 #include <sstream>
 
-#include "embeddedRes.h"
-#include "include/editorResources.h"
+#include "editorResources.h"
 
 using namespace PTS;
 

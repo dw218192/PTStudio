@@ -1,10 +1,11 @@
-#include "include/shader.h"
+#include "shader.h"
+
+#include <core/enumIter.h>
+#include <core/transactionScope.h>
 
 #include <fstream>
 
-#include "enumIter.h"
 #include "glTexture.h"
-#include "transactionScope.h"
 
 using namespace PTS;
 

@@ -1,5 +1,6 @@
 #pragma once
-#include "utils.h"
+#include <core/utils.h>
+
 #include "vulkanHelper.h"
 
 namespace PTS {
@@ -93,7 +94,8 @@ struct VulkanBufferInfo : VulkanInfo<vk::UniqueBuffer> {
 
 template <typename ElementType, std::size_t Extent>
 [[nodiscard]] auto PTS::Vk::VulkanBufferInfo::create(VulkanDeviceInfo const& dev,
-                                                     VulkanBufferInfo::Type type, vk::DeviceSize size,
+                                                     VulkanBufferInfo::Type type,
+                                                     vk::DeviceSize size,
                                                      tcb::span<ElementType, Extent> data,
                                                      size_t offset_bytes)
     -> tl::expected<VulkanBufferInfo, std::string> {

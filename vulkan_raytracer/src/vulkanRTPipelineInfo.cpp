@@ -1,10 +1,10 @@
 #include "vulkanRTPipelineInfo.h"
 
+#include <core/embeddedRes.h>
+
 #include <cmrc/cmrc.hpp>
 #include <shaderc/shaderc.hpp>
 #include <vector>
-
-#include "embeddedRes.h"
 
 CMRC_DECLARE(vulkan_raytracer_resources);
 CMRC_DECLARE(core_resources);

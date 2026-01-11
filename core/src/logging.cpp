@@ -1,54 +1,88 @@
-#include "include/logging.h"
+#include "logging.h"
 
 #include <spdlog/sinks/stdout_color_sinks.h>
 
-#include <atomic>
+#include <mutex>
 
 namespace PTS {
+namespace Logging {
+
 namespace {
-std::atomic<bool> g_initialized{false};
-LoggingConfig g_config{};
-}  // namespace
 
-auto get_logger(std::string_view name) noexcept -> spdlog::logger& {
-    std::string logger_name{name};
+std::mutex g_mtx;
+Config g_cfg{};
+std::vector<spdlog::sink_ptr> g_sinks;
+bool g_inited = false;
 
-    // Try to get existing logger
-    auto existing_logger = spdlog::get(logger_name);
-    if (existing_logger) {
-        return *existing_logger;
-    }
+void apply_cfg_to_sink(const spdlog::sink_ptr& s) {
+    s->set_pattern(g_cfg.pattern);
+    // keep sink permissive and let logger level filter
+    s->set_level(spdlog::level::trace);
+}
 
-    // Create new logger if it doesn't exist
-    // Use stdout_color_mt for thread-safe colored console logging
-    // If another thread created it concurrently, this will throw, so catch and retry
-    try {
-        auto new_logger = spdlog::stdout_color_mt(logger_name);
-        new_logger->set_level(g_config.level);
-        new_logger->set_pattern(g_config.pattern);
-        return *new_logger;
-    } catch (spdlog::spdlog_ex& ex) {
-        // maybe another thread created it concurrently
-        existing_logger = spdlog::get(logger_name);
-        if (existing_logger) {
-            return *existing_logger;
-        }
-
-        // fallback to default logger
-        fmt::print(stderr, "Failed to create logger, falling back to default logger: {}",
-                   ex.what());
-        auto default_logger = spdlog::default_logger();
-        default_logger->set_level(g_config.level);
-        default_logger->set_pattern(g_config.pattern);
-        return *default_logger;
+void ensure_default_sink() {
+    if (g_sinks.empty()) {
+        auto console = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+        g_sinks.push_back(console);
     }
 }
 
-void init_logging(LoggingConfig const& config) {
-    if (g_initialized.exchange(true)) {
+}  // namespace
+void init_logging(Config const& config) {
+    std::lock_guard lk(g_mtx);
+
+    g_cfg = config;
+    ensure_default_sink();
+
+    for (auto& s : g_sinks) apply_cfg_to_sink(s);
+
+    // update existing loggers too
+    spdlog::apply_all([&](const std::shared_ptr<spdlog::logger>& l) {
+        l->set_level(static_cast<spdlog::level::level_enum>(g_cfg.level));
+        l->set_pattern(g_cfg.pattern);
+    });
+
+    g_inited = true;
+}
+
+void add_sink(spdlog::sink_ptr sink) {
+    if (!g_inited) {
+        spdlog::warn("add_sink() called before init_logging(), sink will not be applied");
         return;
     }
 
-    g_config = config;
+    std::lock_guard lk(g_mtx);
+
+    // apply current config (or defaults if init_logging not called yet)
+    apply_cfg_to_sink(sink);
+
+    // make future loggers inherit it
+    g_sinks.push_back(sink);
+    spdlog::apply_all(
+        [&](const std::shared_ptr<spdlog::logger>& l) { l->sinks().push_back(sink); });
 }
+
+auto get_logger(std::string_view name) noexcept -> spdlog::logger& {
+    std::lock_guard lk(g_mtx);
+
+    if (!g_inited) {
+        ensure_default_sink();
+        for (auto& s : g_sinks) apply_cfg_to_sink(s);
+        g_inited = true;
+    }
+
+    if (auto existing = spdlog::get(std::string{name})) {
+        return *existing;
+    }
+
+    auto logger =
+        std::make_shared<spdlog::logger>(std::string{name}, g_sinks.begin(), g_sinks.end());
+    logger->set_level(static_cast<spdlog::level::level_enum>(g_cfg.level));
+    // optional; sinks already have pattern, but keeps behavior consistent
+    logger->set_pattern(g_cfg.pattern);
+
+    spdlog::register_logger(logger);
+    return *logger;
+}
+}  // namespace Logging
 }  // namespace PTS

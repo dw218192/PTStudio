@@ -1,4 +1,4 @@
-#include "include/glTexture.h"
+#include "glTexture.h"
 
 #include <fstream>
 

@@ -1,11 +1,12 @@
 #pragma once
 
+#include <core/utils.h>
+
 #include <string>
 #include <tcb/span.hpp>
 #include <tl/expected.hpp>
 
 #include "glResource.h"
-#include "utils.h"
 
 namespace PTS {
 struct GLBuffer;
@@ -13,23 +14,23 @@ using GLBufferRef = UniqueGLResRef<GLBuffer>;
 
 struct GLBuffer final : GLResource {
     NO_COPY(GLBuffer);
-    [[nodiscard]] static auto create(GLenum target) -> tl::expected<GLBufferRef, std::string>;
+    NODISCARD static auto create(GLenum target) -> tl::expected<GLBufferRef, std::string>;
 
     GLBuffer(GLBuffer&& other) noexcept;
     auto operator=(GLBuffer&& other) noexcept -> GLBuffer&;
 
     // TODO: might be helpful to store the element type as well
     template <typename T, size_t Extent>
-    [[nodiscard]] auto set_data(tcb::span<T const, Extent> data, GLenum usage = GL_STATIC_DRAW)
+    NODISCARD auto set_data(tcb::span<T const, Extent> data, GLenum usage = GL_STATIC_DRAW)
         -> tl::expected<void, std::string>;
     template <typename T, size_t Extent>
-    [[nodiscard]] auto set_data(tcb::span<T, Extent> data, GLenum usage = GL_STATIC_DRAW)
+    NODISCARD auto set_data(tcb::span<T, Extent> data, GLenum usage = GL_STATIC_DRAW)
         -> tl::expected<void, std::string>;
 
-    [[nodiscard]] auto bind() const noexcept -> tl::expected<void, std::string>;
+    NODISCARD auto bind() const noexcept -> tl::expected<void, std::string>;
     void unbind() const noexcept;
 
-    [[nodiscard]] auto size() const noexcept {
+    NODISCARD auto size() const noexcept {
         return m_size;
     }
 

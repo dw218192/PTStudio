@@ -1,13 +1,12 @@
 #pragma once
 #include <GL/glew.h>
+#include <gl_utils/glTexture.h>
 
 #include <optional>
 #include <string_view>
 #include <tl/expected.hpp>
 #include <vector>
 #include <vulkan/vulkan.hpp>
-
-#include "glTexture.h"
 
 #if defined(_WIN32)
 #ifndef NOMINMAX

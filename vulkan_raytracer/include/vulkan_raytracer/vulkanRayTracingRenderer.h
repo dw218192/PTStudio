@@ -1,15 +1,17 @@
 #pragma once
 
+#include <core/continuousGPUBufferLink.h>
+#include <core/renderer.h>
+
 #include <optional>
 #include <tcb/span.hpp>
 #include <unordered_map>
 #include <vulkan/vulkan.hpp>
 
-#include "continuousGPUBufferLink.h"
-#include "renderer.h"
-#include "vulkanAccelStructInfo.h"
-#include "vulkanHelper.h"
-#include "vulkanRTPipelineInfo.h"
+// TODO: use pointer to impl to avoid exposing implementation details
+#include "../../src/include/vulkanAccelStructInfo.h"
+#include "../../src/include/vulkanHelper.h"
+#include "../../src/include/vulkanRTPipelineInfo.h"
 
 namespace PTS {
 namespace Vk {

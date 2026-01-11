@@ -1,10 +1,10 @@
 #pragma once
+#include <core/utils.h>
+
 #include <functional>
 #include <glm/glm.hpp>
 #include <optional>
 #include <string_view>
-
-#include "utils.h"
 
 namespace PTS {
 enum class InputType { KEYBOARD, MOUSE };

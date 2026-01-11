@@ -44,8 +44,11 @@ PUBLIC
 
 set(PT_CORE_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/include PARENT_SCOPE)
 
-target_include_directories(${lib_name} PUBLIC
-	${CMAKE_CURRENT_SOURCE_DIR}/src/include
+target_include_directories(${lib_name}
+PUBLIC
+	${CMAKE_CURRENT_SOURCE_DIR}/include
+PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}/include/core
 )
 
 # Build unit tests if enabled

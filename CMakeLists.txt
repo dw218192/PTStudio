@@ -85,7 +85,7 @@ include(${EXT_DIR}/cmrc/CMakeRC.cmake)
 add_subdirectory(core)
 
 # renderers
-add_subdirectory(gl_wrapper)
+add_subdirectory(gl_utils)
 add_subdirectory(vulkan_raytracer)
 
 add_subdirectory(editor)

@@ -1,15 +1,14 @@
 #include "vulkanRayTracingRenderer.h"
 
 #include <GLFW/glfw3.h>
+#include <core/application.h>
+#include <core/imgui/reflectedField.h>
 #include <imgui.h>
 
 #include <glm/gtc/type_ptr.hpp>
 #include <iostream>
 #include <shaderc/shaderc.hpp>
 #include <tuple>
-
-#include "application.h"
-#include "imgui/reflectedField.h"
 
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 
@@ -295,7 +294,7 @@ PTS::Vk::VulkanRayTracingRenderer::VulkanRayTracingRenderer(RenderConfig config)
             auto const data = PTS::Vk::VulkanRayTracingShaders::LightBlock::get_mem(
                 static_cast<int>(m_light_data_link.size()),
                 tcb::span{m_light_data_link.data(), m_light_data_link.size()});
-            TL_CHECK_NON_FATAL(m_app, LogLevel::Error, buf->upload(data));
+            TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, buf->upload(data));
         };
 
     m_light_data_link.get_on_erase_callbacks() +=
@@ -303,15 +302,16 @@ PTS::Vk::VulkanRayTracingRenderer::VulkanRayTracingRenderer(RenderConfig config)
             auto const data = PTS::Vk::VulkanRayTracingShaders::LightBlock::get_mem(
                 static_cast<int>(m_light_data_link.size()),
                 tcb::span{m_light_data_link.data(), m_light_data_link.size()});
-            TL_CHECK_NON_FATAL(m_app, LogLevel::Error, buf->upload(data));
+            TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, buf->upload(data));
         };
 
     m_light_data_link.get_on_update_callbacks() +=
         [this](VulkanBufferInfo* buf, Light const* light, LightData const& data) {
             auto id = size_t{};
-            TL_TRY_ASSIGN_NON_FATAL(id, m_app, LogLevel::Error, m_light_data_link.get_idx(light));
+            TL_TRY_ASSIGN_NON_FATAL(id, m_app, Logging::LogLevel::Error,
+                                    m_light_data_link.get_idx(light));
             TL_CHECK_NON_FATAL(
-                m_app, LogLevel::Error,
+                m_app, Logging::LogLevel::Error,
                 buf->upload(data, PTS::Vk::VulkanRayTracingShaders::LightBlock::get_offset(id)));
         };
 }
@@ -392,25 +392,25 @@ auto PTS::Vk::VulkanRayTracingRenderer::open_scene(Ref<Scene> scene) noexcept
 #pragma region Callbacks
 
 auto PTS::Vk::VulkanRayTracingRenderer::on_add_obj(Ref<SceneObject> obj) noexcept -> void {
-    TL_CHECK_NON_FATAL(m_app, LogLevel::Error, add_object(obj));
-    TL_CHECK_NON_FATAL(m_app, LogLevel::Error, reset_path_tracing());
+    TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, add_object(obj));
+    TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, reset_path_tracing());
 }
 
 auto PTS::Vk::VulkanRayTracingRenderer::on_remove_obj(Ref<SceneObject> obj) noexcept -> void {
-    TL_CHECK_NON_FATAL(m_app, LogLevel::Error, remove_object(obj));
-    TL_CHECK_NON_FATAL(m_app, LogLevel::Error, reset_path_tracing());
+    TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, remove_object(obj));
+    TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, reset_path_tracing());
 }
 
 auto PTS::Vk::VulkanRayTracingRenderer::on_obj_world_trans_change(
     SceneObject::callback_data_t<SceneObject::FieldTag::WORLD_TRANSFORM> data) -> void {
-    TL_CHECK_NON_FATAL(m_app, LogLevel::Error, update_obj(data.obj));
-    TL_CHECK_NON_FATAL(m_app, LogLevel::Error, reset_path_tracing());
+    TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, update_obj(data.obj));
+    TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, reset_path_tracing());
 }
 
 auto PTS::Vk::VulkanRayTracingRenderer::on_obj_local_trans_change(
     SceneObject::callback_data_t<SceneObject::FieldTag::LOCAL_TRANSFORM> data) -> void {
-    TL_CHECK_NON_FATAL(m_app, LogLevel::Error, update_obj(data.obj));
-    TL_CHECK_NON_FATAL(m_app, LogLevel::Error, reset_path_tracing());
+    TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, update_obj(data.obj));
+    TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, reset_path_tracing());
 }
 
 auto PTS::Vk::VulkanRayTracingRenderer::on_mat_change(
@@ -419,14 +419,14 @@ auto PTS::Vk::VulkanRayTracingRenderer::on_mat_change(
     if (it != m_rend_obj_data.end()) {
         auto mat_data = PTS::Vk::VulkanRayTracingShaders::MaterialData{data.obj.get_material()};
         TL_CHECK_NON_FATAL(
-            m_app, LogLevel::Error,
+            m_app, Logging::LogLevel::Error,
             m_vk_pipeline.materials_mem.upload(
                 mat_data,
                 it->second.gpu_idx * sizeof(PTS::Vk::VulkanRayTracingShaders::MaterialData)));
     } else {
-        m_app->log(LogLevel::Error, "cannot find object {}", data.obj.get_name());
+        m_app->log(Logging::LogLevel::Error, "cannot find object {}", data.obj.get_name());
     }
-    TL_CHECK_NON_FATAL(m_app, LogLevel::Error, reset_path_tracing());
+    TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, reset_path_tracing());
 }
 
 auto PTS::Vk::VulkanRayTracingRenderer::update_obj(SceneObject const& obj) noexcept
@@ -455,7 +455,7 @@ auto PTS::Vk::VulkanRayTracingRenderer::update_light(Light const& light) noexcep
     try {
         m_light_data_link[idx] = light.get_data();
     } catch (std::out_of_range const& err) {
-        m_app->log(LogLevel::Error, err.what());
+        m_app->log(Logging::LogLevel::Error, err.what());
     }
     return {};
 }
@@ -463,28 +463,28 @@ auto PTS::Vk::VulkanRayTracingRenderer::update_light(Light const& light) noexcep
 auto PTS::Vk::VulkanRayTracingRenderer::on_light_type_change(
     Light::callback_data_t<Light::FieldTag::LIGHT_TYPE> data) -> void {
     if (data.obj.get_type() == LightType::Mesh) {
-        TL_CHECK_NON_FATAL(m_app, LogLevel::Error, m_light_data_link.erase(&data.obj));
+        TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, m_light_data_link.erase(&data.obj));
     } else {
         if (m_light_data_link.get_idx(&data.obj)) {
-            TL_CHECK_NON_FATAL(m_app, LogLevel::Error, update_light(data.obj));
+            TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, update_light(data.obj));
         } else {
-            TL_CHECK_NON_FATAL(m_app, LogLevel::Error,
+            TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error,
                                m_light_data_link.push_back(&data.obj, data.obj.get_data()));
         }
     }
-    TL_CHECK_NON_FATAL(m_app, LogLevel::Error, reset_path_tracing());
+    TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, reset_path_tracing());
 }
 
 auto PTS::Vk::VulkanRayTracingRenderer::on_light_color_change(
     Light::callback_data_t<Light::FieldTag::COLOR> data) -> void {
-    TL_CHECK_NON_FATAL(m_app, LogLevel::Error, update_light(data.obj));
-    TL_CHECK_NON_FATAL(m_app, LogLevel::Error, reset_path_tracing());
+    TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, update_light(data.obj));
+    TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, reset_path_tracing());
 }
 
 auto PTS::Vk::VulkanRayTracingRenderer::on_light_intensity_change(
     Light::callback_data_t<Light::FieldTag::INTENSITY> data) -> void {
-    TL_CHECK_NON_FATAL(m_app, LogLevel::Error, update_light(data.obj));
-    TL_CHECK_NON_FATAL(m_app, LogLevel::Error, reset_path_tracing());
+    TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, update_light(data.obj));
+    TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, reset_path_tracing());
 }
 
 #pragma endregion Callbacks

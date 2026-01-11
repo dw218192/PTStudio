@@ -16,7 +16,10 @@ add_library(${lib_name} STATIC ${src_files})
 
 target_include_directories(${lib_name} 
     PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/vulkan_raytracer
 )
 
 if (WIN32)
@@ -43,7 +46,7 @@ target_link_libraries( ${lib_name}
         $<BUILD_INTERFACE:developer_flags>
     PUBLIC
         core
-        gl_wrapper
+        gl_utils
         glfw
         Vulkan::Headers
         Vulkan::Vulkan

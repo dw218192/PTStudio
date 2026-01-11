@@ -1,5 +1,6 @@
 #pragma once
 #include <GL/glew.h>
+#include <core/utils.h>
 
 #include <memory>
 
@@ -20,10 +21,10 @@ using GLResRef = std::shared_ptr<T>;
 struct GLResource {
     friend struct GLResourceDeleter;
 
-    [[nodiscard]] auto valid() const noexcept -> bool {
+    NODISCARD auto valid() const noexcept -> bool {
         return m_handle != 0;
     }
-    [[nodiscard]] auto handle() const noexcept -> GLuint {
+    NODISCARD auto handle() const noexcept -> GLuint {
         return m_handle;
     }
 

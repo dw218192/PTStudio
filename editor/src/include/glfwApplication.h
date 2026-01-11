@@ -1,13 +1,14 @@
 #pragma once
 
+#include <core/application.h>
+#include <core/callbackList.h>
+
 #include <array>
 #include <bitset>
 #include <functional>
 #include <optional>
 #include <string_view>
 
-#include "application.h"
-#include "callbackList.h"
 #include "debugDrawer.h"
 #include "ext.h"
 #include "inputAction.h"
@@ -85,10 +86,6 @@ struct GLFWApplication : Application {
         return m_min_frame_time;
     }
 
-    auto set_log_flush_interval(float interval_secs) {
-        m_log_flush_interval = interval_secs;
-    }
-
    protected:
     glm::vec2 m_mouse_scroll_delta;
     glm::vec2 m_mouse_pos;
@@ -101,8 +98,6 @@ struct GLFWApplication : Application {
     GLFWwindow* m_window;
     DebugDrawer m_debug_drawer;
     float m_min_frame_time;
-    float m_log_flush_interval{5.0f};
-    float m_log_flush_timer{0.0f};
     float m_delta_time{0.0f};
     std::unordered_map<std::string_view, ImGuiWindowInfo> m_imgui_window_info;
 
