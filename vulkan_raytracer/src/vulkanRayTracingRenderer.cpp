@@ -27,28 +27,48 @@ auto to_cstr_vec(tcb::span<std::string_view> views) -> std::vector<char const*> 
     return res;
 }
 
-auto has_ext(tcb::span<vk::ExtensionProperties const> props, std::string_view ext) -> bool {
-    return std::find_if(props.begin(), props.end(), [&](vk::ExtensionProperties const& prop) {
-               return ext == prop.extensionName;
-           }) != props.end();
+auto check_extensions(tcb::span<vk::ExtensionProperties const> props,
+                      tcb::span<std::string_view> required_exts) -> tl::expected<void, std::string> {
+    auto missing = std::vector<std::string_view>{};
+    for (auto const& ext : required_exts) {
+        auto found = std::find_if(props.begin(), props.end(), [&](vk::ExtensionProperties const& prop) {
+            return ext == prop.extensionName;
+        }) != props.end();
+        if (!found) {
+            missing.push_back(ext);
+        }
+    }
+    if (!missing.empty()) {
+        auto msg = std::string{"Missing extensions: "};
+        for (size_t i = 0; i < missing.size(); ++i) {
+            msg += missing[i];
+            if (i + 1 < missing.size()) msg += ", ";
+        }
+        return TL_ERROR(msg);
+    }
+    return {};
 }
 
-auto has_ext(tcb::span<vk::ExtensionProperties const> props,
-             tcb::span<std::string_view> exts) -> bool {
-    return std::all_of(exts.begin(), exts.end(),
-                       [&](std::string_view ext) { return has_ext(props, ext); });
-}
-
-auto has_layer(tcb::span<vk::LayerProperties const> props, std::string_view layer) -> bool {
-    return std::find_if(props.begin(), props.end(), [&](vk::LayerProperties const& prop) {
-               return layer == prop.layerName;
-           }) != props.end();
-}
-
-auto has_layer(tcb::span<vk::LayerProperties const> props,
-               tcb::span<std::string_view> layers) -> bool {
-    return std::all_of(layers.begin(), layers.end(),
-                       [&](std::string_view layer) { return has_layer(props, layer); });
+auto check_layers(tcb::span<vk::LayerProperties const> props,
+                  tcb::span<std::string_view> required_layers) -> tl::expected<void, std::string> {
+    auto missing = std::vector<std::string_view>{};
+    for (auto const& layer : required_layers) {
+        auto found = std::find_if(props.begin(), props.end(), [&](vk::LayerProperties const& prop) {
+            return layer == prop.layerName;
+        }) != props.end();
+        if (!found) {
+            missing.push_back(layer);
+        }
+    }
+    if (!missing.empty()) {
+        auto msg = std::string{"Missing layers: "};
+        for (size_t i = 0; i < missing.size(); ++i) {
+            msg += missing[i];
+            if (i + 1 < missing.size()) msg += ", ";
+        }
+        return TL_ERROR(msg);
+    }
+    return {};
 }
 
 [[nodiscard]] auto create_instance(tcb::span<std::string_view> required_ins_ext,
@@ -86,9 +106,7 @@ auto has_layer(tcb::span<vk::LayerProperties const> props,
     try {
         // check if all required instance extensions are available
         auto const ext_props = vk::enumerateInstanceExtensionProperties();
-        if (!has_ext(ext_props, required_ins_ext)) {
-            return TL_ERROR("required instance extension not found");
-        }
+        TL_CHECK(check_extensions(ext_props, required_ins_ext));
 
         // check if all layers are available
         auto layers = std::vector<std::string_view>{};
@@ -96,9 +114,7 @@ auto has_layer(tcb::span<vk::LayerProperties const> props,
         layers.push_back("VK_LAYER_KHRONOS_validation");
 #endif
         auto layer_props = vk::enumerateInstanceLayerProperties();
-        if (!has_layer(layer_props, layers)) {
-            return TL_ERROR("required layer not found");
-        }
+        TL_CHECK(check_layers(layer_props, layers));
 
         constexpr auto app_info =
             vk::ApplicationInfo{"PTS::Vk::VulkanRayTracingRenderer", VK_MAKE_VERSION(1, 0, 0),
@@ -130,23 +146,28 @@ template <typename CreateInfoChainType>
         }
 
         auto select_physical_device = [&](std::vector<vk::PhysicalDevice> const& devices)
-            -> std::optional<vk::PhysicalDevice> {
+            -> tl::expected<vk::PhysicalDevice, std::string> {
+            auto error_msgs = std::vector<std::string>{};
             for (auto physical_device : devices) {
-                // return the first device that supports all required extensions
+                auto const props = physical_device.getProperties();
                 auto const ext_props = physical_device.enumerateDeviceExtensionProperties();
-                if (has_ext(ext_props, required_device_ext)) {
+                auto check_result = check_extensions(ext_props, required_device_ext);
+                if (check_result) {
                     return physical_device;
                 }
+                error_msgs.push_back(
+                    fmt::format("Device '{}': {}", props.deviceName.data(), check_result.error()));
             }
-            return std::nullopt;
+            
+            auto msg = std::string{"No suitable physical device found. Checked devices:\n"};
+            for (auto const& err : error_msgs) {
+                msg += "  - " + err + "\n";
+            }
+            return TL_ERROR(msg);
         };
 
         auto physical_device = vk::PhysicalDevice{};
-        if (auto const res = select_physical_device(physical_devices); !res) {
-            return TL_ERROR("no suitable physical device found");
-        } else {
-            physical_device = *res;
-        }
+        TL_TRY_ASSIGN(physical_device, select_physical_device(physical_devices));
 
         // request a single graphics queue
         auto const queue_family_props = physical_device.getQueueFamilyProperties();
