@@ -40,6 +40,7 @@ PUBLIC
 	nativefiledialog
 	tcb-span::tcb-span
 	nlohmann_json::nlohmann_json
+	Boost::filesystem
 )
 
 set(PT_CORE_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/include PARENT_SCOPE)

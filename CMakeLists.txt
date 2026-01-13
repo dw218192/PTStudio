@@ -69,6 +69,7 @@ find_package(fmt REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(tl-expected REQUIRED)
 find_package(nlohmann_json REQUIRED)
+find_package(Boost REQUIRED COMPONENTS filesystem)
 
 # Vulkan support
 find_package(VulkanHeaders REQUIRED)
@@ -89,6 +90,9 @@ add_subdirectory(gl_utils)
 add_subdirectory(vulkan_raytracer)
 
 add_subdirectory(editor)
+
+# plugins
+add_subdirectory(plugins/test_plugin)
 
 # set editor as the start-up project
 set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT editor)
