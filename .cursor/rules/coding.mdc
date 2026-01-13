@@ -8,6 +8,7 @@ alwaysApply: true
 * Preserve **binary compatibility** at DLL boundaries.
 * Make ownership/lifetimes **obvious**.
 * Prefer **simple, testable designs** over cleverness.
+* Do not generate design documents unless explicitly requested.
 
 ---
 
@@ -27,8 +28,8 @@ alwaysApply: true
 
 ### Namespaces and Templates
 
-* **Namespaces:** **Upper CamelCase**
-  Example: `CoreRuntime`, `NetIO`
+* **Namespaces:** **snake_case_with_underscores**
+  Example: `core_runtime`, `net_io`
 * **Template parameters:** **Upper CamelCase**
   Example: `template <typename ValueType>`
 
@@ -45,19 +46,27 @@ alwaysApply: true
 * **Private data members:** `snake_case_` (trailing underscore)
 * **Constants:** `kCamelCase` for `constexpr`/`const`
 * **Macros:** avoid; if required, `UPPER_SNAKE_CASE`
+* **File Names:** **lower camelCase**
+  - Example: `fileReader.cpp`, `httpClient.hpp`
+* **Directory Names:** **snake_case_with_underscores**
+  - Example: `core_runtime`, `net_io`
 
 ---
 
 ## File Layout and Includes (project-specific)
 
-### Public headers
-
-* **Public includes must live in:** `package(app)/include/package_namespace/`
-* Public headers must be stable, minimal, and well-documented.
-
-### Private headers
-
-* Private includes typically live alongside source, e.g.: `package(app)/src/include`
+### Public vs. Private headers
+```
+/api  (ABI-safe, C-like, subset of C++)
+	/core
+		/logging.h
+/include 
+	/core (public header for static internal components)
+    logging.h
+/src
+  /include (private includes that should only visible to the target itself)
+    loggingImpl.h
+```
 
 ### Include hygiene
 

@@ -124,7 +124,13 @@
         "*.def": "cpp",
         "complex": "cpp",
         "source_location": "cpp",
-        "expected": "cpp"
+        "expected": "cpp",
+        "csetjmp": "cpp",
+        "execution": "cpp",
+        "memory_resource": "cpp",
+        "stdfloat": "cpp",
+        "strstream": "cpp",
+        "*.ipp": "cpp"
     },
     "C_Cpp.default.compilerPath": "cl.exe"
 }

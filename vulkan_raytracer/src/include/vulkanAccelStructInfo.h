@@ -1,6 +1,6 @@
 #pragma once
-#include <core/scene.h>
-#include <core/utils.h>
+#include <core/legacy/scene.h>
+#include <core/legacy/utils.h>
 
 #include "vulkanBufferInfo.h"
 #include "vulkanHelper.h"

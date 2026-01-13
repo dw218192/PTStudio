@@ -1,4 +1,5 @@
-#include <core/plugin/pluginAPI.h>
+#include <core/plugin.h>
+
 #include <iostream>
 
 /**
@@ -6,7 +7,7 @@
  * Demonstrates the minimal plugin interface.
  */
 class TestPlugin : public IPlugin {
-public:
+   public:
     TestPlugin() {
         std::cout << "[TestPlugin] Constructor called" << std::endl;
     }
@@ -25,11 +26,4 @@ public:
 };
 
 // Export the plugin using the convenience macro
-PTS_PLUGIN_DEFINE(
-    TestPlugin,
-    PTS_PLUGIN_KIND_TEST,
-    "test_plugin",
-    "Test Plugin",
-    "1.0.0"
-)
-
+PTS_PLUGIN_DEFINE(TestPlugin, PTS_PLUGIN_KIND_TEST, "TestPlugin", "Test Plugin", "1.0.0")

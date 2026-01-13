@@ -1,6 +1,6 @@
 #pragma once
 
-#include <core/texture.h>
+#include <core/legacy/texture.h>
 #include <stb_image.h>
 
 #include <tcb/span.hpp>

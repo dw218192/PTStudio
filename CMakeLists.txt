@@ -92,7 +92,7 @@ add_subdirectory(vulkan_raytracer)
 add_subdirectory(editor)
 
 # plugins
-add_subdirectory(plugins/test_plugin)
+add_subdirectory(plugins)
 
 # set editor as the start-up project
 set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT editor)

@@ -1,6 +1,6 @@
 #include "vulkanGLInterop.h"
 
-#include <core/utils.h>
+#include <core/legacy/utils.h>
 
 #include <iostream>
 

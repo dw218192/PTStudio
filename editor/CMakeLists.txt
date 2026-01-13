@@ -33,7 +33,9 @@ PRIVATE
 	glfw
 	imguizmo
 	ImGuiColorTextEdit
-
+	Boost::stacktrace
+	Boost::stacktrace_from_exception
+	Boost::program_options
 	#renderers
 	vulkan_raytracer
 	#resourcers

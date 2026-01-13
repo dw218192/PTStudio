@@ -1,7 +1,7 @@
 #pragma once
-#include <core/material.h>
-#include <core/reflection.h>
-#include <core/transform.h>
+#include <core/legacy/material.h>
+#include <core/legacy/reflection.h>
+#include <core/legacy/transform.h>
 #include <gl_utils/UniformVar.h>
 
 #include "includes.h"

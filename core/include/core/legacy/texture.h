@@ -23,34 +23,34 @@ struct Texture {
         return m_pixels;
     }
     /**
-     * \brief Gets the width of the render result, in num of pixels.
-     * \return The width of the render result, in num of pixels.
+     * @brief Gets the width of the render result, in num of pixels.
+     * @return The width of the render result, in num of pixels.
      */
     NODISCARD auto get_width() const noexcept {
         return m_width;
     }
     /**
-     * \brief Gets the height of the render result, in num of pixels.
-     * \return The height of the render result, in num of pixels.
+     * @brief Gets the height of the render result, in num of pixels.
+     * @return The height of the render result, in num of pixels.
      */
     NODISCARD auto get_height() const noexcept {
         return m_height;
     }
 
     /**
-     * \brief Changes the height of the texture
-     * \param width the new width
-     * \param height the new height
-     * \return on failure, an error message\n
+     * @brief Changes the height of the texture
+     * @param width the new width
+     * @param height the new height
+     * @return on failure, an error message\n
      */
     NODISCARD virtual auto resize(unsigned width,
                                   unsigned height) noexcept -> tl::expected<void, std::string>;
 
     /**
-     * \brief Saves the render result to a file
-     * \param fmt The file format to be used
-     * \param file_path The path to the file to be saved
-     * \return on failure, an error message
+     * @brief Saves the render result to a file
+     * @param fmt The file format to be used
+     * @param file_path The path to the file to be saved
+     * @return on failure, an error message
      */
     auto save(FileFormat fmt,
               std::string_view file_path) const noexcept -> tl::expected<void, std::string>;

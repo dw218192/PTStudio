@@ -1,10 +1,10 @@
 #pragma once
 
-#include <core/callbackList.h>
-#include <core/consts.h>
-#include <core/continuousGPUBufferLink.h>
-#include <core/enumArray.h>
-#include <core/renderer.h>
+#include <core/legacy/callbackList.h>
+#include <core/legacy/consts.h>
+#include <core/legacy/continuousGPUBufferLink.h>
+#include <core/legacy/enumArray.h>
+#include <core/legacy/renderer.h>
 #include <gl_utils/glFrameBuffer.h>
 #include <gl_utils/glTexture.h>
 #include <gl_utils/glVertexArray.h>

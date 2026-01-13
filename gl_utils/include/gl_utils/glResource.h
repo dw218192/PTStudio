@@ -1,6 +1,6 @@
 #pragma once
 #include <GL/glew.h>
-#include <core/utils.h>
+#include <core/legacy/utils.h>
 
 #include <memory>
 

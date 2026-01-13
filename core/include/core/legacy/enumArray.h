@@ -6,7 +6,7 @@
 
 namespace PTS {
 /**
- * \brief A thin wrapper on top of std::array that allows for strongly typed enum indexing
+ * @brief A thin wrapper on top of std::array that allows for strongly typed enum indexing
  * \tparam Enum the enum type to use for indexing
  * \tparam T the type of the array elements
  * \details NOT meant to be general purpose\n

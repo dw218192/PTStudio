@@ -1,18 +1,16 @@
-#include "jsonArchive.h"
-
+#include <core/legacy/camera.h>
+#include <core/legacy/jsonArchive.h>
+#include <core/legacy/object.h>
+#include <core/legacy/objectID.h>
+#include <core/legacy/scene.h>
+#include <core/legacy/transform.h>
+#include <core/legacy/typeTraitsUtil.h>
+#include <core/legacy/utils.h>
 #include <fmt/format.h>
 
 #include <glm/glm.hpp>
 #include <map>
 #include <unordered_map>
-
-#include "camera.h"
-#include "object.h"
-#include "objectID.h"
-#include "scene.h"
-#include "transform.h"
-#include "typeTraitsUtil.h"
-#include "utils.h"
 
 namespace {
 // used during deserialization

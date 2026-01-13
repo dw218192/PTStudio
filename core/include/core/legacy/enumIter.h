@@ -2,7 +2,7 @@
 #include "utils.h"
 namespace PTS {
 /**
- * \brief Iterator that iterates over all values of an enum class
+ * @brief Iterator that iterates over all values of an enum class
  * \tparam Enum the enum class to iterate over
  * \details NOT meant to be general purpose\n
  * Assumes the enum class has a _COUNT value as the last value\n

@@ -11,3 +11,4 @@ Follow @build.mdc for how to build the project
 
 ## Instructions
 - Work autonomously on user's request and ensure the project can build and all unit tests pass
+    - Use `-b` flag to only perform the build step if no reconfiguration is needed

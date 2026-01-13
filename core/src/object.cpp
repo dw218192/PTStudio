@@ -1,4 +1,4 @@
-#include "object.h"
+#include <core/legacy/object.h>
 
 PTS::Object::Object(ObjectConstructorUsage usage) noexcept {
     if (usage == ObjectConstructorUsage::DEFAULT) {

@@ -1,11 +1,9 @@
-#include "renderableObject.h"
-
+#include <core/legacy/camera.h>
+#include <core/legacy/renderableObject.h>
+#include <core/legacy/scene.h>
 #include <tiny_obj_loader.h>
 
 #include <glm/ext/scalar_constants.hpp>
-
-#include "camera.h"
-#include "scene.h"
 
 PTS::RenderableObject::RenderableObject(ObjectConstructorUsage usage) noexcept
     : SceneObject{usage} {

@@ -1,6 +1,6 @@
 #include "vulkanRTPipelineInfo.h"
 
-#include <core/embeddedRes.h>
+#include <core/legacy/embeddedRes.h>
 
 #include <cmrc/cmrc.hpp>
 #include <shaderc/shaderc.hpp>

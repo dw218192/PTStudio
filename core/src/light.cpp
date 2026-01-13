@@ -1,6 +1,5 @@
-#include "light.h"
-
-#include "scene.h"
+#include <core/legacy/light.h>
+#include <core/legacy/scene.h>
 
 PTS::Light::Light(ObjectConstructorUsage usage) noexcept : SceneObject{usage} {
 }

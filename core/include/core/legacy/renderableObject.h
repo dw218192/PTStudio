@@ -16,7 +16,7 @@
 
 namespace PTS {
 /**
- * \brief If the object is a primitive, this enum will be used to determine which primitive it is
+ * @brief If the object is a primitive, this enum will be used to determine which primitive it is
  */
 enum class PrimitiveType { None, Triangle, Quad, Cube, Sphere };
 

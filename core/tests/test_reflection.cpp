@@ -1,13 +1,14 @@
-#define CATCH_CONFIG_MAIN
-#include <catch2/catch.hpp>
+#define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+#include <core/legacy/reflection.h>
+#include <doctest/doctest.h>
 
-#include "reflection.h"
+#include <algorithm>
 
-TEST_CASE("PTS::Type", "[reflection]") {
+TEST_CASE("PTS::Type") {
     using namespace PTS;
-    SECTION("basic test") {
+    SUBCASE("basic test") {
         // basic types, cv qualifiers are ignored
-        INFO("testing basic types");
+        MESSAGE("testing basic types");
         REQUIRE(PTS::Type::of<int>() == PTS::Type::of<int>());
         REQUIRE(PTS::Type::of<int const>() == PTS::Type::of<int const>());
         REQUIRE(PTS::Type::of<int volatile>() == PTS::Type::of<int>());
@@ -58,7 +59,7 @@ TEST_CASE("PTS::Type", "[reflection]") {
         REQUIRE(PTS::Type::of<int const (&&)(int)>() == PTS::Type::of<int(int)>());
     }
 
-    SECTION("type trait") {
+    SUBCASE("type trait") {
         REQUIRE(PTS::Type::of<int>().is_arithmetic);
         REQUIRE(PTS::Type::of<float>().is_arithmetic);
         REQUIRE(PTS::Type::of<double>().is_arithmetic);
@@ -78,7 +79,7 @@ TEST_CASE("PTS::Type", "[reflection]") {
         REQUIRE(PTS::Type::of<std::function<int(int, float)>>().is_templated);
     }
 
-    SECTION("subtypes") {
+    SUBCASE("subtypes") {
         REQUIRE(PTS::Type::of<int*>().pointed_to_type() == PTS::Type::of<int>());
         REQUIRE(PTS::Type::of<float**>().pointed_to_type() == PTS::Type::of<float*>());
         REQUIRE(PTS::Type::of<int******>()
@@ -100,27 +101,35 @@ TEST_CASE("PTS::Type", "[reflection]") {
                                                      PTS::Type::of<int (*)(void)>()});
     }
 
-    SECTION("templated type") {
+    SUBCASE("templated type") {
         auto type = PTS::Type::of<std::tuple<int, float>>();
         auto template_args = type.template_args();
-        REQUIRE_THAT(template_args, Catch::Matchers::UnorderedEquals(
-                                        std::vector{PTS::Type::of<int>(), PTS::Type::of<float>()}));
+        // doctest doesn't have UnorderedEquals matcher, so we check size and contents
+        REQUIRE(template_args.size() == 2);
+        REQUIRE(std::find(template_args.begin(), template_args.end(), PTS::Type::of<int>()) !=
+                template_args.end());
+        REQUIRE(std::find(template_args.begin(), template_args.end(), PTS::Type::of<float>()) !=
+                template_args.end());
         REQUIRE(type.to_string() == "std::tuple<int, float>");
 
         type = PTS::Type::of<std::vector<int>>();
         template_args = type.template_args();
-        REQUIRE_THAT(template_args,
-                     Catch::Matchers::UnorderedEquals(
-                         std::vector{PTS::Type::of<int>(), PTS::Type::of<std::allocator<int>>()}));
+        REQUIRE(template_args.size() == 2);
+        REQUIRE(std::find(template_args.begin(), template_args.end(), PTS::Type::of<int>()) !=
+                template_args.end());
+        REQUIRE(std::find(template_args.begin(), template_args.end(),
+                          PTS::Type::of<std::allocator<int>>()) != template_args.end());
         REQUIRE(type.to_string() == "std::vector<int, std::allocator<int>>");
 
         type = PTS::Type::of<
             std::pair<std::pair<int, std::pair<std::string, float>>, std::vector<int>>>();
         template_args = type.template_args();
-        REQUIRE_THAT(template_args,
-                     Catch::Matchers::UnorderedEquals(
-                         std::vector{PTS::Type::of<std::pair<int, std::pair<std::string, float>>>(),
-                                     PTS::Type::of<std::vector<int>>()}));
+        REQUIRE(template_args.size() == 2);
+        REQUIRE(std::find(template_args.begin(), template_args.end(),
+                          PTS::Type::of<std::pair<int, std::pair<std::string, float>>>()) !=
+                template_args.end());
+        REQUIRE(std::find(template_args.begin(), template_args.end(),
+                          PTS::Type::of<std::vector<int>>()) != template_args.end());
         REQUIRE(type.to_string() ==
                 "std::pair<std::pair<int, std::pair<std::string<char, "
                 "std::char_traits<char>, std::allocator<char>>, float>>, "
@@ -128,8 +137,9 @@ TEST_CASE("PTS::Type", "[reflection]") {
 
         type = PTS::Type::of<std::function<int(int, float)>>();
         template_args = type.template_args();
-        REQUIRE_THAT(template_args, Catch::Matchers::UnorderedEquals(
-                                        std::vector{PTS::Type::of<int(int, float)>()}));
+        REQUIRE(template_args.size() == 1);
+        REQUIRE(std::find(template_args.begin(), template_args.end(),
+                          PTS::Type::of<int(int, float)>()) != template_args.end());
         REQUIRE(type.to_string() == "std::function<int(int, float)>");
     }
 }
@@ -145,8 +155,8 @@ struct Base {
     END_REFLECT();
 };
 
-TEST_CASE("Reflection Macros", "Reflection") {
-    SECTION("basic member looping") {
+TEST_CASE("Reflection Macros") {
+    SUBCASE("basic member looping") {
         auto field_names = std::array{"x", "y", "z"};
         auto field_types = std::array{"int", "std::vector<int>", "float"};
         Base::for_each_field([&, i = 0](auto field) mutable {
@@ -157,7 +167,7 @@ TEST_CASE("Reflection Macros", "Reflection") {
         });
     }
 
-    SECTION("field info") {
+    SUBCASE("field info") {
         {
             Base b;
             Base::get_field_info<0>().get(b) = 10;
@@ -175,7 +185,7 @@ TEST_CASE("Reflection Macros", "Reflection") {
         }
     }
 
-    SECTION("on change callback") {
+    SUBCASE("on change callback") {
         {
             Base b;
             Base::get_field_info<&Base::x>().get_on_change_callback_list() +=

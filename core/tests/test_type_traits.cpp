@@ -1,3 +1,6 @@
+#define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+#include <doctest/doctest.h>
+
 #include <array>
 #include <deque>
 #include <functional>
@@ -11,7 +14,7 @@
 #include <unordered_set>
 #include <vector>
 
-#include "typeTraitsUtil.h"
+#include <core/legacy/typeTraitsUtil.h>
 
 // ----------------- is_container -----------------
 static_assert(PTS::Traits::is_container_v<std::vector<int>>);
@@ -183,6 +186,12 @@ static_assert(std::is_same_v<PTS::Traits::get_template_args_t<std::vector<int>>,
 static_assert(std::is_same_v<PTS::Traits::get_template_args_t<std::function<int(int, float)>>,
                              std::tuple<int(int, float)>>);
 
-int main() {
-    return 0;
+// Compile-time tests above are checked at compile time.
+// This test case ensures the executable runs and reports success.
+TEST_CASE("Type Traits Compile-Time Tests") {
+    SUBCASE("All static_asserts passed at compile time") {
+        // If we reach here, all static_asserts above have passed
+        REQUIRE(true);
+        MESSAGE("All compile-time type trait tests passed");
+    }
 }

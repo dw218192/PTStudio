@@ -1,12 +1,11 @@
 #pragma once
 
+#include <core/legacy/reflection.h>
+#include <core/legacy/typeTraitsUtil.h>
 #include <imgui.h>
 
 #include <glm/glm.hpp>
 #include <type_traits>
-
-#include "../reflection.h"
-#include "../typeTraitsUtil.h"
 
 namespace ImGui {
 template <typename TemplatedFieldInfo, typename Reflected>

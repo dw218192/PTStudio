@@ -1,6 +1,6 @@
 #include "include/glslHelper.h"
 
-#include <core/embeddedRes.h>
+#include <core/legacy/embeddedRes.h>
 
 #include <optional>
 #include <regex>

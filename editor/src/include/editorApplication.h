@@ -1,14 +1,15 @@
 #pragma once
 
-#include <core/archive.h>
-#include <core/callbackList.h>
-#include <core/camera.h>
-#include <core/scene.h>
-#include <core/singleton.h>
+#include <core/legacy/archive.h>
+#include <core/legacy/callbackList.h>
+#include <core/legacy/camera.h>
+#include <core/legacy/scene.h>
+#include <core/logging.h>
 #include <gl_utils/glTexture.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 
 #include <array>
+#include <cstdlib>
 #include <iostream>
 
 #include "editorRenderer.h"
@@ -22,8 +23,7 @@ constexpr auto k_init_rot_sensitivity = 60.0f;
 constexpr auto k_object_select_mouse_time = 1.0f;
 constexpr auto k_default_renderer_idx = 0;
 
-struct EditorApplication final : GLFWApplication, Singleton<EditorApplication> {
-    friend Singleton;
+struct EditorApplication final : GLFWApplication {
     NO_COPY_MOVE(EditorApplication);
 
     auto add_renderer(std::unique_ptr<Renderer> renderer) noexcept -> void;
@@ -45,8 +45,9 @@ struct EditorApplication final : GLFWApplication, Singleton<EditorApplication> {
    protected:
     auto on_begin_first_loop() -> void override;
 
-   private:
-    EditorApplication(std::string_view name, RenderConfig config);
+   public:
+    EditorApplication(std::string_view name, RenderConfig config,
+                      pts::LoggingManager& logging_manager);
     ~EditorApplication() override = default;
 
     auto create_input_actions() noexcept -> void;
@@ -73,6 +74,7 @@ struct EditorApplication final : GLFWApplication, Singleton<EditorApplication> {
 
     std::string m_console_text;
     std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> m_console_log_sink;
+    pts::LoggingManager* m_logging_manager;
 
     // rendering
     RenderConfig m_config;
@@ -124,7 +126,7 @@ template <typename T, typename E>
 constexpr auto EditorApplication::check_error(tl::expected<T, E> const& res) -> decltype(auto) {
     if (!res) {
         std::cerr << res.error() << std::endl;
-        get().quit(-1);
+        std::exit(-1);
     }
     if constexpr (!std::is_void_v<T>) {
         return res.value();
@@ -135,7 +137,7 @@ template <typename T, typename E>
 constexpr auto EditorApplication::check_error(tl::expected<T, E>&& res) -> decltype(auto) {
     if (!res) {
         std::cerr << res.error() << std::endl;
-        get().quit(-1);
+        std::exit(-1);
     }
     if constexpr (!std::is_void_v<T>) {
         return std::move(res).value();
