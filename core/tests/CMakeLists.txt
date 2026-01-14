@@ -18,6 +18,19 @@ foreach(TEST_NAME IN LISTS TEST_NAMES)
     add_executable(${TEST_NAME} ${TEST_NAME}.cpp)
     target_include_directories(${TEST_NAME} PRIVATE ../include)
     target_link_libraries(${TEST_NAME} PRIVATE doctest::doctest)
+    
+    # Set output directory to bin/tests
+    set_target_properties(${TEST_NAME} PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tests
+    )
+    
+    # Ensure consistent output for multi-config generators
+    foreach(config Debug Release RelWithDebInfo MinSizeRel)
+        string(TOUPPER ${config} config_upper)
+        set_target_properties(${TEST_NAME} PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY_${config_upper} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tests
+        )
+    endforeach()
 endforeach()
 
 # Enable CTest integration

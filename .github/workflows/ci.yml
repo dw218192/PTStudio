@@ -2,47 +2,139 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master, develop ]
   pull_request:
+    branches: [ main, master, develop ]
   workflow_dispatch:
 
 jobs:
-  check:
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    runs-on: windows-latest
-    steps:
-       # intentionally without submodules since all the checking commands won't need stuff in /ext
-       # if this assumption changes, we need to add submodules here
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Bootstrap tooling
-        shell: pwsh
-        run: |
-          .\tools\bootstrap.ps1
-
-      - name: Check formatting
-        shell: pwsh
-        run: |
-          .\pts.cmd format --verify
-
   build:
-    needs: check
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    runs-on: windows-latest
+    name: Build (${{ matrix.os }}, ${{ matrix.build_type }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest]
+        build_type: [Debug, Release]
+        include:
+          - os: windows-latest
+            pts_script: pts.cmd
+            bootstrap_script: tools/bootstrap.ps1
+            shell: pwsh
+          # Future Linux/Mac support:
+          # - os: ubuntu-latest
+          #   pts_script: pts.sh
+          #   bootstrap_script: tools/bootstrap.sh
+          #   shell: bash
+          # - os: macos-latest
+          #   pts_script: pts.sh
+          #   bootstrap_script: tools/bootstrap.sh
+          #   shell: bash
+    
     steps:
-      - name: Checkout (with submodules)
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Bootstrap tooling
-        shell: pwsh
-        run: |
-          .\tools\bootstrap.ps1
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
-      - name: Configure Conan + build
-        shell: pwsh
+      - name: Cache Python dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            _tools/venv
+            _tools/cache
+          key: ${{ runner.os }}-python-${{ hashFiles('tools/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-python-
+
+      - name: Cache Conan packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.conan2
+            _build/deps
+          key: ${{ runner.os }}-conan-${{ hashFiles('conanfile.py', 'conan.lock') }}-${{ matrix.build_type }}
+          restore-keys: |
+            ${{ runner.os }}-conan-${{ hashFiles('conanfile.py') }}-${{ matrix.build_type }}
+            ${{ runner.os }}-conan-
+
+      - name: Bootstrap build environment
+        shell: ${{ matrix.shell }}
         run: |
-          .\pts.cmd build --build-type Release
-          .\pts.cmd build --build-type Debug
+          ./${{ matrix.bootstrap_script }}
+
+      - name: Build project
+        shell: ${{ matrix.shell }}
+        run: |
+          ./${{ matrix.pts_script }} build --build-type ${{ matrix.build_type }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts-${{ matrix.os }}-${{ matrix.build_type }}
+          path: |
+            _build/${{ matrix.build_type }}/bin/
+          retention-days: 3
+
+  test:
+    name: Test (${{ matrix.os }}, ${{ matrix.build_type }})
+    runs-on: ${{ matrix.os }}
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest]
+        build_type: [Debug, Release]
+        include:
+          - os: windows-latest
+            pts_script: pts.cmd
+            bootstrap_script: tools/bootstrap.ps1
+            shell: pwsh
+          # Future Linux/Mac support:
+          # - os: ubuntu-latest
+          #   pts_script: pts.sh
+          #   bootstrap_script: tools/bootstrap.sh
+          #   shell: bash
+          # - os: macos-latest
+          #   pts_script: pts.sh
+          #   bootstrap_script: tools/bootstrap.sh
+          #   shell: bash
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Bootstrap build environment
+        shell: ${{ matrix.shell }}
+        run: |
+          ./${{ matrix.bootstrap_script }}
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts-${{ matrix.os }}-${{ matrix.build_type }}
+          path: _build/${{ matrix.build_type }}/bin/
+
+      - name: Run tests
+        shell: ${{ matrix.shell }}
+        run: |
+          ./${{ matrix.pts_script }} test --build-type ${{ matrix.build_type }}
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}-${{ matrix.build_type }}
+          path: |
+            _logs/
+          retention-days: 3

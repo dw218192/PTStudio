@@ -1,0 +1,51 @@
+# Ensures proper line endings for shell scripts across platforms
+
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Shell scripts must use LF (Unix line endings)
+*.sh text eol=lf
+pts.sh text eol=lf
+
+# Windows scripts use CRLF
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+pts.cmd text eol=crlf
+
+# Python files use LF
+*.py text eol=lf
+
+# C++ files use LF
+*.cpp text eol=lf
+*.h text eol=lf
+*.hpp text eol=lf
+*.c text eol=lf
+
+# CMake files use LF
+*.cmake text eol=lf
+CMakeLists.txt text eol=lf
+
+# YAML files use LF
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Markdown files use LF
+*.md text eol=lf
+
+# Binary files
+*.dll binary
+*.exe binary
+*.so binary
+*.dylib binary
+*.a binary
+*.lib binary
+*.obj binary
+*.o binary
+*.pdb binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ttf binary
+*.otf binary
+

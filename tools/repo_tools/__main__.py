@@ -6,6 +6,7 @@ from pathlib import Path
 
 from repo_tools.build import register_build_command
 from repo_tools.format import register_format_command
+from repo_tools.test import register_test_command
 
 
 def main() -> None:
@@ -18,6 +19,7 @@ def main() -> None:
     # Register tooling commands
     register_build_command(subparsers)
     register_format_command(subparsers)
+    register_test_command(subparsers)
 
     args = parser.parse_args()
     args.func(args)
