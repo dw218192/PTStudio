@@ -8,28 +8,26 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
-    name: Build (${{ matrix.os }}, ${{ matrix.build_type }})
-    runs-on: ${{ matrix.os }}
+  # =============================================================================
+  # Windows Build & Test (Current Platform)
+  # =============================================================================
+  # To add Linux/macOS support in the future:
+  # 1. Duplicate these jobs with appropriate suffixes (e.g., build-linux, test-linux)
+  # 2. Change runs-on to ubuntu-latest or macos-latest
+  # 3. Change shell to bash and use ./pts.sh instead of .\pts.cmd
+  # 4. Adjust cache paths (~/.conan2 works on Linux/macOS too)
+  
+  build-windows:
+    name: Build (Windows, ${{ matrix.build_type }})
+    runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest]
         build_type: [Debug, Release]
-        include:
-          - os: windows-latest
-            pts_script: pts.cmd
-            bootstrap_script: tools/bootstrap.ps1
-            shell: pwsh
-          # Future Linux/Mac support:
-          # - os: ubuntu-latest
-          #   pts_script: pts.sh
-          #   bootstrap_script: tools/bootstrap.sh
-          #   shell: bash
-          # - os: macos-latest
-          #   pts_script: pts.sh
-          #   bootstrap_script: tools/bootstrap.sh
-          #   shell: bash
+    
+    defaults:
+      run:
+        shell: pwsh
     
     steps:
       - name: Checkout repository
@@ -48,9 +46,9 @@ jobs:
           path: |
             _tools/venv
             _tools/cache
-          key: ${{ runner.os }}-python-${{ hashFiles('tools/requirements.txt') }}
+          key: windows-python-${{ hashFiles('tools/requirements.txt') }}
           restore-keys: |
-            ${{ runner.os }}-python-
+            windows-python-
 
       - name: Cache Conan packages
         uses: actions/cache@v4
@@ -58,52 +56,36 @@ jobs:
           path: |
             ~/.conan2
             _build/deps
-          key: ${{ runner.os }}-conan-${{ hashFiles('conanfile.py', 'conan.lock') }}-${{ matrix.build_type }}
+          key: windows-conan-${{ hashFiles('conanfile.py', 'conan.lock') }}-${{ matrix.build_type }}
           restore-keys: |
-            ${{ runner.os }}-conan-${{ hashFiles('conanfile.py') }}-${{ matrix.build_type }}
-            ${{ runner.os }}-conan-
+            windows-conan-${{ hashFiles('conanfile.py') }}-${{ matrix.build_type }}
+            windows-conan-
 
       - name: Bootstrap build environment
-        shell: ${{ matrix.shell }}
-        run: |
-          ./${{ matrix.bootstrap_script }}
+        run: .\tools\bootstrap.ps1
 
       - name: Build project
-        shell: ${{ matrix.shell }}
-        run: |
-          ./${{ matrix.pts_script }} build --build-type ${{ matrix.build_type }}
+        run: .\pts.cmd build --build-type ${{ matrix.build_type }}
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: build-artifacts-${{ matrix.os }}-${{ matrix.build_type }}
-          path: |
-            _build/${{ matrix.build_type }}/bin/
+          name: build-windows-${{ matrix.build_type }}
+          path: _build/${{ matrix.build_type }}/bin/
           retention-days: 3
 
-  test:
-    name: Test (${{ matrix.os }}, ${{ matrix.build_type }})
-    runs-on: ${{ matrix.os }}
-    needs: build
+  test-windows:
+    name: Test (Windows, ${{ matrix.build_type }})
+    runs-on: windows-latest
+    needs: build-windows
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest]
         build_type: [Debug, Release]
-        include:
-          - os: windows-latest
-            pts_script: pts.cmd
-            bootstrap_script: tools/bootstrap.ps1
-            shell: pwsh
-          # Future Linux/Mac support:
-          # - os: ubuntu-latest
-          #   pts_script: pts.sh
-          #   bootstrap_script: tools/bootstrap.sh
-          #   shell: bash
-          # - os: macos-latest
-          #   pts_script: pts.sh
-          #   bootstrap_script: tools/bootstrap.sh
-          #   shell: bash
+    
+    defaults:
+      run:
+        shell: pwsh
     
     steps:
       - name: Checkout repository
@@ -115,26 +97,21 @@ jobs:
           python-version: '3.12'
 
       - name: Bootstrap build environment
-        shell: ${{ matrix.shell }}
-        run: |
-          ./${{ matrix.bootstrap_script }}
+        run: .\tools\bootstrap.ps1
 
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: build-artifacts-${{ matrix.os }}-${{ matrix.build_type }}
+          name: build-windows-${{ matrix.build_type }}
           path: _build/${{ matrix.build_type }}/bin/
 
       - name: Run tests
-        shell: ${{ matrix.shell }}
-        run: |
-          ./${{ matrix.pts_script }} test --build-type ${{ matrix.build_type }}
+        run: .\pts.cmd test --build-type ${{ matrix.build_type }}
 
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results-${{ matrix.os }}-${{ matrix.build_type }}
-          path: |
-            _logs/
+          name: test-results-windows-${{ matrix.build_type }}
+          path: _logs/
           retention-days: 3
