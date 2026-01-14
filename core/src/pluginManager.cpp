@@ -35,6 +35,7 @@ void PluginManager::setup_host_api() {
     m_host_api.log_critical = &PluginManager::log_critical_impl;
     m_host_api.log_debug = &PluginManager::log_debug_impl;
     m_host_api.log_trace = &PluginManager::log_trace_impl;
+    m_host_api.is_level_enabled = &PluginManager::is_level_enabled_impl;
     m_host_api.get_plugin_handle = &PluginManager::get_plugin_handle_impl;
     m_host_api.query_interface = &PluginManager::query_interface_impl;
 }
@@ -82,6 +83,43 @@ void PluginManager::log_trace_impl(LoggerHandle logger, const char* message) {
     if (logger && message) {
         static_cast<spdlog::logger*>(logger)->trace(message);
     }
+}
+
+bool PluginManager::is_level_enabled_impl(LoggerHandle logger, PtsLogLevel level) {
+    if (!logger) {
+        return false;
+    }
+
+    auto* spd_logger = static_cast<spdlog::logger*>(logger);
+    spdlog::level::level_enum spd_level = spdlog::level::off;
+
+    switch (level) {
+        case PTS_LOG_LEVEL_TRACE:
+            spd_level = spdlog::level::trace;
+            break;
+        case PTS_LOG_LEVEL_DEBUG:
+            spd_level = spdlog::level::debug;
+            break;
+        case PTS_LOG_LEVEL_INFO:
+            spd_level = spdlog::level::info;
+            break;
+        case PTS_LOG_LEVEL_WARNING:
+            spd_level = spdlog::level::warn;
+            break;
+        case PTS_LOG_LEVEL_ERROR:
+            spd_level = spdlog::level::err;
+            break;
+        case PTS_LOG_LEVEL_CRITICAL:
+            spd_level = spdlog::level::critical;
+            break;
+        case PTS_LOG_LEVEL_OFF:
+            spd_level = spdlog::level::off;
+            break;
+        default:
+            return false;
+    }
+
+    return spd_logger->should_log(spd_level);
 }
 
 PluginHandle PluginManager::get_plugin_handle_impl(const char* plugin_id) {

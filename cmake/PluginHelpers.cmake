@@ -19,7 +19,7 @@
 # Parameters:
 #   NAME         - Name of the plugin target (required)
 #   SOURCES      - List of source files for the plugin (required)
-#   DEPENDENCIES - Optional list of target dependencies (e.g., core::api, other libraries)
+#   DEPENDENCIES - Optional list of external dependencies
 #
 # The function automatically:
 #   - Creates a shared library target
@@ -48,7 +48,6 @@ function(pts_add_plugin)
     # Create the shared library target
     add_library(${PLUGIN_NAME} SHARED ${PLUGIN_SOURCES})
 
-    # Link dependencies (always include core::api)
     target_link_libraries(${PLUGIN_NAME} PRIVATE core::api)
     if(PLUGIN_DEPENDENCIES)
         target_link_libraries(${PLUGIN_NAME} PRIVATE ${PLUGIN_DEPENDENCIES})

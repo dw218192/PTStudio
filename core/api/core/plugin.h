@@ -25,6 +25,16 @@ typedef void* PluginHandle;
 typedef void* LoggerHandle;
 
 typedef enum {
+    PTS_LOG_LEVEL_TRACE = 0,
+    PTS_LOG_LEVEL_DEBUG = 1,
+    PTS_LOG_LEVEL_INFO = 2,
+    PTS_LOG_LEVEL_WARNING = 3,
+    PTS_LOG_LEVEL_ERROR = 4,
+    PTS_LOG_LEVEL_CRITICAL = 5,
+    PTS_LOG_LEVEL_OFF = 6,
+} PtsLogLevel;
+
+typedef enum {
     PTS_PLUGIN_KIND_SUBSYSTEM = 0,
     PTS_PLUGIN_KIND_RENDERER = 1,
 } PtsPluginKind;
@@ -41,6 +51,7 @@ typedef struct {
     void (*log_critical)(LoggerHandle logger, const char* message);
     void (*log_debug)(LoggerHandle logger, const char* message);
     void (*log_trace)(LoggerHandle logger, const char* message);
+    bool (*is_level_enabled)(LoggerHandle logger, PtsLogLevel level);
 
     PluginHandle (*get_plugin_handle)(const char* plugin_id);
     void* (*query_interface)(PluginHandle plugin_handle, const char* iid);
