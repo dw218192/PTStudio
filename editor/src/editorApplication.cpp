@@ -1,17 +1,17 @@
 #include "editorApplication.h"
 
-#include <core/boundingVolume.h>
-#include <core/camera.h>
 #include <core/imgui/fileDialogue.h>
 #include <core/imgui/imhelper.h>
 #include <core/imgui/reflectedField.h>
-#include <core/intersection.h>
-#include <core/jsonArchive.h>
-#include <core/light.h>
+#include <core/legacy/boundingVolume.h>
+#include <core/legacy/camera.h>
+#include <core/legacy/intersection.h>
+#include <core/legacy/jsonArchive.h>
+#include <core/legacy/light.h>
+#include <core/legacy/renderableObject.h>
+#include <core/legacy/scene.h>
+#include <core/legacy/sceneObject.h>
 #include <core/logging.h>
-#include <core/renderableObject.h>
-#include <core/scene.h>
-#include <core/sceneObject.h>
 #include <imgui_internal.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 #include <vulkan_raytracer/vulkanRayTracingRenderer.h>
@@ -32,11 +32,13 @@ static constexpr auto k_scene_view_win_name = "Scene";
 static constexpr auto k_console_win_name = "Console";
 static constexpr auto k_console_log_buffer_size = 1024;
 
-EditorApplication::EditorApplication(std::string_view name, RenderConfig config)
+EditorApplication::EditorApplication(std::string_view name, RenderConfig config,
+                                     pts::LoggingManager& logging_manager)
     : GLFWApplication{name, config.width, config.height, config.min_frame_time},
       m_config{config},
       m_cam{config.fovy, config.get_aspect(), LookAtParams{}},
-      m_archive{new JsonArchive} {
+      m_archive{new JsonArchive},
+      m_logging_manager{&logging_manager} {
     // default renderers
     add_renderer(std::make_unique<EditorRenderer>(config));
     add_renderer(std::make_unique<Vk::VulkanRayTracingRenderer>(config));
@@ -58,9 +60,9 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config)
     // logging
     m_console_log_sink =
         std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(k_console_log_buffer_size);
-    Logging::add_sink(m_console_log_sink);
+    m_logging_manager->add_sink(m_console_log_sink);
 
-    log(Logging::LogLevel::Info, "EditorApplication created");
+    log(pts::LogLevel::Info, "EditorApplication created");
 }
 
 auto EditorApplication::create_input_actions() noexcept -> void {
@@ -255,7 +257,7 @@ auto EditorApplication::wrap_mouse_pos() noexcept -> void {
 
 auto EditorApplication::add_renderer(std::unique_ptr<Renderer> renderer) noexcept -> void {
     if (!renderer) {
-        this->log(Logging::LogLevel::Error, "add_renderer(): renderer is null");
+        this->log(pts::LogLevel::Error, "add_renderer(): renderer is null");
         return;
     }
 
@@ -400,7 +402,7 @@ auto EditorApplication::draw_scene_panel() noexcept -> void {
                 if (!editable.is_editable()) {
                     // should not be possible, objects with _NoEdit flag should not be in the
                     // editable list
-                    this->log(Logging::LogLevel::Error,
+                    this->log(pts::LogLevel::Error,
                               "Editable with _NoEdit flag found in m_scene.get_editables()");
                     continue;
                 }
@@ -457,7 +459,7 @@ auto EditorApplication::draw_scene_panel() noexcept -> void {
                     auto obj = check_error(RenderableObject::from_obj(m_scene, k_editable_flags,
                                                                       Material{}, path, &warning));
                     m_scene.emplace_object<RenderableObject>(std::move(obj));
-                    this->log(Logging::LogLevel::Warning, warning);
+                    this->log(pts::LogLevel::Warning, warning);
                 }
             }
             if (ImGui::MenuItem("Add Light")) {
@@ -645,7 +647,7 @@ auto EditorApplication::try_select_object() noexcept -> void {
     auto pos = ImGui::GetMousePos();
     auto const win_pos = get_window_content_pos(k_scene_view_win_name);
     if (!win_pos) {
-        this->log(Logging::LogLevel::Error, "scene view not found");
+        this->log(pts::LogLevel::Error, "scene view not found");
         return;
     }
     if (get_cur_hovered_widget() != k_scene_view_win_name) {
@@ -693,7 +695,7 @@ auto EditorApplication::on_add_oject(Ref<SceneObject> obj) -> void {
 auto EditorApplication::get_cur_renderer() noexcept -> Renderer& {
     if (m_control_state.cur_renderer_idx >= m_renderers.size() ||
         m_control_state.cur_renderer_idx < 0) {
-        this->log(Logging::LogLevel::Error, "the current renderer is no longer valid");
+        this->log(pts::LogLevel::Error, "the current renderer is no longer valid");
         m_control_state.cur_renderer_idx = k_default_renderer_idx;
     }
 

@@ -1,8 +1,8 @@
 #pragma once
 
-#include <core/application.h>
-#include <core/texture.h>
-#include <core/utils.h>
+#include <core/legacy/application.h>
+#include <core/legacy/texture.h>
+#include <core/legacy/utils.h>
 #include <imgui.h>
 
 #include <functional>

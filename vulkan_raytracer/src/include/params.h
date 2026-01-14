@@ -1,5 +1,5 @@
 #pragma once
-#include <core/consts.h>
+#include <core/legacy/consts.h>
 
 #include <glm/glm.hpp>
 

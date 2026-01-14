@@ -1,0 +1,6 @@
+---
+alwaysApply: true
+---
+This project is undergoing a major refactor to
+1. make the codebase more maintainable
+2. transition to a better architecture so that renderers are truly modular/pluggable and the ownership of resources is clearer.

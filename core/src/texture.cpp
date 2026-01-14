@@ -1,4 +1,4 @@
-#include "texture.h"
+#include <core/legacy/texture.h>
 
 #include "stb_image_write.h"
 

@@ -17,6 +17,8 @@ class PTStudioConan(ConanFile):
     default_options = {
         "pathtracer": False,
         "build_tests": True,
+        # Boost configuration - need filesystem for DLL loading
+        "boost/*:without_filesystem": False,
     }
     generators = "CMakeDeps"
 
@@ -37,6 +39,7 @@ class PTStudioConan(ConanFile):
         self.requires("tcb-span/[>=0]")
         self.requires("tl-expected/[>=0]")
         self.requires("doctest/[>=0]")
+        self.requires("boost/[>=0]")
 
         # Vulkan support
         self.requires("vulkan-headers/[>=0]")

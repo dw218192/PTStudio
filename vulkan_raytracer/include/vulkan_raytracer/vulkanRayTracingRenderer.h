@@ -1,7 +1,7 @@
 #pragma once
 
-#include <core/continuousGPUBufferLink.h>
-#include <core/renderer.h>
+#include <core/legacy/continuousGPUBufferLink.h>
+#include <core/legacy/renderer.h>
 
 #include <optional>
 #include <tcb/span.hpp>

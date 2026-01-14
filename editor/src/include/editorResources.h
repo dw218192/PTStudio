@@ -1,6 +1,6 @@
 #pragma once
-#include <core/enumArray.h>
-#include <core/lightData.h>
+#include <core/legacy/enumArray.h>
+#include <core/legacy/lightData.h>
 #include <gl_utils/shaderType.h>
 
 #include <cmrc/cmrc.hpp>

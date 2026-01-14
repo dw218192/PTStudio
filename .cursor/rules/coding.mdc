@@ -1,0 +1,240 @@
+---
+alwaysApply: true
+---
+
+## Rules
+* Do not generate design or change summary documents unless explicitly requested.
+* Do not generate unit tests for a new feature unless explicitly requested.
+* Do not generate example code to demonstrate the usage of a new feature unless explicitly requested.
+
+## Goals
+
+* Keep code **readable**, **safe**, and **maintainable**.
+* Preserve **binary compatibility** at DLL boundaries.
+* Make ownership/lifetimes **obvious**.
+* Prefer **simple, testable designs** over cleverness.
+
+---
+
+## Language and Standard Library
+
+* **C++17** is the baseline.
+* Prefer the standard library. Use Boost where blessed (notably `boost::span`, and `boost::result` per public API error handling rules below).
+
+---
+
+## Naming Conventions (project-specific)
+
+### Types
+
+* **Class names:** **lower camelCase**
+  Example: `fileReader`, `httpClient`
+
+### Namespaces and Templates
+
+* **Namespaces:** **snake_case_with_underscores**
+  Example: `core_runtime`, `net_io`
+* **Template parameters:** **Upper CamelCase**
+  Example: `template <typename ValueType>`
+
+### Functions and Parameters (project-specific)
+
+* **Class methods:** **snake_case_with_underscores**
+  Example: `read_file()`, `parse_json()`
+* **Parameters:** **snake_case_with_underscores**
+  Example: `int retry_count`, `std::string_view file_name`
+
+### Additional naming rules (recommended)
+
+* **Local variables:** `snake_case`
+* **Private data members:** `m_snake_case` (prefixed with `m_`)
+* **Constants:** `kCamelCase` for `constexpr`/`const`
+* **Macros:** avoid; if required, `UPPER_SNAKE_CASE`
+* **File Names:** **lower camelCase**
+  - Example: `fileReader.cpp`, `httpClient.hpp`
+* **Directory Names:** **snake_case_with_underscores**
+  - Example: `core_runtime`, `net_io`
+
+---
+
+## File Layout and Includes (project-specific)
+
+### Public vs. Private headers
+```
+/api  (ABI-safe, C-like, subset of C++)
+	/core
+		/logging.h
+/include 
+	/core (public header for static internal components)
+    logging.h
+/src
+  /include (private includes that should only visible to the target itself)
+    loggingImpl.h
+```
+
+### Include hygiene
+
+* Use `#pragma once`.
+* Include what you use; do not rely on transitive includes.
+* Prefer forward declarations in headers where practical.
+* Keep headers lightweight.
+
+Suggested include order:
+
+* Corresponding header (`"foo.h"`)
+* C++ standard headers (`<vector>`)
+* Third-party headers (`<boost/span.hpp>`)
+* Project headers (`"CoreRuntime/bar.h"`)
+
+---
+
+## ABI and Public API Boundary Rules (project-specific)
+
+### ABI-safe types only on DLL/public API boundaries
+
+At DLL/public boundaries, only use ABI-stable types:
+
+* Fixed-width integers (`std::int32_t`, etc.)
+* `double`, `bool` (carefully), POD/standard-layout structs with fixed layout
+* Opaque handles / pointers to incomplete types (PIMPL/handles)
+
+Avoid exporting across boundaries:
+
+* `std::string`, `std::vector`, `std::optional`, `std::variant` (unless ABI and CRT/allocator constraints are explicitly guaranteed)
+* Exceptions crossing the boundary
+* Exported templates (unless explicitly intended header-only)
+
+Recommended pattern:
+
+```cpp
+struct subsystem;                      // incomplete type
+using subsystem_handle = subsystem*;   // opaque handle
+```
+
+---
+
+## Error Handling and `noexcept` (project-specific)
+
+### Internal code
+
+* Inside a subsystem, prefer exceptions for “can’t proceed” errors.
+* Keep invariants strong: constructors establish valid objects or throw (internally).
+
+### Public API boundary (required)
+
+* Public API boundary functions must be **`noexcept`**.
+* Public API boundary must use **error codes + `boost::result`** (not exceptions).
+
+Rules:
+
+* If a function returns **no value**, return an `error_code` (or `boost::result<void, error_code>` if you want uniformity).
+* If a function returns a **value**, return `boost::result<T, error_code>`.
+* Do not use `std::error_code` across the boundary unless explicitly standardized for the project’s ABI story; prefer a project-defined enum/struct that is ABI-stable.
+
+Example:
+
+```cpp
+enum class error_code : std::int32_t {
+  ok = 0,
+  invalid_argument = 1,
+  io_error = 2,
+  internal_error = 3,
+};
+
+[[nodiscard]] error_code initialize(subsystem_handle* out) noexcept;
+
+[[nodiscard]] boost::result<std::int32_t, error_code>
+compute_answer(subsystem_handle h, std::int32_t input) noexcept;
+
+[[nodiscard]] boost::result<void, error_code>
+write_config(subsystem_handle h, boost::span<const std::uint8_t> bytes) noexcept;
+
+void shutdown(subsystem_handle h) noexcept;
+```
+
+Implementation guidance:
+
+* Catch all exceptions at the boundary and translate to `error_code::internal_error` (or more specific codes if you can do so safely).
+* Never let exceptions escape boundary functions.
+
+---
+
+## `[[nodiscard]]` (project-specific)
+
+* Use `[[nodiscard]]` on:
+
+  * `error_code` returns
+  * `boost::result<...>` returns
+  * Resource acquisition results / handles
+
+---
+
+## Ownership, Lifetimes, and Pointer Rules
+
+### Views for non-owning data (project-specific)
+
+* Prefer:
+
+  * `boost::span<T>` for non-owning array views
+  * `std::string_view` for non-owning string views
+* Do not store `span`/`string_view` beyond the underlying lifetime.
+
+### Non-owning pointers (project-specific)
+
+* Use a plain-pointer typedef for non-owning pointers:
+
+```cpp
+template <class T>
+using ptr = T*; // non-owning
+```
+
+* If non-null is required, enforce it via wrapper (`gsl::not_null`) or assert + documentation.
+
+### Owning pointers (recommended)
+
+* Prefer RAII:
+
+  * `std::unique_ptr<T>` for unique ownership
+  * `std::shared_ptr<T>` only when shared ownership is truly required
+* Avoid `new`/`delete` in application code.
+
+---
+
+## API Design (C++17-friendly)
+
+* Prefer `enum class` over plain enums.
+* Prefer `std::chrono` types for time/duration (internally; be careful at ABI boundaries).
+* Avoid `using namespace ...` in headers.
+
+---
+
+## Classes, Special Members, and RAII
+
+* Prefer Rule of Zero.
+* If manually managing resources, follow Rule of Five.
+* Destructors must not throw.
+
+---
+
+## Performance and Correctness Defaults
+
+* Prefer `string_view`/`span` to avoid copies.
+* Reserve capacity in loops when building containers.
+* Avoid UB; avoid C-style casts.
+
+---
+
+## Concurrency Basics
+
+* Synchronize shared mutable state.
+* Prefer `std::mutex` + `std::lock_guard`.
+* Use atomics only when you understand memory ordering.
+
+---
+
+## Tooling and Consistency
+
+* Invoke the repo formatting tool through the tooling entrypoint after making changes to ensure consistent formatting
+```powershell
+.\pts.cmd build
+```

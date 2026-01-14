@@ -1,6 +1,6 @@
 #include "glRenderBuffer.h"
 
-#include <core/utils.h>
+#include <core/legacy/utils.h>
 
 using namespace PTS;
 

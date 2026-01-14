@@ -1,6 +1,5 @@
-#include <core/renderer.h>
-
-#include "application.h"
+#include <core/legacy/application.h>
+#include <core/legacy/renderer.h>
 
 PTS::Renderer::Renderer(RenderConfig config, std::string_view name) noexcept
     : m_name(name), m_config(std::move(config)), m_app{nullptr} {

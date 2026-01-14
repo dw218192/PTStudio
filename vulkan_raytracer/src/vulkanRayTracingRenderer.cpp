@@ -1,8 +1,8 @@
 #include "vulkanRayTracingRenderer.h"
 
 #include <GLFW/glfw3.h>
-#include <core/application.h>
 #include <core/imgui/reflectedField.h>
+#include <core/legacy/application.h>
 #include <imgui.h>
 
 #include <glm/gtc/type_ptr.hpp>
@@ -27,28 +27,50 @@ auto to_cstr_vec(tcb::span<std::string_view> views) -> std::vector<char const*> 
     return res;
 }
 
-auto has_ext(tcb::span<vk::ExtensionProperties const> props, std::string_view ext) -> bool {
-    return std::find_if(props.begin(), props.end(), [&](vk::ExtensionProperties const& prop) {
-               return ext == prop.extensionName;
-           }) != props.end();
+auto check_extensions(tcb::span<vk::ExtensionProperties const> props,
+                      tcb::span<std::string_view> required_exts)
+    -> tl::expected<void, std::string> {
+    auto missing = std::vector<std::string_view>{};
+    for (auto const& ext : required_exts) {
+        auto found =
+            std::find_if(props.begin(), props.end(), [&](vk::ExtensionProperties const& prop) {
+                return ext == prop.extensionName;
+            }) != props.end();
+        if (!found) {
+            missing.push_back(ext);
+        }
+    }
+    if (!missing.empty()) {
+        auto msg = std::string{"Missing extensions: "};
+        for (size_t i = 0; i < missing.size(); ++i) {
+            msg += missing[i];
+            if (i + 1 < missing.size()) msg += ", ";
+        }
+        return TL_ERROR(msg);
+    }
+    return {};
 }
 
-auto has_ext(tcb::span<vk::ExtensionProperties const> props,
-             tcb::span<std::string_view> exts) -> bool {
-    return std::all_of(exts.begin(), exts.end(),
-                       [&](std::string_view ext) { return has_ext(props, ext); });
-}
-
-auto has_layer(tcb::span<vk::LayerProperties const> props, std::string_view layer) -> bool {
-    return std::find_if(props.begin(), props.end(), [&](vk::LayerProperties const& prop) {
-               return layer == prop.layerName;
-           }) != props.end();
-}
-
-auto has_layer(tcb::span<vk::LayerProperties const> props,
-               tcb::span<std::string_view> layers) -> bool {
-    return std::all_of(layers.begin(), layers.end(),
-                       [&](std::string_view layer) { return has_layer(props, layer); });
+auto check_layers(tcb::span<vk::LayerProperties const> props,
+                  tcb::span<std::string_view> required_layers) -> tl::expected<void, std::string> {
+    auto missing = std::vector<std::string_view>{};
+    for (auto const& layer : required_layers) {
+        auto found = std::find_if(props.begin(), props.end(), [&](vk::LayerProperties const& prop) {
+                         return layer == prop.layerName;
+                     }) != props.end();
+        if (!found) {
+            missing.push_back(layer);
+        }
+    }
+    if (!missing.empty()) {
+        auto msg = std::string{"Missing layers: "};
+        for (size_t i = 0; i < missing.size(); ++i) {
+            msg += missing[i];
+            if (i + 1 < missing.size()) msg += ", ";
+        }
+        return TL_ERROR(msg);
+    }
+    return {};
 }
 
 [[nodiscard]] auto create_instance(tcb::span<std::string_view> required_ins_ext,
@@ -86,9 +108,7 @@ auto has_layer(tcb::span<vk::LayerProperties const> props,
     try {
         // check if all required instance extensions are available
         auto const ext_props = vk::enumerateInstanceExtensionProperties();
-        if (!has_ext(ext_props, required_ins_ext)) {
-            return TL_ERROR("required instance extension not found");
-        }
+        TL_CHECK(check_extensions(ext_props, required_ins_ext));
 
         // check if all layers are available
         auto layers = std::vector<std::string_view>{};
@@ -96,9 +116,7 @@ auto has_layer(tcb::span<vk::LayerProperties const> props,
         layers.push_back("VK_LAYER_KHRONOS_validation");
 #endif
         auto layer_props = vk::enumerateInstanceLayerProperties();
-        if (!has_layer(layer_props, layers)) {
-            return TL_ERROR("required layer not found");
-        }
+        TL_CHECK(check_layers(layer_props, layers));
 
         constexpr auto app_info =
             vk::ApplicationInfo{"PTS::Vk::VulkanRayTracingRenderer", VK_MAKE_VERSION(1, 0, 0),
@@ -130,23 +148,28 @@ template <typename CreateInfoChainType>
         }
 
         auto select_physical_device = [&](std::vector<vk::PhysicalDevice> const& devices)
-            -> std::optional<vk::PhysicalDevice> {
+            -> tl::expected<vk::PhysicalDevice, std::string> {
+            auto error_msgs = std::vector<std::string>{};
             for (auto physical_device : devices) {
-                // return the first device that supports all required extensions
+                auto const props = physical_device.getProperties();
                 auto const ext_props = physical_device.enumerateDeviceExtensionProperties();
-                if (has_ext(ext_props, required_device_ext)) {
+                auto check_result = check_extensions(ext_props, required_device_ext);
+                if (check_result) {
                     return physical_device;
                 }
+                error_msgs.push_back(
+                    fmt::format("Device '{}': {}", props.deviceName.data(), check_result.error()));
             }
-            return std::nullopt;
+
+            auto msg = std::string{"No suitable physical device found. Checked devices:\n"};
+            for (auto const& err : error_msgs) {
+                msg += "  - " + err + "\n";
+            }
+            return TL_ERROR(msg);
         };
 
         auto physical_device = vk::PhysicalDevice{};
-        if (auto const res = select_physical_device(physical_devices); !res) {
-            return TL_ERROR("no suitable physical device found");
-        } else {
-            physical_device = *res;
-        }
+        TL_TRY_ASSIGN(physical_device, select_physical_device(physical_devices));
 
         // request a single graphics queue
         auto const queue_family_props = physical_device.getQueueFamilyProperties();
@@ -294,7 +317,7 @@ PTS::Vk::VulkanRayTracingRenderer::VulkanRayTracingRenderer(RenderConfig config)
             auto const data = PTS::Vk::VulkanRayTracingShaders::LightBlock::get_mem(
                 static_cast<int>(m_light_data_link.size()),
                 tcb::span{m_light_data_link.data(), m_light_data_link.size()});
-            TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, buf->upload(data));
+            TL_CHECK_NON_FATAL(m_app, pts::LogLevel::Error, buf->upload(data));
         };
 
     m_light_data_link.get_on_erase_callbacks() +=
@@ -302,18 +325,17 @@ PTS::Vk::VulkanRayTracingRenderer::VulkanRayTracingRenderer(RenderConfig config)
             auto const data = PTS::Vk::VulkanRayTracingShaders::LightBlock::get_mem(
                 static_cast<int>(m_light_data_link.size()),
                 tcb::span{m_light_data_link.data(), m_light_data_link.size()});
-            TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, buf->upload(data));
+            TL_CHECK_NON_FATAL(m_app, pts::LogLevel::Error, buf->upload(data));
         };
 
-    m_light_data_link.get_on_update_callbacks() +=
-        [this](VulkanBufferInfo* buf, Light const* light, LightData const& data) {
-            auto id = size_t{};
-            TL_TRY_ASSIGN_NON_FATAL(id, m_app, Logging::LogLevel::Error,
-                                    m_light_data_link.get_idx(light));
-            TL_CHECK_NON_FATAL(
-                m_app, Logging::LogLevel::Error,
-                buf->upload(data, PTS::Vk::VulkanRayTracingShaders::LightBlock::get_offset(id)));
-        };
+    m_light_data_link.get_on_update_callbacks() += [this](VulkanBufferInfo* buf, Light const* light,
+                                                          LightData const& data) {
+        auto id = size_t{};
+        TL_TRY_ASSIGN_NON_FATAL(id, m_app, pts::LogLevel::Error, m_light_data_link.get_idx(light));
+        TL_CHECK_NON_FATAL(
+            m_app, pts::LogLevel::Error,
+            buf->upload(data, PTS::Vk::VulkanRayTracingShaders::LightBlock::get_offset(id)));
+    };
 }
 
 PTS::Vk::VulkanRayTracingRenderer::~VulkanRayTracingRenderer() noexcept {
@@ -392,25 +414,25 @@ auto PTS::Vk::VulkanRayTracingRenderer::open_scene(Ref<Scene> scene) noexcept
 #pragma region Callbacks
 
 auto PTS::Vk::VulkanRayTracingRenderer::on_add_obj(Ref<SceneObject> obj) noexcept -> void {
-    TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, add_object(obj));
-    TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, reset_path_tracing());
+    TL_CHECK_NON_FATAL(m_app, pts::LogLevel::Error, add_object(obj));
+    TL_CHECK_NON_FATAL(m_app, pts::LogLevel::Error, reset_path_tracing());
 }
 
 auto PTS::Vk::VulkanRayTracingRenderer::on_remove_obj(Ref<SceneObject> obj) noexcept -> void {
-    TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, remove_object(obj));
-    TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, reset_path_tracing());
+    TL_CHECK_NON_FATAL(m_app, pts::LogLevel::Error, remove_object(obj));
+    TL_CHECK_NON_FATAL(m_app, pts::LogLevel::Error, reset_path_tracing());
 }
 
 auto PTS::Vk::VulkanRayTracingRenderer::on_obj_world_trans_change(
     SceneObject::callback_data_t<SceneObject::FieldTag::WORLD_TRANSFORM> data) -> void {
-    TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, update_obj(data.obj));
-    TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, reset_path_tracing());
+    TL_CHECK_NON_FATAL(m_app, pts::LogLevel::Error, update_obj(data.obj));
+    TL_CHECK_NON_FATAL(m_app, pts::LogLevel::Error, reset_path_tracing());
 }
 
 auto PTS::Vk::VulkanRayTracingRenderer::on_obj_local_trans_change(
     SceneObject::callback_data_t<SceneObject::FieldTag::LOCAL_TRANSFORM> data) -> void {
-    TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, update_obj(data.obj));
-    TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, reset_path_tracing());
+    TL_CHECK_NON_FATAL(m_app, pts::LogLevel::Error, update_obj(data.obj));
+    TL_CHECK_NON_FATAL(m_app, pts::LogLevel::Error, reset_path_tracing());
 }
 
 auto PTS::Vk::VulkanRayTracingRenderer::on_mat_change(
@@ -419,14 +441,14 @@ auto PTS::Vk::VulkanRayTracingRenderer::on_mat_change(
     if (it != m_rend_obj_data.end()) {
         auto mat_data = PTS::Vk::VulkanRayTracingShaders::MaterialData{data.obj.get_material()};
         TL_CHECK_NON_FATAL(
-            m_app, Logging::LogLevel::Error,
+            m_app, pts::LogLevel::Error,
             m_vk_pipeline.materials_mem.upload(
                 mat_data,
                 it->second.gpu_idx * sizeof(PTS::Vk::VulkanRayTracingShaders::MaterialData)));
     } else {
-        m_app->log(Logging::LogLevel::Error, "cannot find object {}", data.obj.get_name());
+        m_app->log(pts::LogLevel::Error, "cannot find object {}", data.obj.get_name());
     }
-    TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, reset_path_tracing());
+    TL_CHECK_NON_FATAL(m_app, pts::LogLevel::Error, reset_path_tracing());
 }
 
 auto PTS::Vk::VulkanRayTracingRenderer::update_obj(SceneObject const& obj) noexcept
@@ -455,7 +477,7 @@ auto PTS::Vk::VulkanRayTracingRenderer::update_light(Light const& light) noexcep
     try {
         m_light_data_link[idx] = light.get_data();
     } catch (std::out_of_range const& err) {
-        m_app->log(Logging::LogLevel::Error, err.what());
+        m_app->log(pts::LogLevel::Error, err.what());
     }
     return {};
 }
@@ -463,28 +485,28 @@ auto PTS::Vk::VulkanRayTracingRenderer::update_light(Light const& light) noexcep
 auto PTS::Vk::VulkanRayTracingRenderer::on_light_type_change(
     Light::callback_data_t<Light::FieldTag::LIGHT_TYPE> data) -> void {
     if (data.obj.get_type() == LightType::Mesh) {
-        TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, m_light_data_link.erase(&data.obj));
+        TL_CHECK_NON_FATAL(m_app, pts::LogLevel::Error, m_light_data_link.erase(&data.obj));
     } else {
         if (m_light_data_link.get_idx(&data.obj)) {
-            TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, update_light(data.obj));
+            TL_CHECK_NON_FATAL(m_app, pts::LogLevel::Error, update_light(data.obj));
         } else {
-            TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error,
+            TL_CHECK_NON_FATAL(m_app, pts::LogLevel::Error,
                                m_light_data_link.push_back(&data.obj, data.obj.get_data()));
         }
     }
-    TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, reset_path_tracing());
+    TL_CHECK_NON_FATAL(m_app, pts::LogLevel::Error, reset_path_tracing());
 }
 
 auto PTS::Vk::VulkanRayTracingRenderer::on_light_color_change(
     Light::callback_data_t<Light::FieldTag::COLOR> data) -> void {
-    TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, update_light(data.obj));
-    TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, reset_path_tracing());
+    TL_CHECK_NON_FATAL(m_app, pts::LogLevel::Error, update_light(data.obj));
+    TL_CHECK_NON_FATAL(m_app, pts::LogLevel::Error, reset_path_tracing());
 }
 
 auto PTS::Vk::VulkanRayTracingRenderer::on_light_intensity_change(
     Light::callback_data_t<Light::FieldTag::INTENSITY> data) -> void {
-    TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, update_light(data.obj));
-    TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, reset_path_tracing());
+    TL_CHECK_NON_FATAL(m_app, pts::LogLevel::Error, update_light(data.obj));
+    TL_CHECK_NON_FATAL(m_app, pts::LogLevel::Error, reset_path_tracing());
 }
 
 #pragma endregion Callbacks

@@ -1,8 +1,8 @@
 #pragma once
-#include <core/camera.h>
-#include <core/lightData.h>
-#include <core/material.h>
-#include <core/vertex.h>
+#include <core/legacy/camera.h>
+#include <core/legacy/lightData.h>
+#include <core/legacy/material.h>
+#include <core/legacy/vertex.h>
 
 #include <cstdint>
 #include <glm/glm.hpp>

@@ -3,7 +3,7 @@
 
 namespace PTS {
 /**
- * \brief Represents if an editable is visible in the scene or can be edited in the editor
+ * @brief Represents if an editable is visible in the scene or can be edited in the editor
  */
 enum EditFlags {
     None = 0,

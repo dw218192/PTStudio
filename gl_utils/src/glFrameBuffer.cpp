@@ -1,6 +1,6 @@
 #include "glFrameBuffer.h"
 
-#include <core/utils.h>
+#include <core/legacy/utils.h>
 
 #include "glRenderBuffer.h"
 #include "glTexture.h"

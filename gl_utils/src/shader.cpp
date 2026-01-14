@@ -1,7 +1,7 @@
 #include "shader.h"
 
-#include <core/enumIter.h>
-#include <core/transactionScope.h>
+#include <core/legacy/enumIter.h>
+#include <core/legacy/transactionScope.h>
 
 #include <fstream>
 

@@ -7,6 +7,10 @@ project(${project_name} LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 17)
 
+# Include custom CMake modules
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+include(PluginHelpers)
+
 #default build type is Debug
 if (CMAKE_BUILD_TYPE STREQUAL "")
     set(CMAKE_BUILD_TYPE Debug)
@@ -69,6 +73,7 @@ find_package(fmt REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(tl-expected REQUIRED)
 find_package(nlohmann_json REQUIRED)
+find_package(Boost REQUIRED COMPONENTS filesystem)
 
 # Vulkan support
 find_package(VulkanHeaders REQUIRED)
@@ -89,6 +94,9 @@ add_subdirectory(gl_utils)
 add_subdirectory(vulkan_raytracer)
 
 add_subdirectory(editor)
+
+# plugins
+add_subdirectory(plugins)
 
 # set editor as the start-up project
 set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT editor)

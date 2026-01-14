@@ -1,16 +1,17 @@
 #pragma once
+#include <core/logging.h>
 #include <fmt/core.h>
+#include <spdlog/spdlog.h>
 
 #include <deque>
 #include <sstream>
 
-#include "logging.h"
 #include "utils.h"
 
 namespace PTS {
 
 /**
- * \brief The base class for all applications (not necessarily graphical)
+ * @brief The base class for all applications (not necessarily graphical)
  */
 struct Application {
     DEFAULT_COPY_MOVE(Application);
@@ -29,15 +30,18 @@ struct Application {
         return 0.0f;
     }
     /**
-     * \brief Terminates the program with the given exit code
-     * \param code the exit code
+     * @brief Terminates the program with the given exit code
+     * @param code the exit code
      */
     [[noreturn]] virtual void quit(int code) = 0;
 
     template <typename... Args>
-    void log(Logging::LogLevel level, std::string_view fmt, Args&&... args) noexcept {
-        Logging::get_logger(get_name())
-            .log(static_cast<spdlog::level::level_enum>(level), fmt, std::forward<Args>(args)...);
+    void log(pts::LogLevel level, std::string_view fmt, Args&&... args) noexcept {
+        // Note: This requires a logger to be registered with the name from get_name()
+        if (auto logger = spdlog::get(get_name().data())) {
+            logger->log(static_cast<spdlog::level::level_enum>(level), fmt,
+                        std::forward<Args>(args)...);
+        }
     }
 
    private:

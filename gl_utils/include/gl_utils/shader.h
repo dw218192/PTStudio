@@ -1,8 +1,8 @@
 #pragma once
 
 #include <GL/glew.h>
-#include <core/enumArray.h>
-#include <core/utils.h>
+#include <core/legacy/enumArray.h>
+#include <core/legacy/utils.h>
 
 #include <any>
 #include <glm/glm.hpp>

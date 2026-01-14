@@ -4,10 +4,14 @@
         {
             "browse": {
                 "path": [
-                    "${workspaceFolder}/core/src/include",
-                    "${workspaceFolder}/editor/src/include",
-                    "${workspaceFolder}/gl_utils/src/include",
-                    "${workspaceFolder}/vulkan_raytracer/src/include",
+                    "${workspaceFolder}/core/**/include",
+                    "${workspaceFolder}/core/include/core",
+                    "${workspaceFolder}/editor/**/include",
+                    "${workspaceFolder}/editor/include/editor",
+                    "${workspaceFolder}/gl_utils/**/include",
+                    "${workspaceFolder}/gl_utils/include/gl_utils",
+                    "${workspaceFolder}/vulkan_raytracer/**/include",
+                    "${workspaceFolder}/vulkan_raytracer/include/vulkan_raytracer",
                     "${workspaceFolder}/ext/**",
                     "${workspaceFolder}/_build/deps/full_deploy/host/**/include",
                     "${workspaceFolder}/_build/*/_cmrc/include"
@@ -15,9 +19,13 @@
             },
             "includePath": [
                 "${workspaceFolder}/core/**/include",
+                "${workspaceFolder}/core/include/core",
                 "${workspaceFolder}/editor/**/include",
+                "${workspaceFolder}/editor/include/editor",
                 "${workspaceFolder}/gl_utils/**/include",
+                "${workspaceFolder}/gl_utils/include/gl_utils",
                 "${workspaceFolder}/vulkan_raytracer/**/include",
+                "${workspaceFolder}/vulkan_raytracer/include/vulkan_raytracer",
                 "${workspaceFolder}/ext/**",
                 "${workspaceFolder}/_build/deps/full_deploy/host/**/include",
                 "${workspaceFolder}/_build/*/_cmrc/include"

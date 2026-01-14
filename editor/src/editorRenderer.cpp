@@ -1,9 +1,9 @@
 #include "editorRenderer.h"
 
-#include <core/application.h>
-#include <core/embeddedRes.h>
-#include <core/enumIter.h>
 #include <core/imgui/imhelper.h>
+#include <core/legacy/application.h>
+#include <core/legacy/embeddedRes.h>
+#include <core/legacy/enumIter.h>
 
 #include <algorithm>
 
@@ -75,9 +75,9 @@ EditorRenderer::EditorRenderer(RenderConfig config) noexcept
         .get_on_change_callback_list() += m_on_obj_local_trans_change;
 
     auto upload_light_data = [this](GLBufferRef& buf, Light const*, LightData const&) {
-        TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, buf->bind());
+        TL_CHECK_NON_FATAL(m_app, pts::LogLevel::Error, buf->bind());
         TL_CHECK_NON_FATAL(
-            m_app, Logging::LogLevel::Error,
+            m_app, pts::LogLevel::Error,
             buf->set_data(tcb::span{m_light_data_link.data(), m_light_data_link.size()},
                           GL_DYNAMIC_DRAW));
         buf->unbind();
@@ -297,13 +297,13 @@ auto EditorRenderer::on_change_render_config() noexcept -> tl::expected<void, st
 auto EditorRenderer::on_add_obj(Ref<SceneObject> obj) noexcept -> void {
     if (auto const render_obj = obj.get().as<RenderableObject>()) {
         if (m_obj_data.count(render_obj)) {
-            m_app->log(Logging::LogLevel::Error, "object added twice");
+            m_app->log(pts::LogLevel::Error, "object added twice");
             return;
         }
-        TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error,
+        TL_CHECK_NON_FATAL(m_app, pts::LogLevel::Error,
                            on_add_object_internal(m_obj_data[render_obj], *render_obj));
     } else if (auto const light = obj.get().as<Light>()) {
-        TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error,
+        TL_CHECK_NON_FATAL(m_app, pts::LogLevel::Error,
                            m_light_data_link.push_back(light, light->get_data()));
     }
 }
@@ -312,7 +312,7 @@ auto EditorRenderer::on_remove_obj(Ref<SceneObject> obj) noexcept -> void {
     if (auto const render_obj = obj.get().as<RenderableObject>()) {
         auto const it = m_obj_data.find(render_obj);
         if (it == m_obj_data.end()) {
-            m_app->log(Logging::LogLevel::Error, "object not found");
+            m_app->log(pts::LogLevel::Error, "object not found");
             return;
         }
         m_obj_data.erase(it);
@@ -320,18 +320,17 @@ auto EditorRenderer::on_remove_obj(Ref<SceneObject> obj) noexcept -> void {
             m_cur_outline_obj = nullptr;
         }
     } else if (auto const light = obj.get().as<Light>()) {
-        TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Error, m_light_data_link.erase(light));
+        TL_CHECK_NON_FATAL(m_app, pts::LogLevel::Error, m_light_data_link.erase(light));
     }
 }
 
 auto EditorRenderer::update_light(Light const& light) -> void {
     auto idx = size_t{};
-    TL_TRY_ASSIGN_NON_FATAL(idx, m_app, Logging::LogLevel::Error,
-                            m_light_data_link.get_idx(&light));
+    TL_TRY_ASSIGN_NON_FATAL(idx, m_app, pts::LogLevel::Error, m_light_data_link.get_idx(&light));
     try {
         m_light_data_link[idx] = light.get_data();
     } catch (std::out_of_range const& err) {
-        m_app->log(Logging::LogLevel::Error, err.what());
+        m_app->log(pts::LogLevel::Error, err.what());
     }
 }
 
@@ -679,7 +678,7 @@ auto EditorRenderer::try_compile() noexcept -> void {
 
     auto res = data.shader->try_recompile(descs);
     if (!res) {
-        m_app->log(Logging::LogLevel::Error, res.error());
+        m_app->log(pts::LogLevel::Error, res.error());
         edit_data.compilation_status = PerObjectEditingData::CompilationStatus::FAILURE;
     } else {
         commit_cur_shader_code();
@@ -817,7 +816,7 @@ auto EditorRenderer::draw_glsl_editor(ShaderType type, Ref<ShaderProgram> shader
                 } else {
                     if (ImGui::ShaderVariableField(name.c_str(), val_copy)) {
                         TL_CHECK(shader.bind());
-                        TL_CHECK_NON_FATAL(m_app, Logging::LogLevel::Warning,
+                        TL_CHECK_NON_FATAL(m_app, pts::LogLevel::Warning,
                                            shader.set_uniform(name, val_copy));
                         shader.unbind();
                     }

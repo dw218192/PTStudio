@@ -12,8 +12,9 @@ https://github.com/dw218192/PTStudio/assets/31294154/4116308d-ee31-4d20-a449-f13
 - This project uses a hermetic tooling initialization process where all the tools are pulled in as Python packages, and python is used to perform various tasks like building, formatting, etc.
 - To see the available tool commands, run `pts.cmd --help`.
 
-## Build Instructions
+## Build & Test Instructions
 - Run the repository tooling entrypoint `pts.cmd build` to bootstrap the build system (if needed) and build the project.
+- Run the repository tooling entrypoint `pts.cmd test` to run the unit tests.
 
 ### Prerequisites
 - C++ Compiler Toolchain (GCC, Clang, MSVC, etc.)

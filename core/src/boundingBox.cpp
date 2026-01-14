@@ -1,4 +1,4 @@
-#include "boundingBox.h"
+#include <core/legacy/boundingBox.h>
 
 auto PTS::BoundingBox::from_vertices(std::vector<Vertex> const& vertices) noexcept -> BoundingBox {
     glm::vec3 min_pos{std::numeric_limits<float>::max()};

@@ -35,16 +35,16 @@ struct Camera {
     }
 
     /**
-     * \brief Returns the position of the camera
-     * \return the position of the camera
+     * @brief Returns the position of the camera
+     * @return the position of the camera
      */
     NODISCARD auto get_eye() const noexcept {
         return m_eye;
     }
 
     /**
-     * \brief Returns the point that the camera is looking at
-     * \return the point that the camera is looking at
+     * @brief Returns the point that the camera is looking at
+     * @return the point that the camera is looking at
      */
     NODISCARD auto get_center() const noexcept {
         return m_center;
@@ -54,49 +54,49 @@ struct Camera {
     }
 
     /**
-     * \brief Converts a point in screen space to normalized device coordinates
-     * \param screen the point in screen space; top left is (0,0), bottom right is (width, height)
-     * \return the point in normalized device coordinates, OpenGL standard, i.e. [-1, 1] for x,y,z
+     * @brief Converts a point in screen space to normalized device coordinates
+     * @param screen the point in screen space; top left is (0,0), bottom right is (width, height)
+     * @return the point in normalized device coordinates, OpenGL standard, i.e. [-1, 1] for x,y,z
      */
     NODISCARD auto screen_to_ndc(glm::vec2 screen) const noexcept -> glm::vec2;
 
     /**
-     * \brief Converts a point in normalized device coordinates to world space
-     * \param ndc the point in normalized device coordinates, OpenGL standard, i.e. [-1, 1] for
-     * x,y,z \param z the z value to use for the point \return the point in world space
+     * @brief Converts a point in normalized device coordinates to world space
+     * @param ndc the point in normalized device coordinates, OpenGL standard, i.e. [-1, 1] for
+     * x,y,z @param z the z value to use for the point @return the point in world space
      */
     NODISCARD auto ndc_to_wrold(glm::vec2 ndc, float z) const noexcept -> glm::vec3;
 
     /**
-     * \brief Converts a point in world space to normalized device coordinates
-     * \param world the point in world space
-     * \return the point in normalized device coordinates, OpenGL standard, i.e. [-1, 1] for x,y,z
+     * @brief Converts a point in world space to normalized device coordinates
+     * @param world the point in world space
+     * @return the point in normalized device coordinates, OpenGL standard, i.e. [-1, 1] for x,y,z
      */
     NODISCARD auto world_to_ndc(glm::vec3 world) const noexcept -> glm::vec3;
 
     /**
-     * \brief Converts a point in world space to screen space
-     * \param world the point in world space
-     * \param vp_size the size of viewport
-     * \return the point in screen space; top left is (0,0), bottom right is (width, height)
+     * @brief Converts a point in world space to screen space
+     * @param world the point in world space
+     * @param vp_size the size of viewport
+     * @return the point in screen space; top left is (0,0), bottom right is (width, height)
      */
     NODISCARD auto world_to_viewport(glm::vec3 world,
                                      glm::ivec2 vp_size) const noexcept -> glm::vec2;
     /**
-     * \brief Converts a point in screen space to world space
-     * \param screen the point in screen space; top left is (0,0), bottom right is (width, height)
-     * \param z the z value to use for the point
-     * \param vp_size the size of viewport
-     * \return the point in world space
+     * @brief Converts a point in screen space to world space
+     * @param screen the point in screen space; top left is (0,0), bottom right is (width, height)
+     * @param z the z value to use for the point
+     * @param vp_size the size of viewport
+     * @return the point in world space
      */
     NODISCARD auto viewport_to_world(glm::vec2 screen, glm::ivec2 vp_size,
                                      float z = -1.0f) const noexcept -> glm::vec3;
 
     /**
-     * \brief Converts a point in screen space to a ray in world space
-     * \param screen the point in screen space; top left is (0,0), bottom right is (width, height)
-     * \param vp_size the size of viewport
-     * \return the ray in world space
+     * @brief Converts a point in screen space to a ray in world space
+     * @param screen the point in screen space; top left is (0,0), bottom right is (width, height)
+     * @param vp_size the size of viewport
+     * @return the ray in world space
      */
     NODISCARD auto viewport_to_ray(glm::vec2 screen, glm::ivec2 vp_size) const noexcept -> Ray;
 
@@ -104,21 +104,21 @@ struct Camera {
     void set_aspect(float aspect) noexcept;
 
     /**
-     * \brief Rotates the camera pivoted at the center
-     * \param delta the rotation in degrees
+     * @brief Rotates the camera pivoted at the center
+     * @param delta the rotation in degrees
      * \note the rotation is applied in the order XYZ
      */
     void set_delta_rotation(glm::vec3 const& delta) noexcept;
 
     /**
-     * \brief Moves the camera center by delta, in local space
-     * \param delta the movement in local space
+     * @brief Moves the camera center by delta, in local space
+     * @param delta the movement in local space
      */
     void set_delta_dolly(glm::vec3 const& delta) noexcept;
 
     /**
-     * \brief Zooms the camera by delta
-     * \param delta the zoom amount
+     * @brief Zooms the camera by delta
+     * @param delta the zoom amount
      * \note delta > 0 zooms in, delta < 0 zooms out
      */
     void set_delta_zoom(float delta) noexcept;

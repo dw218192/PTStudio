@@ -1,7 +1,7 @@
 #pragma once
 
-#include <core/application.h>
-#include <core/callbackList.h>
+#include <core/legacy/application.h>
+#include <core/legacy/callbackList.h>
 
 #include <array>
 #include <bitset>
@@ -15,7 +15,7 @@
 
 namespace PTS {
 /**
- * \brief abstract GLFW application. Responsible for creating the window and polling events.
+ * @brief abstract GLFW application. Responsible for creating the window and polling events.
  */
 struct GLFWApplication : Application {
     // used to help detect if the mouse enters/leaves certain imgui windows
@@ -40,8 +40,8 @@ struct GLFWApplication : Application {
     [[nodiscard]] auto get_window_width() const noexcept -> int;
     [[nodiscard]] auto get_window_height() const noexcept -> int;
     /**
-     * \brief Called every frame. Override to handle the main loop.
-     * \param dt the time since the last frame
+     * @brief Called every frame. Override to handle the main loop.
+     * @param dt the time since the last frame
      */
     virtual void loop(float dt) = 0;
 
@@ -52,8 +52,8 @@ struct GLFWApplication : Application {
     auto poll_input_events() noexcept -> void;
 
     /**
-     * \brief Gets the renderer for the application.
-     * \return the renderer
+     * @brief Gets the renderer for the application.
+     * @return the renderer
      */
     [[nodiscard]] auto get_debug_drawer() -> DebugDrawer& {
         return m_debug_drawer;

@@ -2,47 +2,119 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master, develop ]
   pull_request:
+    branches: [ main, master, develop ]
   workflow_dispatch:
 
 jobs:
-  check:
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+  # =============================================================================
+  # Windows Check, Build & Test (Current Platform)
+  # =============================================================================
+  # To add Linux/macOS support in the future:
+  # 1. Duplicate these jobs with appropriate suffixes (e.g., check-and-build-linux)
+  # 2. Change runs-on to ubuntu-latest or macos-latest
+  # 3. Change shell to bash and use ./pts.sh instead of .\pts.cmd
+  # 4. Adjust cache paths (~/.conan2 works on Linux/macOS too)
+  
+  check-and-build-windows:
+    name: Check & Build (Windows, ${{ matrix.build_type }})
     runs-on: windows-latest
-    steps:
-       # intentionally without submodules since all the checking commands won't need stuff in /ext
-       # if this assumption changes, we need to add submodules here
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Bootstrap tooling
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Debug, Release]
+    
+    defaults:
+      run:
         shell: pwsh
-        run: |
-          .\tools\bootstrap.ps1
-
-      - name: Check formatting
-        shell: pwsh
-        run: |
-          .\pts.cmd format --verify
-
-  build:
-    needs: check
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    runs-on: windows-latest
+    
     steps:
-      - name: Checkout (with submodules)
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Bootstrap tooling
-        shell: pwsh
-        run: |
-          .\tools\bootstrap.ps1
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
-      - name: Configure Conan + build
+      - name: Bootstrap build environment
+        run: .\tools\bootstrap.ps1
+
+      - name: Check code formatting
+        run: .\pts.cmd format --verify
+
+      - name: Cache Python dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            _tools/venv
+            _tools/cache
+          key: windows-python-${{ hashFiles('tools/requirements.txt') }}
+          restore-keys: |
+            windows-python-
+
+      - name: Cache Conan packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.conan2
+            _build/deps
+          key: windows-conan-${{ hashFiles('conanfile.py', 'conan.lock') }}-${{ matrix.build_type }}
+          restore-keys: |
+            windows-conan-${{ hashFiles('conanfile.py') }}-${{ matrix.build_type }}
+            windows-conan-
+
+      - name: Build project
+        run: .\pts.cmd build --build-type ${{ matrix.build_type }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-windows-${{ matrix.build_type }}
+          path: _build/${{ matrix.build_type }}/bin/
+          retention-days: 3
+
+  test-windows:
+    name: Test (Windows, ${{ matrix.build_type }})
+    runs-on: windows-latest
+    needs: check-and-build-windows
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Debug, Release]
+    
+    defaults:
+      run:
         shell: pwsh
-        run: |
-          .\pts.cmd build --build-type Release
-          .\pts.cmd build --build-type Debug
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Bootstrap build environment
+        run: .\tools\bootstrap.ps1
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-windows-${{ matrix.build_type }}
+          path: _build/${{ matrix.build_type }}/bin/
+
+      - name: Run tests
+        run: .\pts.cmd test --build-type ${{ matrix.build_type }}
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-windows-${{ matrix.build_type }}
+          path: _logs/
+          retention-days: 3

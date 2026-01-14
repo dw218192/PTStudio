@@ -1,7 +1,6 @@
-#include "sceneObject.h"
-
-#include "camera.h"
-#include "scene.h"
+#include <core/legacy/camera.h>
+#include <core/legacy/scene.h>
+#include <core/legacy/sceneObject.h>
 
 PTS::SceneObject::SceneObject(ObjectConstructorUsage usage) noexcept : Object{usage} {
 }

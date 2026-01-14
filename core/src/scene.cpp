@@ -1,13 +1,12 @@
-#include "scene.h"
+#include <core/legacy/boundingBox.h>
+#include <core/legacy/boundingSphere.h>
+#include <core/legacy/intersection.h>
+#include <core/legacy/ray.h>
+#include <core/legacy/scene.h>
+#include <core/legacy/utils.h>
 
 #include <algorithm>
 #include <glm/ext/matrix_transform.hpp>
-
-#include "boundingBox.h"
-#include "boundingSphere.h"
-#include "intersection.h"
-#include "ray.h"
-#include "utils.h"
 
 // here we assume +y is up
 auto PTS::Scene::get_good_cam_start() const noexcept -> LookAtParams {

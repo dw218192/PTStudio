@@ -20,25 +20,25 @@ struct Renderer {
     NODISCARD virtual auto init(ObserverPtr<Application> app) noexcept
         -> tl::expected<void, std::string>;
     /**
-     * \brief Opens a new scene and closes the current one if there is one
-     * \param scene The scene to be opened
-     * \return on failure, an error message
+     * @brief Opens a new scene and closes the current one if there is one
+     * @param scene The scene to be opened
+     * @return on failure, an error message
      */
     NODISCARD virtual auto open_scene(Ref<Scene> scene) noexcept
         -> tl::expected<void, std::string> = 0;
 
     /**
-     * \brief Changes the render configuration
-     * \param config The new render configuration
-     * \return on failure, an error message
+     * @brief Changes the render configuration
+     * @param config The new render configuration
+     * @return on failure, an error message
      */
     NODISCARD auto set_render_config(RenderConfig config) noexcept
         -> tl::expected<void, std::string>;
 
     /**
-     * \brief Renders the scene to a texture
-     * \param camera The camera to view the scene from
-     * \return on failure, an error message\n
+     * @brief Renders the scene to a texture
+     * @param camera The camera to view the scene from
+     * @return on failure, an error message\n
      * on success, a handle to the texture containing the rendered scene
      * \note The texture is owned by the renderer and will be deleted when the renderer is destroyed
      */
@@ -46,30 +46,30 @@ struct Renderer {
         -> tl::expected<TextureHandle, std::string> = 0;
 
     /**
-     * \brief Checks if the renderer is initialized and valid.
-     * \return true if the renderer is initialized and valid, false otherwise.
+     * @brief Checks if the renderer is initialized and valid.
+     * @return true if the renderer is initialized and valid, false otherwise.
      */
     NODISCARD virtual auto valid() const noexcept -> bool = 0;
 
     /**
-     * \brief Gets the current render configuration
-     * \return The current render configuration
+     * @brief Gets the current render configuration
+     * @return The current render configuration
      */
     NODISCARD auto get_config() const noexcept -> RenderConfig const& {
         return m_config;
     }
 
     /**
-     * \brief Gets the name of the renderer
-     * \return The name of the renderer
+     * @brief Gets the name of the renderer
+     * @return The name of the renderer
      */
     NODISCARD auto get_name() const noexcept -> std::string_view {
         return m_name;
     }
 
     /**
-     * \brief Draws any custom UI that might help editing that is specific to a renderer
-     * \return on failure, an error message
+     * @brief Draws any custom UI that might help editing that is specific to a renderer
+     * @return on failure, an error message
      */
     NODISCARD virtual auto draw_imgui() noexcept -> tl::expected<void, std::string> {
         return {};

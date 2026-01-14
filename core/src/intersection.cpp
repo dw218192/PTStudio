@@ -1,4 +1,4 @@
-#include "intersection.h"
+#include <core/legacy/intersection.h>
 
 #include <cmath>
 #include <glm/gtx/intersect.hpp>
