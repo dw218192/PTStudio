@@ -9,16 +9,16 @@ on:
 
 jobs:
   # =============================================================================
-  # Windows Build & Test (Current Platform)
+  # Windows Check, Build & Test (Current Platform)
   # =============================================================================
   # To add Linux/macOS support in the future:
-  # 1. Duplicate these jobs with appropriate suffixes (e.g., build-linux, test-linux)
+  # 1. Duplicate these jobs with appropriate suffixes (e.g., check-and-build-linux)
   # 2. Change runs-on to ubuntu-latest or macos-latest
   # 3. Change shell to bash and use ./pts.sh instead of .\pts.cmd
   # 4. Adjust cache paths (~/.conan2 works on Linux/macOS too)
   
-  build-windows:
-    name: Build (Windows, ${{ matrix.build_type }})
+  check-and-build-windows:
+    name: Check & Build (Windows, ${{ matrix.build_type }})
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -39,6 +39,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
+      - name: Bootstrap build environment
+        run: .\tools\bootstrap.ps1
+
+      - name: Check code formatting
+        run: .\pts.cmd format --verify
 
       - name: Cache Python dependencies
         uses: actions/cache@v4
@@ -61,9 +67,6 @@ jobs:
             windows-conan-${{ hashFiles('conanfile.py') }}-${{ matrix.build_type }}
             windows-conan-
 
-      - name: Bootstrap build environment
-        run: .\tools\bootstrap.ps1
-
       - name: Build project
         run: .\pts.cmd build --build-type ${{ matrix.build_type }}
 
@@ -77,7 +80,7 @@ jobs:
   test-windows:
     name: Test (Windows, ${{ matrix.build_type }})
     runs-on: windows-latest
-    needs: build-windows
+    needs: check-and-build-windows
     strategy:
       fail-fast: false
       matrix:
