@@ -9,8 +9,9 @@ find_package(doctest REQUIRED)
 
 # Test executables
 set(TEST_NAMES
-    test_reflection    
-    test_type_traits
+    testReflection    
+    testTypeTraits
+    testPluginSystem
 )
 
 foreach(TEST_NAME IN LISTS TEST_NAMES)
@@ -18,6 +19,14 @@ foreach(TEST_NAME IN LISTS TEST_NAMES)
     add_executable(${TEST_NAME} ${TEST_NAME}.cpp)
     target_include_directories(${TEST_NAME} PRIVATE ../include)
     target_link_libraries(${TEST_NAME} PRIVATE doctest::doctest)
+    
+    # testPluginSystem needs core library and plugin interface headers
+    if(TEST_NAME STREQUAL "testPluginSystem")
+        target_link_libraries(${TEST_NAME} PRIVATE core)
+        target_include_directories(${TEST_NAME} PRIVATE 
+            ${CMAKE_SOURCE_DIR}/plugins/test_plugin/api
+        )
+    endif()
     
     # Set output directory to bin/tests
     set_target_properties(${TEST_NAME} PROPERTIES

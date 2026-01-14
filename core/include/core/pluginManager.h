@@ -41,12 +41,14 @@ struct PluginInfo {
 };
 
 /**
- * Manages plugin discovery, loading, and lifecycle.
- * Uses Boost.DLL for cross-platform dynamic loading.
+ * Manages plugin discovery, loading, and lifecycle. Also acts as an API bridge between the plugin
+ * and the host application. Uses Boost.DLL for cross-platform dynamic loading.
  */
+class LoggingManager;
+
 class PluginManager {
    public:
-    PluginManager(std::shared_ptr<spdlog::logger> logger);
+    PluginManager(std::shared_ptr<spdlog::logger> logger, LoggingManager& logging_manager);
     ~PluginManager();
 
     // Disable copying
@@ -85,14 +87,24 @@ class PluginManager {
     void* get_plugin_instance(std::string_view plugin_id) const;
 
     /**
+     * Query an interface from a plugin instance.
+     * @param plugin_handle The plugin instance handle
+     * @param interface_id The interface identifier string
+     * @return Pointer to the interface, or nullptr if not found
+     */
+    void* query_interface(void* plugin_handle, const char* interface_id) const;
+
+    /**
      * Unload all plugins and clear registry.
      */
     void shutdown();
 
    private:
     std::shared_ptr<spdlog::logger> m_logger;
+    LoggingManager* m_logging_manager;
     std::vector<PluginInfo> m_plugins;
     std::vector<LoadedPlugin> m_loaded_plugins;
+    PtsHostApi m_host_api;
 
     auto find_loaded_plugin(std::string_view plugin_id) -> std::vector<LoadedPlugin>::iterator;
     auto find_loaded_plugin(std::string_view plugin_id) const
@@ -100,6 +112,18 @@ class PluginManager {
         return const_cast<PluginManager*>(this)->find_loaded_plugin(plugin_id);
     }
     bool try_load_descriptor(const std::filesystem::path& dll_path, PluginInfo& out_info);
+
+    // Host API implementation helpers
+    void setup_host_api();
+    static LoggerHandle create_logger_impl(const char* name);
+    static void log_info_impl(LoggerHandle logger, const char* message);
+    static void log_warning_impl(LoggerHandle logger, const char* message);
+    static void log_error_impl(LoggerHandle logger, const char* message);
+    static void log_critical_impl(LoggerHandle logger, const char* message);
+    static void log_debug_impl(LoggerHandle logger, const char* message);
+    static void log_trace_impl(LoggerHandle logger, const char* message);
+    static PluginHandle get_plugin_handle_impl(const char* plugin_id);
+    static void* query_interface_impl(PluginHandle plugin_handle, const char* iid);
 };
 
 }  // namespace pts

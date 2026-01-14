@@ -2,13 +2,16 @@
 
 /**
  * Simple lightweight C++ plugin API.
- *  - No plugin dependency system (loading order is unspecified)
- *  - Fixed plugin kinds and interface definitions
+ *  - No plugin dependency system (plugin-level loading ordering is unspecified)
+ *  - Fixed plugin kinds that determine loading order
+ *  - Supports plugin interfaces for public API exposure via function tables
+ *
+ * Interface Query Mechanism:
+ *  - Each plugin can expose multiple function table interfaces
+ *  - Interfaces are identified by unique string IDs (hashed at compile-time)
+ *  - Host queries interfaces via query_interface(handle, interface_id)
+ *  - Function tables must be C-compatible POD structs with function pointers
  */
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 #include <stdint.h>
 
@@ -18,88 +21,67 @@ extern "C" {
 
 #define PTS_PLUGIN_API_VERSION 1
 
+typedef void* PluginHandle;
+typedef void* LoggerHandle;
+
 typedef enum {
-    PTS_PLUGIN_KIND_UNKNOWN = 0,
+    PTS_PLUGIN_KIND_SUBSYSTEM = 0,
     PTS_PLUGIN_KIND_RENDERER = 1,
-    PTS_PLUGIN_KIND_TEST = 99,  // For testing/demo purposes
 } PtsPluginKind;
 
-// ============================================================================
-// Plugin Descriptor (returned by pts_plugin_get_desc)
-// ============================================================================
+/**
+ * Host API, providing essential methods to interact with the host application.
+ * This interface exposes logging and plugin manager methods in an ABI-stable manner.
+ */
+typedef struct {
+    LoggerHandle (*create_logger)(const char* name);
+    void (*log_info)(LoggerHandle logger, const char* message);
+    void (*log_warning)(LoggerHandle logger, const char* message);
+    void (*log_error)(LoggerHandle logger, const char* message);
+    void (*log_critical)(LoggerHandle logger, const char* message);
+    void (*log_debug)(LoggerHandle logger, const char* message);
+    void (*log_trace)(LoggerHandle logger, const char* message);
 
+    PluginHandle (*get_plugin_handle)(const char* plugin_id);
+    void* (*query_interface)(PluginHandle plugin_handle, const char* iid);
+} PtsHostApi;
+
+/**
+ * Descriptor for a plugin.
+ */
 typedef struct {
     uint32_t api_version;      // Must be PTS_PLUGIN_API_VERSION
+    uint32_t struct_size;      // Size of the struct in bytes
     PtsPluginKind kind;        // Plugin category
     const char* plugin_id;     // Unique identifier
     const char* display_name;  // Human-readable name
     const char* version;       // Plugin version string
 
     // Lifecycle callbacks (opaque handle returned)
-    void* (*create)(void);              // Create plugin instance
-    void (*destroy)(void* instance);    // Destroy plugin instance
-    void (*on_load)(void* instance);    // Called after creation
-    void (*on_unload)(void* instance);  // Called before destruction
+    PluginHandle (*create)(PtsHostApi* host_api);             // Create plugin instance
+    void (*destroy)(PluginHandle instance);                   // Destroy plugin instance
+    bool (*on_load)(PluginHandle instance);                   // Called after creation
+    void (*on_unload)(PluginHandle instance);                 // Called before destruction
+    void* (*query_interface)(PluginHandle, const char* iid);  // Query interface by ID string
 } PtsPluginDescriptor;
 
 // ============================================================================
 // Entry Point (required export)
 // ============================================================================
+// Symbol Visibility
+// ============================================================================
+// Plugins are configured to hide all symbols by default (CXX_VISIBILITY_PRESET=hidden).
+// Only symbols explicitly marked with PTS_PLUGIN_EXPORT are made visible.
+// This prevents symbol conflicts between plugins and reduces the dynamic symbol table size.
 
-/**
- * Every plugin DLL must export this function.
- * Returns a pointer to a static descriptor (valid for plugin lifetime).
- */
 #ifdef _WIN32
 #define PTS_PLUGIN_EXPORT __declspec(dllexport)
 #else
 #define PTS_PLUGIN_EXPORT __attribute__((visibility("default")))
 #endif
 
-// The plugin must implement this:
-// PTS_PLUGIN_EXPORT const PtsPluginDescriptor* pts_plugin_get_desc(void);
-
-#ifdef __cplusplus
-}
-#endif
-
-// ============================================================================
-// C++ Helper Macros (optional, for plugin implementers)
-// ============================================================================
-
-#ifdef __cplusplus
-
 /**
- * Convenience macro to implement the plugin entry point.
- *
- * Usage in plugin .cpp:
- *   PTS_PLUGIN_DEFINE(MyPluginClass, PTS_PLUGIN_KIND_TEST, "my_plugin", "My Plugin", "1.0.0")
+ * Every plugin DLL must export this function.
+ * Returns a pointer to a static descriptor (valid for plugin lifetime).
  */
-#define PTS_PLUGIN_DEFINE(PluginClass, Kind, Id, Name, Version)              \
-    extern "C" {                                                             \
-    PTS_PLUGIN_EXPORT const PtsPluginDescriptor* pts_plugin_get_desc(void) { \
-        static PtsPluginDescriptor desc = {                                  \
-            PTS_PLUGIN_API_VERSION,                                          \
-            Kind,                                                            \
-            Id,                                                              \
-            Name,                                                            \
-            Version,                                                         \
-            [](void) -> void* { return new PluginClass(); },                 \
-            [](void* p) { delete static_cast<PluginClass*>(p); },            \
-            [](void* p) { static_cast<PluginClass*>(p)->on_load(); },        \
-            [](void* p) { static_cast<PluginClass*>(p)->on_unload(); }};     \
-        return &desc;                                                        \
-    }                                                                        \
-    }
-
-/**
- * Base lifecycle interface for C++ plugin implementations.
- * Plugins can inherit from this for convenience.
- */
-struct IPlugin {
-    virtual ~IPlugin() = default;
-    virtual void on_load() = 0;
-    virtual void on_unload() = 0;
-};
-
-#endif  // __cplusplus
+#define PLUGIN_ENTRY_POINT_NAME "pts_plugin_get_desc"

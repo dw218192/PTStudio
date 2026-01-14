@@ -53,7 +53,7 @@ int main(int argc, char* argv[]) {
         // Initialize plugin manager
         auto core_logger = logging_manager.get_logger("Core");
         auto plugin_manager_logger = logging_manager.get_logger_shared("PluginManager");
-        pts::PluginManager plugin_manager{plugin_manager_logger};
+        pts::PluginManager plugin_manager{plugin_manager_logger, logging_manager};
 
         // Scan and load plugins
         plugin_manager.scan_directory(plugins_dir_str);

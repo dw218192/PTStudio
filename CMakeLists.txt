@@ -7,6 +7,10 @@ project(${project_name} LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 17)
 
+# Include custom CMake modules
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+include(PluginHelpers)
+
 #default build type is Debug
 if (CMAKE_BUILD_TYPE STREQUAL "")
     set(CMAKE_BUILD_TYPE Debug)

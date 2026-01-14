@@ -2,13 +2,17 @@
 alwaysApply: true
 ---
 
+## Rules
+* Do not generate design or change summary documents unless explicitly requested.
+* Do not generate unit tests for a new feature unless explicitly requested.
+* Do not generate example code to demonstrate the usage of a new feature unless explicitly requested.
+
 ## Goals
 
 * Keep code **readable**, **safe**, and **maintainable**.
 * Preserve **binary compatibility** at DLL boundaries.
 * Make ownership/lifetimes **obvious**.
 * Prefer **simple, testable designs** over cleverness.
-* Do not generate design documents unless explicitly requested.
 
 ---
 
@@ -43,7 +47,7 @@ alwaysApply: true
 ### Additional naming rules (recommended)
 
 * **Local variables:** `snake_case`
-* **Private data members:** `snake_case_` (trailing underscore)
+* **Private data members:** `m_snake_case` (prefixed with `m_`)
 * **Constants:** `kCamelCase` for `constexpr`/`const`
 * **Macros:** avoid; if required, `UPPER_SNAKE_CASE`
 * **File Names:** **lower camelCase**

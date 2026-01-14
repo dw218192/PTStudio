@@ -2,22 +2,20 @@ cmake_minimum_required(VERSION 3.19 FATAL_ERROR)
 
 set(plugin_name "TestPlugin")
 
-add_library(${plugin_name} SHARED
-    testPlugin.cpp
+# Create the plugin target using the standardized helper function
+pts_add_plugin(
+    NAME ${plugin_name}
+    SOURCES testPlugin.cpp
+    DEPENDENCIES test_plugin::api
 )
-target_link_libraries(${plugin_name}
-PRIVATE
-    core::api
-)
-set_target_properties(${plugin_name} PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/plugins
-    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/plugins
-)
-foreach(config Debug Release RelWithDebInfo MinSizeRel)
-    string(TOUPPER ${config} config_upper)
-    set_target_properties(${plugin_name} PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY_${config_upper} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/plugins
-        LIBRARY_OUTPUT_DIRECTORY_${config_upper} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/plugins
-    )
-endforeach()
 
+# ============================================================================
+# Interface Target for public API
+# ============================================================================
+add_library(test_plugin_api INTERFACE)
+add_library(test_plugin::api ALIAS test_plugin_api)
+
+target_include_directories(test_plugin_api
+INTERFACE
+	${CMAKE_CURRENT_SOURCE_DIR}/api
+)

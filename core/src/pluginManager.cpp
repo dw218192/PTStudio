@@ -1,17 +1,111 @@
+#include <core/logging.h>
 #include <core/pluginManager.h>
+#include <core/pluginUtils.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
 #include <boost/dll/import.hpp>
 #include <boost/dll/runtime_symbol_info.hpp>
 #include <boost/function.hpp>
 #include <stdexcept>
+
 namespace pts {
-PluginManager::PluginManager(std::shared_ptr<spdlog::logger> logger) : m_logger(std::move(logger)) {
+
+// Global plugin manager instance pointer for host API callbacks
+static PluginManager* g_plugin_manager = nullptr;
+
+PluginManager::PluginManager(std::shared_ptr<spdlog::logger> logger,
+                             LoggingManager& logging_manager)
+    : m_logger(std::move(logger)), m_logging_manager(&logging_manager) {
+    setup_host_api();
+    g_plugin_manager = this;
     m_logger->info("PluginManager initialized");
 }
 
 PluginManager::~PluginManager() {
+    g_plugin_manager = nullptr;
     shutdown();
+}
+
+void PluginManager::setup_host_api() {
+    m_host_api.create_logger = &PluginManager::create_logger_impl;
+    m_host_api.log_info = &PluginManager::log_info_impl;
+    m_host_api.log_warning = &PluginManager::log_warning_impl;
+    m_host_api.log_error = &PluginManager::log_error_impl;
+    m_host_api.log_critical = &PluginManager::log_critical_impl;
+    m_host_api.log_debug = &PluginManager::log_debug_impl;
+    m_host_api.log_trace = &PluginManager::log_trace_impl;
+    m_host_api.get_plugin_handle = &PluginManager::get_plugin_handle_impl;
+    m_host_api.query_interface = &PluginManager::query_interface_impl;
+}
+
+LoggerHandle PluginManager::create_logger_impl(const char* name) {
+    if (!g_plugin_manager || !name) {
+        return nullptr;
+    }
+
+    // Use LoggingManager to get consistent formatting
+    return &g_plugin_manager->m_logging_manager->get_logger(name);
+}
+
+void PluginManager::log_info_impl(LoggerHandle logger, const char* message) {
+    if (logger && message) {
+        static_cast<spdlog::logger*>(logger)->info(message);
+    }
+}
+
+void PluginManager::log_warning_impl(LoggerHandle logger, const char* message) {
+    if (logger && message) {
+        static_cast<spdlog::logger*>(logger)->warn(message);
+    }
+}
+
+void PluginManager::log_error_impl(LoggerHandle logger, const char* message) {
+    if (logger && message) {
+        static_cast<spdlog::logger*>(logger)->error(message);
+    }
+}
+
+void PluginManager::log_critical_impl(LoggerHandle logger, const char* message) {
+    if (logger && message) {
+        static_cast<spdlog::logger*>(logger)->critical(message);
+    }
+}
+
+void PluginManager::log_debug_impl(LoggerHandle logger, const char* message) {
+    if (logger && message) {
+        static_cast<spdlog::logger*>(logger)->debug(message);
+    }
+}
+
+void PluginManager::log_trace_impl(LoggerHandle logger, const char* message) {
+    if (logger && message) {
+        static_cast<spdlog::logger*>(logger)->trace(message);
+    }
+}
+
+PluginHandle PluginManager::get_plugin_handle_impl(const char* plugin_id) {
+    if (!g_plugin_manager || !plugin_id) {
+        return nullptr;
+    }
+    return g_plugin_manager->get_plugin_instance(plugin_id);
+}
+
+void* PluginManager::query_interface_impl(PluginHandle plugin_handle, const char* iid) {
+    if (!g_plugin_manager || !plugin_handle || !iid) {
+        return nullptr;
+    }
+
+    // Find the loaded plugin descriptor
+    for (const auto& loaded : g_plugin_manager->m_loaded_plugins) {
+        if (loaded.instance == plugin_handle) {
+            if (loaded.descriptor && loaded.descriptor->query_interface) {
+                return loaded.descriptor->query_interface(plugin_handle, iid);
+            }
+            break;
+        }
+    }
+    return nullptr;
 }
 
 size_t PluginManager::scan_directory(std::string_view exe_relative_dir) {
@@ -71,14 +165,14 @@ bool PluginManager::try_load_descriptor(const std::filesystem::path& dll_path,
         // Boost.DLL requires string path
         boost::dll::shared_library lib(dll_path.string(), boost::dll::load_mode::default_mode);
 
-        if (!lib.has("pts_plugin_get_desc")) {
-            m_logger->debug("  {} does not export pts_plugin_get_desc",
+        if (!lib.has(PLUGIN_ENTRY_POINT_NAME)) {
+            m_logger->debug("  {} does not export " PLUGIN_ENTRY_POINT_NAME,
                             dll_path.filename().string());
             return false;
         }
 
         // Import the descriptor function
-        auto get_desc = lib.get<const PtsPluginDescriptor*()>("pts_plugin_get_desc");
+        auto get_desc = lib.get<const PtsPluginDescriptor*()>(PLUGIN_ENTRY_POINT_NAME);
         const PtsPluginDescriptor* desc = get_desc();
 
         if (!desc) {
@@ -91,6 +185,14 @@ bool PluginManager::try_load_descriptor(const std::filesystem::path& dll_path,
             m_logger->error("  {} has incompatible API version {} (expected {})",
                             dll_path.filename().string(), desc->api_version,
                             PTS_PLUGIN_API_VERSION);
+            return false;
+        }
+
+        // Validate struct size
+        if (desc->struct_size != sizeof(PtsPluginDescriptor)) {
+            m_logger->error("  {} has incompatible ABI (struct size mismatch) {} (expected {})",
+                            dll_path.filename().string(), desc->struct_size,
+                            sizeof(PtsPluginDescriptor));
             return false;
         }
 
@@ -138,7 +240,7 @@ bool PluginManager::load_plugin(std::string_view plugin_id) {
         boost::dll::shared_library lib(it->dll_path.string(), boost::dll::load_mode::default_mode);
 
         // Get descriptor
-        auto get_desc = lib.get<const PtsPluginDescriptor*()>("pts_plugin_get_desc");
+        auto get_desc = lib.get<const PtsPluginDescriptor*()>(PLUGIN_ENTRY_POINT_NAME);
         const PtsPluginDescriptor* desc = get_desc();
 
         // Create loaded plugin entry
@@ -146,14 +248,29 @@ bool PluginManager::load_plugin(std::string_view plugin_id) {
 
         // Create instance
         if (desc->create) {
-            loaded.instance = desc->create();
+            loaded.instance = desc->create(&m_host_api);
             m_logger->debug("  Plugin instance created: {}", static_cast<void*>(loaded.instance));
         }
 
-        // Call on_load
+        // Call on_load - this is a potentially fallible operation
         if (desc->on_load && loaded.instance) {
-            desc->on_load(loaded.instance);
-            m_logger->debug("  Plugin on_load() called");
+            bool load_success = desc->on_load(loaded.instance);
+            m_logger->debug("  Plugin on_load() called, result: {}", load_success);
+
+            if (!load_success) {
+                m_logger->error("Plugin '{}' on_load() failed, cleaning up", plugin_id);
+
+                // Cleanup: destroy instance
+                if (desc->destroy) {
+                    desc->destroy(loaded.instance);
+                    m_logger->debug("  Plugin instance destroyed after on_load failure");
+                }
+
+                // Remove from loaded plugins vector
+                m_loaded_plugins.pop_back();
+
+                return false;
+            }
         }
 
         // Update registry
@@ -208,6 +325,23 @@ void PluginManager::unload_plugin(std::string_view plugin_id) {
 void* PluginManager::get_plugin_instance(std::string_view plugin_id) const {
     auto loaded = find_loaded_plugin(plugin_id);
     return loaded != m_loaded_plugins.end() ? loaded->instance : nullptr;
+}
+
+void* PluginManager::query_interface(void* plugin_handle, const char* interface_id) const {
+    if (!plugin_handle || !interface_id) {
+        return nullptr;
+    }
+
+    // Find the loaded plugin with this instance
+    for (const auto& loaded : m_loaded_plugins) {
+        if (loaded.instance == plugin_handle) {
+            if (loaded.descriptor && loaded.descriptor->query_interface) {
+                return loaded.descriptor->query_interface(plugin_handle, interface_id);
+            }
+            break;
+        }
+    }
+    return nullptr;
 }
 
 void PluginManager::shutdown() {
