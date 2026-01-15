@@ -27,8 +27,8 @@ alwaysApply: true
 
 ### Types
 
-* **Class names:** **lower camelCase**
-  Example: `fileReader`, `httpClient`
+* **Class names:** **Upper camelCase**
+  Example: `FileReader`, `HttpClient`
 
 ### Namespaces and Templates
 

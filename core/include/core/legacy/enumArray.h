@@ -7,9 +7,9 @@
 namespace PTS {
 /**
  * @brief A thin wrapper on top of std::array that allows for strongly typed enum indexing
- * \tparam Enum the enum type to use for indexing
- * \tparam T the type of the array elements
- * \details NOT meant to be general purpose\n
+ * @tparam Enum the enum type to use for indexing
+ * @tparam T the type of the array elements
+ * @details NOT meant to be general purpose\n
  * Assumes the enum class has a __COUNT value as the last value\n
  * and that the enum values are contiguous\n
  * and that the enum values start at 0

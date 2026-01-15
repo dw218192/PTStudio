@@ -12,3 +12,4 @@ Follow @build.mdc for how to build the project
 ## Instructions
 - Work autonomously on user's request and ensure the project can build and all unit tests pass
     - Use `-b` flag to only perform the build step if no reconfiguration is needed
+- Unless the user explicitly asks for backward compatibility, don’t preserve old behavior. If a change breaks something, update the dependent code and delete the obsolete code.

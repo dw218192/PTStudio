@@ -66,6 +66,11 @@ INTERFACE
 	${CMAKE_CURRENT_SOURCE_DIR}/api
 )
 
+target_link_libraries(core_api
+INTERFACE
+	fmt::fmt
+)
+
 # Build unit tests if enabled
 if (CORE_BUILD_TESTS)
 	add_subdirectory(tests)

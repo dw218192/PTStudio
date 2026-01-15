@@ -25,6 +25,16 @@ typedef void* PluginHandle;
 typedef void* LoggerHandle;
 
 typedef enum {
+    PTS_LOG_LEVEL_TRACE = 0,
+    PTS_LOG_LEVEL_DEBUG = 1,
+    PTS_LOG_LEVEL_INFO = 2,
+    PTS_LOG_LEVEL_WARNING = 3,
+    PTS_LOG_LEVEL_ERROR = 4,
+    PTS_LOG_LEVEL_CRITICAL = 5,
+    PTS_LOG_LEVEL_OFF = 6,
+} PtsLogLevel;
+
+typedef enum {
     PTS_PLUGIN_KIND_SUBSYSTEM = 0,
     PTS_PLUGIN_KIND_RENDERER = 1,
 } PtsPluginKind;
@@ -35,15 +45,15 @@ typedef enum {
  */
 typedef struct {
     LoggerHandle (*create_logger)(const char* name);
-    void (*log_info)(LoggerHandle logger, const char* message);
-    void (*log_warning)(LoggerHandle logger, const char* message);
-    void (*log_error)(LoggerHandle logger, const char* message);
-    void (*log_critical)(LoggerHandle logger, const char* message);
-    void (*log_debug)(LoggerHandle logger, const char* message);
-    void (*log_trace)(LoggerHandle logger, const char* message);
+    void (*log)(LoggerHandle logger, PtsLogLevel level, const char* message);
+    bool (*is_level_enabled)(LoggerHandle logger, PtsLogLevel level);
 
     PluginHandle (*get_plugin_handle)(const char* plugin_id);
     void* (*query_interface)(PluginHandle plugin_handle, const char* iid);
+
+    // rendering APIs
+    const void* render_graph_api;  // (PtsRenderGraphApi*)
+    const void* render_world_api;  // (PtsRenderWorldApi*)
 } PtsHostApi;
 
 /**
@@ -64,15 +74,6 @@ typedef struct {
     void (*on_unload)(PluginHandle instance);                 // Called before destruction
     void* (*query_interface)(PluginHandle, const char* iid);  // Query interface by ID string
 } PtsPluginDescriptor;
-
-// ============================================================================
-// Entry Point (required export)
-// ============================================================================
-// Symbol Visibility
-// ============================================================================
-// Plugins are configured to hide all symbols by default (CXX_VISIBILITY_PRESET=hidden).
-// Only symbols explicitly marked with PTS_PLUGIN_EXPORT are made visible.
-// This prevents symbol conflicts between plugins and reduces the dynamic symbol table size.
 
 #ifdef _WIN32
 #define PTS_PLUGIN_EXPORT __declspec(dllexport)
