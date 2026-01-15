@@ -55,6 +55,10 @@ typedef struct {
 
     PluginHandle (*get_plugin_handle)(const char* plugin_id);
     void* (*query_interface)(PluginHandle plugin_handle, const char* iid);
+
+    // rendering APIs
+    const void* render_graph_api;  // (PtsRenderGraphApi*)
+    const void* render_world_api;  // (PtsRenderWorldApi*)
 } PtsHostApi;
 
 /**
