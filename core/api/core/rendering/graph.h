@@ -138,16 +138,16 @@ typedef enum PtsBufUsage : uint32_t {
 
 typedef struct PtsBufferDesc {
     uint64_t size_bytes;
-    uint32_t usage_bits;   // PtsBufUsage
-    uint32_t struct_stride; // 0 for raw buffers, >0 for structured
+    uint32_t usage_bits;     // PtsBufUsage
+    uint32_t struct_stride;  // 0 for raw buffers, >0 for structured
 } PtsBufferDesc;
 
 typedef struct PtsBufferViewDesc {
     PtsBuffer buf;
     uint64_t offset_bytes;
-    uint64_t size_bytes;    // 0 = rest of buffer
-    PtsFormat format;       // For typed buffers; PTS_FMT_UNKNOWN for structured/raw
-    uint32_t struct_stride; // For structured buffer views
+    uint64_t size_bytes;     // 0 = rest of buffer
+    PtsFormat format;        // For typed buffers; PTS_FMT_UNKNOWN for structured/raw
+    uint32_t struct_stride;  // For structured buffer views
 } PtsBufferViewDesc;
 
 // ============================================================================
@@ -324,10 +324,7 @@ typedef struct PtsComputePipelineDesc {
 // Attachment & Pass Types
 // ============================================================================
 
-typedef enum PtsStoreOp : uint8_t {
-    PTS_STORE_STORE = 0,
-    PTS_STORE_DONTCARE = 1
-} PtsStoreOp;
+typedef enum PtsStoreOp : uint8_t { PTS_STORE_STORE = 0, PTS_STORE_DONTCARE = 1 } PtsStoreOp;
 
 typedef enum PtsLoadOp : uint8_t {
     PTS_LOAD_LOAD = 0,
@@ -384,10 +381,14 @@ typedef struct PtsResUse {
 } PtsResUse;
 
 // Helper macros for PtsResUse initialization
-#define PTS_TEX_USE(view, acc) \
-    (PtsResUse) { .kind = PTS_RES_TEXTURE_VIEW, .access = (acc), .tex_view = (view) }
-#define PTS_BUF_USE(view, acc) \
-    (PtsResUse) { .kind = PTS_RES_BUFFER_VIEW, .access = (acc), .buf_view = (view) }
+#define PTS_TEX_USE(view, acc)                                            \
+    (PtsResUse) {                                                         \
+        .kind = PTS_RES_TEXTURE_VIEW, .access = (acc), .tex_view = (view) \
+    }
+#define PTS_BUF_USE(view, acc)                                           \
+    (PtsResUse) {                                                        \
+        .kind = PTS_RES_BUFFER_VIEW, .access = (acc), .buf_view = (view) \
+    }
 
 // ============================================================================
 // Pass Types
@@ -499,4 +500,3 @@ typedef struct PtsRenderGraphApi {
     PtsBuffer (*get_or_create_persistent_buffer)(const char* key, const PtsBufferDesc* desc,
                                                  const char* debug_name);
 } PtsRenderGraphApi;
-

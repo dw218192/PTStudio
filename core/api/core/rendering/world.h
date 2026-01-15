@@ -45,9 +45,9 @@ typedef enum PtsLayoutFieldType : uint32_t {
 } PtsLayoutFieldType;
 
 typedef struct PtsLayoutField {
-    const char* name;              // Field name (lifetime: until schema changes)
-    uint32_t offset_bytes;         // Offset within struct
-    PtsLayoutFieldType type;       // Field type
+    const char* name;         // Field name (lifetime: until schema changes)
+    uint32_t offset_bytes;    // Offset within struct
+    PtsLayoutFieldType type;  // Field type
 } PtsLayoutField;
 
 typedef struct PtsBufferLayout {

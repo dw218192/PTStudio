@@ -67,9 +67,9 @@ typedef struct PtsViewParams {
 // ============================================================================
 
 typedef struct PtsFrameParams {
-    uint64_t frame_index;    // Monotonically increasing frame counter
-    double time_seconds;     // Time since application start
-    double wall_time;        // Wall clock time (for time-of-day, etc.)
+    uint64_t frame_index;  // Monotonically increasing frame counter
+    double time_seconds;   // Time since application start
+    double wall_time;      // Wall clock time (for time-of-day, etc.)
 } PtsFrameParams;
 
 // ============================================================================
@@ -102,11 +102,11 @@ typedef struct PtsFrameIO {
 //
 
 typedef struct PtsDebugOutput {
-    const char* name;        // Display name
-    const char* category;    // Category for grouping (e.g., "GBuffer", "Lighting")
-    PtsTexture texture;      // Texture handle
-    uint32_t mip_level;      // Which mip to display
-    uint32_t array_slice;    // Which array slice to display
+    const char* name;      // Display name
+    const char* category;  // Category for grouping (e.g., "GBuffer", "Lighting")
+    PtsTexture texture;    // Texture handle
+    uint32_t mip_level;    // Which mip to display
+    uint32_t array_slice;  // Which array slice to display
 } PtsDebugOutput;
 
 // ============================================================================

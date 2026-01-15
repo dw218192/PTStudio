@@ -71,8 +71,8 @@ typedef enum PtsBindPoint : uint32_t {
 
 // Descriptor binding - supports both table-based and direct binding
 typedef struct PtsDescriptorBinding {
-    uint32_t set;     // Descriptor set index
-    uint32_t binding; // Binding within set
+    uint32_t set;      // Descriptor set index
+    uint32_t binding;  // Binding within set
     union {
         PtsTexView tex_view;
         PtsBufView buf_view;
@@ -149,8 +149,8 @@ typedef struct PtsCmdApi {
                              const PtsDescriptorBinding* bindings, uint32_t count);
 
     // Push constants (small, fast-path uniform data)
-    void (*push_constants)(PtsCmd* cmd, PtsBindPoint bind_point, uint32_t offset,
-                           const void* data, uint32_t size);
+    void (*push_constants)(PtsCmd* cmd, PtsBindPoint bind_point, uint32_t offset, const void* data,
+                           uint32_t size);
 
     // ------------------------------------------------------------------------
     // Draw commands (graphics passes only)
@@ -176,9 +176,11 @@ typedef struct PtsCmdApi {
     void (*copy_texture)(PtsCmd* cmd, PtsTexture src, PtsTexture dst,
                          const PtsTextureCopyRegion* regions, uint32_t region_count);
     void (*copy_buffer_to_texture)(PtsCmd* cmd, PtsBuffer src, PtsTexture dst,
-                                   const PtsBufferTextureCopyRegion* regions, uint32_t region_count);
+                                   const PtsBufferTextureCopyRegion* regions,
+                                   uint32_t region_count);
     void (*copy_texture_to_buffer)(PtsCmd* cmd, PtsTexture src, PtsBuffer dst,
-                                   const PtsBufferTextureCopyRegion* regions, uint32_t region_count);
+                                   const PtsBufferTextureCopyRegion* regions,
+                                   uint32_t region_count);
 
     // ------------------------------------------------------------------------
     // Debug markers
