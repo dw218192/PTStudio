@@ -1,7 +1,9 @@
 #pragma once
 #include <cstring>
 #include <type_traits>
+#include <utility>
 
+#include "loggingUtils.hpp"
 #include "plugin.h"
 
 /**
@@ -113,6 +115,36 @@ inline void* query_interface_impl(PluginHandle instance, const char* iid) {
         iid, instance);
 }
 
+template <typename InterfaceList>
+struct InterfaceReporter {
+    static void log(const PluginLogger& logger) noexcept {
+        logger.log_info("  - {}", InterfaceList::head::id);
+        InterfaceReporter<typename InterfaceList::tail>::log(logger);
+    }
+};
+
+template <>
+struct InterfaceReporter<TypeListEnd> {
+    static void log(const PluginLogger& /*logger*/) noexcept {
+    }
+};
+
+template <typename PluginClass>
+inline void log_plugin_started(const PluginLogger& logger) noexcept {
+    logger.log_info("Plugin started");
+    using interface_list = typename PluginInterfaceTable<PluginClass>::interface_list;
+    if constexpr (std::is_same_v<interface_list, TypeListEnd>) {
+        logger.log_info("Exported interfaces: none");
+    } else {
+        logger.log_info("Exported interfaces:");
+        InterfaceReporter<interface_list>::log(logger);
+    }
+}
+
+inline void log_plugin_shutdown(const PluginLogger& logger) noexcept {
+    logger.log_info("Plugin shutting down");
+}
+
 }  // namespace detail
 
 /**
@@ -120,8 +152,7 @@ inline void* query_interface_impl(PluginHandle instance, const char* iid) {
  * Plugins can inherit from this for convenience.
  */
 struct IPlugin {
-    explicit IPlugin(PtsHostApi* host_api) : m_host_api(host_api) {
-    }
+    IPlugin() = default;
     virtual ~IPlugin() = default;
 
     /**
@@ -136,13 +167,36 @@ struct IPlugin {
      */
     virtual void on_unload() = 0;
 
-   protected:
-    PtsHostApi* host_api() const {
+    PluginLogger& logger() noexcept {
+        return m_logger;
+    }
+
+    const PluginLogger& logger() const noexcept {
+        return m_logger;
+    }
+
+    PtsHostApi* host_api() const noexcept {
         return m_host_api;
     }
 
    private:
+    // hidden friend to hack access to initialize()
+    template <typename PluginClass>
+    friend bool initialize_plugin(PluginClass* plugin, PtsHostApi* host_api,
+                                  PluginLogger logger) noexcept {
+        if (!plugin || !host_api || !logger.is_valid()) {
+            return false;
+        }
+        plugin->initialize(host_api, std::move(logger));
+        return true;
+    }
+
+    void initialize(PtsHostApi* host_api, PluginLogger logger) noexcept {
+        m_host_api = host_api;
+        m_logger = std::move(logger);
+    }
     PtsHostApi* m_host_api = nullptr;
+    PluginLogger m_logger;
 };
 
 }  // namespace pts
@@ -168,14 +222,33 @@ struct IPlugin {
             Version,                                                                \
             [](PtsHostApi* host_api) -> PluginHandle {                              \
                 try {                                                               \
-                    return new PluginClass(host_api);                               \
+                    auto logger = pts::make_logger(host_api, Id);                   \
+                    auto* plugin = new PluginClass();                               \
+                    if (!initialize_plugin(plugin, host_api, std::move(logger))) {  \
+                        delete plugin;                                              \
+                        return nullptr;                                             \
+                    }                                                               \
+                    return plugin;                                                  \
                 } catch (...) {                                                     \
                     return nullptr;                                                 \
                 }                                                                   \
             },                                                                      \
             [](PluginHandle p) { delete static_cast<PluginClass*>(p); },            \
-            [](PluginHandle p) { return static_cast<PluginClass*>(p)->on_load(); }, \
-            [](PluginHandle p) { static_cast<PluginClass*>(p)->on_unload(); },      \
+            [](PluginHandle p) {                                                    \
+                auto* plugin = static_cast<PluginClass*>(p);                        \
+                bool ok = plugin && plugin->on_load();                              \
+                if (ok) {                                                           \
+                    pts::detail::log_plugin_started<PluginClass>(plugin->logger()); \
+                }                                                                   \
+                return ok;                                                          \
+            },                                                                      \
+            [](PluginHandle p) {                                                    \
+                auto* plugin = static_cast<PluginClass*>(p);                        \
+                if (plugin) {                                                       \
+                    pts::detail::log_plugin_shutdown(plugin->logger());             \
+                    plugin->on_unload();                                            \
+                }                                                                   \
+            },                                                                      \
             [](PluginHandle p, const char* iid) {                                   \
                 return pts::detail::query_interface_impl<PluginClass>(p, iid);      \
             }};                                                                     \

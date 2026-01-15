@@ -75,15 +75,6 @@ typedef struct {
     void* (*query_interface)(PluginHandle, const char* iid);  // Query interface by ID string
 } PtsPluginDescriptor;
 
-// ============================================================================
-// Entry Point (required export)
-// ============================================================================
-// Symbol Visibility
-// ============================================================================
-// Plugins are configured to hide all symbols by default (CXX_VISIBILITY_PRESET=hidden).
-// Only symbols explicitly marked with PTS_PLUGIN_EXPORT are made visible.
-// This prevents symbol conflicts between plugins and reduces the dynamic symbol table size.
-
 #ifdef _WIN32
 #define PTS_PLUGIN_EXPORT __declspec(dllexport)
 #else

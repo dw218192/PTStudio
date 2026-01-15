@@ -33,11 +33,10 @@ class PluginLogger final {
         return m_logger;
     }
 
-#define PTS_PLUGIN_LOG_METHOD(method_name, level)                               \
-    template <typename... Args>                                                 \
-    void method_name(fmt::format_string<Args...> format, Args&&... args) const   \
-        noexcept {                                                              \
-        log_impl(level, format, std::forward<Args>(args)...);                   \
+#define PTS_PLUGIN_LOG_METHOD(method_name, level)                                         \
+    template <typename... Args>                                                           \
+    void method_name(fmt::format_string<Args...> format, Args&&... args) const noexcept { \
+        log_impl(level, format, std::forward<Args>(args)...);                             \
     }
 
     PTS_PLUGIN_LOG_METHOD(log_info, PTS_LOG_LEVEL_INFO)

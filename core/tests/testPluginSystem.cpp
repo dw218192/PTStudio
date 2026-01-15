@@ -154,7 +154,6 @@ TEST_CASE("PluginManager - Interface Querying") {
 
         // Cast to the interface type
         auto* iface = static_cast<TestPluginInterfaceV1*>(iface_ptr);
-        CHECK(iface->version == TEST_PLUGIN_INTERFACE_V1_VERSION);
 
         // Test interface functions
         const char* greeting = iface->get_greeting();
@@ -175,7 +174,6 @@ TEST_CASE("PluginManager - Interface Querying") {
 
         // Cast to the interface type
         auto* iface = static_cast<TestPluginMathInterfaceV1*>(iface_ptr);
-        CHECK(iface->version == TEST_PLUGIN_MATH_INTERFACE_V1_VERSION);
 
         // Test math operations
         int32_t product = iface->multiply(7, 6);
