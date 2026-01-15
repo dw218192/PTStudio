@@ -45,12 +45,7 @@ typedef enum {
  */
 typedef struct {
     LoggerHandle (*create_logger)(const char* name);
-    void (*log_info)(LoggerHandle logger, const char* message);
-    void (*log_warning)(LoggerHandle logger, const char* message);
-    void (*log_error)(LoggerHandle logger, const char* message);
-    void (*log_critical)(LoggerHandle logger, const char* message);
-    void (*log_debug)(LoggerHandle logger, const char* message);
-    void (*log_trace)(LoggerHandle logger, const char* message);
+    void (*log)(LoggerHandle logger, PtsLogLevel level, const char* message);
     bool (*is_level_enabled)(LoggerHandle logger, PtsLogLevel level);
 
     PluginHandle (*get_plugin_handle)(const char* plugin_id);

@@ -29,15 +29,12 @@ PluginManager::~PluginManager() {
 
 void PluginManager::setup_host_api() {
     m_host_api.create_logger = &PluginManager::create_logger_impl;
-    m_host_api.log_info = &PluginManager::log_info_impl;
-    m_host_api.log_warning = &PluginManager::log_warning_impl;
-    m_host_api.log_error = &PluginManager::log_error_impl;
-    m_host_api.log_critical = &PluginManager::log_critical_impl;
-    m_host_api.log_debug = &PluginManager::log_debug_impl;
-    m_host_api.log_trace = &PluginManager::log_trace_impl;
+    m_host_api.log = &PluginManager::log_impl;
     m_host_api.is_level_enabled = &PluginManager::is_level_enabled_impl;
     m_host_api.get_plugin_handle = &PluginManager::get_plugin_handle_impl;
     m_host_api.query_interface = &PluginManager::query_interface_impl;
+    m_host_api.render_graph_api = nullptr;
+    m_host_api.render_world_api = nullptr;
 }
 
 LoggerHandle PluginManager::create_logger_impl(const char* name) {
@@ -49,40 +46,41 @@ LoggerHandle PluginManager::create_logger_impl(const char* name) {
     return &g_plugin_manager->m_logging_manager->get_logger(name);
 }
 
-void PluginManager::log_info_impl(LoggerHandle logger, const char* message) {
-    if (logger && message) {
-        static_cast<spdlog::logger*>(logger)->info(message);
+void PluginManager::log_impl(LoggerHandle logger, PtsLogLevel level, const char* message) {
+    if (!logger || !message) {
+        return;
     }
-}
 
-void PluginManager::log_warning_impl(LoggerHandle logger, const char* message) {
-    if (logger && message) {
-        static_cast<spdlog::logger*>(logger)->warn(message);
-    }
-}
+    auto* spd_logger = static_cast<spdlog::logger*>(logger);
+    spdlog::level::level_enum spd_level = spdlog::level::off;
 
-void PluginManager::log_error_impl(LoggerHandle logger, const char* message) {
-    if (logger && message) {
-        static_cast<spdlog::logger*>(logger)->error(message);
+    switch (level) {
+        case PTS_LOG_LEVEL_TRACE:
+            spd_level = spdlog::level::trace;
+            break;
+        case PTS_LOG_LEVEL_DEBUG:
+            spd_level = spdlog::level::debug;
+            break;
+        case PTS_LOG_LEVEL_INFO:
+            spd_level = spdlog::level::info;
+            break;
+        case PTS_LOG_LEVEL_WARNING:
+            spd_level = spdlog::level::warn;
+            break;
+        case PTS_LOG_LEVEL_ERROR:
+            spd_level = spdlog::level::err;
+            break;
+        case PTS_LOG_LEVEL_CRITICAL:
+            spd_level = spdlog::level::critical;
+            break;
+        case PTS_LOG_LEVEL_OFF:
+            spd_level = spdlog::level::off;
+            break;
+        default:
+            return;
     }
-}
 
-void PluginManager::log_critical_impl(LoggerHandle logger, const char* message) {
-    if (logger && message) {
-        static_cast<spdlog::logger*>(logger)->critical(message);
-    }
-}
-
-void PluginManager::log_debug_impl(LoggerHandle logger, const char* message) {
-    if (logger && message) {
-        static_cast<spdlog::logger*>(logger)->debug(message);
-    }
-}
-
-void PluginManager::log_trace_impl(LoggerHandle logger, const char* message) {
-    if (logger && message) {
-        static_cast<spdlog::logger*>(logger)->trace(message);
-    }
+    spd_logger->log(spd_level, message);
 }
 
 bool PluginManager::is_level_enabled_impl(LoggerHandle logger, PtsLogLevel level) {

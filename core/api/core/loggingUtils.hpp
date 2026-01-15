@@ -33,41 +33,21 @@ class PluginLogger final {
         return m_logger;
     }
 
-    template <typename... Args>
-    void log_info(fmt::format_string<Args...> format, Args&&... args) const noexcept {
-        log_impl(PTS_LOG_LEVEL_INFO, m_host_api ? m_host_api->log_info : nullptr, format,
-                 std::forward<Args>(args)...);
+#define PTS_PLUGIN_LOG_METHOD(method_name, level)                               \
+    template <typename... Args>                                                 \
+    void method_name(fmt::format_string<Args...> format, Args&&... args) const   \
+        noexcept {                                                              \
+        log_impl(level, format, std::forward<Args>(args)...);                   \
     }
 
-    template <typename... Args>
-    void log_warning(fmt::format_string<Args...> format, Args&&... args) const noexcept {
-        log_impl(PTS_LOG_LEVEL_WARNING, m_host_api ? m_host_api->log_warning : nullptr, format,
-                 std::forward<Args>(args)...);
-    }
+    PTS_PLUGIN_LOG_METHOD(log_info, PTS_LOG_LEVEL_INFO)
+    PTS_PLUGIN_LOG_METHOD(log_warning, PTS_LOG_LEVEL_WARNING)
+    PTS_PLUGIN_LOG_METHOD(log_error, PTS_LOG_LEVEL_ERROR)
+    PTS_PLUGIN_LOG_METHOD(log_critical, PTS_LOG_LEVEL_CRITICAL)
+    PTS_PLUGIN_LOG_METHOD(log_debug, PTS_LOG_LEVEL_DEBUG)
+    PTS_PLUGIN_LOG_METHOD(log_trace, PTS_LOG_LEVEL_TRACE)
 
-    template <typename... Args>
-    void log_error(fmt::format_string<Args...> format, Args&&... args) const noexcept {
-        log_impl(PTS_LOG_LEVEL_ERROR, m_host_api ? m_host_api->log_error : nullptr, format,
-                 std::forward<Args>(args)...);
-    }
-
-    template <typename... Args>
-    void log_critical(fmt::format_string<Args...> format, Args&&... args) const noexcept {
-        log_impl(PTS_LOG_LEVEL_CRITICAL, m_host_api ? m_host_api->log_critical : nullptr, format,
-                 std::forward<Args>(args)...);
-    }
-
-    template <typename... Args>
-    void log_debug(fmt::format_string<Args...> format, Args&&... args) const noexcept {
-        log_impl(PTS_LOG_LEVEL_DEBUG, m_host_api ? m_host_api->log_debug : nullptr, format,
-                 std::forward<Args>(args)...);
-    }
-
-    template <typename... Args>
-    void log_trace(fmt::format_string<Args...> format, Args&&... args) const noexcept {
-        log_impl(PTS_LOG_LEVEL_TRACE, m_host_api ? m_host_api->log_trace : nullptr, format,
-                 std::forward<Args>(args)...);
-    }
+#undef PTS_PLUGIN_LOG_METHOD
 
     [[nodiscard]] auto is_level_enabled(PtsLogLevel level) const noexcept -> bool {
         if (!m_logger || !m_host_api || !m_host_api->is_level_enabled) {
@@ -78,13 +58,13 @@ class PluginLogger final {
 
    private:
     template <typename... Args>
-    void log_impl(PtsLogLevel level, void (*log_fn)(LoggerHandle, const char*),
-                  fmt::format_string<Args...> format, Args&&... args) const noexcept {
-        if (!m_logger || !log_fn) {
+    void log_impl(PtsLogLevel level, fmt::format_string<Args...> format,
+                  Args&&... args) const noexcept {
+        if (!m_logger || !m_host_api || !m_host_api->log) {
             return;
         }
 
-        if (m_host_api && m_host_api->is_level_enabled) {
+        if (m_host_api->is_level_enabled) {
             if (!m_host_api->is_level_enabled(m_logger, level)) {
                 return;
             }
@@ -93,7 +73,7 @@ class PluginLogger final {
         }
 
         std::string message = fmt::format(format, std::forward<Args>(args)...);
-        log_fn(m_logger, message.c_str());
+        m_host_api->log(m_logger, level, message.c_str());
     }
 
     PtsHostApi* m_host_api = nullptr;

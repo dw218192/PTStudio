@@ -116,12 +116,7 @@ class PluginManager {
     // Host API implementation helpers
     void setup_host_api();
     static LoggerHandle create_logger_impl(const char* name);
-    static void log_info_impl(LoggerHandle logger, const char* message);
-    static void log_warning_impl(LoggerHandle logger, const char* message);
-    static void log_error_impl(LoggerHandle logger, const char* message);
-    static void log_critical_impl(LoggerHandle logger, const char* message);
-    static void log_debug_impl(LoggerHandle logger, const char* message);
-    static void log_trace_impl(LoggerHandle logger, const char* message);
+    static void log_impl(LoggerHandle logger, PtsLogLevel level, const char* message);
     static bool is_level_enabled_impl(LoggerHandle logger, PtsLogLevel level);
     static PluginHandle get_plugin_handle_impl(const char* plugin_id);
     static void* query_interface_impl(PluginHandle plugin_handle, const char* iid);
