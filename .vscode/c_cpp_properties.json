@@ -6,6 +6,7 @@
                 "path": [
                     "${workspaceFolder}/core/**/include",
                     "${workspaceFolder}/core/include/core",
+                    "${workspaceFolder}/core/api/core",
                     "${workspaceFolder}/editor/**/include",
                     "${workspaceFolder}/editor/include/editor",
                     "${workspaceFolder}/gl_utils/**/include",
@@ -14,12 +15,14 @@
                     "${workspaceFolder}/vulkan_raytracer/include/vulkan_raytracer",
                     "${workspaceFolder}/ext/**",
                     "${workspaceFolder}/_build/deps/full_deploy/host/**/include",
-                    "${workspaceFolder}/_build/*/_cmrc/include"
+                    "${workspaceFolder}/_build/*/_cmrc/include",
+                    "${workspaceFolder}/plugins/**/api/**"
                 ]
             },
             "includePath": [
                 "${workspaceFolder}/core/**/include",
                 "${workspaceFolder}/core/include/core",
+                "${workspaceFolder}/core/api/**",
                 "${workspaceFolder}/editor/**/include",
                 "${workspaceFolder}/editor/include/editor",
                 "${workspaceFolder}/gl_utils/**/include",
@@ -28,7 +31,8 @@
                 "${workspaceFolder}/vulkan_raytracer/include/vulkan_raytracer",
                 "${workspaceFolder}/ext/**",
                 "${workspaceFolder}/_build/deps/full_deploy/host/**/include",
-                "${workspaceFolder}/_build/*/_cmrc/include"
+                "${workspaceFolder}/_build/*/_cmrc/include",
+                "${workspaceFolder}/plugins/**/api/**"
             ],
             "name": "PTStudio",
             "cppStandard": "c++17",

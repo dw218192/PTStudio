@@ -17,9 +17,8 @@ class PluginLogger final {
 
     PluginLogger(PtsHostApi* host_api, const char* logger_name) noexcept
         : m_host_api(host_api),
-          m_logger(host_api && host_api->create_logger
-                       ? host_api->create_logger(logger_name)
-                       : nullptr) {
+          m_logger(host_api && host_api->create_logger ? host_api->create_logger(logger_name)
+                                                       : nullptr) {
     }
 
     PluginLogger(PtsHostApi* host_api, LoggerHandle logger) noexcept
@@ -92,7 +91,7 @@ class PluginLogger final {
         } else if (level == PTS_LOG_LEVEL_OFF) {
             return;
         }
-        
+
         std::string message = fmt::format(format, std::forward<Args>(args)...);
         log_fn(m_logger, message.c_str());
     }
@@ -101,8 +100,8 @@ class PluginLogger final {
     LoggerHandle m_logger = nullptr;
 };
 
-[[nodiscard]] inline auto make_logger(PtsHostApi* host_api, const char* logger_name) noexcept
-    -> PluginLogger {
+[[nodiscard]] inline auto make_logger(PtsHostApi* host_api,
+                                      const char* logger_name) noexcept -> PluginLogger {
     return PluginLogger(host_api, logger_name);
 }
 

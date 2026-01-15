@@ -1,7 +1,8 @@
-#include <core/loggingUtils.h>
-#include <core/pluginUtils.h>
 #include <test_plugin/interface.h>
 #include <test_plugin/math.h>
+
+#include <core/loggingUtils.hpp>
+#include <core/pluginUtils.hpp>
 
 // ============================================================================
 // Interface ID constants

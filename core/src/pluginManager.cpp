@@ -1,12 +1,12 @@
 #include <core/logging.h>
 #include <core/pluginManager.h>
-#include <core/pluginUtils.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
 #include <boost/dll/import.hpp>
 #include <boost/dll/runtime_symbol_info.hpp>
 #include <boost/function.hpp>
+#include <core/pluginUtils.hpp>
 #include <stdexcept>
 
 namespace pts {
