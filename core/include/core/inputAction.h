@@ -84,9 +84,10 @@ struct InputAction {
         return std::move(*this);
     }
 
-   private:
+  private:
     Input m_input;
     std::function<void(InputEvent const&)> m_action;
     std::vector<InputActionConstraint> m_constraints;
 };
 }  // namespace PTS
+

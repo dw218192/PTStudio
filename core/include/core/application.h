@@ -43,7 +43,6 @@ struct Application {
 
     template <typename... Args>
     void log(pts::LogLevel level, std::string_view fmt, Args&&... args) noexcept {
-        // Note: This requires a logger to be registered with the name from get_name()
         m_logger->log(static_cast<spdlog::level::level_enum>(level), fmt,
                       std::forward<Args>(args)...);
     }

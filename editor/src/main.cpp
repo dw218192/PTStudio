@@ -64,7 +64,7 @@ int main(int argc, char* argv[]) {
         }
 
         // Run the application
-        PTS::Editor::EditorApplication{"PT Editor", config, logging_manager, plugin_manager}.run();
+        PTS::Editor::EditorApplication{"Editor", config, logging_manager, plugin_manager}.run();
 
         // Plugin manager and logging manager will be destroyed here, ensuring proper shutdown
     } catch (std::exception& e) {

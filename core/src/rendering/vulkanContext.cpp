@@ -1,10 +1,13 @@
-#include "include/vulkanContext.h"
+#include <core/rendering/vulkanContext.h>
 
 #include <cstring>
 #include <stdexcept>
 #include <vector>
 
-namespace PTS::Editor {
+VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
+
+namespace PTS::rendering {
+
 namespace {
 bool has_extension(vk::PhysicalDevice device, const char* name) {
     auto props = device.enumerateDeviceExtensionProperties();
@@ -55,13 +58,12 @@ VulkanContext::VulkanContext(vk::Instance instance, vk::SurfaceKHR surface)
                           .setQueuePriorities(priority);
 
     auto device_exts = std::vector<char const*>{VK_KHR_SWAPCHAIN_EXTENSION_NAME};
-    auto device_info =
-        vk::DeviceCreateInfo{}.setQueueCreateInfos(queue_info).setPEnabledExtensionNames(
-            device_exts);
+    auto device_info = vk::DeviceCreateInfo{}
+                           .setQueueCreateInfos(queue_info)
+                           .setPEnabledExtensionNames(device_exts);
 
     m_device = m_physical_device.createDeviceUnique(device_info);
     VULKAN_HPP_DEFAULT_DISPATCHER.init(m_device.get());
     m_graphics_queue = m_device->getQueue(m_graphics_queue_family, 0);
 }
-}  // namespace PTS::Editor
-
+}  // namespace PTS::rendering

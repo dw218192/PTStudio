@@ -1,18 +1,21 @@
 #pragma once
 
 #include <core/application.h>
+#include <core/debugDrawer.h>
+#include <core/inputAction.h>
 #include <core/legacy/callbackList.h>
+#include <core/rendering/renderingHost.h>
+#include <imgui.h>
 
 #include <array>
 #include <bitset>
 #include <functional>
 #include <optional>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
-#include "debugDrawer.h"
-#include "ext.h"
-#include "inputAction.h"
+struct GLFWwindow;
 
 namespace PTS {
 /**
@@ -49,18 +52,12 @@ struct GLFWApplication : Application {
      */
     virtual void loop(float dt) = 0;
 
-    // Vulkan/ImGui initialization (called after a renderer provides a Vulkan device)
-    auto init_imgui_vulkan(vk::PhysicalDevice physical_device, vk::Device device,
-                           uint32_t graphics_queue_family, vk::Queue graphics_queue) -> void;
-    auto shutdown_imgui_vulkan() noexcept -> void;
-
-    // Vulkan instance/surface accessors (instance is owned by GLFWApplication)
-    [[nodiscard]] auto get_vk_instance() const noexcept -> vk::Instance {
-        return m_vk_instance.get();
-    }
-    [[nodiscard]] auto get_vk_surface() const noexcept -> vk::SurfaceKHR {
-        return m_vk_surface;
-    }
+    [[nodiscard]] auto get_render_graph_api() const noexcept -> const PtsRenderGraphApi*;
+    [[nodiscard]] auto get_render_output_texture() const noexcept -> PtsTexture;
+    [[nodiscard]] auto get_render_output_imgui_id() const noexcept -> ImTextureID;
+    auto resize_render_output(uint32_t width, uint32_t height) -> void;
+    auto set_render_graph_current() -> void;
+    auto clear_render_graph_current() -> void;
 
    protected:
     virtual auto handle_input(InputEvent const& event) noexcept -> void {
@@ -123,41 +120,7 @@ struct GLFWApplication : Application {
 
     static constexpr auto k_no_hovered_widget = "";
 
-    // Vulkan rendering for ImGui
-    auto create_vulkan_instance() -> void;
-    auto create_vulkan_surface() -> void;
-    auto create_swapchain() -> void;
-    auto create_render_pass() -> void;
-    auto create_framebuffers() -> void;
-    auto create_command_pool() -> void;
-    auto create_command_buffers() -> void;
-    auto create_sync_objects() -> void;
-    auto cleanup_swapchain() -> void;
-    auto recreate_swapchain() -> void;
-    auto record_command_buffer(vk::CommandBuffer cmd_buf, uint32_t image_index) -> void;
-    auto render_frame() -> void;
-
-    vk::UniqueInstance m_vk_instance;
-    vk::SurfaceKHR m_vk_surface{VK_NULL_HANDLE};
-    vk::PhysicalDevice m_vk_physical_device{};
-    vk::Device m_vk_device{};
-    vk::Queue m_vk_graphics_queue{};
-    uint32_t m_vk_graphics_queue_family{0};
-    vk::UniqueSwapchainKHR m_vk_swapchain;
-    vk::Format m_vk_swapchain_format{vk::Format::eUndefined};
-    vk::Extent2D m_vk_swapchain_extent{};
-    std::vector<vk::Image> m_vk_swapchain_images;
-    std::vector<vk::UniqueImageView> m_vk_swapchain_image_views;
-    vk::UniqueRenderPass m_vk_render_pass;
-    std::vector<vk::UniqueFramebuffer> m_vk_framebuffers;
-    vk::UniqueCommandPool m_vk_command_pool;
-    std::vector<vk::UniqueCommandBuffer> m_vk_command_buffers;
-    std::vector<vk::UniqueSemaphore> m_vk_image_available_semaphores;
-    std::vector<vk::UniqueSemaphore> m_vk_render_finished_semaphores;
-    std::vector<vk::UniqueFence> m_vk_in_flight_fences;
-    size_t m_vk_frame_index{0};
-    bool m_vk_framebuffer_resized{false};
-    bool m_imgui_vulkan_initialized{false};
-    vk::UniqueDescriptorPool m_imgui_descriptor_pool;
+    std::unique_ptr<PTS::rendering::RenderingHost> m_rendering_host;
+    bool m_framebuffer_resized{false};
 };
 }  // namespace PTS

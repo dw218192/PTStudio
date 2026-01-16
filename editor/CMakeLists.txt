@@ -33,7 +33,6 @@ PRIVATE
 	glfw
 	imguizmo
 	ImGuiColorTextEdit
-	Vulkan::Vulkan
 	Boost::stacktrace
 	Boost::stacktrace_from_exception
 	Boost::program_options
@@ -41,10 +40,6 @@ PRIVATE
 	${exec_name}::rc
 )
 
-target_compile_definitions(${exec_name}
-PRIVATE
-	VULKAN_HPP_DISPATCH_LOADER_DYNAMIC
-)
 
 target_include_directories(${exec_name}
 PRIVATE

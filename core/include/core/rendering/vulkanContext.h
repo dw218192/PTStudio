@@ -2,9 +2,15 @@
 
 #include <vulkan/vulkan.hpp>
 
-namespace PTS::Editor {
+/**
+ * @brief Vulkan context management, providing access to the Vulkan instance, surface, device, and
+ * queue.
+ *
+ * TODO: This class is also responsible for managing all the allocation pools.
+ */
+namespace PTS::rendering {
 class VulkanContext {
-  public:
+   public:
     VulkanContext(vk::Instance instance, vk::SurfaceKHR surface);
     ~VulkanContext() = default;
 
@@ -16,6 +22,12 @@ class VulkanContext {
     [[nodiscard]] auto physical_device() const noexcept -> vk::PhysicalDevice {
         return m_physical_device;
     }
+    [[nodiscard]] auto instance() const noexcept -> vk::Instance {
+        return m_instance;
+    }
+    [[nodiscard]] auto surface() const noexcept -> vk::SurfaceKHR {
+        return m_surface;
+    }
     [[nodiscard]] auto device() const noexcept -> vk::Device {
         return m_device.get();
     }
@@ -26,7 +38,7 @@ class VulkanContext {
         return m_graphics_queue_family;
     }
 
-  private:
+   private:
     vk::Instance m_instance{};
     vk::SurfaceKHR m_surface{};
     vk::PhysicalDevice m_physical_device{};
@@ -34,5 +46,4 @@ class VulkanContext {
     vk::Queue m_graphics_queue{};
     uint32_t m_graphics_queue_family{0};
 };
-}  // namespace PTS::Editor
-
+}  // namespace PTS::rendering

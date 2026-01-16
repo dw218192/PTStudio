@@ -1,9 +1,9 @@
-#include "include/renderGraphHost.h"
+#include <core/rendering/renderGraphHost.h>
 
 #include <array>
 #include <cstring>
 
-namespace PTS::Editor {
+namespace PTS::rendering {
 thread_local RenderGraphHost* RenderGraphHost::s_current = nullptr;
 
 RenderGraphHost::RenderGraphHost(vk::PhysicalDevice physical_device, vk::Device device,
@@ -171,7 +171,6 @@ void RenderGraphHost::execute(Graph& graph) {
         wrote_output = true;
     }
     if (!wrote_output) {
-        // Ensure ImGui samples from a defined layout even if no pass ran.
         transition_image_layout(cmd_buf, vk::ImageLayout::eShaderReadOnlyOptimal);
     }
 
@@ -231,15 +230,8 @@ void RenderGraphHost::create_output_resources() {
 
     m_output_texture = PtsTexture{};
     m_output_texture.h = 1;
-    if (m_output_imgui_id) {
-        ImGui_ImplVulkan_RemoveTexture(static_cast<VkDescriptorSet>(m_output_imgui_id));
-        m_output_imgui_id = nullptr;
-    }
-    m_output_imgui_id = ImGui_ImplVulkan_AddTexture(m_output_sampler, m_output_view,
-                                                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     m_output_layout = vk::ImageLayout::eUndefined;
 
-    // Ensure the image is in a valid layout before ImGui samples it.
     auto cmd_buf = allocate_command_buffer();
     cmd_buf.begin(vk::CommandBufferBeginInfo{vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
     transition_image_layout(cmd_buf, vk::ImageLayout::eShaderReadOnlyOptimal);
@@ -250,10 +242,6 @@ void RenderGraphHost::create_output_resources() {
 }
 
 void RenderGraphHost::destroy_output_resources() {
-    if (m_output_imgui_id) {
-        ImGui_ImplVulkan_RemoveTexture(static_cast<VkDescriptorSet>(m_output_imgui_id));
-        m_output_imgui_id = nullptr;
-    }
     if (m_output_sampler) {
         m_device.destroySampler(m_output_sampler);
         m_output_sampler = VK_NULL_HANDLE;
@@ -339,4 +327,4 @@ uint32_t RenderGraphHost::find_memory_type(uint32_t type_bits, vk::MemoryPropert
     }
     return 0;
 }
-}  // namespace PTS::Editor
+}  // namespace PTS::rendering

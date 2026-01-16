@@ -14,11 +14,10 @@
 #include <cstdlib>
 #include <iostream>
 
-#include "glfwApplication.h"
+#include <core/glfwApplication.h>
+#include <core/inputAction.h>
+
 #include "imgui/includes.h"
-#include "inputAction.h"
-#include "renderGraphHost.h"
-#include "vulkanContext.h"
 
 namespace PTS::Editor {
 constexpr auto k_init_move_sensitivity = 5.0f;
@@ -87,8 +86,6 @@ struct EditorApplication final : GLFWApplication {
     PluginHandle m_renderer_plugin{nullptr};
     RendererPluginInterfaceV1* m_renderer_interface{nullptr};
     PtsHostApi m_renderer_host_api{};
-    std::unique_ptr<VulkanContext> m_vk_context;
-    std::unique_ptr<RenderGraphHost> m_render_graph;
     uint64_t m_frame_index{0};
 
     struct ControlState {

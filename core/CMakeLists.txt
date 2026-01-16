@@ -41,6 +41,13 @@ PUBLIC
 	tcb-span::tcb-span
 	nlohmann_json::nlohmann_json
 	Boost::filesystem
+	Vulkan::Vulkan
+	glfw
+)
+
+target_compile_definitions(${lib_name}
+PRIVATE
+	VULKAN_HPP_DISPATCH_LOADER_DYNAMIC
 )
 
 set(PT_CORE_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/include PARENT_SCOPE)

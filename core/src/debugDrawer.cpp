@@ -1,4 +1,4 @@
-#include "debugDrawer.h"
+#include <core/debugDrawer.h>
 
 #include <core/imgui/imhelper.h>
 #include <core/legacy/boundingBox.h>
@@ -132,3 +132,4 @@ void DebugDrawer::draw_img_3d(View<Camera> cam, glm::ivec2 vp_size, glm::vec3 po
                                                draw_img(view_pos, size, tex, time);
                                            }});
 }
+

@@ -2,14 +2,12 @@
 
 #include <core/rendering/graph.h>
 
-#include <imgui_impl_vulkan.h>
+#include <vector>
 #include <vulkan/vulkan.hpp>
 
-#include <vector>
-
-namespace PTS::Editor {
+namespace PTS::rendering {
 class RenderGraphHost {
-  public:
+   public:
     RenderGraphHost(vk::PhysicalDevice physical_device, vk::Device device, vk::Queue queue,
                     uint32_t queue_family);
     ~RenderGraphHost();
@@ -26,14 +24,20 @@ class RenderGraphHost {
     [[nodiscard]] auto output_texture() const noexcept -> PtsTexture {
         return m_output_texture;
     }
-    [[nodiscard]] auto output_imgui_id() const noexcept -> ImTextureID {
-        return m_output_imgui_id;
+    [[nodiscard]] auto output_image_view() const noexcept -> vk::ImageView {
+        return m_output_view;
+    }
+    [[nodiscard]] auto output_sampler() const noexcept -> vk::Sampler {
+        return m_output_sampler;
+    }
+    [[nodiscard]] auto output_layout() const noexcept -> vk::ImageLayout {
+        return m_output_layout;
     }
     [[nodiscard]] auto api() const noexcept -> const PtsRenderGraphApi* {
         return &m_api;
     }
 
-  private:
+   private:
     struct Pass {
         bool has_color{false};
         PtsAttachment color{};
@@ -59,8 +63,8 @@ class RenderGraphHost {
     void transition_image_layout(vk::CommandBuffer cmd_buf, vk::ImageLayout new_layout);
     void clear_color(vk::CommandBuffer cmd_buf, const float rgba[4]);
     [[nodiscard]] auto allocate_command_buffer() -> vk::CommandBuffer;
-    [[nodiscard]] auto find_memory_type(uint32_t type_bits,
-                                        vk::MemoryPropertyFlags flags) -> uint32_t;
+    [[nodiscard]] auto find_memory_type(uint32_t type_bits, vk::MemoryPropertyFlags flags)
+        -> uint32_t;
 
     vk::PhysicalDevice m_physical_device{};
     vk::Device m_device{};
@@ -76,10 +80,8 @@ class RenderGraphHost {
     vk::ImageLayout m_output_layout{vk::ImageLayout::eUndefined};
     vk::Extent2D m_output_extent{};
     vk::Format m_output_format{vk::Format::eR8G8B8A8Unorm};
-    ImTextureID m_output_imgui_id{nullptr};
     PtsTexture m_output_texture{};
 
     PtsRenderGraphApi m_api{};
 };
-}  // namespace PTS::Editor
-
+}  // namespace PTS::rendering

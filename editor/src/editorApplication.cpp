@@ -13,13 +13,14 @@
 #include <core/legacy/sceneObject.h>
 #include <core/loggingManager.h>
 #include <imgui_internal.h>
+#include <GLFW/glfw3.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 
 #include <cstring>
 #include <filesystem>
 #include <glm/gtc/type_ptr.hpp>
 
-#include "debugDrawer.h"
+#include <core/debugDrawer.h>
 #include "editorResources.h"
 #include "imgui/editorFields.h"
 
@@ -40,15 +41,7 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config,
       m_config{config},
       m_cam{config.fovy, config.get_aspect(), LookAtParams{}},
       m_archive{new JsonArchive} {
-    m_vk_context = std::make_unique<VulkanContext>(get_vk_instance(), get_vk_surface());
-    init_imgui_vulkan(m_vk_context->physical_device(), m_vk_context->device(),
-                      m_vk_context->queue_family(), m_vk_context->queue());
-
-    m_render_graph =
-        std::make_unique<RenderGraphHost>(m_vk_context->physical_device(), m_vk_context->device(),
-                                          m_vk_context->queue(), m_vk_context->queue_family());
-    m_render_graph->resize(m_config.width, m_config.height);
-    m_renderer_host_api.render_graph_api = m_render_graph->api();
+    m_renderer_host_api.render_graph_api = get_render_graph_api();
     m_renderer_host_api.render_world_api = nullptr;
 
     m_renderer_plugin = get_plugin_manager().get_plugin_instance("editor.renderer");
@@ -84,9 +77,6 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config,
 }
 
 EditorApplication::~EditorApplication() {
-    m_render_graph.reset();
-    // Ensure Vulkan/ImGui teardown while renderer device is still alive.
-    shutdown_imgui_vulkan();
 }
 
 auto EditorApplication::create_input_actions() noexcept -> void {
@@ -311,7 +301,7 @@ auto EditorApplication::loop(float dt) -> void {
     ImGuizmo::BeginFrame();
 
     ImGui::DockSpaceOverViewport(ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
-    if (m_renderer_interface && m_renderer_interface->build_graph && m_render_graph) {
+    if (m_renderer_interface && m_renderer_interface->build_graph) {
         PtsFrameParams frame{};
         frame.frame_index = m_frame_index++;
         frame.time_seconds = get_time();
@@ -337,11 +327,11 @@ auto EditorApplication::loop(float dt) -> void {
         view.far_plane = 100000.0f;
 
         PtsFrameIO io{};
-        io.output = m_render_graph->output_texture();
+        io.output = get_render_output_texture();
 
-        m_render_graph->set_current();
+        set_render_graph_current();
         m_renderer_interface->build_graph(&m_renderer_host_api, &frame, &view, &io);
-        m_render_graph->clear_current();
+        clear_render_graph_current();
     }
 
     // draw left panel
@@ -553,8 +543,9 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
         last_size = view_size;
     }
 
-    if (m_render_graph && m_render_graph->output_imgui_id()) {
-        ImGui::Image(m_render_graph->output_imgui_id(), view_size);
+    auto output = get_render_output_imgui_id();
+    if (output) {
+        ImGui::Image(output, view_size);
     } else {
         ImGui::TextUnformatted("Renderer output not available");
     }
@@ -629,9 +620,7 @@ auto EditorApplication::on_scene_opened(Scene& scene) -> void {
 auto EditorApplication::on_render_config_change(RenderConfig const& conf) -> void {
     m_cam.set_aspect(conf.get_aspect());
     m_cam.set_fov(conf.fovy);
-    if (m_render_graph) {
-        m_render_graph->resize(conf.width, conf.height);
-    }
+    resize_render_output(conf.width, conf.height);
     if (m_renderer_interface && m_renderer_interface->on_resize) {
         m_renderer_interface->on_resize(conf.width, conf.height);
     }

@@ -43,7 +43,7 @@ struct DebugDrawer {
     void draw_img_3d(View<Camera> cam, glm::ivec2 vp_size, glm::vec3 pos, glm::vec2 size,
                      TextureHandle tex, float time = k_default_lifetime) noexcept;
 
-   private:
+  private:
     struct DrawCallInfo {
         float life;
         std::function<void(Ref<Application>)> draw_call;
@@ -52,3 +52,4 @@ struct DebugDrawer {
     std::list<DrawCallInfo> m_draw_calls;
 };
 }  // namespace PTS
+
