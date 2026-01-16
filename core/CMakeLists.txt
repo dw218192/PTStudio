@@ -50,6 +50,10 @@ PRIVATE
 	VULKAN_HPP_DISPATCH_LOADER_DYNAMIC
 )
 
+if (MSVC)
+	target_compile_options(${lib_name} PRIVATE /bigobj)
+endif()
+
 set(PT_CORE_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/include PARENT_SCOPE)
 
 target_include_directories(${lib_name}

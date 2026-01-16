@@ -5,7 +5,7 @@
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
-namespace PTS::rendering {
+namespace pts::rendering {
 class RenderGraphHost {
    public:
     RenderGraphHost(vk::PhysicalDevice physical_device, vk::Device device, vk::Queue queue,
@@ -84,4 +84,4 @@ class RenderGraphHost {
 
     PtsRenderGraphApi m_api{};
 };
-}  // namespace PTS::rendering
+}  // namespace pts::rendering

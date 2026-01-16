@@ -6,7 +6,7 @@
 
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 
-namespace PTS::rendering {
+namespace pts::rendering {
 
 namespace {
 bool has_extension(vk::PhysicalDevice device, const char* name) {
@@ -66,4 +66,4 @@ VulkanContext::VulkanContext(vk::Instance instance, vk::SurfaceKHR surface)
     VULKAN_HPP_DEFAULT_DISPATCHER.init(m_device.get());
     m_graphics_queue = m_device->getQueue(m_graphics_queue_family, 0);
 }
-}  // namespace PTS::rendering
+}  // namespace pts::rendering

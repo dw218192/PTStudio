@@ -40,6 +40,9 @@ PRIVATE
 	${exec_name}::rc
 )
 
+if (MSVC)
+	target_compile_options(${exec_name} PRIVATE /bigobj)
+endif()
 
 target_include_directories(${exec_name}
 PRIVATE

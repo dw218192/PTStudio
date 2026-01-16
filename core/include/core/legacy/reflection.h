@@ -23,7 +23,7 @@
 #include <unordered_set>
 #include <vector>
 
-#include "callbackList.h"
+#include <core/signal.h>
 #include "stringManip.h"
 #include "typeTraitsUtil.h"
 
@@ -385,7 +385,7 @@ struct TFieldRuntime {
     int member_index;
     FieldType default_val;
     FieldType ClassType::*mem_pointer;
-    CallbackList<callback_type> on_change_callbacks;
+    pts::Signal<callback_type> on_change_callbacks;
 };
 
 #pragma endregion TField

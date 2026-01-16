@@ -1,10 +1,10 @@
 #pragma once
 
 #include <core/application.h>
-#include <core/debugDrawer.h>
 #include <core/inputAction.h>
-#include <core/legacy/callbackList.h>
+#include <core/legacy/debugDrawer.h>
 #include <core/rendering/renderingHost.h>
+#include <core/signal.h>
 #include <imgui.h>
 
 #include <array>
@@ -17,15 +17,15 @@
 
 struct GLFWwindow;
 
-namespace PTS {
+namespace pts {
 /**
  * @brief abstract GLFW application. Responsible for creating the window and polling events.
  */
 struct GLFWApplication : Application {
     // used to help detect if the mouse enters/leaves certain imgui windows
     struct ImGuiWindowInfo {
-        CallbackList<void()> on_leave_region;
-        CallbackList<void()> on_enter_region;
+        Signal<void()> on_leave_region;
+        Signal<void()> on_enter_region;
     };
 
     friend static void click_func(GLFWwindow* window, int button, int action, int mods);
@@ -69,7 +69,7 @@ struct GLFWApplication : Application {
      * @brief Gets the renderer for the application.
      * @return the renderer
      */
-    [[nodiscard]] auto get_debug_drawer() -> DebugDrawer& {
+    [[nodiscard]] auto get_debug_drawer() -> PTS::DebugDrawer& {
         return m_debug_drawer;
     }
     [[nodiscard]] auto get_cur_hovered_widget() const noexcept {
@@ -110,7 +110,7 @@ struct GLFWApplication : Application {
     std::array<std::string_view, ImGuiKey_COUNT> m_key_initiated_window{};
 
     GLFWwindow* m_window;
-    DebugDrawer m_debug_drawer;
+    PTS::DebugDrawer m_debug_drawer;
     float m_min_frame_time;
     float m_delta_time{0.0f};
     std::unordered_map<std::string_view, ImGuiWindowInfo> m_imgui_window_info;
@@ -120,7 +120,7 @@ struct GLFWApplication : Application {
 
     static constexpr auto k_no_hovered_widget = "";
 
-    std::unique_ptr<PTS::rendering::RenderingHost> m_rendering_host;
+    std::unique_ptr<pts::rendering::RenderingHost> m_rendering_host;
     bool m_framebuffer_resized{false};
 };
-}  // namespace PTS
+}  // namespace pts

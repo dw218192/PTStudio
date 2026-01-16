@@ -7,7 +7,7 @@
 CMRC_DECLARE(editor_resources);
 CMRC_DECLARE(core_resources);
 
-namespace PTS {
+namespace pts {
 constexpr auto k_editor_tutorial_text = R"(This is a simple editor.
 Basic Operations:
 - Left click to select object
@@ -50,8 +50,8 @@ constexpr auto k_light_inc_path = "shaders/user/light.inc";
 constexpr auto k_uniform_inc_path = "shaders/user/uniforms.inc";
 
 constexpr auto k_user_shader_paths =
-    EArray<ShaderType, char const*>{{ShaderType::Vertex, "shaders/user/default_vs.glsl"},
-                                    {ShaderType::Fragment, "shaders/user/default_fs.glsl"}};
+    PTS::EArray<ShaderType, char const*>{{ShaderType::Vertex, "shaders/user/default_vs.glsl"},
+                                         {ShaderType::Fragment, "shaders/user/default_fs.glsl"}};
 
 // uniforms
 constexpr auto k_uniform_half_grid_dim = "halfGridDim";
@@ -1928,4 +1928,4 @@ static const char consolas_compressed_data_base85[93615 + 1] =
     "$4lEpkbZ=edC&aul9%##";
 
 #pragma endregion fonts
-}  // namespace PTS
+}  // namespace pts

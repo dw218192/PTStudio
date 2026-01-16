@@ -5,7 +5,7 @@
 
 struct GLFWwindow;
 
-namespace PTS::rendering {
+namespace pts::rendering {
 class ImGuiVulkanPresenter {
    public:
     ImGuiVulkanPresenter(GLFWwindow* window, SwapchainHost& swapchain, VulkanContext& context);
@@ -51,4 +51,4 @@ class ImGuiVulkanPresenter {
     bool m_initialized{false};
     vk::UniqueDescriptorPool m_imgui_descriptor_pool;
 };
-}  // namespace PTS::rendering
+}  // namespace pts::rendering

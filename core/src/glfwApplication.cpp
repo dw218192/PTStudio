@@ -1,9 +1,7 @@
+#include <GLFW/glfw3.h>
 #include <core/glfwApplication.h>
-
 #include <core/imgui/imhelper.h>
 #include <imgui_internal.h>
-
-#include <GLFW/glfw3.h>
 
 #include <algorithm>
 #include <cstdlib>
@@ -12,7 +10,7 @@
 using namespace PTS;
 
 // stubs for callbacks
-namespace PTS {
+namespace pts {
 static void click_func(GLFWwindow* window, int button, int action, int mods) {
     // auto const app = static_cast<GLFWApplication*>(glfwGetWindowUserPointer(window));
     // check if ImGui is using the mouse
@@ -41,7 +39,6 @@ static void framebuffer_resize_func(GLFWwindow* window, int width, int height) {
     static_cast<void>(width);
     static_cast<void>(height);
 }
-}  // namespace PTS
 
 GLFWApplication::GLFWApplication(std::string_view name, pts::LoggingManager& logging_manager,
                                  pts::PluginManager& plugin_manager, unsigned width,
@@ -81,7 +78,7 @@ GLFWApplication::GLFWApplication(std::string_view name, pts::LoggingManager& log
 
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
-    m_rendering_host = std::make_unique<PTS::rendering::RenderingHost>(m_window);
+    m_rendering_host = std::make_unique<pts::rendering::RenderingHost>(m_window);
 }
 
 GLFWApplication::~GLFWApplication() {
@@ -304,4 +301,4 @@ float GLFWApplication::get_time() const noexcept {
 float GLFWApplication::get_delta_time() const noexcept {
     return m_delta_time;
 }
-
+}  // namespace pts

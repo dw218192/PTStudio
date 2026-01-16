@@ -27,6 +27,10 @@ foreach(TEST_NAME IN LISTS TEST_NAMES)
             ${CMAKE_SOURCE_DIR}/plugins/test_plugin/api
         )
     endif()
+
+    if (TEST_NAME STREQUAL "testReflection")
+        target_link_libraries(${TEST_NAME} PRIVATE core)
+    endif()
     
     # Set output directory to bin/tests
     set_target_properties(${TEST_NAME} PROPERTIES

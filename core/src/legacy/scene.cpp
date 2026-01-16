@@ -131,6 +131,6 @@ auto PTS::Scene::try_remove_editable(View<SceneObject> obj_view) noexcept -> voi
     m_editables.remove_if([&](auto&& obj) { return &obj.get() == &obj_view.get(); });
 }
 
-auto PTS::Scene::get_callback_list(SceneChangeType type) -> CallbackList<void(Ref<SceneObject>)>& {
+auto PTS::Scene::get_callback_list(SceneChangeType type) -> pts::Signal<void(Ref<SceneObject>)>& {
     return m_scene_callbacks[type];
 }

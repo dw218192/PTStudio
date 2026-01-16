@@ -235,7 +235,7 @@ auto PTS::RenderableObject::make_sphere_obj(Scene& scene, EditFlags edit_flags, 
 }
 
 auto PTS::RenderableObject::static_init() -> void {
-    get_field_info<1>().get_on_change_callback_list() += [](auto data) {
+    get_field_info<1>().get_on_change_callback_list().connect([](auto data) {
         auto& self = data.obj;
         if (data.new_val.is_emissive()) {
             if (!self.m_proxy_light) {
@@ -254,5 +254,5 @@ auto PTS::RenderableObject::static_init() -> void {
                 self.m_proxy_light = nullptr;
             }
         }
-    };
+    });
 }

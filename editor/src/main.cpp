@@ -1,7 +1,7 @@
 #include <core/error.h>
-#include <core/legacy/renderConfig.h>
 #include <core/loggingManager.h>
 #include <core/pluginManager.h>
+#include <core/renderConfig.h>
 #include <core/utils.h>
 #include <spdlog/spdlog.h>
 
@@ -41,7 +41,7 @@ int main(int argc, char* argv[]) {
         return static_cast<int>(ErrorCode::InvalidArgument);
     }
 
-    auto config = PTS::RenderConfig{1280, 720, 60.0, 120.0};
+    auto config = pts::RenderConfig{1280, 720, 60.0, 120.0};
 
     try {
         // Initialize logging manager
@@ -64,7 +64,7 @@ int main(int argc, char* argv[]) {
         }
 
         // Run the application
-        PTS::Editor::EditorApplication{"Editor", config, logging_manager, plugin_manager}.run();
+        pts::editor::EditorApplication{"Editor", config, logging_manager, plugin_manager}.run();
 
         // Plugin manager and logging manager will be destroyed here, ensuring proper shutdown
     } catch (std::exception& e) {

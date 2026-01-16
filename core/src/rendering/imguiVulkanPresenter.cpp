@@ -7,7 +7,7 @@
 #include <cstdlib>
 #include <iostream>
 
-namespace PTS::rendering {
+namespace pts::rendering {
 ImGuiVulkanPresenter::ImGuiVulkanPresenter(GLFWwindow* window, SwapchainHost& swapchain,
                                            VulkanContext& context)
     : m_window(window), m_swapchain(swapchain), m_context(context) {
@@ -246,4 +246,4 @@ void ImGuiVulkanPresenter::init_imgui_backend() {
     }
     m_initialized = true;
 }
-}  // namespace PTS::rendering
+}  // namespace pts::rendering

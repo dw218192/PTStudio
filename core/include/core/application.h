@@ -9,7 +9,7 @@
 #include "pluginManager.h"
 #include "utils.h"
 
-namespace PTS {
+namespace pts {
 
 /**
  * @brief The base class for all applications (not necessarily graphical)
@@ -61,4 +61,4 @@ struct Application {
     pts::PluginManager* m_plugin_manager;
     std::shared_ptr<spdlog::logger> m_logger;
 };
-}  // namespace PTS
+}  // namespace pts

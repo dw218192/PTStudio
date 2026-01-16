@@ -188,18 +188,18 @@ TEST_CASE("Reflection Macros") {
     SUBCASE("on change callback") {
         {
             Base b;
-            Base::get_field_info<&Base::x>().get_on_change_callback_list() +=
-                [&](auto data) { data.obj.y.push_back(data.new_val); };
+            Base::get_field_info<&Base::x>().get_on_change_callback_list().connect(
+                [&](auto data) { data.obj.y.push_back(data.new_val); });
             Base::get_field_info<&Base::x>().get_proxy(b) = 2;
 
             REQUIRE(b.x == 2);
             REQUIRE(b.y == std::vector<int>{2});
 
-            Base::get_field_info<&Base::x>().get_on_change_callback_list() += [&](auto data) {
+            Base::get_field_info<&Base::x>().get_on_change_callback_list().connect([&](auto data) {
                 for (auto& x : data.obj.y) {
                     x *= 2;
                 }
-            };
+            });
             Base::get_field_info<&Base::x>().get_proxy(b) = 3;
             REQUIRE(b.x == 3);
             REQUIRE(b.y == std::vector<int>{4, 6});

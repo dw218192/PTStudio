@@ -1,9 +1,11 @@
 #pragma once
+
+#include <core/signal.h>
+
 #include <array>
 #include <string>
 #include <unordered_map>
 
-#include "callbackList.h"
 #include "utils.h"
 
 namespace PTS {
@@ -55,8 +57,8 @@ struct ContinuousGPUBufferLink {
     template <typename T,
               typename = std::enable_if_t<std::disjunction_v<std::is_same<std::decay_t<T>, GPUType>,
                                                              std::is_assignable<GPUType&, T>>>>
-    NODISCARD auto push_back(cpu_handle_t cpu_handle,
-                             T&& value) noexcept -> tl::expected<size_t, std::string>;
+    NODISCARD auto push_back(cpu_handle_t cpu_handle, T&& value) noexcept
+        -> tl::expected<size_t, std::string>;
     NODISCARD auto erase(cpu_handle_t cpu_handle) noexcept -> tl::expected<void, std::string>;
     NODISCARD auto get_idx(cpu_handle_t cpu_handle) const noexcept
         -> tl::expected<size_t, std::string>;
@@ -128,15 +130,16 @@ struct ContinuousGPUBufferLink {
     std::unordered_map<size_t, cpu_handle_t> m_idx_to_ins;
     UserDataType m_user_data;
 
-    CallbackList<on_erase_callback_fn_t> m_on_erase_callbacks;
-    CallbackList<on_push_back_callback_fn_t> m_on_push_back_callbacks;
-    CallbackList<on_update_callback_fn_t> m_on_update_callbacks;
+    pts::Signal<on_erase_callback_fn_t> m_on_erase_callbacks;
+    pts::Signal<on_push_back_callback_fn_t> m_on_push_back_callbacks;
+    pts::Signal<on_update_callback_fn_t> m_on_update_callbacks;
 };
 
 template <typename GPUType, typename CPUType, typename UserDataType, size_t N>
 template <typename T, typename>
-auto ContinuousGPUBufferLink<GPUType, CPUType, UserDataType, N>::push_back(
-    cpu_handle_t cpu_handle, T&& value) noexcept -> tl::expected<size_t, std::string> {
+auto ContinuousGPUBufferLink<GPUType, CPUType, UserDataType, N>::push_back(cpu_handle_t cpu_handle,
+                                                                           T&& value) noexcept
+    -> tl::expected<size_t, std::string> {
     if (m_size >= N) {
         return TL_ERROR("Buffer is full");
     }

@@ -1,5 +1,5 @@
 #pragma once
-namespace PTS {
+namespace pts {
 struct RenderConfig {
     RenderConfig(unsigned width, unsigned height, float fovy, float max_fps)
         : width{width},
@@ -30,4 +30,4 @@ struct RenderConfig {
     float max_fps;
     float min_frame_time;
 };
-}  // namespace PTS
+}  // namespace pts

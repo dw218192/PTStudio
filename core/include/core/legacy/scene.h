@@ -5,8 +5,9 @@
 #include <tcb/span.hpp>
 #include <tl/expected.hpp>
 
+#include <core/signal.h>
+
 #include "boundingBox.h"
-#include "callbackList.h"
 #include "camera.h"
 #include "enumArray.h"
 #include "light.h"
@@ -90,7 +91,7 @@ struct Scene : Object {
     auto try_add_editable(Ref<SceneObject> obj_view) noexcept -> void;
     auto try_remove_editable(View<SceneObject> obj_view) noexcept -> void;
 
-    auto get_callback_list(SceneChangeType type) -> CallbackList<void(Ref<SceneObject>)>&;
+    auto get_callback_list(SceneChangeType type) -> pts::Signal<void(Ref<SceneObject>)>&;
 
    private:
     BEGIN_REFLECT(Scene, Object);
@@ -111,7 +112,7 @@ struct Scene : Object {
     // objects that are currently added to the scene
     std::unordered_set<ViewPtr<SceneObject>> m_alive_objs;
 
-    EArray<SceneChangeType, CallbackList<void(Ref<SceneObject>)>> m_scene_callbacks;
+    EArray<SceneChangeType, pts::Signal<void(Ref<SceneObject>)>> m_scene_callbacks;
 };
 
 template <typename T, typename>

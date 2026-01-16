@@ -1,25 +1,24 @@
 #pragma once
 
+#include <core/glfwApplication.h>
+#include <core/inputAction.h>
 #include <core/legacy/archive.h>
-#include <core/legacy/callbackList.h>
 #include <core/legacy/camera.h>
-#include <core/legacy/renderConfig.h>
 #include <core/legacy/scene.h>
 #include <core/loggingManager.h>
 #include <core/pluginManager.h>
+#include <core/renderConfig.h>
 #include <core/rendering/plugin.h>
+#include <core/signal.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 
 #include <array>
 #include <cstdlib>
 #include <iostream>
 
-#include <core/glfwApplication.h>
-#include <core/inputAction.h>
-
 #include "imgui/includes.h"
 
-namespace PTS::Editor {
+namespace pts::editor {
 constexpr auto k_init_move_sensitivity = 5.0f;
 constexpr auto k_init_rot_sensitivity = 60.0f;
 constexpr auto k_object_select_mouse_time = 1.0f;
@@ -60,7 +59,7 @@ struct EditorApplication final : GLFWApplication {
     auto draw_console_panel() const noexcept -> void;
 
     // events
-    auto on_scene_opened(Scene& scene) -> void;
+    auto on_scene_opened(PTS::Scene& scene) -> void;
     auto on_render_config_change(RenderConfig const& conf) -> void;
     auto on_mouse_leave_scene_viewport() noexcept -> void;
     auto on_mouse_enter_scene_viewport() noexcept -> void;
@@ -68,30 +67,30 @@ struct EditorApplication final : GLFWApplication {
     // other helpers
     auto try_select_object() noexcept -> void;
     auto handle_input(InputEvent const& event) noexcept -> void override;
-    auto on_remove_object(Ref<SceneObject> obj) -> void;
-    auto on_add_oject(Ref<SceneObject> obj) -> void;
+    auto on_remove_object(PTS::Ref<PTS::SceneObject> obj) -> void;
+    auto on_add_oject(PTS::Ref<PTS::SceneObject> obj) -> void;
 
     std::string m_console_text;
     std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> m_console_log_sink;
 
     // rendering
     RenderConfig m_config;
-    Scene m_scene;
-    Camera m_cam;
+    PTS::Scene m_scene;
+    PTS::Camera m_cam;
 
     // input handling
     std::vector<InputAction> m_input_actions;
 
-    std::unique_ptr<Archive> m_archive;
+    std::unique_ptr<PTS::Archive> m_archive;
     PluginHandle m_renderer_plugin{nullptr};
     RendererPluginInterfaceV1* m_renderer_interface{nullptr};
     PtsHostApi m_renderer_host_api{};
     uint64_t m_frame_index{0};
 
     struct ControlState {
-        using ObjChangeCallback = std::function<void(ObserverPtr<SceneObject>)>;
+        using ObjChangeCallback = std::function<void(PTS::SceneObject*)>;
 
-        auto set_cur_obj(ObserverPtr<SceneObject> obj) noexcept -> void;
+        auto set_cur_obj(PTS::SceneObject* obj) noexcept -> void;
         auto get_cur_obj() const noexcept {
             return m_cur_obj;
         }
@@ -115,8 +114,8 @@ struct EditorApplication final : GLFWApplication {
         int is_changing_scene_cam{0};
 
        private:
-        ObserverPtr<SceneObject> m_cur_obj{nullptr};
-        CallbackList<void(ObserverPtr<SceneObject>)> m_on_selected_obj_change_callback_list;
+        PTS::SceneObject* m_cur_obj{nullptr};
+        pts::Signal<void(PTS::SceneObject*)> m_on_selected_obj_change_callback_list;
     } m_control_state;
 };
 
@@ -141,4 +140,4 @@ constexpr auto EditorApplication::check_error(tl::expected<T, E>&& res) -> declt
         return std::move(res).value();
     }
 }
-}  // namespace PTS::Editor
+}  // namespace pts::editor

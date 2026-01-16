@@ -8,7 +8,7 @@
  *
  * TODO: This class is also responsible for managing all the allocation pools.
  */
-namespace PTS::rendering {
+namespace pts::rendering {
 class VulkanContext {
    public:
     VulkanContext(vk::Instance instance, vk::SurfaceKHR surface);
@@ -46,4 +46,4 @@ class VulkanContext {
     vk::Queue m_graphics_queue{};
     uint32_t m_graphics_queue_family{0};
 };
-}  // namespace PTS::rendering
+}  // namespace pts::rendering

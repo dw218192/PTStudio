@@ -10,7 +10,7 @@
 #include <iostream>
 #include <vector>
 
-namespace PTS::rendering {
+namespace pts::rendering {
 struct RenderingHost::Impl {
     explicit Impl(GLFWwindow* window) : window(window) {
         create_vulkan_instance();
@@ -138,4 +138,4 @@ auto RenderingHost::output_texture() const noexcept -> PtsTexture {
 auto RenderingHost::output_imgui_id() const noexcept -> ImTextureID {
     return m_impl->output_id;
 }
-}  // namespace PTS::rendering
+}  // namespace pts::rendering

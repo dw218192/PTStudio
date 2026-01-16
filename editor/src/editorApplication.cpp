@@ -1,10 +1,12 @@
 #include "editorApplication.h"
 
+#include <GLFW/glfw3.h>
 #include <core/imgui/fileDialogue.h>
 #include <core/imgui/imhelper.h>
 #include <core/imgui/reflectedField.h>
 #include <core/legacy/boundingVolume.h>
 #include <core/legacy/camera.h>
+#include <core/legacy/debugDrawer.h>
 #include <core/legacy/intersection.h>
 #include <core/legacy/jsonArchive.h>
 #include <core/legacy/light.h>
@@ -13,19 +15,18 @@
 #include <core/legacy/sceneObject.h>
 #include <core/loggingManager.h>
 #include <imgui_internal.h>
-#include <GLFW/glfw3.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 
 #include <cstring>
 #include <filesystem>
 #include <glm/gtc/type_ptr.hpp>
 
-#include <core/debugDrawer.h>
 #include "editorResources.h"
 #include "imgui/editorFields.h"
 
+using namespace pts;
+using namespace pts::editor;
 using namespace PTS;
-using namespace PTS::Editor;
 
 static constexpr auto k_scene_setting_win_name = "Scene Settings";
 static constexpr auto k_inspector_win_name = "Inspector";
@@ -55,15 +56,18 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config,
     }
 
     // callbacks
-    get_imgui_window_info(k_scene_view_win_name).on_enter_region +=
-        [this] { on_mouse_enter_scene_viewport(); };
-    get_imgui_window_info(k_scene_view_win_name).on_leave_region +=
-        [this] { on_mouse_leave_scene_viewport(); };
+    get_imgui_window_info(k_scene_view_win_name).on_enter_region.connect([this] {
+        on_mouse_enter_scene_viewport();
+    });
+    get_imgui_window_info(k_scene_view_win_name).on_leave_region.connect([this] {
+        on_mouse_leave_scene_viewport();
+    });
 
-    m_scene.get_callback_list(SceneChangeType::OBJECT_ADDED) +=
-        [this](Ref<SceneObject> obj) { this->on_add_oject(obj); };
-    m_scene.get_callback_list(SceneChangeType::OBJECT_REMOVED) +=
-        [this](Ref<SceneObject> obj) { this->on_remove_object(obj); };
+    m_scene.get_callback_list(SceneChangeType::OBJECT_ADDED).connect([this](Ref<SceneObject> obj) {
+        this->on_add_oject(obj);
+    });
+    m_scene.get_callback_list(SceneChangeType::OBJECT_REMOVED)
+        .connect([this](Ref<SceneObject> obj) { this->on_remove_object(obj); });
 
     // input actions
     create_input_actions();

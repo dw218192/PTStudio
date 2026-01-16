@@ -1,10 +1,9 @@
-#include <core/rendering/swapchainHost.h>
-
 #include <GLFW/glfw3.h>
+#include <core/rendering/swapchainHost.h>
 
 #include <algorithm>
 
-namespace PTS::rendering {
+namespace pts::rendering {
 SwapchainHost::SwapchainHost(GLFWwindow* window, VulkanContext& context)
     : m_window(window), m_context(context) {
     create_swapchain();
@@ -74,20 +73,19 @@ void SwapchainHost::create_swapchain() {
     m_format = surface_format.format;
     m_extent = extent;
 
-    auto swapchain_info =
-        vk::SwapchainCreateInfoKHR{}
-            .setSurface(m_context.surface())
-            .setMinImageCount(image_count)
-            .setImageFormat(m_format)
-            .setImageColorSpace(surface_format.colorSpace)
-            .setImageExtent(m_extent)
-            .setImageArrayLayers(1)
-            .setImageUsage(vk::ImageUsageFlagBits::eColorAttachment)
-            .setImageSharingMode(vk::SharingMode::eExclusive)
-            .setPreTransform(caps.currentTransform)
-            .setCompositeAlpha(vk::CompositeAlphaFlagBitsKHR::eOpaque)
-            .setPresentMode(present_mode)
-            .setClipped(true);
+    auto swapchain_info = vk::SwapchainCreateInfoKHR{}
+                              .setSurface(m_context.surface())
+                              .setMinImageCount(image_count)
+                              .setImageFormat(m_format)
+                              .setImageColorSpace(surface_format.colorSpace)
+                              .setImageExtent(m_extent)
+                              .setImageArrayLayers(1)
+                              .setImageUsage(vk::ImageUsageFlagBits::eColorAttachment)
+                              .setImageSharingMode(vk::SharingMode::eExclusive)
+                              .setPreTransform(caps.currentTransform)
+                              .setCompositeAlpha(vk::CompositeAlphaFlagBitsKHR::eOpaque)
+                              .setPresentMode(present_mode)
+                              .setClipped(true);
 
     m_swapchain = m_context.device().createSwapchainKHRUnique(swapchain_info);
     m_images = m_context.device().getSwapchainImagesKHR(m_swapchain.get());
@@ -133,5 +131,4 @@ void SwapchainHost::recreate_swapchain() {
     create_swapchain();
     create_image_views();
 }
-}  // namespace PTS::rendering
-
+}  // namespace pts::rendering

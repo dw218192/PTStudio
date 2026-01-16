@@ -2,15 +2,14 @@
 
 #include <core/rendering/vulkanContext.h>
 
-#include <vulkan/vulkan.hpp>
-
 #include <vector>
+#include <vulkan/vulkan.hpp>
 
 struct GLFWwindow;
 
-namespace PTS::rendering {
+namespace pts::rendering {
 class SwapchainHost {
-  public:
+   public:
     SwapchainHost(GLFWwindow* window, VulkanContext& context);
     ~SwapchainHost();
 
@@ -40,12 +39,11 @@ class SwapchainHost {
         return static_cast<uint32_t>(m_images.size());
     }
 
-    [[nodiscard]] auto acquire_next_image(vk::Semaphore semaphore,
-                                          uint32_t* image_index) -> vk::Result;
-    [[nodiscard]] auto present(vk::Semaphore wait_semaphore,
-                               uint32_t image_index) -> vk::Result;
+    [[nodiscard]] auto acquire_next_image(vk::Semaphore semaphore, uint32_t* image_index)
+        -> vk::Result;
+    [[nodiscard]] auto present(vk::Semaphore wait_semaphore, uint32_t image_index) -> vk::Result;
 
-  private:
+   private:
     void create_swapchain();
     void create_image_views();
     void cleanup_swapchain();
@@ -59,5 +57,4 @@ class SwapchainHost {
     std::vector<vk::Image> m_images;
     std::vector<vk::UniqueImageView> m_image_views;
 };
-}  // namespace PTS::rendering
-
+}  // namespace pts::rendering

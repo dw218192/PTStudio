@@ -3,7 +3,7 @@
 #include <array>
 #include <cstring>
 
-namespace PTS::rendering {
+namespace pts::rendering {
 thread_local RenderGraphHost* RenderGraphHost::s_current = nullptr;
 
 RenderGraphHost::RenderGraphHost(vk::PhysicalDevice physical_device, vk::Device device,
@@ -327,4 +327,4 @@ uint32_t RenderGraphHost::find_memory_type(uint32_t type_bits, vk::MemoryPropert
     }
     return 0;
 }
-}  // namespace PTS::rendering
+}  // namespace pts::rendering

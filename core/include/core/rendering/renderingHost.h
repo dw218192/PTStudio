@@ -7,7 +7,7 @@
 
 struct GLFWwindow;
 
-namespace PTS::rendering {
+namespace pts::rendering {
 class RenderingHost {
    public:
     explicit RenderingHost(GLFWwindow* window);
@@ -32,4 +32,4 @@ class RenderingHost {
     struct Impl;
     std::unique_ptr<Impl> m_impl;
 };
-}  // namespace PTS::rendering
+}  // namespace pts::rendering
