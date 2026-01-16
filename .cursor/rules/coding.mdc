@@ -63,10 +63,10 @@ alwaysApply: true
 ```
 /api  (ABI-safe, C-like, subset of C++)
 	/core
-		/logging.h
+		/loggingManager.h
 /include 
 	/core (public header for static internal components)
-    logging.h
+    loggingManager.h
 /src
   /include (private includes that should only visible to the target itself)
     loggingImpl.h

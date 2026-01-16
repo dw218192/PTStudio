@@ -1,5 +1,5 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
-#include <core/logging.h>
+#include <core/loggingManager.h>
 #include <core/pluginManager.h>
 #include <doctest/doctest.h>
 #include <test_plugin/interface.h>

@@ -11,7 +11,7 @@
 #include <core/legacy/renderableObject.h>
 #include <core/legacy/scene.h>
 #include <core/legacy/sceneObject.h>
-#include <core/logging.h>
+#include <core/loggingManager.h>
 #include <imgui_internal.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 
@@ -35,12 +35,11 @@ static constexpr auto k_console_log_buffer_size = 1024;
 EditorApplication::EditorApplication(std::string_view name, RenderConfig config,
                                      pts::LoggingManager& logging_manager,
                                      pts::PluginManager& plugin_manager)
-    : GLFWApplication{name, config.width, config.height, config.min_frame_time},
+    : GLFWApplication{name,         logging_manager, plugin_manager,
+                      config.width, config.height,   config.min_frame_time},
       m_config{config},
       m_cam{config.fovy, config.get_aspect(), LookAtParams{}},
-      m_archive{new JsonArchive},
-      m_logging_manager{&logging_manager},
-      m_plugin_manager{&plugin_manager} {
+      m_archive{new JsonArchive} {
     m_vk_context = std::make_unique<VulkanContext>(get_vk_instance(), get_vk_surface());
     init_imgui_vulkan(m_vk_context->physical_device(), m_vk_context->device(),
                       m_vk_context->queue_family(), m_vk_context->queue());
@@ -52,10 +51,11 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config,
     m_renderer_host_api.render_graph_api = m_render_graph->api();
     m_renderer_host_api.render_world_api = nullptr;
 
-    m_renderer_plugin = m_plugin_manager->get_plugin_instance("editor.renderer");
+    m_renderer_plugin = get_plugin_manager().get_plugin_instance("editor.renderer");
     if (m_renderer_plugin) {
-        m_renderer_interface = static_cast<RendererPluginInterfaceV1*>(
-            m_plugin_manager->query_interface(m_renderer_plugin, RENDERER_PLUGIN_INTERFACE_V1_ID));
+        m_renderer_interface =
+            static_cast<RendererPluginInterfaceV1*>(get_plugin_manager().query_interface(
+                m_renderer_plugin, RENDERER_PLUGIN_INTERFACE_V1_ID));
     }
     if (!m_renderer_interface) {
         log(pts::LogLevel::Error, "Renderer plugin interface not found");
@@ -78,7 +78,7 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config,
     // logging
     m_console_log_sink =
         std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(k_console_log_buffer_size);
-    m_logging_manager->add_sink(m_console_log_sink);
+    get_logging_manager().add_sink(m_console_log_sink);
 
     log(pts::LogLevel::Info, "EditorApplication created");
 }

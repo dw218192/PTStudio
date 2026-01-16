@@ -1,6 +1,6 @@
 #pragma once
 
-#include <core/legacy/application.h>
+#include <core/application.h>
 #include <core/legacy/texture.h>
 #include <core/legacy/utils.h>
 #include <imgui.h>

@@ -94,8 +94,7 @@ PtsTexture RenderGraphHost::import_texture(PtsGraph, PtsTexture external_tex, co
     return external_tex;
 }
 
-PtsTexView RenderGraphHost::create_tex_view(PtsGraph, const PtsTextureViewDesc* desc,
-                                            const char*) {
+PtsTexView RenderGraphHost::create_tex_view(PtsGraph, const PtsTextureViewDesc* desc, const char*) {
     if (!s_current || !desc) {
         return PtsTexView{};
     }
@@ -158,6 +157,7 @@ void RenderGraphHost::execute(Graph& graph) {
     auto cmd_buf = allocate_command_buffer();
     cmd_buf.begin(vk::CommandBufferBeginInfo{vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
 
+    bool wrote_output = false;
     for (auto const& pass : graph.passes) {
         if (!pass.has_color) {
             continue;
@@ -167,6 +167,11 @@ void RenderGraphHost::execute(Graph& graph) {
         }
         transition_image_layout(cmd_buf, vk::ImageLayout::eTransferDstOptimal);
         clear_color(cmd_buf, pass.color.clear.rgba);
+        transition_image_layout(cmd_buf, vk::ImageLayout::eShaderReadOnlyOptimal);
+        wrote_output = true;
+    }
+    if (!wrote_output) {
+        // Ensure ImGui samples from a defined layout even if no pass ran.
         transition_image_layout(cmd_buf, vk::ImageLayout::eShaderReadOnlyOptimal);
     }
 
@@ -181,26 +186,26 @@ void RenderGraphHost::create_output_resources() {
         return;
     }
 
-    auto image_info = vk::ImageCreateInfo{}
-                          .setImageType(vk::ImageType::e2D)
-                          .setFormat(m_output_format)
-                          .setExtent({m_output_extent.width, m_output_extent.height, 1})
-                          .setMipLevels(1)
-                          .setArrayLayers(1)
-                          .setSamples(vk::SampleCountFlagBits::e1)
-                          .setTiling(vk::ImageTiling::eOptimal)
-                          .setUsage(vk::ImageUsageFlagBits::eTransferDst |
-                                    vk::ImageUsageFlagBits::eSampled |
-                                    vk::ImageUsageFlagBits::eColorAttachment)
-                          .setSharingMode(vk::SharingMode::eExclusive)
-                          .setInitialLayout(vk::ImageLayout::eUndefined);
+    auto image_info =
+        vk::ImageCreateInfo{}
+            .setImageType(vk::ImageType::e2D)
+            .setFormat(m_output_format)
+            .setExtent({m_output_extent.width, m_output_extent.height, 1})
+            .setMipLevels(1)
+            .setArrayLayers(1)
+            .setSamples(vk::SampleCountFlagBits::e1)
+            .setTiling(vk::ImageTiling::eOptimal)
+            .setUsage(vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled |
+                      vk::ImageUsageFlagBits::eColorAttachment)
+            .setSharingMode(vk::SharingMode::eExclusive)
+            .setInitialLayout(vk::ImageLayout::eUndefined);
 
     m_output_image = m_device.createImage(image_info);
     auto mem_req = m_device.getImageMemoryRequirements(m_output_image);
     auto mem_index =
         find_memory_type(mem_req.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal);
-    auto alloc_info = vk::MemoryAllocateInfo{}.setAllocationSize(mem_req.size).setMemoryTypeIndex(
-        mem_index);
+    auto alloc_info =
+        vk::MemoryAllocateInfo{}.setAllocationSize(mem_req.size).setMemoryTypeIndex(mem_index);
     m_output_memory = m_device.allocateMemory(alloc_info);
     m_device.bindImageMemory(m_output_image, m_output_memory, 0);
 
@@ -233,6 +238,15 @@ void RenderGraphHost::create_output_resources() {
     m_output_imgui_id = ImGui_ImplVulkan_AddTexture(m_output_sampler, m_output_view,
                                                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     m_output_layout = vk::ImageLayout::eUndefined;
+
+    // Ensure the image is in a valid layout before ImGui samples it.
+    auto cmd_buf = allocate_command_buffer();
+    cmd_buf.begin(vk::CommandBufferBeginInfo{vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+    transition_image_layout(cmd_buf, vk::ImageLayout::eShaderReadOnlyOptimal);
+    cmd_buf.end();
+    m_queue.submit(vk::SubmitInfo{}.setCommandBuffers(cmd_buf), {});
+    m_queue.waitIdle();
+    m_device.freeCommandBuffers(m_command_pool, cmd_buf);
 }
 
 void RenderGraphHost::destroy_output_resources() {
@@ -283,9 +297,13 @@ void RenderGraphHost::transition_image_layout(vk::CommandBuffer cmd_buf,
             .setDstAccessMask(vk::AccessFlagBits::eShaderRead);
         src_stage = vk::PipelineStageFlagBits::eTransfer;
         dst_stage = vk::PipelineStageFlagBits::eFragmentShader;
+    } else if (m_output_layout == vk::ImageLayout::eUndefined &&
+               new_layout == vk::ImageLayout::eShaderReadOnlyOptimal) {
+        barrier.setSrcAccessMask({}).setDstAccessMask(vk::AccessFlagBits::eShaderRead);
+        src_stage = vk::PipelineStageFlagBits::eTopOfPipe;
+        dst_stage = vk::PipelineStageFlagBits::eFragmentShader;
     } else if (new_layout == vk::ImageLayout::eTransferDstOptimal) {
-        barrier.setSrcAccessMask({})
-            .setDstAccessMask(vk::AccessFlagBits::eTransferWrite);
+        barrier.setSrcAccessMask({}).setDstAccessMask(vk::AccessFlagBits::eTransferWrite);
     }
 
     cmd_buf.pipelineBarrier(src_stage, dst_stage, {}, nullptr, nullptr, barrier);
@@ -312,8 +330,7 @@ vk::CommandBuffer RenderGraphHost::allocate_command_buffer() {
     return buffers.front();
 }
 
-uint32_t RenderGraphHost::find_memory_type(uint32_t type_bits,
-                                           vk::MemoryPropertyFlags flags) {
+uint32_t RenderGraphHost::find_memory_type(uint32_t type_bits, vk::MemoryPropertyFlags flags) {
     auto props = m_physical_device.getMemoryProperties();
     for (uint32_t i = 0; i < props.memoryTypeCount; ++i) {
         if ((type_bits & (1u << i)) && (props.memoryTypes[i].propertyFlags & flags) == flags) {
@@ -323,4 +340,3 @@ uint32_t RenderGraphHost::find_memory_type(uint32_t type_bits,
     return 0;
 }
 }  // namespace PTS::Editor
-

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <core/legacy/application.h>
+#include <core/application.h>
 #include <core/legacy/callbackList.h>
 
 #include <array>
@@ -34,7 +34,9 @@ struct GLFWApplication : Application {
 
     NO_COPY_MOVE(GLFWApplication);
 
-    GLFWApplication(std::string_view name, unsigned width, unsigned height, float min_frame_time);
+    GLFWApplication(std::string_view name, pts::LoggingManager& logging_manager,
+                    pts::PluginManager& plugin_manager, unsigned width, unsigned height,
+                    float min_frame_time);
     ~GLFWApplication() override;
 
     void run() override;

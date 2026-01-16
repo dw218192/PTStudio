@@ -43,9 +43,10 @@ static void framebuffer_resize_func(GLFWwindow* window, int width, int height) {
 }
 }  // namespace PTS
 
-GLFWApplication::GLFWApplication(std::string_view name, unsigned width, unsigned height,
-                                 float min_frame_time)
-    : Application{name} {
+GLFWApplication::GLFWApplication(std::string_view name, pts::LoggingManager& logging_manager,
+                                 pts::PluginManager& plugin_manager, unsigned width,
+                                 unsigned height, float min_frame_time)
+    : Application{name, logging_manager, plugin_manager} {
     set_min_frame_time(min_frame_time);
     glfwSetErrorCallback(error_func);
 

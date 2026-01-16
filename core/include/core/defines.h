@@ -1,4 +1,4 @@
-
+#pragma once
 #define NO_COPY_MOVE(Ty)               \
     Ty(Ty const&) = delete;            \
     Ty& operator=(Ty const&) = delete; \

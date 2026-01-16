@@ -1,6 +1,6 @@
 #include <core/error.h>
 #include <core/legacy/renderConfig.h>
-#include <core/logging.h>
+#include <core/loggingManager.h>
 #include <core/pluginManager.h>
 #include <core/utils.h>
 #include <spdlog/spdlog.h>

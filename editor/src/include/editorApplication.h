@@ -5,9 +5,9 @@
 #include <core/legacy/camera.h>
 #include <core/legacy/renderConfig.h>
 #include <core/legacy/scene.h>
-#include <core/rendering/plugin.h>
-#include <core/logging.h>
+#include <core/loggingManager.h>
 #include <core/pluginManager.h>
+#include <core/rendering/plugin.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 
 #include <array>
@@ -74,7 +74,6 @@ struct EditorApplication final : GLFWApplication {
 
     std::string m_console_text;
     std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> m_console_log_sink;
-    pts::LoggingManager* m_logging_manager;
 
     // rendering
     RenderConfig m_config;
@@ -85,7 +84,6 @@ struct EditorApplication final : GLFWApplication {
     std::vector<InputAction> m_input_actions;
 
     std::unique_ptr<Archive> m_archive;
-    pts::PluginManager* m_plugin_manager;
     PluginHandle m_renderer_plugin{nullptr};
     RendererPluginInterfaceV1* m_renderer_interface{nullptr};
     PtsHostApi m_renderer_host_api{};

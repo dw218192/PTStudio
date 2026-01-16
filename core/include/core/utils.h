@@ -1,3 +1,4 @@
+#pragma once
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/describe/enum.hpp>
 #include <boost/describe/enumerators.hpp>
