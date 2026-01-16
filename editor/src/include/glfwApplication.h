@@ -8,6 +8,7 @@
 #include <functional>
 #include <optional>
 #include <string_view>
+#include <vector>
 
 #include "debugDrawer.h"
 #include "ext.h"
@@ -29,6 +30,7 @@ struct GLFWApplication : Application {
     friend static void scroll_func(GLFWwindow* window, double x, double y);
     friend static void key_func(GLFWwindow* window, int key, int scancode, int action, int mods);
     friend static void error_func(int error, const char* description);
+    friend static void framebuffer_resize_func(GLFWwindow* window, int width, int height);
 
     NO_COPY_MOVE(GLFWApplication);
 
@@ -44,6 +46,19 @@ struct GLFWApplication : Application {
      * @param dt the time since the last frame
      */
     virtual void loop(float dt) = 0;
+
+    // Vulkan/ImGui initialization (called after a renderer provides a Vulkan device)
+    auto init_imgui_vulkan(vk::PhysicalDevice physical_device, vk::Device device,
+                           uint32_t graphics_queue_family, vk::Queue graphics_queue) -> void;
+    auto shutdown_imgui_vulkan() noexcept -> void;
+
+    // Vulkan instance/surface accessors (instance is owned by GLFWApplication)
+    [[nodiscard]] auto get_vk_instance() const noexcept -> vk::Instance {
+        return m_vk_instance.get();
+    }
+    [[nodiscard]] auto get_vk_surface() const noexcept -> vk::SurfaceKHR {
+        return m_vk_surface;
+    }
 
    protected:
     virtual auto handle_input(InputEvent const& event) noexcept -> void {
@@ -105,5 +120,42 @@ struct GLFWApplication : Application {
     std::string_view m_cur_focused_widget;
 
     static constexpr auto k_no_hovered_widget = "";
+
+    // Vulkan rendering for ImGui
+    auto create_vulkan_instance() -> void;
+    auto create_vulkan_surface() -> void;
+    auto create_swapchain() -> void;
+    auto create_render_pass() -> void;
+    auto create_framebuffers() -> void;
+    auto create_command_pool() -> void;
+    auto create_command_buffers() -> void;
+    auto create_sync_objects() -> void;
+    auto cleanup_swapchain() -> void;
+    auto recreate_swapchain() -> void;
+    auto record_command_buffer(vk::CommandBuffer cmd_buf, uint32_t image_index) -> void;
+    auto render_frame() -> void;
+
+    vk::UniqueInstance m_vk_instance;
+    vk::SurfaceKHR m_vk_surface{VK_NULL_HANDLE};
+    vk::PhysicalDevice m_vk_physical_device{};
+    vk::Device m_vk_device{};
+    vk::Queue m_vk_graphics_queue{};
+    uint32_t m_vk_graphics_queue_family{0};
+    vk::UniqueSwapchainKHR m_vk_swapchain;
+    vk::Format m_vk_swapchain_format{vk::Format::eUndefined};
+    vk::Extent2D m_vk_swapchain_extent{};
+    std::vector<vk::Image> m_vk_swapchain_images;
+    std::vector<vk::UniqueImageView> m_vk_swapchain_image_views;
+    vk::UniqueRenderPass m_vk_render_pass;
+    std::vector<vk::UniqueFramebuffer> m_vk_framebuffers;
+    vk::UniqueCommandPool m_vk_command_pool;
+    std::vector<vk::UniqueCommandBuffer> m_vk_command_buffers;
+    std::vector<vk::UniqueSemaphore> m_vk_image_available_semaphores;
+    std::vector<vk::UniqueSemaphore> m_vk_render_finished_semaphores;
+    std::vector<vk::UniqueFence> m_vk_in_flight_fences;
+    size_t m_vk_frame_index{0};
+    bool m_vk_framebuffer_resized{false};
+    bool m_imgui_vulkan_initialized{false};
+    vk::UniqueDescriptorPool m_imgui_descriptor_pool;
 };
 }  // namespace PTS

@@ -14,12 +14,12 @@
 #include <core/logging.h>
 #include <imgui_internal.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
-#include <vulkan_raytracer/vulkanRayTracingRenderer.h>
 
+#include <cstring>
 #include <filesystem>
+#include <glm/gtc/type_ptr.hpp>
 
 #include "debugDrawer.h"
-#include "editorRenderer.h"
 #include "editorResources.h"
 #include "imgui/editorFields.h"
 
@@ -33,15 +33,33 @@ static constexpr auto k_console_win_name = "Console";
 static constexpr auto k_console_log_buffer_size = 1024;
 
 EditorApplication::EditorApplication(std::string_view name, RenderConfig config,
-                                     pts::LoggingManager& logging_manager)
+                                     pts::LoggingManager& logging_manager,
+                                     pts::PluginManager& plugin_manager)
     : GLFWApplication{name, config.width, config.height, config.min_frame_time},
       m_config{config},
       m_cam{config.fovy, config.get_aspect(), LookAtParams{}},
       m_archive{new JsonArchive},
-      m_logging_manager{&logging_manager} {
-    // default renderers
-    add_renderer(std::make_unique<EditorRenderer>(config));
-    add_renderer(std::make_unique<Vk::VulkanRayTracingRenderer>(config));
+      m_logging_manager{&logging_manager},
+      m_plugin_manager{&plugin_manager} {
+    m_vk_context = std::make_unique<VulkanContext>(get_vk_instance(), get_vk_surface());
+    init_imgui_vulkan(m_vk_context->physical_device(), m_vk_context->device(),
+                      m_vk_context->queue_family(), m_vk_context->queue());
+
+    m_render_graph =
+        std::make_unique<RenderGraphHost>(m_vk_context->physical_device(), m_vk_context->device(),
+                                          m_vk_context->queue(), m_vk_context->queue_family());
+    m_render_graph->resize(m_config.width, m_config.height);
+    m_renderer_host_api.render_graph_api = m_render_graph->api();
+    m_renderer_host_api.render_world_api = nullptr;
+
+    m_renderer_plugin = m_plugin_manager->get_plugin_instance("editor.renderer");
+    if (m_renderer_plugin) {
+        m_renderer_interface = static_cast<RendererPluginInterfaceV1*>(
+            m_plugin_manager->query_interface(m_renderer_plugin, RENDERER_PLUGIN_INTERFACE_V1_ID));
+    }
+    if (!m_renderer_interface) {
+        log(pts::LogLevel::Error, "Renderer plugin interface not found");
+    }
 
     // callbacks
     get_imgui_window_info(k_scene_view_win_name).on_enter_region +=
@@ -63,6 +81,12 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config,
     m_logging_manager->add_sink(m_console_log_sink);
 
     log(pts::LogLevel::Info, "EditorApplication created");
+}
+
+EditorApplication::~EditorApplication() {
+    m_render_graph.reset();
+    // Ensure Vulkan/ImGui teardown while renderer device is still alive.
+    shutdown_imgui_vulkan();
 }
 
 auto EditorApplication::create_input_actions() noexcept -> void {
@@ -255,27 +279,6 @@ auto EditorApplication::wrap_mouse_pos() noexcept -> void {
     }
 }
 
-auto EditorApplication::add_renderer(std::unique_ptr<Renderer> renderer) noexcept -> void {
-    if (!renderer) {
-        this->log(pts::LogLevel::Error, "add_renderer(): renderer is null");
-        return;
-    }
-
-    // initialize renderer
-    check_error(renderer->init(this));
-    check_error(renderer->open_scene(m_scene));
-
-    // editor renderer-specific initialization
-    if (auto p_editor_renderer = dynamic_cast<EditorRenderer*>(renderer.get()); p_editor_renderer) {
-        m_control_state.get_on_selected_obj_change_callback_list() +=
-            [p_editor_renderer](auto&& obj) {
-                p_editor_renderer->on_selected_editable_change(obj);
-            };
-    }
-
-    m_renderers.emplace_back(std::move(renderer));
-}
-
 auto EditorApplication::on_begin_first_loop() -> void {
     GLFWApplication::on_begin_first_loop();
 
@@ -308,7 +311,38 @@ auto EditorApplication::loop(float dt) -> void {
     ImGuizmo::BeginFrame();
 
     ImGui::DockSpaceOverViewport(ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
-    auto const render_tex = check_error(get_cur_renderer().render(m_cam));
+    if (m_renderer_interface && m_renderer_interface->build_graph && m_render_graph) {
+        PtsFrameParams frame{};
+        frame.frame_index = m_frame_index++;
+        frame.time_seconds = get_time();
+        frame.wall_time = get_time();
+
+        PtsViewParams view{};
+        std::memcpy(view.view, glm::value_ptr(m_cam.get_view()), sizeof(view.view));
+        std::memcpy(view.proj, glm::value_ptr(m_cam.get_projection()), sizeof(view.proj));
+        auto view_proj = m_cam.get_projection() * m_cam.get_view();
+        std::memcpy(view.view_proj, glm::value_ptr(view_proj), sizeof(view.view_proj));
+        std::memset(view.prev_view_proj, 0, sizeof(view.prev_view_proj));
+        auto cam_pos = m_cam.get_eye();
+        view.camera_pos[0] = cam_pos.x;
+        view.camera_pos[1] = cam_pos.y;
+        view.camera_pos[2] = cam_pos.z;
+        view.jitter_xy[0] = 0.0f;
+        view.jitter_xy[1] = 0.0f;
+        view.dt_seconds = dt;
+        view.frame_index = static_cast<uint32_t>(frame.frame_index);
+        view.viewport_w = m_config.width;
+        view.viewport_h = m_config.height;
+        view.near_plane = 0.1f;
+        view.far_plane = 100000.0f;
+
+        PtsFrameIO io{};
+        io.output = m_render_graph->output_texture();
+
+        m_render_graph->set_current();
+        m_renderer_interface->build_graph(&m_renderer_host_api, &frame, &view, &io);
+        m_render_graph->clear_current();
+    }
 
     // draw left panel
     if (begin_imgui_window(k_scene_setting_win_name, ImGuiWindowFlags_NoMove)) {
@@ -332,11 +366,9 @@ auto EditorApplication::loop(float dt) -> void {
     if (begin_imgui_window(k_scene_view_win_name, ImGuiWindowFlags_NoScrollWithMouse |
                                                       ImGuiWindowFlags_NoMove |
                                                       ImGuiWindowFlags_MenuBar)) {
-        draw_scene_viewport(render_tex);
+        draw_scene_viewport();
     }
     end_imgui_window();
-
-    check_error(get_cur_renderer().draw_imgui());
 
     wrap_mouse_pos();
 }
@@ -501,88 +533,59 @@ auto EditorApplication::draw_object_panel() noexcept -> void {
     }
 }
 
-auto EditorApplication::draw_scene_viewport(TextureHandle render_buf) noexcept -> void {
+auto EditorApplication::draw_scene_viewport() noexcept -> void {
     if (ImGui::BeginMenuBar()) {
-        ImGui::Text("Select Renderer");
-        ImGui::SameLine();
-        if (ImGui::Combo(
-                "##Select Renderer", &m_control_state.cur_renderer_idx,
-                [](void* data, int idx, char const** out_text) {
-                    auto const& renderers =
-                        *static_cast<std::vector<std::unique_ptr<Renderer>> const*>(data);
-                    *out_text = renderers[idx]->get_name().data();
-                    return true;
-                },
-                &m_renderers, m_renderers.size())) {
-            on_render_config_change(m_config);
-        }
-
+        ImGui::TextUnformatted("Renderer: editor.renderer");
         ImGui::EndMenuBar();
     }
 
-    if (get_cur_renderer().valid()) {
-        static auto last_size = ImVec2{0, 0};
+    static auto last_size = ImVec2{0, 0};
 
-        auto const v_min = ImGui::GetWindowContentRegionMin();
-        auto const v_max = ImGui::GetWindowContentRegionMax();
-        auto const view_size = v_max - v_min;
+    auto const v_min = ImGui::GetWindowContentRegionMin();
+    auto const v_max = ImGui::GetWindowContentRegionMax();
+    auto const view_size = v_max - v_min;
 
-        if (std::abs(view_size.x - last_size.x) >= 0.01f ||
-            std::abs(view_size.y - last_size.y) >= 0.01f) {
-            m_config.width = static_cast<unsigned>(view_size.x);
-            m_config.height = static_cast<unsigned>(view_size.y);
-            on_render_config_change(m_config);
-            last_size = view_size;
-        }
+    if (std::abs(view_size.x - last_size.x) >= 0.01f ||
+        std::abs(view_size.y - last_size.y) >= 0.01f) {
+        m_config.width = static_cast<unsigned>(view_size.x);
+        m_config.height = static_cast<unsigned>(view_size.y);
+        on_render_config_change(m_config);
+        last_size = view_size;
+    }
 
-        check_error(render_buf->bind());
-        auto uv0 = ImVec2{0, 0};
-        auto uv1 = ImVec2{1, 1};
-
-        if (render_buf->get_width() != m_config.width) {
-            uv1.x = m_config.width / static_cast<float>(render_buf->get_width());
-        }
-        if (render_buf->get_height() != m_config.height) {
-            uv1.y = m_config.height / static_cast<float>(render_buf->get_height());
-        }
-        // imgui uses top-left as origin, but OpenGL use bottom-left
-        uv0.y = uv1.y;
-        uv1.y = 0;
-
-        ImGui::Image(render_buf->get_id(), view_size, uv0, uv1);
-        render_buf->unbind();
-
-        // draw x,y,z axis ref
-
-        // TODO: figure out why ImGuiConfigFlags_ViewportsEnable makes these not work
-        // auto const vp_size = glm::ivec2{ m_config.width, m_config.height };
-        // auto const axis_origin = m_cam.viewport_to_world(glm::vec2 {30, 30}, vp_size,0.0f);
-        // constexpr float axis_len = 0.01f;
-        // get_debug_drawer().begin_relative(to_glm(ImGui::GetWindowPos() + v_min));
-        // get_debug_drawer().draw_line_3d(m_cam, vp_size, axis_origin, axis_origin + glm::vec3{
-        // axis_len, 0, 0 }, { 1, 0, 0 }, 2.0f, 0.0f); get_debug_drawer().draw_line_3d(m_cam,
-        // vp_size, axis_origin, axis_origin + glm::vec3{ 0, axis_len, 0 }, { 0, 1, 0 }, 2.0f,
-        // 0.0f); get_debug_drawer().draw_line_3d(m_cam, vp_size, axis_origin, axis_origin +
-        // glm::vec3{ 0, 0, axis_len }, { 0, 0, 1 }, 2.0f, 0.0f); get_debug_drawer().end_relative();
-
-        // draw gizmos
-        if (m_control_state.get_cur_obj()) {
-            auto const win = ImGui::GetCurrentWindow();
-            auto const& gizmo_state = m_control_state.gizmo_state;
-
-            ImGuizmo::SetDrawlist(win->DrawList);
-            ImGuizmo::SetRect(win->Pos.x, win->Pos.y, win->Size.x, win->Size.y);
-
-            auto mat =
-                m_control_state.get_cur_obj()->get_transform(TransformSpace::LOCAL).get_matrix();
-            if (Manipulate(value_ptr(m_cam.get_view()), value_ptr(m_cam.get_projection()),
-                           gizmo_state.op, gizmo_state.mode, value_ptr(mat), nullptr,
-                           gizmo_state.snap ? value_ptr(gizmo_state.snap_scale) : nullptr)) {
-                m_control_state.get_cur_obj()->set_transform(Transform{mat}, TransformSpace::LOCAL);
-            }
-        }
+    if (m_render_graph && m_render_graph->output_imgui_id()) {
+        ImGui::Image(m_render_graph->output_imgui_id(), view_size);
     } else {
-        ImGui::Text("Renderer not found");
+        ImGui::TextUnformatted("Renderer output not available");
+    }
+
+    // draw x,y,z axis ref
+
+    // TODO: figure out why ImGuiConfigFlags_ViewportsEnable makes these not work
+    // auto const vp_size = glm::ivec2{ m_config.width, m_config.height };
+    // auto const axis_origin = m_cam.viewport_to_world(glm::vec2 {30, 30}, vp_size,0.0f);
+    // constexpr float axis_len = 0.01f;
+    // get_debug_drawer().begin_relative(to_glm(ImGui::GetWindowPos() + v_min));
+    // get_debug_drawer().draw_line_3d(m_cam, vp_size, axis_origin, axis_origin + glm::vec3{
+    // axis_len, 0, 0 }, { 1, 0, 0 }, 2.0f, 0.0f); get_debug_drawer().draw_line_3d(m_cam,
+    // vp_size, axis_origin, axis_origin + glm::vec3{ 0, axis_len, 0 }, { 0, 1, 0 }, 2.0f,
+    // 0.0f); get_debug_drawer().draw_line_3d(m_cam, vp_size, axis_origin, axis_origin +
+    // glm::vec3{ 0, 0, axis_len }, { 0, 0, 1 }, 2.0f, 0.0f); get_debug_drawer().end_relative();
+
+    // draw gizmos
+    if (m_control_state.get_cur_obj()) {
+        auto const win = ImGui::GetCurrentWindow();
+        auto const& gizmo_state = m_control_state.gizmo_state;
+
+        ImGuizmo::SetDrawlist(win->DrawList);
+        ImGuizmo::SetRect(win->Pos.x, win->Pos.y, win->Size.x, win->Size.y);
+
+        auto mat = m_control_state.get_cur_obj()->get_transform(TransformSpace::LOCAL).get_matrix();
+        if (Manipulate(value_ptr(m_cam.get_view()), value_ptr(m_cam.get_projection()),
+                       gizmo_state.op, gizmo_state.mode, value_ptr(mat), nullptr,
+                       gizmo_state.snap ? value_ptr(gizmo_state.snap_scale) : nullptr)) {
+            m_control_state.get_cur_obj()->set_transform(Transform{mat}, TransformSpace::LOCAL);
+        }
     }
 }
 
@@ -621,17 +624,16 @@ auto EditorApplication::draw_console_panel() const noexcept -> void {
 auto EditorApplication::on_scene_opened(Scene& scene) -> void {
     m_cam.set_aspect(m_config.get_aspect());
     m_control_state.set_cur_obj(nullptr);
-
-    for (auto&& renderer : m_renderers) {
-        check_error(renderer->open_scene(scene));
-    }
 }
 
 auto EditorApplication::on_render_config_change(RenderConfig const& conf) -> void {
     m_cam.set_aspect(conf.get_aspect());
     m_cam.set_fov(conf.fovy);
-    for (auto&& renderer : m_renderers) {
-        check_error(renderer->set_render_config(conf));
+    if (m_render_graph) {
+        m_render_graph->resize(conf.width, conf.height);
+    }
+    if (m_renderer_interface && m_renderer_interface->on_resize) {
+        m_renderer_interface->on_resize(conf.width, conf.height);
     }
 }
 
@@ -690,16 +692,6 @@ auto EditorApplication::on_add_oject(Ref<SceneObject> obj) -> void {
             m_cam.set(m_scene.get_good_cam_start());
         }
     }
-}
-
-auto EditorApplication::get_cur_renderer() noexcept -> Renderer& {
-    if (m_control_state.cur_renderer_idx >= m_renderers.size() ||
-        m_control_state.cur_renderer_idx < 0) {
-        this->log(pts::LogLevel::Error, "the current renderer is no longer valid");
-        m_control_state.cur_renderer_idx = k_default_renderer_idx;
-    }
-
-    return *m_renderers[m_control_state.cur_renderer_idx];
 }
 
 auto EditorApplication::ControlState::set_cur_obj(ObserverPtr<SceneObject> obj) noexcept -> void {

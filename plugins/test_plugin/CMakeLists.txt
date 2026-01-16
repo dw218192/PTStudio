@@ -2,7 +2,6 @@ cmake_minimum_required(VERSION 3.19 FATAL_ERROR)
 
 set(plugin_name "TestPlugin")
 
-# Create the plugin target using the standardized helper function
 pts_add_plugin(
     NAME ${plugin_name}
     SOURCES testPlugin.cpp

@@ -9,6 +9,7 @@ file(GLOB_RECURSE src_files
 	${CMAKE_CURRENT_SOURCE_DIR}/src/include/*.*
 	${CMAKE_CURRENT_SOURCE_DIR}/src/include/imgui/*.*
 )
+list(FILTER src_files EXCLUDE REGEX "editorRenderer")
 #GLOB resource files
 file(GLOB_RECURSE res_files 
 	${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.*
@@ -29,17 +30,20 @@ target_link_libraries(${exec_name}
 PRIVATE
 	$<BUILD_INTERFACE:developer_flags>
 	core
-	gl_utils
 	glfw
 	imguizmo
 	ImGuiColorTextEdit
+	Vulkan::Vulkan
 	Boost::stacktrace
 	Boost::stacktrace_from_exception
 	Boost::program_options
-	#renderers
-	vulkan_raytracer
 	#resourcers
 	${exec_name}::rc
+)
+
+target_compile_definitions(${exec_name}
+PRIVATE
+	VULKAN_HPP_DISPATCH_LOADER_DYNAMIC
 )
 
 target_include_directories(${exec_name}

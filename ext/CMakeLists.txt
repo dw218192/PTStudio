@@ -10,7 +10,7 @@ add_library(imgui STATIC
 # use glfw as backend
 file(GLOB IMGUI_BACKEND_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/imgui/backends/imgui_impl_glfw.*
-    ${CMAKE_CURRENT_SOURCE_DIR}/imgui/backends/imgui_impl_opengl3.*
+    ${CMAKE_CURRENT_SOURCE_DIR}/imgui/backends/imgui_impl_vulkan.*
     ${CMAKE_CURRENT_SOURCE_DIR}/imgui/backends/imgui_impl_win32.*
 )
 target_sources(imgui 
@@ -25,6 +25,7 @@ target_include_directories(imgui
 target_link_libraries(imgui
     PRIVATE
         glfw
+        Vulkan::Vulkan
 )
 
 # Manually add imguizmo

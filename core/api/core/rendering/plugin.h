@@ -124,7 +124,7 @@ typedef struct RendererPluginInterfaceV1 {
     //
     // The graph is automatically compiled and executed after this returns.
     //
-    void (*build_graph)(void* instance, const PtsHostApi* host, const PtsFrameParams* frame,
+    void (*build_graph)(const PtsHostApi* host, const PtsFrameParams* frame,
                         const PtsViewParams* view, const PtsFrameIO* io);
 
     // ------------------------------------------------------------------------
@@ -134,7 +134,7 @@ typedef struct RendererPluginInterfaceV1 {
     // resolution-dependent resources (e.g., G-buffers, history).
     // May be null if plugin doesn't need resize handling.
     //
-    void (*on_resize)(void* instance, uint32_t w, uint32_t h);
+    void (*on_resize)(uint32_t w, uint32_t h);
 
     // ------------------------------------------------------------------------
     // Optional: Expose debug outputs
@@ -143,7 +143,7 @@ typedef struct RendererPluginInterfaceV1 {
     // list_blob receives PtsDebugOutput[] data.
     // May be null if plugin doesn't expose debug outputs.
     //
-    void (*get_debug_outputs)(void* instance, /*out*/ PtsSpan* list_blob);
+    void (*get_debug_outputs)(/*out*/ PtsSpan* list_blob);
 
     // ------------------------------------------------------------------------
     // Optional: Settings management
@@ -152,7 +152,7 @@ typedef struct RendererPluginInterfaceV1 {
     // get_settings_schema: Return schema describing available settings.
     // May be null if plugin doesn't have configurable settings.
     //
-    void (*set_settings_blob)(void* instance, PtsSpan blob);
-    void (*get_settings_schema)(void* instance, /*out*/ PtsSpan* schema_blob);
+    void (*set_settings_blob)(PtsSpan blob);
+    void (*get_settings_schema)(/*out*/ PtsSpan* schema_blob);
 
 } RendererPluginInterfaceV1;

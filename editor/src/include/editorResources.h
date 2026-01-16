@@ -1,7 +1,6 @@
 #pragma once
 #include <core/legacy/enumArray.h>
 #include <core/legacy/lightData.h>
-#include <gl_utils/shaderType.h>
 
 #include <cmrc/cmrc.hpp>
 #include <optional>
@@ -45,6 +44,8 @@ constexpr auto k_billboard_vs_path = "shaders/billboard_vs.glsl";
 constexpr auto k_billboard_fs_path = "shaders/billboard_fs.glsl";
 
 // user shaders
+enum class ShaderType { Vertex = 0, Fragment = 1, __COUNT };
+
 constexpr auto k_light_inc_path = "shaders/user/light.inc";
 constexpr auto k_uniform_inc_path = "shaders/user/uniforms.inc";
 

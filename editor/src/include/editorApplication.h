@@ -3,30 +3,31 @@
 #include <core/legacy/archive.h>
 #include <core/legacy/callbackList.h>
 #include <core/legacy/camera.h>
+#include <core/legacy/renderConfig.h>
 #include <core/legacy/scene.h>
+#include <core/rendering/plugin.h>
 #include <core/logging.h>
-#include <gl_utils/glTexture.h>
+#include <core/pluginManager.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 
 #include <array>
 #include <cstdlib>
 #include <iostream>
 
-#include "editorRenderer.h"
 #include "glfwApplication.h"
 #include "imgui/includes.h"
 #include "inputAction.h"
+#include "renderGraphHost.h"
+#include "vulkanContext.h"
 
 namespace PTS::Editor {
 constexpr auto k_init_move_sensitivity = 5.0f;
 constexpr auto k_init_rot_sensitivity = 60.0f;
 constexpr auto k_object_select_mouse_time = 1.0f;
-constexpr auto k_default_renderer_idx = 0;
 
 struct EditorApplication final : GLFWApplication {
     NO_COPY_MOVE(EditorApplication);
 
-    auto add_renderer(std::unique_ptr<Renderer> renderer) noexcept -> void;
     auto loop(float dt) -> void override;
     auto quit(int code) -> void override;
     /**
@@ -47,8 +48,8 @@ struct EditorApplication final : GLFWApplication {
 
    public:
     EditorApplication(std::string_view name, RenderConfig config,
-                      pts::LoggingManager& logging_manager);
-    ~EditorApplication() override = default;
+                      pts::LoggingManager& logging_manager, pts::PluginManager& plugin_manager);
+    ~EditorApplication() override;
 
     auto create_input_actions() noexcept -> void;
     auto wrap_mouse_pos() noexcept -> void;
@@ -56,7 +57,7 @@ struct EditorApplication final : GLFWApplication {
     // imgui rendering
     auto draw_scene_panel() noexcept -> void;
     auto draw_object_panel() noexcept -> void;
-    auto draw_scene_viewport(TextureHandle render_buf) noexcept -> void;
+    auto draw_scene_viewport() noexcept -> void;
     auto draw_console_panel() const noexcept -> void;
 
     // events
@@ -70,7 +71,6 @@ struct EditorApplication final : GLFWApplication {
     auto handle_input(InputEvent const& event) noexcept -> void override;
     auto on_remove_object(Ref<SceneObject> obj) -> void;
     auto on_add_oject(Ref<SceneObject> obj) -> void;
-    auto get_cur_renderer() noexcept -> Renderer&;
 
     std::string m_console_text;
     std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> m_console_log_sink;
@@ -84,9 +84,14 @@ struct EditorApplication final : GLFWApplication {
     // input handling
     std::vector<InputAction> m_input_actions;
 
-    // rendering
-    std::vector<std::unique_ptr<Renderer>> m_renderers;
     std::unique_ptr<Archive> m_archive;
+    pts::PluginManager* m_plugin_manager;
+    PluginHandle m_renderer_plugin{nullptr};
+    RendererPluginInterfaceV1* m_renderer_interface{nullptr};
+    PtsHostApi m_renderer_host_api{};
+    std::unique_ptr<VulkanContext> m_vk_context;
+    std::unique_ptr<RenderGraphHost> m_render_graph;
+    uint64_t m_frame_index{0};
 
     struct ControlState {
         using ObjChangeCallback = std::function<void(ObserverPtr<SceneObject>)>;
@@ -104,8 +109,6 @@ struct EditorApplication final : GLFWApplication {
         float rot_sensitivity = k_init_rot_sensitivity;
         std::array<char, 1024> obj_name_buf{};
         bool is_outside_view{false};
-        int cur_renderer_idx{k_default_renderer_idx};
-
         struct GizmoState {
             ImGuizmo::OPERATION op{ImGuizmo::OPERATION::TRANSLATE};
             ImGuizmo::MODE mode{ImGuizmo::MODE::WORLD};
