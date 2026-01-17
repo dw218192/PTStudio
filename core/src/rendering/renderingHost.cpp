@@ -26,6 +26,7 @@ struct RenderingHost::Impl {
 
     ~Impl() {
         if (output_id) {
+            context->device().waitIdle();
             presenter->unregister_texture(output_id);
             output_id = nullptr;
         }
@@ -41,6 +42,7 @@ struct RenderingHost::Impl {
 
     void resize_render_graph(uint32_t width, uint32_t height) {
         if (output_id) {
+            context->device().waitIdle();
             presenter->unregister_texture(output_id);
             output_id = nullptr;
         }

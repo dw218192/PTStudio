@@ -38,7 +38,7 @@ int main(int argc, char* argv[]) {
     auto opt_log_level = pts::from_string<pts::LogLevel>(log_level_str);
     if (!opt_log_level) {
         std::cerr << "Invalid log level: " << log_level_str << std::endl;
-        return static_cast<int>(ErrorCode::InvalidArgument);
+        return static_cast<int>(pts::ErrorCode::InvalidArgument);
     }
 
     auto config = pts::RenderConfig{1280, 720, 60.0, 120.0};
@@ -70,12 +70,12 @@ int main(int argc, char* argv[]) {
     } catch (std::exception& e) {
         std::cerr << "Exception thrown: " << e.what() << std::endl;
         std::cerr << boost::stacktrace::stacktrace() << std::endl;
-        return static_cast<int>(ErrorCode::InternalError);
+        return static_cast<int>(pts::ErrorCode::InternalError);
     } catch (...) {
         std::cerr << "Unknown exception thrown" << std::endl;
         std::cerr << boost::stacktrace::stacktrace() << std::endl;
-        return static_cast<int>(ErrorCode::InternalError);
+        return static_cast<int>(pts::ErrorCode::InternalError);
     }
 
-    return static_cast<int>(ErrorCode::Ok);
+    return static_cast<int>(pts::ErrorCode::Ok);
 }

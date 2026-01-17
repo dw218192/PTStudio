@@ -26,9 +26,6 @@ ImGuiVulkanPresenter::~ImGuiVulkanPresenter() {
         ImGui_ImplGlfw_Shutdown();
     }
     cleanup_swapchain();
-    if (m_command_pool) {
-        m_context.device().destroyCommandPool(m_command_pool);
-    }
 }
 
 void ImGuiVulkanPresenter::new_frame() {
@@ -145,7 +142,7 @@ void ImGuiVulkanPresenter::create_framebuffers() {
 }
 
 void ImGuiVulkanPresenter::create_command_pool() {
-    m_command_pool = m_context.device().createCommandPool(
+    m_command_pool = m_context.device().createCommandPoolUnique(
         vk::CommandPoolCreateInfo{}
             .setQueueFamilyIndex(m_context.queue_family())
             .setFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer));
@@ -155,7 +152,7 @@ void ImGuiVulkanPresenter::create_command_buffers() {
     static constexpr uint32_t k_frames_in_flight = 2;
     m_command_buffers =
         m_context.device().allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo{
-            m_command_pool, vk::CommandBufferLevel::ePrimary, k_frames_in_flight});
+            m_command_pool.get(), vk::CommandBufferLevel::ePrimary, k_frames_in_flight});
 }
 
 void ImGuiVulkanPresenter::create_sync_objects() {
@@ -172,6 +169,9 @@ void ImGuiVulkanPresenter::create_sync_objects() {
 }
 
 void ImGuiVulkanPresenter::cleanup_swapchain() {
+    if (m_render_pass || !m_framebuffers.empty()) {
+        m_context.device().waitIdle();
+    }
     m_framebuffers.clear();
     m_render_pass.reset();
 }

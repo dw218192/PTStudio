@@ -42,7 +42,7 @@ class ImGuiVulkanPresenter {
 
     vk::UniqueRenderPass m_render_pass;
     std::vector<vk::UniqueFramebuffer> m_framebuffers;
-    vk::CommandPool m_command_pool{};
+    vk::UniqueCommandPool m_command_pool{};
     std::vector<vk::UniqueCommandBuffer> m_command_buffers;
     std::vector<vk::UniqueSemaphore> m_image_available_semaphores;
     std::vector<vk::UniqueSemaphore> m_render_finished_semaphores;

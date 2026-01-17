@@ -2,6 +2,8 @@
 #include <core/rendering/swapchainHost.h>
 
 #include <algorithm>
+#include <optional>
+#include <stdexcept>
 
 namespace pts::rendering {
 SwapchainHost::SwapchainHost(GLFWwindow* window, VulkanContext& context)
@@ -19,8 +21,14 @@ void SwapchainHost::resize() {
 }
 
 vk::Result SwapchainHost::acquire_next_image(vk::Semaphore semaphore, uint32_t* image_index) {
-    return m_context.device().acquireNextImageKHR(m_swapchain.get(), UINT64_MAX, semaphore, {},
-                                                  image_index);
+    try {
+        return m_context.device().acquireNextImageKHR(m_swapchain.get(), UINT64_MAX, semaphore, {},
+                                                      image_index);
+    } catch (vk::OutOfDateKHRError const&) {
+        return vk::Result::eErrorOutOfDateKHR;
+    } catch (vk::SystemError const& err) {
+        return static_cast<vk::Result>(err.code().value());
+    }
 }
 
 vk::Result SwapchainHost::present(vk::Semaphore wait_semaphore, uint32_t image_index) {
@@ -28,7 +36,13 @@ vk::Result SwapchainHost::present(vk::Semaphore wait_semaphore, uint32_t image_i
                             .setWaitSemaphores(wait_semaphore)
                             .setSwapchains(m_swapchain.get())
                             .setImageIndices(image_index);
-    return m_context.queue().presentKHR(present_info);
+    try {
+        return m_context.queue().presentKHR(present_info);
+    } catch (vk::OutOfDateKHRError const&) {
+        return vk::Result::eErrorOutOfDateKHR;
+    } catch (vk::SystemError const& err) {
+        return static_cast<vk::Result>(err.code().value());
+    }
 }
 
 void SwapchainHost::create_swapchain() {
@@ -37,13 +51,50 @@ void SwapchainHost::create_swapchain() {
     auto const present_modes =
         m_context.physical_device().getSurfacePresentModesKHR(m_context.surface());
 
-    auto surface_format = formats.front();
+    // Some drivers reject SRGB swapchain formats when storage usage is implied.
+    // Require formats that support the usage bits we rely on.
+    auto const format_usage_check = vk::ImageUsageFlagBits::eColorAttachment |
+                                    vk::ImageUsageFlagBits::eTransferSrc |
+                                    vk::ImageUsageFlagBits::eStorage;
+
+    auto format_supports_usage = [&](vk::Format format) {
+        try {
+            static_cast<void>(m_context.physical_device().getImageFormatProperties(
+                format, vk::ImageType::e2D, vk::ImageTiling::eOptimal, format_usage_check, {}));
+            return true;
+        } catch (vk::SystemError const&) {
+            return false;
+        }
+    };
+
+    // Prefer SRGB first, then UNORM, then any supported format.
+    auto surface_format = std::optional<vk::SurfaceFormatKHR>{};
     for (auto const& fmt : formats) {
-        if (fmt.format == vk::Format::eB8G8R8A8Srgb &&
-            fmt.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
+        if (fmt.colorSpace != vk::ColorSpaceKHR::eSrgbNonlinear) {
+            continue;
+        }
+        if (fmt.format == vk::Format::eB8G8R8A8Srgb && format_supports_usage(fmt.format)) {
             surface_format = fmt;
             break;
         }
+        if (fmt.format == vk::Format::eB8G8R8A8Unorm && format_supports_usage(fmt.format) &&
+            !surface_format) {
+            surface_format = fmt;
+        }
+    }
+    if (!surface_format) {
+        // No SRGB/UNORM candidate matched; accept the first supported format.
+        for (auto const& fmt : formats) {
+            if (format_supports_usage(fmt.format)) {
+                surface_format = fmt;
+                break;
+            }
+        }
+    }
+    if (!surface_format) {
+        // Hard fail to avoid creating an invalid swapchain.
+        throw std::runtime_error(
+            "No swapchain surface format supports required usage for the current device");
     }
 
     auto present_mode = vk::PresentModeKHR::eFifo;
@@ -70,23 +121,27 @@ void SwapchainHost::create_swapchain() {
         image_count = caps.maxImageCount;
     }
 
-    m_format = surface_format.format;
+    m_format = surface_format->format;
     m_extent = extent;
 
-    auto swapchain_info = vk::SwapchainCreateInfoKHR{}
-                              .setSurface(m_context.surface())
-                              .setMinImageCount(image_count)
-                              .setImageFormat(m_format)
-                              .setImageColorSpace(surface_format.colorSpace)
-                              .setImageExtent(m_extent)
-                              .setImageArrayLayers(1)
-                              .setImageUsage(vk::ImageUsageFlagBits::eColorAttachment)
-                              .setImageSharingMode(vk::SharingMode::eExclusive)
-                              .setPreTransform(caps.currentTransform)
-                              .setCompositeAlpha(vk::CompositeAlphaFlagBitsKHR::eOpaque)
-                              .setPresentMode(present_mode)
-                              .setClipped(true);
+    auto image_usage = vk::ImageUsageFlags{vk::ImageUsageFlagBits::eColorAttachment};
+    if ((caps.supportedUsageFlags & image_usage) != image_usage) {
+        image_usage = caps.supportedUsageFlags & image_usage;
+    }
 
+    auto swapchain_info = vk::SwapchainCreateInfoKHR{};
+    swapchain_info.surface = m_context.surface();
+    swapchain_info.minImageCount = image_count;
+    swapchain_info.imageFormat = m_format;
+    swapchain_info.imageColorSpace = surface_format->colorSpace;
+    swapchain_info.imageExtent = m_extent;
+    swapchain_info.imageArrayLayers = 1;
+    swapchain_info.imageUsage = image_usage;
+    swapchain_info.imageSharingMode = vk::SharingMode::eExclusive;
+    swapchain_info.preTransform = caps.currentTransform;
+    swapchain_info.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque;
+    swapchain_info.presentMode = present_mode;
+    swapchain_info.clipped = true;
     m_swapchain = m_context.device().createSwapchainKHRUnique(swapchain_info);
     m_images = m_context.device().getSwapchainImagesKHR(m_swapchain.get());
 }
