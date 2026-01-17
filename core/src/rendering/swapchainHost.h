@@ -1,9 +1,9 @@
 #pragma once
 
-#include <core/rendering/vulkanContext.h>
-
 #include <vector>
 #include <vulkan/vulkan.hpp>
+
+#include "vulkanContext.h"
 
 struct GLFWwindow;
 

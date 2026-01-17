@@ -1,5 +1,6 @@
+#include "swapchainHost.h"
+
 #include <GLFW/glfw3.h>
-#include <core/rendering/swapchainHost.h>
 
 #include <algorithm>
 #include <optional>
@@ -62,7 +63,7 @@ void SwapchainHost::create_swapchain() {
             static_cast<void>(m_context.physical_device().getImageFormatProperties(
                 format, vk::ImageType::e2D, vk::ImageTiling::eOptimal, format_usage_check, {}));
             return true;
-        } catch (vk::SystemError const&) {
+        } catch (vk::SystemError const& err) {
             return false;
         }
     };

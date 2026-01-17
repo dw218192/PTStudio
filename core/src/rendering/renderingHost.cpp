@@ -1,14 +1,15 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
-#include <core/rendering/imguiVulkanPresenter.h>
-#include <core/rendering/renderGraphHost.h>
 #include <core/rendering/renderingHost.h>
-#include <core/rendering/swapchainHost.h>
-#include <core/rendering/vulkanContext.h>
 
 #include <cstdlib>
 #include <iostream>
 #include <vector>
+
+#include "imguiVulkanPresenter.h"
+#include "renderGraphHost.h"
+#include "swapchainHost.h"
+#include "vulkanContext.h"
 
 namespace pts::rendering {
 struct RenderingHost::Impl {
