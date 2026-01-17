@@ -9,6 +9,10 @@
 
 using namespace PTS;
 
+namespace {
+std::weak_ptr<spdlog::logger> g_logger;
+}
+
 // stubs for callbacks
 namespace pts {
 static void click_func(GLFWwindow* window, int button, int action, int mods) {
@@ -30,8 +34,11 @@ static void key_func(GLFWwindow* window, int key, int scancode, int action, int 
     // app->m_key_states[key] = action == GLFW_PRESS;
 }
 static void error_func(int error, const char* description) {
-    std::cerr << "GLFW error: " << error << ": " << description << std::endl;
-    std::exit(-1);
+    if (auto logger = g_logger.lock()) {
+        logger->error("GLFW error: {}: {}", error, description);
+    } else {
+        std::cerr << "GLFW error: " << error << ": " << description << std::endl;
+    }
 }
 static void framebuffer_resize_func(GLFWwindow* window, int width, int height) {
     auto const app = static_cast<GLFWApplication*>(glfwGetWindowUserPointer(window));
@@ -44,20 +51,18 @@ GLFWApplication::GLFWApplication(std::string_view name, pts::LoggingManager& log
                                  pts::PluginManager& plugin_manager, unsigned width,
                                  unsigned height, float min_frame_time)
     : Application{name, logging_manager, plugin_manager} {
+    g_logger = get_logger();
     set_min_frame_time(min_frame_time);
     glfwSetErrorCallback(error_func);
-
     if (!glfwInit()) {
-        std::cerr << "Failed to initialize GLFW" << std::endl;
-        std::exit(-1);
+        throw std::runtime_error("Failed to initialize GLFW");
     }
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
     m_window = glfwCreateWindow(width, height, name.data(), nullptr, nullptr);
     if (!m_window) {
-        std::cerr << "Failed to create window" << std::endl;
-        std::exit(-1);
+        throw std::runtime_error("Failed to create window");
     }
 
     // set callbacks

@@ -54,6 +54,9 @@ struct Application {
     pts::PluginManager& get_plugin_manager() noexcept {
         return *m_plugin_manager;
     }
+    auto get_logger() noexcept -> std::shared_ptr<spdlog::logger> {
+        return m_logger;
+    }
 
    private:
     std::string m_name;

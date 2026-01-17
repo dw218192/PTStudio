@@ -118,6 +118,7 @@ using subsystem_handle = subsystem*;   // opaque handle
 ### Internal code
 
 * Inside a subsystem, prefer exceptions for “can’t proceed” errors.
+* Do not use std::exit or std::abort or std::terminate, prefer throwing an exception.
 * Keep invariants strong: constructors establish valid objects or throw (internally).
 
 ### Public API boundary (required)

@@ -28,18 +28,6 @@ struct EditorApplication final : GLFWApplication {
 
     auto loop(float dt) -> void override;
     auto quit(int code) -> void override;
-    /**
-     * @brief Checks a result returned from some function. Prints the error and Terminates the
-     * program on error.
-     * @tparam T Type of the real return value
-     * @tparam E Type of the error return value
-     * @param res the result
-     * @return The real return value if no error
-     */
-    template <typename T, typename E>
-    static constexpr auto check_error(tl::expected<T, E> const& res) -> decltype(auto);
-    template <typename T, typename E>
-    static constexpr auto check_error(tl::expected<T, E>&& res) -> decltype(auto);
 
    protected:
     auto on_begin_first_loop() -> void override;
@@ -118,26 +106,4 @@ struct EditorApplication final : GLFWApplication {
         pts::Signal<void(PTS::SceneObject*)> m_on_selected_obj_change_callback_list;
     } m_control_state;
 };
-
-template <typename T, typename E>
-constexpr auto EditorApplication::check_error(tl::expected<T, E> const& res) -> decltype(auto) {
-    if (!res) {
-        std::cerr << res.error() << std::endl;
-        std::exit(-1);
-    }
-    if constexpr (!std::is_void_v<T>) {
-        return res.value();
-    }
-}
-
-template <typename T, typename E>
-constexpr auto EditorApplication::check_error(tl::expected<T, E>&& res) -> decltype(auto) {
-    if (!res) {
-        std::cerr << res.error() << std::endl;
-        std::exit(-1);
-    }
-    if constexpr (!std::is_void_v<T>) {
-        return std::move(res).value();
-    }
-}
 }  // namespace pts::editor

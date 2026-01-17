@@ -378,7 +378,10 @@ auto EditorApplication::draw_scene_panel() noexcept -> void {
     if (ImGui::Button("Open Scene")) {
         auto const path = FileDialogue(ImGui::FileDialogueMode::OPEN, m_archive->get_ext().data());
         if (!path.empty()) {
-            check_error(m_archive->load_file(path, m_scene, m_cam));
+            auto res = m_archive->load_file(path, m_scene, m_cam);
+            if (!res) {
+                this->log(pts::LogLevel::Error, "Failed to load scene: {}", res.error());
+            }
             on_scene_opened(m_scene);
         }
     }
@@ -386,7 +389,10 @@ auto EditorApplication::draw_scene_panel() noexcept -> void {
     if (ImGui::Button("Save Scene")) {
         auto const path = FileDialogue(ImGui::FileDialogueMode::SAVE, m_archive->get_ext().data());
         if (!path.empty()) {
-            check_error(m_archive->save_file(m_scene, m_cam, path));
+            auto res = m_archive->save_file(m_scene, m_cam, path);
+            if (!res) {
+                this->log(pts::LogLevel::Error, "Failed to save scene: {}", res.error());
+            }
         }
     }
 
@@ -482,8 +488,13 @@ auto EditorApplication::draw_scene_panel() noexcept -> void {
                 auto const path = FileDialogue(ImGui::FileDialogueMode::OPEN, "obj");
                 if (!path.empty()) {
                     std::string warning;
-                    auto obj = check_error(RenderableObject::from_obj(m_scene, k_editable_flags,
-                                                                      Material{}, path, &warning));
+                    auto res = RenderableObject::from_obj(m_scene, k_editable_flags, Material{},
+                                                          path, &warning);
+                    if (!res) {
+                        this->log(pts::LogLevel::Error, "Failed to import .obj file: {}",
+                                  res.error());
+                    }
+                    auto obj = std::move(res.value());
                     m_scene.emplace_object<RenderableObject>(std::move(obj));
                     this->log(pts::LogLevel::Warning, warning);
                 }

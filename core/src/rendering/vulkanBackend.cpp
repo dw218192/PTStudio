@@ -123,8 +123,7 @@ void VulkanBackend::create_vulkan_instance() {
 void VulkanBackend::create_surface() {
     VkSurfaceKHR created = VK_NULL_HANDLE;
     if (glfwCreateWindowSurface(m_instance.get(), m_window, nullptr, &created) != VK_SUCCESS) {
-        m_logger->error("Failed to create Vulkan surface");
-        std::exit(-1);
+        throw std::runtime_error("Failed to create Vulkan surface");
     }
     m_surface = created;
     m_logger->info("Vulkan surface created");
