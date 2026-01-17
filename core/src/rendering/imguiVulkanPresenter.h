@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/loggingManager.h>
 #include <imgui.h>
 
 #include "swapchainHost.h"
@@ -9,7 +10,8 @@ struct GLFWwindow;
 namespace pts::rendering {
 class ImGuiVulkanPresenter {
    public:
-    ImGuiVulkanPresenter(GLFWwindow* window, SwapchainHost& swapchain, VulkanContext& context);
+    ImGuiVulkanPresenter(GLFWwindow* window, SwapchainHost& swapchain, VulkanContext& context,
+                         class LoggingManager& logging_manager);
     ~ImGuiVulkanPresenter();
 
     ImGuiVulkanPresenter(const ImGuiVulkanPresenter&) = delete;
@@ -51,5 +53,6 @@ class ImGuiVulkanPresenter {
     size_t m_frame_index_counter{0};
     bool m_initialized{false};
     vk::UniqueDescriptorPool m_imgui_descriptor_pool;
+    std::shared_ptr<spdlog::logger> m_logger;
 };
 }  // namespace pts::rendering

@@ -2,8 +2,9 @@
 #include <GLFW/glfw3.h>
 #include <core/rendering/renderingHost.h>
 
+#include <core/loggingManager.h>
+
 #include <cstdlib>
-#include <iostream>
 #include <vector>
 
 #include "imguiVulkanPresenter.h"
@@ -13,19 +14,26 @@
 
 namespace pts::rendering {
 struct RenderingHost::Impl {
-    explicit Impl(GLFWwindow* window) : window(window) {
+    explicit Impl(GLFWwindow* window, LoggingManager& logging_manager)
+        : window(window), logging_manager(logging_manager) {
+        logger = logging_manager.get_logger_shared("RenderingHost");
+        logger->info("RenderingHost initializing");
         create_vulkan_instance();
         create_surface();
-        context = std::make_unique<VulkanContext>(instance.get(), surface);
-        swapchain = std::make_unique<SwapchainHost>(window, *context);
+        context = std::make_unique<VulkanContext>(instance.get(), surface, logging_manager);
+        swapchain = std::make_unique<SwapchainHost>(window, *context, logging_manager);
         render_graph =
             std::make_unique<RenderGraphHost>(context->physical_device(), context->device(),
-                                              context->queue(), context->queue_family());
-        presenter = std::make_unique<ImGuiVulkanPresenter>(window, *swapchain, *context);
+                                              context->queue(), context->queue_family(),
+                                              logging_manager);
+        presenter =
+            std::make_unique<ImGuiVulkanPresenter>(window, *swapchain, *context, logging_manager);
         resize_render_graph(swapchain->extent().width, swapchain->extent().height);
+        logger->info("RenderingHost initialized");
     }
 
     ~Impl() {
+        logger->info("RenderingHost shutting down");
         if (output_id) {
             context->device().waitIdle();
             presenter->unregister_texture(output_id);
@@ -49,6 +57,7 @@ struct RenderingHost::Impl {
         }
         render_graph->resize(width, height);
         if (width == 0 || height == 0) {
+            logger->debug("Render graph resize skipped for zero extent");
             return;
         }
         output_id = presenter->register_texture(render_graph->output_sampler(),
@@ -80,18 +89,22 @@ struct RenderingHost::Impl {
         instance = vk::createInstanceUnique(
             vk::InstanceCreateInfo{instance_flags, &app_info, layers, extensions});
         VULKAN_HPP_DEFAULT_DISPATCHER.init(instance.get());
+        logger->info("Vulkan instance created (extensions={}, layers={})", extensions.size(),
+                     layers.size());
     }
 
     void create_surface() {
         VkSurfaceKHR created = VK_NULL_HANDLE;
         if (glfwCreateWindowSurface(instance.get(), window, nullptr, &created) != VK_SUCCESS) {
-            std::cerr << "Failed to create Vulkan surface" << std::endl;
+            logger->error("Failed to create Vulkan surface");
             std::exit(-1);
         }
         surface = created;
+        logger->info("Vulkan surface created");
     }
 
     GLFWwindow* window{nullptr};
+    LoggingManager& logging_manager;
     vk::UniqueInstance instance;
     vk::SurfaceKHR surface{VK_NULL_HANDLE};
     std::unique_ptr<VulkanContext> context;
@@ -99,9 +112,11 @@ struct RenderingHost::Impl {
     std::unique_ptr<RenderGraphHost> render_graph;
     std::unique_ptr<ImGuiVulkanPresenter> presenter;
     ImTextureID output_id{nullptr};
+    std::shared_ptr<spdlog::logger> logger;
 };
 
-RenderingHost::RenderingHost(GLFWwindow* window) : m_impl(std::make_unique<Impl>(window)) {
+RenderingHost::RenderingHost(GLFWwindow* window, LoggingManager& logging_manager)
+    : m_impl(std::make_unique<Impl>(window, logging_manager)) {
 }
 
 RenderingHost::~RenderingHost() = default;

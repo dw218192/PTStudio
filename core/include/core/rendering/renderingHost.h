@@ -7,10 +7,14 @@
 
 struct GLFWwindow;
 
+namespace pts {
+class LoggingManager;
+}
+
 namespace pts::rendering {
 class RenderingHost {
    public:
-    explicit RenderingHost(GLFWwindow* window);
+    explicit RenderingHost(GLFWwindow* window, pts::LoggingManager& logging_manager);
     ~RenderingHost();
 
     RenderingHost(const RenderingHost&) = delete;

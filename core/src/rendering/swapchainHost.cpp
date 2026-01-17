@@ -7,13 +7,19 @@
 #include <stdexcept>
 
 namespace pts::rendering {
-SwapchainHost::SwapchainHost(GLFWwindow* window, VulkanContext& context)
+SwapchainHost::SwapchainHost(GLFWwindow* window, VulkanContext& context,
+                             LoggingManager& logging_manager)
     : m_window(window), m_context(context) {
+    m_logger = logging_manager.get_logger_shared("SwapchainHost");
+    m_logger->info("SwapchainHost created");
     create_swapchain();
     create_image_views();
 }
 
 SwapchainHost::~SwapchainHost() {
+    if (m_logger) {
+        m_logger->info("SwapchainHost destroyed");
+    }
     cleanup_swapchain();
 }
 
@@ -28,6 +34,9 @@ vk::Result SwapchainHost::acquire_next_image(vk::Semaphore semaphore, uint32_t* 
     } catch (vk::OutOfDateKHRError const&) {
         return vk::Result::eErrorOutOfDateKHR;
     } catch (vk::SystemError const& err) {
+        if (m_logger) {
+            m_logger->error("Swapchain acquire failed: {}", err.what());
+        }
         return static_cast<vk::Result>(err.code().value());
     }
 }
@@ -42,6 +51,9 @@ vk::Result SwapchainHost::present(vk::Semaphore wait_semaphore, uint32_t image_i
     } catch (vk::OutOfDateKHRError const&) {
         return vk::Result::eErrorOutOfDateKHR;
     } catch (vk::SystemError const& err) {
+        if (m_logger) {
+            m_logger->error("Swapchain present failed: {}", err.what());
+        }
         return static_cast<vk::Result>(err.code().value());
     }
 }
@@ -143,6 +155,13 @@ void SwapchainHost::create_swapchain() {
     swapchain_info.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque;
     swapchain_info.presentMode = present_mode;
     swapchain_info.clipped = true;
+    if (m_logger) {
+        m_logger->info(
+            "Creating swapchain: format={}, colorspace={}, present_mode={}, extent={}x{}, "
+            "image_count={}",
+            static_cast<int>(m_format), static_cast<int>(surface_format->colorSpace),
+            static_cast<int>(present_mode), m_extent.width, m_extent.height, image_count);
+    }
     m_swapchain = m_context.device().createSwapchainKHRUnique(swapchain_info);
     m_images = m_context.device().getSwapchainImagesKHR(m_swapchain.get());
 }
@@ -171,12 +190,18 @@ void SwapchainHost::cleanup_swapchain() {
         return;
     }
     m_context.device().waitIdle();
+    if (m_logger) {
+        m_logger->info("Swapchain resources destroyed");
+    }
     m_image_views.clear();
     m_swapchain.reset();
     m_images.clear();
 }
 
 void SwapchainHost::recreate_swapchain() {
+    if (m_logger) {
+        m_logger->info("Recreating swapchain");
+    }
     int width = 0;
     int height = 0;
     while (width == 0 || height == 0) {

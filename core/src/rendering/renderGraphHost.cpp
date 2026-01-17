@@ -7,11 +7,14 @@ namespace pts::rendering {
 thread_local RenderGraphHost* RenderGraphHost::s_current = nullptr;
 
 RenderGraphHost::RenderGraphHost(vk::PhysicalDevice physical_device, vk::Device device,
-                                 vk::Queue queue, uint32_t queue_family)
+                                 vk::Queue queue, uint32_t queue_family,
+                                 LoggingManager& logging_manager)
     : m_physical_device(physical_device),
       m_device(device),
       m_queue(queue),
       m_queue_family(queue_family) {
+    m_logger = logging_manager.get_logger_shared("RenderGraphHost");
+    m_logger->info("RenderGraphHost created");
     m_api.get_last_error = &RenderGraphHost::get_last_error;
     m_api.get_error_message = &RenderGraphHost::get_error_message;
     m_api.begin = &RenderGraphHost::begin_graph;
@@ -43,6 +46,9 @@ RenderGraphHost::RenderGraphHost(vk::PhysicalDevice physical_device, vk::Device 
 }
 
 RenderGraphHost::~RenderGraphHost() {
+    if (m_logger) {
+        m_logger->info("RenderGraphHost destroyed");
+    }
     destroy_output_resources();
     if (m_command_pool) {
         m_device.destroyCommandPool(m_command_pool);
@@ -51,10 +57,16 @@ RenderGraphHost::~RenderGraphHost() {
 
 void RenderGraphHost::resize(uint32_t width, uint32_t height) {
     if (width == 0 || height == 0) {
+        if (m_logger) {
+            m_logger->debug("RenderGraph resize skipped for zero extent");
+        }
         return;
     }
     if (m_output_extent.width == width && m_output_extent.height == height) {
         return;
+    }
+    if (m_logger) {
+        m_logger->info("RenderGraph resized: {}x{}", width, height);
     }
     destroy_output_resources();
     m_output_extent = vk::Extent2D{width, height};
@@ -184,6 +196,10 @@ void RenderGraphHost::create_output_resources() {
     if (m_output_extent.width == 0 || m_output_extent.height == 0) {
         return;
     }
+    if (m_logger) {
+        m_logger->info("Creating render graph output resources: {}x{}", m_output_extent.width,
+                       m_output_extent.height);
+    }
 
     auto image_info =
         vk::ImageCreateInfo{}
@@ -242,6 +258,9 @@ void RenderGraphHost::create_output_resources() {
 }
 
 void RenderGraphHost::destroy_output_resources() {
+    if (m_output_image && m_logger) {
+        m_logger->info("Destroying render graph output resources");
+    }
     if (m_output_sampler) {
         m_device.destroySampler(m_output_sampler);
         m_output_sampler = VK_NULL_HANDLE;

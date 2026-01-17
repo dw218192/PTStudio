@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/loggingManager.h>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
@@ -10,7 +11,7 @@ struct GLFWwindow;
 namespace pts::rendering {
 class SwapchainHost {
    public:
-    SwapchainHost(GLFWwindow* window, VulkanContext& context);
+    SwapchainHost(GLFWwindow* window, VulkanContext& context, LoggingManager& logging_manager);
     ~SwapchainHost();
 
     SwapchainHost(const SwapchainHost&) = delete;
@@ -56,5 +57,6 @@ class SwapchainHost {
     vk::Extent2D m_extent{};
     std::vector<vk::Image> m_images;
     std::vector<vk::UniqueImageView> m_image_views;
+    std::shared_ptr<spdlog::logger> m_logger;
 };
 }  // namespace pts::rendering

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/loggingManager.h>
 #include <core/rendering/graph.h>
 
 #include <vector>
@@ -9,7 +10,7 @@ namespace pts::rendering {
 class RenderGraphHost {
    public:
     RenderGraphHost(vk::PhysicalDevice physical_device, vk::Device device, vk::Queue queue,
-                    uint32_t queue_family);
+                    uint32_t queue_family, LoggingManager& logging_manager);
     ~RenderGraphHost();
 
     RenderGraphHost(const RenderGraphHost&) = delete;
@@ -83,5 +84,6 @@ class RenderGraphHost {
     PtsTexture m_output_texture{};
 
     PtsRenderGraphApi m_api{};
+    std::shared_ptr<spdlog::logger> m_logger;
 };
 }  // namespace pts::rendering

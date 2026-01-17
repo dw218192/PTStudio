@@ -3,21 +3,40 @@
 #include <GLFW/glfw3.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_vulkan.h>
+#include <spdlog/spdlog.h>
 
 #include <array>
 #include <cstdlib>
 #include <iostream>
 
+namespace {
+std::weak_ptr<spdlog::logger> g_imgui_logger;
+
+void log_imgui_vk_result(VkResult err) {
+    if (err == VK_SUCCESS) {
+        return;
+    }
+    if (auto logger = g_imgui_logger.lock()) {
+        logger->error("ImGui Vulkan error: {}", static_cast<int>(err));
+    } else {
+        std::cerr << "ImGui Vulkan error: " << static_cast<int>(err) << std::endl;
+    }
+}
+}  // namespace
+
 namespace pts::rendering {
 ImGuiVulkanPresenter::ImGuiVulkanPresenter(GLFWwindow* window, SwapchainHost& swapchain,
-                                           VulkanContext& context)
+                                           VulkanContext& context, LoggingManager& logging_manager)
     : m_window(window), m_swapchain(swapchain), m_context(context) {
+    m_logger = logging_manager.get_logger_shared("ImGuiVulkanPresenter");
+    g_imgui_logger = m_logger;
     create_command_pool();
     create_render_pass();
     create_framebuffers();
     create_command_buffers();
     create_sync_objects();
     init_imgui_backend();
+    m_logger->info("ImGuiVulkanPresenter initialized");
 }
 
 ImGuiVulkanPresenter::~ImGuiVulkanPresenter() {
@@ -27,6 +46,7 @@ ImGuiVulkanPresenter::~ImGuiVulkanPresenter() {
         ImGui_ImplGlfw_Shutdown();
     }
     cleanup_swapchain();
+    m_logger->info("ImGuiVulkanPresenter destroyed");
 }
 
 void ImGuiVulkanPresenter::new_frame() {
@@ -49,6 +69,7 @@ void ImGuiVulkanPresenter::render(bool framebuffer_resized) {
         m_image_available_semaphores[frame_index].get(), &image_index);
     if (acquire_result == vk::Result::eErrorOutOfDateKHR ||
         acquire_result == vk::Result::eSuboptimalKHR) {
+        m_logger->info("Swapchain out of date; recreating");
         recreate_swapchain();
         return;
     }
@@ -72,6 +93,7 @@ void ImGuiVulkanPresenter::render(bool framebuffer_resized) {
 
     if (present_result == vk::Result::eErrorOutOfDateKHR ||
         present_result == vk::Result::eSuboptimalKHR || framebuffer_resized) {
+        m_logger->info("Swapchain out of date after present; recreating");
         recreate_swapchain();
     }
 
@@ -178,6 +200,7 @@ void ImGuiVulkanPresenter::cleanup_swapchain() {
 }
 
 void ImGuiVulkanPresenter::recreate_swapchain() {
+    m_logger->info("Recreating ImGui swapchain resources");
     cleanup_swapchain();
     m_swapchain.resize();
     create_render_pass();
@@ -234,15 +257,11 @@ void ImGuiVulkanPresenter::init_imgui_backend() {
     init_info.MinImageCount = m_swapchain.image_count();
     init_info.ImageCount = m_swapchain.image_count();
     init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-    init_info.CheckVkResultFn = [](VkResult err) {
-        if (err != VK_SUCCESS) {
-            std::cerr << "ImGui Vulkan error: " << err << std::endl;
-        }
-    };
+    init_info.CheckVkResultFn = log_imgui_vk_result;
 
     ImGui_ImplVulkan_Init(&init_info, m_render_pass.get());
     if (!ImGui_ImplVulkan_CreateFontsTexture()) {
-        std::cerr << "Failed to upload ImGui Vulkan fonts" << std::endl;
+        m_logger->error("Failed to upload ImGui Vulkan fonts");
         std::exit(-1);
     }
     m_initialized = true;

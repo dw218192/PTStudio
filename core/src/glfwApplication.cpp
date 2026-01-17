@@ -78,7 +78,8 @@ GLFWApplication::GLFWApplication(std::string_view name, pts::LoggingManager& log
 
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
-    m_rendering_host = std::make_unique<pts::rendering::RenderingHost>(m_window);
+    m_rendering_host =
+        std::make_unique<pts::rendering::RenderingHost>(m_window, get_logging_manager());
 }
 
 GLFWApplication::~GLFWApplication() {

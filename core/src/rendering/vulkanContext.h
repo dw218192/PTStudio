@@ -1,5 +1,7 @@
 #pragma once
 
+#include <core/loggingManager.h>
+
 #include <vulkan/vulkan.hpp>
 
 /**
@@ -11,7 +13,7 @@
 namespace pts::rendering {
 class VulkanContext {
    public:
-    VulkanContext(vk::Instance instance, vk::SurfaceKHR surface);
+    VulkanContext(vk::Instance instance, vk::SurfaceKHR surface, LoggingManager& logging_manager);
     ~VulkanContext() = default;
 
     VulkanContext(const VulkanContext&) = delete;
@@ -45,5 +47,6 @@ class VulkanContext {
     vk::UniqueDevice m_device;
     vk::Queue m_graphics_queue{};
     uint32_t m_graphics_queue_family{0};
+    std::shared_ptr<spdlog::logger> m_logger;
 };
 }  // namespace pts::rendering
