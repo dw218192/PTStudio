@@ -21,6 +21,9 @@ endif ()
 if(NOT DEFINED CORE_BUILD_TESTS)
     option(CORE_BUILD_TESTS "Build core unit tests" ON)
 endif()
+if(NOT DEFINED PTS_STATIC_PLUGINS)
+    option(PTS_STATIC_PLUGINS "Build plugins as static libraries" OFF)
+endif()
 
 # Direct all output to /bin directory
 # Since we organize builds by configuration (build/Debug, build/Release) -- see build.ps1,
@@ -93,6 +96,11 @@ add_subdirectory(editor)
 
 # plugins
 add_subdirectory(plugins)
+
+# Link static plugins into the main executable when enabled.
+if(PTS_STATIC_PLUGINS)
+    target_link_libraries(editor PRIVATE pts::plugins)
+endif()
 
 # set editor as the start-up project
 set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT editor)

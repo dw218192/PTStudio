@@ -147,6 +147,9 @@ inline void log_plugin_shutdown(const PluginLogger& logger) noexcept {
 
 }  // namespace detail
 
+// Registers static plugins into the host registry (no-op for dynamic builds).
+void register_static_plugin(const PtsPluginDescriptor* descriptor) noexcept;
+
 /**
  * Base lifecycle interface for C++ plugin implementations.
  * Plugins can inherit from this for convenience.
@@ -201,6 +204,20 @@ struct IPlugin {
 
 }  // namespace pts
 
+#if defined(PTS_STATIC_PLUGINS)
+#define PTS_PLUGIN_REGISTER_STATIC(PluginClass)                               \
+    namespace {                                                               \
+    struct PluginClass##StaticRegistrar {                                     \
+        PluginClass##StaticRegistrar() {                                      \
+            ::pts::register_static_plugin(::pts_plugin_get_desc());           \
+        }                                                                     \
+    };                                                                        \
+    static PluginClass##StaticRegistrar PluginClass##StaticRegistrarInstance; \
+    }  // namespace
+#else
+#define PTS_PLUGIN_REGISTER_STATIC(PluginClass)
+#endif
+
 /**
  * Defines a plugin. This should be put in exactly one translation unit of the plugin.
  *
@@ -254,7 +271,8 @@ struct IPlugin {
             }};                                                                     \
         return &desc;                                                               \
     }                                                                               \
-    }
+    }                                                                               \
+    PTS_PLUGIN_REGISTER_STATIC(PluginClass)
 
 // ============================================================================
 // Metaprogramming-based Interface Registration Macros

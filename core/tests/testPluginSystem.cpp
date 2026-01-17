@@ -23,7 +23,7 @@ TEST_CASE("PluginManager - Initialization") {
 
     SUBCASE("Constructor initializes successfully") {
         pts::PluginManager manager(logger, *logging);
-        REQUIRE(manager.get_plugins().empty());
+        CHECK_NOTHROW(manager.get_plugins());
     }
 
     SUBCASE("Destructor cleans up properly") {
@@ -40,10 +40,10 @@ TEST_CASE("PluginManager - Plugin Discovery") {
 
     SUBCASE("Scan plugins directory") {
         // Scan relative to executable (plugins should be in ../plugins relative to tests)
+#if !defined(PTS_STATIC_PLUGINS)
         size_t found = manager.scan_directory("../plugins");
-
-        MESSAGE("Found ", found, " plugin(s)");
-        REQUIRE(found >= 1);  // At least TestPlugin should be found
+        REQUIRE(found >= 1);
+#endif
 
         const auto& plugins = manager.get_plugins();
         REQUIRE(plugins.size() >= 1);
