@@ -1,8 +1,7 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
-#include <core/rendering/renderingHost.h>
-
 #include <core/loggingManager.h>
+#include <core/rendering/renderingHost.h>
 
 #include <cstdlib>
 #include <vector>
@@ -22,10 +21,9 @@ struct RenderingHost::Impl {
         create_surface();
         context = std::make_unique<VulkanContext>(instance.get(), surface, logging_manager);
         swapchain = std::make_unique<SwapchainHost>(window, *context, logging_manager);
-        render_graph =
-            std::make_unique<RenderGraphHost>(context->physical_device(), context->device(),
-                                              context->queue(), context->queue_family(),
-                                              logging_manager);
+        render_graph = std::make_unique<RenderGraphHost>(context->physical_device(),
+                                                         context->device(), context->queue(),
+                                                         context->queue_family(), logging_manager);
         presenter =
             std::make_unique<ImGuiVulkanPresenter>(window, *swapchain, *context, logging_manager);
         resize_render_graph(swapchain->extent().width, swapchain->extent().height);

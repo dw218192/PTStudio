@@ -64,8 +64,8 @@ class RenderGraphHost {
     void transition_image_layout(vk::CommandBuffer cmd_buf, vk::ImageLayout new_layout);
     void clear_color(vk::CommandBuffer cmd_buf, const float rgba[4]);
     [[nodiscard]] auto allocate_command_buffer() -> vk::CommandBuffer;
-    [[nodiscard]] auto find_memory_type(uint32_t type_bits, vk::MemoryPropertyFlags flags)
-        -> uint32_t;
+    [[nodiscard]] auto find_memory_type(uint32_t type_bits,
+                                        vk::MemoryPropertyFlags flags) -> uint32_t;
 
     vk::PhysicalDevice m_physical_device{};
     vk::Device m_device{};

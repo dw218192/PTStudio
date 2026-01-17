@@ -65,4 +65,3 @@ bool ImGui::TransformField(const char* label, PTS::Transform& transform, ImGuizm
     }
     return changed;
 }
-

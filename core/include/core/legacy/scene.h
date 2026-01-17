@@ -1,11 +1,11 @@
 #pragma once
 
+#include <core/signal.h>
+
 #include <list>
 #include <string>
 #include <tcb/span.hpp>
 #include <tl/expected.hpp>
-
-#include <core/signal.h>
 
 #include "boundingBox.h"
 #include "camera.h"

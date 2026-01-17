@@ -9,6 +9,8 @@
 #include <variant>
 
 // data structures
+#include <core/signal.h>
+
 #include <array>
 #include <bitset>
 #include <deque>
@@ -23,7 +25,6 @@
 #include <unordered_set>
 #include <vector>
 
-#include <core/signal.h>
 #include "stringManip.h"
 #include "typeTraitsUtil.h"
 

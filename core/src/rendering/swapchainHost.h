@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/loggingManager.h>
+
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
@@ -40,8 +41,8 @@ class SwapchainHost {
         return static_cast<uint32_t>(m_images.size());
     }
 
-    [[nodiscard]] auto acquire_next_image(vk::Semaphore semaphore, uint32_t* image_index)
-        -> vk::Result;
+    [[nodiscard]] auto acquire_next_image(vk::Semaphore semaphore,
+                                          uint32_t* image_index) -> vk::Result;
     [[nodiscard]] auto present(vk::Semaphore wait_semaphore, uint32_t image_index) -> vk::Result;
 
    private:
