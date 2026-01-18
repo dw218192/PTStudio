@@ -96,6 +96,9 @@ void VulkanBackend::create_vulkan_instance() {
     VULKAN_HPP_DEFAULT_DISPATCHER.init(vkGetInstanceProcAddr);
     uint32_t glfw_ext_count = 0;
     auto glfw_exts = glfwGetRequiredInstanceExtensions(&glfw_ext_count);
+    if (!glfw_exts) {
+        throw std::runtime_error("Failed to get required Vulkan instance extensions from GLFW");
+    }
     auto extensions = std::vector<char const*>{glfw_exts, glfw_exts + glfw_ext_count};
     extensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
 

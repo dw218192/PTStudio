@@ -42,19 +42,6 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config,
       m_config{config},
       m_cam{config.fovy, config.get_aspect(), LookAtParams{}},
       m_archive{new JsonArchive} {
-    m_renderer_host_api.render_graph_api = get_render_graph_api();
-    m_renderer_host_api.render_world_api = nullptr;
-
-    m_renderer_plugin = get_plugin_manager().get_plugin_instance("editor.renderer");
-    if (m_renderer_plugin) {
-        m_renderer_interface =
-            static_cast<RendererPluginInterfaceV1*>(get_plugin_manager().query_interface(
-                m_renderer_plugin, RENDERER_PLUGIN_INTERFACE_V1_ID));
-    }
-    if (!m_renderer_interface) {
-        log(pts::LogLevel::Error, "Renderer plugin interface not found");
-    }
-
     // callbacks
     get_imgui_window_info(k_scene_view_win_name).on_enter_region.connect([this] {
         on_mouse_enter_scene_viewport();
@@ -76,6 +63,20 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config,
     m_console_log_sink =
         std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(k_console_log_buffer_size);
     get_logging_manager().add_sink(m_console_log_sink);
+
+    // renderer
+    m_renderer_host_api.render_graph_api = get_render_graph_api();
+    m_renderer_host_api.render_world_api = nullptr;
+
+    m_renderer_plugin = get_plugin_manager().get_plugin_instance("editor.renderer");
+    if (m_renderer_plugin) {
+        m_renderer_interface =
+            static_cast<RendererPluginInterfaceV1*>(get_plugin_manager().query_interface(
+                m_renderer_plugin, RENDERER_PLUGIN_INTERFACE_V1_ID));
+    }
+    if (!m_renderer_interface) {
+        log(pts::LogLevel::Error, "Renderer plugin interface not found");
+    }
 
     log(pts::LogLevel::Info, "EditorApplication created");
 }

@@ -54,8 +54,16 @@ target_include_directories(${STATIC_TEST_NAME} PRIVATE ../include)
 target_link_libraries(${STATIC_TEST_NAME} PRIVATE doctest::doctest core test_plugin::api
     TestPluginStatic)
 target_compile_definitions(${STATIC_TEST_NAME} PRIVATE PTS_STATIC_PLUGINS)
+
 if (MSVC)
+    target_link_libraries(${STATIC_TEST_NAME} PRIVATE TestPluginStatic)
     target_link_options(${STATIC_TEST_NAME} PRIVATE /WHOLEARCHIVE:TestPluginStatic)
+elseif(APPLE)
+    target_link_libraries(${STATIC_TEST_NAME} PRIVATE
+        "-Wl,-force_load,$<TARGET_FILE:TestPluginStatic>")
+else()
+    target_link_libraries(${STATIC_TEST_NAME} PRIVATE
+        "-Wl,--whole-archive" TestPluginStatic "-Wl,--no-whole-archive")
 endif()
 
 set_target_properties(${STATIC_TEST_NAME} PROPERTIES
