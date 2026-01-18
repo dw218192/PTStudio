@@ -62,6 +62,7 @@ GLFWApplication::GLFWApplication(std::string_view name, pts::LoggingManager& log
 
     m_window = glfwCreateWindow(width, height, name.data(), nullptr, nullptr);
     if (!m_window) {
+        glfwTerminate();
         throw std::runtime_error("Failed to create window");
     }
 

@@ -43,7 +43,7 @@ class VulkanBackend final : public IRhiBackend {
     GLFWwindow* m_window{nullptr};
     LoggingManager& m_logging_manager;
     vk::UniqueInstance m_instance;
-    vk::SurfaceKHR m_surface{VK_NULL_HANDLE};
+    vk::UniqueSurfaceKHR m_surface;
     std::unique_ptr<VulkanContext> m_context;
     std::unique_ptr<SwapchainHost> m_swapchain;
     std::unique_ptr<RenderGraphHost> m_render_graph;

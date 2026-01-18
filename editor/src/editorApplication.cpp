@@ -382,8 +382,10 @@ auto EditorApplication::draw_scene_panel() noexcept -> void {
             auto res = m_archive->load_file(path, m_scene, m_cam);
             if (!res) {
                 this->log(pts::LogLevel::Error, "Failed to load scene: {}", res.error());
+            } else {
+                on_scene_opened(m_scene);
+                this->log(pts::LogLevel::Info, "Scene loaded from {}", path);
             }
-            on_scene_opened(m_scene);
         }
     }
     ImGui::SameLine();
@@ -494,10 +496,11 @@ auto EditorApplication::draw_scene_panel() noexcept -> void {
                     if (!res) {
                         this->log(pts::LogLevel::Error, "Failed to import .obj file: {}",
                                   res.error());
+                    } else {
+                        auto obj = std::move(res.value());
+                        m_scene.emplace_object<RenderableObject>(std::move(obj));
+                        this->log(pts::LogLevel::Warning, warning);
                     }
-                    auto obj = std::move(res.value());
-                    m_scene.emplace_object<RenderableObject>(std::move(obj));
-                    this->log(pts::LogLevel::Warning, warning);
                 }
             }
             if (ImGui::MenuItem("Add Light")) {

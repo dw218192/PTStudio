@@ -195,7 +195,6 @@ size_t PluginManager::scan_directory(std::string_view exe_relative_dir) {
 
             if (it != m_plugins.end()) {
                 m_logger->warn("Duplicate plugin ID '{}' found at: {}", info.id, path.string());
-                found_count++;
                 continue;
             }
 

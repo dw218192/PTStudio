@@ -1,6 +1,5 @@
 #include "vulkanBackend.h"
 
-#include <cstdlib>
 #include <vector>
 
 #include "imguiVulkanPresenter.h"
@@ -38,10 +37,6 @@ VulkanBackend::~VulkanBackend() {
     m_render_graph.reset();
     m_swapchain.reset();
     m_context.reset();
-    if (m_surface != VK_NULL_HANDLE) {
-        m_instance->destroySurfaceKHR(m_surface);
-        m_surface = VK_NULL_HANDLE;
-    }
 }
 
 void VulkanBackend::new_frame() {
@@ -128,7 +123,7 @@ void VulkanBackend::create_surface() {
     if (glfwCreateWindowSurface(m_instance.get(), m_window, nullptr, &created) != VK_SUCCESS) {
         throw std::runtime_error("Failed to create Vulkan surface");
     }
-    m_surface = created;
+    m_surface = vk::UniqueSurfaceKHR{created};
     m_logger->info("Vulkan surface created");
 }
 
