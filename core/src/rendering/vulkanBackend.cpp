@@ -10,18 +10,18 @@
 namespace pts::rendering {
 
 VulkanBackend::VulkanBackend(GLFWwindow* window, LoggingManager& logging_manager)
-    : m_window(window), m_logging_manager(logging_manager) {
+    : m_window(window), m_logging_manager(&logging_manager) {
     m_logger = logging_manager.get_logger_shared("VulkanBackend");
     m_logger->info("Vulkan backend initializing");
-    create_vulkan_instance();
-    create_surface();
-    m_context = std::make_unique<VulkanContext>(m_instance.get(), m_surface, m_logging_manager);
-    m_swapchain = std::make_unique<SwapchainHost>(m_window, *m_context, m_logging_manager);
-    m_render_graph = std::make_unique<RenderGraphHost>(
-        m_context->physical_device(), m_context->device(), m_context->queue(),
-        m_context->queue_family(), m_logging_manager);
-    m_presenter = std::make_unique<ImGuiVulkanPresenter>(m_window, *m_swapchain, *m_context,
-                                                         m_logging_manager);
+    m_instance = create_vulkan_instance();
+    m_surface = create_surface(m_instance.get());
+    m_context = std::make_unique<VulkanContext>(m_instance.get(), m_surface.get(), logging_manager);
+    m_swapchain = std::make_unique<SwapchainHost>(m_window, *m_context, logging_manager);
+    m_render_graph = std::make_unique<RenderGraphHost>(m_context->physical_device(),
+                                                       m_context->device(), m_context->queue(),
+                                                       m_context->queue_family(), logging_manager);
+    m_presenter =
+        std::make_unique<ImGuiVulkanPresenter>(m_window, *m_swapchain, *m_context, logging_manager);
     resize_render_graph(m_swapchain->extent().width, m_swapchain->extent().height);
     m_logger->info("Vulkan backend initialized");
 }
@@ -87,7 +87,7 @@ auto VulkanBackend::output_imgui_id() const noexcept -> ImTextureID {
     return m_output_id;
 }
 
-void VulkanBackend::create_vulkan_instance() {
+auto VulkanBackend::create_vulkan_instance() -> vk::UniqueInstance {
     VULKAN_HPP_DEFAULT_DISPATCHER.init(vkGetInstanceProcAddr);
     uint32_t glfw_ext_count = 0;
     auto glfw_exts = glfwGetRequiredInstanceExtensions(&glfw_ext_count);
@@ -111,20 +111,21 @@ void VulkanBackend::create_vulkan_instance() {
     auto const app_info = vk::ApplicationInfo{"PTS Editor", VK_MAKE_VERSION(1, 0, 0), "PTS",
                                               VK_MAKE_VERSION(1, 0, 0), VK_API_VERSION_1_2};
 
-    m_instance = vk::createInstanceUnique(
+    auto instance = vk::createInstanceUnique(
         vk::InstanceCreateInfo{instance_flags, &app_info, layers, extensions});
-    VULKAN_HPP_DEFAULT_DISPATCHER.init(m_instance.get());
+    VULKAN_HPP_DEFAULT_DISPATCHER.init(instance.get());
     m_logger->info("Vulkan instance created (extensions={}, layers={})", extensions.size(),
                    layers.size());
+    return instance;
 }
 
-void VulkanBackend::create_surface() {
+auto VulkanBackend::create_surface(vk::Instance instance) -> vk::UniqueSurfaceKHR {
     VkSurfaceKHR created = VK_NULL_HANDLE;
-    if (glfwCreateWindowSurface(m_instance.get(), m_window, nullptr, &created) != VK_SUCCESS) {
+    if (glfwCreateWindowSurface(instance, m_window, nullptr, &created) != VK_SUCCESS) {
         throw std::runtime_error("Failed to create Vulkan surface");
     }
-    m_surface = vk::UniqueSurfaceKHR{created};
     m_logger->info("Vulkan surface created");
+    return vk::UniqueSurfaceKHR{created, instance};
 }
 
 }  // namespace pts::rendering

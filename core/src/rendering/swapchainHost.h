@@ -10,6 +10,9 @@
 struct GLFWwindow;
 
 namespace pts::rendering {
+/**
+ * @brief Swapchain host, managing the swapchain and image views. This is owned by VulkanBackend.
+ */
 class SwapchainHost {
    public:
     SwapchainHost(GLFWwindow* window, VulkanContext& context, LoggingManager& logging_manager);

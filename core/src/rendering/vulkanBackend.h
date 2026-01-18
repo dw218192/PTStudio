@@ -37,11 +37,11 @@ class VulkanBackend final : public IRhiBackend {
     [[nodiscard]] auto output_imgui_id() const noexcept -> ImTextureID override;
 
    private:
-    void create_vulkan_instance();
-    void create_surface();
+    auto create_vulkan_instance() -> vk::UniqueInstance;
+    auto create_surface(vk::Instance instance) -> vk::UniqueSurfaceKHR;
 
     GLFWwindow* m_window{nullptr};
-    LoggingManager& m_logging_manager;
+    LoggingManager* m_logging_manager;
     vk::UniqueInstance m_instance;
     vk::UniqueSurfaceKHR m_surface;
     std::unique_ptr<VulkanContext> m_context;
