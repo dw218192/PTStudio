@@ -261,8 +261,7 @@ void ImGuiVulkanPresenter::init_imgui_backend() {
 
     ImGui_ImplVulkan_Init(&init_info, m_render_pass.get());
     if (!ImGui_ImplVulkan_CreateFontsTexture()) {
-        m_logger->error("Failed to upload ImGui Vulkan fonts");
-        std::exit(-1);
+        throw std::runtime_error("Failed to upload ImGui Vulkan fonts");
     }
     m_initialized = true;
 }

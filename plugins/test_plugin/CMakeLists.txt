@@ -8,6 +8,11 @@ pts_add_plugin(
     DEPENDENCIES test_plugin::api
 )
 
+# Static variant used for static-plugin tests.
+add_library(${plugin_name}Static STATIC testPlugin.cpp)
+target_link_libraries(${plugin_name}Static PRIVATE core::api test_plugin::api)
+target_compile_definitions(${plugin_name}Static PRIVATE PTS_STATIC_PLUGINS)
+
 # ============================================================================
 # Interface Target for public API
 # ============================================================================

@@ -75,7 +75,9 @@ typedef struct {
     void* (*query_interface)(PluginHandle, const char* iid);  // Query interface by ID string
 } PtsPluginDescriptor;
 
-#ifdef _WIN32
+#if defined(PTS_STATIC_PLUGINS)
+#define PTS_PLUGIN_EXPORT
+#elif defined(_WIN32)
 #define PTS_PLUGIN_EXPORT __declspec(dllexport)
 #else
 #define PTS_PLUGIN_EXPORT __attribute__((visibility("default")))

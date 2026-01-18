@@ -42,19 +42,6 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config,
       m_config{config},
       m_cam{config.fovy, config.get_aspect(), LookAtParams{}},
       m_archive{new JsonArchive} {
-    m_renderer_host_api.render_graph_api = get_render_graph_api();
-    m_renderer_host_api.render_world_api = nullptr;
-
-    m_renderer_plugin = get_plugin_manager().get_plugin_instance("editor.renderer");
-    if (m_renderer_plugin) {
-        m_renderer_interface =
-            static_cast<RendererPluginInterfaceV1*>(get_plugin_manager().query_interface(
-                m_renderer_plugin, RENDERER_PLUGIN_INTERFACE_V1_ID));
-    }
-    if (!m_renderer_interface) {
-        log(pts::LogLevel::Error, "Renderer plugin interface not found");
-    }
-
     // callbacks
     get_imgui_window_info(k_scene_view_win_name).on_enter_region.connect([this] {
         on_mouse_enter_scene_viewport();
@@ -76,6 +63,20 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config,
     m_console_log_sink =
         std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(k_console_log_buffer_size);
     get_logging_manager().add_sink(m_console_log_sink);
+
+    // renderer
+    m_renderer_host_api.render_graph_api = get_render_graph_api();
+    m_renderer_host_api.render_world_api = nullptr;
+
+    m_renderer_plugin = get_plugin_manager().get_plugin_instance("editor.renderer");
+    if (m_renderer_plugin) {
+        m_renderer_interface =
+            static_cast<RendererPluginInterfaceV1*>(get_plugin_manager().query_interface(
+                m_renderer_plugin, RENDERER_PLUGIN_INTERFACE_V1_ID));
+    }
+    if (!m_renderer_interface) {
+        log(pts::LogLevel::Error, "Renderer plugin interface not found");
+    }
 
     log(pts::LogLevel::Info, "EditorApplication created");
 }
@@ -378,15 +379,23 @@ auto EditorApplication::draw_scene_panel() noexcept -> void {
     if (ImGui::Button("Open Scene")) {
         auto const path = FileDialogue(ImGui::FileDialogueMode::OPEN, m_archive->get_ext().data());
         if (!path.empty()) {
-            check_error(m_archive->load_file(path, m_scene, m_cam));
-            on_scene_opened(m_scene);
+            auto res = m_archive->load_file(path, m_scene, m_cam);
+            if (!res) {
+                this->log(pts::LogLevel::Error, "Failed to load scene: {}", res.error());
+            } else {
+                on_scene_opened(m_scene);
+                this->log(pts::LogLevel::Info, "Scene loaded from {}", path);
+            }
         }
     }
     ImGui::SameLine();
     if (ImGui::Button("Save Scene")) {
         auto const path = FileDialogue(ImGui::FileDialogueMode::SAVE, m_archive->get_ext().data());
         if (!path.empty()) {
-            check_error(m_archive->save_file(m_scene, m_cam, path));
+            auto res = m_archive->save_file(m_scene, m_cam, path);
+            if (!res) {
+                this->log(pts::LogLevel::Error, "Failed to save scene: {}", res.error());
+            }
         }
     }
 
@@ -482,10 +491,16 @@ auto EditorApplication::draw_scene_panel() noexcept -> void {
                 auto const path = FileDialogue(ImGui::FileDialogueMode::OPEN, "obj");
                 if (!path.empty()) {
                     std::string warning;
-                    auto obj = check_error(RenderableObject::from_obj(m_scene, k_editable_flags,
-                                                                      Material{}, path, &warning));
-                    m_scene.emplace_object<RenderableObject>(std::move(obj));
-                    this->log(pts::LogLevel::Warning, warning);
+                    auto res = RenderableObject::from_obj(m_scene, k_editable_flags, Material{},
+                                                          path, &warning);
+                    if (!res) {
+                        this->log(pts::LogLevel::Error, "Failed to import .obj file: {}",
+                                  res.error());
+                    } else {
+                        auto obj = std::move(res.value());
+                        m_scene.emplace_object<RenderableObject>(std::move(obj));
+                        this->log(pts::LogLevel::Warning, warning);
+                    }
                 }
             }
             if (ImGui::MenuItem("Add Light")) {

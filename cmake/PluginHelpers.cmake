@@ -45,32 +45,40 @@ function(pts_add_plugin)
         message(FATAL_ERROR "pts_add_plugin: SOURCES is required")
     endif()
 
-    # Create the shared library target
-    add_library(${PLUGIN_NAME} SHARED ${PLUGIN_SOURCES})
+    # Create the plugin library target
+    if(PTS_STATIC_PLUGINS)
+        add_library(${PLUGIN_NAME} STATIC ${PLUGIN_SOURCES})
+        target_compile_definitions(${PLUGIN_NAME} PUBLIC PTS_STATIC_PLUGINS)
+        set_property(GLOBAL APPEND PROPERTY PTS_STATIC_PLUGIN_TARGETS ${PLUGIN_NAME})
+    else()
+        add_library(${PLUGIN_NAME} SHARED ${PLUGIN_SOURCES})
+    endif()
 
     target_link_libraries(${PLUGIN_NAME} PRIVATE core::api)
     if(PLUGIN_DEPENDENCIES)
         target_link_libraries(${PLUGIN_NAME} PRIVATE ${PLUGIN_DEPENDENCIES})
     endif()
 
-    # Configure plugin target properties
-    # Hide all symbols by default, only export those marked with PTS_PLUGIN_EXPORT
-    # This prevents symbol conflicts between plugins and reduces the dynamic symbol table size
-    set_target_properties(${PLUGIN_NAME} PROPERTIES
-        CXX_VISIBILITY_PRESET hidden
-        VISIBILITY_INLINES_HIDDEN ON
-        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/plugins
-        LIBRARY_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/plugins
-    )
-
-    # Set output directories for all configurations
-    foreach(config Debug Release RelWithDebInfo MinSizeRel)
-        string(TOUPPER ${config} config_upper)
+    if(NOT PTS_STATIC_PLUGINS)
+        # Configure plugin target properties
+        # Hide all symbols by default, only export those marked with PTS_PLUGIN_EXPORT
+        # This prevents symbol conflicts between plugins and reduces the dynamic symbol table size
         set_target_properties(${PLUGIN_NAME} PROPERTIES
-            RUNTIME_OUTPUT_DIRECTORY_${config_upper} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/plugins
-            LIBRARY_OUTPUT_DIRECTORY_${config_upper} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/plugins
+            CXX_VISIBILITY_PRESET hidden
+            VISIBILITY_INLINES_HIDDEN ON
+            RUNTIME_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/plugins
+            LIBRARY_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/plugins
         )
-    endforeach()
+
+        # Set output directories for all configurations
+        foreach(config Debug Release RelWithDebInfo MinSizeRel)
+            string(TOUPPER ${config} config_upper)
+            set_target_properties(${PLUGIN_NAME} PROPERTIES
+                RUNTIME_OUTPUT_DIRECTORY_${config_upper} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/plugins
+                LIBRARY_OUTPUT_DIRECTORY_${config_upper} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/plugins
+            )
+        endforeach()
+    endif()
 
     message(STATUS "Plugin configured: ${PLUGIN_NAME}")
 endfunction()

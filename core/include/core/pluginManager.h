@@ -6,22 +6,33 @@
 
 #include <boost/dll/shared_library.hpp>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <vector>
 
 namespace pts {
 
+// Registers a statically linked plugin descriptor.
+void register_static_plugin(const PtsPluginDescriptor* descriptor) noexcept;
+
 // Internal representation of a loaded plugin
 struct LoadedPlugin {
     std::string plugin_id;
-    boost::dll::shared_library library;
+    std::unique_ptr<boost::dll::shared_library> library;
     const PtsPluginDescriptor* descriptor;
     void* instance;
 
     LoadedPlugin(std::string plugin_id, boost::dll::shared_library library,
                  const PtsPluginDescriptor* descriptor) noexcept
         : plugin_id(std::move(plugin_id)),
-          library(std::move(library)),
+          library(std::make_unique<boost::dll::shared_library>(std::move(library))),
+          descriptor(descriptor),
+          instance(nullptr) {
+    }
+
+    LoadedPlugin(std::string plugin_id, const PtsPluginDescriptor* descriptor) noexcept
+        : plugin_id(std::move(plugin_id)),
+          library(nullptr),
           descriptor(descriptor),
           instance(nullptr) {
     }
@@ -38,6 +49,8 @@ struct PluginInfo {
     std::filesystem::path dll_path;
     bool is_loaded;
     void* instance;  // Opaque plugin instance handle
+    bool is_static;
+    const PtsPluginDescriptor* static_descriptor;
 };
 
 /**
@@ -64,7 +77,7 @@ class PluginManager {
     size_t scan_directory(std::string_view exe_relative_dir);
 
     /**
-     * Get list of all discovered plugins (loaded or not).
+     * Get list of all registered plugins (loaded or not).
      */
     const std::vector<PluginInfo>& get_plugins() const {
         return m_plugins;
@@ -99,6 +112,11 @@ class PluginManager {
      */
     void shutdown();
 
+    /**
+     * Register a statically linked plugin descriptor.
+     */
+    bool register_static_plugin(const PtsPluginDescriptor* descriptor);
+
    private:
     std::shared_ptr<spdlog::logger> m_logger;
     LoggingManager* m_logging_manager;
@@ -112,6 +130,7 @@ class PluginManager {
         return const_cast<PluginManager*>(this)->find_loaded_plugin(plugin_id);
     }
     bool try_load_descriptor(const std::filesystem::path& dll_path, PluginInfo& out_info);
+    void register_static_plugins_from_registry();
 
     // Host API implementation helpers
     void setup_host_api();

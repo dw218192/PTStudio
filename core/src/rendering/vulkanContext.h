@@ -6,7 +6,7 @@
 
 /**
  * @brief Vulkan context management, providing access to the Vulkan instance, surface, device, and
- * queue.
+ * queue. This is owned by VulkanBackend.
  *
  * TODO: This class is also responsible for managing all the allocation pools.
  */

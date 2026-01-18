@@ -46,6 +46,37 @@ foreach(TEST_NAME IN LISTS TEST_NAMES)
     endforeach()
 endforeach()
 
+# Static-plugin test executable (builds alongside the dynamic one).
+set(STATIC_TEST_NAME testPluginSystemStatic)
+message(STATUS "Building test: ${STATIC_TEST_NAME}")
+add_executable(${STATIC_TEST_NAME} testPluginSystem.cpp)
+target_include_directories(${STATIC_TEST_NAME} PRIVATE ../include)
+target_link_libraries(${STATIC_TEST_NAME} PRIVATE doctest::doctest core test_plugin::api
+    TestPluginStatic)
+target_compile_definitions(${STATIC_TEST_NAME} PRIVATE PTS_STATIC_PLUGINS)
+
+if (MSVC)
+    target_link_libraries(${STATIC_TEST_NAME} PRIVATE TestPluginStatic)
+    target_link_options(${STATIC_TEST_NAME} PRIVATE /WHOLEARCHIVE:TestPluginStatic)
+elseif(APPLE)
+    target_link_libraries(${STATIC_TEST_NAME} PRIVATE
+        "-Wl,-force_load,$<TARGET_FILE:TestPluginStatic>")
+else()
+    target_link_libraries(${STATIC_TEST_NAME} PRIVATE
+        "-Wl,--whole-archive" TestPluginStatic "-Wl,--no-whole-archive")
+endif()
+
+set_target_properties(${STATIC_TEST_NAME} PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tests
+)
+
+foreach(config Debug Release RelWithDebInfo MinSizeRel)
+    string(TOUPPER ${config} config_upper)
+    set_target_properties(${STATIC_TEST_NAME} PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY_${config_upper} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tests
+    )
+endforeach()
+
 # Enable CTest integration
 include(CTest)
 enable_testing()
@@ -54,3 +85,4 @@ enable_testing()
 foreach(TEST_NAME IN LISTS TEST_NAMES)
     add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
 endforeach()
+add_test(NAME ${STATIC_TEST_NAME} COMMAND ${STATIC_TEST_NAME})

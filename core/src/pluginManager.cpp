@@ -10,6 +10,19 @@
 #include <stdexcept>
 
 namespace pts {
+namespace {
+auto& static_plugin_registry() {
+    static std::vector<const PtsPluginDescriptor*> registry;
+    return registry;
+}
+}  // namespace
+
+void register_static_plugin(const PtsPluginDescriptor* descriptor) noexcept {
+    if (!descriptor) {
+        return;
+    }
+    static_plugin_registry().push_back(descriptor);
+}
 
 // Global plugin manager instance pointer for host API callbacks
 static PluginManager* g_plugin_manager = nullptr;
@@ -19,6 +32,7 @@ PluginManager::PluginManager(std::shared_ptr<spdlog::logger> logger,
     : m_logger(std::move(logger)), m_logging_manager(&logging_manager) {
     setup_host_api();
     g_plugin_manager = this;
+    register_static_plugins_from_registry();
     m_logger->info("PluginManager initialized");
 }
 
@@ -240,6 +254,8 @@ bool PluginManager::try_load_descriptor(const std::filesystem::path& dll_path,
         out_info.dll_path = dll_path;
         out_info.is_loaded = false;
         out_info.instance = nullptr;
+        out_info.is_static = false;
+        out_info.static_descriptor = nullptr;
 
         if (out_info.id.empty()) {
             m_logger->error("  {} has empty plugin_id", dll_path.filename().string());
@@ -251,6 +267,67 @@ bool PluginManager::try_load_descriptor(const std::filesystem::path& dll_path,
     } catch (const std::exception& e) {
         m_logger->debug("  Failed to load {}: {}", dll_path.filename().string(), e.what());
         return false;
+    }
+}
+
+bool PluginManager::register_static_plugin(const PtsPluginDescriptor* descriptor) {
+    if (!descriptor) {
+        return false;
+    }
+
+    if (descriptor->api_version != PTS_PLUGIN_API_VERSION) {
+        m_logger->error("Static plugin has incompatible API version {} (expected {})",
+                        descriptor->api_version, PTS_PLUGIN_API_VERSION);
+        return false;
+    }
+
+    if (descriptor->struct_size != sizeof(PtsPluginDescriptor)) {
+        m_logger->error(
+            "Static plugin has incompatible ABI (struct size mismatch) {} (expected {})",
+            descriptor->struct_size, sizeof(PtsPluginDescriptor));
+        return false;
+    }
+
+    PluginInfo info;
+    info.id = descriptor->plugin_id ? descriptor->plugin_id : "<unknown>";
+    info.display_name = descriptor->display_name ? descriptor->display_name : "<unknown>";
+    info.version = descriptor->version ? descriptor->version : "<unknown>";
+    info.kind = descriptor->kind;
+    info.dll_path = std::filesystem::path{};
+    info.is_loaded = false;
+    info.instance = nullptr;
+    info.is_static = true;
+    info.static_descriptor = descriptor;
+
+    if (info.id.empty()) {
+        m_logger->error("Static plugin has empty plugin_id");
+        return false;
+    }
+
+    auto existing = std::find_if(m_plugins.begin(), m_plugins.end(),
+                                 [&](const PluginInfo& p) { return p.id == info.id; });
+    if (existing != m_plugins.end()) {
+        m_logger->warn("Duplicate plugin ID '{}' for static plugin", info.id);
+        return false;
+    }
+
+    m_plugins.push_back(std::move(info));
+    return true;
+}
+
+void PluginManager::register_static_plugins_from_registry() {
+    const auto& registry = static_plugin_registry();
+    if (registry.empty()) {
+        return;
+    }
+
+    m_logger->info("Registering {} static plugin(s)", registry.size());
+    for (const auto* descriptor : registry) {
+        if (register_static_plugin(descriptor)) {
+            m_logger->info("  Registered static plugin: {} ({})",
+                           descriptor->display_name ? descriptor->display_name : "<unknown>",
+                           descriptor->plugin_id ? descriptor->plugin_id : "<unknown>");
+        }
     }
 }
 
@@ -272,15 +349,29 @@ bool PluginManager::load_plugin(std::string_view plugin_id) {
     try {
         m_logger->info("Loading plugin: {} ({})", it->display_name, plugin_id);
 
-        // Load the library - Boost.DLL requires string path
-        boost::dll::shared_library lib(it->dll_path.string(), boost::dll::load_mode::default_mode);
+        const PtsPluginDescriptor* desc = nullptr;
+        if (it->is_static) {
+            desc = it->static_descriptor;
+            if (!desc) {
+                m_logger->error("Static plugin '{}' is missing a descriptor", plugin_id);
+                return false;
+            }
+            // Create loaded plugin entry (static plugins have no backing library)
+            m_loaded_plugins.emplace_back(std::string{plugin_id}, desc);
+        } else {
+            // Load the library - Boost.DLL requires string path
+            boost::dll::shared_library lib(it->dll_path.string(),
+                                           boost::dll::load_mode::default_mode);
 
-        // Get descriptor
-        auto get_desc = lib.get<const PtsPluginDescriptor*()>(PLUGIN_ENTRY_POINT_NAME);
-        const PtsPluginDescriptor* desc = get_desc();
+            // Get descriptor
+            auto get_desc = lib.get<const PtsPluginDescriptor*()>(PLUGIN_ENTRY_POINT_NAME);
+            desc = get_desc();
 
-        // Create loaded plugin entry
-        auto& loaded = m_loaded_plugins.emplace_back(std::string{plugin_id}, std::move(lib), desc);
+            // Create loaded plugin entry
+            m_loaded_plugins.emplace_back(std::string{plugin_id}, std::move(lib), desc);
+        }
+
+        auto& loaded = m_loaded_plugins.back();
 
         // Create instance
         if (desc->create) {
