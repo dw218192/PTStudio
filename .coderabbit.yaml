@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+reviews:
+  profile: assertive
+  poem: false
+  auto_review:
+    base_branches:
+      - develop
+knowledge_base:
+  code_guidelines:
+    filePatterns:
+      - '**/.cursor/rules/*'
