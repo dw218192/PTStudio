@@ -53,11 +53,11 @@ void VulkanBackend::resize_render_graph(uint32_t width, uint32_t height) {
         m_presenter->unregister_texture(m_output_id);
         m_output_id = nullptr;
     }
-    m_render_graph->resize(width, height);
     if (width == 0 || height == 0) {
         m_logger->debug("Render graph resize skipped for zero extent");
         return;
     }
+    m_render_graph->resize(width, height);
     m_output_id = m_presenter->register_texture(m_render_graph->output_sampler(),
                                                 m_render_graph->output_image_view(),
                                                 m_render_graph->output_layout());

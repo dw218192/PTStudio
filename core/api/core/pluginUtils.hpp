@@ -394,39 +394,34 @@ struct MethodBinder {
 namespace pts {
 
 /**
- * Type-safe wrapper for querying plugin interfaces.
- *
- * Usage:
- *   auto* iface = query_plugin_interface<MyInterfaceV1>(plugin_handle, descriptor,
- * "my_interface_v1"); if (iface) { iface->do_something();
- *   }
+ * C++ convenience wrapper over the host API interface query functions.
  */
-template <typename InterfaceType>
-inline InterfaceType* query_plugin_interface(PluginHandle handle, const PtsPluginDescriptor* desc,
-                                             const char* interface_id) {
-    if (!handle || !desc || !desc->query_interface) {
-        return nullptr;
-    }
-    return static_cast<InterfaceType*>(desc->query_interface(handle, interface_id));
-}
+class PluginInterfaceQuery final {
+   public:
+    PluginInterfaceQuery() = default;
 
-/**
- * Compile-time interface ID wrapper for type safety.
- *
- * Usage:
- *   constexpr auto MyInterfaceID = PluginInterfaceID<MyInterfaceV1>("my_interface_v1");
- *   auto* iface = MyInterfaceID.query(plugin_handle, descriptor);
- */
-template <typename InterfaceType>
-struct PluginInterfaceID {
-    const char* id;
-
-    constexpr explicit PluginInterfaceID(const char* interface_id) : id(interface_id) {
+    explicit PluginInterfaceQuery(PtsHostApi* host_api) noexcept : m_host_api(host_api) {
     }
 
-    InterfaceType* query(PluginHandle handle, const PtsPluginDescriptor* desc) const {
-        return query_plugin_interface<InterfaceType>(handle, desc, id);
+    [[nodiscard]] auto is_valid() const noexcept -> bool {
+        return m_host_api && m_host_api->query_interface;
     }
+
+    template <typename InterfaceType>
+    InterfaceType* query(PluginHandle handle, const char* interface_id) const noexcept {
+        if (!handle || !interface_id || !m_host_api || !m_host_api->query_interface) {
+            return nullptr;
+        }
+        return static_cast<InterfaceType*>(m_host_api->query_interface(handle, interface_id));
+    }
+
+   private:
+    PtsHostApi* m_host_api = nullptr;
 };
+
+[[nodiscard]] inline auto make_interface_query(PtsHostApi* host_api) noexcept
+    -> PluginInterfaceQuery {
+    return PluginInterfaceQuery(host_api);
+}
 
 }  // namespace pts

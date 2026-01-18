@@ -21,7 +21,14 @@
 
 #define PTS_PLUGIN_API_VERSION 1
 
+/**
+ * Opaque handle to a plugin instance.
+ */
 typedef void* PluginHandle;
+
+/**
+ * Opaque handle to a logger instance.
+ */
 typedef void* LoggerHandle;
 
 typedef enum {
@@ -68,11 +75,12 @@ typedef struct {
     const char* version;       // Plugin version string
 
     // Lifecycle callbacks (opaque handle returned)
-    PluginHandle (*create)(PtsHostApi* host_api);             // Create plugin instance
-    void (*destroy)(PluginHandle instance);                   // Destroy plugin instance
-    bool (*on_load)(PluginHandle instance);                   // Called after creation
-    void (*on_unload)(PluginHandle instance);                 // Called before destruction
-    void* (*query_interface)(PluginHandle, const char* iid);  // Query interface by ID string
+    PluginHandle (*create)(PtsHostApi* host_api);  // Create plugin instance
+    void (*destroy)(PluginHandle instance);        // Destroy plugin instance
+    bool (*on_load)(PluginHandle instance);        // Called after creation
+    void (*on_unload)(PluginHandle instance);      // Called before destruction
+    void* (*query_interface)(PluginHandle,
+                             const char* iid);  // Query interface by ID string
 } PtsPluginDescriptor;
 
 #if defined(PTS_STATIC_PLUGINS)
