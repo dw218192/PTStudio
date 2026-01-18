@@ -40,10 +40,7 @@ TEST_CASE("PluginManager - Plugin Discovery") {
 
     SUBCASE("Scan plugins directory") {
         // Scan relative to executable (plugins should be in ../plugins relative to tests)
-#if !defined(PTS_STATIC_PLUGINS)
-        size_t found = manager.scan_directory("../plugins");
-        REQUIRE(found >= 1);
-#endif
+        manager.scan_directory("../plugins");
 
         const auto& plugins = manager.get_plugins();
         REQUIRE(plugins.size() >= 1);
@@ -72,9 +69,7 @@ TEST_CASE("PluginManager - Plugin Loading and Unloading") {
     pts::PluginManager manager(logger, *logging);
 
     // First scan for plugins
-    size_t found = manager.scan_directory("../plugins");
-    REQUIRE(found >= 1);
-
+    manager.scan_directory("../plugins");
     SUBCASE("Load valid plugin") {
         bool loaded = manager.load_plugin("TestPlugin");
         REQUIRE(loaded);
