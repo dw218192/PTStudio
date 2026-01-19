@@ -1,26 +1,25 @@
 #pragma once
 
 #include <core/rendering/graph.h>
+#include <core/rendering/windowing.h>
 #include <imgui.h>
 
 #include <memory>
-
-struct GLFWwindow;
 
 namespace pts {
 class LoggingManager;
 }
 
 namespace pts::rendering {
-class RenderingHost {
+class Rendering {
    public:
-    explicit RenderingHost(GLFWwindow* window, pts::LoggingManager& logging_manager);
-    ~RenderingHost();
+    explicit Rendering(IWindowing& windowing, pts::LoggingManager& logging_manager);
+    ~Rendering();
 
-    RenderingHost(const RenderingHost&) = delete;
-    RenderingHost& operator=(const RenderingHost&) = delete;
-    RenderingHost(RenderingHost&&) = delete;
-    RenderingHost& operator=(RenderingHost&&) = delete;
+    Rendering(const Rendering&) = delete;
+    Rendering& operator=(const Rendering&) = delete;
+    Rendering(Rendering&&) = delete;
+    Rendering& operator=(Rendering&&) = delete;
 
     void new_frame();
     void render(bool framebuffer_resized);

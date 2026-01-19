@@ -6,17 +6,18 @@
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
-namespace pts::rendering {
-class RenderGraphHost {
-   public:
-    RenderGraphHost(vk::PhysicalDevice physical_device, vk::Device device, vk::Queue queue,
-                    uint32_t queue_family, LoggingManager& logging_manager);
-    ~RenderGraphHost();
+#include "vulkan/vulkanRhi.h"
 
-    RenderGraphHost(const RenderGraphHost&) = delete;
-    RenderGraphHost& operator=(const RenderGraphHost&) = delete;
-    RenderGraphHost(RenderGraphHost&&) = delete;
-    RenderGraphHost& operator=(RenderGraphHost&&) = delete;
+namespace pts::rendering {
+class RenderGraph {
+   public:
+    RenderGraph(VulkanRhi& rhi, LoggingManager& logging_manager);
+    ~RenderGraph();
+
+    RenderGraph(const RenderGraph&) = delete;
+    RenderGraph& operator=(const RenderGraph&) = delete;
+    RenderGraph(RenderGraph&&) = delete;
+    RenderGraph& operator=(RenderGraph&&) = delete;
 
     void resize(uint32_t width, uint32_t height);
     void set_current();
@@ -47,7 +48,7 @@ class RenderGraphHost {
         std::vector<Pass> passes;
     };
 
-    static thread_local RenderGraphHost* s_current;
+    static thread_local RenderGraph* s_current;
 
     static PtsGraph begin_graph();
     static void end_graph(PtsGraph g);
@@ -64,13 +65,10 @@ class RenderGraphHost {
     void transition_image_layout(vk::CommandBuffer cmd_buf, vk::ImageLayout new_layout);
     void clear_color(vk::CommandBuffer cmd_buf, const float rgba[4]);
     [[nodiscard]] auto allocate_command_buffer() -> vk::CommandBuffer;
-    [[nodiscard]] auto find_memory_type(uint32_t type_bits,
-                                        vk::MemoryPropertyFlags flags) -> uint32_t;
+    [[nodiscard]] auto find_memory_type(uint32_t type_bits, vk::MemoryPropertyFlags flags)
+        -> uint32_t;
 
-    vk::PhysicalDevice m_physical_device{};
-    vk::Device m_device{};
-    vk::Queue m_queue{};
-    uint32_t m_queue_family{0};
+    VulkanRhi& m_rhi;
 
     vk::CommandPool m_command_pool{};
 

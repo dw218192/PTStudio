@@ -24,6 +24,13 @@ endif()
 if(NOT DEFINED PTS_STATIC_PLUGINS)
     option(PTS_STATIC_PLUGINS "Build plugins as static libraries" OFF)
 endif()
+if(NOT DEFINED PTS_GAPI_VULKAN)
+    option(PTS_GAPI_VULKAN "Use Vulkan as graphics API" ON)
+endif()
+if(NOT DEFINED PTS_WINDOWING_GLFW)
+    option(PTS_WINDOWING_GLFW "Use GLFW for windowing" ON)
+endif()
+
 
 # Direct all output to /bin directory
 # Since we organize builds by configuration (build/Debug, build/Release) -- see build.ps1,
@@ -60,6 +67,12 @@ set(MSVC_XCOMPILER_FLAGS
 add_library(developer_flags INTERFACE)
 target_compile_options(developer_flags INTERFACE
     $<$<COMPILE_LANGUAGE:CXX>:${cxx_flags}>
+)
+target_compile_definitions(developer_flags INTERFACE
+    $<$<BOOL:${PTS_GAPI_VULKAN}>:PTS_GAPI_VULKAN=1>
+    $<$<NOT:$<BOOL:${PTS_GAPI_VULKAN}>>:PTS_GAPI_VULKAN=0>
+    $<$<BOOL:${PTS_WINDOWING_GLFW}>:PTS_WINDOWING_GLFW=1>
+    $<$<NOT:$<BOOL:${PTS_WINDOWING_GLFW}>>:PTS_WINDOWING_GLFW=0>
 )
 
 target_compile_features(developer_flags INTERFACE cxx_std_17)

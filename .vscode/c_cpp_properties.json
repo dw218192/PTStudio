@@ -38,7 +38,9 @@
             "cppStandard": "c++17",
             "defines": [
                 "VULKAN_HPP_DISPATCH_LOADER_DYNAMIC",
-                "SPDLOG_FMT_EXTERNAL"
+                "SPDLOG_FMT_EXTERNAL",
+                "PTS_GAPI_VULKAN",
+                "PTS_WINDOWING_GLFW"
             ],
             "cStandard": "c17"
         }

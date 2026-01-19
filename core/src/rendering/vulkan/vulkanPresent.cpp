@@ -1,36 +1,85 @@
-#include "swapchainHost.h"
+#if defined(_WIN32)
+#define VK_USE_PLATFORM_WIN32_KHR
+#elif defined(__linux__)
+#define VK_USE_PLATFORM_XLIB_KHR
+#else
+#error "Unsupported host platform for Vulkan present"
+#endif
 
-#include <GLFW/glfw3.h>
+#include "vulkanPresent.h"
+
+#if defined(_WIN32)
+#include <windows.h>
+#elif defined(__linux__)
+#include <X11/Xlib.h>
+#endif
 
 #include <algorithm>
+#include <cstdint>
 #include <optional>
 #include <stdexcept>
 
 namespace pts::rendering {
-SwapchainHost::SwapchainHost(GLFWwindow* window, VulkanContext& context,
-                             LoggingManager& logging_manager)
-    : m_window(window), m_context(context) {
-    m_logger = logging_manager.get_logger_shared("SwapchainHost");
-    m_logger->info("SwapchainHost created");
+namespace {
+auto map_present_result(vk::Result result) -> PresentStatus {
+    switch (result) {
+        case vk::Result::eSuccess:
+            return PresentStatus::ok;
+        case vk::Result::eSuboptimalKHR:
+            return PresentStatus::suboptimal;
+        case vk::Result::eErrorOutOfDateKHR:
+            return PresentStatus::out_of_date;
+        default:
+            return PresentStatus::error;
+    }
+}
+}  // namespace
+
+VulkanPresent::VulkanPresent(IWindowing& windowing, VulkanRhi& rhi, LoggingManager& logging_manager)
+    : m_windowing(windowing), m_rhi(rhi) {
+    m_logger = logging_manager.get_logger_shared("VulkanPresent");
+    create_surface();
+    if (!m_rhi.physical_device().getSurfaceSupportKHR(m_rhi.queue_family(), m_surface.get())) {
+        throw std::runtime_error("Selected Vulkan queue family does not support present");
+    }
+    m_logger->info("VulkanPresent created");
     create_swapchain();
     create_image_views();
 }
 
-SwapchainHost::~SwapchainHost() {
-    if (m_logger) {
-        m_logger->info("SwapchainHost destroyed");
-    }
+VulkanPresent::~VulkanPresent() {
     cleanup_swapchain();
+    if (m_logger) {
+        m_logger->info("VulkanPresent destroyed");
+    }
 }
 
-void SwapchainHost::resize() {
-    recreate_swapchain();
+auto VulkanPresent::acquire_next_backbuffer(RhiSemaphore signal_semaphore, uint32_t* index)
+    -> PresentStatus {
+    auto semaphore = m_rhi.semaphore(signal_semaphore);
+    auto result = acquire_next_image(semaphore, index);
+    return map_present_result(result);
 }
 
-vk::Result SwapchainHost::acquire_next_image(vk::Semaphore semaphore, uint32_t* image_index) {
+auto VulkanPresent::present_backbuffer(uint32_t index, RhiSemaphore wait_semaphore)
+    -> PresentStatus {
+    auto semaphore = m_rhi.semaphore(wait_semaphore);
+    auto result = present(semaphore, index);
+    return map_present_result(result);
+}
+
+void VulkanPresent::recreate_swapchain() {
+    do_recreate_swapchain();
+}
+
+auto VulkanPresent::framebuffer_extent() const noexcept -> FramebufferExtent {
+    return FramebufferExtent{m_extent.width, m_extent.height};
+}
+
+vk::Result VulkanPresent::acquire_next_image(vk::Semaphore semaphore, uint32_t* image_index) {
     try {
-        return m_context.device().acquireNextImageKHR(m_swapchain.get(), UINT64_MAX, semaphore, {},
-                                                      image_index);
+        return m_rhi.device().acquireNextImageKHR(m_swapchain.get(), UINT64_MAX, semaphore, {},
+                                                  image_index);
     } catch (vk::OutOfDateKHRError const&) {
         return vk::Result::eErrorOutOfDateKHR;
     } catch (vk::SystemError const& err) {
@@ -41,13 +90,13 @@ vk::Result SwapchainHost::acquire_next_image(vk::Semaphore semaphore, uint32_t* 
     }
 }
 
-vk::Result SwapchainHost::present(vk::Semaphore wait_semaphore, uint32_t image_index) {
+vk::Result VulkanPresent::present(vk::Semaphore wait_semaphore, uint32_t image_index) {
     auto present_info = vk::PresentInfoKHR{}
                             .setWaitSemaphores(wait_semaphore)
                             .setSwapchains(m_swapchain.get())
                             .setImageIndices(image_index);
     try {
-        return m_context.queue().presentKHR(present_info);
+        return m_rhi.queue().presentKHR(present_info);
     } catch (vk::OutOfDateKHRError const&) {
         return vk::Result::eErrorOutOfDateKHR;
     } catch (vk::SystemError const& err) {
@@ -58,11 +107,40 @@ vk::Result SwapchainHost::present(vk::Semaphore wait_semaphore, uint32_t image_i
     }
 }
 
-void SwapchainHost::create_swapchain() {
-    auto const caps = m_context.physical_device().getSurfaceCapabilitiesKHR(m_context.surface());
-    auto const formats = m_context.physical_device().getSurfaceFormatsKHR(m_context.surface());
-    auto const present_modes =
-        m_context.physical_device().getSurfacePresentModesKHR(m_context.surface());
+void VulkanPresent::resize_swapchain() {
+    do_recreate_swapchain();
+}
+
+void VulkanPresent::create_surface() {
+    auto handle = m_windowing.native_handle();
+#if defined(_WIN32)
+    if (!handle.platform_handle) {
+        throw std::runtime_error("Windowing must provide a native platform handle");
+    }
+    auto const hwnd = static_cast<HWND>(handle.platform_handle);
+    auto const hinstance = GetModuleHandle(nullptr);
+    auto create_info = vk::Win32SurfaceCreateInfoKHR{}.setHinstance(hinstance).setHwnd(hwnd);
+    auto created = m_rhi.instance().createWin32SurfaceKHR(create_info);
+#elif defined(__linux__)
+    if (!handle.platform_handle || !handle.window_handle) {
+        throw std::runtime_error("Windowing must provide native display and window handles");
+    }
+    auto* display = static_cast<Display*>(handle.platform_handle);
+    auto window = static_cast<Window>(reinterpret_cast<std::uintptr_t>(handle.window_handle));
+    auto create_info = vk::XlibSurfaceCreateInfoKHR{}.setDpy(display).setWindow(window);
+    auto created = m_rhi.instance().createXlibSurfaceKHR(create_info);
+#else
+    static_cast<void>(handle);
+    throw std::runtime_error("Unsupported host platform for Vulkan present");
+#endif
+    m_logger->info("Vulkan surface created");
+    m_surface = vk::UniqueSurfaceKHR{created, m_rhi.instance()};
+}
+
+void VulkanPresent::create_swapchain() {
+    auto const caps = m_rhi.physical_device().getSurfaceCapabilitiesKHR(m_surface.get());
+    auto const formats = m_rhi.physical_device().getSurfaceFormatsKHR(m_surface.get());
+    auto const present_modes = m_rhi.physical_device().getSurfacePresentModesKHR(m_surface.get());
 
     // Some drivers reject SRGB swapchain formats when storage usage is implied.
     // Require formats that support the usage bits we rely on.
@@ -72,10 +150,10 @@ void SwapchainHost::create_swapchain() {
 
     auto format_supports_usage = [&](vk::Format format) {
         try {
-            static_cast<void>(m_context.physical_device().getImageFormatProperties(
+            static_cast<void>(m_rhi.physical_device().getImageFormatProperties(
                 format, vk::ImageType::e2D, vk::ImageTiling::eOptimal, format_usage_check, {}));
             return true;
-        } catch (vk::SystemError const& err) {
+        } catch (vk::SystemError const&) {
             return false;
         }
     };
@@ -120,13 +198,10 @@ void SwapchainHost::create_swapchain() {
 
     auto extent = caps.currentExtent;
     if (extent.width == UINT32_MAX) {
-        int width = 0;
-        int height = 0;
-        glfwGetFramebufferSize(m_window, &width, &height);
-        extent.width = std::clamp(static_cast<uint32_t>(width), caps.minImageExtent.width,
-                                  caps.maxImageExtent.width);
-        extent.height = std::clamp(static_cast<uint32_t>(height), caps.minImageExtent.height,
-                                   caps.maxImageExtent.height);
+        auto const size = m_windowing.framebuffer_extent();
+        extent.width = std::clamp(size.width, caps.minImageExtent.width, caps.maxImageExtent.width);
+        extent.height =
+            std::clamp(size.height, caps.minImageExtent.height, caps.maxImageExtent.height);
     }
 
     uint32_t image_count = caps.minImageCount + 1;
@@ -143,7 +218,7 @@ void SwapchainHost::create_swapchain() {
     }
 
     auto swapchain_info = vk::SwapchainCreateInfoKHR{};
-    swapchain_info.surface = m_context.surface();
+    swapchain_info.surface = m_surface.get();
     swapchain_info.minImageCount = image_count;
     swapchain_info.imageFormat = m_format;
     swapchain_info.imageColorSpace = surface_format->colorSpace;
@@ -162,15 +237,15 @@ void SwapchainHost::create_swapchain() {
             static_cast<int>(m_format), static_cast<int>(surface_format->colorSpace),
             static_cast<int>(present_mode), m_extent.width, m_extent.height, image_count);
     }
-    m_swapchain = m_context.device().createSwapchainKHRUnique(swapchain_info);
-    m_images = m_context.device().getSwapchainImagesKHR(m_swapchain.get());
+    m_swapchain = m_rhi.device().createSwapchainKHRUnique(swapchain_info);
+    m_images = m_rhi.device().getSwapchainImagesKHR(m_swapchain.get());
 }
 
-void SwapchainHost::create_image_views() {
+void VulkanPresent::create_image_views() {
     m_image_views.clear();
     m_image_views.reserve(m_images.size());
     for (auto const& image : m_images) {
-        auto view = m_context.device().createImageViewUnique(
+        auto view = m_rhi.device().createImageViewUnique(
             vk::ImageViewCreateInfo{}
                 .setImage(image)
                 .setViewType(vk::ImageViewType::e2D)
@@ -185,11 +260,11 @@ void SwapchainHost::create_image_views() {
     }
 }
 
-void SwapchainHost::cleanup_swapchain() {
+void VulkanPresent::cleanup_swapchain() {
     if (!m_swapchain) {
         return;
     }
-    m_context.device().waitIdle();
+    m_rhi.device().waitIdle();
     if (m_logger) {
         m_logger->info("Swapchain resources destroyed");
     }
@@ -198,15 +273,14 @@ void SwapchainHost::cleanup_swapchain() {
     m_images.clear();
 }
 
-void SwapchainHost::recreate_swapchain() {
+void VulkanPresent::do_recreate_swapchain() {
     if (m_logger) {
         m_logger->info("Recreating swapchain");
     }
-    int width = 0;
-    int height = 0;
-    while (width == 0 || height == 0) {
-        glfwGetFramebufferSize(m_window, &width, &height);
-        glfwWaitEvents();
+    auto size = m_windowing.framebuffer_extent();
+    while (size.width == 0 || size.height == 0) {
+        m_windowing.wait_events();
+        size = m_windowing.framebuffer_extent();
     }
     cleanup_swapchain();
     create_swapchain();

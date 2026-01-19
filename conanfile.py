@@ -73,4 +73,7 @@ class PTStudioConan(ConanFile):
         # Ensure spdlog uses external fmt library
         tc.cache_variables["SPDLOG_FMT_EXTERNAL"] = "ON"
 
+        tc.cache_variables["PTS_GAPI_VULKAN"] = "ON"
+        tc.cache_variables["PTS_WINDOWING_GLFW"] = "ON"
+
         tc.generate()

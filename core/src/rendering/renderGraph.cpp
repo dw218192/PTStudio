@@ -1,27 +1,21 @@
-#include "renderGraphHost.h"
+#include "renderGraph.h"
 
 #include <array>
 #include <cstring>
 
 namespace pts::rendering {
-thread_local RenderGraphHost* RenderGraphHost::s_current = nullptr;
+thread_local RenderGraph* RenderGraph::s_current = nullptr;
 
-RenderGraphHost::RenderGraphHost(vk::PhysicalDevice physical_device, vk::Device device,
-                                 vk::Queue queue, uint32_t queue_family,
-                                 LoggingManager& logging_manager)
-    : m_physical_device(physical_device),
-      m_device(device),
-      m_queue(queue),
-      m_queue_family(queue_family) {
-    m_logger = logging_manager.get_logger_shared("RenderGraphHost");
-    m_logger->info("RenderGraphHost created");
-    m_api.get_last_error = &RenderGraphHost::get_last_error;
-    m_api.get_error_message = &RenderGraphHost::get_error_message;
-    m_api.begin = &RenderGraphHost::begin_graph;
-    m_api.end = &RenderGraphHost::end_graph;
-    m_api.import_texture = &RenderGraphHost::import_texture;
-    m_api.create_tex_view = &RenderGraphHost::create_tex_view;
-    m_api.add_pass = &RenderGraphHost::add_pass;
+RenderGraph::RenderGraph(VulkanRhi& rhi, LoggingManager& logging_manager) : m_rhi(rhi) {
+    m_logger = logging_manager.get_logger_shared("RenderGraph");
+    m_logger->info("RenderGraph created");
+    m_api.get_last_error = &RenderGraph::get_last_error;
+    m_api.get_error_message = &RenderGraph::get_error_message;
+    m_api.begin = &RenderGraph::begin_graph;
+    m_api.end = &RenderGraph::end_graph;
+    m_api.import_texture = &RenderGraph::import_texture;
+    m_api.create_tex_view = &RenderGraph::create_tex_view;
+    m_api.add_pass = &RenderGraph::add_pass;
 
     m_api.create_texture = nullptr;
     m_api.create_buffer = nullptr;
@@ -40,22 +34,22 @@ RenderGraphHost::RenderGraphHost(vk::PhysicalDevice physical_device, vk::Device 
     m_api.get_or_create_persistent_buffer = nullptr;
 
     auto pool_info = vk::CommandPoolCreateInfo{}
-                         .setQueueFamilyIndex(m_queue_family)
+                         .setQueueFamilyIndex(m_rhi.queue_family())
                          .setFlags(vk::CommandPoolCreateFlagBits::eTransient);
-    m_command_pool = m_device.createCommandPool(pool_info);
+    m_command_pool = m_rhi.device().createCommandPool(pool_info);
 }
 
-RenderGraphHost::~RenderGraphHost() {
+RenderGraph::~RenderGraph() {
     if (m_logger) {
-        m_logger->info("RenderGraphHost destroyed");
+        m_logger->info("RenderGraph destroyed");
     }
     destroy_output_resources();
     if (m_command_pool) {
-        m_device.destroyCommandPool(m_command_pool);
+        m_rhi.device().destroyCommandPool(m_command_pool);
     }
 }
 
-void RenderGraphHost::resize(uint32_t width, uint32_t height) {
+void RenderGraph::resize(uint32_t width, uint32_t height) {
     if (width == 0 || height == 0) {
         if (m_logger) {
             m_logger->debug("RenderGraph resize skipped for zero extent");
@@ -73,17 +67,17 @@ void RenderGraphHost::resize(uint32_t width, uint32_t height) {
     create_output_resources();
 }
 
-void RenderGraphHost::set_current() {
+void RenderGraph::set_current() {
     s_current = this;
 }
 
-void RenderGraphHost::clear_current() {
+void RenderGraph::clear_current() {
     if (s_current == this) {
         s_current = nullptr;
     }
 }
 
-PtsGraph RenderGraphHost::begin_graph() {
+PtsGraph RenderGraph::begin_graph() {
     if (!s_current) {
         return PtsGraph{};
     }
@@ -93,7 +87,7 @@ PtsGraph RenderGraphHost::begin_graph() {
     return handle;
 }
 
-void RenderGraphHost::end_graph(PtsGraph g) {
+void RenderGraph::end_graph(PtsGraph g) {
     if (!s_current || PTS_IS_NULL(g)) {
         return;
     }
@@ -102,11 +96,11 @@ void RenderGraphHost::end_graph(PtsGraph g) {
     delete graph;
 }
 
-PtsTexture RenderGraphHost::import_texture(PtsGraph, PtsTexture external_tex, const char*) {
+PtsTexture RenderGraph::import_texture(PtsGraph, PtsTexture external_tex, const char*) {
     return external_tex;
 }
 
-PtsTexView RenderGraphHost::create_tex_view(PtsGraph, const PtsTextureViewDesc* desc, const char*) {
+PtsTexView RenderGraph::create_tex_view(PtsGraph, const PtsTextureViewDesc* desc, const char*) {
     if (!s_current || !desc) {
         return PtsTexView{};
     }
@@ -118,7 +112,7 @@ PtsTexView RenderGraphHost::create_tex_view(PtsGraph, const PtsTextureViewDesc* 
     return PtsTexView{};
 }
 
-PtsPass RenderGraphHost::add_pass(PtsGraph g, const PtsPassDesc* desc) {
+PtsPass RenderGraph::add_pass(PtsGraph g, const PtsPassDesc* desc) {
     if (!s_current || PTS_IS_NULL(g) || !desc) {
         return PtsPass{};
     }
@@ -134,11 +128,11 @@ PtsPass RenderGraphHost::add_pass(PtsGraph g, const PtsPassDesc* desc) {
     return handle;
 }
 
-PtsGraphError RenderGraphHost::get_last_error(PtsGraph) {
+PtsGraphError RenderGraph::get_last_error(PtsGraph) {
     return PTS_GRAPH_OK;
 }
 
-const char* RenderGraphHost::get_error_message(PtsGraphError err) {
+const char* RenderGraph::get_error_message(PtsGraphError err) {
     switch (err) {
         case PTS_GRAPH_OK:
             return "ok";
@@ -161,7 +155,7 @@ const char* RenderGraphHost::get_error_message(PtsGraphError err) {
     }
 }
 
-void RenderGraphHost::execute(Graph& graph) {
+void RenderGraph::execute(Graph& graph) {
     if (!m_output_image) {
         return;
     }
@@ -187,12 +181,12 @@ void RenderGraphHost::execute(Graph& graph) {
     }
 
     cmd_buf.end();
-    m_queue.submit(vk::SubmitInfo{}.setCommandBuffers(cmd_buf), {});
-    m_queue.waitIdle();
-    m_device.freeCommandBuffers(m_command_pool, cmd_buf);
+    m_rhi.queue().submit(vk::SubmitInfo{}.setCommandBuffers(cmd_buf), {});
+    m_rhi.queue().waitIdle();
+    m_rhi.device().freeCommandBuffers(m_command_pool, cmd_buf);
 }
 
-void RenderGraphHost::create_output_resources() {
+void RenderGraph::create_output_resources() {
     if (m_output_extent.width == 0 || m_output_extent.height == 0) {
         return;
     }
@@ -215,14 +209,14 @@ void RenderGraphHost::create_output_resources() {
             .setSharingMode(vk::SharingMode::eExclusive)
             .setInitialLayout(vk::ImageLayout::eUndefined);
 
-    m_output_image = m_device.createImage(image_info);
-    auto mem_req = m_device.getImageMemoryRequirements(m_output_image);
+    m_output_image = m_rhi.device().createImage(image_info);
+    auto mem_req = m_rhi.device().getImageMemoryRequirements(m_output_image);
     auto mem_index =
         find_memory_type(mem_req.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal);
     auto alloc_info =
         vk::MemoryAllocateInfo{}.setAllocationSize(mem_req.size).setMemoryTypeIndex(mem_index);
-    m_output_memory = m_device.allocateMemory(alloc_info);
-    m_device.bindImageMemory(m_output_image, m_output_memory, 0);
+    m_output_memory = m_rhi.device().allocateMemory(alloc_info);
+    m_rhi.device().bindImageMemory(m_output_image, m_output_memory, 0);
 
     auto view_info = vk::ImageViewCreateInfo{}
                          .setImage(m_output_image)
@@ -234,7 +228,7 @@ void RenderGraphHost::create_output_resources() {
                                                   .setLevelCount(1)
                                                   .setBaseArrayLayer(0)
                                                   .setLayerCount(1));
-    m_output_view = m_device.createImageView(view_info);
+    m_output_view = m_rhi.device().createImageView(view_info);
 
     auto sampler_info = vk::SamplerCreateInfo{}
                             .setMagFilter(vk::Filter::eLinear)
@@ -242,7 +236,7 @@ void RenderGraphHost::create_output_resources() {
                             .setAddressModeU(vk::SamplerAddressMode::eClampToEdge)
                             .setAddressModeV(vk::SamplerAddressMode::eClampToEdge)
                             .setAddressModeW(vk::SamplerAddressMode::eClampToEdge);
-    m_output_sampler = m_device.createSampler(sampler_info);
+    m_output_sampler = m_rhi.device().createSampler(sampler_info);
 
     m_output_texture = PtsTexture{};
     m_output_texture.h = 1;
@@ -252,35 +246,34 @@ void RenderGraphHost::create_output_resources() {
     cmd_buf.begin(vk::CommandBufferBeginInfo{vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
     transition_image_layout(cmd_buf, vk::ImageLayout::eShaderReadOnlyOptimal);
     cmd_buf.end();
-    m_queue.submit(vk::SubmitInfo{}.setCommandBuffers(cmd_buf), {});
-    m_queue.waitIdle();
-    m_device.freeCommandBuffers(m_command_pool, cmd_buf);
+    m_rhi.queue().submit(vk::SubmitInfo{}.setCommandBuffers(cmd_buf), {});
+    m_rhi.queue().waitIdle();
+    m_rhi.device().freeCommandBuffers(m_command_pool, cmd_buf);
 }
 
-void RenderGraphHost::destroy_output_resources() {
+void RenderGraph::destroy_output_resources() {
     if (m_output_image && m_logger) {
         m_logger->info("Destroying render graph output resources");
     }
     if (m_output_sampler) {
-        m_device.destroySampler(m_output_sampler);
+        m_rhi.device().destroySampler(m_output_sampler);
         m_output_sampler = VK_NULL_HANDLE;
     }
     if (m_output_view) {
-        m_device.destroyImageView(m_output_view);
+        m_rhi.device().destroyImageView(m_output_view);
         m_output_view = VK_NULL_HANDLE;
     }
     if (m_output_image) {
-        m_device.destroyImage(m_output_image);
+        m_rhi.device().destroyImage(m_output_image);
         m_output_image = VK_NULL_HANDLE;
     }
     if (m_output_memory) {
-        m_device.freeMemory(m_output_memory);
+        m_rhi.device().freeMemory(m_output_memory);
         m_output_memory = VK_NULL_HANDLE;
     }
 }
 
-void RenderGraphHost::transition_image_layout(vk::CommandBuffer cmd_buf,
-                                              vk::ImageLayout new_layout) {
+void RenderGraph::transition_image_layout(vk::CommandBuffer cmd_buf, vk::ImageLayout new_layout) {
     if (m_output_layout == new_layout) {
         return;
     }
@@ -317,7 +310,7 @@ void RenderGraphHost::transition_image_layout(vk::CommandBuffer cmd_buf,
     m_output_layout = new_layout;
 }
 
-void RenderGraphHost::clear_color(vk::CommandBuffer cmd_buf, const float rgba[4]) {
+void RenderGraph::clear_color(vk::CommandBuffer cmd_buf, const float rgba[4]) {
     auto color = vk::ClearColorValue{std::array<float, 4>{rgba[0], rgba[1], rgba[2], rgba[3]}};
     auto range = vk::ImageSubresourceRange{}
                      .setAspectMask(vk::ImageAspectFlagBits::eColor)
@@ -328,17 +321,17 @@ void RenderGraphHost::clear_color(vk::CommandBuffer cmd_buf, const float rgba[4]
     cmd_buf.clearColorImage(m_output_image, m_output_layout, color, range);
 }
 
-vk::CommandBuffer RenderGraphHost::allocate_command_buffer() {
+vk::CommandBuffer RenderGraph::allocate_command_buffer() {
     auto alloc_info = vk::CommandBufferAllocateInfo{}
                           .setCommandPool(m_command_pool)
                           .setLevel(vk::CommandBufferLevel::ePrimary)
                           .setCommandBufferCount(1);
-    auto buffers = m_device.allocateCommandBuffers(alloc_info);
+    auto buffers = m_rhi.device().allocateCommandBuffers(alloc_info);
     return buffers.front();
 }
 
-uint32_t RenderGraphHost::find_memory_type(uint32_t type_bits, vk::MemoryPropertyFlags flags) {
-    auto props = m_physical_device.getMemoryProperties();
+uint32_t RenderGraph::find_memory_type(uint32_t type_bits, vk::MemoryPropertyFlags flags) {
+    auto props = m_rhi.physical_device().getMemoryProperties();
     for (uint32_t i = 0; i < props.memoryTypeCount; ++i) {
         if ((type_bits & (1u << i)) && (props.memoryTypes[i].propertyFlags & flags) == flags) {
             return i;

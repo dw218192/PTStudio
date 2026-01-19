@@ -1,78 +1,22 @@
-#include <GLFW/glfw3.h>
-#include <core/glfwApplication.h>
+#include <core/guiApplication.h>
 #include <core/imgui/imhelper.h>
 #include <imgui_internal.h>
 
-#include <algorithm>
-#include <cstdlib>
-#include <iostream>
+#include <stdexcept>
 
-using namespace PTS;
+#include "guiApplicationImpl.h"
 
-namespace {
-std::weak_ptr<spdlog::logger> g_logger;
-}
+#if !defined(PTS_WINDOWING_GLFW)
+#define PTS_WINDOWING_GLFW 1
+#endif
 
-// stubs for callbacks
 namespace pts {
-static void click_func(GLFWwindow* window, int button, int action, int mods) {
-    // auto const app = static_cast<GLFWApplication*>(glfwGetWindowUserPointer(window));
-    // check if ImGui is using the mouse
-    // static_cast<void>(mods);
-    // app->m_mouse_states[button] = action == GLFW_PRESS;
-}
-static void motion_func(GLFWwindow* window, double x, double y) {
-}
-static void scroll_func(GLFWwindow* window, double x, double y) {
-    auto const app = static_cast<GLFWApplication*>(glfwGetWindowUserPointer(window));
-    app->m_mouse_scroll_delta = {x, y};
-}
-static void key_func(GLFWwindow* window, int key, int scancode, int action, int mods) {
-    // auto const app = static_cast<GLFWApplication*>(glfwGetWindowUserPointer(window));
-    // static_cast<void>(scancode);
-    // static_cast<void>(mods);
-    // app->m_key_states[key] = action == GLFW_PRESS;
-}
-static void error_func(int error, const char* description) {
-    if (auto logger = g_logger.lock()) {
-        logger->error("GLFW error: {}: {}", error, description);
-    } else {
-        std::cerr << "GLFW error: " << error << ": " << description << std::endl;
-    }
-}
-static void framebuffer_resize_func(GLFWwindow* window, int width, int height) {
-    auto const app = static_cast<GLFWApplication*>(glfwGetWindowUserPointer(window));
-    app->m_framebuffer_resized = true;
-    static_cast<void>(width);
-    static_cast<void>(height);
-}
-
-GLFWApplication::GLFWApplication(std::string_view name, pts::LoggingManager& logging_manager,
-                                 pts::PluginManager& plugin_manager, unsigned width,
-                                 unsigned height, float min_frame_time)
+GUIApplication::GUIApplication(std::string_view name, pts::LoggingManager& logging_manager,
+                               pts::PluginManager& plugin_manager, unsigned width, unsigned height,
+                               float min_frame_time)
     : Application{name, logging_manager, plugin_manager} {
-    g_logger = get_logger();
     set_min_frame_time(min_frame_time);
-    glfwSetErrorCallback(error_func);
-    if (!glfwInit()) {
-        throw std::runtime_error("Failed to initialize GLFW");
-    }
-
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-
-    m_window = glfwCreateWindow(width, height, name.data(), nullptr, nullptr);
-    if (!m_window) {
-        glfwTerminate();
-        throw std::runtime_error("Failed to create window");
-    }
-
-    // set callbacks
-    glfwSetWindowUserPointer(m_window, this);
-    glfwSetMouseButtonCallback(m_window, click_func);
-    glfwSetCursorPosCallback(m_window, motion_func);
-    glfwSetScrollCallback(m_window, scroll_func);
-    glfwSetKeyCallback(m_window, key_func);
-    glfwSetFramebufferSizeCallback(m_window, framebuffer_resize_func);
+    m_impl = create_gui_application_impl(*this, name, logging_manager, width, height);
 
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
@@ -84,27 +28,28 @@ GLFWApplication::GLFWApplication(std::string_view name, pts::LoggingManager& log
 
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
+    m_windowing = m_impl->create_windowing();
     m_rendering_host =
-        std::make_unique<pts::rendering::RenderingHost>(m_window, get_logging_manager());
+        std::make_unique<pts::rendering::Rendering>(*m_windowing, get_logging_manager());
 }
 
-GLFWApplication::~GLFWApplication() {
+GUIApplication::~GUIApplication() {
     m_rendering_host.reset();
+    m_windowing.reset();
     ImGui::DestroyContext();
-
-    glfwTerminate();
+    m_impl.reset();
 }
 
-void GLFWApplication::run() {
+void GUIApplication::run() {
     static bool s_once = false;
     double last_frame_time = 0;
-    while (!glfwWindowShouldClose(m_window)) {
-        auto const now = glfwGetTime();
+    while (!m_impl->should_close()) {
+        auto const now = m_impl->time();
 
         // Poll and handle events (inputs, window resize, etc.)
         m_mouse_scroll_delta = glm::vec2{0.0f};
 
-        glfwPollEvents();
+        m_impl->poll_events();
         poll_input_events();
 
         m_delta_time = static_cast<float>(now - last_frame_time);
@@ -154,43 +99,44 @@ void GLFWApplication::run() {
     }
 }
 
-auto GLFWApplication::get_render_graph_api() const noexcept -> const PtsRenderGraphApi* {
+auto GUIApplication::get_render_graph_api() const noexcept -> const PtsRenderGraphApi* {
     return m_rendering_host ? m_rendering_host->render_graph_api() : nullptr;
 }
 
-auto GLFWApplication::get_render_output_texture() const noexcept -> PtsTexture {
+auto GUIApplication::get_render_output_texture() const noexcept -> PtsTexture {
     return m_rendering_host ? m_rendering_host->output_texture() : PtsTexture{};
 }
 
-auto GLFWApplication::get_render_output_imgui_id() const noexcept -> ImTextureID {
+auto GUIApplication::get_render_output_imgui_id() const noexcept -> ImTextureID {
     return m_rendering_host ? m_rendering_host->output_imgui_id() : nullptr;
 }
 
-auto GLFWApplication::resize_render_output(uint32_t width, uint32_t height) -> void {
+auto GUIApplication::resize_render_output(uint32_t width, uint32_t height) -> void {
     if (m_rendering_host) {
         m_rendering_host->resize_render_graph(width, height);
     }
 }
 
-auto GLFWApplication::set_render_graph_current() -> void {
+auto GUIApplication::set_render_graph_current() -> void {
     if (m_rendering_host) {
         m_rendering_host->set_render_graph_current();
     }
 }
 
-auto GLFWApplication::clear_render_graph_current() -> void {
+auto GUIApplication::clear_render_graph_current() -> void {
     if (m_rendering_host) {
         m_rendering_host->clear_render_graph_current();
     }
 }
 
-auto GLFWApplication::on_begin_first_loop() -> void {
+auto GUIApplication::on_begin_first_loop() -> void {
 }
 
-auto GLFWApplication::poll_input_events() noexcept -> void {
+auto GUIApplication::poll_input_events() noexcept -> void {
     auto screen_dim = glm::ivec2{get_window_width(), get_window_height()};
-    double x, y;
-    glfwGetCursorPos(m_window, &x, &y);
+    double x = 0.0;
+    double y = 0.0;
+    m_impl->cursor_pos(x, y);
     if (!m_last_mouse_pos) {
         m_last_mouse_pos = m_mouse_pos = {x, y};
     } else {
@@ -230,7 +176,7 @@ auto GLFWApplication::poll_input_events() noexcept -> void {
 
     // scroll
     if (glm::length(m_mouse_scroll_delta) > 0) {
-        auto input = Input{InputType::MOUSE, ActionType::SCROLL, GLFW_MOUSE_BUTTON_MIDDLE};
+        auto input = Input{InputType::MOUSE, ActionType::SCROLL, m_impl->middle_mouse_button()};
         handle_input(InputEvent{input, m_mouse_pos, screen_dim, m_mouse_scroll_delta,
                                 m_mouse_initiated_window[ImGuiMouseButton_Middle], get_time()});
     }
@@ -264,20 +210,34 @@ auto GLFWApplication::poll_input_events() noexcept -> void {
     }
 }
 
-auto GLFWApplication::get_window_height() const noexcept -> int {
-    int display_h;
-    glfwGetFramebufferSize(m_window, nullptr, &display_h);
-    return display_h;
+void GUIApplication::on_scroll_event(double x, double y) noexcept {
+    m_mouse_scroll_delta = {x, y};
 }
 
-auto GLFWApplication::get_window_width() const noexcept -> int {
-    int display_w;
-    glfwGetFramebufferSize(m_window, &display_w, nullptr);
-    return display_w;
+void GUIApplication::on_framebuffer_resized() noexcept {
+    m_framebuffer_resized = true;
 }
 
-auto GLFWApplication::begin_imgui_window(std::string_view name,
-                                         ImGuiWindowFlags flags) noexcept -> bool {
+auto GUIApplication::get_window_extent() const noexcept -> glm::ivec2 {
+    return m_impl->window_extent();
+}
+
+auto GUIApplication::set_cursor_pos(float x, float y) noexcept -> void {
+    m_impl->set_cursor_pos(x, y);
+}
+
+auto GUIApplication::get_window_height() const noexcept -> int {
+    auto const extent = m_windowing->framebuffer_extent();
+    return static_cast<int>(extent.height);
+}
+
+auto GUIApplication::get_window_width() const noexcept -> int {
+    auto const extent = m_windowing->framebuffer_extent();
+    return static_cast<int>(extent.width);
+}
+
+auto GUIApplication::begin_imgui_window(std::string_view name, ImGuiWindowFlags flags) noexcept
+    -> bool {
     auto const ret = ImGui::Begin(name.data(), nullptr, flags);
     if (ImGui::IsWindowHovered(ImGuiItemStatusFlags_HoveredRect)) {
         m_cur_hovered_widget = name;
@@ -288,11 +248,11 @@ auto GLFWApplication::begin_imgui_window(std::string_view name,
     return ret;
 }
 
-void GLFWApplication::end_imgui_window() noexcept {
+void GUIApplication::end_imgui_window() noexcept {
     ImGui::End();
 }
 
-auto GLFWApplication::get_window_content_pos(std::string_view name) const noexcept
+auto GUIApplication::get_window_content_pos(std::string_view name) const noexcept
     -> std::optional<ImVec2> {
     auto const win = ImGui::FindWindowByName(name.data());
     if (!win) {
@@ -301,11 +261,11 @@ auto GLFWApplication::get_window_content_pos(std::string_view name) const noexce
     return win->ContentRegionRect.Min;
 }
 
-float GLFWApplication::get_time() const noexcept {
-    return static_cast<float>(glfwGetTime());
+float GUIApplication::get_time() const noexcept {
+    return static_cast<float>(m_impl->time());
 }
 
-float GLFWApplication::get_delta_time() const noexcept {
+float GUIApplication::get_delta_time() const noexcept {
     return m_delta_time;
 }
 }  // namespace pts

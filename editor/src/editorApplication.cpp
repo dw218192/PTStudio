@@ -1,6 +1,5 @@
 #include "editorApplication.h"
 
-#include <GLFW/glfw3.h>
 #include <core/imgui/fileDialogue.h>
 #include <core/imgui/imhelper.h>
 #include <core/imgui/reflectedField.h>
@@ -37,8 +36,8 @@ static constexpr auto k_console_log_buffer_size = 1024;
 EditorApplication::EditorApplication(std::string_view name, RenderConfig config,
                                      pts::LoggingManager& logging_manager,
                                      pts::PluginManager& plugin_manager)
-    : GLFWApplication{name,         logging_manager, plugin_manager,
-                      config.width, config.height,   config.min_frame_time},
+    : GUIApplication{name,         logging_manager, plugin_manager,
+                     config.width, config.height,   config.min_frame_time},
       m_config{config},
       m_cam{config.fovy, config.get_aspect(), LookAtParams{}},
       m_archive{new JsonArchive} {
@@ -147,14 +146,13 @@ auto EditorApplication::create_input_actions() noexcept -> void {
             params.up = glm::vec3{0, 1, 0};
             m_cam.set(params);
         }};
-    auto select_obj =
-        InputAction{{InputType::MOUSE, ActionType::PRESS, ImGuiMouseButton_Left},
-                    [this](InputEvent const& event) {
-                        if (!m_control_state.is_outside_view &&
-                            (glfwGetTime() - event.time) <= k_object_select_mouse_time) {
-                            try_select_object();
-                        }
-                    }};
+    auto select_obj = InputAction{{InputType::MOUSE, ActionType::PRESS, ImGuiMouseButton_Left},
+                                  [this](InputEvent const& event) {
+                                      if (!m_control_state.is_outside_view &&
+                                          (get_time() - event.time) <= k_object_select_mouse_time) {
+                                          try_select_object();
+                                      }
+                                  }};
     auto deselect_obj =
         InputAction{{InputType::KEYBOARD, ActionType::PRESS, ImGuiKey_Escape},
                     [this](InputEvent const& event) { m_control_state.set_cur_obj(nullptr); }};
@@ -244,10 +242,9 @@ auto EditorApplication::create_input_actions() noexcept -> void {
 
 auto EditorApplication::wrap_mouse_pos() noexcept -> void {
     if (m_control_state.is_changing_scene_cam) {
-        auto iwx = int{}, iwy = int{};
-        glfwGetWindowSize(m_window, &iwx, &iwy);
-        auto const wx = static_cast<float>(iwx);
-        auto const wy = static_cast<float>(iwy);
+        auto const window_extent = get_window_extent();
+        auto const wx = static_cast<float>(window_extent.x);
+        auto const wy = static_cast<float>(window_extent.y);
         static constexpr auto eps = 0.1f;
 
         auto changed{false};
@@ -269,13 +266,13 @@ auto EditorApplication::wrap_mouse_pos() noexcept -> void {
         }
 
         if (changed) {
-            glfwSetCursorPos(m_window, m_mouse_pos.x, m_mouse_pos.y);
+            set_cursor_pos(m_mouse_pos.x, m_mouse_pos.y);
         }
     }
 }
 
 auto EditorApplication::on_begin_first_loop() -> void {
-    GLFWApplication::on_begin_first_loop();
+    GUIApplication::on_begin_first_loop();
 
     // do layout initialization work
     if (ImGui::GetIO().IniFilename) {

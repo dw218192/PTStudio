@@ -1,6 +1,6 @@
 #pragma once
 
-#include <core/glfwApplication.h>
+#include <core/guiApplication.h>
 #include <core/inputAction.h>
 #include <core/legacy/archive.h>
 #include <core/legacy/camera.h>
@@ -23,7 +23,7 @@ constexpr auto k_init_move_sensitivity = 5.0f;
 constexpr auto k_init_rot_sensitivity = 60.0f;
 constexpr auto k_object_select_mouse_time = 1.0f;
 
-struct EditorApplication final : GLFWApplication {
+struct EditorApplication final : GUIApplication {
     NO_COPY_MOVE(EditorApplication);
 
     auto loop(float dt) -> void override;

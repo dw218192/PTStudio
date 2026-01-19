@@ -41,6 +41,7 @@ PUBLIC
 	tcb-span::tcb-span
 	nlohmann_json::nlohmann_json
 	Boost::filesystem
+	Boost::container
 	Vulkan::Vulkan
 	glfw
 )

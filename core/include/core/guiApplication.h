@@ -3,49 +3,47 @@
 #include <core/application.h>
 #include <core/inputAction.h>
 #include <core/legacy/debugDrawer.h>
-#include <core/rendering/renderingHost.h>
+#include <core/rendering/rendering.h>
+#include <core/rendering/windowing.h>
 #include <core/signal.h>
 #include <imgui.h>
 
 #include <array>
 #include <bitset>
 #include <functional>
+#include <glm/glm.hpp>
 #include <optional>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
 
-struct GLFWwindow;
-
 namespace pts {
 /**
- * @brief abstract GLFW application. Responsible for creating the window and polling events.
+ * @brief GUI application. Responsible for creating the window and polling events.
  */
-struct GLFWApplication : Application {
+struct GUIApplication : Application {
+    struct Impl;
+
     // used to help detect if the mouse enters/leaves certain imgui windows
     struct ImGuiWindowInfo {
         Signal<void()> on_leave_region;
         Signal<void()> on_enter_region;
     };
 
-    friend static void click_func(GLFWwindow* window, int button, int action, int mods);
-    friend static void motion_func(GLFWwindow* window, double x, double y);
-    friend static void scroll_func(GLFWwindow* window, double x, double y);
-    friend static void key_func(GLFWwindow* window, int key, int scancode, int action, int mods);
-    friend static void error_func(int error, const char* description);
-    friend static void framebuffer_resize_func(GLFWwindow* window, int width, int height);
+    NO_COPY_MOVE(GUIApplication);
 
-    NO_COPY_MOVE(GLFWApplication);
-
-    GLFWApplication(std::string_view name, pts::LoggingManager& logging_manager,
-                    pts::PluginManager& plugin_manager, unsigned width, unsigned height,
-                    float min_frame_time);
-    ~GLFWApplication() override;
+    GUIApplication(std::string_view name, pts::LoggingManager& logging_manager,
+                   pts::PluginManager& plugin_manager, unsigned width, unsigned height,
+                   float min_frame_time);
+    ~GUIApplication() override;
 
     void run() override;
 
     [[nodiscard]] auto get_window_width() const noexcept -> int;
     [[nodiscard]] auto get_window_height() const noexcept -> int;
+
+    void on_scroll_event(double x, double y) noexcept;
+    void on_framebuffer_resized() noexcept;
     /**
      * @brief Called every frame. Override to handle the main loop.
      * @param dt the time since the last frame
@@ -64,6 +62,8 @@ struct GLFWApplication : Application {
     }
     virtual auto on_begin_first_loop() -> void;
     auto poll_input_events() noexcept -> void;
+    [[nodiscard]] auto get_window_extent() const noexcept -> glm::ivec2;
+    auto set_cursor_pos(float x, float y) noexcept -> void;
 
     /**
      * @brief Gets the renderer for the application.
@@ -109,7 +109,6 @@ struct GLFWApplication : Application {
     std::array<std::string_view, ImGuiMouseButton_COUNT> m_mouse_initiated_window{};
     std::array<std::string_view, ImGuiKey_COUNT> m_key_initiated_window{};
 
-    GLFWwindow* m_window;
     PTS::DebugDrawer m_debug_drawer;
     float m_min_frame_time;
     float m_delta_time{0.0f};
@@ -120,7 +119,11 @@ struct GLFWApplication : Application {
 
     static constexpr auto k_no_hovered_widget = "";
 
-    std::unique_ptr<pts::rendering::RenderingHost> m_rendering_host;
+    std::unique_ptr<pts::rendering::IWindowing> m_windowing;
+    std::unique_ptr<pts::rendering::Rendering> m_rendering_host;
     bool m_framebuffer_resized{false};
+
+   private:
+    std::unique_ptr<Impl> m_impl;
 };
 }  // namespace pts
