@@ -54,6 +54,8 @@ alwaysApply: true
   - Example: `fileReader.cpp`, `httpClient.hpp`
 * **Directory Names:** **snake_case_with_underscores**
   - Example: `core_runtime`, `net_io`
+* **Enum classes:** **UpperCamelCase** and **UpperCamelCase** for values
+  Example: `enum class ErrorCode { Ok = 0, InternalError = 1, InvalidArgument = 2 };`
 
 ---
 
@@ -135,13 +137,11 @@ Rules:
 Example:
 
 ```cpp
-enum class error_code : std::int32_t {
-  ok = 0,
-  invalid_argument = 1,
-  io_error = 2,
-  internal_error = 3,
+enum class ErrorCode : std::int32_t {
+    Ok = 0,
+    InternalError = 1,
+    InvalidArgument = 2,
 };
-
 [[nodiscard]] error_code initialize(subsystem_handle* out) noexcept;
 
 [[nodiscard]] boost::result<std::int32_t, error_code>
