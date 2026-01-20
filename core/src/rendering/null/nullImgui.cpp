@@ -35,12 +35,12 @@ class NullImguiRendering final : public IImguiRendering {
     void resize() override {
     }
     auto set_render_output(IRenderGraph&) -> ImTextureID override {
-        return nullptr;
+        return ImTextureID_Invalid;
     }
     void clear_render_output() override {
     }
     [[nodiscard]] auto output_id() const noexcept -> ImTextureID override {
-        return nullptr;
+        return ImTextureID_Invalid;
     }
 };
 }  // namespace

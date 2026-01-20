@@ -283,7 +283,7 @@ auto EditorApplication::on_begin_first_loop() -> void {
     }
 
     // create an UI that covers the whole window, for docking
-    auto id = ImGui::DockSpaceOverViewport(ImGui::GetMainViewport(),
+    auto id = ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(),
                                            ImGuiDockNodeFlags_PassthruCentralNode);
     ImGui::DockBuilderRemoveNode(id);
     ImGui::DockBuilderAddNode(id);
@@ -302,7 +302,8 @@ auto EditorApplication::loop(float dt) -> void {
     // ImGuizmo
     ImGuizmo::BeginFrame();
 
-    ImGui::DockSpaceOverViewport(ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
+    ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(),
+                                 ImGuiDockNodeFlags_PassthruCentralNode);
     if (m_renderer_interface && m_renderer_interface->build_graph) {
         PtsFrameParams frame{};
         frame.frame_index = m_frame_index++;

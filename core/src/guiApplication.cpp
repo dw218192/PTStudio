@@ -141,7 +141,7 @@ auto GUIApplication::get_render_output_texture() const noexcept -> PtsTexture {
 }
 
 auto GUIApplication::get_render_output_imgui_id() const noexcept -> ImTextureID {
-    return m_imgui_rendering ? m_imgui_rendering->output_id() : nullptr;
+    return m_imgui_rendering ? m_imgui_rendering->output_id() : ImTextureID_Invalid;
 }
 
 auto GUIApplication::resize_render_output(uint32_t width, uint32_t height) -> void {
@@ -152,6 +152,7 @@ auto GUIApplication::resize_render_output(uint32_t width, uint32_t height) -> vo
         m_imgui_rendering->clear_render_output();
         return;
     }
+    m_imgui_rendering->clear_render_output();
     m_render_graph->resize(width, height);
     m_imgui_rendering->set_render_output(*m_render_graph);
 }
@@ -186,21 +187,21 @@ auto GUIApplication::poll_input_events() noexcept -> void {
         m_mouse_pos = {x, y};
     }
 
-    // key events
-    for (int i = 0; i < m_key_states.size(); ++i) {
+    // key events (keyboard only, ImGuiKey values)
+    for (ImGuiKey key = ImGuiKey_NamedKey_BEGIN; key <= ImGuiKey_Oem102;
+         key = static_cast<ImGuiKey>(key + 1)) {
+        auto const key_index = static_cast<size_t>(key);
         std::optional<Input> input;
-        auto key_state = ImGui::IsKeyDown(static_cast<ImGuiKey>(i));
+        auto const key_state = ImGui::IsKeyDown(key);
         if (key_state) {
-            if (m_key_states[i]) {
-                input = Input{InputType::KEYBOARD, ActionType::HOLD, i};
+            if (m_key_states[key_index]) {
+                input = Input{InputType::KEYBOARD, ActionType::HOLD, static_cast<int>(key)};
             } else {
-                input = Input{InputType::KEYBOARD, ActionType::PRESS, i};
-                m_key_initiated_window[i] = m_cur_hovered_widget;
+                input = Input{InputType::KEYBOARD, ActionType::PRESS, static_cast<int>(key)};
+                m_key_initiated_window[key_index] = m_cur_hovered_widget;
             }
-        } else {
-            if (m_key_states[i]) {
-                input = Input{InputType::KEYBOARD, ActionType::RELEASE, i};
-            }
+        } else if (m_key_states[key_index]) {
+            input = Input{InputType::KEYBOARD, ActionType::RELEASE, static_cast<int>(key)};
         }
         if (input) {
             auto event = InputEvent{*input,     m_mouse_pos,          *m_last_mouse_pos,
@@ -208,10 +209,10 @@ auto GUIApplication::poll_input_events() noexcept -> void {
                                     get_time()};
             handle_input(event);
             if (input->action_type == ActionType::RELEASE) {
-                m_key_initiated_window[i] = k_no_hovered_widget;
+                m_key_initiated_window[key_index] = k_no_hovered_widget;
             }
         }
-        m_key_states[i] = key_state;
+        m_key_states[key_index] = key_state;
     }
 
     // mouse events

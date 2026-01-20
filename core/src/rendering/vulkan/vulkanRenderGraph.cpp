@@ -259,6 +259,9 @@ void VulkanRenderGraph::destroy_output_resources() {
     if (m_output_image && m_logger) {
         m_logger->info("Destroying render graph output resources");
     }
+    if (m_output_sampler || m_output_view || m_output_image || m_output_memory) {
+        m_rhi.device().waitIdle();
+    }
     if (m_output_sampler) {
         m_rhi.device().destroySampler(m_output_sampler);
         m_output_sampler = VK_NULL_HANDLE;

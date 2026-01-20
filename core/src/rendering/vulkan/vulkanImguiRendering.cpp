@@ -113,22 +113,24 @@ auto VulkanImguiRendering::set_render_output(IRenderGraph& render_graph) -> ImTe
         if (m_logger) {
             m_logger->error("ImGui rendering requires Vulkan render graph output");
         }
-        return nullptr;
+        return ImTextureID_Invalid;
     }
     clear_render_output();
     if (!m_initialized) {
-        return nullptr;
+        return ImTextureID_Invalid;
     }
-    m_output_id = ImGui_ImplVulkan_AddTexture(
+    auto descriptor = ImGui_ImplVulkan_AddTexture(
         vulkan_graph->output_sampler(), vulkan_graph->output_image_view(),
         static_cast<VkImageLayout>(vulkan_graph->output_layout()));
+    m_output_id = static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(descriptor));
     return m_output_id;
 }
 
 void VulkanImguiRendering::clear_render_output() {
-    if (m_output_id) {
-        ImGui_ImplVulkan_RemoveTexture(static_cast<VkDescriptorSet>(m_output_id));
-        m_output_id = nullptr;
+    if (m_output_id != ImTextureID_Invalid) {
+        auto descriptor = reinterpret_cast<VkDescriptorSet>(static_cast<uintptr_t>(m_output_id));
+        ImGui_ImplVulkan_RemoveTexture(descriptor);
+        m_output_id = ImTextureID_Invalid;
     }
 }
 
@@ -267,13 +269,12 @@ void VulkanImguiRendering::init_imgui_backend() {
     init_info.DescriptorPool = m_imgui_descriptor_pool.get();
     init_info.MinImageCount = m_present.image_count();
     init_info.ImageCount = m_present.image_count();
-    init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+    init_info.PipelineInfoMain.RenderPass = m_render_pass.get();
+    init_info.PipelineInfoMain.Subpass = 0;
+    init_info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
     init_info.CheckVkResultFn = log_imgui_vk_result;
 
-    ImGui_ImplVulkan_Init(&init_info, m_render_pass.get());
-    if (!ImGui_ImplVulkan_CreateFontsTexture()) {
-        throw std::runtime_error("Failed to upload ImGui Vulkan fonts");
-    }
+    ImGui_ImplVulkan_Init(&init_info);
     m_initialized = true;
 }
 }  // namespace pts::rendering

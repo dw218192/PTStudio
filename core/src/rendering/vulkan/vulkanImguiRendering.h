@@ -56,7 +56,7 @@ class VulkanImguiRendering final : public IImguiRendering {
     size_t m_frame_index_counter{0};
     bool m_initialized{false};
     vk::UniqueDescriptorPool m_imgui_descriptor_pool;
-    ImTextureID m_output_id{nullptr};
+    ImTextureID m_output_id{ImTextureID_Invalid};
     std::shared_ptr<spdlog::logger> m_logger;
 };
 }  // namespace pts::rendering
