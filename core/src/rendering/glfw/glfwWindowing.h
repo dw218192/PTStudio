@@ -1,8 +1,7 @@
 #pragma once
 
 #include <core/loggingManager.h>
-
-#include "../windowing.h"
+#include <core/rendering/windowing.h>
 
 struct GLFWwindow;
 

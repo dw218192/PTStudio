@@ -11,6 +11,7 @@ class LoggingManager;
 
 namespace pts::rendering {
 enum class WindowingType : std::uint32_t {
+    null_backend = 0,
     glfw = 1,
 };
 enum class NativePlatform : std::uint32_t { win32, xlib, emscripten };

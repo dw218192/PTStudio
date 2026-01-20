@@ -1,5 +1,7 @@
 """Build subcommand implementation."""
+
 import argparse
+import json
 import os
 import shutil
 from pathlib import Path
@@ -7,12 +9,89 @@ from pathlib import Path
 from repo_tools import ensure_conan_profile, find_venv_executable, run_command
 
 
+def _format_workspace_path(root: Path, path: Path) -> str:
+    try:
+        relative = path.relative_to(root)
+        return f"${{workspaceFolder}}/{relative.as_posix()}"
+    except ValueError:
+        return path.as_posix()
+
+
+def _collect_header_dirs(root: Path, base: Path) -> set[Path]:
+    header_dirs: set[Path] = set()
+    if not base.exists():
+        return header_dirs
+    for pattern in ("*.h", "*.hpp", "*.inl"):
+        for header in base.rglob(pattern):
+            header_dirs.add(header.parent)
+    return header_dirs
+
+
+def _generate_cpp_properties(
+    root: Path, build_type: str, gapi: str, windowing: str
+) -> None:
+    vscode_dir = root / ".vscode"
+    vscode_dir.mkdir(parents=True, exist_ok=True)
+
+    include_dirs: set[Path] = set()
+    include_dirs |= _collect_header_dirs(root, root / "core" / "include")
+    include_dirs |= _collect_header_dirs(root, root / "core" / "api")
+    include_dirs |= _collect_header_dirs(root, root / "editor" / "include")
+    include_dirs |= _collect_header_dirs(root, root / "plugins")
+    include_dirs |= _collect_header_dirs(root, root / "gl_utils")
+    include_dirs |= _collect_header_dirs(root, root / "vulkan_raytracer")
+
+    include_dirs |= _collect_header_dirs(
+        root, root / "core" / "src" / "rendering" / gapi
+    )
+    include_dirs |= _collect_header_dirs(
+        root, root / "core" / "src" / "rendering" / windowing
+    )
+
+    deps_include = root / "_build" / "deps" / "full_deploy" / "host"
+    if deps_include.exists():
+        include_dirs.add(deps_include)
+        include_dirs |= _collect_header_dirs(root, deps_include)
+
+    for cmrc_include in root.glob("_build/*/_cmrc/include"):
+        include_dirs.add(cmrc_include)
+
+    include_paths = sorted(
+        {_format_workspace_path(root, path) for path in include_dirs if path.exists()}
+    )
+
+    defines = [
+        "SPDLOG_FMT_EXTERNAL",
+        f"PTS_GAPI_{gapi}",
+        f"PTS_WINDOWING_{windowing}",
+        f'PTS_GAPI="{gapi}"',
+        f'PTS_WINDOWING="{windowing}"',
+    ]
+    if gapi == "vulkan":
+        defines.append("VULKAN_HPP_DISPATCH_LOADER_DYNAMIC")
+
+    config = {
+        "name": "PTStudio",
+        "cppStandard": "c++17",
+        "cStandard": "c17",
+        "defines": defines,
+        "includePath": include_paths,
+        "browse": {"path": include_paths},
+    }
+    payload = {"version": 4, "configurations": [config]}
+    (vscode_dir / "c_cpp_properties.json").write_text(
+        json.dumps(payload, indent=4) + "\n", encoding="utf-8"
+    )
+
+
 def build_command(args: argparse.Namespace) -> None:
     """Build subcommand implementation."""
     root = Path(__file__).parent.parent.parent
     build_folder = root / "_build"
     logs_dir = root / "_logs"
-    lock_file = root / "conan.lock"
+    gapi = args.gapi
+    windowing = args.windowing
+    lock_file = root / f"conan_{gapi}_{windowing}.lock"
 
     # Remove build directory if -x flag is provided
     if args.rebuild and build_folder.exists():
@@ -49,7 +128,7 @@ def build_command(args: argparse.Namespace) -> None:
                     print("Update lock flag (-u) detected. Regenerating lock file...")
                 else:
                     print("Lock file not found. Generating new lock file...")
-                lock_log_file = logs_dir / "conan_lock_create.log"
+                lock_log_file = logs_dir / f"conan_lock_create_{gapi}_{windowing}.log"
                 conan_exe = find_venv_executable("conan")
                 run_command(
                     [
@@ -57,6 +136,10 @@ def build_command(args: argparse.Namespace) -> None:
                         "lock",
                         "create",
                         "..",
+                        "-o",
+                        f"&:gapi={gapi}",
+                        "-o",
+                        f"&:windowing={windowing}",
                         "--lockfile-out",
                         str(lock_file),
                     ],
@@ -80,6 +163,10 @@ def build_command(args: argparse.Namespace) -> None:
                     "--build=missing",
                     f"--profile:host={args.conan_profile}",
                     f"--profile:build={args.conan_profile}",
+                    "-o",
+                    f"&:gapi={gapi}",
+                    "-o",
+                    f"&:windowing={windowing}",
                     "-s",
                     "compiler.cppstd=17",
                     "-s",
@@ -87,6 +174,8 @@ def build_command(args: argparse.Namespace) -> None:
                 ],
                 log_file=install_log_file,
             )
+
+            _generate_cpp_properties(root, args.build_type, gapi, windowing)
 
             configure_log_file = logs_dir / "cmake_configure.log"
             cmake_exe = find_venv_executable("cmake")
@@ -121,7 +210,6 @@ def build_command(args: argparse.Namespace) -> None:
             )
         else:
             print("Configure only mode (-c): Skipping build step")
-
     finally:
         os.chdir(original_cwd)
 
@@ -161,5 +249,17 @@ def register_build_command(subparsers: argparse._SubParsersAction) -> None:
     )
     parser.add_argument(
         "--conan-profile", default="default", help="Conan profile (default: default)"
+    )
+    parser.add_argument(
+        "--gapi",
+        choices=["vulkan", "null"],
+        default="vulkan",
+        help="Graphics backend (default: vulkan)",
+    )
+    parser.add_argument(
+        "--windowing",
+        choices=["glfw", "null"],
+        default="glfw",
+        help="Windowing backend (default: glfw)",
     )
     parser.set_defaults(func=build_command)
