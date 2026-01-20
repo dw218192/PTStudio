@@ -21,9 +21,10 @@ if(PTS_GAPI STREQUAL "vulkan")
 	)
 	list(APPEND core_rendering_sources ${core_gapi_sources})
 elseif(PTS_GAPI STREQUAL "null")
-	list(APPEND core_rendering_sources
+	file(GLOB_RECURSE core_gapi_sources
 		${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/null/*.*
 	)
+	list(APPEND core_rendering_sources ${core_gapi_sources})
 endif()
 
 if(PTS_WINDOWING STREQUAL "glfw")
@@ -32,9 +33,10 @@ if(PTS_WINDOWING STREQUAL "glfw")
 	)
 	list(APPEND core_rendering_sources ${core_windowing_sources})
 elseif(PTS_WINDOWING STREQUAL "null")
-	list(APPEND core_rendering_sources
+	file(GLOB_RECURSE core_windowing_sources
 		${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/null/*.*
 	)
+	list(APPEND core_rendering_sources ${core_windowing_sources})
 endif()
 
 set(src_files ${core_src_files} ${core_rendering_sources})

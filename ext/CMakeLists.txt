@@ -6,13 +6,22 @@ add_library(imgui STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/imgui/imgui_demo.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/imgui/imgui_tables.cpp
 )
-# add windows, linux and mac specific files
-# use glfw as backend
+# add platform/renderer backends based on configuration
 file(GLOB IMGUI_BACKEND_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/imgui/backends/imgui_impl_glfw.*
-    ${CMAKE_CURRENT_SOURCE_DIR}/imgui/backends/imgui_impl_vulkan.*
-    ${CMAKE_CURRENT_SOURCE_DIR}/imgui/backends/imgui_impl_win32.*
+    ${CMAKE_CURRENT_SOURCE_DIR}/imgui/backends/imgui_impl_null.*
 )
+if(PTS_WINDOWING STREQUAL "glfw")
+    file(GLOB IMGUI_BACKEND_GLFW_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/imgui/backends/imgui_impl_glfw.*
+    )
+    list(APPEND IMGUI_BACKEND_SOURCES ${IMGUI_BACKEND_GLFW_SOURCES})
+endif()
+if(PTS_GAPI STREQUAL "vulkan")
+    file(GLOB IMGUI_BACKEND_VULKAN_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/imgui/backends/imgui_impl_vulkan.*
+    )
+    list(APPEND IMGUI_BACKEND_SOURCES ${IMGUI_BACKEND_VULKAN_SOURCES})
+endif()
 target_sources(imgui 
     PRIVATE
         ${IMGUI_BACKEND_SOURCES}
@@ -22,11 +31,12 @@ target_include_directories(imgui
         ${CMAKE_CURRENT_SOURCE_DIR}/imgui
         ${CMAKE_CURRENT_SOURCE_DIR}/imgui/backends
 )
-target_link_libraries(imgui
-    PRIVATE
-        glfw
-        Vulkan::Vulkan
-)
+if(PTS_WINDOWING STREQUAL "glfw")
+    target_link_libraries(imgui PRIVATE glfw)
+endif()
+if(PTS_GAPI STREQUAL "vulkan")
+    target_link_libraries(imgui PRIVATE Vulkan::Vulkan)
+endif()
 
 # Manually add imguizmo
 add_library(imguizmo STATIC

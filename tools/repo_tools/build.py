@@ -211,6 +211,8 @@ def build_command(args: argparse.Namespace) -> None:
                     args.build_type,
                     "-DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake",
                     f"-DCMAKE_BUILD_TYPE={args.build_type}",
+                    f"-DPTS_GAPI={gapi}",
+                    f"-DPTS_WINDOWING={windowing}",
                     "-DCMAKE_CXX_STANDARD=17",
                     "-DCMAKE_CXX_STANDARD_REQUIRED=ON",
                     "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",

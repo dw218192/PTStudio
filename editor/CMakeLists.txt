@@ -30,7 +30,6 @@ target_link_libraries(${exec_name}
 PRIVATE
 	$<BUILD_INTERFACE:developer_flags>
 	core
-	glfw
 	imguizmo
 	ImGuiColorTextEdit
 	Boost::stacktrace
@@ -39,7 +38,6 @@ PRIVATE
 	#resourcers
 	${exec_name}::rc
 )
-
 if (MSVC)
 	target_compile_options(${exec_name} PRIVATE /bigobj)
 endif()
