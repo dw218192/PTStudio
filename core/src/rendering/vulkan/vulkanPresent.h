@@ -14,7 +14,8 @@ namespace pts::rendering {
 
 class VulkanPresent final : public IPresent {
    public:
-    VulkanPresent(IWindowing& windowing, VulkanRhi& rhi, LoggingManager& logging_manager);
+    VulkanPresent(IWindowing& windowing, IViewport& viewport, VulkanRhi& rhi,
+                  pts::LoggingManager& logging_manager);
     ~VulkanPresent() override;
 
     VulkanPresent(const VulkanPresent&) = delete;
@@ -27,7 +28,7 @@ class VulkanPresent final : public IPresent {
     [[nodiscard]] auto present_backbuffer(uint32_t index, RhiSemaphore wait_semaphore)
         -> PresentStatus override;
     void recreate_swapchain() override;
-    [[nodiscard]] auto framebuffer_extent() const noexcept -> FramebufferExtent override;
+    [[nodiscard]] auto framebuffer_extent() const noexcept -> Extent2D override;
 
     [[nodiscard]] auto format() const noexcept -> vk::Format {
         return m_format;
@@ -54,6 +55,7 @@ class VulkanPresent final : public IPresent {
     void do_recreate_swapchain();
 
     IWindowing& m_windowing;
+    IViewport& m_viewport;
     VulkanRhi& m_rhi;
     vk::UniqueSurfaceKHR m_surface;
     vk::UniqueSwapchainKHR m_swapchain;

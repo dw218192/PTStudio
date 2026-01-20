@@ -35,8 +35,9 @@ auto map_present_result(vk::Result result) -> PresentStatus {
 }
 }  // namespace
 
-VulkanPresent::VulkanPresent(IWindowing& windowing, VulkanRhi& rhi, LoggingManager& logging_manager)
-    : m_windowing(windowing), m_rhi(rhi) {
+VulkanPresent::VulkanPresent(IWindowing& windowing, IViewport& viewport, VulkanRhi& rhi,
+                             pts::LoggingManager& logging_manager)
+    : m_windowing(windowing), m_viewport(viewport), m_rhi(rhi) {
     m_logger = logging_manager.get_logger_shared("VulkanPresent");
     create_surface();
     if (!m_rhi.physical_device().getSurfaceSupportKHR(m_rhi.queue_family(), m_surface.get())) {
@@ -72,8 +73,8 @@ void VulkanPresent::recreate_swapchain() {
     do_recreate_swapchain();
 }
 
-auto VulkanPresent::framebuffer_extent() const noexcept -> FramebufferExtent {
-    return FramebufferExtent{m_extent.width, m_extent.height};
+auto VulkanPresent::framebuffer_extent() const noexcept -> Extent2D {
+    return Extent2D{m_extent.width, m_extent.height};
 }
 
 vk::Result VulkanPresent::acquire_next_image(vk::Semaphore semaphore, uint32_t* image_index) {
@@ -112,21 +113,22 @@ void VulkanPresent::resize_swapchain() {
 }
 
 void VulkanPresent::create_surface() {
-    auto handle = m_windowing.native_handle();
+    auto handle = m_viewport.native_handle();
 #if defined(_WIN32)
-    if (!handle.platform_handle) {
+    if (!handle.win32.hwnd) {
         throw std::runtime_error("Windowing must provide a native platform handle");
     }
-    auto const hwnd = static_cast<HWND>(handle.platform_handle);
-    auto const hinstance = GetModuleHandle(nullptr);
+    auto const hwnd = static_cast<HWND>(handle.win32.hwnd);
+    auto const hinstance = handle.win32.hinstance ? static_cast<HINSTANCE>(handle.win32.hinstance)
+                                                  : GetModuleHandle(nullptr);
     auto create_info = vk::Win32SurfaceCreateInfoKHR{}.setHinstance(hinstance).setHwnd(hwnd);
     auto created = m_rhi.instance().createWin32SurfaceKHR(create_info);
 #elif defined(__linux__)
-    if (!handle.platform_handle || !handle.window_handle) {
+    if (!handle.xlib.display || handle.xlib.window == 0) {
         throw std::runtime_error("Windowing must provide native display and window handles");
     }
-    auto* display = static_cast<Display*>(handle.platform_handle);
-    auto window = static_cast<Window>(reinterpret_cast<std::uintptr_t>(handle.window_handle));
+    auto* display = static_cast<Display*>(handle.xlib.display);
+    auto window = static_cast<Window>(handle.xlib.window);
     auto create_info = vk::XlibSurfaceCreateInfoKHR{}.setDpy(display).setWindow(window);
     auto created = m_rhi.instance().createXlibSurfaceKHR(create_info);
 #else
@@ -198,10 +200,9 @@ void VulkanPresent::create_swapchain() {
 
     auto extent = caps.currentExtent;
     if (extent.width == UINT32_MAX) {
-        auto const size = m_windowing.framebuffer_extent();
-        extent.width = std::clamp(size.width, caps.minImageExtent.width, caps.maxImageExtent.width);
-        extent.height =
-            std::clamp(size.height, caps.minImageExtent.height, caps.maxImageExtent.height);
+        auto const size = m_viewport.drawable_extent();
+        extent.width = std::clamp(size.w, caps.minImageExtent.width, caps.maxImageExtent.width);
+        extent.height = std::clamp(size.h, caps.minImageExtent.height, caps.maxImageExtent.height);
     }
 
     uint32_t image_count = caps.minImageCount + 1;
@@ -277,10 +278,10 @@ void VulkanPresent::do_recreate_swapchain() {
     if (m_logger) {
         m_logger->info("Recreating swapchain");
     }
-    auto size = m_windowing.framebuffer_extent();
-    while (size.width == 0 || size.height == 0) {
-        m_windowing.wait_events();
-        size = m_windowing.framebuffer_extent();
+    auto size = m_viewport.drawable_extent();
+    while (size.w == 0 || size.h == 0) {
+        m_windowing.pump_events(PumpEventMode::Wait);
+        size = m_viewport.drawable_extent();
     }
     cleanup_swapchain();
     create_swapchain();

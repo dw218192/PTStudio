@@ -8,6 +8,7 @@
 #include <vulkan/vulkan.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <stdexcept>
 #include <vector>
@@ -28,7 +29,7 @@ bool has_extension(vk::PhysicalDevice device, const char* name) {
 }
 }  // namespace
 
-VulkanRhi::VulkanRhi(WindowingVulkanExtensions extensions, LoggingManager& logging_manager) {
+VulkanRhi::VulkanRhi(WindowingVulkanExtensions extensions, pts::LoggingManager& logging_manager) {
     m_logger = logging_manager.get_logger_shared("VulkanRhi");
     m_logger->info("Vulkan RHI initializing");
     m_instance = create_vulkan_instance(extensions);
@@ -47,39 +48,42 @@ auto VulkanRhi::create_fence(bool signaled) -> RhiFence {
         auto const index = m_free_fence_ids.back();
         m_free_fence_ids.pop_back();
         m_fences[index] = fence;
-        return {static_cast<void*>(&m_fences[index])};
+        return {reinterpret_cast<void*>(static_cast<std::uintptr_t>(index + 1))};
     }
     m_fences.push_back(fence);
-    return {static_cast<void*>(&m_fences.back())};
+    return {reinterpret_cast<void*>(static_cast<std::uintptr_t>(m_fences.size()))};
 }
 
 void VulkanRhi::destroy_fence(RhiFence fence) noexcept {
     if (!fence.handle) {
         return;
     }
-    auto* handle = static_cast<vk::Fence*>(fence.handle);
-    if (!handle || !*handle) {
+    auto index = reinterpret_cast<std::uintptr_t>(fence.handle) - 1;
+    if (index >= m_fences.size()) {
         return;
     }
-    m_device->destroyFence(*handle);
-    *handle = vk::Fence{};
-    for (uint32_t i = 0; i < m_fences.size(); ++i) {
-        if (&m_fences[i] == handle) {
-            m_free_fence_ids.push_back(i);
-            break;
-        }
+    auto& handle = m_fences[index];
+    if (!handle) {
+        return;
     }
+    m_device->destroyFence(handle);
+    handle = vk::Fence{};
+    m_free_fence_ids.push_back(static_cast<uint32_t>(index));
 }
 
 auto VulkanRhi::wait_fence(RhiFence fence, std::uint64_t timeout_ns) noexcept -> bool {
     if (!fence.handle) {
         return false;
     }
-    auto* handle = static_cast<vk::Fence*>(fence.handle);
-    if (!handle || !*handle) {
+    auto index = reinterpret_cast<std::uintptr_t>(fence.handle) - 1;
+    if (index >= m_fences.size()) {
         return false;
     }
-    auto result = m_device->waitForFences(*handle, true, timeout_ns);
+    auto& handle = m_fences[index];
+    if (!handle) {
+        return false;
+    }
+    auto result = m_device->waitForFences(handle, true, timeout_ns);
     return result == vk::Result::eSuccess;
 }
 
@@ -87,11 +91,15 @@ void VulkanRhi::reset_fence(RhiFence fence) noexcept {
     if (!fence.handle) {
         return;
     }
-    auto* handle = static_cast<vk::Fence*>(fence.handle);
-    if (!handle || !*handle) {
+    auto index = reinterpret_cast<std::uintptr_t>(fence.handle) - 1;
+    if (index >= m_fences.size()) {
         return;
     }
-    m_device->resetFences(*handle);
+    auto& handle = m_fences[index];
+    if (!handle) {
+        return;
+    }
+    m_device->resetFences(handle);
 }
 
 auto VulkanRhi::create_semaphore() -> RhiSemaphore {
@@ -100,44 +108,49 @@ auto VulkanRhi::create_semaphore() -> RhiSemaphore {
         auto const index = m_free_semaphore_ids.back();
         m_free_semaphore_ids.pop_back();
         m_semaphores[index] = semaphore;
-        return {static_cast<void*>(&m_semaphores[index])};
+        return {reinterpret_cast<void*>(static_cast<std::uintptr_t>(index + 1))};
     }
     m_semaphores.push_back(semaphore);
-    return {static_cast<void*>(&m_semaphores.back())};
+    return {reinterpret_cast<void*>(static_cast<std::uintptr_t>(m_semaphores.size()))};
 }
 
 void VulkanRhi::destroy_semaphore(RhiSemaphore semaphore) noexcept {
     if (!semaphore.handle) {
         return;
     }
-    auto* handle = static_cast<vk::Semaphore*>(semaphore.handle);
-    if (!handle || !*handle) {
+    auto index = reinterpret_cast<std::uintptr_t>(semaphore.handle) - 1;
+    if (index >= m_semaphores.size()) {
         return;
     }
-    m_device->destroySemaphore(*handle);
-    *handle = vk::Semaphore{};
-    for (uint32_t i = 0; i < m_semaphores.size(); ++i) {
-        if (&m_semaphores[i] == handle) {
-            m_free_semaphore_ids.push_back(i);
-            break;
-        }
+    auto& handle = m_semaphores[index];
+    if (!handle) {
+        return;
     }
+    m_device->destroySemaphore(handle);
+    handle = vk::Semaphore{};
+    m_free_semaphore_ids.push_back(static_cast<uint32_t>(index));
 }
 
 auto VulkanRhi::fence(RhiFence handle) const -> vk::Fence {
     if (!handle.handle) {
         return {};
     }
-    auto* fence = static_cast<vk::Fence*>(handle.handle);
-    return fence ? *fence : vk::Fence{};
+    auto index = reinterpret_cast<std::uintptr_t>(handle.handle) - 1;
+    if (index >= m_fences.size()) {
+        return {};
+    }
+    return m_fences[index];
 }
 
 auto VulkanRhi::semaphore(RhiSemaphore handle) const -> vk::Semaphore {
     if (!handle.handle) {
         return {};
     }
-    auto* semaphore = static_cast<vk::Semaphore*>(handle.handle);
-    return semaphore ? *semaphore : vk::Semaphore{};
+    auto index = reinterpret_cast<std::uintptr_t>(handle.handle) - 1;
+    if (index >= m_semaphores.size()) {
+        return {};
+    }
+    return m_semaphores[index];
 }
 
 auto VulkanRhi::create_vulkan_instance(WindowingVulkanExtensions extensions) -> vk::UniqueInstance {

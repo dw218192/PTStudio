@@ -1,38 +1,41 @@
 #pragma once
 
-#include <core/loggingManager.h>
 #include <imgui.h>
 
 #include <memory>
 
-#include "present.h"
-#include "vulkan/vulkanRhi.h"
+namespace pts {
+class LoggingManager;
+}
 
 namespace pts::rendering {
+class IViewport;
+class IRenderGraph;
 
-class ImGuiBackend {
+class IImguiWindowing {
    public:
-    ImGuiBackend(IWindowing& windowing, IPresent& present, VulkanRhi& rhi,
-                 LoggingManager& logging_manager);
-    ~ImGuiBackend();
-
-    ImGuiBackend(const ImGuiBackend&) = delete;
-    ImGuiBackend& operator=(const ImGuiBackend&) = delete;
-    ImGuiBackend(ImGuiBackend&&) = delete;
-    ImGuiBackend& operator=(ImGuiBackend&&) = delete;
-
-    void new_frame();
-    void render(bool framebuffer_resized);
-    void resize();
-
-    [[nodiscard]] auto register_texture(vk::Sampler sampler, vk::ImageView view,
-                                        vk::ImageLayout layout) -> ImTextureID;
-    void unregister_texture(ImTextureID id);
-
-    struct Impl;
-
-   private:
-    std::unique_ptr<Impl> m_impl;
+    virtual ~IImguiWindowing() = default;
+    virtual void new_frame() = 0;
 };
+
+class IImguiRendering {
+   public:
+    virtual ~IImguiRendering() = default;
+    virtual void new_frame() = 0;
+    virtual void render(bool framebuffer_resized) = 0;
+    virtual void resize() = 0;
+
+    virtual auto set_render_output(IRenderGraph& render_graph) -> ImTextureID = 0;
+    virtual void clear_render_output() = 0;
+    [[nodiscard]] virtual auto output_id() const noexcept -> ImTextureID = 0;
+};
+
+struct ImguiBackendComponents {
+    std::unique_ptr<IImguiWindowing> imgui_windowing;
+    std::unique_ptr<IImguiRendering> imgui_rendering;
+};
+
+[[nodiscard]] auto create_imgui_windowing(IViewport& viewport, pts::LoggingManager& logging_manager)
+    -> std::unique_ptr<IImguiWindowing>;
 
 }  // namespace pts::rendering

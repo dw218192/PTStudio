@@ -2,21 +2,25 @@
 #include <core/imgui/imhelper.h>
 #include <imgui_internal.h>
 
-#include <stdexcept>
+#include <chrono>
 
-#include "guiApplicationImpl.h"
-
-#if !defined(PTS_WINDOWING_GLFW)
-#define PTS_WINDOWING_GLFW 1
-#endif
+#include "rendering/imguiBackend.h"
+#include "rendering/renderingComponents.h"
 
 namespace pts {
+namespace {
+auto time_since_start(const std::chrono::steady_clock::time_point& start) -> double {
+    auto const now = std::chrono::steady_clock::now();
+    return std::chrono::duration<double>(now - start).count();
+}
+}  // namespace
+
 GUIApplication::GUIApplication(std::string_view name, pts::LoggingManager& logging_manager,
                                pts::PluginManager& plugin_manager, unsigned width, unsigned height,
                                float min_frame_time)
     : Application{name, logging_manager, plugin_manager} {
     set_min_frame_time(min_frame_time);
-    m_impl = create_gui_application_impl(*this, name, logging_manager, width, height);
+    m_start_time = std::chrono::steady_clock::now();
 
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
@@ -28,28 +32,50 @@ GUIApplication::GUIApplication(std::string_view name, pts::LoggingManager& loggi
 
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
-    m_windowing = m_impl->create_windowing();
-    m_rendering_host =
-        std::make_unique<pts::rendering::Rendering>(*m_windowing, get_logging_manager());
+    m_windowing = pts::rendering::create_windowing(get_logging_manager());
+    auto viewport_desc = pts::rendering::ViewportDesc{
+        get_name().data(), width, height, true, true, true, true,
+    };
+    m_viewport = m_windowing->create_viewport(viewport_desc);
+    m_viewport->on_scroll.connect([this](double dx, double dy) { on_scroll_event(dx, dy); });
+    m_viewport->on_drawable_resized.connect(
+        [this](pts::rendering::Extent2D) { on_framebuffer_resized(); });
+    m_viewport->on_close_requested.connect([this]() {
+        if (m_viewport) {
+            m_viewport->request_close();
+        }
+    });
+
+    m_imgui_windowing = pts::rendering::create_imgui_windowing(*m_viewport, get_logging_manager());
+
+    auto rendering_components = pts::rendering::create_rendering_components(
+        *m_windowing, *m_viewport, get_logging_manager());
+    m_render_graph = std::move(rendering_components.render_graph);
+    m_imgui_rendering = std::move(rendering_components.imgui_rendering);
+
+    auto const extent = m_viewport->drawable_extent();
+    resize_render_output(extent.w, extent.h);
 }
 
 GUIApplication::~GUIApplication() {
-    m_rendering_host.reset();
+    m_imgui_rendering.reset();
+    m_imgui_windowing.reset();
+    m_render_graph.reset();
+    m_viewport.reset();
     m_windowing.reset();
     ImGui::DestroyContext();
-    m_impl.reset();
 }
 
 void GUIApplication::run() {
     static bool s_once = false;
-    double last_frame_time = 0;
-    while (!m_impl->should_close()) {
-        auto const now = m_impl->time();
+    double last_frame_time = time_since_start(m_start_time);
+    while (m_viewport && !m_viewport->should_close()) {
+        auto const now = time_since_start(m_start_time);
 
         // Poll and handle events (inputs, window resize, etc.)
         m_mouse_scroll_delta = glm::vec2{0.0f};
 
-        m_impl->poll_events();
+        m_windowing->pump_events(pts::rendering::PumpEventMode::Poll);
         poll_input_events();
 
         m_delta_time = static_cast<float>(now - last_frame_time);
@@ -60,7 +86,12 @@ void GUIApplication::run() {
             m_cur_focused_widget = "";
 
             // Start the Dear ImGui frame
-            m_rendering_host->new_frame();
+            if (m_imgui_windowing) {
+                m_imgui_windowing->new_frame();
+            }
+            if (m_imgui_rendering) {
+                m_imgui_rendering->new_frame();
+            }
             ImGui::NewFrame();
 
             if (!s_once) {
@@ -75,7 +106,9 @@ void GUIApplication::run() {
             get_debug_drawer().loop(*this, m_delta_time);
 
             ImGui::Render();
-            m_rendering_host->render(m_framebuffer_resized);
+            if (m_imgui_rendering) {
+                m_imgui_rendering->render(m_framebuffer_resized);
+            }
             m_framebuffer_resized = false;
             last_frame_time = now;
 
@@ -100,32 +133,38 @@ void GUIApplication::run() {
 }
 
 auto GUIApplication::get_render_graph_api() const noexcept -> const PtsRenderGraphApi* {
-    return m_rendering_host ? m_rendering_host->render_graph_api() : nullptr;
+    return m_render_graph ? m_render_graph->api() : nullptr;
 }
 
 auto GUIApplication::get_render_output_texture() const noexcept -> PtsTexture {
-    return m_rendering_host ? m_rendering_host->output_texture() : PtsTexture{};
+    return m_render_graph ? m_render_graph->output_texture() : PtsTexture{};
 }
 
 auto GUIApplication::get_render_output_imgui_id() const noexcept -> ImTextureID {
-    return m_rendering_host ? m_rendering_host->output_imgui_id() : nullptr;
+    return m_imgui_rendering ? m_imgui_rendering->output_id() : nullptr;
 }
 
 auto GUIApplication::resize_render_output(uint32_t width, uint32_t height) -> void {
-    if (m_rendering_host) {
-        m_rendering_host->resize_render_graph(width, height);
+    if (!m_render_graph || !m_imgui_rendering) {
+        return;
     }
+    if (width == 0 || height == 0) {
+        m_imgui_rendering->clear_render_output();
+        return;
+    }
+    m_render_graph->resize(width, height);
+    m_imgui_rendering->set_render_output(*m_render_graph);
 }
 
 auto GUIApplication::set_render_graph_current() -> void {
-    if (m_rendering_host) {
-        m_rendering_host->set_render_graph_current();
+    if (m_render_graph) {
+        m_render_graph->set_current();
     }
 }
 
 auto GUIApplication::clear_render_graph_current() -> void {
-    if (m_rendering_host) {
-        m_rendering_host->clear_render_graph_current();
+    if (m_render_graph) {
+        m_render_graph->clear_current();
     }
 }
 
@@ -134,9 +173,12 @@ auto GUIApplication::on_begin_first_loop() -> void {
 
 auto GUIApplication::poll_input_events() noexcept -> void {
     auto screen_dim = glm::ivec2{get_window_width(), get_window_height()};
-    double x = 0.0;
-    double y = 0.0;
-    m_impl->cursor_pos(x, y);
+    auto mouse_pos = ImGui::GetMousePos();
+    if (!ImGui::IsMousePosValid(&mouse_pos)) {
+        mouse_pos = ImVec2{0.0f, 0.0f};
+    }
+    double x = mouse_pos.x;
+    double y = mouse_pos.y;
     if (!m_last_mouse_pos) {
         m_last_mouse_pos = m_mouse_pos = {x, y};
     } else {
@@ -176,7 +218,7 @@ auto GUIApplication::poll_input_events() noexcept -> void {
 
     // scroll
     if (glm::length(m_mouse_scroll_delta) > 0) {
-        auto input = Input{InputType::MOUSE, ActionType::SCROLL, m_impl->middle_mouse_button()};
+        auto input = Input{InputType::MOUSE, ActionType::SCROLL, ImGuiMouseButton_Middle};
         handle_input(InputEvent{input, m_mouse_pos, screen_dim, m_mouse_scroll_delta,
                                 m_mouse_initiated_window[ImGuiMouseButton_Middle], get_time()});
     }
@@ -216,24 +258,40 @@ void GUIApplication::on_scroll_event(double x, double y) noexcept {
 
 void GUIApplication::on_framebuffer_resized() noexcept {
     m_framebuffer_resized = true;
+    if (m_viewport) {
+        auto const extent = m_viewport->drawable_extent();
+        resize_render_output(extent.w, extent.h);
+    }
 }
 
 auto GUIApplication::get_window_extent() const noexcept -> glm::ivec2 {
-    return m_impl->window_extent();
+    if (!m_viewport) {
+        return glm::ivec2{0, 0};
+    }
+    auto const extent = m_viewport->logical_extent();
+    return glm::ivec2{static_cast<int>(extent.w), static_cast<int>(extent.h)};
 }
 
 auto GUIApplication::set_cursor_pos(float x, float y) noexcept -> void {
-    m_impl->set_cursor_pos(x, y);
+    if (m_viewport) {
+        m_viewport->set_cursor_pos(x, y);
+    }
 }
 
 auto GUIApplication::get_window_height() const noexcept -> int {
-    auto const extent = m_windowing->framebuffer_extent();
-    return static_cast<int>(extent.height);
+    if (!m_viewport) {
+        return 0;
+    }
+    auto const extent = m_viewport->drawable_extent();
+    return static_cast<int>(extent.h);
 }
 
 auto GUIApplication::get_window_width() const noexcept -> int {
-    auto const extent = m_windowing->framebuffer_extent();
-    return static_cast<int>(extent.width);
+    if (!m_viewport) {
+        return 0;
+    }
+    auto const extent = m_viewport->drawable_extent();
+    return static_cast<int>(extent.w);
 }
 
 auto GUIApplication::begin_imgui_window(std::string_view name, ImGuiWindowFlags flags) noexcept
@@ -262,7 +320,7 @@ auto GUIApplication::get_window_content_pos(std::string_view name) const noexcep
 }
 
 float GUIApplication::get_time() const noexcept {
-    return static_cast<float>(m_impl->time());
+    return static_cast<float>(time_since_start(m_start_time));
 }
 
 float GUIApplication::get_delta_time() const noexcept {

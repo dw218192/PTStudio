@@ -1,21 +1,24 @@
-#include "renderGraph.h"
+#include "vulkanRenderGraph.h"
 
 #include <array>
 #include <cstring>
+#include <utility>
 
 namespace pts::rendering {
-thread_local RenderGraph* RenderGraph::s_current = nullptr;
+thread_local VulkanRenderGraph* VulkanRenderGraph::s_current = nullptr;
 
-RenderGraph::RenderGraph(VulkanRhi& rhi, LoggingManager& logging_manager) : m_rhi(rhi) {
+VulkanRenderGraph::VulkanRenderGraph(std::shared_ptr<VulkanRhi> rhi,
+                                     pts::LoggingManager& logging_manager)
+    : m_rhi_owner(std::move(rhi)), m_rhi(*m_rhi_owner) {
     m_logger = logging_manager.get_logger_shared("RenderGraph");
     m_logger->info("RenderGraph created");
-    m_api.get_last_error = &RenderGraph::get_last_error;
-    m_api.get_error_message = &RenderGraph::get_error_message;
-    m_api.begin = &RenderGraph::begin_graph;
-    m_api.end = &RenderGraph::end_graph;
-    m_api.import_texture = &RenderGraph::import_texture;
-    m_api.create_tex_view = &RenderGraph::create_tex_view;
-    m_api.add_pass = &RenderGraph::add_pass;
+    m_api.get_last_error = &VulkanRenderGraph::get_last_error;
+    m_api.get_error_message = &VulkanRenderGraph::get_error_message;
+    m_api.begin = &VulkanRenderGraph::begin_graph;
+    m_api.end = &VulkanRenderGraph::end_graph;
+    m_api.import_texture = &VulkanRenderGraph::import_texture;
+    m_api.create_tex_view = &VulkanRenderGraph::create_tex_view;
+    m_api.add_pass = &VulkanRenderGraph::add_pass;
 
     m_api.create_texture = nullptr;
     m_api.create_buffer = nullptr;
@@ -39,7 +42,7 @@ RenderGraph::RenderGraph(VulkanRhi& rhi, LoggingManager& logging_manager) : m_rh
     m_command_pool = m_rhi.device().createCommandPool(pool_info);
 }
 
-RenderGraph::~RenderGraph() {
+VulkanRenderGraph::~VulkanRenderGraph() {
     if (m_logger) {
         m_logger->info("RenderGraph destroyed");
     }
@@ -49,7 +52,7 @@ RenderGraph::~RenderGraph() {
     }
 }
 
-void RenderGraph::resize(uint32_t width, uint32_t height) {
+void VulkanRenderGraph::resize(uint32_t width, uint32_t height) {
     if (width == 0 || height == 0) {
         if (m_logger) {
             m_logger->debug("RenderGraph resize skipped for zero extent");
@@ -67,17 +70,17 @@ void RenderGraph::resize(uint32_t width, uint32_t height) {
     create_output_resources();
 }
 
-void RenderGraph::set_current() {
+void VulkanRenderGraph::set_current() {
     s_current = this;
 }
 
-void RenderGraph::clear_current() {
+void VulkanRenderGraph::clear_current() {
     if (s_current == this) {
         s_current = nullptr;
     }
 }
 
-PtsGraph RenderGraph::begin_graph() {
+PtsGraph VulkanRenderGraph::begin_graph() {
     if (!s_current) {
         return PtsGraph{};
     }
@@ -87,7 +90,7 @@ PtsGraph RenderGraph::begin_graph() {
     return handle;
 }
 
-void RenderGraph::end_graph(PtsGraph g) {
+void VulkanRenderGraph::end_graph(PtsGraph g) {
     if (!s_current || PTS_IS_NULL(g)) {
         return;
     }
@@ -96,11 +99,12 @@ void RenderGraph::end_graph(PtsGraph g) {
     delete graph;
 }
 
-PtsTexture RenderGraph::import_texture(PtsGraph, PtsTexture external_tex, const char*) {
+PtsTexture VulkanRenderGraph::import_texture(PtsGraph, PtsTexture external_tex, const char*) {
     return external_tex;
 }
 
-PtsTexView RenderGraph::create_tex_view(PtsGraph, const PtsTextureViewDesc* desc, const char*) {
+PtsTexView VulkanRenderGraph::create_tex_view(PtsGraph, const PtsTextureViewDesc* desc,
+                                              const char*) {
     if (!s_current || !desc) {
         return PtsTexView{};
     }
@@ -112,7 +116,7 @@ PtsTexView RenderGraph::create_tex_view(PtsGraph, const PtsTextureViewDesc* desc
     return PtsTexView{};
 }
 
-PtsPass RenderGraph::add_pass(PtsGraph g, const PtsPassDesc* desc) {
+PtsPass VulkanRenderGraph::add_pass(PtsGraph g, const PtsPassDesc* desc) {
     if (!s_current || PTS_IS_NULL(g) || !desc) {
         return PtsPass{};
     }
@@ -128,11 +132,11 @@ PtsPass RenderGraph::add_pass(PtsGraph g, const PtsPassDesc* desc) {
     return handle;
 }
 
-PtsGraphError RenderGraph::get_last_error(PtsGraph) {
+PtsGraphError VulkanRenderGraph::get_last_error(PtsGraph) {
     return PTS_GRAPH_OK;
 }
 
-const char* RenderGraph::get_error_message(PtsGraphError err) {
+const char* VulkanRenderGraph::get_error_message(PtsGraphError err) {
     switch (err) {
         case PTS_GRAPH_OK:
             return "ok";
@@ -155,7 +159,7 @@ const char* RenderGraph::get_error_message(PtsGraphError err) {
     }
 }
 
-void RenderGraph::execute(Graph& graph) {
+void VulkanRenderGraph::execute(Graph& graph) {
     if (!m_output_image) {
         return;
     }
@@ -186,7 +190,7 @@ void RenderGraph::execute(Graph& graph) {
     m_rhi.device().freeCommandBuffers(m_command_pool, cmd_buf);
 }
 
-void RenderGraph::create_output_resources() {
+void VulkanRenderGraph::create_output_resources() {
     if (m_output_extent.width == 0 || m_output_extent.height == 0) {
         return;
     }
@@ -251,7 +255,7 @@ void RenderGraph::create_output_resources() {
     m_rhi.device().freeCommandBuffers(m_command_pool, cmd_buf);
 }
 
-void RenderGraph::destroy_output_resources() {
+void VulkanRenderGraph::destroy_output_resources() {
     if (m_output_image && m_logger) {
         m_logger->info("Destroying render graph output resources");
     }
@@ -273,7 +277,8 @@ void RenderGraph::destroy_output_resources() {
     }
 }
 
-void RenderGraph::transition_image_layout(vk::CommandBuffer cmd_buf, vk::ImageLayout new_layout) {
+void VulkanRenderGraph::transition_image_layout(vk::CommandBuffer cmd_buf,
+                                                vk::ImageLayout new_layout) {
     if (m_output_layout == new_layout) {
         return;
     }
@@ -310,7 +315,7 @@ void RenderGraph::transition_image_layout(vk::CommandBuffer cmd_buf, vk::ImageLa
     m_output_layout = new_layout;
 }
 
-void RenderGraph::clear_color(vk::CommandBuffer cmd_buf, const float rgba[4]) {
+void VulkanRenderGraph::clear_color(vk::CommandBuffer cmd_buf, const float rgba[4]) {
     auto color = vk::ClearColorValue{std::array<float, 4>{rgba[0], rgba[1], rgba[2], rgba[3]}};
     auto range = vk::ImageSubresourceRange{}
                      .setAspectMask(vk::ImageAspectFlagBits::eColor)
@@ -321,7 +326,7 @@ void RenderGraph::clear_color(vk::CommandBuffer cmd_buf, const float rgba[4]) {
     cmd_buf.clearColorImage(m_output_image, m_output_layout, color, range);
 }
 
-vk::CommandBuffer RenderGraph::allocate_command_buffer() {
+vk::CommandBuffer VulkanRenderGraph::allocate_command_buffer() {
     auto alloc_info = vk::CommandBufferAllocateInfo{}
                           .setCommandPool(m_command_pool)
                           .setLevel(vk::CommandBufferLevel::ePrimary)
@@ -330,7 +335,7 @@ vk::CommandBuffer RenderGraph::allocate_command_buffer() {
     return buffers.front();
 }
 
-uint32_t RenderGraph::find_memory_type(uint32_t type_bits, vk::MemoryPropertyFlags flags) {
+uint32_t VulkanRenderGraph::find_memory_type(uint32_t type_bits, vk::MemoryPropertyFlags flags) {
     auto props = m_rhi.physical_device().getMemoryProperties();
     for (uint32_t i = 0; i < props.memoryTypeCount; ++i) {
         if ((type_bits & (1u << i)) && (props.memoryTypes[i].propertyFlags & flags) == flags) {

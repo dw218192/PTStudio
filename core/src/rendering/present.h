@@ -25,6 +25,6 @@ class IPresent {
     [[nodiscard]] virtual auto present_backbuffer(uint32_t index, RhiSemaphore wait_semaphore)
         -> PresentStatus = 0;
     virtual void recreate_swapchain() = 0;
-    [[nodiscard]] virtual auto framebuffer_extent() const noexcept -> FramebufferExtent = 0;
+    [[nodiscard]] virtual auto framebuffer_extent() const noexcept -> Extent2D = 0;
 };
 }  // namespace pts::rendering

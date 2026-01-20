@@ -3,7 +3,6 @@
 #include <core/loggingManager.h>
 #include <core/rendering/windowing.h>
 
-#include <boost/container/stable_vector.hpp>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
@@ -13,7 +12,7 @@ namespace pts::rendering {
 
 class VulkanRhi final : public IRhi {
    public:
-    VulkanRhi(WindowingVulkanExtensions extensions, LoggingManager& logging_manager);
+    VulkanRhi(WindowingVulkanExtensions extensions, pts::LoggingManager& logging_manager);
     ~VulkanRhi() override = default;
 
     VulkanRhi(const VulkanRhi&) = delete;
@@ -74,8 +73,8 @@ class VulkanRhi final : public IRhi {
     vk::UniqueDevice m_device;
     vk::Queue m_graphics_queue{};
     uint32_t m_graphics_queue_family{0};
-    boost::container::stable_vector<vk::Fence> m_fences;
-    boost::container::stable_vector<vk::Semaphore> m_semaphores;
+    std::vector<vk::Fence> m_fences;
+    std::vector<vk::Semaphore> m_semaphores;
     std::vector<uint32_t> m_free_fence_ids;
     std::vector<uint32_t> m_free_semaphore_ids;
     std::shared_ptr<spdlog::logger> m_logger;

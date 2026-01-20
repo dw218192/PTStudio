@@ -1,44 +1,27 @@
-#define GLFW_EXPOSE_NATIVE_WIN32
-#include <GLFW/glfw3.h>
-#include <GLFW/glfw3native.h>
-#include <core/rendering/windowing.h>
+#pragma once
 
-#include <stdexcept>
+#include <core/loggingManager.h>
 
-namespace pts {
-class GlfwWindowing final : public rendering::IWindowing {
+#include "../windowing.h"
+
+struct GLFWwindow;
+
+namespace pts::rendering {
+class GlfwWindowing final : public IWindowing {
    public:
-    explicit GlfwWindowing(GLFWwindow* window) : m_window(window) {
-    }
+    explicit GlfwWindowing(pts::LoggingManager& logging_manager);
+    ~GlfwWindowing() override;
 
-    [[nodiscard]] auto native_handle() const noexcept -> rendering::WindowingHandle override {
-        auto handle = rendering::WindowingHandle{};
-        handle.type = rendering::WindowingType::glfw;
-        handle.window_handle = m_window;
-        handle.platform_handle = glfwGetWin32Window(m_window);
-        return handle;
-    }
-
-    [[nodiscard]] auto framebuffer_extent() const noexcept
-        -> rendering::FramebufferExtent override {
-        int width = 0;
-        int height = 0;
-        glfwGetFramebufferSize(m_window, &width, &height);
-        return {static_cast<uint32_t>(width), static_cast<uint32_t>(height)};
-    }
-
+    [[nodiscard]] std::unique_ptr<IViewport> create_viewport(const ViewportDesc& desc) override;
+    [[nodiscard]] NativeViewportHandle native_handle() const noexcept override;
     [[nodiscard]] auto required_vulkan_instance_extensions() const noexcept
-        -> rendering::WindowingVulkanExtensions override {
-        uint32_t count = 0;
-        auto names = glfwGetRequiredInstanceExtensions(&count);
-        return {names, count};
-    }
+        -> rendering::WindowingVulkanExtensions override;
+    void pump_events(PumpEventMode mode) override;
 
-    void wait_events() const override {
-        glfwWaitEvents();
-    }
+    void clear_primary_window(GLFWwindow* window) noexcept;
 
    private:
-    GLFWwindow* m_window{nullptr};
+    GLFWwindow* m_primary_window{nullptr};
+    std::shared_ptr<spdlog::logger> m_logger;
 };
-}  // namespace pts
+}  // namespace pts::rendering

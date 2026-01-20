@@ -3,13 +3,14 @@
 #include <core/application.h>
 #include <core/inputAction.h>
 #include <core/legacy/debugDrawer.h>
-#include <core/rendering/rendering.h>
+#include <core/rendering/graph.h>
 #include <core/rendering/windowing.h>
 #include <core/signal.h>
 #include <imgui.h>
 
 #include <array>
 #include <bitset>
+#include <chrono>
 #include <functional>
 #include <glm/glm.hpp>
 #include <optional>
@@ -18,12 +19,16 @@
 #include <vector>
 
 namespace pts {
+namespace rendering {
+class IImguiRendering;
+class IImguiWindowing;
+class IRenderGraph;
+}  // namespace rendering
+
 /**
  * @brief GUI application. Responsible for creating the window and polling events.
  */
 struct GUIApplication : Application {
-    struct Impl;
-
     // used to help detect if the mouse enters/leaves certain imgui windows
     struct ImGuiWindowInfo {
         Signal<void()> on_leave_region;
@@ -120,10 +125,11 @@ struct GUIApplication : Application {
     static constexpr auto k_no_hovered_widget = "";
 
     std::unique_ptr<pts::rendering::IWindowing> m_windowing;
-    std::unique_ptr<pts::rendering::Rendering> m_rendering_host;
+    std::unique_ptr<pts::rendering::IViewport> m_viewport;
+    std::unique_ptr<pts::rendering::IRenderGraph> m_render_graph;
+    std::unique_ptr<pts::rendering::IImguiWindowing> m_imgui_windowing;
+    std::unique_ptr<pts::rendering::IImguiRendering> m_imgui_rendering;
     bool m_framebuffer_resized{false};
-
-   private:
-    std::unique_ptr<Impl> m_impl;
+    std::chrono::steady_clock::time_point m_start_time;
 };
 }  // namespace pts
