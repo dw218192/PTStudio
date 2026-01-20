@@ -23,10 +23,10 @@ class VulkanPresent final : public IPresent {
     VulkanPresent(VulkanPresent&&) = delete;
     VulkanPresent& operator=(VulkanPresent&&) = delete;
 
-    [[nodiscard]] auto acquire_next_backbuffer(RhiSemaphore signal_semaphore, uint32_t* index)
-        -> PresentStatus override;
-    [[nodiscard]] auto present_backbuffer(uint32_t index, RhiSemaphore wait_semaphore)
-        -> PresentStatus override;
+    [[nodiscard]] auto acquire_next_backbuffer(RhiSemaphore signal_semaphore,
+                                               uint32_t* index) -> PresentStatus override;
+    [[nodiscard]] auto present_backbuffer(uint32_t index,
+                                          RhiSemaphore wait_semaphore) -> PresentStatus override;
     void recreate_swapchain() override;
     [[nodiscard]] auto framebuffer_extent() const noexcept -> Extent2D override;
 
@@ -42,8 +42,8 @@ class VulkanPresent final : public IPresent {
     [[nodiscard]] auto image_count() const noexcept -> uint32_t {
         return static_cast<uint32_t>(m_images.size());
     }
-    [[nodiscard]] auto acquire_next_image(vk::Semaphore semaphore, uint32_t* image_index)
-        -> vk::Result;
+    [[nodiscard]] auto acquire_next_image(vk::Semaphore semaphore,
+                                          uint32_t* image_index) -> vk::Result;
     [[nodiscard]] auto present(vk::Semaphore wait_semaphore, uint32_t image_index) -> vk::Result;
     void resize_swapchain();
 

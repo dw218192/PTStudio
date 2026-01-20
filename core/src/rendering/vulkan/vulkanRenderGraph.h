@@ -67,8 +67,8 @@ class VulkanRenderGraph final : public IRenderGraph {
     void transition_image_layout(vk::CommandBuffer cmd_buf, vk::ImageLayout new_layout);
     void clear_color(vk::CommandBuffer cmd_buf, const float rgba[4]);
     [[nodiscard]] auto allocate_command_buffer() -> vk::CommandBuffer;
-    [[nodiscard]] auto find_memory_type(uint32_t type_bits, vk::MemoryPropertyFlags flags)
-        -> uint32_t;
+    [[nodiscard]] auto find_memory_type(uint32_t type_bits,
+                                        vk::MemoryPropertyFlags flags) -> uint32_t;
 
     std::shared_ptr<VulkanRhi> m_rhi_owner;
     VulkanRhi& m_rhi;

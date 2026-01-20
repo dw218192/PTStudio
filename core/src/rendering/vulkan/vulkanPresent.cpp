@@ -55,15 +55,15 @@ VulkanPresent::~VulkanPresent() {
     }
 }
 
-auto VulkanPresent::acquire_next_backbuffer(RhiSemaphore signal_semaphore, uint32_t* index)
-    -> PresentStatus {
+auto VulkanPresent::acquire_next_backbuffer(RhiSemaphore signal_semaphore,
+                                            uint32_t* index) -> PresentStatus {
     auto semaphore = m_rhi.semaphore(signal_semaphore);
     auto result = acquire_next_image(semaphore, index);
     return map_present_result(result);
 }
 
-auto VulkanPresent::present_backbuffer(uint32_t index, RhiSemaphore wait_semaphore)
-    -> PresentStatus {
+auto VulkanPresent::present_backbuffer(uint32_t index,
+                                       RhiSemaphore wait_semaphore) -> PresentStatus {
     auto semaphore = m_rhi.semaphore(wait_semaphore);
     auto result = present(semaphore, index);
     return map_present_result(result);
