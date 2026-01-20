@@ -17,66 +17,90 @@ def _format_workspace_path(root: Path, path: Path) -> str:
         return path.as_posix()
 
 
-def _collect_header_dirs(root: Path, base: Path) -> set[Path]:
-    header_dirs: set[Path] = set()
-    if not base.exists():
-        return header_dirs
-    for pattern in ("*.h", "*.hpp", "*.inl"):
-        for header in base.rglob(pattern):
-            header_dirs.add(header.parent)
-    return header_dirs
+def _ensure_cmake_file_api_query(build_dir: Path) -> None:
+    query_dir = build_dir / ".cmake" / "api" / "v1" / "query"
+    query_dir.mkdir(parents=True, exist_ok=True)
+    (query_dir / "codemodel-v2").write_text("", encoding="utf-8")
+
+
+def _load_codemodel(build_dir: Path) -> tuple[dict, Path] | None:
+    reply_dir = build_dir / ".cmake" / "api" / "v1" / "reply"
+    if not reply_dir.exists():
+        return None
+    index_files = sorted(
+        reply_dir.glob("index-*.json"), key=lambda p: p.stat().st_mtime
+    )
+    if not index_files:
+        return None
+    index = json.loads(index_files[-1].read_text(encoding="utf-8"))
+    codemodel_info = index.get("reply", {}).get("codemodel-v2")
+    if not codemodel_info:
+        return None
+    codemodel = json.loads(
+        (reply_dir / codemodel_info["jsonFile"]).read_text(encoding="utf-8")
+    )
+    return codemodel, reply_dir
+
+
+def _collect_target_compile_info(
+    codemodel: dict, reply_dir: Path, target_name: str
+) -> tuple[set[Path], set[str]]:
+    include_dirs: set[Path] = set()
+    defines: set[str] = set()
+    for config in codemodel.get("configurations", []):
+        for target in config.get("targets", []):
+            if target.get("name") != target_name:
+                continue
+            target_json = json.loads(
+                (reply_dir / target["jsonFile"]).read_text(encoding="utf-8")
+            )
+            for group in target_json.get("compileGroups", []):
+                for include in group.get("includes", []):
+                    include_dirs.add(Path(include["path"]))
+                for define in group.get("defines", []):
+                    defines.add(define["define"])
+    return include_dirs, defines
 
 
 def _generate_cpp_properties(
-    root: Path, build_type: str, gapi: str, windowing: str
+    root: Path, build_dir: Path, gapi: str, windowing: str
 ) -> None:
-    vscode_dir = root / ".vscode"
-    vscode_dir.mkdir(parents=True, exist_ok=True)
-
+    # Use CMake file-api outputs for accuracy across generators/platforms.
+    # compile_commands.json is not reliably generated on all platforms or generators.
+    result = _load_codemodel(build_dir)
     include_dirs: set[Path] = set()
-    include_dirs |= _collect_header_dirs(root, root / "core" / "include")
-    include_dirs |= _collect_header_dirs(root, root / "core" / "api")
-    include_dirs |= _collect_header_dirs(root, root / "editor" / "include")
-    include_dirs |= _collect_header_dirs(root, root / "plugins")
-    include_dirs |= _collect_header_dirs(root, root / "gl_utils")
-    include_dirs |= _collect_header_dirs(root, root / "vulkan_raytracer")
+    defines: set[str] = set()
+    if result:
+        codemodel, reply_dir = result
+        include_dirs, defines = _collect_target_compile_info(
+            codemodel, reply_dir, "core"
+        )
 
-    include_dirs |= _collect_header_dirs(
-        root, root / "core" / "src" / "rendering" / gapi
-    )
-    include_dirs |= _collect_header_dirs(
-        root, root / "core" / "src" / "rendering" / windowing
-    )
-
-    deps_include = root / "_build" / "deps" / "full_deploy" / "host"
-    if deps_include.exists():
-        include_dirs.add(deps_include)
-        include_dirs |= _collect_header_dirs(root, deps_include)
-
-    for cmrc_include in root.glob("_build/*/_cmrc/include"):
-        include_dirs.add(cmrc_include)
+    if not defines:
+        defines = {
+            "SPDLOG_FMT_EXTERNAL",
+            f"PTS_GAPI_{gapi}",
+            f"PTS_WINDOWING_{windowing}",
+            f'PTS_GAPI="{gapi}"',
+            f'PTS_WINDOWING="{windowing}"',
+        }
+        if gapi == "vulkan":
+            defines.add("VULKAN_HPP_DISPATCH_LOADER_DYNAMIC")
 
     include_paths = sorted(
         {_format_workspace_path(root, path) for path in include_dirs if path.exists()}
     )
+    browse_paths = include_paths
 
-    defines = [
-        "SPDLOG_FMT_EXTERNAL",
-        f"PTS_GAPI_{gapi}",
-        f"PTS_WINDOWING_{windowing}",
-        f'PTS_GAPI="{gapi}"',
-        f'PTS_WINDOWING="{windowing}"',
-    ]
-    if gapi == "vulkan":
-        defines.append("VULKAN_HPP_DISPATCH_LOADER_DYNAMIC")
-
+    vscode_dir = root / ".vscode"
+    vscode_dir.mkdir(parents=True, exist_ok=True)
     config = {
         "name": "PTStudio",
         "cppStandard": "c++17",
         "cStandard": "c17",
-        "defines": defines,
+        "defines": sorted(defines),
         "includePath": include_paths,
-        "browse": {"path": include_paths},
+        "browse": {"path": browse_paths},
     }
     payload = {"version": 4, "configurations": [config]}
     (vscode_dir / "c_cpp_properties.json").write_text(
@@ -175,10 +199,9 @@ def build_command(args: argparse.Namespace) -> None:
                 log_file=install_log_file,
             )
 
-            _generate_cpp_properties(root, args.build_type, gapi, windowing)
-
             configure_log_file = logs_dir / "cmake_configure.log"
             cmake_exe = find_venv_executable("cmake")
+            _ensure_cmake_file_api_query(build_folder / args.build_type)
             run_command(
                 [
                     cmake_exe,
@@ -193,6 +216,10 @@ def build_command(args: argparse.Namespace) -> None:
                     "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
                 ],
                 log_file=configure_log_file,
+            )
+
+            _generate_cpp_properties(
+                root, build_folder / args.build_type, gapi, windowing
             )
 
         if not args.configure_only:
