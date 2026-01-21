@@ -23,17 +23,20 @@ constexpr auto k_init_move_sensitivity = 5.0f;
 constexpr auto k_init_rot_sensitivity = 60.0f;
 constexpr auto k_object_select_mouse_time = 1.0f;
 
+struct AppConfig {
+    bool quit_on_start{false};
+};
+
 struct EditorApplication final : GUIApplication {
     NO_COPY_MOVE(EditorApplication);
 
     auto loop(float dt) -> void override;
-    auto quit(int code) -> void override;
 
    protected:
     auto on_begin_first_loop() -> void override;
 
    public:
-    EditorApplication(std::string_view name, RenderConfig config,
+    EditorApplication(std::string_view name, RenderConfig config, AppConfig app_config,
                       pts::LoggingManager& logging_manager, pts::PluginManager& plugin_manager);
     ~EditorApplication() override;
 
@@ -57,6 +60,8 @@ struct EditorApplication final : GUIApplication {
     auto handle_input(InputEvent const& event) noexcept -> void override;
     auto on_remove_object(PTS::Ref<PTS::SceneObject> obj) -> void;
     auto on_add_oject(PTS::Ref<PTS::SceneObject> obj) -> void;
+
+    AppConfig m_app_config;
 
     std::string m_console_text;
     std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> m_console_log_sink;

@@ -34,10 +34,11 @@ static constexpr auto k_console_win_name = "Console";
 static constexpr auto k_console_log_buffer_size = 1024;
 
 EditorApplication::EditorApplication(std::string_view name, RenderConfig config,
-                                     pts::LoggingManager& logging_manager,
+                                     AppConfig app_config, pts::LoggingManager& logging_manager,
                                      pts::PluginManager& plugin_manager)
     : GUIApplication{name,         logging_manager, plugin_manager,
                      config.width, config.height,   config.min_frame_time},
+      m_app_config{app_config},
       m_config{config},
       m_cam{config.fovy, config.get_aspect(), LookAtParams{}},
       m_archive{new JsonArchive} {
@@ -272,6 +273,10 @@ auto EditorApplication::wrap_mouse_pos() noexcept -> void {
 }
 
 auto EditorApplication::on_begin_first_loop() -> void {
+    if (m_app_config.quit_on_start) {
+        m_viewport->request_close();
+    }
+
     GUIApplication::on_begin_first_loop();
 
     // do layout initialization work
@@ -364,10 +369,6 @@ auto EditorApplication::loop(float dt) -> void {
     end_imgui_window();
 
     wrap_mouse_pos();
-}
-
-auto EditorApplication::quit(int code) -> void {
-    std::exit(code);
 }
 
 auto EditorApplication::draw_scene_panel() noexcept -> void {

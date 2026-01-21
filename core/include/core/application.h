@@ -35,11 +35,6 @@ struct Application {
     [[nodiscard]] virtual auto get_delta_time() const noexcept -> float {
         return 0.0f;
     }
-    /**
-     * @brief Terminates the program with the given exit code
-     * @param code the exit code
-     */
-    [[noreturn]] virtual void quit(int code) = 0;
 
     template <typename... Args>
     void log(pts::LogLevel level, std::string_view fmt, Args&&... args) noexcept {

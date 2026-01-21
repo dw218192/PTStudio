@@ -40,12 +40,6 @@ GUIApplication::GUIApplication(std::string_view name, pts::LoggingManager& loggi
     m_viewport->on_scroll.connect([this](double dx, double dy) { on_scroll_event(dx, dy); });
     m_viewport->on_drawable_resized.connect(
         [this](pts::rendering::Extent2D) { on_framebuffer_resized(); });
-    m_viewport->on_close_requested.connect([this]() {
-        if (m_viewport) {
-            m_viewport->request_close();
-        }
-    });
-
     m_imgui_windowing = pts::rendering::create_imgui_windowing(*m_viewport, get_logging_manager());
 
     auto rendering_components = pts::rendering::create_rendering_components(

@@ -42,18 +42,44 @@ def _load_codemodel(build_dir: Path) -> tuple[dict, Path] | None:
     return codemodel, reply_dir
 
 
+def _target_has_plugin_sources(target_json: dict, plugins_root: Path) -> bool:
+    for source in target_json.get("sources", []):
+        source_path = Path(source.get("path", ""))
+        try:
+            source_path.relative_to(plugins_root)
+            return True
+        except ValueError:
+            continue
+    return False
+
+
 def _collect_target_compile_info(
-    codemodel: dict, reply_dir: Path, target_name: str
+    codemodel: dict,
+    reply_dir: Path,
+    root: Path,
+    target_names: set[str],
+    include_plugins: bool,
 ) -> tuple[set[Path], set[str]]:
     include_dirs: set[Path] = set()
     defines: set[str] = set()
+    plugins_root = root / "plugins"
     for config in codemodel.get("configurations", []):
         for target in config.get("targets", []):
-            if target.get("name") != target_name:
+            target_name = target.get("name")
+            if not target_name:
                 continue
-            target_json = json.loads(
-                (reply_dir / target["jsonFile"]).read_text(encoding="utf-8")
-            )
+            if target_name not in target_names:
+                target_json = json.loads(
+                    (reply_dir / target["jsonFile"]).read_text(encoding="utf-8")
+                )
+                if not include_plugins or not _target_has_plugin_sources(
+                    target_json, plugins_root
+                ):
+                    continue
+            else:
+                target_json = json.loads(
+                    (reply_dir / target["jsonFile"]).read_text(encoding="utf-8")
+                )
             for group in target_json.get("compileGroups", []):
                 for include in group.get("includes", []):
                     include_dirs.add(Path(include["path"]))
@@ -73,7 +99,11 @@ def _generate_cpp_properties(
     if result:
         codemodel, reply_dir = result
         include_dirs, defines = _collect_target_compile_info(
-            codemodel, reply_dir, "core"
+            codemodel,
+            reply_dir,
+            root,
+            {"core", "editor"},
+            include_plugins=True,
         )
 
     if not defines:
