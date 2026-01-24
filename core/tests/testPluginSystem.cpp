@@ -221,13 +221,9 @@ TEST_CASE("PluginManager - Plugin Interfaces Functionality") {
         REQUIRE(test_iface != nullptr);
         REQUIRE(math_iface != nullptr);
 
-        // Use both interfaces
-        auto* test = test_iface;
-        auto* math = math_iface;
-
         // Call functions from both interfaces
-        int32_t sum = test->add_numbers(10, 20);
-        int32_t product = math->multiply(5, 4);
+        int32_t sum = test_iface->add_numbers(10, 20);
+        int32_t product = math_iface->multiply(5, 4);
 
         CHECK(sum == 30);
         CHECK(product == 20);
@@ -238,13 +234,11 @@ TEST_CASE("PluginManager - Plugin Interfaces Functionality") {
             interface_query.query<TestPluginInterfaceV1>(plugin_handle, "test_plugin.interface.v1");
         REQUIRE(test_iface != nullptr);
 
-        auto* test = test_iface;
-
-        const char* greeting = test->get_greeting();
+        const char* greeting = test_iface->get_greeting();
         CHECK(greeting != nullptr);
         CHECK(std::string(greeting) == "Hello from TestPlugin!");
-        CHECK(test->add_numbers(1, 2) == 3);
-        CHECK_NOTHROW(test->print_message("Test"));
+        CHECK(test_iface->add_numbers(1, 2) == 3);
+        CHECK_NOTHROW(test_iface->print_message("Test"));
     }
 
     SUBCASE("Math interface edge cases") {
@@ -252,19 +246,17 @@ TEST_CASE("PluginManager - Plugin Interfaces Functionality") {
             interface_query.query<TestPluginMathInterfaceV1>(plugin_handle, "test_plugin.math.v1");
         REQUIRE(math_iface != nullptr);
 
-        auto* math = math_iface;
-
         // Test with zero
-        CHECK(math->multiply(100, 0) == 0);
-        CHECK(math->multiply(0, 100) == 0);
+        CHECK(math_iface->multiply(100, 0) == 0);
+        CHECK(math_iface->multiply(0, 100) == 0);
 
         // Test with negative numbers
-        CHECK(math->multiply(-5, 3) == -15);
-        CHECK(math->multiply(-4, -3) == 12);
+        CHECK(math_iface->multiply(-5, 3) == -15);
+        CHECK(math_iface->multiply(-4, -3) == 12);
 
         // Test division with negatives
-        CHECK(math->divide(-10.0, 2.0) == -5.0);
-        CHECK(math->divide(10.0, -2.0) == -5.0);
+        CHECK(math_iface->divide(-10.0, 2.0) == -5.0);
+        CHECK(math_iface->divide(10.0, -2.0) == -5.0);
     }
 
     manager.unload_plugin("TestPlugin");
