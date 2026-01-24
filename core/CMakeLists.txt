@@ -40,6 +40,7 @@ elseif(PTS_WINDOWING STREQUAL "null")
 endif()
 
 set(src_files ${core_src_files} ${core_rendering_sources})
+list(REMOVE_DUPLICATES src_files)
 
 #GLOB resource files
 file(GLOB_RECURSE res_files
