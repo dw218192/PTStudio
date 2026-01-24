@@ -88,9 +88,7 @@ def _collect_target_compile_info(
     return include_dirs, defines
 
 
-def _generate_cpp_properties(
-    root: Path, build_dir: Path, gapi: str, windowing: str
-) -> None:
+def _generate_cpp_properties(root: Path, build_dir: Path, windowing: str) -> None:
     # Use CMake file-api outputs for accuracy across generators/platforms.
     # compile_commands.json is not reliably generated on all platforms or generators.
     result = _load_codemodel(build_dir)
@@ -109,13 +107,9 @@ def _generate_cpp_properties(
     if not defines:
         defines = {
             "SPDLOG_FMT_EXTERNAL",
-            f"PTS_GAPI_{gapi}",
             f"PTS_WINDOWING_{windowing}",
-            f'PTS_GAPI="{gapi}"',
             f'PTS_WINDOWING="{windowing}"',
         }
-        if gapi == "vulkan":
-            defines.add("VULKAN_HPP_DISPATCH_LOADER_DYNAMIC")
 
     include_paths = sorted(
         {_format_workspace_path(root, path) for path in include_dirs if path.exists()}
@@ -143,9 +137,8 @@ def build_command(args: argparse.Namespace) -> None:
     root = Path(__file__).parent.parent.parent
     build_folder = root / "_build"
     logs_dir = root / "_logs"
-    gapi = args.gapi
     windowing = args.windowing
-    lock_file = root / f"conan_{gapi}_{windowing}.lock"
+    lock_file = root / f"conan_{windowing}.lock"
 
     # Remove build directory if -x flag is provided
     if args.rebuild and build_folder.exists():
@@ -182,7 +175,7 @@ def build_command(args: argparse.Namespace) -> None:
                     print("Update lock flag (-u) detected. Regenerating lock file...")
                 else:
                     print("Lock file not found. Generating new lock file...")
-                lock_log_file = logs_dir / f"conan_lock_create_{gapi}_{windowing}.log"
+                lock_log_file = logs_dir / f"conan_lock_create_{windowing}.log"
                 conan_exe = find_venv_executable("conan")
                 run_command(
                     [
@@ -190,8 +183,6 @@ def build_command(args: argparse.Namespace) -> None:
                         "lock",
                         "create",
                         "..",
-                        "-o",
-                        f"&:gapi={gapi}",
                         "-o",
                         f"&:windowing={windowing}",
                         "--lockfile-out",
@@ -218,8 +209,6 @@ def build_command(args: argparse.Namespace) -> None:
                     f"--profile:host={args.conan_profile}",
                     f"--profile:build={args.conan_profile}",
                     "-o",
-                    f"&:gapi={gapi}",
-                    "-o",
                     f"&:windowing={windowing}",
                     "-s",
                     "compiler.cppstd=17",
@@ -241,7 +230,6 @@ def build_command(args: argparse.Namespace) -> None:
                     args.build_type,
                     "-DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake",
                     f"-DCMAKE_BUILD_TYPE={args.build_type}",
-                    f"-DPTS_GAPI={gapi}",
                     f"-DPTS_WINDOWING={windowing}",
                     "-DCMAKE_CXX_STANDARD=17",
                     "-DCMAKE_CXX_STANDARD_REQUIRED=ON",
@@ -250,9 +238,7 @@ def build_command(args: argparse.Namespace) -> None:
                 log_file=configure_log_file,
             )
 
-            _generate_cpp_properties(
-                root, build_folder / args.build_type, gapi, windowing
-            )
+            _generate_cpp_properties(root, build_folder / args.build_type, windowing)
 
         if not args.configure_only:
             build_log_file = logs_dir / "cmake_build.log"
@@ -308,12 +294,6 @@ def register_build_command(subparsers: argparse._SubParsersAction) -> None:
     )
     parser.add_argument(
         "--conan-profile", default="default", help="Conan profile (default: default)"
-    )
-    parser.add_argument(
-        "--gapi",
-        choices=["vulkan", "null"],
-        default="vulkan",
-        help="Graphics backend (default: vulkan)",
     )
     parser.add_argument(
         "--windowing",

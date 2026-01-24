@@ -1,9 +1,8 @@
 #pragma once
-#include <core/legacy/enumArray.h>
-#include <core/legacy/lightData.h>
-
+#include <array>
 #include <cmrc/cmrc.hpp>
 #include <optional>
+#include <utility>
 CMRC_DECLARE(editor_resources);
 CMRC_DECLARE(core_resources);
 
@@ -50,8 +49,8 @@ constexpr auto k_light_inc_path = "shaders/user/light.inc";
 constexpr auto k_uniform_inc_path = "shaders/user/uniforms.inc";
 
 constexpr auto k_user_shader_paths =
-    PTS::EArray<ShaderType, char const*>{{ShaderType::Vertex, "shaders/user/default_vs.glsl"},
-                                         {ShaderType::Fragment, "shaders/user/default_fs.glsl"}};
+    std::array{std::pair{ShaderType::Vertex, "shaders/user/default_vs.glsl"},
+               std::pair{ShaderType::Fragment, "shaders/user/default_fs.glsl"}};
 
 // uniforms
 constexpr auto k_uniform_half_grid_dim = "halfGridDim";

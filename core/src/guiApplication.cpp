@@ -80,29 +80,23 @@ void GUIApplication::run() {
             m_cur_focused_widget = "";
 
             // Start the Dear ImGui frame
-            if (m_imgui_windowing) {
-                m_imgui_windowing->new_frame();
-            }
-            if (m_imgui_rendering) {
-                m_imgui_rendering->new_frame();
-            }
+            m_imgui_windowing->new_frame();
+            m_imgui_rendering->new_frame();
             ImGui::NewFrame();
 
             if (!s_once) {
                 on_begin_first_loop();
                 s_once = true;
             }
+            if (m_viewport && m_viewport->should_close()) {
+                break;
+            }
 
             // User Rendering
             loop(m_delta_time);
 
-            // Process debug drawing events
-            get_debug_drawer().loop(*this, m_delta_time);
-
             ImGui::Render();
-            if (m_imgui_rendering) {
-                m_imgui_rendering->render(m_framebuffer_resized);
-            }
+            m_imgui_rendering->render(m_framebuffer_resized);
             m_framebuffer_resized = false;
             last_frame_time = now;
 
@@ -135,11 +129,12 @@ auto GUIApplication::get_render_output_texture() const noexcept -> PtsTexture {
 }
 
 auto GUIApplication::get_render_output_imgui_id() const noexcept -> ImTextureID {
-    return m_imgui_rendering ? m_imgui_rendering->output_id() : ImTextureID_Invalid;
+    return m_imgui_rendering->output_id();
 }
 
 auto GUIApplication::resize_render_output(uint32_t width, uint32_t height) -> void {
-    if (!m_render_graph || !m_imgui_rendering) {
+    if (!m_render_graph) {
+        m_imgui_rendering->clear_render_output();
         return;
     }
     if (width == 0 || height == 0) {

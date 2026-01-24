@@ -2,7 +2,6 @@
 
 #include <core/application.h>
 #include <core/inputAction.h>
-#include <core/legacy/debugDrawer.h>
 #include <core/rendering/graph.h>
 #include <core/rendering/windowing.h>
 #include <core/signal.h>
@@ -70,13 +69,6 @@ struct GUIApplication : Application {
     [[nodiscard]] auto get_window_extent() const noexcept -> glm::ivec2;
     auto set_cursor_pos(float x, float y) noexcept -> void;
 
-    /**
-     * @brief Gets the renderer for the application.
-     * @return the renderer
-     */
-    [[nodiscard]] auto get_debug_drawer() -> PTS::DebugDrawer& {
-        return m_debug_drawer;
-    }
     [[nodiscard]] auto get_cur_hovered_widget() const noexcept {
         return m_cur_hovered_widget;
     }
@@ -114,7 +106,6 @@ struct GUIApplication : Application {
     std::array<std::string_view, ImGuiMouseButton_COUNT> m_mouse_initiated_window{};
     std::array<std::string_view, ImGuiKey_COUNT> m_key_initiated_window{};
 
-    PTS::DebugDrawer m_debug_drawer;
     float m_min_frame_time;
     float m_delta_time{0.0f};
     std::unordered_map<std::string_view, ImGuiWindowInfo> m_imgui_window_info;

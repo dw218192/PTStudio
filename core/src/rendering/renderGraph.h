@@ -4,12 +4,6 @@
 
 #include <memory>
 
-#include "rhi.h"
-
-namespace pts {
-class LoggingManager;
-}
-
 namespace pts::rendering {
 
 class IRenderGraph {
@@ -23,6 +17,4 @@ class IRenderGraph {
     [[nodiscard]] virtual auto api() const noexcept -> const PtsRenderGraphApi* = 0;
 };
 
-[[nodiscard]] auto create_render_graph(IRhi& rhi, pts::LoggingManager& logging_manager)
-    -> std::unique_ptr<IRenderGraph>;
 }  // namespace pts::rendering

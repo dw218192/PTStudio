@@ -24,9 +24,6 @@ endif()
 if(NOT DEFINED PTS_STATIC_PLUGINS)
     option(PTS_STATIC_PLUGINS "Build plugins as static libraries" OFF)
 endif()
-if(NOT DEFINED PTS_GAPI)
-    set(PTS_GAPI "vulkan")
-endif()
 if(NOT DEFINED PTS_WINDOWING)
     set(PTS_WINDOWING "glfw")
 endif()
@@ -69,9 +66,7 @@ target_compile_options(developer_flags INTERFACE
     $<$<COMPILE_LANGUAGE:CXX>:${cxx_flags}>
 )
 target_compile_definitions(developer_flags INTERFACE
-    PTS_GAPI="${PTS_GAPI}"
     PTS_WINDOWING="${PTS_WINDOWING}"
-    "PTS_GAPI_${PTS_GAPI}=1"
     "PTS_WINDOWING_${PTS_WINDOWING}=1"
 )
 
@@ -82,7 +77,6 @@ set(EXT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ext")
 if(PTS_WINDOWING STREQUAL "glfw")
     find_package(glfw3 REQUIRED)
 endif()
-find_package(glew REQUIRED)
 find_package(glm REQUIRED)
 find_package(tinyobjloader REQUIRED)
 find_package(stb REQUIRED)
@@ -93,12 +87,6 @@ find_package(tl-expected REQUIRED)
 find_package(nlohmann_json REQUIRED)
 find_package(Boost REQUIRED COMPONENTS filesystem)
 
-# Vulkan support
-if(PTS_GAPI STREQUAL "vulkan")
-    find_package(VulkanHeaders REQUIRED)
-    find_package(Vulkan REQUIRED)
-    find_package(shaderc REQUIRED)
-endif()
 
 # external dependencies that are built from source
 add_subdirectory(${EXT_DIR})

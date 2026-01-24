@@ -16,12 +16,6 @@ if(PTS_WINDOWING STREQUAL "glfw")
     )
     list(APPEND IMGUI_BACKEND_SOURCES ${IMGUI_BACKEND_GLFW_SOURCES})
 endif()
-if(PTS_GAPI STREQUAL "vulkan")
-    file(GLOB IMGUI_BACKEND_VULKAN_SOURCES
-        ${CMAKE_CURRENT_SOURCE_DIR}/imgui/backends/imgui_impl_vulkan.*
-    )
-    list(APPEND IMGUI_BACKEND_SOURCES ${IMGUI_BACKEND_VULKAN_SOURCES})
-endif()
 target_sources(imgui 
     PRIVATE
         ${IMGUI_BACKEND_SOURCES}
@@ -33,9 +27,6 @@ target_include_directories(imgui
 )
 if(PTS_WINDOWING STREQUAL "glfw")
     target_link_libraries(imgui PRIVATE glfw)
-endif()
-if(PTS_GAPI STREQUAL "vulkan")
-    target_link_libraries(imgui PRIVATE Vulkan::Vulkan)
 endif()
 
 # Manually add imguizmo

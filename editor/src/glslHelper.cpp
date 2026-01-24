@@ -1,6 +1,6 @@
 #include "include/glslHelper.h"
 
-#include <core/legacy/embeddedRes.h>
+#include <fmt/format.h>
 
 #include <optional>
 #include <regex>
@@ -8,7 +8,16 @@
 
 #include "editorResources.h"
 
-using namespace PTS;
+namespace {
+auto try_get_embedded_res(const cmrc::embedded_filesystem& fs,
+                          std::string_view path) -> std::optional<std::string> {
+    if (!fs.is_file(std::string{path})) {
+        return std::nullopt;
+    }
+    auto const file = fs.open(std::string{path});
+    return std::string{file.begin(), file.end()};
+}
+}  // namespace
 
 static constexpr auto k_inc_search_paths = std::array{
     "",
@@ -17,7 +26,7 @@ static constexpr auto k_inc_search_paths = std::array{
     "shaders/user/",
 };
 
-auto GLSLHelper::preprocess(std::string_view src) -> std::string {
+auto pts::glsl_helper::preprocess(std::string_view src) -> std::string {
     auto const reg = std::regex(R"(\s*\#\s*include\s*<([^<>]+)>|\s*\#\s*include\s*\"([^"]+)\")");
     auto matches = std::match_results<std::string_view::const_iterator>{};
 

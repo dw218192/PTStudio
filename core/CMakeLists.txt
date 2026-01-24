@@ -15,17 +15,6 @@ list(FILTER core_src_files EXCLUDE REGEX "/rendering/")
 list(APPEND core_src_files ${rendering_root_files})
 
 set(core_rendering_sources)
-if(PTS_GAPI STREQUAL "vulkan")
-	file(GLOB_RECURSE core_gapi_sources
-		${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/vulkan/*.*
-	)
-	list(APPEND core_rendering_sources ${core_gapi_sources})
-elseif(PTS_GAPI STREQUAL "null")
-	file(GLOB_RECURSE core_gapi_sources
-		${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/null/*.*
-	)
-	list(APPEND core_rendering_sources ${core_gapi_sources})
-endif()
 
 if(PTS_WINDOWING STREQUAL "glfw")
 	file(GLOB_RECURSE core_windowing_sources
@@ -75,11 +64,6 @@ PUBLIC
 	Boost::filesystem
 	Boost::container
 )
-
-if(PTS_GAPI STREQUAL "vulkan")
-	target_link_libraries(${lib_name} PUBLIC Vulkan::Vulkan)
-	target_compile_definitions(${lib_name} PRIVATE VULKAN_HPP_DISPATCH_LOADER_DYNAMIC)
-endif()
 
 if(PTS_WINDOWING STREQUAL "glfw")
 	target_link_libraries(${lib_name} PUBLIC glfw)

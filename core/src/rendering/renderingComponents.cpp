@@ -1,40 +1,78 @@
 #include "renderingComponents.h"
 
+#include <imgui.h>
+#include <imgui_impl_null.h>
+
 #include <memory>
 #include <utility>
 
-#if defined(PTS_GAPI_vulkan)
-#include "vulkan/vulkanImguiRendering.h"
-#include "vulkan/vulkanPresent.h"
-#include "vulkan/vulkanRenderGraph.h"
-#include "vulkan/vulkanRhi.h"
-#elif defined(PTS_GAPI_null)
-#include "null/nullImgui.h"
-#include "null/nullRendering.h"
-#endif
+namespace spdlog {
+class logger;
+}
 
 namespace pts::rendering {
+namespace {
+class NullImguiRendering final : public IImguiRendering {
+   public:
+    explicit NullImguiRendering(std::shared_ptr<spdlog::logger> logger)
+        : m_logger(std::move(logger)) {
+        m_initialized = ImGui_ImplNullRender_Init();
+        if (m_logger) {
+            if (m_initialized) {
+                m_logger->info("ImGui null renderer initialized");
+            } else {
+                m_logger->error("ImGui null renderer failed to initialize");
+            }
+        }
+    }
+
+    ~NullImguiRendering() override {
+        if (m_initialized) {
+            ImGui_ImplNullRender_Shutdown();
+        }
+        if (m_logger) {
+            m_logger->info("ImGui null renderer destroyed");
+        }
+    }
+
+    void new_frame() override {
+        ImGui_ImplNullRender_NewFrame();
+    }
+
+    void render(bool framebuffer_resized) override {
+        static_cast<void>(framebuffer_resized);
+        ImGui_ImplNullRender_RenderDrawData(ImGui::GetDrawData());
+    }
+
+    void resize() override {
+    }
+
+    auto set_render_output(IRenderGraph& render_graph) -> ImTextureID override {
+        static_cast<void>(render_graph);
+        return ImTextureID_Invalid;
+    }
+
+    void clear_render_output() override {
+    }
+
+    [[nodiscard]] auto output_id() const noexcept -> ImTextureID override {
+        return ImTextureID_Invalid;
+    }
+
+   private:
+    std::shared_ptr<spdlog::logger> m_logger;
+    bool m_initialized{false};
+};
+}  // namespace
+
 auto create_rendering_components(IWindowing& windowing, IViewport& viewport,
                                  pts::LoggingManager& logging_manager) -> RenderingComponents {
-#if defined(PTS_GAPI_vulkan)
-    auto rhi = std::make_shared<VulkanRhi>(windowing.required_vulkan_instance_extensions(),
-                                           logging_manager);
-    auto present = std::make_shared<VulkanPresent>(windowing, viewport, *rhi, logging_manager);
-
-    auto components = RenderingComponents{};
-    components.render_graph = std::make_unique<VulkanRenderGraph>(rhi, logging_manager);
-    components.imgui_rendering =
-        std::make_unique<VulkanImguiRendering>(std::move(rhi), std::move(present), logging_manager);
-    return components;
-#elif defined(PTS_GAPI_null)
     static_cast<void>(windowing);
     static_cast<void>(viewport);
-    auto components = RenderingComponents{};
-    components.render_graph = create_null_render_graph(logging_manager);
-    components.imgui_rendering = create_null_imgui_rendering(logging_manager);
+    RenderingComponents components;
+    components.render_graph = nullptr;
+    components.imgui_rendering =
+        std::make_unique<NullImguiRendering>(logging_manager.get_logger_shared("ImGuiRendering"));
     return components;
-#else
-#error "Unsupported GAPI"
-#endif
 }
 }  // namespace pts::rendering

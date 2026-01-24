@@ -9,8 +9,6 @@ find_package(doctest REQUIRED)
 
 # Test executables
 set(TEST_NAMES
-    testReflection    
-    testTypeTraits
     testPluginSystem
 )
 
@@ -28,10 +26,6 @@ foreach(TEST_NAME IN LISTS TEST_NAMES)
         )
     endif()
 
-    if (TEST_NAME STREQUAL "testReflection")
-        target_link_libraries(${TEST_NAME} PRIVATE core)
-    endif()
-    
     # Set output directory to bin/tests
     set_target_properties(${TEST_NAME} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tests
