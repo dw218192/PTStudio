@@ -2,13 +2,34 @@ cmake_minimum_required(VERSION 3.19 FATAL_ERROR)
 
 set(lib_name "core")
 
-#GLOB source files 
-file(GLOB_RECURSE src_files
+#GLOB source files
+set(core_src_globs
 	${CMAKE_CURRENT_SOURCE_DIR}/src/*.*
 	${CMAKE_CURRENT_SOURCE_DIR}/src/imgui/*.*
 	${CMAKE_CURRENT_SOURCE_DIR}/src/include/*.*
 	${CMAKE_CURRENT_SOURCE_DIR}/src/include/imgui/*.*
 )
+file(GLOB_RECURSE core_src_files ${core_src_globs})
+file(GLOB rendering_root_files ${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/*.*)
+list(FILTER core_src_files EXCLUDE REGEX "/rendering/")
+list(APPEND core_src_files ${rendering_root_files})
+
+set(core_rendering_sources)
+
+if(PTS_WINDOWING STREQUAL "glfw")
+	file(GLOB_RECURSE core_windowing_sources
+		${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/glfw/*.*
+	)
+	list(APPEND core_rendering_sources ${core_windowing_sources})
+elseif(PTS_WINDOWING STREQUAL "null")
+	file(GLOB_RECURSE core_windowing_sources
+		${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/null/*.*
+	)
+	list(APPEND core_rendering_sources ${core_windowing_sources})
+endif()
+
+set(src_files ${core_src_files} ${core_rendering_sources})
+list(REMOVE_DUPLICATES src_files)
 
 #GLOB resource files
 file(GLOB_RECURSE res_files
@@ -41,14 +62,12 @@ PUBLIC
 	tcb-span::tcb-span
 	nlohmann_json::nlohmann_json
 	Boost::filesystem
-	Vulkan::Vulkan
-	glfw
+	Boost::container
 )
 
-target_compile_definitions(${lib_name}
-PRIVATE
-	VULKAN_HPP_DISPATCH_LOADER_DYNAMIC
-)
+if(PTS_WINDOWING STREQUAL "glfw")
+	target_link_libraries(${lib_name} PUBLIC glfw)
+endif()
 
 if (MSVC)
 	target_compile_options(${lib_name} PRIVATE /bigobj)

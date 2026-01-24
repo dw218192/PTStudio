@@ -13,10 +13,12 @@ class PTStudioConan(ConanFile):
     options = {
         "pathtracer": [True, False],
         "build_tests": [True, False],
+        "windowing": ["glfw", "null"],
     }
     default_options = {
         "pathtracer": False,
         "build_tests": True,
+        "windowing": "glfw",
         # Boost configuration - need filesystem for DLL loading
         "boost/*:without_filesystem": False,
     }
@@ -29,8 +31,8 @@ class PTStudioConan(ConanFile):
         self.requires("nlohmann_json/3.12.0")
 
         # Graphics libraries
-        self.requires("glfw/[>=0]")
-        self.requires("glew/[>=0]")
+        if self.options.windowing == "glfw":
+            self.requires("glfw/[>=0]")
         self.requires("glm/[>=0]")
 
         # Utility libraries
@@ -40,11 +42,6 @@ class PTStudioConan(ConanFile):
         self.requires("tl-expected/[>=0]")
         self.requires("doctest/[>=0]")
         self.requires("boost/[>=0]")
-
-        # Vulkan support
-        self.requires("vulkan-headers/[>=0]")
-        self.requires("vulkan-loader/[>=0]")
-        self.requires("shaderc/[>=0]")
 
         # Note: Some dependencies are built from source in ext/:
         # - imgui (custom build with docking branch)
@@ -72,5 +69,7 @@ class PTStudioConan(ConanFile):
         tc.cache_variables["CORE_BUILD_TESTS"] = self.options.build_tests
         # Ensure spdlog uses external fmt library
         tc.cache_variables["SPDLOG_FMT_EXTERNAL"] = "ON"
+
+        tc.cache_variables["PTS_WINDOWING"] = self.options.windowing
 
         tc.generate()

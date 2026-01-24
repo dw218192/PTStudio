@@ -5,6 +5,7 @@
 #include <test_plugin/interface.h>
 #include <test_plugin/math.h>
 
+#include <core/pluginUtils.hpp>
 #include <memory>
 
 namespace {
@@ -28,8 +29,7 @@ TEST_CASE("PluginManager - Initialization") {
 
     SUBCASE("Destructor cleans up properly") {
         auto manager = std::make_unique<pts::PluginManager>(logger, *logging);
-        manager.reset();  // Should not crash
-        CHECK(true);
+        CHECK_NOTHROW(manager.reset());
     }
 }
 
@@ -118,9 +118,7 @@ TEST_CASE("PluginManager - Plugin Loading and Unloading") {
     }
 
     SUBCASE("Unload non-loaded plugin") {
-        // Should not crash
-        manager.unload_plugin("TestPlugin");
-        CHECK(true);
+        CHECK_NOTHROW(manager.unload_plugin("TestPlugin"));
     }
 }
 
@@ -134,6 +132,7 @@ TEST_CASE("PluginManager - Interface Querying") {
 
     void* plugin_handle = manager.get_plugin_instance("TestPlugin");
     REQUIRE(plugin_handle != nullptr);
+    auto interface_query = pts::make_interface_query(manager.host_api());
 
     // Get the plugin info to access the descriptor
     const auto& plugins = manager.get_plugins();
@@ -144,11 +143,9 @@ TEST_CASE("PluginManager - Interface Querying") {
 
     SUBCASE("Query valid interface - TestPluginInterfaceV1") {
         // Query the test interface
-        void* iface_ptr = manager.query_interface(plugin_handle, TEST_PLUGIN_INTERFACE_V1_ID);
-        REQUIRE(iface_ptr != nullptr);
-
-        // Cast to the interface type
-        auto* iface = static_cast<TestPluginInterfaceV1*>(iface_ptr);
+        auto* iface = interface_query.query<TestPluginInterfaceV1>(plugin_handle,
+                                                                   TEST_PLUGIN_INTERFACE_V1_ID);
+        REQUIRE(iface != nullptr);
 
         // Test interface functions
         const char* greeting = iface->get_greeting();
@@ -164,11 +161,9 @@ TEST_CASE("PluginManager - Interface Querying") {
 
     SUBCASE("Query valid interface - TestPluginMathInterfaceV1") {
         // Query the math interface
-        void* iface_ptr = manager.query_interface(plugin_handle, TEST_PLUGIN_MATH_INTERFACE_V1_ID);
-        REQUIRE(iface_ptr != nullptr);
-
-        // Cast to the interface type
-        auto* iface = static_cast<TestPluginMathInterfaceV1*>(iface_ptr);
+        auto* iface = interface_query.query<TestPluginMathInterfaceV1>(
+            plugin_handle, TEST_PLUGIN_MATH_INTERFACE_V1_ID);
+        REQUIRE(iface != nullptr);
 
         // Test math operations
         int32_t product = iface->multiply(7, 6);
@@ -184,18 +179,20 @@ TEST_CASE("PluginManager - Interface Querying") {
 
     SUBCASE("Query non-existent interface") {
         // Query for interface that doesn't exist
-        void* iface_ptr = manager.query_interface(plugin_handle, "nonexistent.interface.v1");
-        CHECK(iface_ptr == nullptr);
+        auto* iface =
+            interface_query.query<TestPluginInterfaceV1>(plugin_handle, "nonexistent.interface.v1");
+        CHECK(iface == nullptr);
     }
 
     SUBCASE("Query with null plugin handle") {
-        void* iface_ptr = manager.query_interface(nullptr, "test_plugin.interface.v1");
-        CHECK(iface_ptr == nullptr);
+        auto* iface =
+            interface_query.query<TestPluginInterfaceV1>(nullptr, "test_plugin.interface.v1");
+        CHECK(iface == nullptr);
     }
 
     SUBCASE("Query with null interface ID") {
-        void* iface_ptr = manager.query_interface(plugin_handle, nullptr);
-        CHECK(iface_ptr == nullptr);
+        auto* iface = interface_query.query<TestPluginInterfaceV1>(plugin_handle, nullptr);
+        CHECK(iface == nullptr);
     }
 
     manager.unload_plugin("TestPlugin");
@@ -212,59 +209,54 @@ TEST_CASE("PluginManager - Plugin Interfaces Functionality") {
 
     void* plugin_handle = manager.get_plugin_instance("TestPlugin");
     REQUIRE(plugin_handle != nullptr);
+    auto interface_query = pts::make_interface_query(manager.host_api());
 
     SUBCASE("Multiple interface queries on same plugin") {
         // Query both interfaces
-        void* test_iface = manager.query_interface(plugin_handle, TEST_PLUGIN_INTERFACE_V1_ID);
-        void* math_iface = manager.query_interface(plugin_handle, TEST_PLUGIN_MATH_INTERFACE_V1_ID);
+        auto* test_iface = interface_query.query<TestPluginInterfaceV1>(
+            plugin_handle, TEST_PLUGIN_INTERFACE_V1_ID);
+        auto* math_iface = interface_query.query<TestPluginMathInterfaceV1>(
+            plugin_handle, TEST_PLUGIN_MATH_INTERFACE_V1_ID);
 
         REQUIRE(test_iface != nullptr);
         REQUIRE(math_iface != nullptr);
 
-        // Use both interfaces
-        auto* test = static_cast<TestPluginInterfaceV1*>(test_iface);
-        auto* math = static_cast<TestPluginMathInterfaceV1*>(math_iface);
-
         // Call functions from both interfaces
-        int32_t sum = test->add_numbers(10, 20);
-        int32_t product = math->multiply(5, 4);
+        int32_t sum = test_iface->add_numbers(10, 20);
+        int32_t product = math_iface->multiply(5, 4);
 
         CHECK(sum == 30);
         CHECK(product == 20);
     }
 
     SUBCASE("Interface calls increment plugin state") {
-        void* test_iface = manager.query_interface(plugin_handle, "test_plugin.interface.v1");
+        auto* test_iface =
+            interface_query.query<TestPluginInterfaceV1>(plugin_handle, "test_plugin.interface.v1");
         REQUIRE(test_iface != nullptr);
 
-        auto* test = static_cast<TestPluginInterfaceV1*>(test_iface);
-
-        // Call multiple functions - they should all work
-        test->get_greeting();
-        test->add_numbers(1, 2);
-        test->print_message("Test");
-
-        // The plugin tracks call count internally (shown in on_unload)
-        CHECK(true);  // If we get here without crashing, the plugin is working
+        const char* greeting = test_iface->get_greeting();
+        CHECK(greeting != nullptr);
+        CHECK(std::string(greeting) == "Hello from TestPlugin!");
+        CHECK(test_iface->add_numbers(1, 2) == 3);
+        CHECK_NOTHROW(test_iface->print_message("Test"));
     }
 
     SUBCASE("Math interface edge cases") {
-        void* math_iface = manager.query_interface(plugin_handle, "test_plugin.math.v1");
+        auto* math_iface =
+            interface_query.query<TestPluginMathInterfaceV1>(plugin_handle, "test_plugin.math.v1");
         REQUIRE(math_iface != nullptr);
 
-        auto* math = static_cast<TestPluginMathInterfaceV1*>(math_iface);
-
         // Test with zero
-        CHECK(math->multiply(100, 0) == 0);
-        CHECK(math->multiply(0, 100) == 0);
+        CHECK(math_iface->multiply(100, 0) == 0);
+        CHECK(math_iface->multiply(0, 100) == 0);
 
         // Test with negative numbers
-        CHECK(math->multiply(-5, 3) == -15);
-        CHECK(math->multiply(-4, -3) == 12);
+        CHECK(math_iface->multiply(-5, 3) == -15);
+        CHECK(math_iface->multiply(-4, -3) == 12);
 
         // Test division with negatives
-        CHECK(math->divide(-10.0, 2.0) == -5.0);
-        CHECK(math->divide(10.0, -2.0) == -5.0);
+        CHECK(math_iface->divide(-10.0, 2.0) == -5.0);
+        CHECK(math_iface->divide(10.0, -2.0) == -5.0);
     }
 
     manager.unload_plugin("TestPlugin");
@@ -353,8 +345,7 @@ TEST_CASE("PluginManager - Shutdown") {
 
     SUBCASE("Shutdown with no plugins") {
         pts::PluginManager manager(logger, *logging);
-        manager.shutdown();  // Should not crash
-        CHECK(true);
+        CHECK_NOTHROW(manager.shutdown());
     }
 
     SUBCASE("Multiple shutdowns") {
@@ -362,9 +353,8 @@ TEST_CASE("PluginManager - Shutdown") {
         manager.scan_directory("../plugins");
         manager.load_plugin("TestPlugin");
 
-        manager.shutdown();
-        manager.shutdown();  // Second shutdown should be safe
-        CHECK(true);
+        CHECK_NOTHROW(manager.shutdown());
+        CHECK_NOTHROW(manager.shutdown());
     }
 }
 

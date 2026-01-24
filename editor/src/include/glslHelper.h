@@ -3,8 +3,8 @@
 #include <string_view>
 #include <vector>
 
-namespace PTS {
-namespace GLSLHelper {
+namespace pts {
+namespace glsl_helper {
 auto preprocess(std::string_view src) -> std::string;
 }
-}  // namespace PTS
+}  // namespace pts

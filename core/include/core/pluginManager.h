@@ -20,7 +20,7 @@ struct LoadedPlugin {
     std::string plugin_id;
     std::unique_ptr<boost::dll::shared_library> library;
     const PtsPluginDescriptor* descriptor;
-    void* instance;
+    PluginHandle instance;
 
     LoadedPlugin(std::string plugin_id, boost::dll::shared_library library,
                  const PtsPluginDescriptor* descriptor) noexcept
@@ -48,7 +48,7 @@ struct PluginInfo {
     PtsPluginKind kind;
     std::filesystem::path dll_path;
     bool is_loaded;
-    void* instance;  // Opaque plugin instance handle
+    PluginHandle instance;  // Opaque plugin instance handle
     bool is_static;
     const PtsPluginDescriptor* static_descriptor;
 };
@@ -77,45 +77,59 @@ class PluginManager {
     size_t scan_directory(std::string_view exe_relative_dir);
 
     /**
-     * Get list of all registered plugins (loaded or not).
+     * @brief Get list of all registered plugins (loaded or not).
+     * @return The list of plugins
      */
     const std::vector<PluginInfo>& get_plugins() const {
         return m_plugins;
     }
 
     /**
-     * Load a specific plugin by ID.
-     * Returns true if successful, false if already loaded or error.
+     * @brief Load a specific plugin by ID.
+     * @return True if successful, false if already loaded or error.
+     * @param plugin_id The plugin ID
      */
     bool load_plugin(std::string_view plugin_id);
 
     /**
-     * Unload a specific plugin by ID.
+     * @brief Unload a specific plugin by ID.
+     * @param plugin_id The plugin ID
      */
     void unload_plugin(std::string_view plugin_id);
 
     /**
-     * Get plugin instance by ID (returns nullptr if not loaded).
+     * @brief Get plugin handle by ID (returns nullptr if not loaded).
+     * @param plugin_id The plugin ID
+     * @return The plugin handle, or nullptr if not loaded
      */
-    void* get_plugin_instance(std::string_view plugin_id) const;
+    PluginHandle get_plugin_instance(std::string_view plugin_id) const;
 
     /**
-     * Query an interface from a plugin instance.
+     * @brief Query an interface from a plugin handle.
      * @param plugin_handle The plugin instance handle
      * @param interface_id The interface identifier string
-     * @return Pointer to the interface, or nullptr if not found
+     * @return The interface handle, or nullptr if not found
      */
-    void* query_interface(void* plugin_handle, const char* interface_id) const;
+    void* query_interface(PluginHandle plugin_handle, const char* interface_id) const;
 
     /**
-     * Unload all plugins and clear registry.
+     * @brief Unload all plugins and clear registry.
      */
     void shutdown();
 
     /**
-     * Register a statically linked plugin descriptor.
+     * @brief Register a statically linked plugin descriptor.
+     * @param descriptor The static plugin descriptor
+     * @return True if successful, false if already registered
      */
     bool register_static_plugin(const PtsPluginDescriptor* descriptor);
+
+    /**
+     * @brief Access the host API used for plugin callbacks.
+     */
+    PtsHostApi* host_api() noexcept {
+        return &m_host_api;
+    }
 
    private:
     std::shared_ptr<spdlog::logger> m_logger;
@@ -129,6 +143,7 @@ class PluginManager {
         -> std::vector<LoadedPlugin>::const_iterator {
         return const_cast<PluginManager*>(this)->find_loaded_plugin(plugin_id);
     }
+    const PtsPluginDescriptor* try_invoke_plugin_entry_point(const boost::dll::shared_library& lib);
     bool try_load_descriptor(const std::filesystem::path& dll_path, PluginInfo& out_info);
     void register_static_plugins_from_registry();
 

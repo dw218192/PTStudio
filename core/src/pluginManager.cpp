@@ -208,6 +208,34 @@ size_t PluginManager::scan_directory(std::string_view exe_relative_dir) {
     return found_count;
 }
 
+const PtsPluginDescriptor* PluginManager::try_invoke_plugin_entry_point(
+    const boost::dll::shared_library& lib) {
+    auto get_desc = lib.get<const PtsPluginDescriptor*()>(PLUGIN_ENTRY_POINT_NAME);
+    const PtsPluginDescriptor* desc = get_desc();
+    auto dll_path = lib.location();
+
+    if (!desc) {
+        m_logger->error("  {} returned null descriptor", dll_path.string());
+        return nullptr;
+    }
+
+    // Validate API version
+    if (desc->api_version != PTS_PLUGIN_API_VERSION) {
+        m_logger->error("  {} has incompatible API version {} (expected {})", dll_path.string(),
+                        desc->api_version, PTS_PLUGIN_API_VERSION);
+        return nullptr;
+    }
+
+    // Validate struct size
+    if (desc->struct_size != sizeof(PtsPluginDescriptor)) {
+        m_logger->error("  {} has incompatible ABI (struct size mismatch) {} (expected {})",
+                        dll_path.string(), desc->struct_size, sizeof(PtsPluginDescriptor));
+        return nullptr;
+    }
+
+    return desc;
+}
+
 bool PluginManager::try_load_descriptor(const std::filesystem::path& dll_path,
                                         PluginInfo& out_info) {
     try {
@@ -222,27 +250,8 @@ bool PluginManager::try_load_descriptor(const std::filesystem::path& dll_path,
         }
 
         // Import the descriptor function
-        auto get_desc = lib.get<const PtsPluginDescriptor*()>(PLUGIN_ENTRY_POINT_NAME);
-        const PtsPluginDescriptor* desc = get_desc();
-
+        auto desc = try_invoke_plugin_entry_point(lib);
         if (!desc) {
-            m_logger->error("  {} returned null descriptor", dll_path.filename().string());
-            return false;
-        }
-
-        // Validate API version
-        if (desc->api_version != PTS_PLUGIN_API_VERSION) {
-            m_logger->error("  {} has incompatible API version {} (expected {})",
-                            dll_path.filename().string(), desc->api_version,
-                            PTS_PLUGIN_API_VERSION);
-            return false;
-        }
-
-        // Validate struct size
-        if (desc->struct_size != sizeof(PtsPluginDescriptor)) {
-            m_logger->error("  {} has incompatible ABI (struct size mismatch) {} (expected {})",
-                            dll_path.filename().string(), desc->struct_size,
-                            sizeof(PtsPluginDescriptor));
             return false;
         }
 
@@ -364,8 +373,10 @@ bool PluginManager::load_plugin(std::string_view plugin_id) {
                                            boost::dll::load_mode::default_mode);
 
             // Get descriptor
-            auto get_desc = lib.get<const PtsPluginDescriptor*()>(PLUGIN_ENTRY_POINT_NAME);
-            desc = get_desc();
+            desc = try_invoke_plugin_entry_point(lib);
+            if (!desc) {
+                return false;
+            }
 
             // Create loaded plugin entry
             m_loaded_plugins.emplace_back(std::string{plugin_id}, std::move(lib), desc);
@@ -376,7 +387,7 @@ bool PluginManager::load_plugin(std::string_view plugin_id) {
         // Create instance
         if (desc->create) {
             loaded.instance = desc->create(&m_host_api);
-            m_logger->debug("  Plugin instance created: {}", static_cast<void*>(loaded.instance));
+            m_logger->debug("  Plugin instance created: {}", loaded.instance);
         }
 
         // Call on_load - this is a potentially fallible operation
@@ -449,12 +460,12 @@ void PluginManager::unload_plugin(std::string_view plugin_id) {
     m_logger->info("Plugin '{}' unloaded", plugin_id);
 }
 
-void* PluginManager::get_plugin_instance(std::string_view plugin_id) const {
+PluginHandle PluginManager::get_plugin_instance(std::string_view plugin_id) const {
     auto loaded = find_loaded_plugin(plugin_id);
     return loaded != m_loaded_plugins.end() ? loaded->instance : nullptr;
 }
 
-void* PluginManager::query_interface(void* plugin_handle, const char* interface_id) const {
+void* PluginManager::query_interface(PluginHandle plugin_handle, const char* interface_id) const {
     if (!plugin_handle || !interface_id) {
         return nullptr;
     }
