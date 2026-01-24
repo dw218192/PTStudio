@@ -137,8 +137,8 @@ def build_command(args: argparse.Namespace) -> None:
     root = Path(__file__).parent.parent.parent
     build_folder = root / "_build"
     logs_dir = root / "_logs"
-    windowing = args.windowing
-    lock_file = root / f"conan_{windowing}.lock"
+    windowing = "glfw"
+    lock_file = root / "conan_glfw.lock"
 
     # Remove build directory if -x flag is provided
     if args.rebuild and build_folder.exists():
@@ -294,11 +294,5 @@ def register_build_command(subparsers: argparse._SubParsersAction) -> None:
     )
     parser.add_argument(
         "--conan-profile", default="default", help="Conan profile (default: default)"
-    )
-    parser.add_argument(
-        "--windowing",
-        choices=["glfw", "null"],
-        default="glfw",
-        help="Windowing backend (default: glfw)",
     )
     parser.set_defaults(func=build_command)
