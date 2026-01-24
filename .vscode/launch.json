@@ -29,6 +29,66 @@
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
             "environment": []
+        },
+        {
+            "name": "PTStudio Editor (Debug)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/_build/Debug/bin/editor.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "environment": [
+                {
+                    "name": "PATH",
+                    "value": "${workspaceFolder}/_build/usd/Debug/install/bin;${workspaceFolder}/_build/usd/Debug/install/lib;${env:PATH}"
+                }
+            ]
+        },
+        {
+            "name": "PTStudio Test testPluginSystem (Debug)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/_build/Debug/bin/tests/testPluginSystem.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "environment": [
+                {
+                    "name": "PATH",
+                    "value": "${workspaceFolder}/_build/usd/Debug/install/bin;${workspaceFolder}/_build/usd/Debug/install/lib;${env:PATH}"
+                }
+            ]
+        },
+        {
+            "name": "PTStudio Test testPluginSystemStatic (Debug)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/_build/Debug/bin/tests/testPluginSystemStatic.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "environment": [
+                {
+                    "name": "PATH",
+                    "value": "${workspaceFolder}/_build/usd/Debug/install/bin;${workspaceFolder}/_build/usd/Debug/install/lib;${env:PATH}"
+                }
+            ]
+        },
+        {
+            "name": "PTStudio Test testOpenUsd (Debug)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/_build/Debug/bin/tests/testOpenUsd.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "environment": [
+                {
+                    "name": "PATH",
+                    "value": "${workspaceFolder}/_build/usd/Debug/install/bin;${workspaceFolder}/_build/usd/Debug/install/lib;${env:PATH}"
+                }
+            ]
         }
     ]
 }

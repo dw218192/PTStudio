@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from repo_tools import logger
+from repo_tools import logger, print_subprocess_line, print_tool
 
 
 def test_command(args: argparse.Namespace) -> None:
@@ -14,14 +14,15 @@ def test_command(args: argparse.Namespace) -> None:
     root = Path(__file__).parent.parent.parent
     build_folder = root / "_build" / args.build_type
     test_dir = build_folder / "bin" / "tests"
+    usd_install_dir = root / "_build" / "usd" / args.build_type / "install"
     logs_dir = root / "_logs"
 
     # Create logs directory
     logs_dir.mkdir(parents=True, exist_ok=True)
 
     if not test_dir.exists():
-        logger.error(f"Test directory does not exist: {test_dir}")
-        logger.error("Build the project first with: pts.cmd build")
+        print_tool(f"Test directory does not exist: {test_dir}")
+        print_tool("Build the project first with: pts.cmd build")
         sys.exit(1)
 
     # Find all test executables
@@ -34,7 +35,7 @@ def test_command(args: argparse.Namespace) -> None:
         ]
 
     if not test_executables:
-        logger.warning(f"No test executables found in: {test_dir}")
+        print_tool(f"No test executables found in: {test_dir}")
         return
 
     logger.info(f"Found {len(test_executables)} test executable(s)")
@@ -59,6 +60,13 @@ def test_command(args: argparse.Namespace) -> None:
             cmd = [str(test_exe)]
             if args.verbose:
                 cmd.append("--verbose")
+            env = os.environ.copy()
+            if usd_install_dir.exists():
+                usd_bin = usd_install_dir / "bin"
+                usd_lib = usd_install_dir / "lib"
+                env["PATH"] = (
+                    f"{usd_bin}{os.pathsep}{usd_lib}{os.pathsep}{env.get('PATH', '')}"
+                )
 
             result = subprocess.run(
                 cmd,
@@ -67,6 +75,7 @@ def test_command(args: argparse.Namespace) -> None:
                 text=True,
                 encoding="utf-8",
                 errors="replace",
+                env=env,
             )
 
             # Write output to log file
@@ -78,7 +87,8 @@ def test_command(args: argparse.Namespace) -> None:
                 f.write(result.stdout)
 
             # Print output to console
-            print(result.stdout)
+            for line in result.stdout.splitlines():
+                print_subprocess_line(line)
 
             if result.returncode == 0:
                 logger.info(f"✓ {test_name} PASSED")

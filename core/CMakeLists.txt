@@ -49,6 +49,10 @@ cmrc_add_resource_library(${lib_name}_resources
 target_link_libraries(${lib_name}
 PRIVATE
 	$<BUILD_INTERFACE:developer_flags>
+	usd
+	usdGeom
+	usdShade
+	usdLux
 PUBLIC
 	${lib_name}::rc
 	glm::glm
@@ -81,6 +85,7 @@ PUBLIC
 	${CMAKE_CURRENT_SOURCE_DIR}/api
 PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}/include/core
+	${PXR_INCLUDE_DIRS}
 )
 
 # ============================================================================

@@ -2,14 +2,61 @@
 
 import functools
 import logging
+import platform
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from colorama import Fore, Style, init as colorama_init
+
+colorama_init()
+
+
+def _level_color(levelno: int) -> str:
+    if levelno >= logging.ERROR:
+        return Fore.RED
+    if levelno >= logging.WARNING:
+        return Fore.YELLOW
+    return Fore.CYAN
+
+
+class ToolFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        color = _level_color(record.levelno)
+        message = record.getMessage()
+        return f"{color}[{record.levelname.lower()}]{Style.RESET_ALL} {message}"
+
+
+logger = logging.getLogger("repo_tools")
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setFormatter(ToolFormatter())
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+
+
+def is_windows() -> bool:
+    return platform.system() == "Windows"
+
+
+def is_linux() -> bool:
+    return platform.system() == "Linux"
+
+
+def is_macos() -> bool:
+    return platform.system() == "Darwin"
+
+
+def print_tool(message: str) -> None:
+    print(f"{Fore.CYAN}[pts]{Style.RESET_ALL} {message}", flush=True)
+
+
+def print_subprocess_line(line: str) -> None:
+    text = line.rstrip("\n")
+    print(f"{Style.DIM}{text}{Style.RESET_ALL}")
 
 
 @functools.cache
@@ -47,7 +94,7 @@ def run_command(cmd: list[str], log_file: Optional[Path] = None) -> None:
                 bufsize=1,
             )
             for line in process.stdout:
-                print(line, end="")
+                print_subprocess_line(line)
                 f.write(line)
             process.wait()
             if process.returncode != 0:
@@ -61,8 +108,8 @@ def ensure_conan_profile() -> None:
     profile_dir = Path.home() / ".conan2" / "profiles"
 
     if not profile_dir.exists() or not any(profile_dir.iterdir()):
-        print("No Conan profiles found. Running 'conan profile detect'...")
+        print_tool("No Conan profiles found. Running 'conan profile detect'...")
         conan_exe = find_venv_executable("conan")
         subprocess.run([conan_exe, "profile", "detect"], check=True)
     else:
-        print("Conan profiles already exist.")
+        print_tool("Conan profiles already exist.")
