@@ -2,6 +2,8 @@
 
 #include <core/rendering/graph.h>
 
+#include <memory>
+
 #include "rhi.h"
 
 namespace pts {

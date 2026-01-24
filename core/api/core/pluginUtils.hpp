@@ -3,7 +3,6 @@
 #include <type_traits>
 #include <utility>
 
-#include "interfaceUtils.hpp"
 #include "loggingUtils.hpp"
 #include "plugin.h"
 
