@@ -42,6 +42,8 @@ class PTStudioConan(ConanFile):
         self.requires("tl-expected/[>=0]")
         self.requires("doctest/[>=0]")
         self.requires("boost/[>=0]")
+        # Shader toolchain (slangc)
+        self.requires("slang/2026.1")
 
         # Note: Some dependencies are built from source in ext/:
         # - imgui (custom build with docking branch)
@@ -71,5 +73,4 @@ class PTStudioConan(ConanFile):
         tc.cache_variables["SPDLOG_FMT_EXTERNAL"] = "ON"
 
         tc.cache_variables["PTS_WINDOWING"] = self.options.windowing
-
         tc.generate()

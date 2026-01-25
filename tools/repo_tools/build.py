@@ -10,11 +10,20 @@ import time
 from pathlib import Path
 
 from repo_tools import (
+    build_repo_context,
     ensure_conan_profile,
     find_venv_executable,
     is_windows,
+    load_repo_config,
     print_tool,
+    resolve_env_vars,
+    resolve_path,
+    resolve_slang_test_output,
     run_command,
+    resolve_slang_shaders,
+    find_slangc,
+    logger,
+    RepoContext,
 )
 
 
@@ -108,10 +117,6 @@ def _map_usd_build_variant(build_type: str) -> str:
     return "release"
 
 
-def _get_openusd_install_dir(root: Path, build_type: str) -> Path:
-    return root / "_build" / "usd" / build_type / "install"
-
-
 def _get_vcvars_path() -> Path | None:
     if not is_windows():
         return None
@@ -198,6 +203,8 @@ def _ensure_openusd(
     root: Path,
     build_type: str,
     logs_dir: Path,
+    install_dir: Path,
+    usd_build_dir: Path,
     force_rebuild: bool = False,
 ) -> Path:
     usd_root = root / "ext" / "usd"
@@ -205,19 +212,17 @@ def _ensure_openusd(
     if not build_script.exists():
         raise FileNotFoundError(f"OpenUSD build script not found: {build_script}")
 
-    install_dir = _get_openusd_install_dir(root, build_type)
     pxr_config = install_dir / "pxrConfig.cmake"
     if pxr_config.exists():
         if not force_rebuild:
             print_tool(f"OpenUSD install found: {install_dir}")
             return install_dir
         print_tool(f"OpenUSD install found; forcing rebuild: {install_dir}")
-        usd_root_dir = root / "_build" / "usd" / build_type
+        usd_root_dir = usd_build_dir.parent
         if usd_root_dir.exists():
             _remove_tree_with_retries(usd_root_dir)
 
     print_tool("OpenUSD install not found. Building OpenUSD...")
-    usd_build_dir = root / "_build" / "usd" / build_type / "build"
     usd_log_file = logs_dir / f"openusd_build_{build_type.lower()}.log"
     python_exe = find_venv_executable("python")
     usd_cmd = [
@@ -274,6 +279,43 @@ def _ensure_openusd(
     return install_dir
 
 
+def _export_local_conan_recipes(root: Path, logs_dir: Path, config: dict) -> None:
+    recipes = config.get("conan", {}).get("local_recipes", [])
+    if not recipes:
+        return
+
+    conan_exe = find_venv_executable("conan")
+    for recipe in recipes:
+        if not isinstance(recipe, dict):
+            logger.warning(f"Skipping invalid recipe entry (not a dict): {recipe}")
+            continue
+        name = recipe.get("name")
+        version = recipe.get("version")
+        path_value = recipe.get("path")
+        if not name or not version or not path_value:
+            logger.warning(
+                f"Skipping invalid recipe entry (missing name, version, or path): {recipe}"
+            )
+            continue
+        recipe_dir = root / str(path_value)
+        if not recipe_dir.exists():
+            logger.warning(
+                f"Skipping invalid recipe entry (path does not exist): {recipe}"
+            )
+            continue
+        export_log_file = logs_dir / f"conan_export_{name}.log"
+        run_command(
+            [
+                conan_exe,
+                "export",
+                str(recipe_dir),
+                f"--name={name}",
+                f"--version={version}",
+            ],
+            log_file=export_log_file,
+        )
+
+
 def _generate_cpp_properties(root: Path, build_dir: Path, windowing: str) -> None:
     # Use CMake file-api outputs for accuracy across generators/platforms.
     # compile_commands.json is not reliably generated on all platforms or generators.
@@ -318,7 +360,13 @@ def _generate_cpp_properties(root: Path, build_dir: Path, windowing: str) -> Non
     )
 
 
-def _generate_launch_json(root: Path, build_type: str, test_names: list[str]) -> None:
+def _generate_launch_json(
+    root: Path,
+    build_dir: Path,
+    build_type: str,
+    test_names: list[str],
+    env_vars: dict,
+) -> None:
     vscode_dir = root / ".vscode"
     vscode_dir.mkdir(parents=True, exist_ok=True)
     launch_path = vscode_dir / "launch.json"
@@ -333,14 +381,20 @@ def _generate_launch_json(root: Path, build_type: str, test_names: list[str]) ->
     if not isinstance(configurations, list):
         configurations = []
 
-    usd_install_dir = root / "_build" / "usd" / build_type / "install"
-    usd_bin = _format_workspace_path(root, usd_install_dir / "bin")
-    usd_lib = _format_workspace_path(root, usd_install_dir / "lib")
     path_separator = ";" if is_windows() else ":"
-    env_path_value = f"{usd_bin}{path_separator}{usd_lib}{path_separator}${{env:PATH}}"
+    env_entries = []
+    for key, value in env_vars.items():
+        if key.upper() == "PATH":
+            env_entries.append(
+                {"name": key, "value": f"{value}{path_separator}${{env:PATH}}"}
+            )
+        else:
+            env_entries.append({"name": key, "value": value})
 
     launch_configs = []
     editor_name = f"PTStudio Editor ({build_type})"
+    editor_path = build_dir / "bin" / ("editor.exe" if is_windows() else "editor")
+    editor_program = _format_workspace_path(root, editor_path)
 
     if is_windows():
         launch_configs.append(
@@ -348,25 +402,26 @@ def _generate_launch_json(root: Path, build_type: str, test_names: list[str]) ->
                 "name": editor_name,
                 "type": "cppvsdbg",
                 "request": "launch",
-                "program": f"${{workspaceFolder}}/_build/{build_type}/bin/editor.exe",
+                "program": editor_program,
                 "args": [],
                 "cwd": "${workspaceFolder}",
                 "console": "integratedTerminal",
-                "environment": [{"name": "PATH", "value": env_path_value}],
+                "environment": env_entries,
             }
         )
     for test_name in test_names:
         if is_windows():
+            test_path = build_dir / "bin" / "tests" / f"{test_name}.exe"
             launch_configs.append(
                 {
                     "name": f"PTStudio Test {test_name} ({build_type})",
                     "type": "cppvsdbg",
                     "request": "launch",
-                    "program": f"${{workspaceFolder}}/_build/{build_type}/bin/tests/{test_name}.exe",
+                    "program": _format_workspace_path(root, test_path),
                     "args": [],
                     "cwd": "${workspaceFolder}",
                     "console": "integratedTerminal",
-                    "environment": [{"name": "PATH", "value": env_path_value}],
+                    "environment": env_entries,
                 }
             )
 
@@ -385,12 +440,27 @@ def _generate_launch_json(root: Path, build_type: str, test_names: list[str]) ->
     launch_path.write_text(json.dumps(payload, indent=4) + "\n", encoding="utf-8")
 
 
+def _validate_slang_test_output(root: Path, config: dict, context: dict) -> None:
+    output_path = resolve_slang_test_output(root, config, context)
+    if output_path is None:
+        return
+    if not output_path.exists():
+        raise FileNotFoundError(f"Slang test output not found: {output_path}")
+
+    contents = output_path.read_text(encoding="utf-8", errors="replace").strip()
+    if not contents:
+        raise RuntimeError(f"Slang test output is empty: {output_path}")
+    if "@vertex" not in contents:
+        raise RuntimeError(
+            f"Slang test output missing '@vertex' entry point: {output_path}"
+        )
+
+
 def _is_test_name(target_name: str) -> bool:
     return target_name.startswith(("test_", "test"))
 
 
-def _discover_test_targets(root: Path, build_type: str) -> list[str]:
-    build_dir = root / "_build" / build_type
+def _discover_test_targets(build_dir: Path) -> list[str]:
     tests_dir = build_dir / "bin" / "tests"
     test_names: set[str] = set()
     result = _load_codemodel(build_dir)
@@ -427,6 +497,38 @@ def _discover_test_targets(root: Path, build_type: str) -> list[str]:
     return sorted(test_names)
 
 
+def compile_slang_shaders(
+    root: Path, config: dict, context: RepoContext, logs_dir: Path
+) -> None:
+    shaders = resolve_slang_shaders(root, config, context)
+    if not shaders:
+        return
+
+    slangc_path = find_slangc(root, config, context)
+    if slangc_path is None:
+        raise RuntimeError("slangc not found. Install via Conan or set compiler_path.")
+
+    for input_path, output_path in shaders:
+        if not input_path.exists():
+            raise FileNotFoundError(f"Slang shader not found: {input_path}")
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        if output_path.exists():
+            if output_path.stat().st_mtime >= input_path.stat().st_mtime:
+                continue
+        log_file = logs_dir / f"slangc_{input_path.stem}.log"
+        run_command(
+            [
+                str(slangc_path),
+                str(input_path),
+                "-target",
+                "wgsl",
+                "-o",
+                str(output_path),
+            ],
+            log_file=log_file,
+        )
+
+
 def build_command(args: argparse.Namespace) -> None:
     """
     Meta-meta-build system implementation.
@@ -439,11 +541,21 @@ def build_command(args: argparse.Namespace) -> None:
     3. generate vscode launch configurations for the project
     """
     root = Path(__file__).parent.parent.parent
-    build_folder = root / "_build"
-    build_dir = build_folder / args.build_type
-    logs_dir = root / "_logs"
-    windowing = "glfw"
-    lock_file = root / "conan_glfw.lock"
+    config = load_repo_config(root)
+    context = build_repo_context(root, args.build_type, config)
+    build_folder = Path(context["build_root"])
+    build_dir = Path(context["build_dir"])
+    logs_dir = Path(context["logs_root"])
+    windowing = config.get("build", {}).get("windowing", "glfw")
+    lock_file = Path(context["conan_lock"])
+    conan_deployer = config.get("build", {}).get("conan_deployer", "full_deploy")
+    conan_deployer_folder = resolve_path(
+        root,
+        config.get("build", {}).get("conan_deployer_folder", "{conan_deps_root}"),
+        context,
+    )
+    usd_install_dir = Path(context["usd_install_dir"])
+    usd_build_dir = Path(context["usd_build_dir"])
 
     # Remove build configuration directory if -x flag is provided
     if args.rebuild and build_dir.exists():
@@ -459,6 +571,8 @@ def build_command(args: argparse.Namespace) -> None:
         root,
         args.build_type,
         logs_dir,
+        usd_install_dir,
+        usd_build_dir,
         force_rebuild=args.configure_only,
     )
 
@@ -472,6 +586,7 @@ def build_command(args: argparse.Namespace) -> None:
             print_tool(f"Building with configuration: {args.build_type}")
         else:
             ensure_conan_profile()
+            _export_local_conan_recipes(root, logs_dir, config)
 
             if args.configure_only:
                 print_tool(f"Configuring with configuration: {args.build_type}")
@@ -516,8 +631,8 @@ def build_command(args: argparse.Namespace) -> None:
                     "--lockfile",
                     str(lock_file),
                     f"--output-folder={args.build_type}",
-                    "--deployer-folder=deps",
-                    "--deployer=full_deploy",
+                    f"--deployer-folder={conan_deployer_folder}",
+                    f"--deployer={conan_deployer}",
                     "--build=missing",
                     f"--profile:host={args.conan_profile}",
                     f"--profile:build={args.conan_profile}",
@@ -530,6 +645,12 @@ def build_command(args: argparse.Namespace) -> None:
                 ],
                 log_file=install_log_file,
             )
+
+            print_tool("Compiling slang shaders...")
+            compile_slang_shaders(root, config, context, logs_dir)
+            _validate_slang_test_output(root, config, context)
+
+            print_tool("Building targets...")
 
             configure_log_file = logs_dir / "cmake_configure.log"
             cmake_exe = find_venv_executable("cmake")
@@ -552,7 +673,7 @@ def build_command(args: argparse.Namespace) -> None:
                 log_file=configure_log_file,
             )
 
-            _generate_cpp_properties(root, build_folder / args.build_type, windowing)
+            _generate_cpp_properties(root, build_dir, windowing)
 
         if not args.configure_only:
             build_log_file = logs_dir / "cmake_build.log"
@@ -570,8 +691,9 @@ def build_command(args: argparse.Namespace) -> None:
         else:
             print_tool("Configure only mode (-c): Skipping build step")
 
-        tests = _discover_test_targets(root, args.build_type)
-        _generate_launch_json(root, args.build_type, tests)
+        tests = _discover_test_targets(build_dir)
+        env_vars = resolve_env_vars(config, context)
+        _generate_launch_json(root, build_dir, args.build_type, tests, env_vars)
     finally:
         os.chdir(original_cwd)
 
