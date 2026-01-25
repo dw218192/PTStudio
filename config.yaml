@@ -1,0 +1,31 @@
+paths:
+  build_root: "_build"
+  logs_root: "_logs"
+  conan_lock: "conan_glfw.lock"
+  conan_deps_root: "{build_root}/deps"
+  usd_install_dir: "{build_root}/deps/usd/{build_type}/install"
+  usd_build_dir: "{build_root}/deps/usd/{build_type}/build"
+
+build:
+  windowing: "glfw"
+  conan_deployer: "full_deploy"
+  conan_deployer_folder: "{conan_deps_root}"
+
+env:
+  PATH:
+    - "{usd_install_dir}/bin"
+    - "{usd_install_dir}/lib"
+
+slang:
+  compiler_search_roots:
+    - "{conan_deps_root}/full_deploy/host/slang"
+  shaders:
+    - input: "assets/shaders/test/simple.slang"
+      output: "assets/shaders/test/simple.wgsl"
+  test_shader: "assets/shaders/test/simple.wgsl"
+
+conan:
+  local_recipes:
+    - name: "slang"
+      version: "2026.1"
+      path: "tools/conan/slang"

@@ -7,21 +7,26 @@ import sys
 from pathlib import Path
 
 from repo_tools import (
-    augment_env_with_usd,
+    apply_env_overrides,
+    build_repo_context,
+    compile_slang_shaders,
+    is_windows,
+    load_repo_config,
     logger,
     print_subprocess_line,
     print_tool,
-    is_windows,
+    resolve_env_vars,
 )
 
 
 def test_command(args: argparse.Namespace) -> None:
     """Test subcommand implementation."""
     root = Path(__file__).parent.parent.parent
-    build_folder = root / "_build" / args.build_type
-    test_dir = build_folder / "bin" / "tests"
-    usd_install_dir = root / "_build" / "usd" / args.build_type / "install"
-    logs_dir = root / "_logs"
+    config = load_repo_config(root)
+    context = build_repo_context(root, args.build_type, config)
+    build_dir = Path(context["build_dir"])
+    test_dir = build_dir / "bin" / "tests"
+    logs_dir = Path(context["logs_root"])
 
     # Create logs directory
     logs_dir.mkdir(parents=True, exist_ok=True)
@@ -30,6 +35,8 @@ def test_command(args: argparse.Namespace) -> None:
         print_tool(f"Test directory does not exist: {test_dir}")
         print_tool("Build the project first with: pts.cmd build")
         sys.exit(1)
+
+    compile_slang_shaders(root, config, context, logs_dir)
 
     # Find all test executables
     if is_windows():
@@ -66,7 +73,8 @@ def test_command(args: argparse.Namespace) -> None:
             cmd = [str(test_exe)]
             if args.verbose:
                 cmd.append("--verbose")
-            env = augment_env_with_usd(os.environ.copy(), usd_install_dir)
+            env_vars = resolve_env_vars(config, context)
+            env = apply_env_overrides(os.environ.copy(), env_vars)
 
             result = subprocess.run(
                 cmd,

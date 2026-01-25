@@ -8,11 +8,24 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Mapping, Optional, TypedDict
 
 from colorama import Fore, Style, init as colorama_init
+import yaml
 
 colorama_init()
+
+
+class RepoContext(TypedDict):
+    workspace_root: str
+    build_root: str
+    logs_root: str
+    build_type: str
+    conan_deps_root: str
+    conan_lock: str
+    usd_install_dir: str
+    usd_build_dir: str
+    build_dir: str
 
 
 def _level_color(levelno: int) -> str:
@@ -124,3 +137,189 @@ def ensure_conan_profile() -> None:
         subprocess.run([conan_exe, "profile", "detect"], check=True)
     else:
         print_tool("Conan profiles already exist.")
+
+
+def load_repo_config(root: Path) -> dict:
+    config_path = root / "config.yaml"
+    if not config_path.exists():
+        return {}
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    if data is None:
+        return {}
+    if not isinstance(data, dict):
+        raise ValueError("config.yaml must contain a top-level mapping.")
+    return data
+
+
+def _get_config_value(config: dict, key_path: str, default: str) -> str:
+    current = config
+    for key in key_path.split("."):
+        if not isinstance(current, dict) or key not in current:
+            return default
+        current = current[key]
+    return current
+
+
+def _resolve_template(value: str, context: Mapping[str, str]) -> str:
+    try:
+        return value.format(**context)
+    except KeyError as exc:
+        missing = exc.args[0] if exc.args else "unknown"
+        raise KeyError(f"Missing config template value: {missing}") from exc
+
+
+def resolve_path(root: Path, template: str, context: Mapping[str, str]) -> Path:
+    resolved = _resolve_template(template, context)
+    path = Path(resolved)
+    if not path.is_absolute():
+        path = root / path
+    return path
+
+
+def build_repo_context(root: Path, build_type: str, config: dict) -> RepoContext:
+    build_root = root / _get_config_value(config, "paths.build_root", "_build")
+    logs_root = root / _get_config_value(config, "paths.logs_root", "_logs")
+
+    base_context = {
+        "workspace_root": str(root),
+        "build_root": str(build_root),
+        "logs_root": str(logs_root),
+        "build_type": build_type,
+    }
+
+    conan_deps_root = _get_config_value(
+        config, "paths.conan_deps_root", "{build_root}/deps"
+    )
+    resolved_conan_deps_root = _resolve_template(conan_deps_root, base_context)
+    template_context = {**base_context, "conan_deps_root": resolved_conan_deps_root}
+
+    conan_lock = _get_config_value(config, "paths.conan_lock", "conan_glfw.lock")
+    resolved_conan_lock = str(resolve_path(root, conan_lock, template_context))
+
+    usd_install = _get_config_value(
+        config, "paths.usd_install_dir", "{build_root}/usd/{build_type}/install"
+    )
+    resolved_usd_install_dir = str(resolve_path(root, usd_install, template_context))
+
+    usd_build = _get_config_value(
+        config, "paths.usd_build_dir", "{build_root}/usd/{build_type}/build"
+    )
+    resolved_usd_build_dir = str(resolve_path(root, usd_build, template_context))
+
+    context: RepoContext = {
+        **template_context,
+        "conan_lock": resolved_conan_lock,
+        "usd_install_dir": resolved_usd_install_dir,
+        "usd_build_dir": resolved_usd_build_dir,
+        "build_dir": str(build_root / build_type),
+    }
+    return context
+
+
+def resolve_env_vars(config: dict, context: RepoContext) -> dict:
+    env_config = config.get("env", {})
+    resolved = {}
+    for key, value in env_config.items():
+        if isinstance(value, list):
+            values = [_resolve_template(str(item), context) for item in value]
+            resolved[key] = os.pathsep.join(values)
+        else:
+            resolved[key] = _resolve_template(str(value), context)
+    return resolved
+
+
+def apply_env_overrides(env: dict, overrides: dict) -> dict:
+    for key, value in overrides.items():
+        if key.upper() == "PATH":
+            env[key] = f"{value}{os.pathsep}{env.get(key, '')}"
+        else:
+            env[key] = value
+    return env
+
+
+def resolve_slang_shaders(
+    root: Path, config: dict, context: RepoContext
+) -> list[tuple[Path, Path]]:
+    shaders = config.get("slang", {}).get("shaders", [])
+    resolved = []
+    for shader in shaders:
+        if not isinstance(shader, dict):
+            continue
+        input_value = shader.get("input")
+        if not input_value:
+            continue
+        output_value = shader.get("output")
+        if output_value:
+            output_path = resolve_path(root, str(output_value), context)
+        else:
+            input_path = resolve_path(root, str(input_value), context)
+            output_path = input_path.with_suffix(".wgsl")
+        input_path = resolve_path(root, str(input_value), context)
+        resolved.append((input_path, output_path))
+    return resolved
+
+
+def resolve_slang_test_output(
+    root: Path, config: dict, context: RepoContext
+) -> Path | None:
+    test_shader = config.get("slang", {}).get("test_shader")
+    if not test_shader:
+        return None
+    return resolve_path(root, str(test_shader), context)
+
+
+def find_slangc(root: Path, config: dict, context: RepoContext) -> Path | None:
+    compiler_path = config.get("slang", {}).get("compiler_path")
+    if compiler_path:
+        path = resolve_path(root, str(compiler_path), context)
+        if path.exists():
+            return path
+
+    search_roots = config.get("slang", {}).get("compiler_search_roots", [])
+    candidates: list[Path] = []
+    for entry in search_roots:
+        candidate = resolve_path(root, str(entry), context)
+        if candidate.exists():
+            candidates.append(candidate)
+
+    exe_name = "slangc.exe" if is_windows() else "slangc"
+    for candidate_root in candidates:
+        for path in candidate_root.rglob(exe_name):
+            return path
+
+    exe_path = shutil.which(exe_name)
+    if exe_path:
+        return Path(exe_path)
+    return None
+
+
+def compile_slang_shaders(
+    root: Path, config: dict, context: RepoContext, logs_dir: Path
+) -> None:
+    shaders = resolve_slang_shaders(root, config, context)
+    if not shaders:
+        return
+
+    slangc_path = find_slangc(root, config, context)
+    if slangc_path is None:
+        raise RuntimeError("slangc not found. Install via Conan or set compiler_path.")
+
+    for input_path, output_path in shaders:
+        if not input_path.exists():
+            raise FileNotFoundError(f"Slang shader not found: {input_path}")
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        if output_path.exists():
+            if output_path.stat().st_mtime >= input_path.stat().st_mtime:
+                continue
+        log_file = logs_dir / f"slangc_{input_path.stem}.log"
+        run_command(
+            [
+                str(slangc_path),
+                str(input_path),
+                "-target",
+                "wgsl",
+                "-o",
+                str(output_path),
+            ],
+            log_file=log_file,
+        )

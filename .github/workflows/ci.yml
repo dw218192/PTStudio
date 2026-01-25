@@ -82,8 +82,8 @@ jobs:
         with:
           name: usd-windows-${{ matrix.build_type }}
           path: |
-            _build/usd/${{ matrix.build_type }}/install/bin/
-            _build/usd/${{ matrix.build_type }}/install/lib/
+            _build/deps/usd/${{ matrix.build_type }}/install/bin/
+            _build/deps/usd/${{ matrix.build_type }}/install/lib/
           retention-days: 3
 
   test-windows:
@@ -121,7 +121,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: usd-windows-${{ matrix.build_type }}
-          path: _build/usd/${{ matrix.build_type }}/install/
+          path: _build/deps/usd/${{ matrix.build_type }}/install/
 
       - name: Run tests
         run: .\pts.cmd test --build-type ${{ matrix.build_type }}

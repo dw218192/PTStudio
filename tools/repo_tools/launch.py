@@ -6,12 +6,19 @@ import subprocess
 import sys
 from pathlib import Path
 
-from repo_tools import augment_env_with_usd, is_windows, print_tool
+from repo_tools import (
+    apply_env_overrides,
+    build_repo_context,
+    is_windows,
+    load_repo_config,
+    print_tool,
+    resolve_env_vars,
+)
 
 
-def _editor_executable_path(root: Path, config: str) -> Path:
+def _editor_executable_path(build_dir: Path) -> Path:
     exe_name = "editor.exe" if is_windows() else "editor"
-    return root / "_build" / config / "bin" / exe_name
+    return build_dir / "bin" / exe_name
 
 
 def _normalize_config(config: str) -> str:
@@ -27,16 +34,19 @@ def _normalize_config(config: str) -> str:
 def launch_command(args: argparse.Namespace) -> None:
     """Launch the editor executable for native deployment."""
     root = Path(__file__).parent.parent.parent
-    config = _normalize_config(args.config)
-    exe_path = _editor_executable_path(root, config)
-    usd_install_dir = root / "_build" / "usd" / config / "install"
+    build_type = _normalize_config(args.config)
+    config = load_repo_config(root)
+    context = build_repo_context(root, build_type, config)
+    build_dir = Path(context["build_dir"])
+    exe_path = _editor_executable_path(build_dir)
 
     if not exe_path.exists():
         print_tool(f"Editor executable not found: {exe_path}")
         print_tool("Build the project first: .\\pts.cmd build")
         sys.exit(1)
 
-    env = augment_env_with_usd(os.environ.copy(), usd_install_dir)
+    env_vars = resolve_env_vars(config, context)
+    env = apply_env_overrides(os.environ.copy(), env_vars)
 
     cmd = [str(exe_path)]
     cmd.extend(getattr(args, "passthrough_args", []))
