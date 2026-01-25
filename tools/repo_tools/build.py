@@ -430,10 +430,13 @@ def _discover_test_targets(root: Path, build_type: str) -> list[str]:
 def build_command(args: argparse.Namespace) -> None:
     """
     Meta-meta-build system implementation.
-    1. Build OpenUSD if not `--build-only`
-    2. Fetch dependencies with conan
-    3. Configure CMake
-    4. Build the project using CMake
+    1. Configure the project
+      - build OpenUSD if needed (force rebuild if `--configure-only`)
+      - fetch dependencies with conan
+      - configure CMake
+      - generate vscode cpp include paths for the project (compile_commands.json is not reliably generated for certain configurations)
+    2. build the project using CMake by running the appropriate build system
+    3. generate vscode launch configurations for the project
     """
     root = Path(__file__).parent.parent.parent
     build_folder = root / "_build"

@@ -87,11 +87,6 @@ PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}/include/core
 )
 
-if(NOT TARGET usd)
-	# Fallback: pxrConfig.cmake without imported targets.
-	target_include_directories(${lib_name} PRIVATE ${PXR_INCLUDE_DIRS})
-endif()
-
 # ============================================================================
 # ABI-Stable API Interface Target
 # ============================================================================

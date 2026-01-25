@@ -2,6 +2,7 @@
 
 import functools
 import logging
+import os
 import platform
 import shutil
 import subprocess
@@ -55,7 +56,7 @@ def print_tool(message: str) -> None:
 
 
 def print_subprocess_line(line: str) -> None:
-    text = line.rstrip("\n")
+    text = line.rstrip()
     print(f"{Style.DIM}{text}{Style.RESET_ALL}")
 
 
@@ -101,6 +102,14 @@ def run_command(cmd: list[str], log_file: Optional[Path] = None) -> None:
                 sys.exit(process.returncode)
     else:
         subprocess.run(cmd, check=True)
+
+
+def augment_env_with_usd(env: dict, usd_install_dir: Path) -> dict:
+    if usd_install_dir.exists():
+        usd_bin = usd_install_dir / "bin"
+        usd_lib = usd_install_dir / "lib"
+        env["PATH"] = f"{usd_bin}{os.pathsep}{usd_lib}{os.pathsep}{env.get('PATH', '')}"
+    return env
 
 
 def ensure_conan_profile() -> None:

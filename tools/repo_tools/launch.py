@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from repo_tools import is_windows, print_tool
+from repo_tools import augment_env_with_usd, is_windows, print_tool
 
 
 def _editor_executable_path(root: Path, config: str) -> Path:
@@ -36,11 +36,7 @@ def launch_command(args: argparse.Namespace) -> None:
         print_tool("Build the project first: .\\pts.cmd build")
         sys.exit(1)
 
-    env = os.environ.copy()
-    if usd_install_dir.exists():
-        usd_bin = usd_install_dir / "bin"
-        usd_lib = usd_install_dir / "lib"
-        env["PATH"] = f"{usd_bin}{os.pathsep}{usd_lib}{os.pathsep}{env.get('PATH', '')}"
+    env = augment_env_with_usd(os.environ.copy(), usd_install_dir)
 
     cmd = [str(exe_path)]
     cmd.extend(getattr(args, "passthrough_args", []))

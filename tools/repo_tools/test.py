@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from repo_tools import logger, print_subprocess_line, print_tool
+from repo_tools import augment_env_with_usd, logger, print_subprocess_line, print_tool
 
 
 def test_command(args: argparse.Namespace) -> None:
@@ -60,13 +60,7 @@ def test_command(args: argparse.Namespace) -> None:
             cmd = [str(test_exe)]
             if args.verbose:
                 cmd.append("--verbose")
-            env = os.environ.copy()
-            if usd_install_dir.exists():
-                usd_bin = usd_install_dir / "bin"
-                usd_lib = usd_install_dir / "lib"
-                env["PATH"] = (
-                    f"{usd_bin}{os.pathsep}{usd_lib}{os.pathsep}{env.get('PATH', '')}"
-                )
+            env = augment_env_with_usd(os.environ.copy(), usd_install_dir)
 
             result = subprocess.run(
                 cmd,
