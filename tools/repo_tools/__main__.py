@@ -24,10 +24,7 @@ def main() -> None:
     register_test_command(subparsers)
 
     args, unknown_args = parser.parse_known_args()
-    if args.command == "launch":
-        args.passthrough_args = unknown_args
-    elif unknown_args:
-        parser.error(f"unrecognized arguments: {' '.join(unknown_args)}")
+    args.passthrough_args = unknown_args
     args.func(args)
 
 

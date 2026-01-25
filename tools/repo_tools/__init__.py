@@ -109,6 +109,8 @@ def augment_env_with_usd(env: dict, usd_install_dir: Path) -> dict:
         usd_bin = usd_install_dir / "bin"
         usd_lib = usd_install_dir / "lib"
         env["PATH"] = f"{usd_bin}{os.pathsep}{usd_lib}{os.pathsep}{env.get('PATH', '')}"
+    else:
+        logger.error(f"USD install directory does not exist: {usd_install_dir}")
     return env
 
 

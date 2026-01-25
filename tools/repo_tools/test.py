@@ -6,7 +6,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-from repo_tools import augment_env_with_usd, logger, print_subprocess_line, print_tool
+from repo_tools import (
+    augment_env_with_usd,
+    logger,
+    print_subprocess_line,
+    print_tool,
+    is_windows,
+)
 
 
 def test_command(args: argparse.Namespace) -> None:
@@ -26,7 +32,7 @@ def test_command(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     # Find all test executables
-    if sys.platform == "win32":
+    if is_windows():
         test_executables = list(test_dir.glob("*.exe"))
     else:
         # On Unix, find all executable files
