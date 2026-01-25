@@ -386,7 +386,7 @@ def _generate_launch_json(root: Path, build_type: str, test_names: list[str]) ->
 
 
 def _is_test_name(target_name: str) -> bool:
-    return target_name.startswith("test_") or target_name.startswith("test")
+    return target_name.startswith(("test_", "test"))
 
 
 def _discover_test_targets(root: Path, build_type: str) -> list[str]:
@@ -403,9 +403,10 @@ def _discover_test_targets(root: Path, build_type: str) -> list[str]:
                     continue
                 target_json = json.loads(target_json_path.read_text(encoding="utf-8"))
                 for artifact in target_json.get("artifacts", []):
-                    artifact_path = Path(artifact.get("path", ""))
-                    if not artifact_path:
+                    artifact_path_str = artifact.get("path", "")
+                    if not artifact_path_str:
                         continue
+                    artifact_path = Path(artifact_path_str)
                     if not artifact_path.is_absolute():
                         artifact_path = (build_dir / artifact_path).resolve()
                     try:
@@ -423,7 +424,7 @@ def _discover_test_targets(root: Path, build_type: str) -> list[str]:
                     if _is_test_name(test_name):
                         test_names.add(test_name)
 
-    return test_names
+    return sorted(test_names)
 
 
 def build_command(args: argparse.Namespace) -> None:
