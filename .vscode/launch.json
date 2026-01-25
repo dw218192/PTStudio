@@ -46,10 +46,10 @@
             ]
         },
         {
-            "name": "PTStudio Test testPluginSystem (Debug)",
+            "name": "PTStudio Test testOpenUsd (Debug)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/_build/Debug/bin/tests/testPluginSystem.exe",
+            "program": "${workspaceFolder}/_build/Debug/bin/tests/testOpenUsd.exe",
             "args": [],
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
@@ -76,10 +76,10 @@
             ]
         },
         {
-            "name": "PTStudio Test testOpenUsd (Debug)",
+            "name": "PTStudio Test testPluginSystem (Debug)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/_build/Debug/bin/tests/testOpenUsd.exe",
+            "program": "${workspaceFolder}/_build/Debug/bin/tests/testPluginSystem.exe",
             "args": [],
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",

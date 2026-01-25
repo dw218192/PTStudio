@@ -176,7 +176,7 @@ def _remove_tree_with_retries(
                 remove_file(Path(root_dir) / filename)
             for dirname in dirnames:
                 remove_dir(Path(root_dir) / dirname)
-        target.rmdir()
+        remove_dir(target)
 
     for attempt in range(1, attempts + 1):
         try:
@@ -186,7 +186,7 @@ def _remove_tree_with_retries(
             offending = error.filename or str(path)
             print_tool(f"Remove failed for: {offending}")
             if attempt == attempts:
-                raise error
+                raise
             print_tool(
                 f"Remove failed (attempt {attempt}/{attempts}) due to locked files. "
                 f"Retrying in {delay:.1f}s..."
@@ -198,7 +198,7 @@ def _ensure_openusd(
     root: Path,
     build_type: str,
     logs_dir: Path,
-    allow_build: bool,
+    force_rebuild: bool = False,
 ) -> Path:
     usd_root = root / "ext" / "usd"
     build_script = usd_root / "build_scripts" / "build_usd.py"
@@ -208,13 +208,13 @@ def _ensure_openusd(
     install_dir = _get_openusd_install_dir(root, build_type)
     pxr_config = install_dir / "pxrConfig.cmake"
     if pxr_config.exists():
-        print_tool(f"OpenUSD install found: {install_dir}")
-        return install_dir
-
-    if not allow_build:
-        raise RuntimeError(
-            "OpenUSD is not installed. Run a full build to bootstrap it."
-        )
+        if not force_rebuild:
+            print_tool(f"OpenUSD install found: {install_dir}")
+            return install_dir
+        print_tool(f"OpenUSD install found; forcing rebuild: {install_dir}")
+        usd_root_dir = root / "_build" / "usd" / build_type
+        if usd_root_dir.exists():
+            _remove_tree_with_retries(usd_root_dir)
 
     print_tool("OpenUSD install not found. Building OpenUSD...")
     usd_build_dir = root / "_build" / "usd" / build_type / "build"
@@ -341,31 +341,34 @@ def _generate_launch_json(root: Path, build_type: str, test_names: list[str]) ->
 
     launch_configs = []
     editor_name = f"PTStudio Editor ({build_type})"
-    launch_configs.append(
-        {
-            "name": editor_name,
-            "type": "cppvsdbg",
-            "request": "launch",
-            "program": f"${{workspaceFolder}}/_build/{build_type}/bin/editor.exe",
-            "args": [],
-            "cwd": "${workspaceFolder}",
-            "console": "integratedTerminal",
-            "environment": [{"name": "PATH", "value": env_path_value}],
-        }
-    )
-    for test_name in test_names:
+
+    if is_windows():
         launch_configs.append(
             {
-                "name": f"PTStudio Test {test_name} ({build_type})",
+                "name": editor_name,
                 "type": "cppvsdbg",
                 "request": "launch",
-                "program": f"${{workspaceFolder}}/_build/{build_type}/bin/tests/{test_name}.exe",
+                "program": f"${{workspaceFolder}}/_build/{build_type}/bin/editor.exe",
                 "args": [],
                 "cwd": "${workspaceFolder}",
                 "console": "integratedTerminal",
                 "environment": [{"name": "PATH", "value": env_path_value}],
             }
         )
+    for test_name in test_names:
+        if is_windows():
+            launch_configs.append(
+                {
+                    "name": f"PTStudio Test {test_name} ({build_type})",
+                    "type": "cppvsdbg",
+                    "request": "launch",
+                    "program": f"${{workspaceFolder}}/_build/{build_type}/bin/tests/{test_name}.exe",
+                    "args": [],
+                    "cwd": "${workspaceFolder}",
+                    "console": "integratedTerminal",
+                    "environment": [{"name": "PATH", "value": env_path_value}],
+                }
+            )
 
     names_to_replace = {config["name"] for config in launch_configs}
     configurations = [
@@ -382,6 +385,47 @@ def _generate_launch_json(root: Path, build_type: str, test_names: list[str]) ->
     launch_path.write_text(json.dumps(payload, indent=4) + "\n", encoding="utf-8")
 
 
+def _is_test_name(target_name: str) -> bool:
+    return target_name.startswith("test_") or target_name.startswith("test")
+
+
+def _discover_test_targets(root: Path, build_type: str) -> list[str]:
+    build_dir = root / "_build" / build_type
+    tests_dir = build_dir / "bin" / "tests"
+    test_names: set[str] = set()
+    result = _load_codemodel(build_dir)
+    if result:
+        codemodel, reply_dir = result
+        for config in codemodel.get("configurations", []):
+            for target in config.get("targets", []):
+                target_json_path = reply_dir / target.get("jsonFile", "")
+                if not target_json_path.exists():
+                    continue
+                target_json = json.loads(target_json_path.read_text(encoding="utf-8"))
+                for artifact in target_json.get("artifacts", []):
+                    artifact_path = Path(artifact.get("path", ""))
+                    if not artifact_path:
+                        continue
+                    if not artifact_path.is_absolute():
+                        artifact_path = (build_dir / artifact_path).resolve()
+                    try:
+                        artifact_path.relative_to(tests_dir)
+                    except ValueError:
+                        continue
+                    if is_windows():
+                        if artifact_path.suffix.lower() != ".exe":
+                            continue
+                        test_name = artifact_path.stem
+                    else:
+                        if not os.access(artifact_path, os.X_OK):
+                            continue
+                        test_name = artifact_path.name
+                    if _is_test_name(test_name):
+                        test_names.add(test_name)
+
+    return test_names
+
+
 def build_command(args: argparse.Namespace) -> None:
     """
     Meta-meta-build system implementation.
@@ -392,14 +436,15 @@ def build_command(args: argparse.Namespace) -> None:
     """
     root = Path(__file__).parent.parent.parent
     build_folder = root / "_build"
+    build_dir = build_folder / args.build_type
     logs_dir = root / "_logs"
     windowing = "glfw"
     lock_file = root / "conan_glfw.lock"
 
-    # Remove build directory if -x flag is provided
-    if args.rebuild and build_folder.exists():
-        print_tool("Rebuild flag (-x) detected. Removing build folder...")
-        _remove_tree_with_retries(build_folder)
+    # Remove build configuration directory if -x flag is provided
+    if args.rebuild and build_dir.exists():
+        print_tool(f"Rebuild flag (-x) detected. Removing build directory: {build_dir}")
+        _remove_tree_with_retries(build_dir)
 
     # Create build directory if missing
     build_folder.mkdir(parents=True, exist_ok=True)
@@ -410,7 +455,7 @@ def build_command(args: argparse.Namespace) -> None:
         root,
         args.build_type,
         logs_dir,
-        allow_build=not args.build_only,
+        force_rebuild=args.configure_only,
     )
 
     # Change to build directory
@@ -504,11 +549,6 @@ def build_command(args: argparse.Namespace) -> None:
             )
 
             _generate_cpp_properties(root, build_folder / args.build_type, windowing)
-            _generate_launch_json(
-                root,
-                args.build_type,
-                ["testPluginSystem", "testPluginSystemStatic", "testOpenUsd"],
-            )
 
         if not args.configure_only:
             build_log_file = logs_dir / "cmake_build.log"
@@ -525,6 +565,9 @@ def build_command(args: argparse.Namespace) -> None:
             )
         else:
             print_tool("Configure only mode (-c): Skipping build step")
+
+        tests = _discover_test_targets(root, args.build_type)
+        _generate_launch_json(root, args.build_type, tests)
     finally:
         os.chdir(original_cwd)
 
@@ -536,7 +579,7 @@ def register_build_command(subparsers: argparse._SubParsersAction) -> None:
         "-x",
         "--rebuild",
         action="store_true",
-        help="Rebuild flag: removes build folder before building",
+        help="Rebuild flag: removes build configuration folder before building",
     )
     parser.add_argument(
         "-u",

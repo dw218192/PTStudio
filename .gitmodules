@@ -15,3 +15,4 @@
 	path = ext/usd
 	url = https://github.com/PixarAnimationStudios/OpenUSD.git
 	branch = release
+	shallow = true

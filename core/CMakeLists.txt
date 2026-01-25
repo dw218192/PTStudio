@@ -49,12 +49,12 @@ cmrc_add_resource_library(${lib_name}_resources
 target_link_libraries(${lib_name}
 PRIVATE
 	$<BUILD_INTERFACE:developer_flags>
+PUBLIC
+	${lib_name}::rc
 	usd
 	usdGeom
 	usdShade
 	usdLux
-PUBLIC
-	${lib_name}::rc
 	glm::glm
 	tinyobjloader
 	pts_stb
@@ -85,8 +85,12 @@ PUBLIC
 	${CMAKE_CURRENT_SOURCE_DIR}/api
 PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}/include/core
-	${PXR_INCLUDE_DIRS}
 )
+
+if(NOT TARGET usd)
+	# Fallback: pxrConfig.cmake without imported targets.
+	target_include_directories(${lib_name} PRIVATE ${PXR_INCLUDE_DIRS})
+endif()
 
 # ============================================================================
 # ABI-Stable API Interface Target
