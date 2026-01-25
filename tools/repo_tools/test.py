@@ -9,7 +9,6 @@ from pathlib import Path
 from repo_tools import (
     apply_env_overrides,
     build_repo_context,
-    compile_slang_shaders,
     is_windows,
     load_repo_config,
     logger,
@@ -35,8 +34,6 @@ def test_command(args: argparse.Namespace) -> None:
         print_tool(f"Test directory does not exist: {test_dir}")
         print_tool("Build the project first with: pts.cmd build")
         sys.exit(1)
-
-    compile_slang_shaders(root, config, context, logs_dir)
 
     # Find all test executables
     if is_windows():

@@ -77,7 +77,7 @@ jobs:
           path: _build/${{ matrix.build_type }}/bin/
           retention-days: 3
       
-      - name: Upload USD install artifacts
+      - name: Upload USD install artifacts # needed to load DLLs
         uses: actions/upload-artifact@v4
         with:
           name: usd-windows-${{ matrix.build_type }}

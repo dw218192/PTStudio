@@ -295,35 +295,3 @@ def find_slangc(root: Path, config: dict, context: RepoContext) -> Path | None:
     if exe_path:
         return Path(exe_path)
     return None
-
-
-def compile_slang_shaders(
-    root: Path, config: dict, context: RepoContext, logs_dir: Path
-) -> None:
-    shaders = resolve_slang_shaders(root, config, context)
-    if not shaders:
-        return
-
-    slangc_path = find_slangc(root, config, context)
-    if slangc_path is None:
-        raise RuntimeError("slangc not found. Install via Conan or set compiler_path.")
-
-    for input_path, output_path in shaders:
-        if not input_path.exists():
-            raise FileNotFoundError(f"Slang shader not found: {input_path}")
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        if output_path.exists():
-            if output_path.stat().st_mtime >= input_path.stat().st_mtime:
-                continue
-        log_file = logs_dir / f"slangc_{input_path.stem}.log"
-        run_command(
-            [
-                str(slangc_path),
-                str(input_path),
-                "-target",
-                "wgsl",
-                "-o",
-                str(output_path),
-            ],
-            log_file=log_file,
-        )
