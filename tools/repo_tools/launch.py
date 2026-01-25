@@ -1,13 +1,16 @@
 """Launch subcommand implementation."""
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
 
+from repo_tools import augment_env_with_usd, is_windows, print_tool
+
 
 def _editor_executable_path(root: Path, config: str) -> Path:
-    exe_name = "editor.exe" if sys.platform == "win32" else "editor"
+    exe_name = "editor.exe" if is_windows() else "editor"
     return root / "_build" / config / "bin" / exe_name
 
 
@@ -26,15 +29,18 @@ def launch_command(args: argparse.Namespace) -> None:
     root = Path(__file__).parent.parent.parent
     config = _normalize_config(args.config)
     exe_path = _editor_executable_path(root, config)
+    usd_install_dir = root / "_build" / "usd" / config / "install"
 
     if not exe_path.exists():
-        print(f"Editor executable not found: {exe_path}")
-        print("Build the project first: .\\pts.cmd build")
+        print_tool(f"Editor executable not found: {exe_path}")
+        print_tool("Build the project first: .\\pts.cmd build")
         sys.exit(1)
+
+    env = augment_env_with_usd(os.environ.copy(), usd_install_dir)
 
     cmd = [str(exe_path)]
     cmd.extend(getattr(args, "passthrough_args", []))
-    subprocess.run(cmd, check=True)
+    subprocess.run(cmd, check=True, env=env)
 
 
 def register_launch_command(subparsers: argparse._SubParsersAction) -> None:

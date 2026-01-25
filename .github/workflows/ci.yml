@@ -76,6 +76,15 @@ jobs:
           name: build-windows-${{ matrix.build_type }}
           path: _build/${{ matrix.build_type }}/bin/
           retention-days: 3
+      
+      - name: Upload USD install artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: usd-windows-${{ matrix.build_type }}
+          path: |
+            _build/usd/${{ matrix.build_type }}/install/bin/
+            _build/usd/${{ matrix.build_type }}/install/lib/
+          retention-days: 3
 
   test-windows:
     name: Test (Windows, ${{ matrix.build_type }})
@@ -107,6 +116,12 @@ jobs:
         with:
           name: build-windows-${{ matrix.build_type }}
           path: _build/${{ matrix.build_type }}/bin/
+      
+      - name: Download USD install artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: usd-windows-${{ matrix.build_type }}
+          path: _build/usd/${{ matrix.build_type }}/install/
 
       - name: Run tests
         run: .\pts.cmd test --build-type ${{ matrix.build_type }}

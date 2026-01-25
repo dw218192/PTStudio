@@ -11,3 +11,8 @@
 [submodule "ext/nativefiledialog"]
 	path = ext/nativefiledialog
 	url = https://github.com/mlabbe/nativefiledialog.git
+[submodule "ext/usd"]
+	path = ext/usd
+	url = https://github.com/PixarAnimationStudios/OpenUSD.git
+	branch = release
+	shallow = true

@@ -4,9 +4,18 @@ import argparse
 import json
 import os
 import shutil
+import stat
+import subprocess
+import time
 from pathlib import Path
 
-from repo_tools import ensure_conan_profile, find_venv_executable, run_command
+from repo_tools import (
+    ensure_conan_profile,
+    find_venv_executable,
+    is_windows,
+    print_tool,
+    run_command,
+)
 
 
 def _format_workspace_path(root: Path, path: Path) -> str:
@@ -57,35 +66,212 @@ def _collect_target_compile_info(
     codemodel: dict,
     reply_dir: Path,
     root: Path,
-    target_names: set[str],
+    target_names: set[str] | None,
     include_plugins: bool,
 ) -> tuple[set[Path], set[str]]:
     include_dirs: set[Path] = set()
     defines: set[str] = set()
     plugins_root = root / "plugins"
+    include_all = not target_names
     for config in codemodel.get("configurations", []):
         for target in config.get("targets", []):
             target_name = target.get("name")
             if not target_name:
                 continue
-            if target_name not in target_names:
+            target_json = None
+            if include_all or target_name in target_names:
                 target_json = json.loads(
                     (reply_dir / target["jsonFile"]).read_text(encoding="utf-8")
                 )
-                if not include_plugins or not _target_has_plugin_sources(
-                    target_json, plugins_root
-                ):
-                    continue
-            else:
+            elif include_plugins:
                 target_json = json.loads(
                     (reply_dir / target["jsonFile"]).read_text(encoding="utf-8")
                 )
+                if not _target_has_plugin_sources(target_json, plugins_root):
+                    target_json = None
+            if target_json is None:
+                continue
             for group in target_json.get("compileGroups", []):
                 for include in group.get("includes", []):
                     include_dirs.add(Path(include["path"]))
                 for define in group.get("defines", []):
                     defines.add(define["define"])
     return include_dirs, defines
+
+
+def _map_usd_build_variant(build_type: str) -> str:
+    build_type = build_type.lower()
+    if build_type == "debug":
+        return "debug"
+    if build_type == "relwithdebinfo":
+        return "relwithdebuginfo"
+    return "release"
+
+
+def _get_openusd_install_dir(root: Path, build_type: str) -> Path:
+    return root / "_build" / "usd" / build_type / "install"
+
+
+def _get_vcvars_path() -> Path | None:
+    if not is_windows():
+        return None
+
+    program_files_x86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
+    vswhere = (
+        Path(program_files_x86)
+        / "Microsoft Visual Studio"
+        / "Installer"
+        / "vswhere.exe"
+    )
+    if not vswhere.exists():
+        return None
+
+    try:
+        install_path = subprocess.check_output(
+            [
+                str(vswhere),
+                "-latest",
+                "-requires",
+                "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+                "-property",
+                "installationPath",
+            ],
+            text=True,
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+
+    if not install_path:
+        return None
+
+    vcvars = Path(install_path) / "VC" / "Auxiliary" / "Build" / "vcvars64.bat"
+    if vcvars.exists():
+        return vcvars
+    return None
+
+
+def _remove_tree_with_retries(
+    path: Path, attempts: int = 5, delay: float = 1.0
+) -> None:
+    if not path.exists():
+        return
+
+    def remove_file(target: Path) -> None:
+        try:
+            target.unlink()
+        except PermissionError:
+            os.chmod(target, stat.S_IWRITE)
+            target.unlink()
+
+    def remove_dir(target: Path) -> None:
+        try:
+            target.rmdir()
+        except PermissionError:
+            os.chmod(target, stat.S_IWRITE)
+            target.rmdir()
+
+    def remove_tree(target: Path) -> None:
+        for root_dir, dirnames, filenames in os.walk(target, topdown=False):
+            for filename in filenames:
+                remove_file(Path(root_dir) / filename)
+            for dirname in dirnames:
+                remove_dir(Path(root_dir) / dirname)
+        remove_dir(target)
+
+    for attempt in range(1, attempts + 1):
+        try:
+            remove_tree(path)
+            return
+        except PermissionError as error:
+            offending = error.filename or str(path)
+            print_tool(f"Remove failed for: {offending}")
+            if attempt == attempts:
+                raise
+            print_tool(
+                f"Remove failed (attempt {attempt}/{attempts}) due to locked files. "
+                f"Retrying in {delay:.1f}s..."
+            )
+            time.sleep(delay)
+
+
+def _ensure_openusd(
+    root: Path,
+    build_type: str,
+    logs_dir: Path,
+    force_rebuild: bool = False,
+) -> Path:
+    usd_root = root / "ext" / "usd"
+    build_script = usd_root / "build_scripts" / "build_usd.py"
+    if not build_script.exists():
+        raise FileNotFoundError(f"OpenUSD build script not found: {build_script}")
+
+    install_dir = _get_openusd_install_dir(root, build_type)
+    pxr_config = install_dir / "pxrConfig.cmake"
+    if pxr_config.exists():
+        if not force_rebuild:
+            print_tool(f"OpenUSD install found: {install_dir}")
+            return install_dir
+        print_tool(f"OpenUSD install found; forcing rebuild: {install_dir}")
+        usd_root_dir = root / "_build" / "usd" / build_type
+        if usd_root_dir.exists():
+            _remove_tree_with_retries(usd_root_dir)
+
+    print_tool("OpenUSD install not found. Building OpenUSD...")
+    usd_build_dir = root / "_build" / "usd" / build_type / "build"
+    usd_log_file = logs_dir / f"openusd_build_{build_type.lower()}.log"
+    python_exe = find_venv_executable("python")
+    usd_cmd = [
+        python_exe,
+        str(build_script),
+        str(install_dir),
+        "--build",
+        str(usd_build_dir),
+        "--build-variant",
+        _map_usd_build_variant(build_type),
+        "--no-python",
+        "--no-python-docs",
+        "--no-docs",
+        "--no-tests",
+        "--no-examples",
+        "--no-tutorials",
+        "--no-tools",
+        "--no-imaging",
+        "--no-usdview",
+        "--no-ptex",
+        "--no-openvdb",
+        "--no-openimageio",
+        "--no-opencolorio",
+        "--no-alembic",
+        "--no-materialx",
+        "--no-embree",
+        "--no-prman",
+        "--no-vulkan",
+    ]
+
+    if is_windows() and shutil.which("cl") is None:
+        vcvars = _get_vcvars_path()
+        if vcvars is None:
+            raise RuntimeError(
+                "MSVC compiler not found. Run from a Developer Command Prompt "
+                "or install Visual Studio with C++ tools."
+            )
+        cmd_line = subprocess.list2cmdline(usd_cmd)
+        usd_cmd_script = logs_dir / f"openusd_build_{build_type.lower()}.cmd"
+        usd_cmd_script.write_text(
+            f'@echo off\ncall "{vcvars}"\n{cmd_line}\nexit /b %errorlevel%\n',
+            encoding="utf-8",
+        )
+        run_command(
+            ["cmd.exe", "/c", str(usd_cmd_script)],
+            log_file=usd_log_file,
+        )
+    else:
+        run_command(usd_cmd, log_file=usd_log_file)
+
+    if not pxr_config.exists():
+        raise RuntimeError(f"OpenUSD install failed: {pxr_config} not found.")
+
+    return install_dir
 
 
 def _generate_cpp_properties(root: Path, build_dir: Path, windowing: str) -> None:
@@ -100,7 +286,7 @@ def _generate_cpp_properties(root: Path, build_dir: Path, windowing: str) -> Non
             codemodel,
             reply_dir,
             root,
-            {"core", "editor"},
+            None,
             include_plugins=True,
         )
 
@@ -132,24 +318,149 @@ def _generate_cpp_properties(root: Path, build_dir: Path, windowing: str) -> Non
     )
 
 
+def _generate_launch_json(root: Path, build_type: str, test_names: list[str]) -> None:
+    vscode_dir = root / ".vscode"
+    vscode_dir.mkdir(parents=True, exist_ok=True)
+    launch_path = vscode_dir / "launch.json"
+    existing = {}
+    if launch_path.exists():
+        try:
+            existing = json.loads(launch_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            existing = {}
+
+    configurations = existing.get("configurations", [])
+    if not isinstance(configurations, list):
+        configurations = []
+
+    usd_install_dir = root / "_build" / "usd" / build_type / "install"
+    usd_bin = _format_workspace_path(root, usd_install_dir / "bin")
+    usd_lib = _format_workspace_path(root, usd_install_dir / "lib")
+    path_separator = ";" if is_windows() else ":"
+    env_path_value = f"{usd_bin}{path_separator}{usd_lib}{path_separator}${{env:PATH}}"
+
+    launch_configs = []
+    editor_name = f"PTStudio Editor ({build_type})"
+
+    if is_windows():
+        launch_configs.append(
+            {
+                "name": editor_name,
+                "type": "cppvsdbg",
+                "request": "launch",
+                "program": f"${{workspaceFolder}}/_build/{build_type}/bin/editor.exe",
+                "args": [],
+                "cwd": "${workspaceFolder}",
+                "console": "integratedTerminal",
+                "environment": [{"name": "PATH", "value": env_path_value}],
+            }
+        )
+    for test_name in test_names:
+        if is_windows():
+            launch_configs.append(
+                {
+                    "name": f"PTStudio Test {test_name} ({build_type})",
+                    "type": "cppvsdbg",
+                    "request": "launch",
+                    "program": f"${{workspaceFolder}}/_build/{build_type}/bin/tests/{test_name}.exe",
+                    "args": [],
+                    "cwd": "${workspaceFolder}",
+                    "console": "integratedTerminal",
+                    "environment": [{"name": "PATH", "value": env_path_value}],
+                }
+            )
+
+    names_to_replace = {config["name"] for config in launch_configs}
+    configurations = [
+        config
+        for config in configurations
+        if config.get("name") not in names_to_replace
+    ]
+    configurations.extend(launch_configs)
+
+    payload = {
+        "version": existing.get("version", "0.2.0"),
+        "configurations": configurations,
+    }
+    launch_path.write_text(json.dumps(payload, indent=4) + "\n", encoding="utf-8")
+
+
+def _is_test_name(target_name: str) -> bool:
+    return target_name.startswith(("test_", "test"))
+
+
+def _discover_test_targets(root: Path, build_type: str) -> list[str]:
+    build_dir = root / "_build" / build_type
+    tests_dir = build_dir / "bin" / "tests"
+    test_names: set[str] = set()
+    result = _load_codemodel(build_dir)
+    if result:
+        codemodel, reply_dir = result
+        for config in codemodel.get("configurations", []):
+            for target in config.get("targets", []):
+                target_json_path = reply_dir / target.get("jsonFile", "")
+                if not target_json_path.exists():
+                    continue
+                target_json = json.loads(target_json_path.read_text(encoding="utf-8"))
+                for artifact in target_json.get("artifacts", []):
+                    artifact_path_str = artifact.get("path", "")
+                    if not artifact_path_str:
+                        continue
+                    artifact_path = Path(artifact_path_str)
+                    if not artifact_path.is_absolute():
+                        artifact_path = (build_dir / artifact_path).resolve()
+                    try:
+                        artifact_path.relative_to(tests_dir)
+                    except ValueError:
+                        continue
+                    if is_windows():
+                        if artifact_path.suffix.lower() != ".exe":
+                            continue
+                        test_name = artifact_path.stem
+                    else:
+                        if not os.access(artifact_path, os.X_OK):
+                            continue
+                        test_name = artifact_path.name
+                    if _is_test_name(test_name):
+                        test_names.add(test_name)
+
+    return sorted(test_names)
+
+
 def build_command(args: argparse.Namespace) -> None:
-    """Build subcommand implementation."""
+    """
+    Meta-meta-build system implementation.
+    1. Configure the project
+      - build OpenUSD if needed (force rebuild if `--configure-only`)
+      - fetch dependencies with conan
+      - configure CMake
+      - generate vscode cpp include paths for the project (compile_commands.json is not reliably generated for certain configurations)
+    2. build the project using CMake by running the appropriate build system
+    3. generate vscode launch configurations for the project
+    """
     root = Path(__file__).parent.parent.parent
     build_folder = root / "_build"
+    build_dir = build_folder / args.build_type
     logs_dir = root / "_logs"
-    windowing = args.windowing
-    lock_file = root / f"conan_{windowing}.lock"
+    windowing = "glfw"
+    lock_file = root / "conan_glfw.lock"
 
-    # Remove build directory if -x flag is provided
-    if args.rebuild and build_folder.exists():
-        print("Rebuild flag (-x) detected. Removing build folder...")
-        shutil.rmtree(build_folder)
+    # Remove build configuration directory if -x flag is provided
+    if args.rebuild and build_dir.exists():
+        print_tool(f"Rebuild flag (-x) detected. Removing build directory: {build_dir}")
+        _remove_tree_with_retries(build_dir)
 
     # Create build directory if missing
     build_folder.mkdir(parents=True, exist_ok=True)
 
     # Create logs directory
     logs_dir.mkdir(parents=True, exist_ok=True)
+    usd_install_dir = _ensure_openusd(
+        root,
+        args.build_type,
+        logs_dir,
+        force_rebuild=args.configure_only,
+    )
 
     # Change to build directory
     original_cwd = os.getcwd()
@@ -157,24 +468,26 @@ def build_command(args: argparse.Namespace) -> None:
         os.chdir(build_folder)
 
         if args.build_only:
-            print(f"Build only mode (-b): Skipping configuration steps")
-            print(f"Building with configuration: {args.build_type}")
+            print_tool("Build only mode (-b): Skipping configuration steps")
+            print_tool(f"Building with configuration: {args.build_type}")
         else:
             ensure_conan_profile()
 
             if args.configure_only:
-                print(f"Configuring with configuration: {args.build_type}")
+                print_tool(f"Configuring with configuration: {args.build_type}")
             else:
-                print(f"Building with configuration: {args.build_type}")
+                print_tool(f"Building with configuration: {args.build_type}")
 
             # Handle lock file generation and usage
             should_create_lock = args.update_lock or not lock_file.exists()
 
             if should_create_lock:
                 if args.update_lock:
-                    print("Update lock flag (-u) detected. Regenerating lock file...")
+                    print_tool(
+                        "Update lock flag (-u) detected. Regenerating lock file..."
+                    )
                 else:
-                    print("Lock file not found. Generating new lock file...")
+                    print_tool("Lock file not found. Generating new lock file...")
                 lock_log_file = logs_dir / f"conan_lock_create_{windowing}.log"
                 conan_exe = find_venv_executable("conan")
                 run_command(
@@ -191,7 +504,7 @@ def build_command(args: argparse.Namespace) -> None:
                     log_file=lock_log_file,
                 )
             else:
-                print(f"Lock file found. Using existing lock file: {lock_file}")
+                print_tool(f"Lock file found. Using existing lock file: {lock_file}")
 
             install_log_file = logs_dir / "conan_install.log"
             conan_exe = find_venv_executable("conan")
@@ -231,6 +544,7 @@ def build_command(args: argparse.Namespace) -> None:
                     "-DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake",
                     f"-DCMAKE_BUILD_TYPE={args.build_type}",
                     f"-DPTS_WINDOWING={windowing}",
+                    f"-Dpxr_DIR={usd_install_dir}",
                     "-DCMAKE_CXX_STANDARD=17",
                     "-DCMAKE_CXX_STANDARD_REQUIRED=ON",
                     "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
@@ -254,7 +568,10 @@ def build_command(args: argparse.Namespace) -> None:
                 log_file=build_log_file,
             )
         else:
-            print("Configure only mode (-c): Skipping build step")
+            print_tool("Configure only mode (-c): Skipping build step")
+
+        tests = _discover_test_targets(root, args.build_type)
+        _generate_launch_json(root, args.build_type, tests)
     finally:
         os.chdir(original_cwd)
 
@@ -266,7 +583,7 @@ def register_build_command(subparsers: argparse._SubParsersAction) -> None:
         "-x",
         "--rebuild",
         action="store_true",
-        help="Rebuild flag: removes build folder before building",
+        help="Rebuild flag: removes build configuration folder before building",
     )
     parser.add_argument(
         "-u",
@@ -294,11 +611,5 @@ def register_build_command(subparsers: argparse._SubParsersAction) -> None:
     )
     parser.add_argument(
         "--conan-profile", default="default", help="Conan profile (default: default)"
-    )
-    parser.add_argument(
-        "--windowing",
-        choices=["glfw", "null"],
-        default="glfw",
-        help="Windowing backend (default: glfw)",
     )
     parser.set_defaults(func=build_command)

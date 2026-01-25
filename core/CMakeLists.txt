@@ -51,6 +51,10 @@ PRIVATE
 	$<BUILD_INTERFACE:developer_flags>
 PUBLIC
 	${lib_name}::rc
+	usd
+	usdGeom
+	usdShade
+	usdLux
 	glm::glm
 	tinyobjloader
 	pts_stb

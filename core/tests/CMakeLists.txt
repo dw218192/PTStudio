@@ -10,34 +10,45 @@ find_package(doctest REQUIRED)
 # Test executables
 set(TEST_NAMES
     testPluginSystem
+    testOpenUsd
 )
 
-foreach(TEST_NAME IN LISTS TEST_NAMES)
-    message(STATUS "Building test: ${TEST_NAME}")
-    add_executable(${TEST_NAME} ${TEST_NAME}.cpp)
-    target_include_directories(${TEST_NAME} PRIVATE ../include)
-    target_link_libraries(${TEST_NAME} PRIVATE doctest::doctest)
-    
-    # testPluginSystem needs core library and plugin interface headers
-    if(TEST_NAME STREQUAL "testPluginSystem")
-        target_link_libraries(${TEST_NAME} PRIVATE core)
-        target_include_directories(${TEST_NAME} PRIVATE 
-            ${CMAKE_SOURCE_DIR}/plugins/test_plugin/api
-        )
-    endif()
+set(testPluginSystem_source testPluginSystem.cpp)
+set(testPluginSystem_libs core)
+set(testPluginSystem_includes ${CMAKE_SOURCE_DIR}/plugins/test_plugin/api)
+
+set(testOpenUsd_source integration/testOpenUsd.cpp)
+set(testOpenUsd_libs usd)
+set(testOpenUsd_includes ${PXR_INCLUDE_DIRS})
+
+function(add_core_test target_name)
+    message(STATUS "Building test: ${target_name}")
+    add_executable(${target_name} ${${target_name}_source})
+    target_include_directories(${target_name} PRIVATE
+        ../include
+        ${${target_name}_includes}
+    )
+    target_link_libraries(${target_name} PRIVATE
+        doctest::doctest
+        ${${target_name}_libs}
+    )
 
     # Set output directory to bin/tests
-    set_target_properties(${TEST_NAME} PROPERTIES
+    set_target_properties(${target_name} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tests
     )
     
     # Ensure consistent output for multi-config generators
     foreach(config Debug Release RelWithDebInfo MinSizeRel)
         string(TOUPPER ${config} config_upper)
-        set_target_properties(${TEST_NAME} PROPERTIES
+        set_target_properties(${target_name} PROPERTIES
             RUNTIME_OUTPUT_DIRECTORY_${config_upper} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tests
         )
     endforeach()
+endfunction()
+
+foreach(TEST_NAME IN LISTS TEST_NAMES)
+    add_core_test(${TEST_NAME})
 endforeach()
 
 # Static-plugin test executable (builds alongside the dynamic one).
