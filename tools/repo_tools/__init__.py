@@ -232,6 +232,8 @@ def resolve_env_vars(config: dict, context: RepoContext) -> dict:
 def apply_env_overrides(env: dict, overrides: dict) -> dict:
     for key, value in overrides.items():
         if key.upper() == "PATH":
+            if is_windows():  # case-insensitive on Windows
+                key = next((k for k in env if k.upper() == "PATH"), key)
             env[key] = f"{value}{os.pathsep}{env.get(key, '')}"
         else:
             env[key] = value
