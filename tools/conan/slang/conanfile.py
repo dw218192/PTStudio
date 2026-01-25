@@ -61,7 +61,7 @@ class SlangConan(ConanFile):
         for candidate in candidates:
             if os.path.isdir(os.path.join(candidate, "bin")):
                 return candidate
-        return self.build_folder
+        raise RuntimeError(f"No 'bin' directory found in {self.build_folder}")
 
     def package(self) -> None:
         copy(self, "*", src=self._slang_root(), dst=self.package_folder)

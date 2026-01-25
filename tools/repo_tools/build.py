@@ -21,6 +21,7 @@ from repo_tools import (
     resolve_path,
     resolve_slang_test_output,
     run_command,
+    logger,
 )
 
 
@@ -284,14 +285,21 @@ def _export_local_conan_recipes(root: Path, logs_dir: Path, config: dict) -> Non
     conan_exe = find_venv_executable("conan")
     for recipe in recipes:
         if not isinstance(recipe, dict):
+            logger.warning(f"Skipping invalid recipe entry (not a dict): {recipe}")
             continue
         name = recipe.get("name")
         version = recipe.get("version")
         path_value = recipe.get("path")
         if not name or not version or not path_value:
+            logger.warning(
+                f"Skipping invalid recipe entry (missing name, version, or path): {recipe}"
+            )
             continue
         recipe_dir = root / str(path_value)
         if not recipe_dir.exists():
+            logger.warning(
+                f"Skipping invalid recipe entry (path does not exist): {recipe}"
+            )
             continue
         export_log_file = logs_dir / f"conan_export_{name}.log"
         run_command(
@@ -442,7 +450,7 @@ def _validate_slang_test_output(root: Path, config: dict, context: dict) -> None
         raise RuntimeError(f"Slang test output is empty: {output_path}")
     if "@vertex" not in contents:
         raise RuntimeError(
-            "Slang test output missing '@vertex' entry point: " f"{output_path}"
+            f"Slang test output missing '@vertex' entry point: {output_path}"
         )
 
 
@@ -608,7 +616,7 @@ def build_command(args: argparse.Namespace) -> None:
             compile_slang_shaders(root, config, context, logs_dir)
             _validate_slang_test_output(root, config, context)
 
-            print_tool(f"Building targets...")
+            print_tool("Building targets...")
 
             configure_log_file = logs_dir / "cmake_configure.log"
             cmake_exe = find_venv_executable("cmake")

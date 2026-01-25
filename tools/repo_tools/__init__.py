@@ -8,7 +8,8 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Mapping, Optional, TypedDict
+from collections.abc import Mapping
+from typing import Optional, TypedDict
 
 from colorama import Fore, Style, init as colorama_init
 import yaml
@@ -147,7 +148,7 @@ def load_repo_config(root: Path) -> dict:
     if data is None:
         return {}
     if not isinstance(data, dict):
-        raise ValueError("config.yaml must contain a top-level mapping.")
+        raise TypeError("config.yaml must contain a top-level mapping.")
     return data
 
 
@@ -157,7 +158,7 @@ def _get_config_value(config: dict, key_path: str, default: str) -> str:
         if not isinstance(current, dict) or key not in current:
             return default
         current = current[key]
-    return current
+    return str(current) if current is not None else default
 
 
 def _resolve_template(value: str, context: Mapping[str, str]) -> str:
@@ -249,12 +250,13 @@ def resolve_slang_shaders(
         if not input_value:
             continue
         output_value = shader.get("output")
+        input_path = resolve_path(root, str(input_value), context)
+
         if output_value:
             output_path = resolve_path(root, str(output_value), context)
         else:
-            input_path = resolve_path(root, str(input_value), context)
             output_path = input_path.with_suffix(".wgsl")
-        input_path = resolve_path(root, str(input_value), context)
+
         resolved.append((input_path, output_path))
     return resolved
 
