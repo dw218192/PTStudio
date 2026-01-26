@@ -556,6 +556,7 @@ def build_command(args: argparse.Namespace) -> None:
     )
     usd_install_dir = Path(context["usd_install_dir"])
     usd_build_dir = Path(context["usd_build_dir"])
+    dawn_install_dir = Path(context["dawn_install_dir"])
 
     # Remove build configuration directory if -x flag is provided
     if args.rebuild and build_dir.exists():
@@ -642,6 +643,8 @@ def build_command(args: argparse.Namespace) -> None:
                     "compiler.cppstd=17",
                     "-s",
                     f"build_type={args.build_type}",
+                    "-c",
+                    f"user.dawn:install_dir={dawn_install_dir.as_posix()}",
                 ],
                 log_file=install_log_file,
             )
@@ -655,23 +658,24 @@ def build_command(args: argparse.Namespace) -> None:
             configure_log_file = logs_dir / "cmake_configure.log"
             cmake_exe = find_venv_executable("cmake")
             _ensure_cmake_file_api_query(build_folder / args.build_type)
-            run_command(
-                [
-                    cmake_exe,
-                    "-S",
-                    "..",
-                    "-B",
-                    args.build_type,
-                    "-DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake",
-                    f"-DCMAKE_BUILD_TYPE={args.build_type}",
-                    f"-DPTS_WINDOWING={windowing}",
-                    f"-Dpxr_DIR={usd_install_dir}",
-                    "-DCMAKE_CXX_STANDARD=17",
-                    "-DCMAKE_CXX_STANDARD_REQUIRED=ON",
-                    "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-                ],
-                log_file=configure_log_file,
-            )
+            cmake_args = [
+                cmake_exe,
+                "-S",
+                "..",
+                "-B",
+                args.build_type,
+                "-DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake",
+                f"-DCMAKE_BUILD_TYPE={args.build_type}",
+                f"-DPTS_WINDOWING={windowing}",
+                f"-Dpxr_DIR={usd_install_dir}",
+                "-DCMAKE_CXX_STANDARD=17",
+                "-DCMAKE_CXX_STANDARD_REQUIRED=ON",
+                "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+            ]
+            dawn_cmake_dir = dawn_install_dir / "lib" / "cmake" / "Dawn"
+            if dawn_cmake_dir.exists():
+                cmake_args.append(f"-DDawn_DIR={dawn_cmake_dir}")
+            run_command(cmake_args, log_file=configure_log_file)
 
             _generate_cpp_properties(root, build_dir, windowing)
 

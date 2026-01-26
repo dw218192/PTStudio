@@ -5,6 +5,7 @@ paths:
   conan_deps_root: "{build_root}/deps"
   usd_install_dir: "{build_root}/deps/usd/{build_type}/install"
   usd_build_dir: "{build_root}/deps/usd/{build_type}/build"
+  dawn_install_dir: "{build_root}/deps/dawn/{build_type}/install"
 
 build:
   windowing: "glfw"
@@ -15,6 +16,8 @@ env:
   PATH:
     - "{usd_install_dir}/bin"
     - "{usd_install_dir}/lib"
+    - "{dawn_install_dir}/bin"
+    - "{dawn_install_dir}/lib"
 
 slang:
   compiler_search_roots:

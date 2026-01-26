@@ -26,6 +26,7 @@ class RepoContext(TypedDict):
     conan_lock: str
     usd_install_dir: str
     usd_build_dir: str
+    dawn_install_dir: str
     build_dir: str
 
 
@@ -207,11 +208,17 @@ def build_repo_context(root: Path, build_type: str, config: dict) -> RepoContext
     )
     resolved_usd_build_dir = str(resolve_path(root, usd_build, template_context))
 
+    dawn_install = _get_config_value(
+        config, "paths.dawn_install_dir", "{build_root}/deps/dawn/{build_type}/install"
+    )
+    resolved_dawn_install_dir = str(resolve_path(root, dawn_install, template_context))
+
     context: RepoContext = {
         **template_context,
         "conan_lock": resolved_conan_lock,
         "usd_install_dir": resolved_usd_install_dir,
         "usd_build_dir": resolved_usd_build_dir,
+        "dawn_install_dir": resolved_dawn_install_dir,
         "build_dir": str(build_root / build_type),
     }
     return context
