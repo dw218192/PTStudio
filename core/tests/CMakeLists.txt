@@ -21,6 +21,11 @@ set(testOpenUsd_source integration/testOpenUsd.cpp)
 set(testOpenUsd_libs usd)
 set(testOpenUsd_includes ${PXR_INCLUDE_DIRS})
 
+list(APPEND TEST_NAMES testWebGpu)
+set(testWebGpu_source testWebGpu.cpp)
+set(testWebGpu_libs core)
+set(testWebGpu_defines PTS_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
 function(add_core_test target_name)
     message(STATUS "Building test: ${target_name}")
     add_executable(${target_name} ${${target_name}_source})
@@ -32,6 +37,9 @@ function(add_core_test target_name)
         doctest::doctest
         ${${target_name}_libs}
     )
+    if(DEFINED ${target_name}_defines)
+        target_compile_definitions(${target_name} PRIVATE ${${target_name}_defines})
+    endif()
 
     # Set output directory to bin/tests
     set_target_properties(${target_name} PROPERTIES

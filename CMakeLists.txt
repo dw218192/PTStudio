@@ -28,7 +28,6 @@ if(NOT DEFINED PTS_WINDOWING)
     set(PTS_WINDOWING "glfw")
 endif()
 
-
 # Direct all output to /bin directory
 # Since we organize builds by configuration (build/Debug, build/Release) -- see build.ps1,
 # we don't want CMake to append the config name again
@@ -87,6 +86,7 @@ find_package(tl-expected REQUIRED)
 find_package(nlohmann_json REQUIRED)
 find_package(Boost REQUIRED COMPONENTS filesystem)
 find_package(pxr CONFIG REQUIRED)
+find_package(Dawn REQUIRED)
 
 
 # external dependencies that are built from source

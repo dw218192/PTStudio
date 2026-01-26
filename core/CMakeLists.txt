@@ -28,6 +28,11 @@ elseif(PTS_WINDOWING STREQUAL "null")
 	list(APPEND core_rendering_sources ${core_windowing_sources})
 endif()
 
+file(GLOB_RECURSE core_webgpu_sources
+	${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/webgpu/*.*
+)
+list(APPEND core_rendering_sources ${core_webgpu_sources})
+
 set(src_files ${core_src_files} ${core_rendering_sources})
 list(REMOVE_DUPLICATES src_files)
 
@@ -67,6 +72,7 @@ PUBLIC
 	nlohmann_json::nlohmann_json
 	Boost::filesystem
 	Boost::container
+	dawn::webgpu_dawn
 )
 
 if(PTS_WINDOWING STREQUAL "glfw")

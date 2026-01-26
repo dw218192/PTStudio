@@ -44,6 +44,8 @@ class PTStudioConan(ConanFile):
         self.requires("boost/[>=0]")
         # Shader toolchain (slangc)
         self.requires("slang/2026.1")
+        # WebGPU backend
+        self.requires("dawn/20250428.160623")
 
         # Note: Some dependencies are built from source in ext/:
         # - imgui (custom build with docking branch)

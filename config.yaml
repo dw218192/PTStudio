@@ -29,3 +29,6 @@ conan:
     - name: "slang"
       version: "2026.1"
       path: "tools/conan/slang"
+    - name: "dawn"
+      version: "20250428.160623"
+      path: "tools/conan/dawn"
