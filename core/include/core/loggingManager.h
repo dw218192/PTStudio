@@ -35,14 +35,13 @@ class LoggingManager {
     ~LoggingManager();
 
     NO_COPY_MOVE(LoggingManager);
-
     /**
      * @brief Gets a lazily initialized logger with the given name. The logger will be registered
      * and kept alive until the program exits.
      * @param name The name of the logger
      * @return The logger
      */
-    [[nodiscard]] auto get_logger(std::string_view name) noexcept -> spdlog::logger&;
+    [[nodiscard]] auto get_logger(std::string_view name = "pts") noexcept -> spdlog::logger&;
 
     /**
      * @brief Gets a shared pointer to a lazily initialized logger with the given name.

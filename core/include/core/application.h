@@ -1,40 +1,52 @@
 #pragma once
 #include <core/loggingManager.h>
+#include <core/rendering/windowing.h>
 #include <fmt/core.h>
 #include <spdlog/spdlog.h>
 
+#include <chrono>
 #include <deque>
+#include <memory>
 #include <sstream>
 
 #include "pluginManager.h"
-#include "utils.h"
 
 namespace pts {
+namespace rendering {
+class WebGpuContext;
+class IWindowing;
+class IViewport;
+}  // namespace rendering
 
 /**
- * @brief The base class for all applications (not necessarily graphical)
+ * @brief Base class for all applications with WebGPU rendering and windowing.
  */
 struct Application {
-    DEFAULT_COPY_MOVE(Application);
+    NO_COPY_MOVE(Application);
 
     Application(std::string_view name, pts::LoggingManager& logging_manager,
-                pts::PluginManager& plugin_manager) noexcept
-        : m_name{name.begin(), name.end()},
-          m_logging_manager{&logging_manager},
-          m_plugin_manager{&plugin_manager} {
-        m_logger = m_logging_manager->get_logger_shared(get_name().data());
-    }
-    virtual ~Application() = default;
-    virtual void run() = 0;
-    [[nodiscard]] virtual auto get_name() const noexcept -> std::string_view {
+                pts::PluginManager& plugin_manager, unsigned width, unsigned height,
+                float min_frame_time);
+    virtual ~Application();
+
+    virtual void run();
+
+    [[nodiscard]] auto get_name() const noexcept -> std::string_view {
         return m_name;
     }
-    [[nodiscard]] virtual auto get_time() const noexcept -> float {
-        return 0.0f;
-    }
-    [[nodiscard]] virtual auto get_delta_time() const noexcept -> float {
-        return 0.0f;
-    }
+    [[nodiscard]] auto get_window_width() const noexcept -> int;
+    [[nodiscard]] auto get_window_height() const noexcept -> int;
+    [[nodiscard]] auto get_time() const noexcept -> float;
+    [[nodiscard]] auto get_delta_time() const noexcept -> float;
+
+    void set_min_frame_time(float min_frame_time) noexcept;
+    void on_framebuffer_resized() noexcept;
+
+    /**
+     * @brief Called every frame. Override to handle the main loop.
+     * @param dt the time since the last frame
+     */
+    virtual void loop(float dt) = 0;
 
     template <typename... Args>
     void log(pts::LogLevel level, std::string_view fmt, Args&&... args) noexcept {
@@ -53,10 +65,47 @@ struct Application {
         return m_logger;
     }
 
+    [[nodiscard]] auto get_webgpu_context() noexcept -> pts::rendering::WebGpuContext* {
+        return m_webgpu_context.get();
+    }
+    [[nodiscard]] auto get_webgpu_context() const noexcept -> const pts::rendering::WebGpuContext* {
+        return m_webgpu_context.get();
+    }
+
+    [[nodiscard]] auto get_windowing() noexcept -> pts::rendering::IWindowing* {
+        return m_windowing.get();
+    }
+    [[nodiscard]] auto get_windowing() const noexcept -> const pts::rendering::IWindowing* {
+        return m_windowing.get();
+    }
+
+    [[nodiscard]] auto get_viewport() noexcept -> pts::rendering::IViewport* {
+        return m_viewport.get();
+    }
+    [[nodiscard]] auto get_viewport() const noexcept -> const pts::rendering::IViewport* {
+        return m_viewport.get();
+    }
+
+   protected:
+    void set_framebuffer_resized(bool value) noexcept {
+        m_framebuffer_resized = value;
+    }
+
    private:
+    // invariants:
+    // - m_webgpu_context is always valid if the class is constructed successfully
+
     std::string m_name;
     pts::LoggingManager* m_logging_manager;
     pts::PluginManager* m_plugin_manager;
     std::shared_ptr<spdlog::logger> m_logger;
+
+    std::unique_ptr<pts::rendering::IWindowing> m_windowing;
+    std::unique_ptr<pts::rendering::IViewport> m_viewport;
+    std::unique_ptr<pts::rendering::WebGpuContext> m_webgpu_context;
+    bool m_framebuffer_resized{false};
+    std::chrono::steady_clock::time_point m_start_time;
+    float m_min_frame_time{0.0f};
+    float m_delta_time{0.0f};
 };
 }  // namespace pts

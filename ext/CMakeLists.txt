@@ -16,6 +16,12 @@ if(PTS_WINDOWING STREQUAL "glfw")
     )
     list(APPEND IMGUI_BACKEND_SOURCES ${IMGUI_BACKEND_GLFW_SOURCES})
 endif()
+# Add WebGPU backend
+file(GLOB IMGUI_BACKEND_WGPU_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/imgui/backends/imgui_impl_wgpu.*
+)
+list(APPEND IMGUI_BACKEND_SOURCES ${IMGUI_BACKEND_WGPU_SOURCES})
+
 target_sources(imgui 
     PRIVATE
         ${IMGUI_BACKEND_SOURCES}
@@ -25,8 +31,12 @@ target_include_directories(imgui
         ${CMAKE_CURRENT_SOURCE_DIR}/imgui
         ${CMAKE_CURRENT_SOURCE_DIR}/imgui/backends
 )
+target_compile_definitions(imgui PUBLIC IMGUI_IMPL_WEBGPU_BACKEND_DAWN)
 if(PTS_WINDOWING STREQUAL "glfw")
     target_link_libraries(imgui PRIVATE glfw)
+endif()
+if(NOT EMSCRIPTEN)
+    target_link_libraries(imgui PUBLIC dawn::webgpu_dawn)
 endif()
 
 # Manually add imguizmo

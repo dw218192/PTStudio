@@ -48,7 +48,7 @@ auto build_native_handle(GLFWwindow* window) -> NativeViewportHandle {
     handle.xlib.window = static_cast<uint64_t>(glfwGetX11Window(window));
 #else
     static_cast<void>(window);
-    handle.web.canvas_selector = nullptr;
+    handle.web.canvas_selector = "#canvas";
 #endif
     return handle;
 }
@@ -220,13 +220,6 @@ auto GlfwWindowing::native_handle() const noexcept -> NativeViewportHandle {
         return handle;
     }
     return build_native_handle(m_primary_window);
-}
-
-auto GlfwWindowing::required_vulkan_instance_extensions() const noexcept
-    -> rendering::WindowingVulkanExtensions {
-    uint32_t count = 0;
-    auto names = glfwGetRequiredInstanceExtensions(&count);
-    return {names, count};
 }
 
 void GlfwWindowing::pump_events(PumpEventMode mode) {

@@ -3,13 +3,11 @@
 #include <core/application.h>
 #include <core/inputAction.h>
 #include <core/rendering/graph.h>
-#include <core/rendering/windowing.h>
 #include <core/signal.h>
 #include <imgui.h>
 
 #include <array>
 #include <bitset>
-#include <chrono>
 #include <functional>
 #include <glm/glm.hpp>
 #include <optional>
@@ -25,7 +23,7 @@ class IRenderGraph;
 }  // namespace rendering
 
 /**
- * @brief GUI application. Responsible for creating the window and polling events.
+ * @brief GUI application with ImGui support. Extends Application with UI capabilities.
  */
 struct GUIApplication : Application {
     // used to help detect if the mouse enters/leaves certain imgui windows
@@ -43,11 +41,7 @@ struct GUIApplication : Application {
 
     void run() override;
 
-    [[nodiscard]] auto get_window_width() const noexcept -> int;
-    [[nodiscard]] auto get_window_height() const noexcept -> int;
-
     void on_scroll_event(double x, double y) noexcept;
-    void on_framebuffer_resized() noexcept;
     /**
      * @brief Called every frame. Override to handle the main loop.
      * @param dt the time since the last frame
@@ -87,12 +81,6 @@ struct GUIApplication : Application {
     void end_imgui_window() noexcept;
     auto get_window_content_pos(std::string_view name) const noexcept -> std::optional<ImVec2>;
 
-    [[nodiscard]] auto get_time() const noexcept -> float override;
-    [[nodiscard]] auto get_delta_time() const noexcept -> float override;
-
-    auto set_min_frame_time(float min_frame_time) noexcept {
-        m_min_frame_time = min_frame_time;
-    }
     [[nodiscard]] auto get_min_frame_time() const noexcept {
         return m_min_frame_time;
     }
@@ -107,7 +95,6 @@ struct GUIApplication : Application {
     std::array<std::string_view, ImGuiKey_COUNT> m_key_initiated_window{};
 
     float m_min_frame_time;
-    float m_delta_time{0.0f};
     std::unordered_map<std::string_view, ImGuiWindowInfo> m_imgui_window_info;
 
     std::string_view m_cur_hovered_widget, m_prev_hovered_widget;
@@ -115,12 +102,8 @@ struct GUIApplication : Application {
 
     static constexpr auto k_no_hovered_widget = "";
 
-    std::unique_ptr<pts::rendering::IWindowing> m_windowing;
-    std::unique_ptr<pts::rendering::IViewport> m_viewport;
     std::unique_ptr<pts::rendering::IRenderGraph> m_render_graph;
     std::unique_ptr<pts::rendering::IImguiWindowing> m_imgui_windowing;
     std::unique_ptr<pts::rendering::IImguiRendering> m_imgui_rendering;
-    bool m_framebuffer_resized{false};
-    std::chrono::steady_clock::time_point m_start_time;
 };
 }  // namespace pts

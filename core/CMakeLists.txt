@@ -72,8 +72,11 @@ PUBLIC
 	nlohmann_json::nlohmann_json
 	Boost::filesystem
 	Boost::container
-	dawn::webgpu_dawn
 )
+
+if (NOT EMSCRIPTEN)
+	target_link_libraries(${lib_name} PUBLIC dawn::webgpu_dawn)
+endif()
 
 if(PTS_WINDOWING STREQUAL "glfw")
 	target_link_libraries(${lib_name} PUBLIC glfw)

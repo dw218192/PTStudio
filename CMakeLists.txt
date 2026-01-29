@@ -28,6 +28,10 @@ if(NOT DEFINED PTS_WINDOWING)
     set(PTS_WINDOWING "glfw")
 endif()
 
+if(EMSCRIPTEN)
+    set(PTS_STATIC_PLUGINS ON CACHE BOOL "" FORCE)
+endif()
+
 # Direct all output to /bin directory
 # Since we organize builds by configuration (build/Debug, build/Release) -- see build.ps1,
 # we don't want CMake to append the config name again
@@ -86,7 +90,9 @@ find_package(tl-expected REQUIRED)
 find_package(nlohmann_json REQUIRED)
 find_package(Boost REQUIRED COMPONENTS filesystem)
 find_package(pxr CONFIG REQUIRED)
-find_package(Dawn REQUIRED)
+if (NOT EMSCRIPTEN)
+    find_package(Dawn REQUIRED)
+endif()
 
 
 # external dependencies that are built from source
@@ -97,7 +103,7 @@ include(${EXT_DIR}/cmrc/CMakeRC.cmake)
 
 # add subprojects
 add_subdirectory(core)
-
+add_subdirectory(hello_triangle)
 add_subdirectory(editor)
 
 # plugins
@@ -106,6 +112,13 @@ add_subdirectory(plugins)
 # Link static plugins into the main executable when enabled.
 if(PTS_STATIC_PLUGINS)
     target_link_libraries(editor PRIVATE pts::plugins)
+endif()
+
+if(EMSCRIPTEN)
+    set_target_properties(editor PROPERTIES OUTPUT_NAME "ptstudio")
+    target_compile_options(editor PRIVATE "-sUSE_WEBGPU=1" "-sUSE_GLFW=3")
+    target_link_options(editor PRIVATE "-sUSE_WEBGPU=1" "-sUSE_GLFW=3" "-sALLOW_MEMORY_GROWTH=1"
+        "--shell-file=${CMAKE_SOURCE_DIR}/web/index.html")
 endif()
 
 # set editor as the start-up project
