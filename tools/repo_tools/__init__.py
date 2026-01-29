@@ -170,6 +170,21 @@ def _resolve_template(value: str, context: Mapping[str, str]) -> str:
         raise KeyError(f"Missing config template value: {missing}") from exc
 
 
+def replace_tokens(value: str, replacements: Mapping[str, str]) -> str:
+    """Replace {token} occurrences using a replacement mapping."""
+    resolved = value
+    for key, replacement in replacements.items():
+        resolved = resolved.replace(f"{{{key}}}", str(replacement))
+    return resolved
+
+
+def apply_token_replacements(
+    values: list[str], replacements: Mapping[str, str]
+) -> list[str]:
+    """Apply token replacement across a list of values."""
+    return [replace_tokens(value, replacements) for value in values]
+
+
 def resolve_path(root: Path, template: str, context: Mapping[str, str]) -> Path:
     resolved = _resolve_template(template, context)
     path = Path(resolved)

@@ -8,6 +8,7 @@ from repo_tools.build import register_build_command
 from repo_tools.format import register_format_command
 from repo_tools.launch import register_launch_command
 from repo_tools.test import register_test_command
+from repo_tools.ai_agent.command import register_agent_command
 
 
 def main() -> None:
@@ -22,6 +23,7 @@ def main() -> None:
     register_format_command(subparsers)
     register_launch_command(subparsers)
     register_test_command(subparsers)
+    register_agent_command(subparsers)
 
     args, unknown_args = parser.parse_known_args()
     args.passthrough_args = unknown_args

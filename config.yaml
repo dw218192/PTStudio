@@ -35,3 +35,29 @@ conan:
     - name: "dawn"
       version: "20250428.160623"
       path: "tools/conan/dawn"
+
+ai_agent:
+  state_dir: "_ai_agent"
+  allowlist:
+    - 're:^git\s+.*$'
+    - 're:^pts\.cmd\s+.*$'
+    - 're:^coderabbit\s+review\s+--plain$'
+    - 're:^gh\s+pr\s+(create|review\s+--approve|merge\s+--auto\s+--merge)$'
+  cursor_cli:
+    command_template:
+      - "cursor"
+      - "agent"
+      - "--prompt-file"
+      - "{prompt_file}"
+      - "--output-file"
+      - "{output_file}"
+  coderabbit:
+    command_template:
+      - "coderabbit"
+      - "review"
+      - "--plain"
+  prompts_root: "tools/repo_tools/ai_agent/prompts"
+  human_review_mode: "balanced"
+  limits:
+    max_steps: 25
+    max_context_files: 25

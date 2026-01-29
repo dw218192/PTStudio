@@ -1,6 +1,7 @@
 """Test subcommand implementation."""
 
 import argparse
+import fnmatch
 import os
 import subprocess
 import sys
@@ -48,7 +49,25 @@ def test_command(args: argparse.Namespace) -> None:
         print_tool(f"No test executables found in: {test_dir}")
         return
 
-    logger.info(f"Found {len(test_executables)} test executable(s)")
+    # Apply filter if specified
+    if args.filter:
+        filtered_executables = []
+        for test_exe in test_executables:
+            test_name = test_exe.stem
+            if fnmatch.fnmatch(test_name, args.filter):
+                filtered_executables.append(test_exe)
+        
+        if not filtered_executables:
+            print_tool(f"No test executables match filter pattern: {args.filter}")
+            print_tool(f"Available tests:")
+            for test_exe in sorted(test_executables):
+                print_tool(f"  - {test_exe.stem}")
+            return
+        
+        test_executables = filtered_executables
+        logger.info(f"Found {len(test_executables)} test executable(s) matching '{args.filter}'")
+    else:
+        logger.info(f"Found {len(test_executables)} test executable(s)")
 
     # Track test results
     passed = 0
@@ -147,5 +166,11 @@ def register_test_command(subparsers: argparse._SubParsersAction) -> None:
         "--verbose",
         action="store_true",
         help="Verbose test output",
+    )
+    parser.add_argument(
+        "-f",
+        "--filter",
+        type=str,
+        help="Filter tests using fnmatch pattern (e.g., 'test*', '*WebGpu', 'test[PW]*')",
     )
     parser.set_defaults(func=test_command)
