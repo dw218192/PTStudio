@@ -4,7 +4,6 @@ paths:
   conan_lock: "conan_glfw.lock"
   conan_deps_root: "{build_root}/deps"
   usd_install_dir: "{build_root}/deps/usd/{build_type}/install"
-  usd_build_dir: "{build_root}/deps/usd/{build_type}/build"
   dawn_install_dir: "{build_root}/deps/dawn/{build_type}/install"
 
 build:
@@ -35,3 +34,6 @@ conan:
     - name: "dawn"
       version: "20250428.160623"
       path: "tools/conan/dawn"
+    - name: "openusd"
+      version: "25.02"
+      path: "tools/conan/openusd"

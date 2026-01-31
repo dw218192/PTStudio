@@ -108,15 +108,6 @@ def _collect_target_compile_info(
     return include_dirs, defines
 
 
-def _map_usd_build_variant(build_type: str) -> str:
-    build_type = build_type.lower()
-    if build_type == "debug":
-        return "debug"
-    if build_type == "relwithdebinfo":
-        return "relwithdebuginfo"
-    return "release"
-
-
 def _get_vcvars_path() -> Path | None:
     if not is_windows():
         return None
@@ -199,84 +190,61 @@ def _remove_tree_with_retries(
             time.sleep(delay)
 
 
-def _ensure_openusd(
-    root: Path,
-    build_type: str,
-    logs_dir: Path,
+def _find_package_in_deploy(conan_deps_root: Path, package_name: str) -> Path | None:
+    """Find a package in the full_deploy folder, returning the deepest content directory."""
+    host_dir = conan_deps_root / "full_deploy" / "host" / package_name
+    if not host_dir.exists():
+        return None
+    # Navigate through version/build_type/arch structure to find the actual content
+    # Structure: full_deploy/host/<package>/<version>/<build_type>/<arch>/
+    current = host_dir
+    while current.is_dir():
+        subdirs = [d for d in current.iterdir() if d.is_dir()]
+        # Check if this looks like the package root (has lib/, bin/, include/, etc.)
+        if any((current / d).exists() for d in ["lib", "bin", "include", "cmake"]):
+            return current
+        if len(subdirs) == 1:
+            current = subdirs[0]
+        elif len(subdirs) > 1:
+            # Multiple subdirs - pick the first one (shouldn't happen normally)
+            current = subdirs[0]
+        else:
+            break
+    return None
+
+
+def _ensure_package_installed(
+    conan_deps_root: Path,
+    package_name: str,
     install_dir: Path,
-    usd_build_dir: Path,
-    force_rebuild: bool = False,
-) -> Path:
-    usd_root = root / "ext" / "usd"
-    build_script = usd_root / "build_scripts" / "build_usd.py"
-    if not build_script.exists():
-        raise FileNotFoundError(f"OpenUSD build script not found: {build_script}")
+    marker_subpath: str,
+    exclude_dirs: set[str] | None = None,
+) -> bool:
+    """Copy a package from full_deploy to the expected install location.
 
-    pxr_config = install_dir / "pxrConfig.cmake"
-    if pxr_config.exists():
-        if not force_rebuild:
-            print_tool(f"OpenUSD install found: {install_dir}")
-            return install_dir
-        print_tool(f"OpenUSD install found; forcing rebuild: {install_dir}")
-        usd_root_dir = usd_build_dir.parent
-        if usd_root_dir.exists():
-            _remove_tree_with_retries(usd_root_dir)
+    Returns True if the package is installed (either already existed or was copied).
+    """
+    marker_path = install_dir / marker_subpath
+    if marker_path.exists():
+        print_tool(f"{package_name} install found: {install_dir}")
+        return True
 
-    print_tool("OpenUSD install not found. Building OpenUSD...")
-    usd_log_file = logs_dir / f"openusd_build_{build_type.lower()}.log"
-    python_exe = find_venv_executable("python")
-    usd_cmd = [
-        python_exe,
-        str(build_script),
-        str(install_dir),
-        "--build",
-        str(usd_build_dir),
-        "--build-variant",
-        _map_usd_build_variant(build_type),
-        "--no-python",
-        "--no-python-docs",
-        "--no-docs",
-        "--no-tests",
-        "--no-examples",
-        "--no-tutorials",
-        "--no-tools",
-        "--no-imaging",
-        "--no-usdview",
-        "--no-ptex",
-        "--no-openvdb",
-        "--no-openimageio",
-        "--no-opencolorio",
-        "--no-alembic",
-        "--no-materialx",
-        "--no-embree",
-        "--no-prman",
-        "--no-vulkan",
-    ]
+    deploy_dir = _find_package_in_deploy(conan_deps_root, package_name)
+    if deploy_dir is None:
+        print_tool(f"{package_name} not found in full_deploy folder")
+        return False
 
-    if is_windows() and shutil.which("cl") is None:
-        vcvars = _get_vcvars_path()
-        if vcvars is None:
-            raise RuntimeError(
-                "MSVC compiler not found. Run from a Developer Command Prompt "
-                "or install Visual Studio with C++ tools."
-            )
-        cmd_line = subprocess.list2cmdline(usd_cmd)
-        usd_cmd_script = logs_dir / f"openusd_build_{build_type.lower()}.cmd"
-        usd_cmd_script.write_text(
-            f'@echo off\ncall "{vcvars}"\n{cmd_line}\nexit /b %errorlevel%\n',
-            encoding="utf-8",
-        )
-        run_command(
-            ["cmd.exe", "/c", str(usd_cmd_script)],
-            log_file=usd_log_file,
-        )
-    else:
-        run_command(usd_cmd, log_file=usd_log_file)
+    print_tool(f"Copying {package_name} from {deploy_dir} to {install_dir}")
+    install_dir.mkdir(parents=True, exist_ok=True)
 
-    if not pxr_config.exists():
-        raise RuntimeError(f"OpenUSD install failed: {pxr_config} not found.")
+    def ignore_dirs(directory: str, names: list[str]) -> list[str]:
+        if not exclude_dirs:
+            return []
+        return [name for name in names if name in exclude_dirs]
 
-    return install_dir
+    ignore = ignore_dirs if exclude_dirs else None
+    shutil.copytree(deploy_dir, install_dir, dirs_exist_ok=True, ignore=ignore)
+    return True
 
 
 def _export_local_conan_recipes(root: Path, logs_dir: Path, config: dict) -> None:
@@ -533,7 +501,6 @@ def build_command(args: argparse.Namespace) -> None:
     """
     Meta-meta-build system implementation.
     1. Configure the project
-      - build OpenUSD if needed (force rebuild if `--configure-only`)
       - fetch dependencies with conan
       - configure CMake
       - generate vscode cpp include paths for the project (compile_commands.json is not reliably generated for certain configurations)
@@ -555,7 +522,6 @@ def build_command(args: argparse.Namespace) -> None:
         context,
     )
     usd_install_dir = Path(context["usd_install_dir"])
-    usd_build_dir = Path(context["usd_build_dir"])
     dawn_install_dir = Path(context["dawn_install_dir"])
 
     # Remove build configuration directory if -x flag is provided
@@ -568,14 +534,6 @@ def build_command(args: argparse.Namespace) -> None:
 
     # Create logs directory
     logs_dir.mkdir(parents=True, exist_ok=True)
-    usd_install_dir = _ensure_openusd(
-        root,
-        args.build_type,
-        logs_dir,
-        usd_install_dir,
-        usd_build_dir,
-        force_rebuild=args.configure_only,
-    )
 
     # Change to build directory
     original_cwd = os.getcwd()
@@ -624,6 +582,8 @@ def build_command(args: argparse.Namespace) -> None:
 
             install_log_file = logs_dir / "conan_install.log"
             conan_exe = find_venv_executable("conan")
+
+            print_tool(f"Installing dependencies with Conan...")
             run_command(
                 [
                     conan_exe,
@@ -643,11 +603,23 @@ def build_command(args: argparse.Namespace) -> None:
                     "compiler.cppstd=17",
                     "-s",
                     f"build_type={args.build_type}",
-                    "-c",
-                    f"user.dawn:install_dir={dawn_install_dir.as_posix()}",
                 ],
                 log_file=install_log_file,
             )
+
+            if not _ensure_package_installed(
+                conan_deployer_folder, "dawn", dawn_install_dir, "lib/cmake/Dawn"
+            ):
+                raise RuntimeError("Failed to install Dawn package")
+
+            if not _ensure_package_installed(
+                conan_deployer_folder,
+                "openusd",
+                usd_install_dir,
+                "include/pxr/pxr.h",
+                exclude_dirs={"cmake"},
+            ):
+                raise RuntimeError("Failed to install OpenUSD package")
 
             print_tool("Compiling slang shaders...")
             compile_slang_shaders(root, config, context, logs_dir)
@@ -667,7 +639,6 @@ def build_command(args: argparse.Namespace) -> None:
                 "-DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake",
                 f"-DCMAKE_BUILD_TYPE={args.build_type}",
                 f"-DPTS_WINDOWING={windowing}",
-                f"-Dpxr_DIR={usd_install_dir}",
                 "-DCMAKE_CXX_STANDARD=17",
                 "-DCMAKE_CXX_STANDARD_REQUIRED=ON",
                 "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",

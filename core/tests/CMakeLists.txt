@@ -18,7 +18,7 @@ set(testPluginSystem_libs core)
 set(testPluginSystem_includes ${CMAKE_SOURCE_DIR}/plugins/test_plugin/api)
 
 set(testOpenUsd_source integration/testOpenUsd.cpp)
-set(testOpenUsd_libs usd)
+set(testOpenUsd_libs openusd::usd_usd)
 set(testOpenUsd_includes ${PXR_INCLUDE_DIRS})
 
 list(APPEND TEST_NAMES testWebGpu)

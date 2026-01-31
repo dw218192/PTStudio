@@ -56,10 +56,10 @@ PRIVATE
 	$<BUILD_INTERFACE:developer_flags>
 PUBLIC
 	${lib_name}::rc
-	usd
-	usdGeom
-	usdShade
-	usdLux
+	openusd::usd_usd
+	openusd::usd_usdGeom
+	openusd::usd_usdShade
+	openusd::usd_usdLux
 	glm::glm
 	tinyobjloader
 	pts_stb
