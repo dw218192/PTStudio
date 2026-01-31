@@ -17,6 +17,8 @@ namespace pts {
 #if defined(__EMSCRIPTEN__)
 struct PluginSharedLibrary {
     PluginSharedLibrary() = default;
+    PluginSharedLibrary(const PluginSharedLibrary&) = delete;
+    auto operator=(const PluginSharedLibrary&) -> PluginSharedLibrary& = delete;
     PluginSharedLibrary(PluginSharedLibrary&&) noexcept = default;
     auto operator=(PluginSharedLibrary&&) noexcept -> PluginSharedLibrary& = default;
 };
