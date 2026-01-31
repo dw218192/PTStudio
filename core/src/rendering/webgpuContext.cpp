@@ -12,10 +12,10 @@ WebGpuContext::~WebGpuContext() = default;
 WebGpuContext::WebGpuContext(WebGpuContext&&) noexcept = default;
 auto WebGpuContext::operator=(WebGpuContext&&) noexcept -> WebGpuContext& = default;
 
-auto WebGpuContext::create(const IViewport& viewport, pts::LoggingManager& logging_manager)
-    -> std::unique_ptr<WebGpuContext> {
+auto WebGpuContext::create(const IViewport& viewport,
+                           pts::LoggingManager& logging_manager) -> std::unique_ptr<WebGpuContext> {
     auto logger = logging_manager.get_logger_shared("webgpu");
-    
+
     try {
         // Device creation enforces invariants and throws on failure
         auto device = pts::webgpu::Device::create(logger);

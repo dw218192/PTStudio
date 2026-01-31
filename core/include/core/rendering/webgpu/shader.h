@@ -4,9 +4,10 @@
 
 namespace pts::webgpu {
 
+/// RAII wrapper for WGPUShaderModule.
+/// Invariant: handle is non-null after construction (moved-from state is null but unusable).
 class ShaderModule {
    public:
-    ShaderModule() = default;
     explicit ShaderModule(WGPUShaderModule shader_module);
 
     ShaderModule(const ShaderModule&) = delete;
@@ -17,11 +18,10 @@ class ShaderModule {
 
     ~ShaderModule();
 
-    [[nodiscard]] auto is_valid() const noexcept -> bool;
     [[nodiscard]] auto handle() const noexcept -> WGPUShaderModule;
 
    private:
-    WGPUShaderModule m_shader_module = nullptr;
+    WGPUShaderModule m_shader_module;
 };
 
 }  // namespace pts::webgpu

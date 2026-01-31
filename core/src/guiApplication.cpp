@@ -39,8 +39,8 @@ GUIApplication::GUIApplication(std::string_view name, pts::LoggingManager& loggi
     // Create ImGui rendering components
     auto* webgpu_context = get_webgpu_context();
     if (webgpu_context && webgpu_context->is_valid()) {
-        auto imgui_components =
-            pts::rendering::create_imgui_components(*webgpu_context, *viewport, get_logging_manager());
+        auto imgui_components = pts::rendering::create_imgui_components(*webgpu_context, *viewport,
+                                                                        get_logging_manager());
         m_render_graph = std::move(imgui_components.render_graph);
         m_imgui_rendering = std::move(imgui_components.imgui_rendering);
     } else {

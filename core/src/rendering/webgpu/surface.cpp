@@ -1,6 +1,5 @@
-#include <core/rendering/webgpu/surface.h>
-
 #include <core/rendering/webgpu/device.h>
+#include <core/rendering/webgpu/surface.h>
 
 #include <cstring>
 

@@ -40,7 +40,6 @@ class WebGpuContext {
     [[nodiscard]] auto surface_format() const noexcept -> WGPUTextureFormat;
 
    private:
-
     // invariants:
     // - m_device is always valid if the class is constructed successfully
     // - m_surface is always valid if the class is constructed successfully
