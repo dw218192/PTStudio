@@ -284,6 +284,58 @@ def _export_local_conan_recipes(root: Path, logs_dir: Path, config: dict) -> Non
         )
 
 
+def _get_local_recipe_names(config: dict) -> set[str]:
+    recipes = config.get("conan", {}).get("local_recipes", [])
+    names: set[str] = set()
+    for recipe in recipes:
+        if isinstance(recipe, dict) and recipe.get("name"):
+            names.add(str(recipe["name"]))
+    return names
+
+
+def _strip_local_recipe_timestamps(lock_file: Path, local_recipe_names: set[str]) -> None:
+    """Strip timestamps from local recipe entries in the lock file.
+
+    Conan lock entries include a timestamp suffix (e.g., name/version#rrev%timestamp).
+    Local recipes are exported on each build, so the timestamp changes even when
+    the recipe revision is identical. Removing the timestamp makes the lock file
+    stable while preserving recipe revisions.
+    """
+    import json
+
+    if not local_recipe_names:
+        return
+
+    if not lock_file.exists():
+        return
+
+    with open(lock_file, "r") as f:
+        lock_data = json.load(f)
+
+    modified = False
+    for key in ["requires", "build_requires"]:
+        if key not in lock_data:
+            continue
+        original = lock_data[key]
+        updated = []
+        for entry in original:
+            if any(entry.startswith(f"{name}/") for name in local_recipe_names):
+                updated.append(entry.split("%", 1)[0])
+            else:
+                updated.append(entry)
+        if updated != original:
+            lock_data[key] = updated
+            modified = True
+
+    if modified:
+        with open(lock_file, "w") as f:
+            json.dump(lock_data, f, indent=4)
+        print_tool(
+            "Stripped local recipe timestamps in lock file: "
+            f"{', '.join(sorted(local_recipe_names))}"
+        )
+
+
 def _generate_cpp_properties(root: Path, build_dir: Path, windowing: str) -> None:
     # Use CMake file-api outputs for accuracy across generators/platforms.
     # compile_commands.json is not reliably generated on all platforms or generators.
@@ -555,6 +607,7 @@ def build_command(args: argparse.Namespace) -> None:
             # Handle lock file generation and usage
             should_create_lock = args.update_lock or not lock_file.exists()
 
+            local_recipe_names = _get_local_recipe_names(config)
             if should_create_lock:
                 if args.update_lock:
                     print_tool(
@@ -577,6 +630,8 @@ def build_command(args: argparse.Namespace) -> None:
                     ],
                     log_file=lock_log_file,
                 )
+                # Strip timestamps for local recipes in the lock file
+                _strip_local_recipe_timestamps(lock_file, local_recipe_names)
             else:
                 print_tool(f"Lock file found. Using existing lock file: {lock_file}")
 
