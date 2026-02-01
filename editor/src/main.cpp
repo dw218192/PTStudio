@@ -1,8 +1,8 @@
+#include <core/enumUtils.h>
 #include <core/error.h>
 #include <core/loggingManager.h>
 #include <core/pluginManager.h>
 #include <core/renderConfig.h>
-#include <core/utils.h>
 #include <spdlog/spdlog.h>
 
 #include <boost/program_options.hpp>

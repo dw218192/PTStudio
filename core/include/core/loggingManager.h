@@ -1,8 +1,10 @@
 #pragma once
 #include <core/defines.h>
+#include <core/enumUtils.h>
 #include <spdlog/spdlog.h>
 
 #include <boost/describe/enum.hpp>
+#include <iostream>
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -35,14 +37,13 @@ class LoggingManager {
     ~LoggingManager();
 
     NO_COPY_MOVE(LoggingManager);
-
     /**
      * @brief Gets a lazily initialized logger with the given name. The logger will be registered
      * and kept alive until the program exits.
-     * @param name The name of the logger
+     * @param name The name of the logger (default: "pts")
      * @return The logger
      */
-    [[nodiscard]] auto get_logger(std::string_view name) noexcept -> spdlog::logger&;
+    [[nodiscard]] auto get_logger(std::string_view name = "pts") noexcept -> spdlog::logger&;
 
     /**
      * @brief Gets a shared pointer to a lazily initialized logger with the given name.
@@ -64,4 +65,25 @@ class LoggingManager {
     Config cfg_;
     std::vector<spdlog::sink_ptr> sinks_;
 };
+
+/**
+ * Helper function to log to a logger or stderr if the logger gets outlived by the calling code.
+ * @param name The name of the logger
+ * @param level The level of the log
+ * @param fmt The format string
+ * @param args The arguments to format the string
+ */
+template <typename... Args>
+inline void log_or_cerr(const std::string& name, LogLevel level, std::string_view fmt,
+                        Args&&... args) {
+    if (auto lg = spdlog::get(name)) {
+        auto spd_level = static_cast<spdlog::level::level_enum>(level);
+        if (spdlog::should_log(spd_level)) {
+            lg->log(spd_level, fmt, std::forward<Args>(args)...);
+        }
+    } else {
+        std::cerr << '[' << pts::to_string(level) << "] "
+                  << "[" << name << "] " << fmt::format(fmt, std::forward<Args>(args)...) << "\n";
+    }
+}
 }  // namespace pts

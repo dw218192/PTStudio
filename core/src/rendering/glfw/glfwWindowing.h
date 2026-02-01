@@ -13,8 +13,6 @@ class GlfwWindowing final : public IWindowing {
 
     [[nodiscard]] std::unique_ptr<IViewport> create_viewport(const ViewportDesc& desc) override;
     [[nodiscard]] NativeViewportHandle native_handle() const noexcept override;
-    [[nodiscard]] auto required_vulkan_instance_extensions() const noexcept
-        -> rendering::WindowingVulkanExtensions override;
     void pump_events(PumpEventMode mode) override;
 
     void clear_primary_window(GLFWwindow* window) noexcept;

@@ -62,7 +62,7 @@ jobs:
           path: |
             ~/.conan2
             _build/deps
-          key: windows-conan-${{ hashFiles('conanfile.py', 'conan.lock') }}-${{ matrix.build_type }}
+          key: windows-conan-${{ hashFiles('conanfile.py', 'conan_glfw.lock') }}-${{ matrix.build_type }}
           restore-keys: |
             windows-conan-${{ hashFiles('conanfile.py') }}-${{ matrix.build_type }}
             windows-conan-
@@ -77,13 +77,20 @@ jobs:
           path: _build/${{ matrix.build_type }}/bin/
           retention-days: 3
       
-      - name: Upload USD install artifacts # needed to load DLLs
+      - name: Upload dependency artifacts # needed to load DLLs
         uses: actions/upload-artifact@v4
         with:
-          name: usd-windows-${{ matrix.build_type }}
+          name: deps-windows-${{ matrix.build_type }}
+          # a marker file ".clang-format" is added so that the zip preserves the directory structure
+          # see https://github.com/actions/upload-artifact/issues/174
           path: |
-            _build/deps/usd/${{ matrix.build_type }}/install/bin/
-            _build/deps/usd/${{ matrix.build_type }}/install/lib/
+            _build/deps/**/openusd/**/${{ matrix.build_type }}/**/bin/
+            _build/deps/**/openusd/**/${{ matrix.build_type }}/**/lib/
+            _build/deps/**/onetbb/**/${{ matrix.build_type }}/**/bin/
+            _build/deps/**/onetbb/**/${{ matrix.build_type }}/**/lib/
+            _build/deps/**/dawn/**/${{ matrix.build_type }}/**/bin/
+            _build/deps/**/dawn/**/${{ matrix.build_type }}/**/lib/
+            .clang-format
           retention-days: 3
 
   test-windows:
@@ -117,11 +124,11 @@ jobs:
           name: build-windows-${{ matrix.build_type }}
           path: _build/${{ matrix.build_type }}/bin/
       
-      - name: Download USD install artifacts
+      - name: Download dependency artifacts
         uses: actions/download-artifact@v4
         with:
-          name: usd-windows-${{ matrix.build_type }}
-          path: _build/deps/usd/${{ matrix.build_type }}/install/
+          name: deps-windows-${{ matrix.build_type }}
+          path: .
 
       - name: Run tests
         run: .\pts.cmd test --build-type ${{ matrix.build_type }}

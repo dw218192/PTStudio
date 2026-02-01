@@ -1,78 +1,36 @@
 #include "renderingComponents.h"
 
+#include <core/rendering/webgpuContext.h>
 #include <imgui.h>
 #include <imgui_impl_null.h>
 
 #include <memory>
 #include <utility>
 
+#include "null/nullImguiRendering.h"
+#include "webgpu/webgpuImguiRendering.h"
+
 namespace spdlog {
 class logger;
 }
 
 namespace pts::rendering {
-namespace {
-class NullImguiRendering final : public IImguiRendering {
-   public:
-    explicit NullImguiRendering(std::shared_ptr<spdlog::logger> logger)
-        : m_logger(std::move(logger)) {
-        m_initialized = ImGui_ImplNullRender_Init();
-        if (m_logger) {
-            if (m_initialized) {
-                m_logger->info("ImGui null renderer initialized");
-            } else {
-                m_logger->error("ImGui null renderer failed to initialize");
-            }
-        }
-    }
 
-    ~NullImguiRendering() override {
-        if (m_initialized) {
-            ImGui_ImplNullRender_Shutdown();
-        }
-        if (m_logger) {
-            m_logger->info("ImGui null renderer destroyed");
-        }
-    }
-
-    void new_frame() override {
-        ImGui_ImplNullRender_NewFrame();
-    }
-
-    void render(bool framebuffer_resized) override {
-        static_cast<void>(framebuffer_resized);
-        ImGui_ImplNullRender_RenderDrawData(ImGui::GetDrawData());
-    }
-
-    void resize() override {
-    }
-
-    auto set_render_output(IRenderGraph& render_graph) -> ImTextureID override {
-        static_cast<void>(render_graph);
-        return ImTextureID_Invalid;
-    }
-
-    void clear_render_output() override {
-    }
-
-    [[nodiscard]] auto output_id() const noexcept -> ImTextureID override {
-        return ImTextureID_Invalid;
-    }
-
-   private:
-    std::shared_ptr<spdlog::logger> m_logger;
-    bool m_initialized{false};
-};
-}  // namespace
-
-auto create_rendering_components(IWindowing& windowing, IViewport& viewport,
-                                 pts::LoggingManager& logging_manager) -> RenderingComponents {
-    static_cast<void>(windowing);
-    static_cast<void>(viewport);
-    RenderingComponents components;
+auto create_imgui_components(WebGpuContext& webgpu_context, pts::rendering::IViewport& viewport,
+                             pts::LoggingManager& logging_manager) -> ImGuiComponents {
+    ImGuiComponents components;
     components.render_graph = nullptr;
-    components.imgui_rendering =
-        std::make_unique<NullImguiRendering>(logging_manager.get_logger_shared("ImGuiRendering"));
+
+    auto webgpu_rendering =
+        create_webgpu_imgui_rendering(webgpu_context, viewport, logging_manager);
+    if (webgpu_rendering) {
+        components.imgui_rendering = std::move(webgpu_rendering);
+        return components;
+    }
+
+    // Fallback to null rendering
+    logging_manager.get_logger().warn("Using null imgui rendering as fallback");
+    components.imgui_rendering = create_null_imgui_rendering(logging_manager);
     return components;
 }
 }  // namespace pts::rendering

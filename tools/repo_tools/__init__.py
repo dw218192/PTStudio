@@ -1,5 +1,6 @@
 """Shared utilities for repo tools."""
 
+import argparse
 import functools
 import logging
 import os
@@ -7,8 +8,8 @@ import platform
 import shutil
 import subprocess
 import sys
-from pathlib import Path
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Optional, TypedDict
 
 from colorama import Fore, Style, init as colorama_init
@@ -24,9 +25,69 @@ class RepoContext(TypedDict):
     build_type: str
     conan_deps_root: str
     conan_lock: str
-    usd_install_dir: str
-    usd_build_dir: str
+    deps_root: str
     build_dir: str
+
+
+class RepoTool:
+    name: str = ""
+    help: str = ""
+
+    def setup(self, parser: argparse.ArgumentParser) -> None:
+        """Define supported CLI args for the tool."""
+        return None
+
+    def default_args(self, context: RepoContext) -> argparse.Namespace:
+        """Return default args for the tool (merged before config/CLI)."""
+        return argparse.Namespace()
+
+    def execute(self, args: argparse.Namespace) -> None:
+        """Execute the tool with merged args."""
+        raise NotImplementedError
+
+
+_REPO_TOOL_REGISTRY: dict[str, RepoTool] = {}
+
+
+def register_repo_tool(tool: RepoTool) -> None:
+    if not tool.name:
+        raise ValueError("Repo tool name cannot be empty.")
+    existing = _REPO_TOOL_REGISTRY.get(tool.name)
+    if existing:
+        if existing is tool:
+            return
+        raise ValueError(f"Repo tool '{tool.name}' is already registered.")
+    _REPO_TOOL_REGISTRY[tool.name] = tool
+
+
+def get_repo_tool(name: str) -> RepoTool | None:
+    return _REPO_TOOL_REGISTRY.get(name)
+
+
+def get_repo_tool_name(tool: RepoTool) -> str | None:
+    return tool.name if tool.name else None
+
+
+def create_repo_tool_args(name: str, context: RepoContext) -> argparse.Namespace:
+    tool = get_repo_tool(name)
+    if tool is None:
+        raise KeyError(f"Repo tool '{name}' is not registered.")
+    return tool.default_args(context)
+
+
+def list_repo_tools() -> list[str]:
+    return sorted(_REPO_TOOL_REGISTRY.keys())
+
+
+def register_repo_tool_parser(
+    subparsers: argparse._SubParsersAction, tool: RepoTool
+) -> None:
+    parser = subparsers.add_parser(
+        tool.name, help=tool.help, argument_default=argparse.SUPPRESS
+    )
+    tool.setup(parser)
+    parser.set_defaults(func=tool.execute)
+    register_repo_tool(tool)
 
 
 def _level_color(levelno: int) -> str:
@@ -118,16 +179,6 @@ def run_command(cmd: list[str], log_file: Optional[Path] = None) -> None:
         subprocess.run(cmd, check=True)
 
 
-def augment_env_with_usd(env: dict, usd_install_dir: Path) -> dict:
-    if usd_install_dir.exists():
-        usd_bin = usd_install_dir / "bin"
-        usd_lib = usd_install_dir / "lib"
-        env["PATH"] = f"{usd_bin}{os.pathsep}{usd_lib}{os.pathsep}{env.get('PATH', '')}"
-    else:
-        logger.error(f"USD install directory does not exist: {usd_install_dir}")
-    return env
-
-
 def ensure_conan_profile() -> None:
     """Ensure Conan profiles exist, run detect if needed."""
     profile_dir = Path.home() / ".conan2" / "profiles"
@@ -161,6 +212,15 @@ def _get_config_value(config: dict, key_path: str, default: str) -> str:
     return str(current) if current is not None else default
 
 
+def _get_optional_config_value(config: dict, key_path: str) -> str | None:
+    current = config
+    for key in key_path.split("."):
+        if not isinstance(current, dict) or key not in current:
+            return None
+        current = current[key]
+    return str(current) if current is not None else None
+
+
 def _resolve_template(value: str, context: Mapping[str, str]) -> str:
     try:
         return value.format(**context)
@@ -178,8 +238,15 @@ def resolve_path(root: Path, template: str, context: Mapping[str, str]) -> Path:
 
 
 def build_repo_context(root: Path, build_type: str, config: dict) -> RepoContext:
-    build_root = root / _get_config_value(config, "paths.build_root", "_build")
-    logs_root = root / _get_config_value(config, "paths.logs_root", "_logs")
+    build_root_value = _get_optional_config_value(config, "repo_paths.build_root")
+    if build_root_value is None:
+        build_root_value = _get_config_value(config, "paths.build_root", "_build")
+    build_root = root / build_root_value
+
+    logs_root_value = _get_optional_config_value(config, "repo_paths.logs_root")
+    if logs_root_value is None:
+        logs_root_value = _get_config_value(config, "paths.logs_root", "_logs")
+    logs_root = root / logs_root_value
 
     base_context = {
         "workspace_root": str(root),
@@ -188,42 +255,56 @@ def build_repo_context(root: Path, build_type: str, config: dict) -> RepoContext
         "build_type": build_type,
     }
 
-    conan_deps_root = _get_config_value(
-        config, "paths.conan_deps_root", "{build_root}/deps"
+    conan_deps_root = _get_optional_config_value(
+        config, "repo_paths.conan_deps_root"
     )
+    if conan_deps_root is None:
+        conan_deps_root = _get_config_value(
+            config, "paths.conan_deps_root", "{build_root}/deps"
+        )
     resolved_conan_deps_root = _resolve_template(conan_deps_root, base_context)
     template_context = {**base_context, "conan_deps_root": resolved_conan_deps_root}
 
-    conan_lock = _get_config_value(config, "paths.conan_lock", "conan_glfw.lock")
+    conan_lock = _get_optional_config_value(config, "repo_paths.conan_lock")
+    if conan_lock is None:
+        conan_lock = _get_config_value(config, "paths.conan_lock", "conan_glfw.lock")
     resolved_conan_lock = str(resolve_path(root, conan_lock, template_context))
 
-    usd_install = _get_config_value(
-        config, "paths.usd_install_dir", "{build_root}/usd/{build_type}/install"
-    )
-    resolved_usd_install_dir = str(resolve_path(root, usd_install, template_context))
-
-    usd_build = _get_config_value(
-        config, "paths.usd_build_dir", "{build_root}/usd/{build_type}/build"
-    )
-    resolved_usd_build_dir = str(resolve_path(root, usd_build, template_context))
+    # Add deps_root for referencing deployed dependencies
+    deps_root = Path(resolved_conan_deps_root) / "full_deploy" / "host"
 
     context: RepoContext = {
         **template_context,
         "conan_lock": resolved_conan_lock,
-        "usd_install_dir": resolved_usd_install_dir,
-        "usd_build_dir": resolved_usd_build_dir,
+        "deps_root": str(deps_root),
         "build_dir": str(build_root / build_type),
     }
     return context
 
 
-def resolve_env_vars(config: dict, context: RepoContext) -> dict:
-    env_config = config.get("env", {})
+def resolve_env_vars(env_config: dict | None, context: RepoContext) -> dict:
+    """Resolve environment variables, expanding glob patterns."""
+    import glob
+
+    if not env_config:
+        return {}
+    if "env" in env_config and isinstance(env_config.get("env"), dict):
+        env_config = env_config.get("env", {})
     resolved = {}
     for key, value in env_config.items():
         if isinstance(value, list):
-            values = [_resolve_template(str(item), context) for item in value]
-            resolved[key] = os.pathsep.join(values)
+            expanded_values = []
+            for item in value:
+                resolved_item = _resolve_template(str(item), context)
+                # Expand glob pattern - take the first match if multiple found
+                matches = sorted(glob.glob(resolved_item))
+                if len(matches) > 1:
+                    logger.warning(
+                        f"Glob pattern '{resolved_item}' matched multiple items: {matches}; "
+                        f"using first match: {matches[0]}"
+                    )
+                expanded_values.append(matches[0] if matches else resolved_item)
+            resolved[key] = os.pathsep.join(expanded_values)
         else:
             resolved[key] = _resolve_template(str(value), context)
     return resolved
@@ -240,58 +321,122 @@ def apply_env_overrides(env: dict, overrides: dict) -> dict:
     return env
 
 
-def resolve_slang_shaders(
-    root: Path, config: dict, context: RepoContext
-) -> list[tuple[Path, Path]]:
-    shaders = config.get("slang", {}).get("shaders", [])
-    resolved = []
-    for shader in shaders:
-        if not isinstance(shader, dict):
-            continue
-        input_value = shader.get("input")
-        if not input_value:
-            continue
-        output_value = shader.get("output")
-        input_path = resolve_path(root, str(input_value), context)
+def normalize_env_config(env_value: object) -> dict[str, object]:
+    if not env_value:
+        return {}
+    if isinstance(env_value, dict):
+        return dict(env_value)
+    if isinstance(env_value, str):
+        env_items = [env_value]
+    elif isinstance(env_value, list):
+        env_items = env_value
+    else:
+        logger.warning(f"Skipping env config with unsupported type: {type(env_value)}")
+        return {}
 
-        if output_value:
-            output_path = resolve_path(root, str(output_value), context)
+    parsed: dict[str, object] = {}
+    for item in env_items:
+        if not isinstance(item, str):
+            logger.warning(f"Skipping env entry (not a string): {item!r}")
+            continue
+        text = item.strip()
+        if not text:
+            continue
+        if "=" in text:
+            key, value = text.split("=", 1)
+            parsed[key] = value
         else:
-            output_path = input_path.with_suffix(".wgsl")
-
-        resolved.append((input_path, output_path))
-    return resolved
+            parsed[text] = ""
+    return parsed
 
 
-def resolve_slang_test_output(
-    root: Path, config: dict, context: RepoContext
-) -> Path | None:
-    test_shader = config.get("slang", {}).get("test_shader")
-    if not test_shader:
-        return None
-    return resolve_path(root, str(test_shader), context)
+def normalize_build_type(value: str | None) -> str:
+    if not value:
+        return "Debug"
+    normalized = str(value)
+    mapping = {
+        "debug": "Debug",
+        "release": "Release",
+        "relwithdebinfo": "RelWithDebInfo",
+        "minsizerel": "MinSizeRel",
+    }
+    return mapping.get(normalized.casefold(), normalized)
 
 
-def find_slangc(root: Path, config: dict, context: RepoContext) -> Path | None:
-    compiler_path = config.get("slang", {}).get("compiler_path")
-    if compiler_path:
-        path = resolve_path(root, str(compiler_path), context)
-        if path.exists():
-            return path
+def normalize_repo_tool_args(args_value: object) -> dict[str, object]:
+    if not args_value:
+        return {}
+    if isinstance(args_value, dict):
+        normalized: dict[str, object] = {}
+        for key, value in args_value.items():
+            normalized_key = str(key).replace("-", "_")
+            normalized[normalized_key] = value
+        return normalized
+    if isinstance(args_value, str):
+        args_list = [args_value]
+    elif isinstance(args_value, list):
+        args_list = args_value
+    else:
+        logger.warning(
+            f"Skipping repo tool args with unsupported type: {type(args_value)}"
+        )
+        return {}
 
-    search_roots = config.get("slang", {}).get("compiler_search_roots", [])
-    candidates: list[Path] = []
-    for entry in search_roots:
-        candidate = resolve_path(root, str(entry), context)
-        if candidate.exists():
-            candidates.append(candidate)
+    parsed: dict[str, object] = {}
+    for arg in args_list:
+        if not isinstance(arg, str):
+            logger.warning(
+                f"Skipping repo tool arg entry (not a string): {arg!r}"
+            )
+            continue
+        text = arg.strip()
+        if not text:
+            continue
+        if "=" in text:
+            key, value = text.split("=", 1)
+            normalized_key = key.lstrip("-").replace("-", "_")
+            parsed[normalized_key] = value
+        elif text.startswith("-"):
+            normalized_key = text.lstrip("-").replace("-", "_")
+            parsed[normalized_key] = True
+        else:
+            logger.warning(
+                f"Skipping repo tool arg entry (expected --flag or key=value): {text}"
+            )
+    return parsed
 
-    exe_name = "slangc.exe" if is_windows() else "slangc"
-    for candidate_root in candidates:
-        for path in candidate_root.rglob(exe_name):
-            return path
 
-    exe_path = shutil.which(exe_name)
-    if exe_path:
-        return Path(exe_path)
-    return None
+def apply_repo_tool_args(target: argparse.Namespace, args: Mapping[str, object]) -> None:
+    for key, value in args.items():
+        setattr(target, key, value)
+
+
+def get_repo_tool_config_args(config: dict, tool_name: str) -> dict[str, object]:
+    tool_config = config.get(tool_name)
+    if tool_config is None:
+        for section_key in ("repo_tools", "tools"):
+            section = config.get(section_key, {})
+            if not isinstance(section, dict):
+                continue
+            tool_config = section.get(tool_name)
+            if tool_config is not None:
+                break
+
+    if tool_config is None:
+        return {}
+    if isinstance(tool_config, (dict, list, str)):
+        return normalize_repo_tool_args(tool_config)
+    logger.warning(
+        f"Skipping repo tool config with unsupported type: {type(tool_config)}"
+    )
+    return {}
+
+
+def infer_build_type(
+    tool_name: str, cli_args: argparse.Namespace, config_args: Mapping[str, object]
+) -> str:
+    if tool_name == "launch":
+        value = getattr(cli_args, "config", None) or config_args.get("config")
+        return normalize_build_type(str(value)) if value else "Debug"
+    value = getattr(cli_args, "build_type", None) or config_args.get("build_type")
+    return normalize_build_type(str(value)) if value else "Debug"

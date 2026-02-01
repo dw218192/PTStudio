@@ -22,8 +22,6 @@ class PTStudioConan(ConanFile):
         # Boost configuration - need filesystem for DLL loading
         "boost/*:without_filesystem": False,
     }
-    generators = "CMakeDeps"
-
     def requirements(self):
         # Core dependencies, strict compatibility
         self.requires("fmt/10.2.1")
@@ -44,6 +42,10 @@ class PTStudioConan(ConanFile):
         self.requires("boost/[>=0]")
         # Shader toolchain (slangc)
         self.requires("slang/2026.1")
+        # WebGPU backend
+        self.requires("dawn/20250428.160623")
+        # Scene description
+        self.requires("openusd/25.02")
 
         # Note: Some dependencies are built from source in ext/:
         # - imgui (custom build with docking branch)
@@ -74,3 +76,6 @@ class PTStudioConan(ConanFile):
 
         tc.cache_variables["PTS_WINDOWING"] = self.options.windowing
         tc.generate()
+
+        deps = CMakeDeps(self)
+        deps.generate()
