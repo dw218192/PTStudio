@@ -7,10 +7,15 @@ import sys
 from pathlib import Path
 
 from repo_tools import (
+    RepoContext,
+    RepoTool,
     apply_env_overrides,
     build_repo_context,
+    get_repo_tool_config_args,
     is_windows,
     load_repo_config,
+    normalize_build_type,
+    normalize_env_config,
     print_tool,
     resolve_env_vars,
 )
@@ -62,67 +67,78 @@ def _discover_executables(build_dir: Path) -> list[Path]:
     return exe_paths
 
 
-def _normalize_config(config: str) -> str:
-    config_map = {
-        "debug": "Debug",
-        "release": "Release",
-        "relwithdebinfo": "RelWithDebInfo",
-        "minsizerel": "MinSizeRel",
-    }
-    return config_map[config.casefold()]
+class LaunchTool(RepoTool):
+    name = "launch"
+    help = "Set up environment and launch executables"
+
+    def setup(self, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "executable",
+            type=str,
+            nargs="?",
+            default=argparse.SUPPRESS,
+            help="Executable to launch (default: editor)",
+        )
+        parser.add_argument(
+            "-c",
+            "--config",
+            type=str.casefold,
+            choices=["debug", "release", "relwithdebinfo", "minsizerel"],
+            help="Build configuration to launch (default: debug)",
+        )
+        parser.add_argument(
+            "--env",
+            action="append",
+            help="Environment override (KEY=VALUE). Repeatable.",
+        )
+
+    def default_args(self, context: RepoContext) -> argparse.Namespace:
+        return argparse.Namespace(
+            executable="editor",
+            config=context["build_type"].casefold(),
+            env=None,
+            passthrough_args=[],
+        )
+
+    def execute(self, args: argparse.Namespace) -> None:
+        """Launch the editor executable for native deployment."""
+        root = Path(__file__).parent.parent.parent
+        build_type = normalize_build_type(args.config)
+        config = load_repo_config(root)
+        context = build_repo_context(root, build_type, config)
+        build_dir = Path(context["build_dir"])
+        exe_paths = _discover_executables(build_dir)
+
+        if not exe_paths:
+            print_tool(f"No executables found in build directory: {build_dir}")
+            print_tool("Build the project first: .\\pts.cmd build")
+            sys.exit(1)
+
+        target_exe_path = None
+        for exe_path in exe_paths:
+            if exe_path.stem == args.executable:
+                target_exe_path = exe_path
+                break
+
+        if target_exe_path is None:
+            print_tool(f"Executable not found: {args.executable}")
+            print_tool("Available executables:")
+            for exe in exe_paths:
+                print_tool(f"  {exe.stem}")
+            sys.exit(1)
+
+        config_args = get_repo_tool_config_args(config, self.name)
+        env_config = normalize_env_config(config_args.get("env"))
+        if isinstance(getattr(args, "env", None), list):
+            env_overrides = normalize_env_config(args.env)
+            env_config.update(env_overrides)
+        elif args.env is not None:
+            env_config = normalize_env_config(args.env)
+
+        env_vars = resolve_env_vars(env_config, context)
+        env = apply_env_overrides(os.environ.copy(), env_vars)
+        cmd = [str(target_exe_path)]
+        cmd.extend(getattr(args, "passthrough_args", []))
+        subprocess.run(cmd, check=True, env=env)
 
 
-def launch_command(args: argparse.Namespace) -> None:
-    """Launch the editor executable for native deployment."""
-    root = Path(__file__).parent.parent.parent
-    build_type = _normalize_config(args.config)
-    config = load_repo_config(root)
-    context = build_repo_context(root, build_type, config)
-    build_dir = Path(context["build_dir"])
-    exe_paths = _discover_executables(build_dir)
-
-    if not exe_paths:
-        print_tool(f"No executables found in build directory: {build_dir}")
-        print_tool("Build the project first: .\\pts.cmd build")
-        sys.exit(1)
-
-    target_exe_path = None
-    for exe_path in exe_paths:
-        if exe_path.stem == args.executable:
-            target_exe_path = exe_path
-            break
-
-    if target_exe_path is None:
-        print_tool(f"Executable not found: {args.executable}")
-        print_tool("Available executables:")
-        for exe in exe_paths:
-            print_tool(f"  {exe.stem}")
-        sys.exit(1)
-
-    env_vars = resolve_env_vars(config, context)
-    env = apply_env_overrides(os.environ.copy(), env_vars)
-    cmd = [str(target_exe_path)]
-    cmd.extend(getattr(args, "passthrough_args", []))
-    subprocess.run(cmd, check=True, env=env)
-
-
-def register_launch_command(subparsers: argparse._SubParsersAction) -> None:
-    """Register the launch subcommand."""
-    parser = subparsers.add_parser(
-        "launch", help="Set up environment and launch executables"
-    )
-    parser.add_argument(
-        "executable",
-        type=str,
-        default="editor",
-        help="Executable to launch (default: editor)",
-    )
-    parser.add_argument(
-        "-c",
-        "--config",
-        type=str.casefold,
-        choices=["debug", "release", "relwithdebinfo", "minsizerel"],
-        default="debug",
-        help="Build configuration to launch (default: debug)",
-    )
-    parser.set_defaults(func=launch_command)

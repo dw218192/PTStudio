@@ -8,6 +8,7 @@
 
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
+#include <core/loggingManager.h>
 
 #include <iostream>
 #include <memory>
@@ -21,7 +22,7 @@
 
 namespace pts::rendering {
 namespace {
-std::weak_ptr<spdlog::logger> g_logger;
+constexpr const char* k_glfw_logger_name = "GlfwWindowing";
 
 constexpr auto k_windowing_type = WindowingType::glfw;
 
@@ -86,11 +87,8 @@ struct GlfwViewportCallbacks {
 
 struct GlfwErrorCallback {
     static void error_func(int error, const char* description) {
-        if (auto logger = g_logger.lock()) {
-            logger->error("GLFW error: {}: {}", error, description);
-        } else {
-            std::cerr << "GLFW error: " << error << ": " << description << std::endl;
-        }
+        pts::log_or_cerr(k_glfw_logger_name, pts::LogLevel::Error, "GLFW error: {}: {}", error,
+                         description);
     }
 };
 
@@ -170,8 +168,7 @@ class GlfwViewport final : public IViewport {
 }  // namespace
 
 GlfwWindowing::GlfwWindowing(pts::LoggingManager& logging_manager) {
-    m_logger = logging_manager.get_logger_shared("GlfwWindowing");
-    g_logger = m_logger;
+    m_logger = logging_manager.get_logger_shared(k_glfw_logger_name);
 
     glfwSetErrorCallback(GlfwErrorCallback::error_func);
     if (!glfwInit()) {

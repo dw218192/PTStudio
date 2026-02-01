@@ -19,7 +19,7 @@ class HelloTriangleApp : public pts::Application {
         static_cast<void>(dt);
 
         auto* context = get_webgpu_context();
-        if (!context || !context->is_valid()) {
+        if (!context) {
             return;
         }
 
@@ -69,7 +69,7 @@ class HelloTriangleApp : public pts::Application {
    private:
     auto create_pipeline() -> pts::webgpu::RenderPipeline {
         auto* context = get_webgpu_context();
-        if (!context || !context->is_valid()) {
+        if (!context) {
             throw std::runtime_error("WebGPU context not available");
         }
 

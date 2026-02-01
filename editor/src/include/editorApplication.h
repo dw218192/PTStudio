@@ -6,7 +6,6 @@
 #include <core/pluginManager.h>
 #include <core/renderConfig.h>
 #include <core/rendering/plugin.h>
-#include <core/rendering/webgpu/webgpu.h>
 #include <core/signal.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 

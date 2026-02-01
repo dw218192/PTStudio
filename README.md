@@ -20,7 +20,8 @@ https://github.com/dw218192/PTStudio/assets/31294154/4116308d-ee31-4d20-a449-f13
 - C++ Compiler Toolchain (GCC, Clang, MSVC, etc.)
 - GPU driver with Vulkan and OpenGL support
 
-### Dependencies and Reproduceable Build
+### Dependencies and Reproducible Build
+
 - There are 3 ways of getting 3rd party dependencies in this project:
     1. Conan pulling from conan center (see `conanfile.py` for the list of dependencies)
     2. Conan local recipes, linked to release artifacts (`./tools/conan`)

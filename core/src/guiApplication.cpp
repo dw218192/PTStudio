@@ -1,6 +1,9 @@
+#include <core/diagnostics.h>
 #include <core/guiApplication.h>
 #include <core/imgui/imhelper.h>
 #include <core/rendering/webgpuContext.h>
+#include <core/scopeUtils.h>
+#include <core/timeUtils.h>
 #include <imgui_internal.h>
 
 #include <chrono>
@@ -9,17 +12,15 @@
 #include "rendering/renderingComponents.h"
 
 namespace pts {
-namespace {
-auto time_since_start(const std::chrono::steady_clock::time_point& start) -> double {
-    auto const now = std::chrono::steady_clock::now();
-    return std::chrono::duration<double>(now - start).count();
-}
-}  // namespace
 
 GUIApplication::GUIApplication(std::string_view name, pts::LoggingManager& logging_manager,
                                pts::PluginManager& plugin_manager, unsigned width, unsigned height,
                                float min_frame_time)
     : Application{name, logging_manager, plugin_manager, width, height, min_frame_time} {
+    SCOPE_FAIL {
+        ImGui::DestroyContext();
+    };
+
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -38,15 +39,17 @@ GUIApplication::GUIApplication(std::string_view name, pts::LoggingManager& loggi
 
     // Create ImGui rendering components
     auto* webgpu_context = get_webgpu_context();
-    if (webgpu_context && webgpu_context->is_valid()) {
-        auto imgui_components = pts::rendering::create_imgui_components(*webgpu_context, *viewport,
-                                                                        get_logging_manager());
-        m_render_graph = std::move(imgui_components.render_graph);
-        m_imgui_rendering = std::move(imgui_components.imgui_rendering);
-    } else {
-        log(pts::LogLevel::Error, "WebGPU context not available for ImGui");
-        throw std::runtime_error("WebGPU context not available for ImGui");
-    }
+    INVARIANT_MSG(webgpu_context != nullptr, "WebGPU context must be valid");
+
+    auto imgui_components =
+        pts::rendering::create_imgui_components(*webgpu_context, *viewport, get_logging_manager());
+    INVARIANT_MSG(imgui_components.render_graph != nullptr,
+                  "create_imgui_components must return valid render_graph");
+    INVARIANT_MSG(imgui_components.imgui_rendering != nullptr,
+                  "create_imgui_components must return valid imgui_rendering");
+
+    m_render_graph = std::move(imgui_components.render_graph);
+    m_imgui_rendering = std::move(imgui_components.imgui_rendering);
 
     auto const extent = viewport->drawable_extent();
     resize_render_output(extent.w, extent.h);
@@ -119,22 +122,22 @@ void GUIApplication::run() {
 }
 
 auto GUIApplication::get_render_graph_api() const noexcept -> const PtsRenderGraphApi* {
-    return m_render_graph ? m_render_graph->api() : nullptr;
+    // Invariant: m_render_graph is always valid after construction
+    return m_render_graph->api();
 }
 
 auto GUIApplication::get_render_output_texture() const noexcept -> PtsTexture {
-    return m_render_graph ? m_render_graph->output_texture() : PtsTexture{};
+    // Invariant: m_render_graph is always valid after construction
+    return m_render_graph->output_texture();
 }
 
 auto GUIApplication::get_render_output_imgui_id() const noexcept -> ImTextureID {
+    // Invariant: m_imgui_rendering is always valid after construction
     return m_imgui_rendering->output_id();
 }
 
 auto GUIApplication::resize_render_output(uint32_t width, uint32_t height) -> void {
-    if (!m_render_graph) {
-        m_imgui_rendering->clear_render_output();
-        return;
-    }
+    // Invariant: m_render_graph and m_imgui_rendering are always valid after construction
     if (width == 0 || height == 0) {
         m_imgui_rendering->clear_render_output();
         return;
@@ -145,15 +148,13 @@ auto GUIApplication::resize_render_output(uint32_t width, uint32_t height) -> vo
 }
 
 auto GUIApplication::set_render_graph_current() -> void {
-    if (m_render_graph) {
-        m_render_graph->set_current();
-    }
+    // Invariant: m_render_graph is always valid after construction
+    m_render_graph->set_current();
 }
 
 auto GUIApplication::clear_render_graph_current() -> void {
-    if (m_render_graph) {
-        m_render_graph->clear_current();
-    }
+    // Invariant: m_render_graph is always valid after construction
+    m_render_graph->clear_current();
 }
 
 auto GUIApplication::on_begin_first_loop() -> void {

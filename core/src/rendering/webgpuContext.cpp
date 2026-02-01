@@ -1,3 +1,4 @@
+#include <core/diagnostics.h>
 #include <core/loggingManager.h>
 #include <core/rendering/webgpuContext.h>
 
@@ -5,6 +6,8 @@ namespace pts::rendering {
 
 WebGpuContext::WebGpuContext(pts::webgpu::Device device, pts::webgpu::Surface surface)
     : m_device(std::move(device)), m_surface(std::move(surface)) {
+    // Invariants are enforced by Device and Surface constructors
+    // Both Device and Surface enforce that their handles are non-null in their constructors
 }
 
 WebGpuContext::~WebGpuContext() = default;
@@ -17,15 +20,11 @@ auto WebGpuContext::create(const IViewport& viewport,
     auto logger = logging_manager.get_logger_shared("webgpu");
 
     try {
-        // Device creation enforces invariants and throws on failure
+        // Device and Surface creation enforce invariants and throw on failure
         auto device = pts::webgpu::Device::create(logger);
 
         auto extent = viewport.drawable_extent();
         auto surface = pts::webgpu::Surface::create(device, viewport.native_handle(), extent);
-        if (!surface.is_valid()) {
-            logger->error("Failed to create WebGPU surface");
-            return nullptr;
-        }
 
         logger->info("WebGPU context created successfully");
         return std::make_unique<WebGpuContext>(std::move(device), std::move(surface));
@@ -33,11 +32,6 @@ auto WebGpuContext::create(const IViewport& viewport,
         logger->error("Failed to create WebGPU context: {}", e.what());
         return nullptr;
     }
-}
-
-auto WebGpuContext::is_valid() const noexcept -> bool {
-    // Device is always valid if constructed successfully (enforced invariants)
-    return m_surface.is_valid();
 }
 
 auto WebGpuContext::device() const noexcept -> const pts::webgpu::Device& {

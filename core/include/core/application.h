@@ -86,14 +86,17 @@ struct Application {
         return m_viewport.get();
     }
 
-   protected:
     void set_framebuffer_resized(bool value) noexcept {
         m_framebuffer_resized = value;
     }
 
    private:
-    // invariants:
-    // - m_webgpu_context is always valid if the class is constructed successfully
+    // Class invariants (enforced in constructor, throw on failure):
+    // - m_webgpu_context is always valid (non-null)
+    // - m_windowing is always valid (non-null)
+    // - m_viewport is always valid (non-null)
+    // - m_logging_manager and m_plugin_manager are always valid (non-null)
+    // - m_logger is always valid (non-null)
 
     std::string m_name;
     pts::LoggingManager* m_logging_manager;

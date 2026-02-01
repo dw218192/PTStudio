@@ -34,7 +34,6 @@ class WebGpuContext {
                                      pts::LoggingManager& logging_manager)
         -> std::unique_ptr<WebGpuContext>;
 
-    [[nodiscard]] auto is_valid() const noexcept -> bool;
     [[nodiscard]] auto device() const noexcept -> const pts::webgpu::Device&;
     [[nodiscard]] auto surface() noexcept -> pts::webgpu::Surface&;
     [[nodiscard]] auto surface_format() const noexcept -> WGPUTextureFormat;

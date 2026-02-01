@@ -1,17 +1,13 @@
 #include <core/application.h>
+#include <core/diagnostics.h>
 #include <core/rendering/webgpuContext.h>
 #include <core/rendering/windowing.h>
+#include <core/timeUtils.h>
 
 #include <chrono>
 #include <thread>
 
 namespace pts {
-namespace {
-auto time_since_start(const std::chrono::steady_clock::time_point& start) -> double {
-    auto const now = std::chrono::steady_clock::now();
-    return std::chrono::duration<double>(now - start).count();
-}
-}  // namespace
 
 Application::Application(std::string_view name, pts::LoggingManager& logging_manager,
                          pts::PluginManager& plugin_manager, unsigned width, unsigned height,
@@ -36,9 +32,7 @@ Application::Application(std::string_view name, pts::LoggingManager& logging_man
 
     // Create WebGPU context
     m_webgpu_context = pts::rendering::WebGpuContext::create(*m_viewport, get_logging_manager());
-    if (!m_webgpu_context || !m_webgpu_context->is_valid()) {
-        throw std::runtime_error("Failed to create WebGPU context");
-    }
+    INVARIANT_MSG(m_webgpu_context != nullptr, "WebGpuContext::create must return valid context");
 
     log(pts::LogLevel::Info, "Application initialized");
 }

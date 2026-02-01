@@ -6,20 +6,34 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <string>
 
 namespace {
-auto get_shader_path() -> std::string {
+auto load_shader_source() -> std::string {
     std::filesystem::path shader_path = PTS_SOURCE_DIR;
     shader_path /= "assets";
     shader_path /= "shaders";
     shader_path /= "test";
     shader_path /= "simple.wgsl";
-    return shader_path.string();
+
+    std::ifstream file(shader_path, std::ios::binary);
+    if (!file) {
+        return {};
+    }
+
+    std::ostringstream ss;
+    ss << file.rdbuf();
+    return ss.str();
 }
 
 auto create_test_logger() -> std::shared_ptr<spdlog::logger> {
-    auto logger = spdlog::stdout_color_mt("webgpu_test");
+    auto logger = spdlog::get("webgpu_test");
+    if (!logger) {
+        // Create new logger if it doesn't exist
+        logger = spdlog::stdout_color_mt("webgpu_test");
+    }
     logger->set_level(spdlog::level::debug);
     return logger;
 }
@@ -38,6 +52,8 @@ TEST_CASE("WebGPU - Device init and basic resources") {
     CHECK(buffer.is_valid());
 
     // ShaderModule factory throws on failure; invariant enforces non-null
-    auto shader = device.create_shader_module(get_shader_path());
+    auto shader_source = load_shader_source();
+    REQUIRE(!shader_source.empty());
+    auto shader = device.create_shader_module_from_source(shader_source);
     CHECK(shader.handle() != nullptr);
 }

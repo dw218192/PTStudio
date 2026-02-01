@@ -37,7 +37,6 @@ class Device {
     [[nodiscard]] auto queue() const noexcept -> WGPUQueue;
 
     [[nodiscard]] auto create_buffer(std::size_t size, WGPUBufferUsage usage) const -> Buffer;
-    [[nodiscard]] auto create_shader_module(std::string_view wgsl_path) const -> ShaderModule;
     [[nodiscard]] auto create_shader_module_from_source(std::string_view wgsl_source) const
         -> ShaderModule;
     [[nodiscard]] auto create_pipeline_layout() const -> PipelineLayout;

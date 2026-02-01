@@ -21,13 +21,11 @@ auto create_imgui_components(WebGpuContext& webgpu_context, pts::rendering::IVie
     ImGuiComponents components;
     components.render_graph = nullptr;
 
-    if (webgpu_context.is_valid()) {
-        auto webgpu_rendering =
-            create_webgpu_imgui_rendering(webgpu_context, viewport, logging_manager);
-        if (webgpu_rendering) {
-            components.imgui_rendering = std::move(webgpu_rendering);
-            return components;
-        }
+    auto webgpu_rendering =
+        create_webgpu_imgui_rendering(webgpu_context, viewport, logging_manager);
+    if (webgpu_rendering) {
+        components.imgui_rendering = std::move(webgpu_rendering);
+        return components;
     }
 
     // Fallback to null rendering

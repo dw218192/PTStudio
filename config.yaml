@@ -1,39 +1,34 @@
-paths:
+repo_paths:
   build_root: "_build"
   logs_root: "_logs"
   conan_lock: "conan_glfw.lock"
   conan_deps_root: "{build_root}/deps"
-  usd_install_dir: "{build_root}/deps/usd/{build_type}/install"
-  dawn_install_dir: "{build_root}/deps/dawn/{build_type}/install"
 
 build:
   windowing: "glfw"
-  conan_deployer: "full_deploy"
-  conan_deployer_folder: "{conan_deps_root}"
+  prebuild:
+    format: {}
+    slangc:
+      compiler_search_roots: "{deps_root}/slang/*/*"
+      shaders:
+        - input: "assets/shaders/test/*.slang"
+          output: "assets/shaders/test/*.wgsl"
+  postbuild: {}
+  conan:
+    local_recipes:
+      - name: "slang"
+        version: "2026.1"
+        path: "tools/conan/slang"
+      - name: "dawn"
+        version: "20250428.160623"
+        path: "tools/conan/dawn"
+      - name: "openusd"
+        version: "25.02"
+        path: "tools/conan/openusd"
 
-env:
-  PATH:
-    - "{usd_install_dir}/bin"
-    - "{usd_install_dir}/lib"
-    - "{dawn_install_dir}/bin"
-    - "{dawn_install_dir}/lib"
-
-slang:
-  compiler_search_roots:
-    - "{conan_deps_root}/full_deploy/host/slang"
-  shaders:
-    - input: "assets/shaders/test/simple.slang"
-      output: "assets/shaders/test/simple.wgsl"
-  test_shader: "assets/shaders/test/simple.wgsl"
-
-conan:
-  local_recipes:
-    - name: "slang"
-      version: "2026.1"
-      path: "tools/conan/slang"
-    - name: "dawn"
-      version: "20250428.160623"
-      path: "tools/conan/dawn"
-    - name: "openusd"
-      version: "25.02"
-      path: "tools/conan/openusd"
+launch:
+  env:
+    PATH:
+      - "{deps_root}/openusd/*/{build_type}/*/lib"
+      - "{deps_root}/onetbb/*/{build_type}/*/bin"
+      - "{deps_root}/dawn/*/{build_type}/*/bin"

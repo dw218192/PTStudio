@@ -1,10 +1,11 @@
 #include <core/diagnostics.h>
+#include <core/loggingManager.h>
 #include <core/rendering/webgpu/device.h>
+#include <core/scopeUtils.h>
 #include <spdlog/spdlog.h>
 
 #include <chrono>
 #include <cstdio>
-#include <fstream>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -14,20 +15,8 @@
 #endif
 
 namespace pts::webgpu {
-namespace {
-auto load_file_contents(std::string_view path) -> std::string {
-    std::ifstream file(std::string(path), std::ios::binary);
-    if (!file) {
-        return {};
-    }
-    file.seekg(0, std::ios::end);
-    std::string contents;
-    contents.resize(static_cast<size_t>(file.tellg()));
-    file.seekg(0, std::ios::beg);
-    file.read(contents.data(), static_cast<std::streamsize>(contents.size()));
-    return contents;
-}
-}  // namespace
+
+constexpr const char* k_webgpu_logger_name = "WebGPU";
 
 Device::Device(WGPUInstance instance, WGPUDevice device, WGPUQueue queue,
                std::shared_ptr<spdlog::logger> logger)
@@ -74,6 +63,7 @@ auto Device::operator=(Device&& other) noexcept -> Device& {
 }
 
 Device::~Device() {
+    // Release WebGPU resources first (callbacks may still fire during release)
     if (m_queue != nullptr) {
         wgpuQueueRelease(m_queue);
     }
@@ -108,54 +98,62 @@ auto Device::create(std::shared_ptr<spdlog::logger> logger) -> Device {
         WGPUAdapter adapter = nullptr;
         bool completed = false;
     };
-    AdapterRequest adapter_request;
-    WGPURequestAdapterOptions options = {};
-    options.backendType = WGPUBackendType_Undefined;
-    WGPURequestAdapterCallbackInfo adapter_callback = WGPU_REQUEST_ADAPTER_CALLBACK_INFO_INIT;
-    adapter_callback.mode = WGPUCallbackMode_AllowSpontaneous;
-    adapter_callback.callback = [](WGPURequestAdapterStatus status, WGPUAdapter adapter,
-                                   WGPUStringView, void* userdata1, void*) {
-        PRECONDITION(userdata1 != nullptr);
-        auto* request = static_cast<AdapterRequest*>(userdata1);
-        request->status = status;
-        request->adapter = adapter;
-        request->completed = true;
-    };
-    adapter_callback.userdata1 = &adapter_request;
-
-    logger->debug("Requesting WebGPU adapter...");
-    wgpuInstanceRequestAdapter(instance, &options, adapter_callback);
-    for (int attempt = 0; attempt < 1000 && !adapter_request.completed; ++attempt) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-
-    if (!adapter_request.completed) {
-        logger->error("WebGPU adapter request timed out");
-        wgpuInstanceRelease(instance);
-        throw std::runtime_error("WebGPU adapter request timed out");
-    }
-
-    if (adapter_request.status != WGPURequestAdapterStatus_Success) {
-        logger->error("Failed to request WebGPU adapter (status: {})",
-                      static_cast<int>(adapter_request.status));
-        wgpuInstanceRelease(instance);
-        throw std::runtime_error("Failed to request WebGPU adapter");
-    }
-
-    if (adapter_request.adapter == nullptr) {
-        logger->error("WebGPU adapter is null");
-        wgpuInstanceRelease(instance);
-        throw std::runtime_error("WebGPU adapter is null");
-    }
-
-    logger->debug("WebGPU adapter acquired successfully");
 
     struct DeviceRequest {
         WGPURequestDeviceStatus status = WGPURequestDeviceStatus_Error;
         WGPUDevice device = nullptr;
         bool completed = false;
     };
+    AdapterRequest adapter_request;
     DeviceRequest device_request;
+
+    SCOPE_FAIL {
+        if (instance) wgpuInstanceRelease(instance);
+        if (device_request.device) wgpuDeviceRelease(device_request.device);
+    };
+    SCOPE_EXIT {
+        if (adapter_request.adapter) wgpuAdapterRelease(adapter_request.adapter);
+    };
+    // request adapter
+    {
+        WGPURequestAdapterOptions options = {};
+        options.backendType = WGPUBackendType_Undefined;
+        WGPURequestAdapterCallbackInfo adapter_callback = WGPU_REQUEST_ADAPTER_CALLBACK_INFO_INIT;
+        adapter_callback.mode = WGPUCallbackMode_AllowSpontaneous;
+        adapter_callback.callback = [](WGPURequestAdapterStatus status, WGPUAdapter adapter,
+                                       WGPUStringView, void* userdata1, void*) {
+            PRECONDITION(userdata1 != nullptr);
+            auto* request = static_cast<AdapterRequest*>(userdata1);
+            request->status = status;
+            request->adapter = adapter;
+            request->completed = true;
+        };
+        adapter_callback.userdata1 = &adapter_request;
+
+        logger->debug("Requesting WebGPU adapter...");
+        wgpuInstanceRequestAdapter(instance, &options, adapter_callback);
+        for (int attempt = 0; attempt < 1000 && !adapter_request.completed; ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        if (!adapter_request.completed) {
+            logger->error("WebGPU adapter request timed out");
+            throw std::runtime_error("WebGPU adapter request timed out");
+        }
+
+        if (adapter_request.status != WGPURequestAdapterStatus_Success) {
+            logger->error("Failed to request WebGPU adapter (status: {})",
+                          static_cast<int>(adapter_request.status));
+            throw std::runtime_error("Failed to request WebGPU adapter");
+        }
+
+        if (adapter_request.adapter == nullptr) {
+            logger->error("WebGPU adapter is null");
+            throw std::runtime_error("WebGPU adapter is null");
+        }
+
+        logger->debug("WebGPU adapter acquired successfully");
+    }
 
     // Setup device descriptor with error callbacks
     WGPUDeviceDescriptor device_descriptor = WGPU_DEVICE_DESCRIPTOR_INIT;
@@ -164,18 +162,16 @@ auto Device::create(std::shared_ptr<spdlog::logger> logger) -> Device {
     WGPUDeviceLostCallbackInfo device_lost_callback = WGPU_DEVICE_LOST_CALLBACK_INFO_INIT;
     device_lost_callback.mode = WGPUCallbackMode_AllowSpontaneous;
     device_lost_callback.callback = [](WGPUDevice const*, WGPUDeviceLostReason reason,
-                                       WGPUStringView message, void* userdata1, void*) {
-        PRECONDITION(userdata1 != nullptr);
-        auto* log = static_cast<spdlog::logger*>(userdata1);
+                                       WGPUStringView message, void*, void*) {
         const char* reason_str = "Unknown";
-        spdlog::level::level_enum level = spdlog::level::err;
+        pts::LogLevel level = pts::LogLevel::Error;
         switch (reason) {
             case WGPUDeviceLostReason_Unknown:
                 reason_str = "Unknown";
                 break;
             case WGPUDeviceLostReason_Destroyed:
                 reason_str = "Destroyed";
-                level = spdlog::level::info;
+                level = pts::LogLevel::Info;
                 break;
             case WGPUDeviceLostReason_CallbackCancelled:
                 reason_str = "CallbackCancelled";
@@ -186,23 +182,21 @@ auto Device::create(std::shared_ptr<spdlog::logger> logger) -> Device {
             default:
                 break;
         }
-        log->log(level, "[WebGPU Device Lost] Reason: {}, Message: {}", reason_str,
-                 message.data ? std::string_view(message.data, message.length)
-                              : std::string_view("(no message)"));
+        pts::log_or_cerr(k_webgpu_logger_name, level,
+                         "[WebGPU Device Lost] Reason: {}, Message: {}", reason_str,
+                         message.data ? std::string_view(message.data, message.length)
+                                      : std::string_view("(no message)"));
     };
-    device_lost_callback.userdata1 = logger.get();
     device_descriptor.deviceLostCallbackInfo = device_lost_callback;
 
     // Configure uncaptured error callback
     WGPUUncapturedErrorCallbackInfo uncaptured_error_callback =
         WGPU_UNCAPTURED_ERROR_CALLBACK_INFO_INIT;
     uncaptured_error_callback.callback = [](WGPUDevice const*, WGPUErrorType type,
-                                            WGPUStringView message, void* userdata1, void*) {
+                                            WGPUStringView message, void*, void*) {
         if (type == WGPUErrorType_NoError) {
             return;  // Don't log "no error"
         }
-        PRECONDITION(userdata1 != nullptr);
-        auto* log = static_cast<spdlog::logger*>(userdata1);
         const char* error_type_name = "Unknown";
         switch (type) {
             case WGPUErrorType_Validation:
@@ -221,11 +215,11 @@ auto Device::create(std::shared_ptr<spdlog::logger> logger) -> Device {
             case WGPUErrorType_NoError:
                 return;
         }
-        log->error("[WebGPU Uncaptured Error] Type: {}, Message: {}", error_type_name,
-                   message.data ? std::string_view(message.data, message.length)
-                                : std::string_view("(no message)"));
+        pts::log_or_cerr(k_webgpu_logger_name, pts::LogLevel::Error,
+                         "[WebGPU Uncaptured Error] Type: {}, Message: {}", error_type_name,
+                         message.data ? std::string_view(message.data, message.length)
+                                      : std::string_view("(no message)"));
     };
-    uncaptured_error_callback.userdata1 = logger.get();
     device_descriptor.uncapturedErrorCallbackInfo = uncaptured_error_callback;
 
     WGPURequestDeviceCallbackInfo device_callback = WGPU_REQUEST_DEVICE_CALLBACK_INFO_INIT;
@@ -245,24 +239,20 @@ auto Device::create(std::shared_ptr<spdlog::logger> logger) -> Device {
     for (int attempt = 0; attempt < 1000 && !device_request.completed; ++attempt) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
-    wgpuAdapterRelease(adapter_request.adapter);
 
     if (!device_request.completed) {
         logger->error("WebGPU device request timed out");
-        wgpuInstanceRelease(instance);
         throw std::runtime_error("WebGPU device request timed out");
     }
 
     if (device_request.status != WGPURequestDeviceStatus_Success) {
         logger->error("Failed to request WebGPU device (status: {})",
                       static_cast<int>(device_request.status));
-        wgpuInstanceRelease(instance);
         throw std::runtime_error("Failed to request WebGPU device");
     }
 
     if (device_request.device == nullptr) {
         logger->error("WebGPU device is null");
-        wgpuInstanceRelease(instance);
         throw std::runtime_error("WebGPU device is null");
     }
 
@@ -271,10 +261,9 @@ auto Device::create(std::shared_ptr<spdlog::logger> logger) -> Device {
     WGPUQueue queue = wgpuDeviceGetQueue(device_request.device);
     if (queue == nullptr) {
         logger->error("Failed to get WebGPU queue");
-        wgpuDeviceRelease(device_request.device);
-        wgpuInstanceRelease(instance);
         throw std::runtime_error("Failed to get WebGPU queue");
     }
+
     wgpuQueueAddRef(queue);
     logger->debug("WebGPU queue acquired successfully");
 
@@ -316,34 +305,6 @@ auto Device::create_buffer(std::size_t size, WGPUBufferUsage usage) const -> Buf
 
     m_logger->debug("Buffer created successfully (handle={})", static_cast<void*>(buffer));
     return Buffer(buffer, size);
-}
-
-auto Device::create_shader_module(std::string_view wgsl_path) const -> ShaderModule {
-    // Device is always valid due to enforced invariants
-    m_logger->debug("Loading shader module from: {}", wgsl_path);
-
-    const std::string source = load_file_contents(wgsl_path);
-    if (source.empty()) {
-        m_logger->error("Failed to load shader source from: {}", wgsl_path);
-        throw std::runtime_error("Failed to load shader source file");
-    }
-
-    m_logger->debug("Shader source loaded ({} bytes)", source.size());
-
-    WGPUShaderSourceWGSL wgsl_descriptor = WGPU_SHADER_SOURCE_WGSL_INIT;
-    wgsl_descriptor.code = WGPUStringView{source.c_str(), source.size()};
-
-    WGPUShaderModuleDescriptor descriptor = {};
-    descriptor.nextInChain = reinterpret_cast<WGPUChainedStruct*>(&wgsl_descriptor);
-    WGPUShaderModule shader_module = wgpuDeviceCreateShaderModule(m_device, &descriptor);
-
-    if (shader_module == nullptr) {
-        m_logger->error("Failed to create shader module from: {}", wgsl_path);
-        throw std::runtime_error("Failed to create WebGPU shader module");
-    }
-
-    m_logger->debug("Shader module created successfully");
-    return ShaderModule(shader_module);
 }
 
 auto Device::create_shader_module_from_source(std::string_view wgsl_source) const -> ShaderModule {

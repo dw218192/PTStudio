@@ -1,5 +1,7 @@
+#include <core/diagnostics.h>
 #include <core/rendering/webgpu/device.h>
 #include <core/rendering/webgpu/surface.h>
+#include <core/scopeUtils.h>
 
 #include <cstring>
 
@@ -94,6 +96,9 @@ Surface::Surface(WGPUSurface surface, WGPUDevice device, WGPUTextureFormat forma
       m_usage(usage),
       m_present_mode(present_mode),
       m_alpha_mode(alpha_mode) {
+    // Enforce class invariants: surface and device must be valid
+    INVARIANT_MSG(m_surface != nullptr, "Surface handle must be valid");
+    INVARIANT_MSG(m_device != nullptr, "Device handle must be valid");
     configure(extent.w, extent.h);
 }
 
@@ -171,8 +176,13 @@ auto Surface::create(const Device& device, const rendering::NativeViewportHandle
 
     WGPUSurface surface = create_surface_for_handle(device.instance(), handle);
     if (surface == nullptr) {
-        return {};
+        throw std::runtime_error("Failed to create WebGPU surface for viewport");
     }
+
+    // Ensure surface is released if construction fails
+    SCOPE_FAIL {
+        if (surface) wgpuSurfaceRelease(surface);
+    };
 
     WGPUTextureFormat format = WGPUTextureFormat_BGRA8Unorm;
     WGPUPresentMode present_mode = WGPUPresentMode_Fifo;
@@ -180,25 +190,28 @@ auto Surface::create(const Device& device, const rendering::NativeViewportHandle
     WGPUTextureUsage usage = WGPUTextureUsage_RenderAttachment;
 
     WGPUAdapter adapter = wgpuDeviceGetAdapter(device.handle());
+    SCOPE_EXIT {
+        if (adapter) wgpuAdapterRelease(adapter);
+    };
+
     if (adapter != nullptr) {
         WGPUSurfaceCapabilities capabilities = WGPU_SURFACE_CAPABILITIES_INIT;
         if (wgpuSurfaceGetCapabilities(surface, adapter, &capabilities) == WGPUStatus_Success) {
+            // Fail fast if RenderAttachment usage is not supported
+            if ((capabilities.usages & WGPUTextureUsage_RenderAttachment) == 0) {
+                wgpuSurfaceCapabilitiesFreeMembers(capabilities);
+                throw std::runtime_error(
+                    "Surface does not support WGPUTextureUsage_RenderAttachment");
+            }
+
             format = choose_format(capabilities);
             present_mode = choose_present_mode(capabilities);
             alpha_mode = choose_alpha_mode(capabilities);
-            if ((capabilities.usages & WGPUTextureUsage_RenderAttachment) == 0) {
-                usage = capabilities.usages;
-            }
             wgpuSurfaceCapabilitiesFreeMembers(capabilities);
         }
-        wgpuAdapterRelease(adapter);
     }
 
     return Surface(surface, device.handle(), format, usage, present_mode, alpha_mode, extent);
-}
-
-auto Surface::is_valid() const noexcept -> bool {
-    return m_surface != nullptr && m_device != nullptr;
 }
 
 auto Surface::format() const noexcept -> WGPUTextureFormat {
@@ -210,9 +223,7 @@ auto Surface::extent() const noexcept -> rendering::Extent2D {
 }
 
 void Surface::resize(rendering::Extent2D extent) {
-    if (!is_valid()) {
-        return;
-    }
+    // Surface is always valid due to enforced invariants
     if (extent.w == 0 || extent.h == 0) {
         m_width = 0;
         m_height = 0;
@@ -221,11 +232,24 @@ void Surface::resize(rendering::Extent2D extent) {
     if (extent.w == m_width && extent.h == m_height) {
         return;
     }
+
+    // Release any in-flight surface resources before reconfiguring
+    if (m_current_view != nullptr) {
+        wgpuTextureViewRelease(m_current_view);
+        m_current_view = nullptr;
+    }
+    if (m_current_texture != nullptr) {
+        wgpuTextureRelease(m_current_texture);
+        m_current_texture = nullptr;
+    }
+    m_present_pending = false;
+
     configure(extent.w, extent.h);
 }
 
 auto Surface::acquire_texture_view() -> WGPUTextureView {
-    if (!is_valid() || m_width == 0 || m_height == 0) {
+    // Surface is always valid due to enforced invariants
+    if (m_width == 0 || m_height == 0) {
         return nullptr;
     }
 
@@ -241,11 +265,14 @@ auto Surface::acquire_texture_view() -> WGPUTextureView {
 
     WGPUSurfaceTexture surface_texture = WGPU_SURFACE_TEXTURE_INIT;
     wgpuSurfaceGetCurrentTexture(m_surface, &surface_texture);
+
+    // Ensure surface texture is released if not successfully assigned to m_current_texture
+    SCOPE_FAIL {
+        if (surface_texture.texture) wgpuTextureRelease(surface_texture.texture);
+    };
+
     if (surface_texture.status != WGPUSurfaceGetCurrentTextureStatus_SuccessOptimal &&
         surface_texture.status != WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal) {
-        if (surface_texture.texture != nullptr) {
-            wgpuTextureRelease(surface_texture.texture);
-        }
         if (surface_texture.status == WGPUSurfaceGetCurrentTextureStatus_Outdated) {
             configure(m_width, m_height);
         }
@@ -268,6 +295,7 @@ auto Surface::acquire_texture_view() -> WGPUTextureView {
 }
 
 void Surface::present() {
+    // Surface is always valid due to enforced invariants
     if (!m_present_pending || m_surface == nullptr) {
         return;
     }
@@ -284,7 +312,8 @@ void Surface::present() {
 }
 
 void Surface::configure(uint32_t width, uint32_t height) {
-    if (!is_valid() || width == 0 || height == 0) {
+    // Surface is always valid due to enforced invariants
+    if (width == 0 || height == 0) {
         return;
     }
     WGPUSurfaceConfiguration configuration = WGPU_SURFACE_CONFIGURATION_INIT;

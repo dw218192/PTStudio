@@ -102,6 +102,10 @@ struct GUIApplication : Application {
 
     static constexpr auto k_no_hovered_widget = "";
 
+    // Class invariants (enforced in constructor, throw on failure):
+    // - m_render_graph is always valid (non-null)
+    // - m_imgui_windowing is always valid (non-null)
+    // - m_imgui_rendering is always valid (non-null)
     std::unique_ptr<pts::rendering::IRenderGraph> m_render_graph;
     std::unique_ptr<pts::rendering::IImguiWindowing> m_imgui_windowing;
     std::unique_ptr<pts::rendering::IImguiRendering> m_imgui_rendering;

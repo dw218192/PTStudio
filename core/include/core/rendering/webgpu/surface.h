@@ -24,7 +24,6 @@ class Surface {
     [[nodiscard]] static auto create(const Device& device,
                                      const rendering::NativeViewportHandle& handle,
                                      rendering::Extent2D extent) -> Surface;
-    [[nodiscard]] auto is_valid() const noexcept -> bool;
     [[nodiscard]] auto format() const noexcept -> WGPUTextureFormat;
     [[nodiscard]] auto extent() const noexcept -> rendering::Extent2D;
 

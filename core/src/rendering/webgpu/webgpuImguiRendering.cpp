@@ -19,10 +19,7 @@ WebGpuImguiRendering::WebGpuImguiRendering(WebGpuContext& context, IViewport& vi
         throw std::runtime_error("Failed to create logger");
     }
 
-    if (!m_context->is_valid()) {
-        m_logger->error("Invalid WebGPU context provided");
-        throw std::runtime_error("Invalid WebGPU context");
-    }
+    // WebGpuContext is always valid if constructed successfully (enforced invariants)
 
     m_extent = viewport.drawable_extent();
 
