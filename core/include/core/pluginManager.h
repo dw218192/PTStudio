@@ -4,7 +4,9 @@
 #include <core/plugin.h>
 #include <spdlog/spdlog.h>
 
+#if !defined(__EMSCRIPTEN__)
 #include <boost/dll/shared_library.hpp>
+#endif
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -12,20 +14,32 @@
 
 namespace pts {
 
+#if defined(__EMSCRIPTEN__)
+struct PluginSharedLibrary {
+    PluginSharedLibrary() = default;
+    PluginSharedLibrary(const PluginSharedLibrary&) = delete;
+    auto operator=(const PluginSharedLibrary&) -> PluginSharedLibrary& = delete;
+    PluginSharedLibrary(PluginSharedLibrary&&) noexcept = default;
+    auto operator=(PluginSharedLibrary&&) noexcept -> PluginSharedLibrary& = default;
+};
+#else
+using PluginSharedLibrary = boost::dll::shared_library;
+#endif
+
 // Registers a statically linked plugin descriptor.
 void register_static_plugin(const PtsPluginDescriptor* descriptor) noexcept;
 
 // Internal representation of a loaded plugin
 struct LoadedPlugin {
     std::string plugin_id;
-    std::unique_ptr<boost::dll::shared_library> library;
+    std::unique_ptr<PluginSharedLibrary> library;
     const PtsPluginDescriptor* descriptor;
     PluginHandle instance;
 
-    LoadedPlugin(std::string plugin_id, boost::dll::shared_library library,
+    LoadedPlugin(std::string plugin_id, PluginSharedLibrary library,
                  const PtsPluginDescriptor* descriptor) noexcept
         : plugin_id(std::move(plugin_id)),
-          library(std::make_unique<boost::dll::shared_library>(std::move(library))),
+          library(std::make_unique<PluginSharedLibrary>(std::move(library))),
           descriptor(descriptor),
           instance(nullptr) {
     }
@@ -143,7 +157,7 @@ class PluginManager {
         -> std::vector<LoadedPlugin>::const_iterator {
         return const_cast<PluginManager*>(this)->find_loaded_plugin(plugin_id);
     }
-    const PtsPluginDescriptor* try_invoke_plugin_entry_point(const boost::dll::shared_library& lib);
+    const PtsPluginDescriptor* try_invoke_plugin_entry_point(const PluginSharedLibrary& lib);
     bool try_load_descriptor(const std::filesystem::path& dll_path, PluginInfo& out_info);
     void register_static_plugins_from_registry();
 

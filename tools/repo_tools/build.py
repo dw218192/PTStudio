@@ -10,21 +10,100 @@ import time
 from pathlib import Path
 
 from repo_tools import (
+    RepoContext,
+    RepoTool,
+    apply_repo_tool_args,
     build_repo_context,
+    create_repo_tool_args,
     ensure_conan_profile,
     find_venv_executable,
+    get_repo_tool,
+    get_repo_tool_config_args,
     is_windows,
     load_repo_config,
+    normalize_env_config,
+    normalize_repo_tool_args,
     print_tool,
     resolve_env_vars,
-    resolve_path,
-    resolve_slang_test_output,
     run_command,
-    resolve_slang_shaders,
-    find_slangc,
     logger,
-    RepoContext,
 )
+
+
+def execute_build_steps(
+    root: Path,
+    config: dict,
+    context: RepoContext,
+    logs_dir: Path,
+    steps_config: dict,
+    step_type: str,
+    current_tool: str,
+) -> None:
+    """Execute prebuild or postbuild steps defined in config.
+
+    Args:
+        root: Repository root path
+        config: Full configuration dictionary
+        context: Repository context
+        logs_dir: Logs directory path
+        steps_config: Dictionary of build steps from config
+        step_type: Either "prebuild" or "postbuild" for logging
+    """
+    if not steps_config:
+        return
+
+    for step_name, step_config in steps_config.items():
+        if not isinstance(step_config, dict):
+            logger.warning(
+                f"Skipping invalid {step_type} step '{step_name}': not a dict"
+            )
+            continue
+
+        repo_tool = step_config.get("repo_tool", step_name)
+        if not repo_tool:
+            logger.warning(
+                f"Skipping {step_type} step '{step_name}': missing 'repo_tool'"
+            )
+            continue
+        step_args_value = step_config.get("args")
+        if step_args_value is None:
+            step_args_value = {
+                key: value for key, value in step_config.items() if key != "repo_tool"
+            }
+
+        tool = get_repo_tool(repo_tool)
+        if tool is None:
+            logger.error(f"  ✗ Unknown repo tool: {repo_tool}")
+            raise RuntimeError(
+                f"Unknown repo tool '{repo_tool}' in {step_type} step '{step_name}'"
+            )
+        if repo_tool == current_tool:
+            logger.error(
+                f"  ✗ Cannot call '{repo_tool}' tool from {step_type} steps (would cause recursion)"
+            )
+            raise RuntimeError(
+                f"{step_type} step '{step_name}' cannot use '{repo_tool}' tool"
+            )
+
+        logger.info(f"Running {step_type} step: {step_name} (tool: {repo_tool})")
+
+        mock_args = create_repo_tool_args(repo_tool, context)
+
+        tool_config_args = get_repo_tool_config_args(config, repo_tool)
+        apply_repo_tool_args(mock_args, tool_config_args)
+
+        step_args = normalize_repo_tool_args(step_args_value)
+        apply_repo_tool_args(mock_args, step_args)
+
+        if not hasattr(mock_args, "passthrough_args"):
+            mock_args.passthrough_args = []
+
+        try:
+            tool.execute(mock_args)
+            logger.info(f"  ✓ {step_name} completed")
+        except Exception as e:
+            logger.error(f"  ✗ {step_name} failed: {e}")
+            raise RuntimeError(f"{step_type} step '{step_name}' failed") from e
 
 
 def _format_workspace_path(root: Path, path: Path) -> str:
@@ -106,15 +185,6 @@ def _collect_target_compile_info(
                 for define in group.get("defines", []):
                     defines.add(define["define"])
     return include_dirs, defines
-
-
-def _map_usd_build_variant(build_type: str) -> str:
-    build_type = build_type.lower()
-    if build_type == "debug":
-        return "debug"
-    if build_type == "relwithdebinfo":
-        return "relwithdebuginfo"
-    return "release"
 
 
 def _get_vcvars_path() -> Path | None:
@@ -199,88 +269,67 @@ def _remove_tree_with_retries(
             time.sleep(delay)
 
 
-def _ensure_openusd(
-    root: Path,
-    build_type: str,
-    logs_dir: Path,
+def _find_package_in_deploy(conan_deps_root: Path, package_name: str) -> Path | None:
+    """Find a package in the full_deploy folder, returning the deepest content directory."""
+    host_dir = conan_deps_root / "full_deploy" / "host" / package_name
+    if not host_dir.exists():
+        return None
+    # Navigate through version/build_type/arch structure to find the actual content
+    # Structure: full_deploy/host/<package>/<version>/<build_type>/<arch>/
+    current = host_dir
+    while current.is_dir():
+        subdirs = [d for d in current.iterdir() if d.is_dir()]
+        # Check if this looks like the package root (has lib/, bin/, include/, etc.)
+        if any((current / d).exists() for d in ["lib", "bin", "include", "cmake"]):
+            return current
+        if len(subdirs) == 1:
+            current = subdirs[0]
+        elif len(subdirs) > 1:
+            # Multiple subdirs - pick the first one (shouldn't happen normally)
+            current = subdirs[0]
+        else:
+            break
+    return None
+
+
+def _ensure_package_installed(
+    conan_deps_root: Path,
+    package_name: str,
     install_dir: Path,
-    usd_build_dir: Path,
-    force_rebuild: bool = False,
-) -> Path:
-    usd_root = root / "ext" / "usd"
-    build_script = usd_root / "build_scripts" / "build_usd.py"
-    if not build_script.exists():
-        raise FileNotFoundError(f"OpenUSD build script not found: {build_script}")
+    marker_subpath: str,
+    exclude_dirs: set[str] | None = None,
+) -> bool:
+    """Copy a package from full_deploy to the expected install location.
 
-    pxr_config = install_dir / "pxrConfig.cmake"
-    if pxr_config.exists():
-        if not force_rebuild:
-            print_tool(f"OpenUSD install found: {install_dir}")
-            return install_dir
-        print_tool(f"OpenUSD install found; forcing rebuild: {install_dir}")
-        usd_root_dir = usd_build_dir.parent
-        if usd_root_dir.exists():
-            _remove_tree_with_retries(usd_root_dir)
+    Returns True if the package is installed (either already existed or was copied).
+    """
+    marker_path = install_dir / marker_subpath
+    if marker_path.exists():
+        print_tool(f"{package_name} install found: {install_dir}")
+        return True
 
-    print_tool("OpenUSD install not found. Building OpenUSD...")
-    usd_log_file = logs_dir / f"openusd_build_{build_type.lower()}.log"
-    python_exe = find_venv_executable("python")
-    usd_cmd = [
-        python_exe,
-        str(build_script),
-        str(install_dir),
-        "--build",
-        str(usd_build_dir),
-        "--build-variant",
-        _map_usd_build_variant(build_type),
-        "--no-python",
-        "--no-python-docs",
-        "--no-docs",
-        "--no-tests",
-        "--no-examples",
-        "--no-tutorials",
-        "--no-tools",
-        "--no-imaging",
-        "--no-usdview",
-        "--no-ptex",
-        "--no-openvdb",
-        "--no-openimageio",
-        "--no-opencolorio",
-        "--no-alembic",
-        "--no-materialx",
-        "--no-embree",
-        "--no-prman",
-        "--no-vulkan",
-    ]
+    deploy_dir = _find_package_in_deploy(conan_deps_root, package_name)
+    if deploy_dir is None:
+        print_tool(f"{package_name} not found in full_deploy folder")
+        return False
 
-    if is_windows() and shutil.which("cl") is None:
-        vcvars = _get_vcvars_path()
-        if vcvars is None:
-            raise RuntimeError(
-                "MSVC compiler not found. Run from a Developer Command Prompt "
-                "or install Visual Studio with C++ tools."
-            )
-        cmd_line = subprocess.list2cmdline(usd_cmd)
-        usd_cmd_script = logs_dir / f"openusd_build_{build_type.lower()}.cmd"
-        usd_cmd_script.write_text(
-            f'@echo off\ncall "{vcvars}"\n{cmd_line}\nexit /b %errorlevel%\n',
-            encoding="utf-8",
-        )
-        run_command(
-            ["cmd.exe", "/c", str(usd_cmd_script)],
-            log_file=usd_log_file,
-        )
-    else:
-        run_command(usd_cmd, log_file=usd_log_file)
+    print_tool(f"Copying {package_name} from {deploy_dir} to {install_dir}")
+    install_dir.mkdir(parents=True, exist_ok=True)
 
-    if not pxr_config.exists():
-        raise RuntimeError(f"OpenUSD install failed: {pxr_config} not found.")
+    def ignore_dirs(directory: str, names: list[str]) -> list[str]:
+        if not exclude_dirs:
+            return []
+        return [name for name in names if name in exclude_dirs]
 
-    return install_dir
+    ignore = ignore_dirs if exclude_dirs else None
+    shutil.copytree(deploy_dir, install_dir, dirs_exist_ok=True, ignore=ignore)
+    return True
 
 
-def _export_local_conan_recipes(root: Path, logs_dir: Path, config: dict) -> None:
-    recipes = config.get("conan", {}).get("local_recipes", [])
+def _export_local_conan_recipes(
+    root: Path, logs_dir: Path, conan_config: dict
+) -> None:
+    recipes = conan_config.get("local_recipes", [])
     if not recipes:
         return
 
@@ -313,6 +362,62 @@ def _export_local_conan_recipes(root: Path, logs_dir: Path, config: dict) -> Non
                 f"--version={version}",
             ],
             log_file=export_log_file,
+        )
+
+
+
+
+def _get_local_recipe_names(conan_config: dict) -> set[str]:
+    recipes = conan_config.get("local_recipes", [])
+    names: set[str] = set()
+    for recipe in recipes:
+        if isinstance(recipe, dict) and recipe.get("name"):
+            names.add(str(recipe["name"]))
+    return names
+
+
+def _strip_local_recipe_revisions(
+    lock_file: Path, local_recipe_names: set[str]
+) -> None:
+    """Strip revisions and timestamps from local recipe entries in the lock file.
+
+    Local recipes are exported on each build, so their revisions are not stable.
+    Removing revisions keeps the lock file stable while still pinning versions.
+    """
+    import json
+
+    if not local_recipe_names:
+        return
+
+    if not lock_file.exists():
+        return
+
+    with open(lock_file, "r") as f:
+        lock_data = json.load(f)
+
+    modified = False
+    for key in ["requires", "build_requires"]:
+        if key not in lock_data:
+            continue
+        original = lock_data[key]
+        updated = []
+        for entry in original:
+            if any(entry.startswith(f"{name}/") for name in local_recipe_names):
+                no_timestamp = entry.split("%", 1)[0]
+                no_revision = no_timestamp.split("#", 1)[0]
+                updated.append(no_revision)
+            else:
+                updated.append(entry)
+        if updated != original:
+            lock_data[key] = updated
+            modified = True
+
+    if modified:
+        with open(lock_file, "w") as f:
+            json.dump(lock_data, f, indent=4)
+        print_tool(
+            "Stripped local recipe revisions in lock file: "
+            f"{', '.join(sorted(local_recipe_names))}"
         )
 
 
@@ -440,22 +545,6 @@ def _generate_launch_json(
     launch_path.write_text(json.dumps(payload, indent=4) + "\n", encoding="utf-8")
 
 
-def _validate_slang_test_output(root: Path, config: dict, context: dict) -> None:
-    output_path = resolve_slang_test_output(root, config, context)
-    if output_path is None:
-        return
-    if not output_path.exists():
-        raise FileNotFoundError(f"Slang test output not found: {output_path}")
-
-    contents = output_path.read_text(encoding="utf-8", errors="replace").strip()
-    if not contents:
-        raise RuntimeError(f"Slang test output is empty: {output_path}")
-    if "@vertex" not in contents:
-        raise RuntimeError(
-            f"Slang test output missing '@vertex' entry point: {output_path}"
-        )
-
-
 def _is_test_name(target_name: str) -> bool:
     return target_name.startswith(("test_", "test"))
 
@@ -497,43 +586,21 @@ def _discover_test_targets(build_dir: Path) -> list[str]:
     return sorted(test_names)
 
 
-def compile_slang_shaders(
-    root: Path, config: dict, context: RepoContext, logs_dir: Path
-) -> None:
-    shaders = resolve_slang_shaders(root, config, context)
-    if not shaders:
-        return
-
-    slangc_path = find_slangc(root, config, context)
-    if slangc_path is None:
-        raise RuntimeError("slangc not found. Install via Conan or set compiler_path.")
-
-    for input_path, output_path in shaders:
-        if not input_path.exists():
-            raise FileNotFoundError(f"Slang shader not found: {input_path}")
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        if output_path.exists():
-            if output_path.stat().st_mtime >= input_path.stat().st_mtime:
-                continue
-        log_file = logs_dir / f"slangc_{input_path.stem}.log"
-        run_command(
-            [
-                str(slangc_path),
-                str(input_path),
-                "-target",
-                "wgsl",
-                "-o",
-                str(output_path),
-            ],
-            log_file=log_file,
-        )
+def _get_dict_arg(args: argparse.Namespace, field_name: str) -> dict:
+    """Extract a dict argument from args, warn if non-dict, return {} if None or invalid."""
+    value = getattr(args, field_name, None)
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return value
+    logger.warning(f"Build arg '{field_name}' must be a dict; ignoring.")
+    return {}
 
 
-def build_command(args: argparse.Namespace) -> None:
+def build_command(args: argparse.Namespace, current_tool: str) -> None:
     """
     Meta-meta-build system implementation.
     1. Configure the project
-      - build OpenUSD if needed (force rebuild if `--configure-only`)
       - fetch dependencies with conan
       - configure CMake
       - generate vscode cpp include paths for the project (compile_commands.json is not reliably generated for certain configurations)
@@ -546,16 +613,13 @@ def build_command(args: argparse.Namespace) -> None:
     build_folder = Path(context["build_root"])
     build_dir = Path(context["build_dir"])
     logs_dir = Path(context["logs_root"])
-    windowing = config.get("build", {}).get("windowing", "glfw")
+    windowing = args.windowing
     lock_file = Path(context["conan_lock"])
-    conan_deployer = config.get("build", {}).get("conan_deployer", "full_deploy")
-    conan_deployer_folder = resolve_path(
-        root,
-        config.get("build", {}).get("conan_deployer_folder", "{conan_deps_root}"),
-        context,
-    )
-    usd_install_dir = Path(context["usd_install_dir"])
-    usd_build_dir = Path(context["usd_build_dir"])
+    conan_deps_root = Path(context["conan_deps_root"])
+
+    conan_config = _get_dict_arg(args, "conan")
+    prebuild_steps = _get_dict_arg(args, "prebuild")
+    postbuild_steps = _get_dict_arg(args, "postbuild")
 
     # Remove build configuration directory if -x flag is provided
     if args.rebuild and build_dir.exists():
@@ -567,14 +631,6 @@ def build_command(args: argparse.Namespace) -> None:
 
     # Create logs directory
     logs_dir.mkdir(parents=True, exist_ok=True)
-    usd_install_dir = _ensure_openusd(
-        root,
-        args.build_type,
-        logs_dir,
-        usd_install_dir,
-        usd_build_dir,
-        force_rebuild=args.configure_only,
-    )
 
     # Change to build directory
     original_cwd = os.getcwd()
@@ -586,7 +642,7 @@ def build_command(args: argparse.Namespace) -> None:
             print_tool(f"Building with configuration: {args.build_type}")
         else:
             ensure_conan_profile()
-            _export_local_conan_recipes(root, logs_dir, config)
+            _export_local_conan_recipes(root, logs_dir, conan_config)
 
             if args.configure_only:
                 print_tool(f"Configuring with configuration: {args.build_type}")
@@ -596,6 +652,7 @@ def build_command(args: argparse.Namespace) -> None:
             # Handle lock file generation and usage
             should_create_lock = args.update_lock or not lock_file.exists()
 
+            local_recipe_names = _get_local_recipe_names(conan_config)
             if should_create_lock:
                 if args.update_lock:
                     print_tool(
@@ -618,11 +675,15 @@ def build_command(args: argparse.Namespace) -> None:
                     ],
                     log_file=lock_log_file,
                 )
+                # Strip revisions for local recipes in the lock file
+                _strip_local_recipe_revisions(lock_file, local_recipe_names)
             else:
                 print_tool(f"Lock file found. Using existing lock file: {lock_file}")
 
             install_log_file = logs_dir / "conan_install.log"
             conan_exe = find_venv_executable("conan")
+
+            print_tool(f"Installing dependencies with Conan...")
             run_command(
                 [
                     conan_exe,
@@ -631,8 +692,8 @@ def build_command(args: argparse.Namespace) -> None:
                     "--lockfile",
                     str(lock_file),
                     f"--output-folder={args.build_type}",
-                    f"--deployer-folder={conan_deployer_folder}",
-                    f"--deployer={conan_deployer}",
+                    f"--deployer-folder={conan_deps_root}",
+                    "--deployer=full_deploy",
                     "--build=missing",
                     f"--profile:host={args.conan_profile}",
                     f"--profile:build={args.conan_profile}",
@@ -646,32 +707,51 @@ def build_command(args: argparse.Namespace) -> None:
                 log_file=install_log_file,
             )
 
-            print_tool("Compiling slang shaders...")
-            compile_slang_shaders(root, config, context, logs_dir)
-            _validate_slang_test_output(root, config, context)
+            # Ensure Dawn and OpenUSD are deployed
+            dawn_deploy_dir = _find_package_in_deploy(conan_deps_root, "dawn")
+            if not dawn_deploy_dir:
+                raise RuntimeError("Failed to find Dawn package in full_deploy")
+
+            openusd_deploy_dir = _find_package_in_deploy(conan_deps_root, "openusd")
+            if not openusd_deploy_dir:
+                raise RuntimeError("Failed to find OpenUSD package in full_deploy")
+
+            # Execute prebuild steps
+            if prebuild_steps:
+                print_tool("Running prebuild steps...")
+                execute_build_steps(
+                    root,
+                    config,
+                    context,
+                    logs_dir,
+                    prebuild_steps,
+                    "prebuild",
+                    current_tool,
+                )
 
             print_tool("Building targets...")
 
             configure_log_file = logs_dir / "cmake_configure.log"
             cmake_exe = find_venv_executable("cmake")
             _ensure_cmake_file_api_query(build_folder / args.build_type)
-            run_command(
-                [
-                    cmake_exe,
-                    "-S",
-                    "..",
-                    "-B",
-                    args.build_type,
-                    "-DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake",
-                    f"-DCMAKE_BUILD_TYPE={args.build_type}",
-                    f"-DPTS_WINDOWING={windowing}",
-                    f"-Dpxr_DIR={usd_install_dir}",
-                    "-DCMAKE_CXX_STANDARD=17",
-                    "-DCMAKE_CXX_STANDARD_REQUIRED=ON",
-                    "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-                ],
-                log_file=configure_log_file,
-            )
+            cmake_args = [
+                cmake_exe,
+                "-S",
+                "..",
+                "-B",
+                args.build_type,
+                "-DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake",
+                f"-DCMAKE_BUILD_TYPE={args.build_type}",
+                f"-DPTS_WINDOWING={windowing}",
+                "-DCMAKE_CXX_STANDARD=17",
+                "-DCMAKE_CXX_STANDARD_REQUIRED=ON",
+                "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+            ]
+            # Find Dawn cmake directory from deployed package
+            dawn_cmake_dir = dawn_deploy_dir / "lib" / "cmake" / "Dawn"
+            if dawn_cmake_dir.exists():
+                cmake_args.append(f"-DDawn_DIR={dawn_cmake_dir}")
+            run_command(cmake_args, log_file=configure_log_file)
 
             _generate_cpp_properties(root, build_dir, windowing)
 
@@ -688,50 +768,94 @@ def build_command(args: argparse.Namespace) -> None:
                 ],
                 log_file=build_log_file,
             )
+
+            # Execute postbuild steps
+            if postbuild_steps:
+                print_tool("Running postbuild steps...")
+                execute_build_steps(
+                    root,
+                    config,
+                    context,
+                    logs_dir,
+                    postbuild_steps,
+                    "postbuild",
+                    current_tool,
+                )
         else:
             print_tool("Configure only mode (-c): Skipping build step")
 
         tests = _discover_test_targets(build_dir)
-        env_vars = resolve_env_vars(config, context)
+        launch_args = get_repo_tool_config_args(config, "launch")
+        env_config = normalize_env_config(launch_args.get("env"))
+        env_vars = resolve_env_vars(env_config, context)
         _generate_launch_json(root, build_dir, args.build_type, tests, env_vars)
     finally:
         os.chdir(original_cwd)
 
 
-def register_build_command(subparsers: argparse._SubParsersAction) -> None:
-    """Register the build subcommand."""
-    parser = subparsers.add_parser("build", help="Build the project")
-    parser.add_argument(
-        "-x",
-        "--rebuild",
-        action="store_true",
-        help="Rebuild flag: removes build configuration folder before building",
-    )
-    parser.add_argument(
-        "-u",
-        "--update-lock",
-        action="store_true",
-        help="Update lock flag: forces regeneration of conan.lock",
-    )
-    parser.add_argument(
-        "-c",
-        "--configure-only",
-        action="store_true",
-        help="Configure only flag: runs conan install and cmake configure, but skips building",
-    )
-    parser.add_argument(
-        "-b",
-        "--build-only",
-        action="store_true",
-        help="Build only flag: skips conan install and cmake configure, only runs build",
-    )
-    parser.add_argument(
-        "--build-type",
-        choices=["Debug", "Release", "RelWithDebInfo", "MinSizeRel"],
-        default="Debug",
-        help="Build configuration type (default: Debug)",
-    )
-    parser.add_argument(
-        "--conan-profile", default="default", help="Conan profile (default: default)"
-    )
-    parser.set_defaults(func=build_command)
+class BuildTool(RepoTool):
+    name = "build"
+    help = "Build the project"
+
+    def setup(self, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "-x",
+            "--rebuild",
+            action="store_true",
+            help="Rebuild flag: removes build configuration folder before building",
+        )
+        parser.add_argument(
+            "-u",
+            "--update-lock",
+            action="store_true",
+            help="Update lock flag: forces regeneration of conan.lock",
+        )
+        parser.add_argument(
+            "-c",
+            "--configure-only",
+            action="store_true",
+            help=(
+                "Configure only flag: runs conan install and cmake configure, "
+                "but skips building"
+            ),
+        )
+        parser.add_argument(
+            "-b",
+            "--build-only",
+            action="store_true",
+            help=(
+                "Build only flag: skips conan install and cmake configure, "
+                "only runs build"
+            ),
+        )
+        parser.add_argument(
+            "--build-type",
+            choices=["Debug", "Release", "RelWithDebInfo", "MinSizeRel"],
+            help="Build configuration type (default: Debug)",
+        )
+        parser.add_argument(
+            "--conan-profile",
+            help="Conan profile (default: default)",
+        )
+        parser.add_argument(
+            "--windowing",
+            choices=["glfw", "null"],
+            help="Windowing backend (default: glfw)",
+        )
+
+    def default_args(self, context: RepoContext) -> argparse.Namespace:
+        return argparse.Namespace(
+            rebuild=False,
+            update_lock=False,
+            configure_only=False,
+            build_only=False,
+            build_type=context["build_type"],
+            conan_profile="default",
+            windowing="glfw",
+            prebuild={},
+            postbuild={},
+            conan={},
+        )
+
+    def execute(self, args: argparse.Namespace) -> None:
+        build_command(args, self.name)

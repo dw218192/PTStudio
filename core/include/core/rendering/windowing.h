@@ -138,13 +138,6 @@ class IWindowing {
      * @brief Pump events from the windowing system. Blocks the current thread if mode is Wait.
      */
     virtual void pump_events(PumpEventMode mode) = 0;
-
-    /**
-     * @brief Get the required Vulkan instance extensions for the windowing system. If the windowing
-     * system does not support Vulkan, returns an empty array.
-     */
-    [[nodiscard]] virtual WindowingVulkanExtensions required_vulkan_instance_extensions()
-        const noexcept = 0;
 };
 
 [[nodiscard]] auto create_windowing(pts::LoggingManager& logging_manager)

@@ -8,6 +8,7 @@
 
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
+#include <core/loggingManager.h>
 
 #include <iostream>
 #include <memory>
@@ -21,7 +22,7 @@
 
 namespace pts::rendering {
 namespace {
-std::weak_ptr<spdlog::logger> g_logger;
+constexpr const char* k_glfw_logger_name = "GlfwWindowing";
 
 constexpr auto k_windowing_type = WindowingType::glfw;
 
@@ -48,7 +49,7 @@ auto build_native_handle(GLFWwindow* window) -> NativeViewportHandle {
     handle.xlib.window = static_cast<uint64_t>(glfwGetX11Window(window));
 #else
     static_cast<void>(window);
-    handle.web.canvas_selector = nullptr;
+    handle.web.canvas_selector = "#canvas";
 #endif
     return handle;
 }
@@ -86,11 +87,8 @@ struct GlfwViewportCallbacks {
 
 struct GlfwErrorCallback {
     static void error_func(int error, const char* description) {
-        if (auto logger = g_logger.lock()) {
-            logger->error("GLFW error: {}: {}", error, description);
-        } else {
-            std::cerr << "GLFW error: " << error << ": " << description << std::endl;
-        }
+        pts::log_or_cerr(k_glfw_logger_name, pts::LogLevel::Error, "GLFW error: {}: {}", error,
+                         description);
     }
 };
 
@@ -170,8 +168,7 @@ class GlfwViewport final : public IViewport {
 }  // namespace
 
 GlfwWindowing::GlfwWindowing(pts::LoggingManager& logging_manager) {
-    m_logger = logging_manager.get_logger_shared("GlfwWindowing");
-    g_logger = m_logger;
+    m_logger = logging_manager.get_logger_shared(k_glfw_logger_name);
 
     glfwSetErrorCallback(GlfwErrorCallback::error_func);
     if (!glfwInit()) {
@@ -220,13 +217,6 @@ auto GlfwWindowing::native_handle() const noexcept -> NativeViewportHandle {
         return handle;
     }
     return build_native_handle(m_primary_window);
-}
-
-auto GlfwWindowing::required_vulkan_instance_extensions() const noexcept
-    -> rendering::WindowingVulkanExtensions {
-    uint32_t count = 0;
-    auto names = glfwGetRequiredInstanceExtensions(&count);
-    return {names, count};
 }
 
 void GlfwWindowing::pump_events(PumpEventMode mode) {

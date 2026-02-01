@@ -62,7 +62,7 @@ jobs:
           path: |
             ~/.conan2
             _build/deps
-          key: windows-conan-${{ hashFiles('conanfile.py', 'conan.lock') }}-${{ matrix.build_type }}
+          key: windows-conan-${{ hashFiles('conanfile.py', 'conan_glfw.lock') }}-${{ matrix.build_type }}
           restore-keys: |
             windows-conan-${{ hashFiles('conanfile.py') }}-${{ matrix.build_type }}
             windows-conan-

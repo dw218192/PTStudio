@@ -3,9 +3,11 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
+#if !defined(__EMSCRIPTEN__)
 #include <boost/dll/import.hpp>
 #include <boost/dll/runtime_symbol_info.hpp>
 #include <boost/function.hpp>
+#endif
 #include <core/pluginUtils.hpp>
 #include <stdexcept>
 
@@ -159,6 +161,11 @@ void* PluginManager::query_interface_impl(PluginHandle plugin_handle, const char
 }
 
 size_t PluginManager::scan_directory(std::string_view exe_relative_dir) {
+#ifdef __EMSCRIPTEN__
+    static_cast<void>(exe_relative_dir);
+    m_logger->info("Web build: plugin scanning disabled (static plugins only)");
+    return 0;
+#else
     auto exe_dir = boost::dll::program_location().parent_path();
     auto plugin_dir = std::filesystem::path{exe_dir.string()} / exe_relative_dir;
 
@@ -206,10 +213,15 @@ size_t PluginManager::scan_directory(std::string_view exe_relative_dir) {
 
     m_logger->info("Scan complete. Found {} plugin(s)", found_count);
     return found_count;
+#endif
 }
 
 const PtsPluginDescriptor* PluginManager::try_invoke_plugin_entry_point(
-    const boost::dll::shared_library& lib) {
+    const PluginSharedLibrary& lib) {
+#ifdef __EMSCRIPTEN__
+    static_cast<void>(lib);
+    return nullptr;
+#else
     auto get_desc = lib.get<const PtsPluginDescriptor*()>(PLUGIN_ENTRY_POINT_NAME);
     const PtsPluginDescriptor* desc = get_desc();
     auto dll_path = lib.location();
@@ -234,10 +246,16 @@ const PtsPluginDescriptor* PluginManager::try_invoke_plugin_entry_point(
     }
 
     return desc;
+#endif
 }
 
 bool PluginManager::try_load_descriptor(const std::filesystem::path& dll_path,
                                         PluginInfo& out_info) {
+#ifdef __EMSCRIPTEN__
+    static_cast<void>(dll_path);
+    static_cast<void>(out_info);
+    return false;
+#else
     try {
         // Temporarily load the library to read its descriptor
         // Boost.DLL requires string path
@@ -277,6 +295,7 @@ bool PluginManager::try_load_descriptor(const std::filesystem::path& dll_path,
         m_logger->debug("  Failed to load {}: {}", dll_path.filename().string(), e.what());
         return false;
     }
+#endif
 }
 
 bool PluginManager::register_static_plugin(const PtsPluginDescriptor* descriptor) {
@@ -368,9 +387,12 @@ bool PluginManager::load_plugin(std::string_view plugin_id) {
             // Create loaded plugin entry (static plugins have no backing library)
             m_loaded_plugins.emplace_back(std::string{plugin_id}, desc);
         } else {
+#ifdef __EMSCRIPTEN__
+            m_logger->error("Dynamic plugins are not supported in web builds");
+            return false;
+#else
             // Load the library - Boost.DLL requires string path
-            boost::dll::shared_library lib(it->dll_path.string(),
-                                           boost::dll::load_mode::default_mode);
+            PluginSharedLibrary lib(it->dll_path.string(), boost::dll::load_mode::default_mode);
 
             // Get descriptor
             desc = try_invoke_plugin_entry_point(lib);
@@ -380,6 +402,7 @@ bool PluginManager::load_plugin(std::string_view plugin_id) {
 
             // Create loaded plugin entry
             m_loaded_plugins.emplace_back(std::string{plugin_id}, std::move(lib), desc);
+#endif
         }
 
         auto& loaded = m_loaded_plugins.back();

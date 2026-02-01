@@ -28,6 +28,11 @@ elseif(PTS_WINDOWING STREQUAL "null")
 	list(APPEND core_rendering_sources ${core_windowing_sources})
 endif()
 
+file(GLOB_RECURSE core_webgpu_sources
+	${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/webgpu/*.*
+)
+list(APPEND core_rendering_sources ${core_webgpu_sources})
+
 set(src_files ${core_src_files} ${core_rendering_sources})
 list(REMOVE_DUPLICATES src_files)
 
@@ -51,10 +56,10 @@ PRIVATE
 	$<BUILD_INTERFACE:developer_flags>
 PUBLIC
 	${lib_name}::rc
-	usd
-	usdGeom
-	usdShade
-	usdLux
+	openusd::usd_usd
+	openusd::usd_usdGeom
+	openusd::usd_usdShade
+	openusd::usd_usdLux
 	glm::glm
 	tinyobjloader
 	pts_stb
@@ -68,6 +73,10 @@ PUBLIC
 	Boost::filesystem
 	Boost::container
 )
+
+if (NOT EMSCRIPTEN)
+	target_link_libraries(${lib_name} PUBLIC dawn::webgpu_dawn)
+endif()
 
 if(PTS_WINDOWING STREQUAL "glfw")
 	target_link_libraries(${lib_name} PUBLIC glfw)

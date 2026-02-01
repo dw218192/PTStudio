@@ -3,6 +3,8 @@
 #include <core/imgui/fileDialogue.h>
 #include <core/imgui/imhelper.h>
 #include <core/loggingManager.h>
+#include <core/rendering/webgpu/device.h>
+#include <core/rendering/webgpuContext.h>
 #include <imgui_internal.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 
@@ -44,8 +46,8 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config,
     m_renderer_host_api.render_graph_api = get_render_graph_api();
     m_renderer_host_api.render_world_api = nullptr;
 
-    if (m_app_config.quit_on_start && m_viewport) {
-        m_viewport->request_close();
+    if (m_app_config.quit_on_start && get_viewport()) {
+        get_viewport()->request_close();
     }
 
     m_renderer_plugin = get_plugin_manager().get_plugin_instance("editor.renderer");
@@ -61,7 +63,8 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config,
     log(pts::LogLevel::Info, "EditorApplication created (scene rewrite in progress)");
 }
 
-EditorApplication::~EditorApplication() = default;
+EditorApplication::~EditorApplication() {
+}
 
 auto EditorApplication::create_input_actions() noexcept -> void {
     m_input_actions.clear();
@@ -72,7 +75,7 @@ auto EditorApplication::wrap_mouse_pos() noexcept -> void {
 
 auto EditorApplication::on_begin_first_loop() -> void {
     if (m_app_config.quit_on_start) {
-        m_viewport->request_close();
+        get_viewport()->request_close();
     }
 
     GUIApplication::on_begin_first_loop();
@@ -248,6 +251,5 @@ auto EditorApplication::on_mouse_leave_scene_viewport() noexcept -> void {
 
 auto EditorApplication::on_mouse_enter_scene_viewport() noexcept -> void {
 }
-
 auto EditorApplication::handle_input(InputEvent const&) noexcept -> void {
 }
