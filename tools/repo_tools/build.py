@@ -187,44 +187,6 @@ def _collect_target_compile_info(
     return include_dirs, defines
 
 
-def _get_vcvars_path() -> Path | None:
-    if not is_windows():
-        return None
-
-    program_files_x86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
-    vswhere = (
-        Path(program_files_x86)
-        / "Microsoft Visual Studio"
-        / "Installer"
-        / "vswhere.exe"
-    )
-    if not vswhere.exists():
-        return None
-
-    try:
-        install_path = subprocess.check_output(
-            [
-                str(vswhere),
-                "-latest",
-                "-requires",
-                "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
-                "-property",
-                "installationPath",
-            ],
-            text=True,
-        ).strip()
-    except (OSError, subprocess.CalledProcessError):
-        return None
-
-    if not install_path:
-        return None
-
-    vcvars = Path(install_path) / "VC" / "Auxiliary" / "Build" / "vcvars64.bat"
-    if vcvars.exists():
-        return vcvars
-    return None
-
-
 def _remove_tree_with_retries(
     path: Path, attempts: int = 5, delay: float = 1.0
 ) -> None:
@@ -292,43 +254,7 @@ def _find_package_in_deploy(conan_deps_root: Path, package_name: str) -> Path | 
     return None
 
 
-def _ensure_package_installed(
-    conan_deps_root: Path,
-    package_name: str,
-    install_dir: Path,
-    marker_subpath: str,
-    exclude_dirs: set[str] | None = None,
-) -> bool:
-    """Copy a package from full_deploy to the expected install location.
-
-    Returns True if the package is installed (either already existed or was copied).
-    """
-    marker_path = install_dir / marker_subpath
-    if marker_path.exists():
-        print_tool(f"{package_name} install found: {install_dir}")
-        return True
-
-    deploy_dir = _find_package_in_deploy(conan_deps_root, package_name)
-    if deploy_dir is None:
-        print_tool(f"{package_name} not found in full_deploy folder")
-        return False
-
-    print_tool(f"Copying {package_name} from {deploy_dir} to {install_dir}")
-    install_dir.mkdir(parents=True, exist_ok=True)
-
-    def ignore_dirs(directory: str, names: list[str]) -> list[str]:
-        if not exclude_dirs:
-            return []
-        return [name for name in names if name in exclude_dirs]
-
-    ignore = ignore_dirs if exclude_dirs else None
-    shutil.copytree(deploy_dir, install_dir, dirs_exist_ok=True, ignore=ignore)
-    return True
-
-
-def _export_local_conan_recipes(
-    root: Path, logs_dir: Path, conan_config: dict
-) -> None:
+def _export_local_conan_recipes(root: Path, logs_dir: Path, conan_config: dict) -> None:
     recipes = conan_config.get("local_recipes", [])
     if not recipes:
         return
@@ -363,8 +289,6 @@ def _export_local_conan_recipes(
             ],
             log_file=export_log_file,
         )
-
-
 
 
 def _get_local_recipe_names(conan_config: dict) -> set[str]:
