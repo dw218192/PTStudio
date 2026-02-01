@@ -123,6 +123,13 @@ using subsystem_handle = subsystem*;   // opaque handle
 * Do not use std::exit or std::abort or std::terminate, prefer throwing an exception.
 * Keep invariants strong: constructors establish valid objects or throw (internally).
 
+### Error handling philosophy
+
+* **No implicit fallbacks**: Do not silently fall back to default values when errors occur. If something fails, propagate the error or throw—don't hide it behind a default.
+* **No catch-all error hiding**: Avoid `catch (...)` or broad `try/catch` blocks that swallow errors. Let errors propagate so they can be handled appropriately or diagnosed.
+* **Strong invariants over validity checks**: Prefer designing classes with strong invariants enforced at construction time, rather than requiring `is_valid()` checks everywhere. If an object exists, it should be valid. Use assertions to verify invariants in debug builds rather than returning error codes from every method.
+  - Exception: Inherently stateful classes (e.g., file handles, connections) may need validity/open state checks.
+
 ### Public API boundary (required)
 
 * Public API boundary functions must be **`noexcept`**.

@@ -9,13 +9,13 @@
 #include "editorResources.h"
 
 namespace {
-auto try_get_embedded_res(const cmrc::embedded_filesystem& fs,
+template <typename GetResourceFn>
+auto try_get_embedded_res(GetResourceFn get_resource,
                           std::string_view path) -> std::optional<std::string> {
-    if (!fs.is_file(std::string{path})) {
-        return std::nullopt;
+    if (auto res = get_resource(path)) {
+        return std::string{*res};
     }
-    auto const file = fs.open(std::string{path});
-    return std::string{file.begin(), file.end()};
+    return std::nullopt;
 }
 }  // namespace
 
@@ -56,30 +56,29 @@ auto pts::glsl_helper::preprocess(std::string_view src) -> std::string {
             continue;
         }
 
-        auto inc_src = std::string{};
-        auto fs = std::optional<cmrc::embedded_filesystem>{};
+        auto inc_src = std::optional<std::string>{};
         if (snippet.type == Snippet::Type::AbsInc) {
-            fs = cmrc::core_resources::get_filesystem();
+            // try all search paths, stop at the first match
+            for (auto const& path : k_inc_search_paths) {
+                inc_src = try_get_embedded_res(core_resources::get_resource, std::string{path} + snippet.text);
+                if (inc_src) break;
+            }
         } else if (snippet.type == Snippet::Type::RelInc) {
-            fs = cmrc::editor_resources::get_filesystem();
+            // try all search paths, stop at the first match
+            for (auto const& path : k_inc_search_paths) {
+                inc_src = try_get_embedded_res(editor_resources::get_resource, std::string{path} + snippet.text);
+                if (inc_src) break;
+            }
         } else {
             ret.append(snippet.text);
             continue;
         }
 
-        // try all search paths, stop at the first match
-        for (auto const& path : k_inc_search_paths) {
-            if (auto res = try_get_embedded_res(fs.value(), path + snippet.text)) {
-                inc_src = std::move(res.value());
-                break;
-            }
-        }
-
-        if (inc_src.empty()) {
+        if (!inc_src) {
             return fmt::format("include file {} not found", snippet.text);
         } else {
             ret.push_back('\n');
-            ret.append(preprocess(inc_src));
+            ret.append(preprocess(*inc_src));
         }
     }
     return ret;

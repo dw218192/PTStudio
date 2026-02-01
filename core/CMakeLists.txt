@@ -80,19 +80,8 @@ list(APPEND core_rendering_sources ${core_webgpu_sources})
 set(src_files ${core_src_files} ${core_rendering_sources})
 list(REMOVE_DUPLICATES src_files)
 
-#GLOB resource files
-file(GLOB_RECURSE res_files
-	${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.*
-)
-
 #Executable
 add_library(${lib_name} STATIC ${src_files})
-
-#Resources
-cmrc_add_resource_library(${lib_name}_resources
-	ALIAS ${lib_name}::rc
-	${res_files}
-)
 
 #Libs linked to the executable
 target_link_libraries(${lib_name}
@@ -100,7 +89,6 @@ PRIVATE
 	$<BUILD_INTERFACE:developer_flags>
 	portable-file-dialogs::portable-file-dialogs
 PUBLIC
-	${lib_name}::rc
 	openusd::usd_usd
 	openusd::usd_usdGeom
 	openusd::usd_usdShade

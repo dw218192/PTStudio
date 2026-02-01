@@ -1,10 +1,10 @@
 #pragma once
 #include <array>
-#include <cmrc/cmrc.hpp>
 #include <optional>
 #include <utility>
-CMRC_DECLARE(editor_resources);
-CMRC_DECLARE(core_resources);
+
+#include "core/generated/embedded_resources.h"
+#include "editor/generated/embedded_resources.h"
 
 namespace pts {
 constexpr auto k_editor_tutorial_text = R"(This is a simple editor.

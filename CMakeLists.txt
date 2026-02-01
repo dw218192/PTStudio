@@ -102,9 +102,6 @@ find_package(portable-file-dialogs REQUIRED)
 # external dependencies that are built from source
 add_subdirectory(${EXT_DIR})
 
-# add resource compiler
-include(${EXT_DIR}/cmrc/CMakeRC.cmake)
-
 # add subprojects
 add_subdirectory(core)
 add_subdirectory(hello_triangle)

@@ -1,3 +1,0 @@
-[submodule "ext/cmrc"]
-	path = ext/cmrc
-	url = https://github.com/vector-of-bool/cmrc.git

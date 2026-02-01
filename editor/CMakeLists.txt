@@ -10,20 +10,9 @@ file(GLOB_RECURSE src_files
 	${CMAKE_CURRENT_SOURCE_DIR}/src/include/imgui/*.*
 )
 list(FILTER src_files EXCLUDE REGEX "editorRenderer")
-#GLOB resource files
-file(GLOB_RECURSE res_files 
-	${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.*
-	${CMAKE_CURRENT_SOURCE_DIR}/icons/*.*
-)
 
 #Executable
 add_executable(${exec_name} ${src_files})
-
-#Embedded resources
-cmrc_add_resource_library(${exec_name}_resources
-	ALIAS ${exec_name}::rc
-	${res_files}
-)
 
 #Libs linked to the executable
 target_link_libraries(${exec_name}
@@ -35,8 +24,6 @@ PRIVATE
 	Boost::stacktrace
 	Boost::stacktrace_from_exception
 	Boost::program_options
-	#resourcers
-	${exec_name}::rc
 )
 if (MSVC)
 	target_compile_options(${exec_name} PRIVATE /bigobj)
@@ -45,6 +32,7 @@ endif()
 target_include_directories(${exec_name}
 PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}/src/include
+	${CMAKE_SOURCE_DIR}  # For generated headers (core/generated, editor/generated)
 )
 
 install(TARGETS ${exec_name}
