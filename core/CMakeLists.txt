@@ -95,7 +95,7 @@ PUBLIC
 	openusd::usd_usdLux
 	glm::glm
 	tinyobjloader
-	pts_stb
+	stb::stb
 	imgui::imgui
 	imgui_backends
 	tl::expected

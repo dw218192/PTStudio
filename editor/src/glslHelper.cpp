@@ -60,13 +60,15 @@ auto pts::glsl_helper::preprocess(std::string_view src) -> std::string {
         if (snippet.type == Snippet::Type::AbsInc) {
             // try all search paths, stop at the first match
             for (auto const& path : k_inc_search_paths) {
-                inc_src = try_get_embedded_res(core_resources::get_resource, std::string{path} + snippet.text);
+                inc_src = try_get_embedded_res(core_resources::get_resource,
+                                               std::string{path} + snippet.text);
                 if (inc_src) break;
             }
         } else if (snippet.type == Snippet::Type::RelInc) {
             // try all search paths, stop at the first match
             for (auto const& path : k_inc_search_paths) {
-                inc_src = try_get_embedded_res(editor_resources::get_resource, std::string{path} + snippet.text);
+                inc_src = try_get_embedded_res(editor_resources::get_resource,
+                                               std::string{path} + snippet.text);
                 if (inc_src) break;
             }
         } else {

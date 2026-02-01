@@ -20,7 +20,7 @@ PRIVATE
 	$<BUILD_INTERFACE:developer_flags>
 	core
 	imguizmo::imguizmo
-	ImGuiColorTextEdit
+	imgui_color_text_edit::imgui_color_text_edit
 	Boost::stacktrace
 	Boost::stacktrace_from_exception
 	Boost::program_options

@@ -4,17 +4,17 @@ from conan.tools.files import copy, save
 from conan.tools.scm import Git
 import os
 
-# Pinned commit for reproducible builds (compatible with imgui 1.92+)
-# From: https://github.com/CedricGuillemet/ImGuizmo
-IMGUIZMO_COMMIT = "a15acd87a3f3241a29ea1363ceafc680dca3a96b"
+# Pinned commit for reproducible builds (compatible with imgui 1.91+)
+# From: https://github.com/BalazsJako/ImGuiColorTextEdit
+IMGUI_COLOR_TEXT_EDIT_COMMIT = "ca2f9f1462e3b60e56351bc466acda448c5ea50d"
 
 
-class ImGuizmoConan(ConanFile):
-    name = "imguizmo"
-    version = "1.92"
+class ImGuiColorTextEditConan(ConanFile):
+    name = "imgui_color_text_edit"
+    version = "1.0"
     license = "MIT"
-    description = "Immediate mode 3D gizmo for scene editing and other controls based on Dear Imgui"
-    homepage = "https://github.com/CedricGuillemet/ImGuizmo"
+    description = "Syntax highlighting text editor for ImGui"
+    homepage = "https://github.com/BalazsJako/ImGuiColorTextEdit"
     settings = "os", "arch", "compiler", "build_type"
     options = {"shared": [True, False], "fPIC": [True, False]}
     default_options = {"shared": False, "fPIC": True}
@@ -37,8 +37,8 @@ class ImGuizmoConan(ConanFile):
     def source(self):
         # Clone and checkout specific commit for reproducibility
         git = Git(self)
-        git.clone("https://github.com/CedricGuillemet/ImGuizmo.git", target=".")
-        git.checkout(IMGUIZMO_COMMIT)
+        git.clone("https://github.com/BalazsJako/ImGuiColorTextEdit.git", target=".")
+        git.checkout(IMGUI_COLOR_TEXT_EDIT_COMMIT)
 
     def generate(self):
         tc = CMakeToolchain(self)
@@ -51,35 +51,33 @@ class ImGuizmoConan(ConanFile):
         tc.generate()
         deps = CMakeDeps(self)
         deps.generate()
+
+        # Create a minimal CMakeLists.txt for building the library
         cmake_content = """
 cmake_minimum_required(VERSION 3.15)
-project(imguizmo CXX)
+project(imgui_color_text_edit CXX)
 
 find_package(imgui REQUIRED)
 
-add_library(imguizmo
-    GraphEditor.cpp
-    ImCurveEdit.cpp
-    ImGradient.cpp
-    ImGuizmo.cpp
-    ImSequencer.cpp
+add_library(imgui_color_text_edit
+    TextEditor.cpp
 )
 
-target_compile_definitions(imguizmo PUBLIC IMGUI_DEFINE_MATH_OPERATORS)
+target_compile_definitions(imgui_color_text_edit PUBLIC IMGUI_DEFINE_MATH_OPERATORS)
 
-target_include_directories(imguizmo PUBLIC
+target_include_directories(imgui_color_text_edit PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
     $<INSTALL_INTERFACE:include>
 )
 
-target_link_libraries(imguizmo PUBLIC imgui::imgui)
+target_link_libraries(imgui_color_text_edit PUBLIC imgui::imgui)
 
-set_target_properties(imguizmo PROPERTIES
-    PUBLIC_HEADER "GraphEditor.h;ImCurveEdit.h;ImGradient.h;ImGuizmo.h;ImSequencer.h;ImZoomSlider.h"
+set_target_properties(imgui_color_text_edit PROPERTIES
+    PUBLIC_HEADER "TextEditor.h"
 )
 
 include(GNUInstallDirs)
-install(TARGETS imguizmo
+install(TARGETS imgui_color_text_edit
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
@@ -104,7 +102,9 @@ install(TARGETS imguizmo
         )
 
     def package_info(self):
-        self.cpp_info.libs = ["imguizmo"]
+        self.cpp_info.libs = ["imgui_color_text_edit"]
         self.cpp_info.defines = ["IMGUI_DEFINE_MATH_OPERATORS"]
-        self.cpp_info.set_property("cmake_file_name", "imguizmo")
-        self.cpp_info.set_property("cmake_target_name", "imguizmo::imguizmo")
+        self.cpp_info.set_property("cmake_file_name", "imgui_color_text_edit")
+        self.cpp_info.set_property(
+            "cmake_target_name", "imgui_color_text_edit::imgui_color_text_edit"
+        )

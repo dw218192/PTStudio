@@ -75,8 +75,6 @@ target_compile_definitions(developer_flags INTERFACE
 
 target_compile_features(developer_flags INTERFACE cxx_std_17)
 
-set(EXT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ext")
-
 if(PTS_WINDOWING STREQUAL "glfw")
     find_package(glfw3 REQUIRED)
 endif()
@@ -97,10 +95,8 @@ endif()
 find_package(imgui REQUIRED)
 find_package(imguizmo REQUIRED)
 find_package(portable-file-dialogs REQUIRED)
+find_package(imgui_color_text_edit REQUIRED)
 
-
-# external dependencies that are built from source
-add_subdirectory(${EXT_DIR})
 
 # add subprojects
 add_subdirectory(core)

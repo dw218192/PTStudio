@@ -44,6 +44,9 @@ build:
       - name: "imguizmo"
         version: "1.92"
         path: "tools/conan/imguizmo"
+      - name: "imgui_color_text_edit"
+        version: "1.0"
+        path: "tools/conan/imgui_color_text_edit"
 
 launch:
   env:
