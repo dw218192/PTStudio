@@ -43,8 +43,12 @@ def _resolve_slang_shaders(
     errors = 0
     seen_outputs: set[Path] = set()
 
-    for shader in shaders:
+    for idx, shader in enumerate(shaders):
         if not isinstance(shader, dict):
+            logger.warning(
+                f"Skipping invalid shader entry at index {idx}: "
+                f"expected dict, got {type(shader).__name__} ({shader!r})"
+            )
             continue
         input_value = shader.get("input")
         if not input_value:
@@ -209,5 +213,3 @@ class SlangcTool(RepoTool):
         print_tool(f"slangc compiled {compiled} shader(s)")
         if skipped:
             print_tool(f"slangc skipped {skipped} up-to-date shader(s)")
-
-

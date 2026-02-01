@@ -298,6 +298,11 @@ def resolve_env_vars(env_config: dict | None, context: RepoContext) -> dict:
                 resolved_item = _resolve_template(str(item), context)
                 # Expand glob pattern - take the first match if multiple found
                 matches = sorted(glob.glob(resolved_item))
+                if len(matches) > 1:
+                    logger.warning(
+                        f"Glob pattern '{resolved_item}' matched multiple items: {matches}; "
+                        f"using first match: {matches[0]}"
+                    )
                 expanded_values.append(matches[0] if matches else resolved_item)
             resolved[key] = os.pathsep.join(expanded_values)
         else:

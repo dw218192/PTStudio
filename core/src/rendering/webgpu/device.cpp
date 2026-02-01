@@ -4,6 +4,7 @@
 #include <core/scopeUtils.h>
 #include <spdlog/spdlog.h>
 
+#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <stdexcept>
@@ -96,13 +97,13 @@ auto Device::create(std::shared_ptr<spdlog::logger> logger) -> Device {
     struct AdapterRequest {
         WGPURequestAdapterStatus status = WGPURequestAdapterStatus_Error;
         WGPUAdapter adapter = nullptr;
-        bool completed = false;
+        std::atomic<bool> completed{false};
     };
 
     struct DeviceRequest {
         WGPURequestDeviceStatus status = WGPURequestDeviceStatus_Error;
         WGPUDevice device = nullptr;
-        bool completed = false;
+        std::atomic<bool> completed{false};
     };
     AdapterRequest adapter_request;
     DeviceRequest device_request;
@@ -126,17 +127,19 @@ auto Device::create(std::shared_ptr<spdlog::logger> logger) -> Device {
             auto* request = static_cast<AdapterRequest*>(userdata1);
             request->status = status;
             request->adapter = adapter;
-            request->completed = true;
+            request->completed.store(true, std::memory_order_release);
         };
         adapter_callback.userdata1 = &adapter_request;
 
         logger->debug("Requesting WebGPU adapter...");
         wgpuInstanceRequestAdapter(instance, &options, adapter_callback);
-        for (int attempt = 0; attempt < 1000 && !adapter_request.completed; ++attempt) {
+        for (int attempt = 0;
+             attempt < 1000 && !adapter_request.completed.load(std::memory_order_acquire);
+             ++attempt) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
 
-        if (!adapter_request.completed) {
+        if (!adapter_request.completed.load(std::memory_order_acquire)) {
             logger->error("WebGPU adapter request timed out");
             throw std::runtime_error("WebGPU adapter request timed out");
         }
@@ -230,17 +233,18 @@ auto Device::create(std::shared_ptr<spdlog::logger> logger) -> Device {
         auto* request = static_cast<DeviceRequest*>(userdata1);
         request->status = status;
         request->device = device;
-        request->completed = true;
+        request->completed.store(true, std::memory_order_release);
     };
     device_callback.userdata1 = &device_request;
 
     logger->debug("Requesting WebGPU device...");
     wgpuAdapterRequestDevice(adapter_request.adapter, &device_descriptor, device_callback);
-    for (int attempt = 0; attempt < 1000 && !device_request.completed; ++attempt) {
+    for (int attempt = 0;
+         attempt < 1000 && !device_request.completed.load(std::memory_order_acquire); ++attempt) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
-    if (!device_request.completed) {
+    if (!device_request.completed.load(std::memory_order_acquire)) {
         logger->error("WebGPU device request timed out");
         throw std::runtime_error("WebGPU device request timed out");
     }

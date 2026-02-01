@@ -106,6 +106,7 @@ class TestTool(RepoTool):
 
             # Create log file for this test
             log_file = logs_dir / f"test_{test_name}.log"
+            cmd = None
 
             try:
                 # Run the test with verbose output if requested
@@ -151,9 +152,10 @@ class TestTool(RepoTool):
                 logger.error(f"✗ {test_name} FAILED (exception: {e})")
                 logger.error(f"  Log: {log_file}")
                 # Write exception to log file
+                cmd_str = ' '.join(cmd) if cmd is not None else "N/A"
                 with open(log_file, "w", encoding="utf-8", errors="replace") as f:
                     f.write(f"Test: {test_name}\n")
-                    f.write(f"Command: {' '.join(cmd)}\n")
+                    f.write(f"Command: {cmd_str}\n")
                     f.write(f"Exception: {e}\n")
                 failed += 1
                 failed_tests.append(test_name)

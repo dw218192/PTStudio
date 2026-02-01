@@ -29,8 +29,7 @@ auto create_imgui_components(WebGpuContext& webgpu_context, pts::rendering::IVie
     }
 
     // Fallback to null rendering
-    logging_manager.get_logger().error(
-        "Failed to create WebGPU imgui rendering, using null imgui rendering instead");
+    logging_manager.get_logger().warn("Using null imgui rendering as fallback");
     components.imgui_rendering = create_null_imgui_rendering(logging_manager);
     return components;
 }

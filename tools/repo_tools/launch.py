@@ -133,7 +133,8 @@ class LaunchTool(RepoTool):
             env_overrides = normalize_env_config(args.env)
             env_config.update(env_overrides)
         elif args.env is not None:
-            env_config = normalize_env_config(args.env)
+            env_overrides = normalize_env_config(args.env)
+            env_config.update(env_overrides)
 
         env_vars = resolve_env_vars(env_config, context)
         env = apply_env_overrides(os.environ.copy(), env_vars)

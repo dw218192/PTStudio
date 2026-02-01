@@ -94,9 +94,7 @@ class FormatTool(RepoTool):
                     logger.error(f"File is not properly formatted: {file_path}")
 
             if failed_files:
-                logger.error(
-                    f"{len(failed_files)} file(s) are not properly formatted"
-                )
+                logger.error(f"{len(failed_files)} file(s) are not properly formatted")
                 sys.exit(1)
             else:
                 logger.info("All files are properly formatted")
@@ -113,8 +111,7 @@ class FormatTool(RepoTool):
                             str(file_path),
                         ],
                         check=True,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
+                        capture_output=True,
                         text=True,
                         encoding="utf-8",
                         errors="replace",
@@ -125,5 +122,3 @@ class FormatTool(RepoTool):
                     logger.error(f"Failed to format {file_path}: {error_msg}")
                     sys.exit(1)
             logger.info(f"Successfully formatted {len(source_files)} file(s)")
-
-

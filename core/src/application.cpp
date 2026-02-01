@@ -16,17 +16,20 @@ Application::Application(std::string_view name, pts::LoggingManager& logging_man
       m_logging_manager{&logging_manager},
       m_plugin_manager{&plugin_manager} {
     m_logger = m_logging_manager->get_logger_shared(get_name().data());
+    INVARIANT_MSG(m_logger != nullptr, "get_logger_shared must return valid logger");
     set_min_frame_time(min_frame_time);
     m_start_time = std::chrono::steady_clock::now();
 
     // Create windowing system
     m_windowing = pts::rendering::create_windowing(get_logging_manager());
+    INVARIANT_MSG(m_windowing != nullptr, "create_windowing must return valid windowing system");
 
     // Create viewport
     auto viewport_desc = pts::rendering::ViewportDesc{
         get_name().data(), width, height, true, true, true, true,
     };
     m_viewport = m_windowing->create_viewport(viewport_desc);
+    INVARIANT_MSG(m_viewport != nullptr, "create_viewport must return valid viewport");
     m_viewport->on_drawable_resized.connect(
         [this](pts::rendering::Extent2D) { on_framebuffer_resized(); });
 

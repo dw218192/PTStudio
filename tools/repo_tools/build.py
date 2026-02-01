@@ -586,6 +586,17 @@ def _discover_test_targets(build_dir: Path) -> list[str]:
     return sorted(test_names)
 
 
+def _get_dict_arg(args: argparse.Namespace, field_name: str) -> dict:
+    """Extract a dict argument from args, warn if non-dict, return {} if None or invalid."""
+    value = getattr(args, field_name, None)
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return value
+    logger.warning(f"Build arg '{field_name}' must be a dict; ignoring.")
+    return {}
+
+
 def build_command(args: argparse.Namespace, current_tool: str) -> None:
     """
     Meta-meta-build system implementation.
@@ -606,17 +617,9 @@ def build_command(args: argparse.Namespace, current_tool: str) -> None:
     lock_file = Path(context["conan_lock"])
     conan_deps_root = Path(context["conan_deps_root"])
 
-    conan_config = args.conan if isinstance(args.conan, dict) else {}
-    if args.conan is not None and not isinstance(args.conan, dict):
-        logger.warning("Build arg 'conan' must be a dict; ignoring.")
-
-    prebuild_steps = args.prebuild if isinstance(args.prebuild, dict) else {}
-    if args.prebuild is not None and not isinstance(args.prebuild, dict):
-        logger.warning("Build arg 'prebuild' must be a dict; ignoring.")
-
-    postbuild_steps = args.postbuild if isinstance(args.postbuild, dict) else {}
-    if args.postbuild is not None and not isinstance(args.postbuild, dict):
-        logger.warning("Build arg 'postbuild' must be a dict; ignoring.")
+    conan_config = _get_dict_arg(args, "conan")
+    prebuild_steps = _get_dict_arg(args, "prebuild")
+    postbuild_steps = _get_dict_arg(args, "postbuild")
 
     # Remove build configuration directory if -x flag is provided
     if args.rebuild and build_dir.exists():
@@ -833,6 +836,11 @@ class BuildTool(RepoTool):
         parser.add_argument(
             "--conan-profile",
             help="Conan profile (default: default)",
+        )
+        parser.add_argument(
+            "--windowing",
+            choices=["glfw", "null"],
+            help="Windowing backend (default: glfw)",
         )
 
     def default_args(self, context: RepoContext) -> argparse.Namespace:
