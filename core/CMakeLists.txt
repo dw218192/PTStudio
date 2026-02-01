@@ -98,6 +98,7 @@ cmrc_add_resource_library(${lib_name}_resources
 target_link_libraries(${lib_name}
 PRIVATE
 	$<BUILD_INTERFACE:developer_flags>
+	portable-file-dialogs::portable-file-dialogs
 PUBLIC
 	${lib_name}::rc
 	openusd::usd_usd
@@ -112,7 +113,6 @@ PUBLIC
 	tl::expected
 	fmt::fmt
 	spdlog::spdlog
-	nativefiledialog
 	tcb-span::tcb-span
 	nlohmann_json::nlohmann_json
 	Boost::filesystem

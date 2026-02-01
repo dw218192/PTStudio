@@ -51,10 +51,10 @@ class PTStudioConan(ConanFile):
         # GUI libraries (from Conan)
         self.requires("imgui/1.92.0-docking")
         self.requires("imguizmo/1.92")
+        self.requires("portable-file-dialogs/0.1.0")
 
         # Note: Some dependencies are built from source in ext/:
         # - ImGuiColorTextEdit
-        # - nativefiledialog
 
     def configure(self):
         # Configure package options
