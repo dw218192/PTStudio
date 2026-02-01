@@ -93,6 +93,9 @@ find_package(openusd CONFIG REQUIRED)
 if (NOT EMSCRIPTEN)
     find_package(Dawn REQUIRED)
 endif()
+# GUI libraries from Conan
+find_package(imgui REQUIRED)
+find_package(imguizmo REQUIRED)
 
 
 # external dependencies that are built from source

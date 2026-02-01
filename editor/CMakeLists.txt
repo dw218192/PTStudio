@@ -30,7 +30,7 @@ target_link_libraries(${exec_name}
 PRIVATE
 	$<BUILD_INTERFACE:developer_flags>
 	core
-	imguizmo
+	imguizmo::imguizmo
 	ImGuiColorTextEdit
 	Boost::stacktrace
 	Boost::stacktrace_from_exception

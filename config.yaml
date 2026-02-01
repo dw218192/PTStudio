@@ -25,6 +25,9 @@ build:
       - name: "openusd"
         version: "25.02"
         path: "tools/conan/openusd"
+      - name: "imguizmo"
+        version: "1.92"
+        path: "tools/conan/imguizmo"
 
 launch:
   env:
