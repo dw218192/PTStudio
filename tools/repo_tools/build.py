@@ -68,9 +68,7 @@ def execute_build_steps(
         step_args_value = step_config.get("args")
         if step_args_value is None:
             step_args_value = {
-                key: value
-                for key, value in step_config.items()
-                if key != "repo_tool"
+                key: value for key, value in step_config.items() if key != "repo_tool"
             }
 
         tool = get_repo_tool(repo_tool)
@@ -367,6 +365,8 @@ def _export_local_conan_recipes(
         )
 
 
+
+
 def _get_local_recipe_names(conan_config: dict) -> set[str]:
     recipes = conan_config.get("local_recipes", [])
     names: set[str] = set()
@@ -376,15 +376,13 @@ def _get_local_recipe_names(conan_config: dict) -> set[str]:
     return names
 
 
-def _strip_local_recipe_timestamps(
+def _strip_local_recipe_revisions(
     lock_file: Path, local_recipe_names: set[str]
 ) -> None:
-    """Strip timestamps from local recipe entries in the lock file.
+    """Strip revisions and timestamps from local recipe entries in the lock file.
 
-    Conan lock entries include a timestamp suffix (e.g., name/version#rrev%timestamp).
-    Local recipes are exported on each build, so the timestamp changes even when
-    the recipe revision is identical. Removing the timestamp makes the lock file
-    stable while preserving recipe revisions.
+    Local recipes are exported on each build, so their revisions are not stable.
+    Removing revisions keeps the lock file stable while still pinning versions.
     """
     import json
 
@@ -405,7 +403,9 @@ def _strip_local_recipe_timestamps(
         updated = []
         for entry in original:
             if any(entry.startswith(f"{name}/") for name in local_recipe_names):
-                updated.append(entry.split("%", 1)[0])
+                no_timestamp = entry.split("%", 1)[0]
+                no_revision = no_timestamp.split("#", 1)[0]
+                updated.append(no_revision)
             else:
                 updated.append(entry)
         if updated != original:
@@ -416,7 +416,7 @@ def _strip_local_recipe_timestamps(
         with open(lock_file, "w") as f:
             json.dump(lock_data, f, indent=4)
         print_tool(
-            "Stripped local recipe timestamps in lock file: "
+            "Stripped local recipe revisions in lock file: "
             f"{', '.join(sorted(local_recipe_names))}"
         )
 
@@ -672,8 +672,8 @@ def build_command(args: argparse.Namespace, current_tool: str) -> None:
                     ],
                     log_file=lock_log_file,
                 )
-                # Strip timestamps for local recipes in the lock file
-                _strip_local_recipe_timestamps(lock_file, local_recipe_names)
+                # Strip revisions for local recipes in the lock file
+                _strip_local_recipe_revisions(lock_file, local_recipe_names)
             else:
                 print_tool(f"Lock file found. Using existing lock file: {lock_file}")
 
@@ -851,5 +851,3 @@ class BuildTool(RepoTool):
 
     def execute(self, args: argparse.Namespace) -> None:
         build_command(args, self.name)
-
-
