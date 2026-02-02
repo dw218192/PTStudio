@@ -2,6 +2,50 @@ cmake_minimum_required(VERSION 3.19 FATAL_ERROR)
 
 set(lib_name "core")
 
+# ============================================================================
+# imgui_backends - compiles imgui backends using Conan's imgui package
+# ============================================================================
+# The core imgui library comes from Conan (imgui::imgui), but backends are 
+# provided as source files in res/bindings/ and must be compiled by the consumer
+
+# Get imgui package folder from Conan (set by CMakeDeps generator)
+# The variable imgui_PACKAGE_FOLDER_DEBUG/RELEASE is set by Conan
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(IMGUI_PKG_ROOT "${imgui_PACKAGE_FOLDER_DEBUG}")
+else()
+    set(IMGUI_PKG_ROOT "${imgui_PACKAGE_FOLDER_RELEASE}")
+endif()
+# Fallback: try without build type suffix
+if(NOT IMGUI_PKG_ROOT)
+    set(IMGUI_PKG_ROOT "${imgui_PACKAGE_FOLDER}")
+endif()
+set(IMGUI_BINDINGS_DIR "${IMGUI_PKG_ROOT}/res/bindings")
+
+# Collect backend sources based on configuration
+set(IMGUI_BACKEND_SOURCES)
+if(PTS_WINDOWING STREQUAL "glfw")
+    list(APPEND IMGUI_BACKEND_SOURCES
+        ${IMGUI_BINDINGS_DIR}/imgui_impl_glfw.cpp
+        ${IMGUI_BINDINGS_DIR}/imgui_impl_glfw.h
+    )
+endif()
+# Add WebGPU backend
+list(APPEND IMGUI_BACKEND_SOURCES
+    ${IMGUI_BINDINGS_DIR}/imgui_impl_wgpu.cpp
+    ${IMGUI_BINDINGS_DIR}/imgui_impl_wgpu.h
+)
+
+add_library(imgui_backends STATIC ${IMGUI_BACKEND_SOURCES})
+target_include_directories(imgui_backends PUBLIC ${IMGUI_BINDINGS_DIR})
+target_link_libraries(imgui_backends PUBLIC imgui::imgui)
+target_compile_definitions(imgui_backends PUBLIC IMGUI_IMPL_WEBGPU_BACKEND_DAWN)
+if(PTS_WINDOWING STREQUAL "glfw")
+    target_link_libraries(imgui_backends PRIVATE glfw)
+endif()
+if(NOT EMSCRIPTEN)
+    target_link_libraries(imgui_backends PUBLIC dawn::webgpu_dawn)
+endif()
+
 #GLOB source files
 set(core_src_globs
 	${CMAKE_CURRENT_SOURCE_DIR}/src/*.*
@@ -36,38 +80,27 @@ list(APPEND core_rendering_sources ${core_webgpu_sources})
 set(src_files ${core_src_files} ${core_rendering_sources})
 list(REMOVE_DUPLICATES src_files)
 
-#GLOB resource files
-file(GLOB_RECURSE res_files
-	${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.*
-)
-
 #Executable
 add_library(${lib_name} STATIC ${src_files})
-
-#Resources
-cmrc_add_resource_library(${lib_name}_resources
-	ALIAS ${lib_name}::rc
-	${res_files}
-)
 
 #Libs linked to the executable
 target_link_libraries(${lib_name}
 PRIVATE
 	$<BUILD_INTERFACE:developer_flags>
+	portable-file-dialogs::portable-file-dialogs
 PUBLIC
-	${lib_name}::rc
 	openusd::usd_usd
 	openusd::usd_usdGeom
 	openusd::usd_usdShade
 	openusd::usd_usdLux
 	glm::glm
 	tinyobjloader
-	pts_stb
-	imgui
+	stb::stb
+	imgui::imgui
+	imgui_backends
 	tl::expected
 	fmt::fmt
 	spdlog::spdlog
-	nativefiledialog
 	tcb-span::tcb-span
 	nlohmann_json::nlohmann_json
 	Boost::filesystem

@@ -1,33 +1,15 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <core/rendering/webgpu/device.h>
 #include <doctest/doctest.h>
+#include <generated/embedded_test_resources.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
 #include <cstdlib>
 #include <filesystem>
-#include <fstream>
-#include <sstream>
 #include <string>
 
 namespace {
-auto load_shader_source() -> std::string {
-    std::filesystem::path shader_path = PTS_SOURCE_DIR;
-    shader_path /= "assets";
-    shader_path /= "shaders";
-    shader_path /= "test";
-    shader_path /= "simple.wgsl";
-
-    std::ifstream file(shader_path, std::ios::binary);
-    if (!file) {
-        return {};
-    }
-
-    std::ostringstream ss;
-    ss << file.rdbuf();
-    return ss.str();
-}
-
 auto create_test_logger() -> std::shared_ptr<spdlog::logger> {
     auto logger = spdlog::get("webgpu_test");
     if (!logger) {
@@ -52,8 +34,8 @@ TEST_CASE("WebGPU - Device init and basic resources") {
     CHECK(buffer.is_valid());
 
     // ShaderModule factory throws on failure; invariant enforces non-null
-    auto shader_source = load_shader_source();
-    REQUIRE(!shader_source.empty());
-    auto shader = device.create_shader_module_from_source(shader_source);
+    auto shader_source = test_resources::get_resource("simple.wgsl");
+    REQUIRE(shader_source.has_value());
+    auto shader = device.create_shader_module_from_source(shader_source.value());
     CHECK(shader.handle() != nullptr);
 }

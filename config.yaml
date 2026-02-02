@@ -13,6 +13,22 @@ build:
       shaders:
         - input: "assets/shaders/test/*.slang"
           output: "assets/shaders/test/*.wgsl"
+    embed:
+      template: "core/templates/embedded_resources.h.j2"
+      resources:
+        - input:
+            - "core/shaders/*.*"
+          output: "core/generated/embedded_resources.h"
+          namespace: "core_resources"
+        - input:
+            - "editor/shaders/**/*.*"
+            - "editor/icons/*.*"
+          output: "editor/generated/embedded_resources.h"
+          namespace: "editor_resources"
+        - input:
+            - "assets/shaders/test/simple.wgsl"
+          output: "core/tests/generated/embedded_test_resources.h"
+          namespace: "test_resources"
   postbuild: {}
   conan:
     local_recipes:
@@ -25,6 +41,12 @@ build:
       - name: "openusd"
         version: "25.02"
         path: "tools/conan/openusd"
+      - name: "imguizmo"
+        version: "1.92"
+        path: "tools/conan/imguizmo"
+      - name: "imgui_color_text_edit"
+        version: "1.0"
+        path: "tools/conan/imgui_color_text_edit"
 
 launch:
   env:

@@ -22,6 +22,7 @@ class PTStudioConan(ConanFile):
         # Boost configuration - need filesystem for DLL loading
         "boost/*:without_filesystem": False,
     }
+
     def requirements(self):
         # Core dependencies, strict compatibility
         self.requires("fmt/10.2.1")
@@ -47,11 +48,11 @@ class PTStudioConan(ConanFile):
         # Scene description
         self.requires("openusd/25.02")
 
-        # Note: Some dependencies are built from source in ext/:
-        # - imgui (custom build with docking branch)
-        # - imguizmo
-        # - ImGuiColorTextEdit
-        # - nativefiledialog
+        # GUI libraries (from Conan)
+        self.requires("imgui/1.92.0-docking")
+        self.requires("imguizmo/1.92")
+        self.requires("portable-file-dialogs/0.1.0")
+        self.requires("imgui_color_text_edit/1.0")
 
     def configure(self):
         # Configure package options

@@ -2,12 +2,11 @@
 
 #include <core/rendering/webgpuContext.h>
 #include <imgui.h>
-#include <imgui_impl_null.h>
 
 #include <memory>
+#include <stdexcept>
 #include <utility>
 
-#include "null/nullImguiRendering.h"
 #include "webgpu/webgpuImguiRendering.h"
 
 namespace spdlog {
@@ -23,14 +22,10 @@ auto create_imgui_components(WebGpuContext& webgpu_context, pts::rendering::IVie
 
     auto webgpu_rendering =
         create_webgpu_imgui_rendering(webgpu_context, viewport, logging_manager);
-    if (webgpu_rendering) {
-        components.imgui_rendering = std::move(webgpu_rendering);
-        return components;
+    if (!webgpu_rendering) {
+        throw std::runtime_error("Failed to create WebGPU imgui rendering");
     }
-
-    // Fallback to null rendering
-    logging_manager.get_logger().warn("Using null imgui rendering as fallback");
-    components.imgui_rendering = create_null_imgui_rendering(logging_manager);
+    components.imgui_rendering = std::move(webgpu_rendering);
     return components;
 }
 }  // namespace pts::rendering

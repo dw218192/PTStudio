@@ -1,32 +1,19 @@
 #include <core/imgui/fileDialogue.h>
-#include <imgui.h>
-#include <nfd.h>
+#include <portable-file-dialogs.h>
 
-auto ImGui::FileDialogue(FileDialogueMode mode, const char* filter,
-                         const char* defaultPath) -> std::string {
-    nfdchar_t* outPath = nullptr;
-    nfdresult_t result;
-    if (mode == FileDialogueMode::OPEN) {
-        result = NFD_OpenDialog(filter, defaultPath, &outPath);
-    } else {
-        result = NFD_SaveDialog(filter, defaultPath, &outPath);
-    }
-
-    if (result == NFD_OKAY) {
-        std::string path = outPath;
-        free(outPath);
-        return path;
-    } else if (result == NFD_CANCEL) {
-        return {};
-    } else {
-        ImGui::OpenPopup("Error");
-    }
-    if (ImGui::BeginPopupModal("Error", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("Error opening file dialogue");
-        if (ImGui::Button("OK")) {
-            ImGui::CloseCurrentPopup();
+auto ImGui::FileDialogue(FileDialogueMode mode, const std::vector<std::string>& filters,
+                         const std::string& default_path) -> std::string {
+    if (mode == FileDialogueMode::Open) {
+        auto selection = pfd::open_file("Open File", default_path, filters).result();
+        if (!selection.empty()) {
+            return selection[0];
         }
-        ImGui::EndPopup();
+    } else {
+        auto result = pfd::save_file("Save File", default_path, filters).result();
+        if (!result.empty()) {
+            return result;
+        }
     }
+
     return {};
 }

@@ -9,4 +9,7 @@ __pycache__/
 .vscode/launch.json
 
 # Generated Slang shaders
-/shaders/test/*.wgsl
+/assets/shaders/test/*.wgsl
+
+# Generated embedded resources
+**/generated/

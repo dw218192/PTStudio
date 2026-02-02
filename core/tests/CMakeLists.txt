@@ -31,6 +31,7 @@ function(add_core_test target_name)
     add_executable(${target_name} ${${target_name}_source})
     target_include_directories(${target_name} PRIVATE
         ../include
+        ${CMAKE_CURRENT_SOURCE_DIR}
         ${${target_name}_includes}
     )
     target_link_libraries(${target_name} PRIVATE
