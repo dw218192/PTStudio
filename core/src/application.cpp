@@ -5,6 +5,7 @@
 #include <core/timeUtils.h>
 
 #include <chrono>
+#include <stdexcept>
 #include <thread>
 
 namespace pts {
@@ -33,9 +34,28 @@ Application::Application(std::string_view name, pts::LoggingManager& logging_man
     m_viewport->on_drawable_resized.connect(
         [this](pts::rendering::Extent2D) { on_framebuffer_resized(); });
 
-    // Create WebGPU context
+    // Create WebGPU context (starts async initialization)
     m_webgpu_context = pts::rendering::WebGpuContext::create(*m_viewport, get_logging_manager());
     INVARIANT_MSG(m_webgpu_context != nullptr, "WebGpuContext::create must return valid context");
+
+    // Drive WebGPU initialization to completion before derived class constructors run
+    while (!m_webgpu_context->is_ready() && !m_webgpu_context->is_failed()) {
+        m_windowing->pump_events(pts::rendering::PumpEventMode::Poll);
+        m_webgpu_context->tick_init();
+
+        if (m_viewport->should_close()) {
+            log(pts::LogLevel::Warning, "Window closed during WebGPU initialization");
+            break;
+        }
+
+        std::this_thread::yield();
+    }
+
+    if (m_webgpu_context->is_failed()) {
+        throw std::runtime_error("WebGPU context initialization failed");
+    }
+
+    INVARIANT_MSG(m_webgpu_context->is_ready(), "WebGPU context must be ready after init loop");
 
     log(pts::LogLevel::Info, "Application initialized");
 }

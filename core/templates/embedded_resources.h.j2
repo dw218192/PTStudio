@@ -17,10 +17,11 @@ namespace detail {
 // Size: {{ res.size }} bytes
 {% if res.is_text %}
 inline constexpr const char k_{{ res.identifier }}_data[] = R"{{ res.delimiter }}({{ res.content }}){{ res.delimiter }}";
+inline constexpr std::size_t k_{{ res.identifier }}_size = sizeof(k_{{ res.identifier }}_data) - 1;
 {% else %}
 inline constexpr const std::uint8_t k_{{ res.identifier }}_data[] = { {{ res.hex_data }} };
-{% endif %}
 inline constexpr std::size_t k_{{ res.identifier }}_size = {{ res.size }};
+{% endif %}
 
 {% endfor %}
 struct ResourceInfo {

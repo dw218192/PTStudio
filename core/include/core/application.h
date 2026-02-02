@@ -92,7 +92,8 @@ struct Application {
 
    private:
     // Class invariants (enforced in constructor, throw on failure):
-    // - m_webgpu_context is always valid (non-null)
+    // - m_webgpu_context is non-null and in Ready state (initialization is completed
+    //   before derived class constructors run)
     // - m_windowing is always valid (non-null)
     // - m_viewport is always valid (non-null)
     // - m_logging_manager and m_plugin_manager are always valid (non-null)

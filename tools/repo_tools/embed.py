@@ -94,10 +94,11 @@ def _process_resource(input_file: Path, base_path: Path) -> ResourceData:
 
     if _is_text_content(data):
         text = data.decode("utf-8")
+        # Use length of text (not bytes) since CRLF becomes LF in raw string literals
         return ResourceData(
             path=path_str,
             identifier=identifier,
-            size=len(data),
+            size=len(text),
             is_text=True,
             content=text,
             delimiter=_find_raw_string_delimiter(text),

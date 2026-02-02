@@ -13,11 +13,9 @@ Follow @build.mdc for how to build the project
 ## Instructions and Verification Criteria
 
 - Work autonomously on user's request and ensure the project can build and all unit tests pass. When asked to implement a plan or milestone, follow the verification/validation steps in the plan if specified.
-  - Use `-b` flag to only perform the build step if no reconfiguration is needed; this also skips building OpenUSD.
+  - Use `-b` flag to only perform the build step if no reconfiguration is needed.
 - Unless the user explicitly asks for backward compatibility, don't preserve old behavior. If a change breaks something, update the dependent code and delete the obsolete code.
 
 ## Finalization
 
-- Use `-x` flag to do a clean rebuild and run tests again to ensure the changes are working as expected from a clean state.
-- Run `.\pts.cmd format` to ensure that the code is formatted correctly.
-- Run `.\pts.cmd launch --quit-on-start` to ensure that the editor starts up correctly.
+- After the user has reviewed and approved the changes, commit the changes to the repository in a single commit with  an appropriate message.

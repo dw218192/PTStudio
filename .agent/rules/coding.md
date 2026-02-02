@@ -246,3 +246,18 @@ using ptr = T*; // non-owning
 ```powershell
 .\pts.cmd build
 ```
+
+## Commenting rules
+- Prefer **no comment** over a misleading or speculative comment.
+- Comments must be **true from the current repository state**.
+  - Do NOT reference removed/old APIs, previous versions, or prompt context.
+  - Do NOT write comparisons like “instead of X”, “used to”, etc.
+- Never mention tools/models/prompts/conversation (no “as requested”, “per prompt”, “like you asked”, etc.).
+- Only write comments for:
+  - non-obvious invariants / safety constraints
+  - tricky edge cases
+  - performance rationale that isn’t obvious from the code
+  - TODOs that include an issue ID/link or concrete next step
+- If you feel tempted to mention some API/class in a comment, but you can’t point to where it exists in the repo:
+  - **omit the comment** (or ask a question in chat instead of guessing).
+- Keep comments short: 1–2 lines; no narrative.
