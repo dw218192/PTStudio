@@ -57,6 +57,7 @@ class WebGpuContext {
     [[nodiscard]] auto state() const noexcept -> WebGpuContextState;
     [[nodiscard]] auto is_ready() const noexcept -> bool;
     [[nodiscard]] auto is_failed() const noexcept -> bool;
+    [[nodiscard]] auto is_initializing() const noexcept -> bool;
 
     /// Access device. Only valid when state() == Ready.
     [[nodiscard]] auto device() const noexcept -> const pts::webgpu::Device&;

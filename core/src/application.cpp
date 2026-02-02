@@ -55,6 +55,11 @@ Application::Application(std::string_view name, pts::LoggingManager& logging_man
         throw std::runtime_error("WebGPU context initialization failed");
     }
 
+    // Check if window was closed during initialization (context still in Initializing state)
+    if (m_viewport->should_close() && !m_webgpu_context->is_ready()) {
+        throw std::runtime_error("Window closed during WebGPU initialization");
+    }
+
     INVARIANT_MSG(m_webgpu_context->is_ready(), "WebGPU context must be ready after init loop");
 
     log(pts::LogLevel::Info, "Application initialized");

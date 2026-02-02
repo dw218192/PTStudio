@@ -25,6 +25,8 @@ inline auto status_name(WGPUPopErrorScopeStatus status) -> const char* {
             return "Success";
         case WGPUPopErrorScopeStatus_Error:
             return "Error";
+        case WGPUPopErrorScopeStatus_CallbackCancelled:
+            return "CallbackCancelled";
         default:
             return "Unknown";
     }

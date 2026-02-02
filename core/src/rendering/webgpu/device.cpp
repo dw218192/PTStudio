@@ -20,11 +20,13 @@ namespace pts::webgpu {
 
 Device::Device(WGPUInstance instance, WGPUDevice device, WGPUQueue queue,
                std::shared_ptr<spdlog::logger> logger)
-    : m_state(ReadyState{instance, device, queue}), m_logger(std::move(logger)) {
+    : m_logger(std::move(logger)) {
     INVARIANT_MSG(instance != nullptr, "instance handle is null");
     INVARIANT_MSG(device != nullptr, "device handle is null");
     INVARIANT_MSG(queue != nullptr, "queue handle is null");
     INVARIANT_MSG(m_logger != nullptr, "logger is null");
+
+    m_state = ReadyState{instance, device, queue};
 
     m_logger->debug("Device constructed successfully (device={}, queue={})",
                     static_cast<void*>(device), static_cast<void*>(queue));
@@ -252,7 +254,6 @@ void Device::finish_initialization() {
         set_failed();
         return;
     }
-    wgpuQueueAddRef(queue);
     m_logger->debug("WebGPU queue acquired successfully");
 
     // Release adapter (no longer needed)

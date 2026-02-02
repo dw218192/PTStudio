@@ -21,11 +21,21 @@ WebGpuContext::~WebGpuContext() {
 
 WebGpuContext::WebGpuContext(WebGpuContext&& other) noexcept
     : m_state(std::move(other.m_state)), m_logger(std::move(other.m_logger)) {
+    // Moving during initialization is unsafe: async callbacks hold raw pointers to
+    // InitializingState
+    INVARIANT_MSG(!std::holds_alternative<InitializingState>(m_state),
+                  "WebGpuContext cannot be moved during initialization");
     other.m_state = FailedState{};
 }
 
 auto WebGpuContext::operator=(WebGpuContext&& other) noexcept -> WebGpuContext& {
     if (this != &other) {
+        // Moving during initialization is unsafe: async callbacks hold raw pointers to
+        // InitializingState
+        INVARIANT_MSG(!std::holds_alternative<InitializingState>(m_state),
+                      "WebGpuContext cannot be move-assigned to during initialization");
+        INVARIANT_MSG(!std::holds_alternative<InitializingState>(other.m_state),
+                      "WebGpuContext cannot be move-assigned from during initialization");
         release_resources();
         m_state = std::move(other.m_state);
         m_logger = std::move(other.m_logger);
@@ -235,7 +245,6 @@ void WebGpuContext::finish_initialization() {
         set_failed();
         return;
     }
-    wgpuQueueAddRef(queue);
     init_state->queue = queue;
 
     m_logger->debug("WebGPU queue acquired successfully");
@@ -244,7 +253,6 @@ void WebGpuContext::finish_initialization() {
     pts::webgpu::Device device_wrapper(init_state->instance, init_state->device, init_state->queue,
                                        m_logger);
     // Device now owns these handles, clear from init_state to prevent double-release
-    WGPUInstance instance_handle = init_state->instance;
     init_state->instance = nullptr;
     init_state->device = nullptr;
     init_state->queue = nullptr;
@@ -322,6 +330,10 @@ auto WebGpuContext::is_ready() const noexcept -> bool {
 
 auto WebGpuContext::is_failed() const noexcept -> bool {
     return std::holds_alternative<FailedState>(m_state);
+}
+
+auto WebGpuContext::is_initializing() const noexcept -> bool {
+    return std::holds_alternative<InitializingState>(m_state);
 }
 
 auto WebGpuContext::device() const noexcept -> const pts::webgpu::Device& {
