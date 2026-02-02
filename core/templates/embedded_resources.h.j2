@@ -31,7 +31,7 @@ struct ResourceInfo {
 inline const std::unordered_map<std::string_view, ResourceInfo>& get_resource_map() {
     static const std::unordered_map<std::string_view, ResourceInfo> resources = {
 {% for res in resources %}
-        {"{{ res.path }}", {reinterpret_cast<const char*>(k_{{ res.identifier }}_data), k_{{ res.identifier }}_size}},
+    {"{{ res.path }}", {reinterpret_cast<const char*>(k_{{ res.identifier }}_data), k_{{ res.identifier }}_size}},
 {% endfor %}
     };
     return resources;

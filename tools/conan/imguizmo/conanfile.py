@@ -42,12 +42,6 @@ class ImGuizmoConan(ConanFile):
 
     def generate(self):
         tc = CMakeToolchain(self)
-        # Define IMGUI_DEFINE_MATH_OPERATORS before imgui.h is included
-        tc.variables["CMAKE_CXX_FLAGS"] = (
-            "/DIMGUI_DEFINE_MATH_OPERATORS"
-            if self.settings.os == "Windows"
-            else "-DIMGUI_DEFINE_MATH_OPERATORS"
-        )
         tc.generate()
         deps = CMakeDeps(self)
         deps.generate()

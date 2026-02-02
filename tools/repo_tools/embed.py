@@ -115,7 +115,7 @@ def _process_resource(input_file: Path, base_path: Path) -> ResourceData:
 
 def _compute_file_hash(path: Path) -> str:
     """Compute MD5 hash of file contents."""
-    return hashlib.md5(path.read_bytes()).hexdigest()
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _load_manifest(manifest_path: Path) -> dict:
@@ -182,7 +182,7 @@ def _resolve_resource_groups(
 
     resolved: list[dict] = []
 
-    for idx, resource in enumerate(resources):
+    for resource in resources:
         input_value = resource["input"]
         output_value = resource["output"]
         namespace_value = resource.get("namespace", "embedded_resources")
@@ -268,7 +268,9 @@ class EmbedTool(RepoTool):
         if template_path_str is None:
             template_path_str = embed_config.get("template")
         if not template_path_str:
-            raise ValueError("Template path not specified. Set 'template' in embed config.")
+            raise ValueError(
+                "Template path not specified. Set 'template' in embed config."
+            )
         template_path = root / template_path_str
         if not template_path.exists():
             raise FileNotFoundError(f"Template not found: {template_path}")
@@ -288,7 +290,9 @@ class EmbedTool(RepoTool):
 
             # Use output path relative to root for unique manifest name
             rel_output = output_path.relative_to(root)
-            manifest_name = str(rel_output).replace("/", "_").replace("\\", "_") + ".manifest.json"
+            manifest_name = (
+                str(rel_output).replace("/", "_").replace("\\", "_") + ".manifest.json"
+            )
             manifest_path = manifest_dir / manifest_name
             needs_regen, current_hashes = _needs_regeneration(
                 input_files, output_path, manifest_path, args.force

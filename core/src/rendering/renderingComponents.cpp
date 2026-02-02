@@ -4,6 +4,7 @@
 #include <imgui.h>
 
 #include <memory>
+#include <stdexcept>
 #include <utility>
 
 #include "webgpu/webgpuImguiRendering.h"
