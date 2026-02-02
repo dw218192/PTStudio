@@ -37,12 +37,13 @@ Device::Device(PrivateCtorTag, std::shared_ptr<spdlog::logger> logger, Initializ
     INVARIANT_MSG(m_logger != nullptr, "logger is null");
 }
 
-Device::Device(Device&& other) noexcept
-    : m_state(std::move(other.m_state)), m_logger(std::move(other.m_logger)) {
+Device::Device(Device&& other) noexcept : m_state(FailedState{}), m_logger(nullptr) {
     // Moving during initialization is unsafe: async callbacks hold raw pointers to
     // InitializingState
-    INVARIANT_MSG(!std::holds_alternative<InitializingState>(m_state),
+    INVARIANT_MSG(!std::holds_alternative<InitializingState>(other.m_state),
                   "Device cannot be moved during initialization");
+    m_state = std::move(other.m_state);
+    m_logger = std::move(other.m_logger);
     other.m_state = FailedState{};
 }
 
