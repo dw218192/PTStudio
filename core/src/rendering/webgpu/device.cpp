@@ -39,11 +39,21 @@ Device::Device(PrivateCtorTag, std::shared_ptr<spdlog::logger> logger, Initializ
 
 Device::Device(Device&& other) noexcept
     : m_state(std::move(other.m_state)), m_logger(std::move(other.m_logger)) {
+    // Moving during initialization is unsafe: async callbacks hold raw pointers to
+    // InitializingState
+    INVARIANT_MSG(!std::holds_alternative<InitializingState>(m_state),
+                  "Device cannot be moved during initialization");
     other.m_state = FailedState{};
 }
 
 auto Device::operator=(Device&& other) noexcept -> Device& {
     if (this != &other) {
+        // Moving during initialization is unsafe: async callbacks hold raw pointers to
+        // InitializingState
+        INVARIANT_MSG(!std::holds_alternative<InitializingState>(m_state),
+                      "Device cannot be move-assigned to during initialization");
+        INVARIANT_MSG(!std::holds_alternative<InitializingState>(other.m_state),
+                      "Device cannot be move-assigned from during initialization");
         release_resources();
         m_state = std::move(other.m_state);
         m_logger = std::move(other.m_logger);
@@ -339,6 +349,10 @@ auto Device::is_ready() const noexcept -> bool {
 
 auto Device::is_failed() const noexcept -> bool {
     return std::holds_alternative<FailedState>(m_state);
+}
+
+auto Device::is_initializing() const noexcept -> bool {
+    return std::holds_alternative<InitializingState>(m_state);
 }
 
 auto Device::instance() const noexcept -> WGPUInstance {

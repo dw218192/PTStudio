@@ -192,23 +192,7 @@ void WebGpuContext::start_device_request() {
         if (type == WGPUErrorType_NoError) {
             return;
         }
-        const char* type_str = "Unknown";
-        switch (type) {
-            case WGPUErrorType_Validation:
-                type_str = "Validation";
-                break;
-            case WGPUErrorType_OutOfMemory:
-                type_str = "OutOfMemory";
-                break;
-            case WGPUErrorType_Internal:
-                type_str = "Internal";
-                break;
-            case WGPUErrorType_Unknown:
-                type_str = "Unknown";
-                break;
-            default:
-                break;
-        }
+        const char* type_str = pts::webgpu::error_type_name(type);
         auto msg = message.data ? std::string_view(message.data, message.length)
                                 : std::string_view("(no message)");
         std::fprintf(stderr, "[WebGPU Uncaptured Error] Type: %s, Message: %.*s\n", type_str,

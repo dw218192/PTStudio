@@ -12,12 +12,6 @@
 namespace pts::webgpu {
 class Device;
 
-/// Convert seconds to nanoseconds for WebGPU future wait timeout
-inline auto to_nanoseconds(std::chrono::seconds timeout) -> std::uint64_t {
-    return static_cast<std::uint64_t>(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(timeout).count());
-}
-
 /// Convert WGPUPopErrorScopeStatus to string representation
 inline auto status_name(WGPUPopErrorScopeStatus status) -> const char* {
     switch (status) {

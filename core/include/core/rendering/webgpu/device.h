@@ -54,6 +54,7 @@ class Device {
     [[nodiscard]] auto state() const noexcept -> DeviceState;
     [[nodiscard]] auto is_ready() const noexcept -> bool;
     [[nodiscard]] auto is_failed() const noexcept -> bool;
+    [[nodiscard]] auto is_initializing() const noexcept -> bool;
 
     /// Access instance handle. Only valid when state() == Ready.
     [[nodiscard]] auto instance() const noexcept -> WGPUInstance;
