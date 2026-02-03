@@ -37,8 +37,6 @@ class PTStudioConan(ConanFile):
         # Utility libraries
         self.requires("stb/[>=0]")
         self.requires("tinyobjloader/2.0.0-rc10")
-        self.requires("tcb-span/[>=0]")
-        self.requires("tl-expected/[>=0]")
         self.requires("doctest/[>=0]")
         self.requires("boost/[>=0]")
         # Shader toolchain (slangc)

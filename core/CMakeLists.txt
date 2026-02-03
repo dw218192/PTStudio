@@ -98,10 +98,8 @@ PUBLIC
 	stb::stb
 	imgui::imgui
 	imgui_backends
-	tl::expected
 	fmt::fmt
 	spdlog::spdlog
-	tcb-span::tcb-span
 	nlohmann_json::nlohmann_json
 	Boost::filesystem
 	Boost::container
