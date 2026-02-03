@@ -117,11 +117,15 @@ class OpenUSDConan(ConanFile):
         
         # WASM-specific flags (from OpenUSD build script)
         if self.settings.os == "Emscripten":
-            wasm_compile_flags = "-pthread --use-port=zlib"
+            wasm_compile_flags = "-pthread --use-port=zlib -Wno-unused-command-line-argument"
             wasm_link_flags = "-pthread"
             tc.variables["CMAKE_CXX_FLAGS"] = wasm_compile_flags
             tc.variables["CMAKE_C_FLAGS"] = wasm_compile_flags
             tc.variables["CMAKE_EXE_LINKER_FLAGS"] = wasm_link_flags
+
+            # oneTBB WASM compatibility (per oneTBB WASM_Support.md)
+            tc.variables["TBB_STRICT"] = "OFF"
+            tc.variables["TBB_DISABLE_HWLOC_AUTOMATIC_SEARCH"] = "ON"
         
         tc.generate()
 
