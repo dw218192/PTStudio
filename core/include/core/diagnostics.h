@@ -7,12 +7,12 @@
 #include <string_view>
 
 #if !defined(PTS_DIAG_ENABLE_STACKTRACE)
-    // Disable stacktrace on Emscripten (not supported)
-    #if defined(__EMSCRIPTEN__)
-        #define PTS_DIAG_ENABLE_STACKTRACE 0
-    #else
-        #define PTS_DIAG_ENABLE_STACKTRACE 1
-    #endif
+// Disable stacktrace on Emscripten (not supported)
+#if defined(__EMSCRIPTEN__)
+#define PTS_DIAG_ENABLE_STACKTRACE 0
+#else
+#define PTS_DIAG_ENABLE_STACKTRACE 1
+#endif
 #endif
 
 #if PTS_DIAG_ENABLE_STACKTRACE
@@ -37,13 +37,12 @@ inline void write_line(std::string_view s) noexcept {
     write_stderr("\n");
 }
 
-
 inline void print_stacktrace() noexcept {
-    #if PTS_DIAG_ENABLE_STACKTRACE
+#if PTS_DIAG_ENABLE_STACKTRACE
     std::cerr << boost::stacktrace::stacktrace() << std::endl;
-    #else
+#else
     std::fputs("  stacktrace: <not available on this platform>\n", stderr);
-    #endif
+#endif
 }
 
 [[noreturn]] inline void trap() noexcept {

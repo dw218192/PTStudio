@@ -90,7 +90,6 @@ struct Application {
         m_framebuffer_resized = value;
     }
 
-
     /**
      * @brief Process a single frame. Override in derived classes for custom frame behavior.
      */

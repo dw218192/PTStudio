@@ -8,9 +8,9 @@ auto ImGui::FileDialogue(FileDialogueMode mode, const std::vector<std::string>& 
                          const std::string& default_path) -> std::string {
 #ifdef __EMSCRIPTEN__
     // File dialogs not supported in browser environment
-    (void)mode;
-    (void)filters;
-    (void)default_path;
+    (void) mode;
+    (void) filters;
+    (void) default_path;
     return {};
 #else
     if (mode == FileDialogueMode::Open) {
