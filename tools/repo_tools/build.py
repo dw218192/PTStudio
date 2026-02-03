@@ -15,6 +15,7 @@ from repo_tools import (
     apply_repo_tool_args,
     build_repo_context,
     create_repo_tool_args,
+    detect_platform_identifier,
     ensure_conan_profile,
     find_venv_executable,
     get_repo_tool,
@@ -533,8 +534,20 @@ def build_command(args: argparse.Namespace, current_tool: str) -> None:
     """
     root = Path(__file__).parent.parent.parent
     config = load_repo_config(root)
-    context = build_repo_context(root, args.build_type, config)
-    build_folder = Path(context["build_root"])
+
+    # Determine platform identifier
+    conan_profile_path = None
+    if hasattr(args, 'conan_profile') and args.conan_profile != "default":
+        conan_profile_path = root / args.conan_profile
+
+    platform_id = detect_platform_identifier(
+        wasm=getattr(args, "wasm", False),
+        platform_override=getattr(args, "platform", None),
+        conan_profile_path=conan_profile_path
+    )
+
+    context = build_repo_context(root, args.build_type, config, platform_id)
+    build_folder = Path(context["build_root"]) / context["platform"]
     build_dir = Path(context["build_dir"])
     logs_dir = Path(context["logs_root"])
     windowing = args.windowing
@@ -743,6 +756,10 @@ class BuildTool(RepoTool):
 
     def setup(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
+            "--platform",
+            help="Platform identifier (e.g., windows-x64, linux-x64, wasm). Auto-detected by default.",
+        )
+        parser.add_argument(
             "-x",
             "--rebuild",
             action="store_true",
@@ -794,6 +811,7 @@ class BuildTool(RepoTool):
 
     def default_args(self, context: RepoContext) -> argparse.Namespace:
         return argparse.Namespace(
+            platform=None,
             rebuild=False,
             update_lock=False,
             configure_only=False,

@@ -5,6 +5,7 @@ import functools
 import logging
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -22,6 +23,7 @@ class RepoContext(TypedDict):
     workspace_root: str
     build_root: str
     logs_root: str
+    platform: str
     build_type: str
     conan_deps_root: str
     conan_lock: str
@@ -237,7 +239,116 @@ def resolve_path(root: Path, template: str, context: Mapping[str, str]) -> Path:
     return path
 
 
-def build_repo_context(root: Path, build_type: str, config: dict) -> RepoContext:
+def detect_platform_identifier(
+    wasm: bool = False,
+    platform_override: str | None = None,
+    conan_profile_path: Path | None = None
+) -> str:
+    """Detect platform identifier for build directory structure.
+
+    Platform detection priority:
+    1. Explicit --platform override
+    2. WASM mode (--wasm flag)
+    3. Parse from Conan profile
+    4. Auto-detect host platform
+    """
+    # 1. Explicit override
+    if platform_override:
+        return platform_override
+
+    # 2. WASM mode
+    if wasm:
+        return "wasm"
+
+    # 3. Parse from Conan profile
+    if conan_profile_path and conan_profile_path.exists():
+        try:
+            profile_content = conan_profile_path.read_text()
+            os_match = re.search(r'^os=(\w+)', profile_content, re.MULTILINE)
+            arch_match = re.search(r'^arch=(\w+)', profile_content, re.MULTILINE)
+            if os_match and arch_match:
+                os_val = os_match.group(1)
+                arch_val = arch_match.group(1)
+                return _map_platform_identifier(os_val, arch_val)
+        except Exception:
+            pass  # Fall through to host detection
+
+    # 4. Host platform auto-detection
+    system = platform.system()
+    machine = platform.machine().lower()
+
+    # Normalize architecture
+    if machine in ("x86_64", "amd64"):
+        arch = "x64"
+    elif machine in ("arm64", "aarch64", "armv8"):
+        arch = "arm64"
+    else:
+        arch = machine
+
+    # Map system
+    if system == "Windows":
+        return f"windows-{arch}"
+    elif system == "Linux":
+        return f"linux-{arch}"
+    elif system == "Darwin":
+        return f"macos-{arch}"
+    else:
+        return f"{system.lower()}-{arch}"
+
+
+def _map_platform_identifier(os_val: str, arch_val: str) -> str:
+    """Map Conan os/arch settings to platform identifier."""
+    if os_val == "Emscripten" and arch_val == "wasm":
+        return "wasm"
+
+    # Normalize OS
+    os_map = {
+        "Windows": "windows",
+        "Linux": "linux",
+        "Macos": "macos",
+        "Darwin": "macos",
+    }
+    os_normalized = os_map.get(os_val, os_val.lower())
+
+    # Normalize arch
+    arch_map = {
+        "x86_64": "x64",
+        "x86": "x86",
+        "armv8": "arm64",
+        "armv8_32": "arm",
+        "wasm": "wasm",
+    }
+    arch_normalized = arch_map.get(arch_val, arch_val.lower())
+
+    return f"{os_normalized}-{arch_normalized}"
+
+
+def is_platform_compatible(target_platform: str, host_platform: str | None = None) -> bool:
+    """Check if target platform binaries can run on host platform.
+
+    Args:
+        target_platform: Platform identifier of the build (e.g., "wasm", "windows-x64")
+        host_platform: Platform identifier of the host (auto-detected if None)
+
+    Returns:
+        True if target can run on host, False otherwise
+    """
+    if host_platform is None:
+        host_platform = detect_platform_identifier()
+
+    # Same platform is always compatible
+    if target_platform == host_platform:
+        return True
+
+    # WASM cannot run natively (needs browser/Node.js)
+    if target_platform == "wasm":
+        return False
+
+    # Cross-platform builds cannot run natively
+    return False
+
+
+def build_repo_context(root: Path, build_type: str, config: dict, platform_id: str) -> RepoContext:
     build_root_value = _get_optional_config_value(config, "repo_paths.build_root")
     if build_root_value is None:
         build_root_value = _get_config_value(config, "paths.build_root", "_build")
@@ -252,6 +363,7 @@ def build_repo_context(root: Path, build_type: str, config: dict) -> RepoContext
         "workspace_root": str(root),
         "build_root": str(build_root),
         "logs_root": str(logs_root),
+        "platform": platform_id,
         "build_type": build_type,
     }
 
@@ -277,7 +389,7 @@ def build_repo_context(root: Path, build_type: str, config: dict) -> RepoContext
         **template_context,
         "conan_lock": resolved_conan_lock,
         "deps_root": str(deps_root),
-        "build_dir": str(build_root / build_type),
+        "build_dir": str(build_root / platform_id / build_type),
     }
     return context
 

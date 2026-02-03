@@ -1,9 +1,12 @@
 """Launch subcommand implementation."""
 
 import argparse
+import http.server
 import os
+import socketserver
 import subprocess
 import sys
+import webbrowser
 from pathlib import Path
 
 from repo_tools import (
@@ -11,7 +14,9 @@ from repo_tools import (
     RepoTool,
     apply_env_overrides,
     build_repo_context,
+    detect_platform_identifier,
     get_repo_tool_config_args,
+    is_platform_compatible,
     is_windows,
     load_repo_config,
     normalize_build_type,
@@ -67,6 +72,51 @@ def _discover_executables(build_dir: Path) -> list[Path]:
     return exe_paths
 
 
+def _launch_wasm(build_dir: Path, executable: str) -> None:
+    """Launch WASM build in browser using local HTTP server."""
+    # Find the WASM output directory (typically bin/)
+    bin_dir = build_dir / "bin"
+    if not bin_dir.exists():
+        print_tool(f"ERROR: WASM build directory not found: {bin_dir}")
+        print_tool("Build the WASM target first: .\\pts.cmd build --wasm")
+        sys.exit(1)
+
+    # Check for index.html (shell file)
+    html_files = list(bin_dir.glob("*.html"))
+    if not html_files:
+        print_tool(f"ERROR: No HTML shell file found in {bin_dir}")
+        print_tool("WASM builds require an HTML shell file (e.g., index.html)")
+        sys.exit(1)
+
+    shell_file = html_files[0]
+
+    # Start HTTP server
+    PORT = 8000
+    os.chdir(bin_dir)
+
+    handler = http.server.SimpleHTTPRequestHandler
+
+    # Try to find an available port
+    for port in range(PORT, PORT + 10):
+        try:
+            with socketserver.TCPServer(("", port), handler) as httpd:
+                url = f"http://localhost:{port}/{shell_file.name}"
+                print_tool(f"Starting HTTP server on port {port}")
+                print_tool(f"Opening {url}")
+
+                # Open browser
+                webbrowser.open(url)
+
+                print_tool("Press Ctrl+C to stop the server")
+                httpd.serve_forever()
+                break
+        except OSError:
+            continue
+    else:
+        print_tool(f"ERROR: Could not find available port in range {PORT}-{PORT+10}")
+        sys.exit(1)
+
+
 class LaunchTool(RepoTool):
     name = "launch"
     help = "Set up environment and launch executables"
@@ -78,6 +128,10 @@ class LaunchTool(RepoTool):
             nargs="?",
             default=argparse.SUPPRESS,
             help="Executable to launch (default: editor)",
+        )
+        parser.add_argument(
+            "--platform",
+            help="Platform identifier (auto-detected by default)",
         )
         parser.add_argument(
             "-c",
@@ -105,7 +159,26 @@ class LaunchTool(RepoTool):
         root = Path(__file__).parent.parent.parent
         build_type = normalize_build_type(args.config)
         config = load_repo_config(root)
-        context = build_repo_context(root, build_type, config)
+
+        platform_id = detect_platform_identifier(
+            platform_override=getattr(args, "platform", None)
+        )
+        context = build_repo_context(root, build_type, config, platform_id)
+
+        # Check platform compatibility
+        if not is_platform_compatible(context["platform"]):
+            if context["platform"] == "wasm":
+                # Special handling for WASM: launch browser
+                build_dir = Path(context["build_dir"])
+                _launch_wasm(build_dir, args.executable)
+                return
+            else:
+                print_tool(f"ERROR: Cannot launch {context['platform']} binaries on this host")
+                print_tool(f"Target platform: {context['platform']}")
+                print_tool(f"Host platform: {detect_platform_identifier()}")
+                print_tool("Cross-compilation targets cannot be launched directly.")
+                sys.exit(1)
+
         build_dir = Path(context["build_dir"])
         exe_paths = _discover_executables(build_dir)
 

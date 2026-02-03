@@ -11,7 +11,9 @@ from repo_tools import (
     RepoTool,
     apply_env_overrides,
     build_repo_context,
+    detect_platform_identifier,
     get_repo_tool_config_args,
+    is_platform_compatible,
     is_windows,
     load_repo_config,
     logger,
@@ -27,6 +29,10 @@ class TestTool(RepoTool):
     help = "Run unit tests"
 
     def setup(self, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--platform",
+            help="Platform identifier (auto-detected by default)",
+        )
         parser.add_argument(
             "--build-type",
             choices=["Debug", "Release", "RelWithDebInfo", "MinSizeRel"],
@@ -51,7 +57,23 @@ class TestTool(RepoTool):
         """Test subcommand implementation."""
         root = Path(__file__).parent.parent.parent
         config = load_repo_config(root)
-        context = build_repo_context(root, args.build_type, config)
+
+        platform_id = detect_platform_identifier(
+            platform_override=getattr(args, "platform", None)
+        )
+        context = build_repo_context(root, args.build_type, config, platform_id)
+
+        # Check if tests can run on this host
+        if not is_platform_compatible(context["platform"]):
+            print_tool(f"ERROR: Cannot run {context['platform']} tests on this host")
+            print_tool(f"Target platform: {context['platform']}")
+            print_tool(f"Host platform: {detect_platform_identifier()}")
+            if context["platform"] == "wasm":
+                print_tool("WASM tests require a browser or Node.js environment")
+            else:
+                print_tool("Cross-compilation targets cannot be tested directly.")
+            sys.exit(1)
+
         build_dir = Path(context["build_dir"])
         test_dir = build_dir / "bin" / "tests"
         logs_dir = Path(context["logs_root"])

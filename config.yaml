@@ -2,7 +2,7 @@ repo_paths:
   build_root: "_build"
   logs_root: "_logs"
   conan_lock: "conan_glfw.lock"
-  conan_deps_root: "{build_root}/deps"
+  conan_deps_root: "{build_root}/{platform}/deps"
 
 build:
   windowing: "glfw"
