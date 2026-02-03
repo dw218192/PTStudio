@@ -10,8 +10,12 @@ The scripts that initialize and invoke the build system are located in the `tool
 
 ## Common Commands
 To build the project, run:
-```powershell
+```bash
+# Windows (cmd/PowerShell):
 .\pts.cmd build
+
+# Bash/Unix:
+./pts build
 ```
 
 Build command options:

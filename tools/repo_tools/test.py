@@ -83,7 +83,7 @@ class TestTool(RepoTool):
 
         if not test_dir.exists():
             print_tool(f"Test directory does not exist: {test_dir}")
-            print_tool("Build the project first with: pts.cmd build")
+            print_tool("Build the project first: pts.cmd build (or ./pts build on bash)")
             sys.exit(1)
 
         # Find all test executables

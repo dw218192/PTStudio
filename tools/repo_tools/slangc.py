@@ -175,7 +175,7 @@ class SlangcTool(RepoTool):
         compiler = _find_slangc(root, config, context, args)
 
         if compiler is None:
-            logger.error("slangc compiler not found. Run '.\\pts.cmd build' first.")
+            logger.error("slangc compiler not found. Run 'pts.cmd build' (or './pts build' on bash) first.")
             sys.exit(1)
 
         shaders, errors = _resolve_slang_shaders(root, config, context, args)

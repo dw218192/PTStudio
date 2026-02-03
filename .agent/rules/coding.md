@@ -243,8 +243,12 @@ using ptr = T*; // non-owning
 ## Tooling and Consistency
 
 * Invoke the repo formatting tool through the tooling entrypoint after making changes to ensure consistent formatting
-```powershell
+```bash
+# Windows (cmd/PowerShell):
 .\pts.cmd build
+
+# Bash/Unix:
+./pts build
 ```
 
 ## Commenting rules

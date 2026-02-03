@@ -77,7 +77,7 @@ def _launch_wasm(build_dir: Path, executable: str) -> None:
     bin_dir = build_dir / "bin"
     if not bin_dir.exists():
         print_tool(f"ERROR: WASM build directory not found: {bin_dir}")
-        print_tool("Build the WASM target first: .\\pts.cmd build --platform wasm")
+        print_tool("Build the WASM target first: pts.cmd --platform wasm build (or ./pts --platform wasm build on bash)")
         sys.exit(1)
 
     # Check for index.html (shell file)
@@ -180,7 +180,7 @@ class LaunchTool(RepoTool):
 
         if not exe_paths:
             print_tool(f"No executables found in build directory: {build_dir}")
-            print_tool("Build the project first: .\\pts.cmd build")
+            print_tool("Build the project first: pts.cmd build (or ./pts build on bash)")
             sys.exit(1)
 
         target_exe_path = None

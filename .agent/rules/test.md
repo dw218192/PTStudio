@@ -6,6 +6,10 @@ This project uses doctest as the unit test framework. The tests are located in t
 
 ## Common Commands
 To run the unit tests, run:
-```powershell
+```bash
+# Windows (cmd/PowerShell):
 .\pts.cmd test
+
+# Bash/Unix:
+./pts test
 ```
