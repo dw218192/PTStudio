@@ -14,7 +14,6 @@ from repo_tools import (
     RepoTool,
     apply_env_overrides,
     build_repo_context,
-    detect_platform_identifier,
     get_repo_tool_config_args,
     is_platform_compatible,
     is_windows,
@@ -78,7 +77,7 @@ def _launch_wasm(build_dir: Path, executable: str) -> None:
     bin_dir = build_dir / "bin"
     if not bin_dir.exists():
         print_tool(f"ERROR: WASM build directory not found: {bin_dir}")
-        print_tool("Build the WASM target first: .\\pts.cmd build --wasm")
+        print_tool("Build the WASM target first: .\\pts.cmd build --platform wasm")
         sys.exit(1)
 
     # Check for index.html (shell file)
@@ -130,10 +129,6 @@ class LaunchTool(RepoTool):
             help="Executable to launch (default: editor)",
         )
         parser.add_argument(
-            "--platform",
-            help="Platform identifier (auto-detected by default)",
-        )
-        parser.add_argument(
             "-c",
             "--config",
             type=str.casefold,
@@ -148,6 +143,7 @@ class LaunchTool(RepoTool):
 
     def default_args(self, context: RepoContext) -> argparse.Namespace:
         return argparse.Namespace(
+            platform=context["platform"],
             executable="editor",
             config=context["build_type"].casefold(),
             env=None,
@@ -160,9 +156,8 @@ class LaunchTool(RepoTool):
         build_type = normalize_build_type(args.config)
         config = load_repo_config(root)
 
-        platform_id = detect_platform_identifier(
-            platform_override=getattr(args, "platform", None)
-        )
+        # Platform is already determined in __main__.py and passed via args
+        platform_id = args.platform
         context = build_repo_context(root, build_type, config, platform_id)
 
         # Check platform compatibility
@@ -173,6 +168,7 @@ class LaunchTool(RepoTool):
                 _launch_wasm(build_dir, args.executable)
                 return
             else:
+                from repo_tools import detect_platform_identifier
                 print_tool(f"ERROR: Cannot launch {context['platform']} binaries on this host")
                 print_tool(f"Target platform: {context['platform']}")
                 print_tool(f"Host platform: {detect_platform_identifier()}")

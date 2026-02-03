@@ -15,6 +15,7 @@ from repo_tools import (
     load_repo_config,
     logger,
     register_repo_tool_parser,
+    detect_platform_identifier,
     RepoTool,
 )
 
@@ -51,6 +52,14 @@ def _discover_tools() -> list[RepoTool]:
 def main() -> None:
     """Main entry point."""
     parser = argparse.ArgumentParser(description="PTStudio repository tools")
+
+    # Top-level arguments (available to all subcommands)
+    parser.add_argument(
+        "--platform",
+        default=None,
+        help="Platform identifier (e.g., windows-x64, linux-x64, wasm). Auto-detected by default.",
+    )
+
     subparsers = parser.add_subparsers(
         dest="command", help="Available commands", required=True
     )
@@ -65,14 +74,20 @@ def main() -> None:
     tool_name = args.command
     config_args = get_repo_tool_config_args(config, tool_name)
     build_type = infer_build_type(tool_name, args, config_args)
-    context = build_repo_context(root, build_type, config)
+
+    # Detect platform identifier (top-level, available to all tools)
+    platform_id = detect_platform_identifier(
+        platform_override=args.platform
+    )
+
+    context = build_repo_context(root, build_type, config, platform_id)
 
     merged_args = create_repo_tool_args(tool_name, context)
     apply_repo_tool_args(merged_args, config_args)
     cli_args = {
         key: value
         for key, value in vars(args).items()
-        if key not in {"command", "func"}
+        if key not in {"command", "func", "platform"}  # platform already handled via context
     }
     apply_repo_tool_args(merged_args, cli_args)
     if unknown_args:

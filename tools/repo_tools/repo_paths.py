@@ -30,12 +30,17 @@ class RepoPathsTool(RepoTool):
         )
 
     def default_args(self, context: RepoContext) -> argparse.Namespace:
-        return argparse.Namespace(build_type=context["build_type"], json=False)
+        return argparse.Namespace(
+            platform=context["platform"],
+            build_type=context["build_type"],
+            json=False
+        )
 
     def execute(self, args: argparse.Namespace) -> None:
         root = Path(__file__).parent.parent.parent
         config = load_repo_config(root)
-        context = build_repo_context(root, args.build_type, config)
+        platform_id = args.platform
+        context = build_repo_context(root, args.build_type, config, platform_id)
         if args.json:
             print(json.dumps(context, indent=4))
             return

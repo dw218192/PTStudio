@@ -247,6 +247,7 @@ class EmbedTool(RepoTool):
 
     def default_args(self, context: RepoContext) -> argparse.Namespace:
         return argparse.Namespace(
+            platform=context["platform"],
             build_type=context["build_type"],
             force=False,
             passthrough_args=[],
@@ -256,7 +257,8 @@ class EmbedTool(RepoTool):
         """Embed resources as C++ headers."""
         root = Path(__file__).parent.parent.parent
         config = load_repo_config(root)
-        context = build_repo_context(root, args.build_type, config)
+        platform_id = args.platform
+        context = build_repo_context(root, args.build_type, config, platform_id)
 
         resource_groups = _resolve_resource_groups(root, config, context, args)
         if not resource_groups:

@@ -11,7 +11,6 @@ from repo_tools import (
     RepoTool,
     apply_env_overrides,
     build_repo_context,
-    detect_platform_identifier,
     get_repo_tool_config_args,
     is_platform_compatible,
     is_windows,
@@ -30,10 +29,6 @@ class TestTool(RepoTool):
 
     def setup(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
-            "--platform",
-            help="Platform identifier (auto-detected by default)",
-        )
-        parser.add_argument(
             "--build-type",
             choices=["Debug", "Release", "RelWithDebInfo", "MinSizeRel"],
             help="Build configuration type (default: Debug)",
@@ -51,20 +46,25 @@ class TestTool(RepoTool):
         )
 
     def default_args(self, context: RepoContext) -> argparse.Namespace:
-        return argparse.Namespace(build_type=context["build_type"], verbose=False, env=None)
+        return argparse.Namespace(
+            platform=context["platform"],
+            build_type=context["build_type"],
+            verbose=False,
+            env=None
+        )
 
     def execute(self, args: argparse.Namespace) -> None:
         """Test subcommand implementation."""
         root = Path(__file__).parent.parent.parent
         config = load_repo_config(root)
 
-        platform_id = detect_platform_identifier(
-            platform_override=getattr(args, "platform", None)
-        )
+        # Platform is already determined in __main__.py and passed via args
+        platform_id = args.platform
         context = build_repo_context(root, args.build_type, config, platform_id)
 
         # Check if tests can run on this host
         if not is_platform_compatible(context["platform"]):
+            from repo_tools import detect_platform_identifier
             print_tool(f"ERROR: Cannot run {context['platform']} tests on this host")
             print_tool(f"Target platform: {context['platform']}")
             print_tool(f"Host platform: {detect_platform_identifier()}")

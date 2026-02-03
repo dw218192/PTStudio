@@ -160,14 +160,18 @@ class SlangcTool(RepoTool):
 
     def default_args(self, context: RepoContext) -> argparse.Namespace:
         return argparse.Namespace(
-            build_type=context["build_type"], force=False, passthrough_args=[]
+            platform=context["platform"],
+            build_type=context["build_type"],
+            force=False,
+            passthrough_args=[]
         )
 
     def execute(self, args: argparse.Namespace) -> None:
         """Compile Slang shaders configured in config.yaml."""
         root = Path(__file__).parent.parent.parent
         config = load_repo_config(root)
-        context = build_repo_context(root, args.build_type, config)
+        platform_id = args.platform
+        context = build_repo_context(root, args.build_type, config, platform_id)
         compiler = _find_slangc(root, config, context, args)
 
         if compiler is None:
