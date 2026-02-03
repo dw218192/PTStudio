@@ -112,10 +112,11 @@ endif()
 # WASM/Emscripten configuration - centralized flags for all targets
 add_library(wasm_flags INTERFACE)
 if(EMSCRIPTEN)
-    target_compile_options(wasm_flags INTERFACE "-sUSE_WEBGPU=1" "-sUSE_GLFW=3")
-    target_link_options(wasm_flags INTERFACE 
-        "-sUSE_WEBGPU=1" 
-        "-sUSE_GLFW=3" 
+    target_compile_options(wasm_flags INTERFACE "-sMEMORY64=1" "-sUSE_WEBGPU=1" "-sUSE_GLFW=3")
+    target_link_options(wasm_flags INTERFACE
+        "-sMEMORY64=1"
+        "-sUSE_WEBGPU=1"
+        "-sUSE_GLFW=3"
         "-sALLOW_MEMORY_GROWTH=1"
         "--shell-file=${CMAKE_SOURCE_DIR}/web/index.html")
 endif()
