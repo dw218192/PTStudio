@@ -39,8 +39,6 @@ struct GUIApplication : Application {
                    float min_frame_time);
     ~GUIApplication() override;
 
-    void run() override;
-
     void on_scroll_event(double x, double y) noexcept;
     /**
      * @brief Called every frame. Override to handle the main loop.
@@ -101,6 +99,12 @@ struct GUIApplication : Application {
     std::string_view m_cur_focused_widget;
 
     static constexpr auto k_no_hovered_widget = "";
+
+    void run_one_frame() override;
+
+   private:
+    double m_last_frame_time{0.0};
+    bool m_first_loop_done{false};
 
     // Class invariants (enforced in constructor, throw on failure):
     // - m_render_graph is always valid (non-null)

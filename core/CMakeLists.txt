@@ -87,7 +87,6 @@ add_library(${lib_name} STATIC ${src_files})
 target_link_libraries(${lib_name}
 PRIVATE
 	$<BUILD_INTERFACE:developer_flags>
-	portable-file-dialogs::portable-file-dialogs
 PUBLIC
 	openusd::usd_usd
 	openusd::usd_usdGeom
@@ -101,12 +100,15 @@ PUBLIC
 	fmt::fmt
 	spdlog::spdlog
 	nlohmann_json::nlohmann_json
-	Boost::filesystem
-	Boost::container
 )
 
 if (NOT EMSCRIPTEN)
-	target_link_libraries(${lib_name} PUBLIC dawn::webgpu_dawn)
+	target_link_libraries(${lib_name}
+		PRIVATE portable-file-dialogs::portable-file-dialogs
+		PUBLIC dawn::webgpu_dawn Boost::filesystem
+	)
+else()
+	target_link_libraries(${lib_name} PUBLIC wasm_flags)
 endif()
 
 if(PTS_WINDOWING STREQUAL "glfw")

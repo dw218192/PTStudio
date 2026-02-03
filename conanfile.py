@@ -29,8 +29,8 @@ class PTStudioConan(ConanFile):
         self.requires("spdlog/1.14.1")
         self.requires("nlohmann_json/3.12.0")
 
-        # Graphics libraries
-        if self.options.windowing == "glfw":
+        # Graphics libraries (GLFW not needed for Emscripten - use -sUSE_GLFW=3)
+        if self.options.windowing == "glfw" and self.settings.os != "Emscripten":
             self.requires("glfw/[>=0]")
         self.requires("glm/[>=0]")
 
@@ -39,23 +39,73 @@ class PTStudioConan(ConanFile):
         self.requires("tinyobjloader/2.0.0-rc10")
         self.requires("doctest/[>=0]")
         self.requires("boost/[>=0]")
-        # Shader toolchain (slangc)
-        self.requires("slang/2026.1")
-        # WebGPU backend
-        self.requires("dawn/20250428.160623")
         # Scene description
         self.requires("openusd/25.02")
+        
+        # These dependencies don't work or aren't needed for Emscripten/WASM
+        if self.settings.os != "Emscripten":
+            self.requires("slang/2026.1")
+            # WebGPU backend (browser provides WebGPU)
+            self.requires("dawn/20250428.160623")
+            # File dialogs (not applicable in browser)
+            self.requires("portable-file-dialogs/0.1.0")
 
         # GUI libraries (from Conan)
         self.requires("imgui/1.92.0-docking")
         self.requires("imguizmo/1.92")
-        self.requires("portable-file-dialogs/0.1.0")
         self.requires("imgui_color_text_edit/1.0")
+
+    def build_requirements(self):
+        # Emscripten SDK for WASM builds
+        if self.settings.os == "Emscripten":
+            self.tool_requires("emsdk/3.1.73")
+            self.tool_requires("ninja/1.13.2")
 
     def configure(self):
         # Configure package options
         if self.options.get_safe("shared"):
             del self.options.shared
+        
+        # Disable Boost stacktrace features that don't work on Emscripten
+        if self.settings.os == "Emscripten":
+            # Use header-only mode to avoid all compilation issues on Emscripten
+            self.options["boost"].header_only = True
+            self.options["boost"].without_stacktrace = True
+            self.options["boost"].without_locale = True
+            self.options["boost"].without_log = True
+            self.options["boost"].without_context = True
+            self.options["boost"].without_coroutine = True
+            self.options["boost"].without_fiber = True
+            self.options["boost"].without_test = True
+            self.options["boost"].without_type_erasure = True
+            self.options["boost"].without_process = True
+            self.options["boost"].without_thread = True
+            self.options["boost"].without_filesystem = True
+            self.options["boost"].without_program_options = True
+            self.options["boost"].without_regex = True
+            self.options["boost"].without_math = True
+            self.options["boost"].without_random = True
+            self.options["boost"].without_serialization = True
+            self.options["boost"].without_wave = True
+            self.options["boost"].without_iostreams = True
+            self.options["boost"].without_graph = True
+            self.options["boost"].without_timer = True
+            self.options["boost"].without_url = True
+            self.options["boost"].without_nowide = True
+            self.options["boost"].without_contract = True
+            self.options["boost"].without_json = True
+            self.options["boost"].without_charconv = True
+            self.options["boost"].without_chrono = True
+            self.options["boost"].without_atomic = True
+            self.options["boost"].without_date_time = True
+            self.options["boost"].without_exception = True
+            self.options["boost"].without_container = True
+            self.options["bzip2"].build_executable = False
+            # Disable hwloc - uses autotools which doesn't work on Windows for cross-compile
+            self.options["onetbb"].tbbbind = False
+            # Force static builds for WASM
+            self.options["openusd"].shared = False
+            # onetbb recipe is strictly shared-library, so we cannot force static via options
 
     def generate(self):
         # Use Ninja generator if available

@@ -1,3 +1,4 @@
+#include <core/diagnostics.h>
 #include <core/enumUtils.h>
 #include <core/error.h>
 #include <core/loggingManager.h>
@@ -6,7 +7,6 @@
 #include <spdlog/spdlog.h>
 
 #include <boost/program_options.hpp>
-#include <boost/stacktrace/stacktrace.hpp>
 #include <filesystem>
 #include <iostream>
 
@@ -96,15 +96,15 @@ int main(int argc, char* argv[]) {
         // Plugin manager and logging manager will be destroyed here, ensuring proper shutdown
     } catch (std::exception& e) {
         std::cerr << "Exception thrown: " << e.what() << std::endl;
-        std::cerr << boost::stacktrace::stacktrace() << std::endl;
+        pts::diagnostics::print_stacktrace();
         return static_cast<int>(pts::ErrorCode::InternalError);
     } catch (boost::exception& e) {
         std::cerr << "Boost exception thrown: " << boost::diagnostic_information(e) << std::endl;
-        std::cerr << boost::stacktrace::stacktrace() << std::endl;
+        pts::diagnostics::print_stacktrace();
         return static_cast<int>(pts::ErrorCode::InternalError);
     } catch (...) {
         std::cerr << "Unknown exception thrown" << std::endl;
-        std::cerr << boost::stacktrace::stacktrace() << std::endl;
+        pts::diagnostics::print_stacktrace();
         return static_cast<int>(pts::ErrorCode::InternalError);
     }
 

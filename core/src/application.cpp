@@ -8,6 +8,10 @@
 #include <stdexcept>
 #include <thread>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 namespace pts {
 
 Application::Application(std::string_view name, pts::LoggingManager& logging_manager,
@@ -68,30 +72,46 @@ Application::Application(std::string_view name, pts::LoggingManager& logging_man
 Application::~Application() = default;
 
 void Application::run() {
+#ifdef __EMSCRIPTEN__
+    // Emscripten requires yielding control to the browser via main loop callback
+    emscripten_set_main_loop_arg(
+        [](void* arg) {
+            auto* app = static_cast<Application*>(arg);
+            app->run_one_frame();
+        },
+        this, 0, true);
+#else
     while (!m_viewport->should_close()) {
-        auto const frame_start = std::chrono::steady_clock::now();
-
-        m_windowing->pump_events(pts::rendering::PumpEventMode::Poll);
-
-        loop(m_delta_time);
-
-        if (m_framebuffer_resized) {
-            auto const extent = m_viewport->drawable_extent();
-            m_webgpu_context->surface().resize(extent);
-            m_framebuffer_resized = false;
-        }
-
-        auto const frame_end = std::chrono::steady_clock::now();
-        auto const frame_duration = std::chrono::duration<float>(frame_end - frame_start).count();
-        m_delta_time = frame_duration;
-
-        if (m_min_frame_time > 0.0f && frame_duration < m_min_frame_time) {
-            auto const sleep_duration = m_min_frame_time - frame_duration;
-            std::this_thread::sleep_for(
-                std::chrono::duration<float, std::milli>(sleep_duration * 1000.0f));
-            m_delta_time = m_min_frame_time;
-        }
+        run_one_frame();
     }
+#endif
+}
+
+void Application::run_one_frame() {
+    auto const frame_start = std::chrono::steady_clock::now();
+
+    m_windowing->pump_events(pts::rendering::PumpEventMode::Poll);
+
+    loop(m_delta_time);
+
+    if (m_framebuffer_resized) {
+        auto const extent = m_viewport->drawable_extent();
+        m_webgpu_context->surface().resize(extent);
+        m_framebuffer_resized = false;
+    }
+
+    auto const frame_end = std::chrono::steady_clock::now();
+    auto const frame_duration = std::chrono::duration<float>(frame_end - frame_start).count();
+    m_delta_time = frame_duration;
+
+#ifndef __EMSCRIPTEN__
+    if (m_min_frame_time > 0.0f && frame_duration < m_min_frame_time) {
+        auto const sleep_duration = m_min_frame_time - frame_duration;
+        std::this_thread::sleep_for(
+            std::chrono::duration<float, std::milli>(sleep_duration * 1000.0f));
+        m_delta_time = m_min_frame_time;
+    }
+#endif
 }
 
 auto Application::get_window_width() const noexcept -> int {

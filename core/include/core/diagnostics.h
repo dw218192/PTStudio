@@ -7,12 +7,18 @@
 #include <string_view>
 
 #if !defined(PTS_DIAG_ENABLE_STACKTRACE)
-#define PTS_DIAG_ENABLE_STACKTRACE 1
+    // Disable stacktrace on Emscripten (not supported)
+    #if defined(__EMSCRIPTEN__)
+        #define PTS_DIAG_ENABLE_STACKTRACE 0
+    #else
+        #define PTS_DIAG_ENABLE_STACKTRACE 1
+    #endif
 #endif
 
 #if PTS_DIAG_ENABLE_STACKTRACE
 #include <boost/stacktrace/stacktrace.hpp>
 #include <boost/stacktrace/stacktrace_fwd.hpp>
+#include <iostream>
 #include <sstream>
 #endif
 
@@ -31,13 +37,14 @@ inline void write_line(std::string_view s) noexcept {
     write_stderr("\n");
 }
 
-#if PTS_DIAG_ENABLE_STACKTRACE
-inline std::string stacktrace_string() {
-    std::ostringstream oss;
-    oss << boost::stacktrace::stacktrace();
-    return oss.str();
+
+inline void print_stacktrace() noexcept {
+    #if PTS_DIAG_ENABLE_STACKTRACE
+    std::cerr << boost::stacktrace::stacktrace() << std::endl;
+    #else
+    std::fputs("  stacktrace: <not available on this platform>\n", stderr);
+    #endif
 }
-#endif
 
 [[noreturn]] inline void trap() noexcept {
 #if defined(_MSC_VER)
@@ -56,16 +63,8 @@ inline std::string stacktrace_string() {
     if (msg && *msg) {
         std::fprintf(stderr, "  message: %s\n", msg);
     }
-#if PTS_DIAG_ENABLE_STACKTRACE
-    // Best-effort: this might allocate; only on failure path.
-    try {
-        auto st = stacktrace_string();
-        std::fputs("  stacktrace:\n", stderr);
-        std::fputs(st.c_str(), stderr);
-    } catch (...) {
-        std::fputs("  stacktrace: <unavailable>\n", stderr);
-    }
-#endif
+
+    print_stacktrace();
     trap();
 }
 

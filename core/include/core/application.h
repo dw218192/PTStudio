@@ -90,6 +90,12 @@ struct Application {
         m_framebuffer_resized = value;
     }
 
+
+    /**
+     * @brief Process a single frame. Override in derived classes for custom frame behavior.
+     */
+    virtual void run_one_frame();
+
    private:
     // Class invariants (enforced in constructor, throw on failure):
     // - m_webgpu_context is non-null and in Ready state (initialization is completed

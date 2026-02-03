@@ -545,6 +545,14 @@ def build_command(args: argparse.Namespace, current_tool: str) -> None:
     prebuild_steps = _get_dict_arg(args, "prebuild")
     postbuild_steps = _get_dict_arg(args, "postbuild")
 
+    # WASM build configuration
+    wasm_build = getattr(args, "wasm", False)
+    if wasm_build:
+        # Use separate lock file for WASM builds
+        lock_file = root / "conan_wasm.lock"
+        print_tool("WASM build mode: Using Emscripten cross-build via Conan")
+        print_tool(f"Lock file: {lock_file}")
+
     # Remove build configuration directory if -x flag is provided
     if args.rebuild and build_dir.exists():
         print_tool(f"Rebuild flag (-x) detected. Removing build directory: {build_dir}")
@@ -576,6 +584,15 @@ def build_command(args: argparse.Namespace, current_tool: str) -> None:
             # Handle lock file generation and usage
             should_create_lock = args.update_lock or not lock_file.exists()
 
+            # Use local emscripten profile from repo root for WASM builds
+            if wasm_build:
+                emscripten_profile = root / "conan_profile_emscripten"
+                if not emscripten_profile.exists():
+                    raise RuntimeError(f"Emscripten profile not found: {emscripten_profile}")
+                host_profile = str(emscripten_profile)
+            else:
+                host_profile = args.conan_profile
+
             local_recipe_names = _get_local_recipe_names(conan_config)
             if should_create_lock:
                 if args.update_lock:
@@ -586,19 +603,19 @@ def build_command(args: argparse.Namespace, current_tool: str) -> None:
                     print_tool("Lock file not found. Generating new lock file...")
                 lock_log_file = logs_dir / f"conan_lock_create_{windowing}.log"
                 conan_exe = find_venv_executable("conan")
-                run_command(
-                    [
-                        conan_exe,
-                        "lock",
-                        "create",
-                        "..",
-                        "-o",
-                        f"&:windowing={windowing}",
-                        "--lockfile-out",
-                        str(lock_file),
-                    ],
-                    log_file=lock_log_file,
-                )
+                lock_args = [
+                    conan_exe,
+                    "lock",
+                    "create",
+                    "..",
+                    "-o",
+                    f"&:windowing={windowing}",
+                    "--lockfile-out",
+                    str(lock_file),
+                    f"--profile:host={host_profile}",
+                    f"--profile:build={args.conan_profile}",
+                ]
+                run_command(lock_args, log_file=lock_log_file)
                 # Strip revisions for local recipes in the lock file
                 _strip_local_recipe_revisions(lock_file, local_recipe_names)
             else:
@@ -619,7 +636,7 @@ def build_command(args: argparse.Namespace, current_tool: str) -> None:
                     f"--deployer-folder={conan_deps_root}",
                     "--deployer=full_deploy",
                     "--build=missing",
-                    f"--profile:host={args.conan_profile}",
+                    f"--profile:host={host_profile}",
                     f"--profile:build={args.conan_profile}",
                     "-o",
                     f"&:windowing={windowing}",
@@ -631,10 +648,12 @@ def build_command(args: argparse.Namespace, current_tool: str) -> None:
                 log_file=install_log_file,
             )
 
-            # Ensure Dawn and OpenUSD are deployed
-            dawn_deploy_dir = _find_package_in_deploy(conan_deps_root, "dawn")
-            if not dawn_deploy_dir:
-                raise RuntimeError("Failed to find Dawn package in full_deploy")
+            # Ensure Dawn and OpenUSD are deployed (Dawn not needed for WASM)
+            dawn_deploy_dir = None
+            if not wasm_build:
+                dawn_deploy_dir = _find_package_in_deploy(conan_deps_root, "dawn")
+                if not dawn_deploy_dir:
+                    raise RuntimeError("Failed to find Dawn package in full_deploy")
 
             openusd_deploy_dir = _find_package_in_deploy(conan_deps_root, "openusd")
             if not openusd_deploy_dir:
@@ -671,10 +690,11 @@ def build_command(args: argparse.Namespace, current_tool: str) -> None:
                 "-DCMAKE_CXX_STANDARD_REQUIRED=ON",
                 "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
             ]
-            # Find Dawn cmake directory from deployed package
-            dawn_cmake_dir = dawn_deploy_dir / "lib" / "cmake" / "Dawn"
-            if dawn_cmake_dir.exists():
-                cmake_args.append(f"-DDawn_DIR={dawn_cmake_dir}")
+            # Find Dawn cmake directory from deployed package (not needed for WASM)
+            if not wasm_build and dawn_deploy_dir:
+                dawn_cmake_dir = dawn_deploy_dir / "lib" / "cmake" / "Dawn"
+                if dawn_cmake_dir.exists():
+                    cmake_args.append(f"-DDawn_DIR={dawn_cmake_dir}")
             run_command(cmake_args, log_file=configure_log_file)
 
             _generate_cpp_properties(root, build_dir, windowing)
@@ -766,6 +786,11 @@ class BuildTool(RepoTool):
             choices=["glfw", "null"],
             help="Windowing backend (default: glfw)",
         )
+        parser.add_argument(
+            "--wasm",
+            action="store_true",
+            help="Build for WebAssembly using Emscripten",
+        )
 
     def default_args(self, context: RepoContext) -> argparse.Namespace:
         return argparse.Namespace(
@@ -776,6 +801,7 @@ class BuildTool(RepoTool):
             build_type=context["build_type"],
             conan_profile="default",
             windowing="glfw",
+            wasm=False,
             prebuild={},
             postbuild={},
             conan={},

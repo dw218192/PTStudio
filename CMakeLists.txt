@@ -109,11 +109,19 @@ if(PTS_STATIC_PLUGINS)
     target_link_libraries(editor PRIVATE pts::plugins)
 endif()
 
+# WASM/Emscripten configuration - centralized flags for all targets
+add_library(wasm_flags INTERFACE)
+if(EMSCRIPTEN)
+    target_compile_options(wasm_flags INTERFACE "-sUSE_WEBGPU=1" "-sUSE_GLFW=3")
+    target_link_options(wasm_flags INTERFACE 
+        "-sUSE_WEBGPU=1" 
+        "-sUSE_GLFW=3" 
+        "-sALLOW_MEMORY_GROWTH=1"
+        "--shell-file=${CMAKE_SOURCE_DIR}/web/index.html")
+endif()
+
 if(EMSCRIPTEN)
     set_target_properties(editor PROPERTIES OUTPUT_NAME "ptstudio")
-    target_compile_options(editor PRIVATE "-sUSE_WEBGPU=1" "-sUSE_GLFW=3")
-    target_link_options(editor PRIVATE "-sUSE_WEBGPU=1" "-sUSE_GLFW=3" "-sALLOW_MEMORY_GROWTH=1"
-        "--shell-file=${CMAKE_SOURCE_DIR}/web/index.html")
 endif()
 
 # set editor as the start-up project

@@ -62,60 +62,56 @@ GUIApplication::~GUIApplication() {
     ImGui::DestroyContext();
 }
 
-void GUIApplication::run() {
-    static bool s_once = false;
-    double last_frame_time = get_time();
-    while (get_viewport() && !get_viewport()->should_close()) {
-        auto const now = get_time();
+void GUIApplication::run_one_frame() {
+    auto const now = get_time();
 
-        // Poll and handle events (inputs, window resize, etc.)
-        m_mouse_scroll_delta = glm::vec2{0.0f};
+    // Poll and handle events (inputs, window resize, etc.)
+    m_mouse_scroll_delta = glm::vec2{0.0f};
 
-        get_windowing()->pump_events(pts::rendering::PumpEventMode::Poll);
-        poll_input_events();
+    get_windowing()->pump_events(pts::rendering::PumpEventMode::Poll);
+    poll_input_events();
 
-        float delta_time = static_cast<float>(now - last_frame_time);
+    float delta_time = static_cast<float>(now - m_last_frame_time);
 
-        if (delta_time >= m_min_frame_time) {
-            m_prev_hovered_widget = m_cur_hovered_widget;
-            m_cur_hovered_widget = "";
-            m_cur_focused_widget = "";
+    if (delta_time >= m_min_frame_time) {
+        m_prev_hovered_widget = m_cur_hovered_widget;
+        m_cur_hovered_widget = "";
+        m_cur_focused_widget = "";
 
-            // Start the Dear ImGui frame
-            m_imgui_windowing->new_frame();
-            m_imgui_rendering->new_frame();
-            ImGui::NewFrame();
+        // Start the Dear ImGui frame
+        m_imgui_windowing->new_frame();
+        m_imgui_rendering->new_frame();
+        ImGui::NewFrame();
 
-            if (!s_once) {
-                on_begin_first_loop();
-                s_once = true;
-            }
-            if (get_viewport() && get_viewport()->should_close()) {
-                break;
-            }
+        if (!m_first_loop_done) {
+            on_begin_first_loop();
+            m_first_loop_done = true;
+        }
+        if (get_viewport() && get_viewport()->should_close()) {
+            return;
+        }
 
-            // User Rendering
-            loop(delta_time);
+        // User Rendering
+        loop(delta_time);
 
-            ImGui::Render();
-            m_imgui_rendering->render(false);  // Framebuffer resize handled in GraphicsApplication
-            last_frame_time = now;
+        ImGui::Render();
+        m_imgui_rendering->render(false);  // Framebuffer resize handled in GraphicsApplication
+        m_last_frame_time = now;
 
-            // process hover change events
-            if (m_prev_hovered_widget != m_cur_hovered_widget) {
-                if (m_prev_hovered_widget != k_no_hovered_widget) {
-                    // call on_leave_region on the previous widget
-                    auto it = m_imgui_window_info.find(m_prev_hovered_widget);
-                    if (it != m_imgui_window_info.end()) {
-                        it->second.on_leave_region();
-                    }
-                }
-
-                // call on_enter_region on the current widget
-                auto it = m_imgui_window_info.find(m_cur_hovered_widget);
+        // process hover change events
+        if (m_prev_hovered_widget != m_cur_hovered_widget) {
+            if (m_prev_hovered_widget != k_no_hovered_widget) {
+                // call on_leave_region on the previous widget
+                auto it = m_imgui_window_info.find(m_prev_hovered_widget);
                 if (it != m_imgui_window_info.end()) {
-                    it->second.on_enter_region();
+                    it->second.on_leave_region();
                 }
+            }
+
+            // call on_enter_region on the current widget
+            auto it = m_imgui_window_info.find(m_cur_hovered_widget);
+            if (it != m_imgui_window_info.end()) {
+                it->second.on_enter_region();
             }
         }
     }

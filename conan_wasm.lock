@@ -1,0 +1,25 @@
+{
+    "version": "0.5",
+    "requires": [
+        "tinyobjloader/2.0.0-rc10#d34a46c931009cc6045094fcca6e5b4b%1751640564.209",
+        "stb/cci.20240531#ede183dce303916dab0c1b835df3926a%1720366012.336",
+        "spdlog/1.14.1#4fd40d9cbc1978247443a10d2ace58fd%1731353169.75",
+        "openusd/25.02",
+        "nlohmann_json/3.12.0#2d634ab0ec8d9f56353e5ccef6d6612c%1744735883.94",
+        "imguizmo/1.92",
+        "imgui_color_text_edit/1.0",
+        "imgui/1.92.0-docking#f7f74f9065d3bd67a4bb5891d0852556%1751084818.723",
+        "glm/cci.20230113#c9c89bea128786a245028f0cb4c1936d%1700512110.519",
+        "fmt/10.2.1#658771bb858b77f380be2ebb22c338e9%1735899167.615",
+        "doctest/2.4.12#eb9fb352fb2fdfc8abb17ec270945165%1749889324.069",
+        "boost/1.90.0#d5e8defe7355494953be18524a7f135b%1765955095.179"
+    ],
+    "build_requires": [
+        "nodejs/16.3.0#a7eaed2d69910ba185e2ddce7a926cd1%1699800365.225",
+        "ninja/1.13.2#c8c5dc2a52ed6e4e42a66d75b4717ceb%1764096931.974",
+        "emsdk/3.1.73#7dd9b10cfb811b620856f87c3a71c070%1733421474.308",
+        "cmake/3.31.10#313d16a1aa16bbdb2ca0792467214b76%1763665505.054"
+    ],
+    "python_requires": [],
+    "config_requires": []
+}

@@ -54,6 +54,9 @@ class OpenUSDConan(ConanFile):
     def configure(self):
         if self.options.shared:
             self.options.rm_safe("fPIC")
+        # WASM requires static builds
+        if self.settings.os == "Emscripten":
+            self.options.shared = False
 
     def layout(self) -> None:
         cmake_layout(self, src_folder="src")
@@ -77,8 +80,9 @@ class OpenUSDConan(ConanFile):
             raise ConanInvalidConfiguration(
                 f"{self.ref} requires C++{self._min_cppstd}, which your compiler does not support."
             )
-        # onetbb forbids static builds
-        if not self.options.shared:
+        # onetbb forbids static builds on non-WASM platforms
+        # For Emscripten, static builds are required
+        if not self.options.shared and self.settings.os != "Emscripten":
             raise ConanInvalidConfiguration(
                 "openusd does not support static build because onetbb recipe forbids it"
             )
@@ -110,6 +114,15 @@ class OpenUSDConan(ConanFile):
         tc.variables["PXR_BUILD_MONOLITHIC"] = False
         # Tell USD to use Conan's TBB target
         tc.variables["TBB_tbb_LIBRARY"] = "onetbb::onetbb"
+        
+        # WASM-specific flags (from OpenUSD build script)
+        if self.settings.os == "Emscripten":
+            wasm_compile_flags = "-pthread --use-port=zlib"
+            wasm_link_flags = "-pthread"
+            tc.variables["CMAKE_CXX_FLAGS"] = wasm_compile_flags
+            tc.variables["CMAKE_C_FLAGS"] = wasm_compile_flags
+            tc.variables["CMAKE_EXE_LINKER_FLAGS"] = wasm_link_flags
+        
         tc.generate()
 
         deps = CMakeDeps(self)
