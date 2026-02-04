@@ -31,9 +31,5 @@ if [[ ! -f "$VENV_PY" ]]; then
     fi
 fi
 
-# Invoke the Python package module
-cd "$ROOT/tools"
-"$VENV_PY" -m repo_tools "$@"
-EXIT_CODE=$?
-cd - > /dev/null
-exit $EXIT_CODE
+# Invoke the Python package module (subshell keeps cd local)
+(cd "$ROOT/tools" && exec "$VENV_PY" -m repo_tools "$@")

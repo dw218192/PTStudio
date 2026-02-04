@@ -14,6 +14,29 @@ namespace pts {
 namespace detail {
 
 // ============================================================================
+// Plugin Instance Storage (forward declaration for interface binding)
+// ============================================================================
+
+// Plugin instance storage for each plugin class (used by interface wrappers)
+// Automatically set during interface query before calling the getter function
+template <typename PluginClass>
+struct PluginInstanceStorage {
+#ifdef __EMSCRIPTEN__
+    // Emscripten: single-threaded, no thread_local needed
+    static PluginClass* instance;
+#else
+    static thread_local PluginClass* instance;
+#endif
+};
+
+template <typename PluginClass>
+#ifdef __EMSCRIPTEN__
+PluginClass* PluginInstanceStorage<PluginClass>::instance = nullptr;
+#else
+thread_local PluginClass* PluginInstanceStorage<PluginClass>::instance = nullptr;
+#endif
+
+// ============================================================================
 // Type List Metaprogramming Infrastructure
 // ============================================================================
 
@@ -339,16 +362,6 @@ struct IPlugin {
 
 namespace pts {
 namespace detail {
-
-// Plugin instance storage for each plugin class (used by interface wrappers)
-// Automatically set during interface query before calling the getter function
-template <typename PluginClass>
-struct PluginInstanceStorage {
-    static thread_local PluginClass* instance;
-};
-
-template <typename PluginClass>
-thread_local PluginClass* PluginInstanceStorage<PluginClass>::instance = nullptr;
 
 // Helper template to generate wrapper functions that access the stored plugin instance
 template <typename PluginClass, typename RetType, typename... Args>

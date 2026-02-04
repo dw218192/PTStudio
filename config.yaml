@@ -9,7 +9,7 @@ build:
   prebuild:
     format: {}
     slangc:
-      compiler_search_roots: "{deps_root}/slang/*/*"
+      compiler_search_roots: "{build_deps_root}/slang/*/*"
       shaders:
         - input: "assets/shaders/test/*.slang"
           output: "assets/shaders/test/*.wgsl"
@@ -31,22 +31,7 @@ build:
           namespace: "test_resources"
   postbuild: {}
   conan:
-    local_recipes:
-      - name: "slang"
-        version: "2026.1"
-        path: "tools/conan/slang"
-      - name: "dawn"
-        version: "20250428.160623"
-        path: "tools/conan/dawn"
-      - name: "openusd"
-        version: "25.02"
-        path: "tools/conan/openusd"
-      - name: "imguizmo"
-        version: "1.92"
-        path: "tools/conan/imguizmo"
-      - name: "imgui_color_text_edit"
-        version: "1.0"
-        path: "tools/conan/imgui_color_text_edit"
+    local_recipes: "tools/conan"
 
 launch:
   env:

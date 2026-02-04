@@ -7,7 +7,9 @@
 #include "glfwWindowing.h"
 
 #include <GLFW/glfw3.h>
+#ifndef __EMSCRIPTEN__
 #include <GLFW/glfw3native.h>
+#endif
 #include <core/loggingManager.h>
 
 #include <iostream>

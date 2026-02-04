@@ -254,8 +254,68 @@ def _find_package_in_deploy(conan_deps_root: Path, package_name: str) -> Path | 
     return None
 
 
+def _parse_conanfile_metadata(conanfile_path: Path) -> tuple[str | None, str | None]:
+    """Extract name and version from a conanfile.py by parsing class attributes."""
+    import re
+
+    content = conanfile_path.read_text(encoding="utf-8")
+    name_match = re.search(r'^\s*name\s*=\s*["\']([^"\']+)["\']', content, re.MULTILINE)
+    version_match = re.search(
+        r'^\s*version\s*=\s*["\']([^"\']+)["\']', content, re.MULTILINE
+    )
+    name = name_match.group(1) if name_match else None
+    version = version_match.group(1) if version_match else None
+    return name, version
+
+
+def _discover_local_recipes(root: Path, recipes_dir: Path) -> list[dict]:
+    """Discover all conan recipes in a directory by scanning for conanfile.py files."""
+    recipes = []
+    if not recipes_dir.exists():
+        logger.warning(f"Local recipes directory does not exist: {recipes_dir}")
+        return recipes
+
+    for subdir in sorted(recipes_dir.iterdir()):
+        conanfile = subdir / "conanfile.py"
+        if not conanfile.exists():
+            continue
+        name, version = _parse_conanfile_metadata(conanfile)
+        if not name or not version:
+            logger.warning(
+                f"Skipping {subdir.name}: could not parse name/version from conanfile.py"
+            )
+            continue
+        recipes.append(
+            {
+                "name": name,
+                "version": version,
+                "path": str(subdir.relative_to(root)),
+            }
+        )
+    return recipes
+
+
+def _get_local_recipes(root: Path, conan_config: dict) -> list[dict]:
+    """Get local recipes from config, supporting both directory and explicit list formats."""
+    local_recipes = conan_config.get("local_recipes")
+    if not local_recipes:
+        return []
+
+    # New format: string path to directory containing recipes
+    if isinstance(local_recipes, str):
+        recipes_dir = root / local_recipes
+        return _discover_local_recipes(root, recipes_dir)
+
+    # Old format: explicit list of recipe dicts
+    if isinstance(local_recipes, list):
+        return local_recipes
+
+    logger.warning(f"Invalid local_recipes format: {type(local_recipes)}")
+    return []
+
+
 def _export_local_conan_recipes(root: Path, logs_dir: Path, conan_config: dict) -> None:
-    recipes = conan_config.get("local_recipes", [])
+    recipes = _get_local_recipes(root, conan_config)
     if not recipes:
         return
 
@@ -291,8 +351,8 @@ def _export_local_conan_recipes(root: Path, logs_dir: Path, conan_config: dict) 
         )
 
 
-def _get_local_recipe_names(conan_config: dict) -> set[str]:
-    recipes = conan_config.get("local_recipes", [])
+def _get_local_recipe_names(root: Path, conan_config: dict) -> set[str]:
+    recipes = _get_local_recipes(root, conan_config)
     names: set[str] = set()
     for recipe in recipes:
         if isinstance(recipe, dict) and recipe.get("name"):
@@ -596,7 +656,7 @@ def build_command(args: argparse.Namespace, current_tool: str) -> None:
             else:
                 host_profile = args.conan_profile
 
-            local_recipe_names = _get_local_recipe_names(conan_config)
+            local_recipe_names = _get_local_recipe_names(root, conan_config)
             if should_create_lock:
                 if args.update_lock:
                     print_tool(
@@ -610,7 +670,7 @@ def build_command(args: argparse.Namespace, current_tool: str) -> None:
                     conan_exe,
                     "lock",
                     "create",
-                    "..",
+                    str(root),  # Use absolute path to root instead of relative ".."
                     "-o",
                     f"&:windowing={windowing}",
                     "--lockfile-out",
@@ -632,7 +692,7 @@ def build_command(args: argparse.Namespace, current_tool: str) -> None:
                 [
                     conan_exe,
                     "install",
-                    "..",
+                    str(root),  # Use absolute path to root instead of relative ".."
                     "--lockfile",
                     str(lock_file),
                     f"--output-folder={args.build_type}",
@@ -680,24 +740,38 @@ def build_command(args: argparse.Namespace, current_tool: str) -> None:
             configure_log_file = logs_dir / "cmake_configure.log"
             cmake_exe = find_venv_executable("cmake")
             _ensure_cmake_file_api_query(build_folder / args.build_type)
-            cmake_args = [
-                cmake_exe,
-                "-S",
-                "..",
-                "-B",
-                args.build_type,
-                "-DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake",
-                f"-DCMAKE_BUILD_TYPE={args.build_type}",
-                f"-DPTS_WINDOWING={windowing}",
-                "-DCMAKE_CXX_STANDARD=17",
-                "-DCMAKE_CXX_STANDARD_REQUIRED=ON",
-                "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-            ]
-            # Find Dawn cmake directory from deployed package (not needed for WASM)
-            if not wasm_build and dawn_deploy_dir:
-                dawn_cmake_dir = dawn_deploy_dir / "lib" / "cmake" / "Dawn"
-                if dawn_cmake_dir.exists():
-                    cmake_args.append(f"-DDawn_DIR={dawn_cmake_dir}")
+
+            if wasm_build:
+                # WASM: Use CMake presets (includes emsdk env, Ninja generator, toolchain)
+                # Preset name is based on Conan os=Emscripten setting
+                preset_name = f"conan-emscripten-{args.build_type.lower()}"
+                cmake_args = [
+                    cmake_exe,
+                    "--preset",
+                    preset_name,
+                    "-S",
+                    str(root),
+                ]
+            else:
+                # Desktop: Manual CMake configuration
+                cmake_args = [
+                    cmake_exe,
+                    "-S",
+                    str(root),
+                    "-B",
+                    args.build_type,
+                    "-DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake",
+                    f"-DCMAKE_BUILD_TYPE={args.build_type}",
+                    f"-DPTS_WINDOWING={windowing}",
+                    "-DCMAKE_CXX_STANDARD=17",
+                    "-DCMAKE_CXX_STANDARD_REQUIRED=ON",
+                    "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+                ]
+                if dawn_deploy_dir:
+                    dawn_cmake_dir = dawn_deploy_dir / "lib" / "cmake" / "Dawn"
+                    if dawn_cmake_dir.exists():
+                        cmake_args.append(f"-DDawn_DIR={dawn_cmake_dir}")
+
             run_command(cmake_args, log_file=configure_log_file)
 
             _generate_cpp_properties(root, build_dir, windowing)
@@ -705,16 +779,28 @@ def build_command(args: argparse.Namespace, current_tool: str) -> None:
         if not args.configure_only:
             build_log_file = logs_dir / "cmake_build.log"
             cmake_exe = find_venv_executable("cmake")
-            run_command(
-                [
+
+            if wasm_build:
+                # WASM: Use CMake build preset (includes emsdk environment)
+                # Preset name is based on Conan os=Emscripten setting
+                # Must run from project root where CMakeUserPresets.json is located
+                preset_name = f"conan-emscripten-{args.build_type.lower()}"
+                build_args = [cmake_exe, "--build", "--preset", preset_name]
+                os.chdir(root)
+                try:
+                    run_command(build_args, log_file=build_log_file)
+                finally:
+                    os.chdir(build_folder)
+            else:
+                # Desktop: Standard CMake build
+                build_args = [
                     cmake_exe,
                     "--build",
                     args.build_type,
                     "--config",
                     args.build_type,
-                ],
-                log_file=build_log_file,
-            )
+                ]
+                run_command(build_args, log_file=build_log_file)
 
             # Execute postbuild steps
             if postbuild_steps:

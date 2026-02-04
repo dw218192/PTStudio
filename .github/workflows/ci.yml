@@ -131,7 +131,7 @@ jobs:
           path: .
 
       - name: Run tests
-        run: .\pts.cmd test --build-type ${{ matrix.build_type }}
+        run: .\pts.cmd launch --test --build-type ${{ matrix.build_type }}
 
       - name: Upload test results
         if: always()

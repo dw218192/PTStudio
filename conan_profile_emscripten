@@ -10,10 +10,9 @@ compiler.libcxx=libc++
 
 [conf]
 tools.cmake.cmaketoolchain:generator=Ninja
-tools.build:cflags=['-sMEMORY64=1']
-tools.build:cxxflags=['-sMEMORY64=1']
-tools.build:exelinkflags=['-sMEMORY64=1', '-sALLOW_MEMORY_GROWTH=1', '-sMAXIMUM_MEMORY=4GB', '-sINITIAL_MEMORY=64MB']
-tools.build:sharedlinkflags=['-sMEMORY64=1', '-sALLOW_MEMORY_GROWTH=1', '-sMAXIMUM_MEMORY=4GB', '-sINITIAL_MEMORY=64MB']
+tools.cmake.cmake_layout:build_folder_vars=["settings.os"]
+tools.build:exelinkflags=['-sALLOW_MEMORY_GROWTH=1', '-sMAXIMUM_MEMORY=4GB', '-sINITIAL_MEMORY=512MB']
+tools.build:sharedlinkflags=['-sALLOW_MEMORY_GROWTH=1', '-sMAXIMUM_MEMORY=4GB', '-sINITIAL_MEMORY=512MB']
 tools.build:compiler_executables={"c":"emcc","cpp":"em++","ar":"emar","ranlib":"emranlib","nm":"emnm","strip":"emstrip"}
 
 [buildenv]
@@ -23,6 +22,3 @@ AR=emar
 NM=emnm
 RANLIB=emranlib
 STRIP=emstrip
-
-[tool_requires]
-*: emsdk/3.1.73

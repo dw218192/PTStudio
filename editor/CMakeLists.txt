@@ -21,10 +21,15 @@ PRIVATE
 	core
 	imguizmo::imguizmo
 	imgui_color_text_edit::imgui_color_text_edit
-	Boost::stacktrace
-	Boost::stacktrace_from_exception
-	Boost::program_options
 )
+# Boost compiled libraries not available for Emscripten (header-only mode)
+if (NOT EMSCRIPTEN)
+	target_link_libraries(${exec_name} PRIVATE
+		Boost::stacktrace
+		Boost::stacktrace_from_exception
+		Boost::program_options
+	)
+endif()
 if (MSVC)
 	target_compile_options(${exec_name} PRIVATE /bigobj)
 endif()

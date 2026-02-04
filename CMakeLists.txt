@@ -75,9 +75,6 @@ target_compile_definitions(developer_flags INTERFACE
 
 target_compile_features(developer_flags INTERFACE cxx_std_17)
 
-if(PTS_WINDOWING STREQUAL "glfw")
-    find_package(glfw3 REQUIRED)
-endif()
 find_package(glm REQUIRED)
 find_package(tinyobjloader REQUIRED)
 find_package(stb REQUIRED)
@@ -86,13 +83,19 @@ find_package(spdlog REQUIRED)
 find_package(nlohmann_json REQUIRED)
 find_package(Boost REQUIRED COMPONENTS filesystem)
 find_package(openusd CONFIG REQUIRED)
+
 if (NOT EMSCRIPTEN)
+    if (PTS_WINDOWING STREQUAL "glfw")
+        find_package(glfw3 REQUIRED)
+    endif()
+
     find_package(Dawn REQUIRED)
+    find_package(portable-file-dialogs REQUIRED)
 endif()
+
 # GUI libraries from Conan
 find_package(imgui REQUIRED)
 find_package(imguizmo REQUIRED)
-find_package(portable-file-dialogs REQUIRED)
 find_package(imgui_color_text_edit REQUIRED)
 
 
@@ -119,10 +122,6 @@ if(EMSCRIPTEN)
         "-sUSE_GLFW=3"
         "-sALLOW_MEMORY_GROWTH=1"
         "--shell-file=${CMAKE_SOURCE_DIR}/web/index.html")
-endif()
-
-if(EMSCRIPTEN)
-    set_target_properties(editor PROPERTIES OUTPUT_NAME "ptstudio")
 endif()
 
 # set editor as the start-up project

@@ -8,11 +8,14 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(.\\\\pts.cmd build:*)",
-      "Bash(cmd /c \"pts.cmd build --wasm --update-lock --configure-only\")",
-      "Bash(cmd /c pts.cmd build --wasm --update-lock --configure-only)",
-      "Bash(C:ReposPTStudiopts.cmd build --wasm --update-lock --configure-only)",
-      "Bash(./pts:*)"
+      "Bash(./pts:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(xargs cat:*)",
+      "Bash(pts:*)",
+      "Bash(python:*)",
+      "Bash(bash -c:*)",
+      "Bash(ls:*)"
     ]
   }
 }

@@ -28,6 +28,7 @@ class RepoContext(TypedDict):
     conan_deps_root: str
     conan_lock: str
     deps_root: str
+    build_deps_root: str
     build_dir: str
 
 
@@ -82,10 +83,13 @@ def list_repo_tools() -> list[str]:
 
 
 def register_repo_tool_parser(
-    subparsers: argparse._SubParsersAction, tool: RepoTool
+    subparsers: argparse._SubParsersAction,
+    tool: RepoTool,
+    parent_parser: argparse.ArgumentParser | None = None,
 ) -> None:
+    parents = [parent_parser] if parent_parser else []
     parser = subparsers.add_parser(
-        tool.name, help=tool.help, argument_default=argparse.SUPPRESS
+        tool.name, help=tool.help, argument_default=argparse.SUPPRESS, parents=parents
     )
     tool.setup(parser)
     parser.set_defaults(func=tool.execute)
@@ -223,7 +227,7 @@ def _get_optional_config_value(config: dict, key_path: str) -> str | None:
     return str(current) if current is not None else None
 
 
-def _resolve_template(value: str, context: Mapping[str, str]) -> str:
+def _resolve_template(value: str, context: RepoContext) -> str:
     try:
         return value.format(**context)
     except KeyError as exc:
@@ -231,7 +235,7 @@ def _resolve_template(value: str, context: Mapping[str, str]) -> str:
         raise KeyError(f"Missing config template value: {missing}") from exc
 
 
-def resolve_path(root: Path, template: str, context: Mapping[str, str]) -> Path:
+def resolve_path(root: Path, template: str, context: RepoContext) -> Path:
     resolved = _resolve_template(template, context)
     path = Path(resolved)
     if not path.is_absolute():
@@ -240,7 +244,6 @@ def resolve_path(root: Path, template: str, context: Mapping[str, str]) -> Path:
 
 
 def detect_platform_identifier(
-    wasm: bool = False,
     platform_override: str | None = None,
     conan_profile_path: Path | None = None
 ) -> str:
@@ -248,19 +251,14 @@ def detect_platform_identifier(
 
     Platform detection priority:
     1. Explicit --platform override
-    2. WASM mode (--wasm flag)
-    3. Parse from Conan profile
-    4. Auto-detect host platform
+    2. Parse from Conan profile
+    3. Auto-detect host platform
     """
     # 1. Explicit override
     if platform_override:
         return platform_override
 
-    # 2. WASM mode
-    if wasm:
-        return "wasm"
-
-    # 3. Parse from Conan profile
+    # 2. Parse from Conan profile
     if conan_profile_path and conan_profile_path.exists():
         try:
             profile_content = conan_profile_path.read_text()
@@ -383,12 +381,16 @@ def build_repo_context(root: Path, build_type: str, config: dict, platform_id: s
     resolved_conan_lock = str(resolve_path(root, conan_lock, template_context))
 
     # Add deps_root for referencing deployed dependencies
+    # deps_root: host/target dependencies (libraries to link against)
+    # build_deps_root: build/tool dependencies (executables to run during build)
     deps_root = Path(resolved_conan_deps_root) / "full_deploy" / "host"
+    build_deps_root = Path(resolved_conan_deps_root) / "full_deploy" / "build"
 
     context: RepoContext = {
         **template_context,
         "conan_lock": resolved_conan_lock,
         "deps_root": str(deps_root),
+        "build_deps_root": str(build_deps_root),
         "build_dir": str(build_root / platform_id / build_type),
     }
     return context

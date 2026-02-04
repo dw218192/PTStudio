@@ -3,15 +3,17 @@ from conan.errors import ConanInvalidConfiguration
 from conan.tools.build import check_min_cppstd
 from conan.tools.cmake import CMake, CMakeDeps, CMakeToolchain, cmake_layout
 from conan.tools.files import copy, get
-from conan.tools.scm import Version
+from conan.tools.scm import Git, Version
 import os
 
 required_conan_version = ">=1.53.0"
 
+OPENUSD_COMMIT = "2f88bd53bd2690998c3d7507d24e8d213068deb1"
+
 
 class OpenUSDConan(ConanFile):
     name = "openusd"
-    version = "25.02"
+    version = "25.11-dev"
     license = "Apache-2.0"
     description = "Universal Scene Description (USD) - minimal core build"
     homepage = "https://openusd.org/"
@@ -26,9 +28,6 @@ class OpenUSDConan(ConanFile):
     default_options = {
         "shared": True,
         "fPIC": True,
-        # onetbb requires hwloc to be shared
-        "onetbb/*:hwloc": True,
-        "hwloc/*:shared": True,
     }
 
     short_paths = True  # Important for Windows - USD has deep paths
@@ -54,9 +53,13 @@ class OpenUSDConan(ConanFile):
     def configure(self):
         if self.options.shared:
             self.options.rm_safe("fPIC")
-        # WASM requires static builds
+        # Emscripten doesn't support shared libraries or hwloc
         if self.settings.os == "Emscripten":
-            self.options.shared = False
+            self.options["onetbb"].tbbbind = False
+        else:
+            # onetbb requires hwloc to be shared on desktop platforms
+            self.options["onetbb"].hwloc = True
+            self.options["hwloc"].shared = True
 
     def layout(self) -> None:
         cmake_layout(self, src_folder="src")
@@ -80,19 +83,11 @@ class OpenUSDConan(ConanFile):
             raise ConanInvalidConfiguration(
                 f"{self.ref} requires C++{self._min_cppstd}, which your compiler does not support."
             )
-        # onetbb forbids static builds on non-WASM platforms
-        # For Emscripten, static builds are required
-        if not self.options.shared and self.settings.os != "Emscripten":
-            raise ConanInvalidConfiguration(
-                "openusd does not support static build because onetbb recipe forbids it"
-            )
 
     def source(self) -> None:
-        get(
-            self,
-            f"https://github.com/PixarAnimationStudios/OpenUSD/archive/refs/tags/v{self.version}.tar.gz",
-            strip_root=True,
-        )
+        git = Git(self)
+        git.clone("https://github.com/PixarAnimationStudios/OpenUSD.git", target=".")
+        git.checkout(OPENUSD_COMMIT)
 
     def generate(self) -> None:
         tc = CMakeToolchain(self)
@@ -109,24 +104,14 @@ class OpenUSDConan(ConanFile):
         tc.variables["PXR_ENABLE_PTEX_SUPPORT"] = False
         tc.variables["PXR_ENABLE_OPENVDB_SUPPORT"] = False
         tc.variables["PXR_ENABLE_MATERIALX_SUPPORT"] = False
+        # Disable validation for WASM - depends on usd libraries excluded on EMSCRIPTEN
+        if self.settings.os == "Emscripten":
+            tc.variables["PXR_BUILD_USD_VALIDATION"] = False
         # Build options
         tc.variables["BUILD_SHARED_LIBS"] = self.options.shared
         tc.variables["PXR_BUILD_MONOLITHIC"] = False
         # Tell USD to use Conan's TBB target
         tc.variables["TBB_tbb_LIBRARY"] = "onetbb::onetbb"
-        
-        # WASM-specific flags (from OpenUSD build script)
-        if self.settings.os == "Emscripten":
-            wasm_compile_flags = "-pthread --use-port=zlib -Wno-unused-command-line-argument"
-            wasm_link_flags = "-pthread"
-            tc.variables["CMAKE_CXX_FLAGS"] = wasm_compile_flags
-            tc.variables["CMAKE_C_FLAGS"] = wasm_compile_flags
-            tc.variables["CMAKE_EXE_LINKER_FLAGS"] = wasm_link_flags
-
-            # oneTBB WASM compatibility (per oneTBB WASM_Support.md)
-            tc.variables["TBB_STRICT"] = "OFF"
-            tc.variables["TBB_DISABLE_HWLOC_AUTOMATIC_SEARCH"] = "ON"
-        
         tc.generate()
 
         deps = CMakeDeps(self)
@@ -151,7 +136,6 @@ class OpenUSDConan(ConanFile):
         if self.settings.os in ["Linux", "FreeBSD"]:
             self.cpp_info.system_libs.extend(["m", "pthread", "dl"])
 
-        # USD core components with proper TBB dependencies (from reference)
         self.cpp_info.components["usd_arch"].libs = ["usd_arch"]
 
         self.cpp_info.components["usd_tf"].libs = ["usd_tf"]

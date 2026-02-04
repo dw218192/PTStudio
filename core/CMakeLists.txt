@@ -108,7 +108,8 @@ if (NOT EMSCRIPTEN)
 		PUBLIC dawn::webgpu_dawn Boost::filesystem
 	)
 else()
-	target_link_libraries(${lib_name} PUBLIC wasm_flags)
+	# Use header-only Boost for Emscripten (filesystem not available)
+	target_link_libraries(${lib_name} PUBLIC wasm_flags Boost::boost)
 endif()
 
 if(PTS_WINDOWING STREQUAL "glfw")

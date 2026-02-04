@@ -49,15 +49,23 @@ def _discover_tools() -> list[RepoTool]:
     return sorted(tools, key=lambda entry: entry.name)
 
 
-def main() -> None:
-    """Main entry point."""
-    parser = argparse.ArgumentParser(description="PTStudio repository tools")
-
-    # Top-level arguments (available to all subcommands)
-    parser.add_argument(
+def _create_common_parser() -> argparse.ArgumentParser:
+    """Create a parent parser with arguments shared across all subcommands."""
+    parent = argparse.ArgumentParser(add_help=False)
+    parent.add_argument(
         "--platform",
         default=None,
         help="Platform identifier (e.g., windows-x64, linux-x64, wasm). Auto-detected by default.",
+    )
+    return parent
+
+
+def main() -> None:
+    """Main entry point."""
+    common_parser = _create_common_parser()
+    parser = argparse.ArgumentParser(
+        description="PTStudio repository tools",
+        parents=[common_parser],
     )
 
     subparsers = parser.add_subparsers(
@@ -66,7 +74,7 @@ def main() -> None:
 
     # Register tooling commands
     for tool in _discover_tools():
-        register_repo_tool_parser(subparsers, tool)
+        register_repo_tool_parser(subparsers, tool, common_parser)
 
     args, unknown_args = parser.parse_known_args()
     root = Path(__file__).parent.parent.parent

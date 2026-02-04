@@ -1,4 +1,4 @@
-"""Launch subcommand implementation."""
+"""Launch subcommand implementation - runs executables and tests."""
 
 import argparse
 import http.server
@@ -18,6 +18,7 @@ from repo_tools import (
     is_platform_compatible,
     is_windows,
     load_repo_config,
+    logger,
     normalize_build_type,
     normalize_env_config,
     print_tool,
@@ -25,120 +26,269 @@ from repo_tools import (
 )
 
 
-def _discover_executables(build_dir: Path) -> list[Path]:
-    """Discover executable files in the build directory's bin folder.
-    
-    Args:
-        build_dir: Root build directory containing the bin folder
-        
-    Returns:
-        List of paths to discovered executables
-    """
-    bin_dir = build_dir / "bin"
-    
-    # Check if bin directory exists
-    if not bin_dir.exists():
-        return []
-    
-    if not bin_dir.is_dir():
-        return []
-    
-    exe_paths = []
-    
+def _get_node_path(context: RepoContext) -> Path | None:
+    """Get path to Node.js from Conan deploy directory."""
+    conan_deps = Path(context["conan_deps_root"])
+    nodejs_dir = conan_deps / "full_deploy" / "build" / "nodejs"
+
+    if not nodejs_dir.exists():
+        return None
+
+    for version_dir in nodejs_dir.iterdir():
+        if not version_dir.is_dir():
+            continue
+        for arch_dir in version_dir.iterdir():
+            if not arch_dir.is_dir():
+                continue
+            bin_dir = arch_dir / "bin"
+            node_exe = bin_dir / ("node.exe" if is_windows() else "node")
+            if node_exe.exists():
+                return node_exe
+    return None
+
+
+def _interactive_select(exe_paths: list[Path]) -> Path | None:
+    """Show interactive menu to select an executable."""
+    from InquirerPy import inquirer
+
+    choices = [exe.stem for exe in sorted(exe_paths)]
+    if not choices:
+        return None
+
     try:
-        for file in bin_dir.iterdir():
-            # Skip if not a file or symlink to a file
+        selected = inquirer.select(
+            message="Select executable to launch:",
+            choices=choices,
+        ).execute()
+    except KeyboardInterrupt:
+        return None
+
+    if selected is None:
+        return None
+
+    for exe in exe_paths:
+        if exe.stem == selected:
+            return exe
+    return None
+
+
+def _discover_executables(target_dir: Path, is_wasm: bool = False) -> list[Path]:
+    """Discover executable files in a directory recursively."""
+    if not target_dir.exists() or not target_dir.is_dir():
+        return []
+
+    exe_paths = []
+    try:
+        for file in target_dir.rglob("*"):
             if not file.is_file():
                 continue
-            
-            # On Windows, check for .exe extension (case-insensitive)
-            if is_windows():
+            if is_wasm:
+                if file.suffix.lower() == ".js":
+                    exe_paths.append(file)
+            elif is_windows():
                 if file.suffix.lower() == ".exe":
                     exe_paths.append(file)
             else:
-                # On Unix-like systems, check if file is executable
-                # Files without extensions are typically executables
                 try:
                     if os.access(file, os.X_OK):
                         exe_paths.append(file)
                 except OSError:
-                    # Skip files we can't check permissions on
                     continue
     except (PermissionError, OSError) as e:
-        # If we can't read the directory, return what we have so far
-        print_tool(f"Warning: Could not fully scan {bin_dir}: {e}")
-    
+        print_tool(f"Warning: Could not scan {target_dir}: {e}")
     return exe_paths
 
 
-def _launch_wasm(build_dir: Path, executable: str) -> None:
+def _setup_environment(context: RepoContext, config: dict, env_overrides: dict | None) -> dict:
+    """Set up environment variables for running executables."""
+    config_args = get_repo_tool_config_args(config, "launch")
+    env_config = normalize_env_config(config_args.get("env"))
+    if env_overrides:
+        env_config.update(env_overrides)
+    env_vars = resolve_env_vars(env_config, context)
+    return apply_env_overrides(os.environ.copy(), env_vars)
+
+
+def _run_executable(
+    exe_path: Path,
+    args: list[str],
+    env: dict,
+    context: RepoContext,
+    capture_output: bool = False,
+) -> subprocess.CompletedProcess:
+    """Run an executable, using Node.js for WASM."""
+    is_wasm = exe_path.suffix.lower() == ".js"
+
+    if is_wasm:
+        node_path = _get_node_path(context)
+        if node_path is None:
+            raise RuntimeError("Node.js not found. Build with --platform wasm first.")
+        node_flags = ["--experimental-wasm-threads", "--experimental-wasm-memory64"]
+        cmd = [str(node_path)] + node_flags + [str(exe_path)] + args
+    else:
+        cmd = [str(exe_path)] + args
+
+    if capture_output:
+        return subprocess.run(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, encoding="utf-8", errors="replace", env=env,
+        )
+    return subprocess.run(cmd, env=env)
+
+
+def _can_run(context: RepoContext) -> bool:
+    """Check if executables can be run on this host."""
+    if context["platform"] == "wasm":
+        return _get_node_path(context) is not None
+    return is_platform_compatible(context["platform"])
+
+
+def _launch_browser(build_dir: Path) -> None:
     """Launch WASM build in browser using local HTTP server."""
-    # Find the WASM output directory (typically bin/)
     bin_dir = build_dir / "bin"
     if not bin_dir.exists():
-        print_tool(f"ERROR: WASM build directory not found: {bin_dir}")
-        print_tool("Build the WASM target first: pts.cmd --platform wasm build (or ./pts --platform wasm build on bash)")
+        print_tool(f"ERROR: Build directory not found: {bin_dir}")
         sys.exit(1)
 
-    # Check for index.html (shell file)
     html_files = list(bin_dir.glob("*.html"))
     if not html_files:
         print_tool(f"ERROR: No HTML shell file found in {bin_dir}")
-        print_tool("WASM builds require an HTML shell file (e.g., index.html)")
         sys.exit(1)
 
     shell_file = html_files[0]
-
-    # Start HTTP server
-    PORT = 8000
     os.chdir(bin_dir)
-
     handler = http.server.SimpleHTTPRequestHandler
 
-    # Try to find an available port
-    for port in range(PORT, PORT + 10):
+    for port in range(8000, 8010):
         try:
             with socketserver.TCPServer(("", port), handler) as httpd:
                 url = f"http://localhost:{port}/{shell_file.name}"
                 print_tool(f"Starting HTTP server on port {port}")
                 print_tool(f"Opening {url}")
-
-                # Open browser
                 webbrowser.open(url)
-
                 print_tool("Press Ctrl+C to stop the server")
                 httpd.serve_forever()
                 break
         except OSError:
+            print_tool(f"Port {port} is in use, trying next port...")
             continue
     else:
-        print_tool(f"ERROR: Could not find available port in range {PORT}-{PORT+10}")
+        print_tool("ERROR: Could not find available port")
         sys.exit(1)
+
+
+def _run_tests(context: RepoContext, config: dict, env: dict, verbose: bool) -> int:
+    """Run all test executables and return exit code."""
+    build_dir = Path(context["build_dir"])
+    is_wasm = context["platform"] == "wasm"
+    test_dir = build_dir / "bin" / "tests"
+    logs_dir = Path(context["logs_root"])
+    logs_dir.mkdir(parents=True, exist_ok=True)
+
+    test_executables = _discover_executables(test_dir, is_wasm)
+    if not test_executables:
+        print_tool(f"No test executables found in: {test_dir}")
+        print_tool("Build the project first: ./pts build")
+        return 1
+
+    logger.info(f"Found {len(test_executables)} test executable(s)")
+
+    passed = 0
+    failed = 0
+    failed_tests = []
+
+    for test_exe in sorted(test_executables):
+        test_name = test_exe.stem
+        logger.info(f"\n{'=' * 70}")
+        logger.info(f"Running test: {test_name}")
+        logger.info(f"{'=' * 70}")
+
+        log_file = logs_dir / f"test_{test_name}.log"
+        test_args = ["--verbose"] if verbose else []
+
+        try:
+            result = _run_executable(test_exe, test_args, env, context, capture_output=True)
+
+            with open(log_file, "w", encoding="utf-8", errors="replace") as f:
+                f.write(f"Test: {test_name}\n")
+                f.write(f"Executable: {test_exe}\n")
+                f.write(f"Exit code: {result.returncode}\n")
+                f.write("=" * 70 + "\n")
+                f.write(result.stdout or "")
+
+            if result.stdout:
+                for line in result.stdout.splitlines():
+                    logger.info(f"  {line}")
+
+            if result.returncode == 0:
+                logger.info(f"PASSED: {test_name}")
+                passed += 1
+            else:
+                logger.error(f"FAILED: {test_name} (exit code: {result.returncode})")
+                failed += 1
+                failed_tests.append(test_name)
+
+        except Exception as e:
+            logger.error(f"FAILED: {test_name} (exception: {e})")
+            with open(log_file, "w", encoding="utf-8", errors="replace") as f:
+                f.write(f"Test: {test_name}\nException: {e}\n")
+            failed += 1
+            failed_tests.append(test_name)
+
+    logger.info(f"\n{'=' * 70}")
+    logger.info("TEST SUMMARY")
+    logger.info(f"{'=' * 70}")
+    logger.info(f"Total:  {passed + failed}")
+    logger.info(f"Passed: {passed}")
+    logger.info(f"Failed: {failed}")
+
+    if failed > 0:
+        logger.error("Failed tests:")
+        for name in failed_tests:
+            logger.error(f"  - {name}")
+        return 1
+    logger.info("All tests passed!")
+    return 0
 
 
 class LaunchTool(RepoTool):
     name = "launch"
-    help = "Set up environment and launch executables"
+    help = "Launch executables or run tests"
 
     def setup(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
-            "executable",
-            type=str,
-            nargs="?",
-            default=argparse.SUPPRESS,
+            "executable", type=str, nargs="?", default=argparse.SUPPRESS,
             help="Executable to launch (default: editor)",
         )
         parser.add_argument(
-            "-c",
-            "--config",
-            type=str.casefold,
+            "-c", "--config", type=str.casefold,
             choices=["debug", "release", "relwithdebinfo", "minsizerel"],
-            help="Build configuration to launch (default: debug)",
+            help="Build configuration (default: debug)",
         )
         parser.add_argument(
-            "--env",
-            action="append",
+            "--build-type",
+            choices=["Debug", "Release", "RelWithDebInfo", "MinSizeRel"],
+            help="Alias for --config",
+        )
+        parser.add_argument(
+            "--env", action="append",
             help="Environment override (KEY=VALUE). Repeatable.",
+        )
+        parser.add_argument(
+            "--browser", action="store_true",
+            help="For WASM: launch in browser instead of Node.js",
+        )
+        parser.add_argument(
+            "--test", action="store_true",
+            help="Run all test executables",
+        )
+        parser.add_argument(
+            "-v", "--verbose", action="store_true",
+            help="Verbose output (for tests)",
+        )
+        parser.add_argument(
+            "-i", "--interactive", action="store_true",
+            help="Interactive menu to select executable",
         )
 
     def default_args(self, context: RepoContext) -> argparse.Namespace:
@@ -146,69 +296,75 @@ class LaunchTool(RepoTool):
             platform=context["platform"],
             executable="editor",
             config=context["build_type"].casefold(),
+            build_type=None,
             env=None,
+            browser=False,
+            test=False,
+            verbose=False,
+            interactive=False,
             passthrough_args=[],
         )
 
     def execute(self, args: argparse.Namespace) -> None:
-        """Launch the editor executable for native deployment."""
         root = Path(__file__).parent.parent.parent
-        build_type = normalize_build_type(args.config)
+        # Support both --config and --build-type
+        build_type = normalize_build_type(args.build_type or args.config)
         config = load_repo_config(root)
-
-        # Platform is already determined in __main__.py and passed via args
-        platform_id = args.platform
-        context = build_repo_context(root, build_type, config, platform_id)
-
-        # Check platform compatibility
-        if not is_platform_compatible(context["platform"]):
-            if context["platform"] == "wasm":
-                # Special handling for WASM: launch browser
-                build_dir = Path(context["build_dir"])
-                _launch_wasm(build_dir, args.executable)
-                return
-            else:
-                from repo_tools import detect_platform_identifier
-                print_tool(f"ERROR: Cannot launch {context['platform']} binaries on this host")
-                print_tool(f"Target platform: {context['platform']}")
-                print_tool(f"Host platform: {detect_platform_identifier()}")
-                print_tool("Cross-compilation targets cannot be launched directly.")
-                sys.exit(1)
-
+        context = build_repo_context(root, build_type, config, args.platform)
         build_dir = Path(context["build_dir"])
-        exe_paths = _discover_executables(build_dir)
+        is_wasm = context["platform"] == "wasm"
 
-        if not exe_paths:
-            print_tool(f"No executables found in build directory: {build_dir}")
-            print_tool("Build the project first: pts.cmd build (or ./pts build on bash)")
+        env_overrides = normalize_env_config(args.env) if args.env else None
+        env = _setup_environment(context, config, env_overrides)
+
+        # WASM browser launch
+        if is_wasm and args.browser:
+            _launch_browser(build_dir)
+            return
+
+        # Check if we can run
+        if not _can_run(context):
+            from repo_tools import detect_platform_identifier
+            if is_wasm:
+                print_tool("Node.js not found. Use --browser or build with --platform wasm first.")
+            else:
+                print_tool(f"ERROR: Cannot run {context['platform']} binaries on this host")
+                print_tool(f"Host platform: {detect_platform_identifier()}")
             sys.exit(1)
 
-        target_exe_path = None
-        for exe_path in exe_paths:
-            if exe_path.stem == args.executable:
-                target_exe_path = exe_path
-                break
+        # Run tests
+        if args.test:
+            sys.exit(_run_tests(context, config, env, args.verbose))
 
-        if target_exe_path is None:
+        # Run single executable
+        bin_dir = build_dir / "bin"
+        exe_paths = _discover_executables(bin_dir, is_wasm)
+
+        if not exe_paths:
+            print_tool(f"No executables found in: {bin_dir}")
+            print_tool("Build the project first: ./pts build")
+            sys.exit(1)
+
+        # Interactive mode
+        if args.interactive:
+            target_exe = _interactive_select(exe_paths)
+            if target_exe is None:
+                print_tool("No executable selected.")
+                sys.exit(0)
+        else:
+            target_exe = None
+            for exe in exe_paths:
+                if exe.stem == args.executable:
+                    target_exe = exe
+                    break
+
+        if target_exe is None:
             print_tool(f"Executable not found: {args.executable}")
             print_tool("Available executables:")
             for exe in exe_paths:
                 print_tool(f"  {exe.stem}")
             sys.exit(1)
 
-        config_args = get_repo_tool_config_args(config, self.name)
-        env_config = normalize_env_config(config_args.get("env"))
-        if isinstance(getattr(args, "env", None), list):
-            env_overrides = normalize_env_config(args.env)
-            env_config.update(env_overrides)
-        elif args.env is not None:
-            env_overrides = normalize_env_config(args.env)
-            env_config.update(env_overrides)
-
-        env_vars = resolve_env_vars(env_config, context)
-        env = apply_env_overrides(os.environ.copy(), env_vars)
-        cmd = [str(target_exe_path)]
-        cmd.extend(getattr(args, "passthrough_args", []))
-        subprocess.run(cmd, check=True, env=env)
-
-
+        passthrough = getattr(args, "passthrough_args", [])
+        result = _run_executable(target_exe, passthrough, env, context)
+        sys.exit(result.returncode)

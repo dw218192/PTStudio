@@ -12,7 +12,8 @@
 namespace pts::webgpu {
 class Device;
 
-/// Convert WGPUPopErrorScopeStatus to string representation
+#ifndef __EMSCRIPTEN__
+/// Convert WGPUPopErrorScopeStatus to string representation (Dawn-specific)
 inline auto status_name(WGPUPopErrorScopeStatus status) -> const char* {
     switch (status) {
         case WGPUPopErrorScopeStatus_Success:
@@ -25,6 +26,7 @@ inline auto status_name(WGPUPopErrorScopeStatus status) -> const char* {
             return "Unknown";
     }
 }
+#endif
 
 /// Convert WGPUErrorType to string representation
 inline auto error_type_name(WGPUErrorType type) -> const char* {
@@ -44,7 +46,8 @@ inline auto error_type_name(WGPUErrorType type) -> const char* {
     }
 }
 
-/// RAII wrapper for WebGPU error scopes.
+#ifndef __EMSCRIPTEN__
+/// RAII wrapper for WebGPU error scopes (Dawn-specific).
 ///
 /// Supports nested error scopes via multiple filters. Filters are pushed in order,
 /// and popped in reverse order (LIFO). If any scope captures an error, it will be reported.
@@ -94,5 +97,16 @@ class ErrorScope {
     std::size_t m_scope_count = 0;
     bool m_popped = false;
 };
+#else
+/// Stub ErrorScope for Emscripten (error scope API differs from Dawn)
+class ErrorScope {
+   public:
+    ErrorScope(const Device&, WGPUErrorFilter, std::string_view, std::string_view) {}
+    ErrorScope(const Device&, std::initializer_list<WGPUErrorFilter>, std::string_view,
+               std::string_view) {}
+    ~ErrorScope() = default;
+    void pop_and_throw_if_error() {}
+};
+#endif
 
 }  // namespace pts::webgpu

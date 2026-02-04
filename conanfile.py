@@ -11,12 +11,10 @@ class PTStudioConan(ConanFile):
     version = "1.0.0"
     settings = "os", "compiler", "build_type", "arch"
     options = {
-        "pathtracer": [True, False],
         "build_tests": [True, False],
         "windowing": ["glfw", "null"],
     }
     default_options = {
-        "pathtracer": False,
         "build_tests": True,
         "windowing": "glfw",
         # Boost configuration - need filesystem for DLL loading
@@ -40,11 +38,10 @@ class PTStudioConan(ConanFile):
         self.requires("doctest/[>=0]")
         self.requires("boost/[>=0]")
         # Scene description
-        self.requires("openusd/25.02")
+        self.requires("openusd/25.11-dev")
         
         # These dependencies don't work or aren't needed for Emscripten/WASM
         if self.settings.os != "Emscripten":
-            self.requires("slang/2026.1")
             # WebGPU backend (browser provides WebGPU)
             self.requires("dawn/20250428.160623")
             # File dialogs (not applicable in browser)
@@ -60,6 +57,8 @@ class PTStudioConan(ConanFile):
         if self.settings.os == "Emscripten":
             self.tool_requires("emsdk/3.1.73")
             self.tool_requires("ninja/1.13.2")
+            self.tool_requires("nodejs/16.3.0")
+        self.tool_requires("slang/2026.1")
 
     def configure(self):
         # Configure package options
@@ -118,7 +117,6 @@ class PTStudioConan(ConanFile):
             tc = CMakeToolchain(self)
 
         # forward options to CMakeLists.txt
-        tc.cache_variables["PTSTUDIO_PATHTRACER"] = self.options.pathtracer
         tc.cache_variables["CORE_BUILD_TESTS"] = self.options.build_tests
         # Ensure spdlog uses external fmt library
         tc.cache_variables["SPDLOG_FMT_EXTERNAL"] = "ON"
