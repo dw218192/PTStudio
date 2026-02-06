@@ -40,11 +40,6 @@ struct GUIApplication : Application {
     ~GUIApplication() override;
 
     void on_scroll_event(double x, double y) noexcept;
-    /**
-     * @brief Called every frame. Override to handle the main loop.
-     * @param dt the time since the last frame
-     */
-    virtual void loop(float dt) = 0;
 
     [[nodiscard]] auto get_render_graph_api() const noexcept -> const PtsRenderGraphApi*;
     [[nodiscard]] auto get_render_output_texture() const noexcept -> PtsTexture;
