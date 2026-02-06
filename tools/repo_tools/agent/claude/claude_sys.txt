@@ -1,0 +1,20 @@
+# PTStudio Agent Environment
+
+## Bash Tool Usage
+
+1. **Never redirect to `/dev/null`** - On Windows, this creates a literal file named "nul" instead of discarding output.
+2. **Always use `./pts` entrypoint** - The Bash tool runs in bash, so use `./pts` (not `.\pts.cmd`).
+3. **All operations go through `./pts`**: `build`, `test`, `format`, `clean`, `python`. Use `./pts -h` or `./pts <cmd> -h` for options.
+
+## Project Overview
+
+**PTStudio**: C++17 3D editor/renderer using WebGPU (Dawn native, emdawnwebgpu for WASM), OpenUSD, plugin system.
+
+## Structure
+
+- **core/**: Static lib - windowing, WebGPU (`WebGpuContext`, `Device`, `Surface`), render graph, plugin system, ImGui
+- **editor/**: Main executable - ImGui-based editor UI, hosts renderer plugins
+- **plugins/**: Dynamic (static on WASM) - `renderers/editor/`, `test_plugin/`
+- **hello_triangle/**: Simple WebGPU example
+
+**Build output**: `_build/<config>/bin/` (executables), `_build/<config>/bin/plugins/` (plugins)

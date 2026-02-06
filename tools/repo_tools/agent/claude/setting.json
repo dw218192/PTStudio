@@ -1,0 +1,73 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch",
+      "WebSearch",
+
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(less:*)",
+      "Bash(wc:*)",
+      "Bash(file:*)",
+      "Bash(type:*)",
+
+      "Bash(ls:*)",
+      "Bash(dir:*)",
+      "Bash(tree:*)",
+      "Bash(find:*)",
+      "Bash(fd:*)",
+
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(findstr:*)",
+      "Bash(ag:*)",
+
+      "Bash(echo:*)",
+      "Bash(printf:*)",
+      "Bash(test:*)",
+      "Bash([:*)",
+      "Bash(true:*)",
+      "Bash(false:*)",
+      "Bash(expr:*)",
+
+      "Bash(xargs:*)",
+      "Bash(sort:*)",
+      "Bash(uniq:*)",
+      "Bash(cut:*)",
+      "Bash(awk:*)",
+      "Bash(sed:*)",
+      "Bash(tr:*)",
+      "Bash(tee:*)",
+
+      "Bash(which:*)",
+      "Bash(where:*)",
+      "Bash(env:*)",
+      "Bash(printenv:*)",
+      "Bash(pwd:*)",
+      "Bash(whoami:*)",
+      "Bash(date:*)",
+      "Bash(uname:*)",
+
+      "Bash(git:*)",
+      "Bash(gh:*)",
+
+      "Bash(./pts:*)",
+      "Bash(python:*)",
+      "Bash(cmake:*)",
+      "Bash(conan:*)",
+      "Bash(ninja:*)",
+      "Bash(make:*)",
+
+      "Bash(curl:*)",
+      "Bash(wget:*)",
+
+      "Bash(for:*)",
+      "Bash(if:*)",
+      "Bash(while:*)",
+      "Bash(case:*)",
+      "Bash(bash:*)",
+      "Bash(sh:*)"
+    ]
+  }
+}

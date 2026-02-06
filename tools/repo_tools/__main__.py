@@ -31,7 +31,11 @@ def _discover_tools() -> list[RepoTool]:
         for _, cls in inspect.getmembers(module, inspect.isclass):
             if cls is RepoTool or not issubclass(cls, RepoTool):
                 continue
-            if cls.__module__ != module.__name__:
+            # For regular modules, class must be defined there
+            # For packages, class can be re-exported from __init__.py
+            if not module_info.ispkg and cls.__module__ != module.__name__:
+                continue
+            if module_info.ispkg and not cls.__module__.startswith(module.__name__):
                 continue
             try:
                 tool = cls()
@@ -55,7 +59,7 @@ def _create_common_parser() -> argparse.ArgumentParser:
     parent.add_argument(
         "--platform",
         default=None,
-        help="Platform identifier (e.g., windows-x64, linux-x64, wasm). Auto-detected by default.",
+        help="Platform identifier (e.g., windows-x64, linux-x64, emscripten). Auto-detected by default.",
     )
     return parent
 

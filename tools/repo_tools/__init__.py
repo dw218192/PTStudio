@@ -297,7 +297,7 @@ def detect_platform_identifier(
 def _map_platform_identifier(os_val: str, arch_val: str) -> str:
     """Map Conan os/arch settings to platform identifier."""
     if os_val == "Emscripten" and arch_val == "wasm":
-        return "wasm"
+        return "emscripten"
 
     # Normalize OS
     os_map = {
@@ -325,7 +325,7 @@ def is_platform_compatible(target_platform: str, host_platform: str | None = Non
     """Check if target platform binaries can run on host platform.
 
     Args:
-        target_platform: Platform identifier of the build (e.g., "wasm", "windows-x64")
+        target_platform: Platform identifier of the build (e.g., "emscripten", "windows-x64")
         host_platform: Platform identifier of the host (auto-detected if None)
 
     Returns:
@@ -338,8 +338,8 @@ def is_platform_compatible(target_platform: str, host_platform: str | None = Non
     if target_platform == host_platform:
         return True
 
-    # WASM cannot run natively (needs browser/Node.js)
-    if target_platform == "wasm":
+    # Emscripten cannot run natively (needs browser/Node.js)
+    if target_platform == "emscripten":
         return False
 
     # Cross-platform builds cannot run natively

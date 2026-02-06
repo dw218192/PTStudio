@@ -72,7 +72,7 @@ def _interactive_select(exe_paths: list[Path]) -> Path | None:
     return None
 
 
-def _discover_executables(target_dir: Path, is_wasm: bool = False) -> list[Path]:
+def _discover_executables(target_dir: Path, is_emscripten: bool = False) -> list[Path]:
     """Discover executable files in a directory recursively."""
     if not target_dir.exists() or not target_dir.is_dir():
         return []
@@ -82,7 +82,7 @@ def _discover_executables(target_dir: Path, is_wasm: bool = False) -> list[Path]
         for file in target_dir.rglob("*"):
             if not file.is_file():
                 continue
-            if is_wasm:
+            if is_emscripten:
                 if file.suffix.lower() == ".js":
                     exe_paths.append(file)
             elif is_windows():
@@ -116,14 +116,14 @@ def _run_executable(
     context: RepoContext,
     capture_output: bool = False,
 ) -> subprocess.CompletedProcess:
-    """Run an executable, using Node.js for WASM."""
-    is_wasm = exe_path.suffix.lower() == ".js"
+    """Run an executable, using Node.js for Emscripten builds."""
+    is_emscripten = exe_path.suffix.lower() == ".js"
 
-    if is_wasm:
+    if is_emscripten:
         node_path = _get_node_path(context)
         if node_path is None:
-            raise RuntimeError("Node.js not found. Build with --platform wasm first.")
-        node_flags = ["--experimental-wasm-threads", "--experimental-wasm-memory64"]
+            raise RuntimeError("Node.js not found. Build with --platform emscripten first.")
+        node_flags = ["--experimental-wasm-threads"]
         cmd = [str(node_path)] + node_flags + [str(exe_path)] + args
     else:
         cmd = [str(exe_path)] + args
@@ -138,13 +138,13 @@ def _run_executable(
 
 def _can_run(context: RepoContext) -> bool:
     """Check if executables can be run on this host."""
-    if context["platform"] == "wasm":
+    if context["platform"] == "emscripten":
         return _get_node_path(context) is not None
     return is_platform_compatible(context["platform"])
 
 
 def _launch_browser(build_dir: Path) -> None:
-    """Launch WASM build in browser using local HTTP server."""
+    """Launch Emscripten build in browser using local HTTP server."""
     bin_dir = build_dir / "bin"
     if not bin_dir.exists():
         print_tool(f"ERROR: Build directory not found: {bin_dir}")
@@ -180,12 +180,12 @@ def _launch_browser(build_dir: Path) -> None:
 def _run_tests(context: RepoContext, config: dict, env: dict, verbose: bool) -> int:
     """Run all test executables and return exit code."""
     build_dir = Path(context["build_dir"])
-    is_wasm = context["platform"] == "wasm"
+    is_emscripten = context["platform"] == "emscripten"
     test_dir = build_dir / "bin" / "tests"
     logs_dir = Path(context["logs_root"])
     logs_dir.mkdir(parents=True, exist_ok=True)
 
-    test_executables = _discover_executables(test_dir, is_wasm)
+    test_executables = _discover_executables(test_dir, is_emscripten)
     if not test_executables:
         print_tool(f"No test executables found in: {test_dir}")
         print_tool("Build the project first: ./pts build")
@@ -276,7 +276,7 @@ class LaunchTool(RepoTool):
         )
         parser.add_argument(
             "--browser", action="store_true",
-            help="For WASM: launch in browser instead of Node.js",
+            help="For Emscripten: launch in browser instead of Node.js",
         )
         parser.add_argument(
             "--test", action="store_true",
@@ -312,21 +312,21 @@ class LaunchTool(RepoTool):
         config = load_repo_config(root)
         context = build_repo_context(root, build_type, config, args.platform)
         build_dir = Path(context["build_dir"])
-        is_wasm = context["platform"] == "wasm"
+        is_emscripten = context["platform"] == "emscripten"
 
         env_overrides = normalize_env_config(args.env) if args.env else None
         env = _setup_environment(context, config, env_overrides)
 
         # WASM browser launch
-        if is_wasm and args.browser:
+        if is_emscripten and args.browser:
             _launch_browser(build_dir)
             return
 
         # Check if we can run
         if not _can_run(context):
             from repo_tools import detect_platform_identifier
-            if is_wasm:
-                print_tool("Node.js not found. Use --browser or build with --platform wasm first.")
+            if is_emscripten:
+                print_tool("Node.js not found. Use --browser or build with --platform emscripten first.")
             else:
                 print_tool(f"ERROR: Cannot run {context['platform']} binaries on this host")
                 print_tool(f"Host platform: {detect_platform_identifier()}")
@@ -338,7 +338,7 @@ class LaunchTool(RepoTool):
 
         # Run single executable
         bin_dir = build_dir / "bin"
-        exe_paths = _discover_executables(bin_dir, is_wasm)
+        exe_paths = _discover_executables(bin_dir, is_emscripten)
 
         if not exe_paths:
             print_tool(f"No executables found in: {bin_dir}")
