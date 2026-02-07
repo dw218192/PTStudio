@@ -26,6 +26,10 @@ set(testWebGpu_source testWebGpu.cpp)
 set(testWebGpu_libs core)
 set(testWebGpu_defines PTS_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
+list(APPEND TEST_NAMES testCommandLine)
+set(testCommandLine_source testCommandLine.cpp)
+set(testCommandLine_libs core)
+
 function(add_core_test target_name)
     message(STATUS "Building test: ${target_name}")
     add_executable(${target_name} ${${target_name}_source})

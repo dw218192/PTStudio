@@ -1,4 +1,5 @@
 #pragma once
+#include <core/commandLine.h>
 #include <core/loggingManager.h>
 #include <core/rendering/windowing.h>
 #include <fmt/core.h>

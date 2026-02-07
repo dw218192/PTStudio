@@ -28,6 +28,7 @@ endif()
 
 if(EMSCRIPTEN)
     set(PTS_STATIC_PLUGINS ON CACHE BOOL "" FORCE)
+    set(CMAKE_EXECUTABLE_SUFFIX ".html")
 endif()
 
 # Direct all output to /bin directory
@@ -76,7 +77,7 @@ find_package(nlohmann_json REQUIRED)
 if(EMSCRIPTEN)
     find_package(Boost REQUIRED)
 else()
-    find_package(Boost REQUIRED COMPONENTS filesystem)
+    find_package(Boost REQUIRED COMPONENTS filesystem program_options stacktrace stacktrace_from_exception)
 endif()
 find_package(openusd CONFIG REQUIRED)
 

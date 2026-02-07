@@ -1,6 +1,13 @@
 {
   "permissions": {
     "allow": [
+      "Edit",
+      "MultiEdit",
+      "Write",
+      "Glob",
+      "Grep",
+      "Task",
+
       "WebFetch",
       "WebSearch",
 
@@ -12,6 +19,7 @@
       "Bash(file:*)",
       "Bash(type:*)",
 
+      "Bash(cd:*)",
       "Bash(ls:*)",
       "Bash(dir:*)",
       "Bash(tree:*)",

@@ -3,7 +3,9 @@
 ## Bash Tool Usage
 
 1. **Always use `./pts` entrypoint** - The Bash tool runs in bash, so use `./pts` (not `.\pts.cmd`).
-2. **All repository operations go through `./pts`**: `build`, `test`, `format`, `clean`, `python`. Use `./pts -h` or `./pts <cmd> -h` for options. Do not attempt to infer the build system/ test driver executable and environment.
+2. **All repository operations go through `./pts`**: `build`, `test`, `format`, `clean`, `python`, `launch`. Use `./pts -h` or `./pts <cmd> -h` for options. Do not attempt to infer the build system/test driver executable and environment.
+3. **Launch executables via `./pts launch <target>`** - This sets up DLL search paths (PATH) correctly. Never run built executables directly.
+4. **Do not launch GUI applications** - The agent environment has no display. Only run headless/CLI tools and tests.
 
 ## Project Overview
 
