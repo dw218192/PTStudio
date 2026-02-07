@@ -1,12 +1,9 @@
 """Launch subcommand implementation - runs executables and tests."""
 
 import argparse
-import http.server
 import os
-import socketserver
 import subprocess
 import sys
-import webbrowser
 from pathlib import Path
 
 from repo_tools import (
@@ -25,25 +22,33 @@ from repo_tools import (
     resolve_env_vars,
 )
 
-
 def _get_node_path(context: RepoContext) -> Path | None:
-    """Get path to Node.js from Conan deploy directory."""
-    conan_deps = Path(context["conan_deps_root"])
-    nodejs_dir = conan_deps / "full_deploy" / "build" / "nodejs"
+    """Get path to Node.js bundled inside the emsdk Conan package."""
+    build_deps = Path(context["build_deps_root"])
+    emsdk_dir = build_deps / "emsdk"
 
-    if not nodejs_dir.exists():
+    if not emsdk_dir.exists():
+        logger.debug(f"emsdk directory not found: {emsdk_dir}")
         return None
 
-    for version_dir in nodejs_dir.iterdir():
+    # Navigate: emsdk/<version>/<arch>/bin/node/<node_version>/bin/node[.exe]
+    for version_dir in emsdk_dir.iterdir():
         if not version_dir.is_dir():
             continue
         for arch_dir in version_dir.iterdir():
             if not arch_dir.is_dir():
                 continue
-            bin_dir = arch_dir / "bin"
-            node_exe = bin_dir / ("node.exe" if is_windows() else "node")
-            if node_exe.exists():
-                return node_exe
+            node_base = arch_dir / "bin" / "node"
+            if not node_base.is_dir():
+                continue
+            for node_ver_dir in node_base.iterdir():
+                if not node_ver_dir.is_dir():
+                    continue
+                node_exe = node_ver_dir / "bin" / ("node.exe" if is_windows() else "node")
+                if node_exe.exists():
+                    return node_exe
+
+    logger.warning("Node.js not found in emsdk package")
     return None
 
 
@@ -116,17 +121,29 @@ def _run_executable(
     context: RepoContext,
     capture_output: bool = False,
 ) -> subprocess.CompletedProcess:
-    """Run an executable, using Node.js for Emscripten builds."""
+    """Run an executable.
+
+    For Emscripten builds, uses emrun (browser with logging) for interactive
+    launches and Node.js for headless/captured output (tests).
+    """
     is_emscripten = exe_path.suffix.lower() in (".js", ".html")
 
-    if is_emscripten:
+    if is_emscripten and not capture_output:
+        # Interactive launch: use emrun (serves files, opens browser, captures logs)
+        emrun = _get_emrun_path(context)
+        if emrun is None:
+            raise RuntimeError("emrun not found. Build with --platform emscripten first.")
+        html_path = exe_path.with_suffix(".html") if exe_path.suffix.lower() != ".html" else exe_path
+        logger.info(f"Launching {html_path.name} with emrun")
+        cmd = [sys.executable, str(emrun), str(html_path)] + args
+    elif is_emscripten:
+        # Headless (tests): use Node.js
         node_path = _get_node_path(context)
         if node_path is None:
             raise RuntimeError("Node.js not found. Build with --platform emscripten first.")
-        # Node runs the .js file; if we have an .html, use the sibling .js
         js_path = exe_path.with_suffix(".js") if exe_path.suffix.lower() == ".html" else exe_path
-        node_flags = ["--experimental-wasm-threads"]
-        cmd = [str(node_path)] + node_flags + [str(js_path)] + args
+        logger.info(f"Running {js_path.name} with Node.js")
+        cmd = [str(node_path), "--experimental-wasm-threads", str(js_path)] + args
     else:
         cmd = [str(exe_path)] + args
 
@@ -141,44 +158,33 @@ def _run_executable(
 def _can_run(context: RepoContext) -> bool:
     """Check if executables can be run on this host."""
     if context["platform"] == "emscripten":
-        return _get_node_path(context) is not None
+        return _get_emrun_path(context) is not None or _get_node_path(context) is not None
     return is_platform_compatible(context["platform"])
 
 
-def _launch_browser(build_dir: Path, executable: str) -> None:
-    """Launch Emscripten build in browser using local HTTP server."""
-    bin_dir = build_dir / "bin"
-    if not bin_dir.exists():
-        logger.error(f"Build directory not found: {bin_dir}")
-        sys.exit(1)
+def _get_emrun_path(context: RepoContext) -> Path | None:
+    """Get path to emrun bundled inside the emsdk Conan package."""
+    build_deps = Path(context["build_deps_root"])
+    emsdk_dir = build_deps / "emsdk"
 
-    # Try to find the requested executable's HTML file
-    target = bin_dir / f"{executable}.html"
-    if target.exists():
-        shell_file = target
-    else:
-        logger.error(f"Executable not found: {executable}.html in {bin_dir}")
-        sys.exit(1)
+    if not emsdk_dir.exists():
+        logger.debug(f"emsdk directory not found: {emsdk_dir}")
+        return None
 
-    os.chdir(bin_dir)
-    handler = http.server.SimpleHTTPRequestHandler
-
-    for port in range(8000, 8010):
-        try:
-            with socketserver.TCPServer(("", port), handler) as httpd:
-                url = f"http://localhost:{port}/{shell_file.name}"
-                logger.info(f"Starting HTTP server on port {port}")
-                logger.info(f"Opening {url}")
-                webbrowser.open(url)
-                logger.info("Press Ctrl+C to stop the server")
-                httpd.serve_forever()
-                break
-        except OSError:
-            logger.info(f"Port {port} is in use, trying next port...")
+    # Navigate: emsdk/<version>/<arch>/bin/upstream/emscripten/emrun.py
+    for version_dir in emsdk_dir.iterdir():
+        if not version_dir.is_dir():
             continue
-    else:
-        logger.error("Could not find available port")
-        sys.exit(1)
+        for arch_dir in version_dir.iterdir():
+            if not arch_dir.is_dir():
+                continue
+            emrun = arch_dir / "bin" / "upstream" / "emscripten" / "emrun.py"
+            if emrun.exists():
+                return emrun
+
+    logger.warning("emrun not found in emsdk package")
+    return None
+
 
 
 def _run_tests(context: RepoContext, config: dict, env: dict, verbose: bool) -> int:
@@ -274,10 +280,6 @@ class LaunchTool(RepoTool):
             help="Environment override (KEY=VALUE). Repeatable.",
         )
         parser.add_argument(
-            "--browser", action="store_true",
-            help="For Emscripten: launch in browser instead of Node.js",
-        )
-        parser.add_argument(
             "--test", action="store_true",
             help="Run all test executables",
         )
@@ -297,11 +299,9 @@ class LaunchTool(RepoTool):
             config=context["build_type"].casefold(),
             build_type=None,
             env=None,
-            browser=False,
             test=False,
             verbose=False,
             interactive=False,
-            passthrough_args=[],
         )
 
     def execute(self, args: argparse.Namespace) -> None:
@@ -316,16 +316,11 @@ class LaunchTool(RepoTool):
         env_overrides = normalize_env_config(args.env) if args.env else None
         env = _setup_environment(context, config, env_overrides)
 
-        # WASM browser launch
-        if is_emscripten and args.browser:
-            _launch_browser(build_dir, args.executable)
-            return
-
         # Check if we can run
         if not _can_run(context):
             from repo_tools import detect_platform_identifier
             if is_emscripten:
-                logger.error("Node.js not found. Use --browser or build with --platform emscripten first.")
+                logger.error("emsdk not found. Build with --platform emscripten first.")
             else:
                 logger.error(f"Cannot run {context['platform']} binaries on this host")
                 logger.info(f"Host platform: {detect_platform_identifier()}")
@@ -364,6 +359,5 @@ class LaunchTool(RepoTool):
                 logger.info(f"  {exe.stem}")
             sys.exit(1)
 
-        passthrough = getattr(args, "passthrough_args", [])
-        result = _run_executable(target_exe, passthrough, env, context)
+        result = _run_executable(target_exe, args.passthrough_args, env, context)
         sys.exit(result.returncode)

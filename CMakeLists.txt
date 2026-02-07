@@ -116,7 +116,8 @@ if(EMSCRIPTEN)
         "-sMAXIMUM_MEMORY=4GB"
         "-sINITIAL_MEMORY=512MB"
         "$<$<CONFIG:Release>:--closure=1>"
-        "--shell-file=${CMAKE_SOURCE_DIR}/web/index.html")
+        "--shell-file=${CMAKE_SOURCE_DIR}/web/index.html"
+        "--emrun")
 endif()
 
 # add subprojects

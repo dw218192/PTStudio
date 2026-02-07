@@ -162,7 +162,6 @@ class SlangcTool(RepoTool):
             platform=context["platform"],
             build_type=context["build_type"],
             force=False,
-            passthrough_args=[]
         )
 
     def execute(self, args: argparse.Namespace) -> None:
@@ -209,7 +208,7 @@ class SlangcTool(RepoTool):
                 "-target",
                 "wgsl",
             ]
-            cmd.extend(getattr(args, "passthrough_args", []))
+            cmd.extend(args.passthrough_args)
             run_command(cmd, log_file=log_file)
             compiled += 1
 

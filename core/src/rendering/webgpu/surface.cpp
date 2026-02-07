@@ -312,7 +312,12 @@ void Surface::present() {
     if (!m_present_pending || m_surface == nullptr) {
         return;
     }
+    // emdawnwebgpu does not implement wgpuSurfacePresent; the browser
+    // composites the surface automatically when control returns to the
+    // event loop (via emscripten_set_main_loop / requestAnimationFrame).
+#ifndef __EMSCRIPTEN__
     wgpuSurfacePresent(m_surface);
+#endif
     if (m_current_view != nullptr) {
         wgpuTextureViewRelease(m_current_view);
         m_current_view = nullptr;

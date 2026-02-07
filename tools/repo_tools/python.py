@@ -12,5 +12,4 @@ class PythonTool(RepoTool):
     help = "Run Python in the repo tooling environment"
 
     def execute(self, args: argparse.Namespace) -> None:
-        extra = getattr(args, "passthrough_args", [])
-        raise SystemExit(subprocess.call([sys.executable, *extra]))
+        raise SystemExit(subprocess.call([sys.executable, *args.passthrough_args]))

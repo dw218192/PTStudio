@@ -249,7 +249,6 @@ class EmbedTool(RepoTool):
             platform=context["platform"],
             build_type=context["build_type"],
             force=False,
-            passthrough_args=[],
         )
 
     def execute(self, args: argparse.Namespace) -> None:

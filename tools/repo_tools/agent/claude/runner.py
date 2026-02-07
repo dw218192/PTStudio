@@ -17,7 +17,7 @@ class ClaudeRunner(AgentRunner):
     def run(self, args: argparse.Namespace) -> int:
         config_dir = Path(__file__).parent
         sys_prompt = config_dir / "claude_sys.txt"
-        settings = config_dir / "setting.json"
+        settings = config_dir / "settings.json"
 
         cmd = [
             "claude",

@@ -76,7 +76,29 @@ def create_repo_tool_args(name: str, context: RepoContext) -> argparse.Namespace
     tool = get_repo_tool(name)
     if tool is None:
         raise KeyError(f"Repo tool '{name}' is not registered.")
-    return tool.default_args(context)
+    args = tool.default_args(context)
+    if not hasattr(args, "passthrough_args"):
+        args.passthrough_args = []
+    return args
+
+
+def invoke_tool(
+    name: str,
+    context: RepoContext,
+    config: dict,
+    extra_args: dict | None = None,
+) -> None:
+    """Invoke a registered repo tool programmatically."""
+    tool = get_repo_tool(name)
+    if tool is None:
+        raise KeyError(f"Repo tool '{name}' is not registered.")
+    args = create_repo_tool_args(name, context)
+    config_args = get_repo_tool_config_args(config, name)
+    apply_repo_tool_args(args, config_args)
+    if extra_args:
+        step_args = normalize_repo_tool_args(extra_args)
+        apply_repo_tool_args(args, step_args)
+    tool.execute(args)
 
 
 def list_repo_tools() -> list[str]:

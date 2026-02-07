@@ -13,18 +13,16 @@ from pathlib import Path
 from repo_tools import (
     RepoContext,
     RepoTool,
-    apply_repo_tool_args,
     build_repo_context,
-    create_repo_tool_args,
     ensure_conan_profile,
     find_venv_executable,
     get_repo_tool,
     get_repo_tool_config_args,
+    invoke_tool,
     is_windows,
     load_repo_config,
     log_section,
     normalize_env_config,
-    normalize_repo_tool_args,
     resolve_env_vars,
     run_command,
     logger,
@@ -88,19 +86,8 @@ def execute_build_steps(
 
         logger.info(f"Running {step_type} step: {step_name} (tool: {repo_tool})")
 
-        mock_args = create_repo_tool_args(repo_tool, context)
-
-        tool_config_args = get_repo_tool_config_args(config, repo_tool)
-        apply_repo_tool_args(mock_args, tool_config_args)
-
-        step_args = normalize_repo_tool_args(step_args_value)
-        apply_repo_tool_args(mock_args, step_args)
-
-        if not hasattr(mock_args, "passthrough_args"):
-            mock_args.passthrough_args = []
-
         try:
-            tool.execute(mock_args)
+            invoke_tool(repo_tool, context, config, extra_args=step_args_value)
             logger.info(f"  ✓ {step_name} completed")
         except Exception as e:
             logger.error(f"  ✗ {step_name} failed: {e}")
@@ -280,9 +267,9 @@ def _remove_tree_with_retries(
             time.sleep(delay)
 
 
-def _find_package_in_deploy(conan_deps_root: Path, package_name: str) -> Path | None:
+def _find_package_in_deploy(deps_root: Path, package_name: str) -> Path | None:
     """Find a package in the full_deploy folder, returning the deepest content directory."""
-    host_dir = conan_deps_root / "full_deploy" / "host" / package_name
+    host_dir = deps_root / package_name
     if not host_dir.exists():
         return None
     # Navigate through version/build_type/arch structure to find the actual content
@@ -764,11 +751,11 @@ def build_command(args: argparse.Namespace, current_tool: str) -> None:
             # Ensure Dawn and OpenUSD are deployed (Dawn not needed for Emscripten)
             dawn_deploy_dir = None
             if not emscripten_build:
-                dawn_deploy_dir = _find_package_in_deploy(conan_deps_root, "dawn")
+                dawn_deploy_dir = _find_package_in_deploy(Path(context["deps_root"]), "dawn")
                 if not dawn_deploy_dir:
                     raise RuntimeError("Failed to find Dawn package in full_deploy")
 
-            openusd_deploy_dir = _find_package_in_deploy(conan_deps_root, "openusd")
+            openusd_deploy_dir = _find_package_in_deploy(Path(context["deps_root"]), "openusd")
             if not openusd_deploy_dir:
                 raise RuntimeError("Failed to find OpenUSD package in full_deploy")
 

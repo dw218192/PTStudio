@@ -8,13 +8,15 @@ from pathlib import Path
 from repo_tools import (
     RepoContext,
     RepoTool,
+    build_repo_context,
     find_venv_executable,
+    load_repo_config,
     logger,
 )
 
 
 TARGET_EXTENSIONS = {".cpp", ".h", ".hpp", ".c", ".cc", ".cxx", ".hxx"}
-EXCLUDE_DIRS = {"_build", "_tools", "_logs", "ext", ".git", ".vs", "build"}
+_ALWAYS_EXCLUDE = {"_tools", "ext", ".git", ".vs", "build"}
 
 
 class FormatTool(RepoTool):
@@ -31,12 +33,19 @@ class FormatTool(RepoTool):
             ),
         )
 
-    def default_args(self, _: RepoContext) -> argparse.Namespace:
-        return argparse.Namespace(verify=False)
+    def default_args(self, context: RepoContext) -> argparse.Namespace:
+        return argparse.Namespace(platform=context["platform"], verify=False)
 
     def execute(self, args: argparse.Namespace) -> None:
         """Format subcommand implementation."""
         root = Path(__file__).parent.parent.parent
+        config = load_repo_config(root)
+        context = build_repo_context(root, "Debug", config, args.platform)
+
+        exclude_dirs = set(_ALWAYS_EXCLUDE)
+        exclude_dirs.add(Path(context["build_root"]).name)
+        exclude_dirs.add(Path(context["logs_root"]).name)
+
         clang_format_exe = find_venv_executable("clang-format")
         clang_format_file = root / ".clang-format"
 
@@ -50,7 +59,7 @@ class FormatTool(RepoTool):
             if path.is_file() and path.suffix in TARGET_EXTENSIONS:
                 # Check if path is in any excluded directory
                 parts = path.parts
-                if not any(excluded in parts for excluded in EXCLUDE_DIRS):
+                if not any(excluded in parts for excluded in exclude_dirs):
                     source_files.append(path)
 
         if not source_files:

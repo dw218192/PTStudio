@@ -104,8 +104,6 @@ def main() -> None:
     apply_repo_tool_args(merged_args, cli_args)
     if unknown_args:
         merged_args.passthrough_args = unknown_args
-    elif not hasattr(merged_args, "passthrough_args"):
-        merged_args.passthrough_args = []
     args.func(merged_args)
 
 
