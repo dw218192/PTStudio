@@ -2,9 +2,8 @@
 
 ## Bash Tool Usage
 
-1. **Never redirect to `/dev/null`** - On Windows, this creates a literal file named "nul" instead of discarding output.
-2. **Always use `./pts` entrypoint** - The Bash tool runs in bash, so use `./pts` (not `.\pts.cmd`).
-3. **All operations go through `./pts`**: `build`, `test`, `format`, `clean`, `python`. Use `./pts -h` or `./pts <cmd> -h` for options.
+1. **Always use `./pts` entrypoint** - The Bash tool runs in bash, so use `./pts` (not `.\pts.cmd`).
+2. **All repository operations go through `./pts`**: `build`, `test`, `format`, `clean`, `python`. Use `./pts -h` or `./pts <cmd> -h` for options. Do not attempt to infer the build system/ test driver executable and environment.
 
 ## Project Overview
 
