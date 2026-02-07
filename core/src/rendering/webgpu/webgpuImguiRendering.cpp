@@ -5,10 +5,6 @@
 
 #include <memory>
 
-#ifndef IMGUI_IMPL_WEBGPU_BACKEND_DAWN
-#define IMGUI_IMPL_WEBGPU_BACKEND_DAWN
-#endif
-
 namespace pts::rendering {
 WebGpuImguiRendering::WebGpuImguiRendering(WebGpuContext& context, IViewport& viewport,
                                            pts::LoggingManager& logging_manager)

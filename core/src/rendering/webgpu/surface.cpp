@@ -55,12 +55,19 @@ auto create_surface_for_handle(WGPUInstance instance,
 
     switch (handle.platform) {
         case rendering::NativePlatform::win32: {
+#ifdef __EMSCRIPTEN__
+            return nullptr;
+#else
             WGPUSurfaceSourceWindowsHWND source = WGPU_SURFACE_SOURCE_WINDOWS_HWND_INIT;
             source.hinstance = handle.win32.hinstance;
             source.hwnd = handle.win32.hwnd;
             descriptor.nextInChain = reinterpret_cast<WGPUChainedStruct*>(&source);
             return wgpuInstanceCreateSurface(instance, &descriptor);
+#endif
         }
+#ifdef __EMSCRIPTEN__
+            return nullptr;
+#else
         case rendering::NativePlatform::xlib: {
             WGPUSurfaceSourceXlibWindow source = WGPU_SURFACE_SOURCE_XLIB_WINDOW_INIT;
             source.display = handle.xlib.display;
@@ -68,6 +75,7 @@ auto create_surface_for_handle(WGPUInstance instance,
             descriptor.nextInChain = reinterpret_cast<WGPUChainedStruct*>(&source);
             return wgpuInstanceCreateSurface(instance, &descriptor);
         }
+#endif
         case rendering::NativePlatform::emscripten: {
 #ifdef __EMSCRIPTEN__
             const char* selector =
@@ -189,6 +197,10 @@ auto Surface::create(const Device& device, const rendering::NativeViewportHandle
     WGPUCompositeAlphaMode alpha_mode = WGPUCompositeAlphaMode_Auto;
     WGPUTextureUsage usage = WGPUTextureUsage_RenderAttachment;
 
+    // Query surface capabilities to pick optimal format/present mode.
+    // wgpuDeviceGetAdapter is a Dawn extension unavailable in emdawnwebgpu,
+    // so on Emscripten we use the defaults above.
+#ifndef __EMSCRIPTEN__
     WGPUAdapter adapter = wgpuDeviceGetAdapter(device.handle());
     SCOPE_EXIT {
         if (adapter) wgpuAdapterRelease(adapter);
@@ -210,6 +222,7 @@ auto Surface::create(const Device& device, const rendering::NativeViewportHandle
             wgpuSurfaceCapabilitiesFreeMembers(capabilities);
         }
     }
+#endif
 
     return Surface(surface, device.handle(), format, usage, present_mode, alpha_mode, extent);
 }

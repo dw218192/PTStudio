@@ -7,6 +7,7 @@ import shutil
 import stat
 import subprocess
 import time
+import urllib.request
 from pathlib import Path
 
 from repo_tools import (
@@ -104,6 +105,54 @@ def execute_build_steps(
         except Exception as e:
             logger.error(f"  ✗ {step_name} failed: {e}")
             raise RuntimeError(f"{step_type} step '{step_name}' failed") from e
+
+
+def _get_dawn_version(root: Path) -> str:
+    """Extract the Dawn version from the Dawn Conan recipe."""
+    dawn_conanfile = root / "tools" / "conan" / "dawn" / "conanfile.py"
+    name, version = _parse_conanfile_metadata(dawn_conanfile)
+    if not version:
+        raise RuntimeError(f"Could not parse Dawn version from {dawn_conanfile}")
+    return version
+
+
+def _ensure_emdawnwebgpu_port(root: Path, build_folder: Path) -> Path:
+    """Ensure the emdawnwebgpu remote port file matching Dawn is available.
+
+    The emdawnwebgpu version is derived from the pinned Dawn version to keep
+    native and WASM WebGPU APIs in sync. The remote port file is downloaded
+    from Dawn's GitHub releases on demand into the build directory.
+
+    Returns the path to the remote port file.
+    """
+    dawn_version = _get_dawn_version(root)
+    tag = f"v{dawn_version}"
+    filename = f"emdawnwebgpu-{tag}.remoteport.py"
+    port_file = build_folder / filename
+
+    if port_file.exists():
+        print_tool(f"emdawnwebgpu port file found: {port_file.name}")
+        return port_file
+
+    # Download from Dawn releases into a temp file, then rename atomically
+    # to avoid leaving a partial file on interrupted downloads.
+    url = (
+        f"https://github.com/google/dawn/releases/download/{tag}/{filename}"
+    )
+    print_tool(f"Downloading emdawnwebgpu port ({tag})...")
+    build_folder.mkdir(parents=True, exist_ok=True)
+    tmp_file = port_file.with_suffix(".tmp")
+    try:
+        urllib.request.urlretrieve(url, tmp_file)
+        tmp_file.replace(port_file)
+    except Exception as e:
+        tmp_file.unlink(missing_ok=True)
+        raise RuntimeError(
+            f"Failed to download emdawnwebgpu port from {url}: {e}"
+        ) from e
+
+    print_tool(f"emdawnwebgpu port file saved: {port_file.name}")
+    return port_file
 
 
 def _format_workspace_path(root: Path, path: Path) -> str:
@@ -608,12 +657,12 @@ def build_command(args: argparse.Namespace, current_tool: str) -> None:
     prebuild_steps = _get_dict_arg(args, "prebuild")
     postbuild_steps = _get_dict_arg(args, "postbuild")
 
-    # WASM build configuration
-    wasm_build = platform_id == "wasm"
-    if wasm_build:
-        # Use separate lock file for WASM builds
-        lock_file = root / "conan_wasm.lock"
-        print_tool("WASM build mode: Using Emscripten cross-build via Conan")
+    # Emscripten build configuration
+    emscripten_build = platform_id == "emscripten"
+    if emscripten_build:
+        # Use separate lock file for Emscripten builds
+        lock_file = root / "conan_emscripten.lock"
+        print_tool("Emscripten build mode: cross-building via Conan")
         print_tool(f"Lock file: {lock_file}")
 
     # Remove build configuration directory if -x flag is provided
@@ -647,8 +696,8 @@ def build_command(args: argparse.Namespace, current_tool: str) -> None:
             # Handle lock file generation and usage
             should_create_lock = args.update_lock or not lock_file.exists()
 
-            # Use local emscripten profile from repo root for WASM builds
-            if wasm_build:
+            # Use local emscripten profile from repo root for Emscripten builds
+            if emscripten_build:
                 emscripten_profile = root / "conan_profile_emscripten"
                 if not emscripten_profile.exists():
                     raise RuntimeError(f"Emscripten profile not found: {emscripten_profile}")
@@ -711,9 +760,9 @@ def build_command(args: argparse.Namespace, current_tool: str) -> None:
                 log_file=install_log_file,
             )
 
-            # Ensure Dawn and OpenUSD are deployed (Dawn not needed for WASM)
+            # Ensure Dawn and OpenUSD are deployed (Dawn not needed for Emscripten)
             dawn_deploy_dir = None
-            if not wasm_build:
+            if not emscripten_build:
                 dawn_deploy_dir = _find_package_in_deploy(conan_deps_root, "dawn")
                 if not dawn_deploy_dir:
                     raise RuntimeError("Failed to find Dawn package in full_deploy")
@@ -741,16 +790,19 @@ def build_command(args: argparse.Namespace, current_tool: str) -> None:
             cmake_exe = find_venv_executable("cmake")
             _ensure_cmake_file_api_query(build_folder / args.build_type)
 
-            if wasm_build:
-                # WASM: Use CMake presets (includes emsdk env, Ninja generator, toolchain)
+            if emscripten_build:
+                # Emscripten: Use CMake presets (includes emsdk env, Ninja generator, toolchain)
                 # Preset name is based on Conan os=Emscripten setting
                 preset_name = f"conan-emscripten-{args.build_type.lower()}"
+                # Ensure the emdawnwebgpu port file matching Dawn is available
+                emdawnwebgpu_port = _ensure_emdawnwebgpu_port(root, build_folder)
                 cmake_args = [
                     cmake_exe,
                     "--preset",
                     preset_name,
                     "-S",
                     str(root),
+                    f"-DEMDAWNWEBGPU_PORT_FILE={emdawnwebgpu_port}",
                 ]
             else:
                 # Desktop: Manual CMake configuration
@@ -780,8 +832,8 @@ def build_command(args: argparse.Namespace, current_tool: str) -> None:
             build_log_file = logs_dir / "cmake_build.log"
             cmake_exe = find_venv_executable("cmake")
 
-            if wasm_build:
-                # WASM: Use CMake build preset (includes emsdk environment)
+            if emscripten_build:
+                # Emscripten: Use CMake build preset (includes emsdk environment)
                 # Preset name is based on Conan os=Emscripten setting
                 # Must run from project root where CMakeUserPresets.json is located
                 preset_name = f"conan-emscripten-{args.build_type.lower()}"
@@ -835,7 +887,7 @@ class BuildTool(RepoTool):
             "-x",
             "--rebuild",
             action="store_true",
-            help="Rebuild flag: removes build configuration folder before building",
+            help="Rebuild flag: removes build configuration folder before building (Use clean tool for a full clean of build and dependencies folders)",
         )
         parser.add_argument(
             "-u",

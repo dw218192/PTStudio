@@ -40,24 +40,22 @@ class PTStudioConan(ConanFile):
         # Scene description
         self.requires("openusd/25.11-dev")
         
-        # These dependencies don't work or aren't needed for Emscripten/WASM
+        # These dependencies don't work or aren't needed for Emscripten
         if self.settings.os != "Emscripten":
-            # WebGPU backend (browser provides WebGPU)
-            self.requires("dawn/20250428.160623")
+            # WebGPU backend (Emscripten gets Dawn via emdawnwebgpu emcc port)
+            self.requires("dawn/20251002.162335")
             # File dialogs (not applicable in browser)
             self.requires("portable-file-dialogs/0.1.0")
 
         # GUI libraries (from Conan)
-        self.requires("imgui/1.92.0-docking")
+        self.requires("imgui/1.92.5-docking")
         self.requires("imguizmo/1.92")
         self.requires("imgui_color_text_edit/1.0")
 
     def build_requirements(self):
-        # Emscripten SDK for WASM builds
         if self.settings.os == "Emscripten":
-            self.tool_requires("emsdk/3.1.73")
+            self.tool_requires("emsdk/4.0.10")
             self.tool_requires("ninja/1.13.2")
-            self.tool_requires("nodejs/16.3.0")
         self.tool_requires("slang/2026.1")
 
     def configure(self):

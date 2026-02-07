@@ -7,7 +7,7 @@ import sys
 
 class DawnConan(ConanFile):
     name = "dawn"
-    version = "20250428.160623"
+    version = "20251002.162335"
     license = "Apache-2.0"
     description = "Dawn WebGPU implementation"
     homepage = "https://dawn.googlesource.com/dawn"

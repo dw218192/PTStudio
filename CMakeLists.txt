@@ -5,8 +5,6 @@ cmake_minimum_required(VERSION 3.19 FATAL_ERROR)
 set(project_name "PTStudio")
 project(${project_name} LANGUAGES CXX C)
 
-set(CMAKE_CXX_STANDARD 17)
-
 # Include custom CMake modules
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(PluginHelpers)
@@ -33,7 +31,7 @@ if(EMSCRIPTEN)
 endif()
 
 # Direct all output to /bin directory
-# Since we organize builds by configuration (build/Debug, build/Release) -- see build.ps1,
+# Since we organize builds by configuration (_build/Debug, _build/Release),
 # we don't want CMake to append the config name again
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin)
 # Prevent multi-config generators from adding config suffix
@@ -42,26 +40,20 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
 
-# Auto-detect GPU architecture (only if building path tracer)
-
 # C++ compiler flags
 set(cxx_flags
-	$<$<CXX_COMPILER_ID:MSVC>:-D_SCL_SECURE_NO_WARNINGS /std:c++17 /MP>
+	$<$<CXX_COMPILER_ID:MSVC>:-D_SCL_SECURE_NO_WARNINGS /MP>
 	$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Debug>>:/MDd /Zi /Ob0 /Od /RTC1>
 	# Add MSVC-specific compiler flags here
 	
-	$<$<CXX_COMPILER_ID:GNU>:-Wall -m64 -O3 -std=c++17 -fmax-errors=1>
+	$<$<CXX_COMPILER_ID:GNU>:-Wall -m64 -O3 -fmax-errors=1>
 	$<$<AND:$<CXX_COMPILER_ID:GNU>,$<CONFIG:Debug>>:-g -O0>
 	# Add GCC compiler flags here
-	
-	$<$<CXX_COMPILER_ID:Clang>:-Wall -m64 -O3 -std=c++17 -ferror-limit=1>
+
+	$<$<AND:$<CXX_COMPILER_ID:Clang>,$<NOT:$<BOOL:${EMSCRIPTEN}>>>:-Wall -m64 -O3 -ferror-limit=1>
+	$<$<AND:$<CXX_COMPILER_ID:Clang>,$<BOOL:${EMSCRIPTEN}>>:-Wall -O3 -ferror-limit=1>
 	$<$<AND:$<CXX_COMPILER_ID:Clang>,$<CONFIG:Debug>>:-g -O0>
 	# Add Clang compiler flags here
-)
-
-set(MSVC_XCOMPILER_FLAGS
-	"/std:c++17"
-	$<$<CONFIG:Debug>:/MDd /Zi /Ob0 /Od /RTC1>
 )
 
 add_library(developer_flags INTERFACE)
@@ -81,7 +73,11 @@ find_package(stb REQUIRED)
 find_package(fmt REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(nlohmann_json REQUIRED)
-find_package(Boost REQUIRED COMPONENTS filesystem)
+if(EMSCRIPTEN)
+    find_package(Boost REQUIRED)
+else()
+    find_package(Boost REQUIRED COMPONENTS filesystem)
+endif()
 find_package(openusd CONFIG REQUIRED)
 
 if (NOT EMSCRIPTEN)
@@ -99,6 +95,29 @@ find_package(imguizmo REQUIRED)
 find_package(imgui_color_text_edit REQUIRED)
 
 
+# Emscripten configuration - centralized flags for all targets
+# Must be defined before add_subdirectory() so that targets can link to it.
+add_library(wasm_flags INTERFACE)
+if(EMSCRIPTEN)
+    # emdawnwebgpu port: the build tool downloads the remote port file matching
+    # the pinned Dawn version and passes it via -DEMDAWNWEBGPU_PORT_FILE=.
+    if(NOT EMDAWNWEBGPU_PORT_FILE)
+        message(FATAL_ERROR "EMDAWNWEBGPU_PORT_FILE must be set for Emscripten builds. "
+            "Use the build tool (./pts build --platform emscripten) which downloads the correct version.")
+    endif()
+    target_compile_options(wasm_flags INTERFACE
+        "--use-port=${EMDAWNWEBGPU_PORT_FILE}"
+        "--use-port=contrib.glfw3")
+    target_link_options(wasm_flags INTERFACE
+        "--use-port=${EMDAWNWEBGPU_PORT_FILE}"
+        "--use-port=contrib.glfw3"
+        "-sALLOW_MEMORY_GROWTH=1"
+        "-sMAXIMUM_MEMORY=4GB"
+        "-sINITIAL_MEMORY=512MB"
+        "$<$<CONFIG:Release>:--closure=1>"
+        "--shell-file=${CMAKE_SOURCE_DIR}/web/index.html")
+endif()
+
 # add subprojects
 add_subdirectory(core)
 add_subdirectory(hello_triangle)
@@ -110,18 +129,6 @@ add_subdirectory(plugins)
 # Link static plugins into the main executable when enabled.
 if(PTS_STATIC_PLUGINS)
     target_link_libraries(editor PRIVATE pts::plugins)
-endif()
-
-# WASM/Emscripten configuration - centralized flags for all targets
-add_library(wasm_flags INTERFACE)
-if(EMSCRIPTEN)
-    target_compile_options(wasm_flags INTERFACE "-sMEMORY64=1" "-sUSE_WEBGPU=1" "-sUSE_GLFW=3")
-    target_link_options(wasm_flags INTERFACE
-        "-sMEMORY64=1"
-        "-sUSE_WEBGPU=1"
-        "-sUSE_GLFW=3"
-        "-sALLOW_MEMORY_GROWTH=1"
-        "--shell-file=${CMAKE_SOURCE_DIR}/web/index.html")
 endif()
 
 # set editor as the start-up project

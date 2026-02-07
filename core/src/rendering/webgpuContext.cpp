@@ -64,11 +64,7 @@ auto WebGpuContext::create(const IViewport& viewport,
         return context;
     }
 
-#ifdef __EMSCRIPTEN__
-    logger->debug("Using Emscripten/Browser WebGPU backend");
-#else
-    logger->debug("Using Dawn/Native WebGPU backend");
-#endif
+    logger->debug("Using Dawn WebGPU backend");
 
     context->m_state = std::move(init_state);
     logger->info("Starting WebGPU context initialization...");
@@ -254,11 +250,7 @@ void WebGpuContext::finish_initialization() {
     // Transition to Ready state
     m_state = ReadyState(std::move(device_wrapper), std::move(surface_wrapper));
 
-#ifdef __EMSCRIPTEN__
-    m_logger->info("WebGPU context created successfully (Emscripten/Browser backend)");
-#else
-    m_logger->info("WebGPU context created successfully (Dawn/Native backend)");
-#endif
+    m_logger->info("WebGPU context created successfully (Dawn backend)");
 }
 
 void WebGpuContext::set_failed() {

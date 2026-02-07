@@ -1,4 +1,4 @@
-# Conan profile for Emscripten/WASM cross-builds
+# Conan profile for Emscripten cross-builds
 [settings]
 os=Emscripten
 arch=wasm
@@ -14,6 +14,9 @@ tools.cmake.cmake_layout:build_folder_vars=["settings.os"]
 tools.build:exelinkflags=['-sALLOW_MEMORY_GROWTH=1', '-sMAXIMUM_MEMORY=4GB', '-sINITIAL_MEMORY=512MB']
 tools.build:sharedlinkflags=['-sALLOW_MEMORY_GROWTH=1', '-sMAXIMUM_MEMORY=4GB', '-sINITIAL_MEMORY=512MB']
 tools.build:compiler_executables={"c":"emcc","cpp":"em++","ar":"emar","ranlib":"emranlib","nm":"emnm","strip":"emstrip"}
+
+[tool_requires]
+emsdk/4.0.10
 
 [buildenv]
 CC=emcc
