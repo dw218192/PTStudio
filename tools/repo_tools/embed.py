@@ -19,7 +19,6 @@ from repo_tools import (
     build_repo_context,
     load_repo_config,
     logger,
-    print_tool,
     resolve_path,
 )
 
@@ -321,6 +320,6 @@ class EmbedTool(RepoTool):
             _save_manifest(manifest_path, {"hashes": current_hashes})
             embedded += 1
 
-        print_tool(f"embed generated {embedded} header(s)")
+        logger.info(f"embed generated {embedded} header(s)")
         if skipped:
-            print_tool(f"embed skipped {skipped} up-to-date header(s)")
+            logger.info(f"embed skipped {skipped} up-to-date header(s)")

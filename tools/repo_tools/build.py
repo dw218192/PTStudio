@@ -22,9 +22,9 @@ from repo_tools import (
     get_repo_tool_config_args,
     is_windows,
     load_repo_config,
+    log_section,
     normalize_env_config,
     normalize_repo_tool_args,
-    print_tool,
     resolve_env_vars,
     run_command,
     logger,
@@ -131,7 +131,7 @@ def _ensure_emdawnwebgpu_port(root: Path, build_folder: Path) -> Path:
     port_file = build_folder / filename
 
     if port_file.exists():
-        print_tool(f"emdawnwebgpu port file found: {port_file.name}")
+        logger.info(f"emdawnwebgpu port file found: {port_file.name}")
         return port_file
 
     # Download from Dawn releases into a temp file, then rename atomically
@@ -139,7 +139,7 @@ def _ensure_emdawnwebgpu_port(root: Path, build_folder: Path) -> Path:
     url = (
         f"https://github.com/google/dawn/releases/download/{tag}/{filename}"
     )
-    print_tool(f"Downloading emdawnwebgpu port ({tag})...")
+    logger.info(f"Downloading emdawnwebgpu port ({tag})...")
     build_folder.mkdir(parents=True, exist_ok=True)
     tmp_file = port_file.with_suffix(".tmp")
     try:
@@ -151,7 +151,7 @@ def _ensure_emdawnwebgpu_port(root: Path, build_folder: Path) -> Path:
             f"Failed to download emdawnwebgpu port from {url}: {e}"
         ) from e
 
-    print_tool(f"emdawnwebgpu port file saved: {port_file.name}")
+    logger.info(f"emdawnwebgpu port file saved: {port_file.name}")
     return port_file
 
 
@@ -270,10 +270,10 @@ def _remove_tree_with_retries(
             return
         except PermissionError as error:
             offending = error.filename or str(path)
-            print_tool(f"Remove failed for: {offending}")
+            logger.warning(f"Remove failed for: {offending}")
             if attempt == attempts:
                 raise
-            print_tool(
+            logger.warning(
                 f"Remove failed (attempt {attempt}/{attempts}) due to locked files. "
                 f"Retrying in {delay:.1f}s..."
             )
@@ -448,7 +448,7 @@ def _strip_local_recipe_revisions(
     if modified:
         with open(lock_file, "w") as f:
             json.dump(lock_data, f, indent=4)
-        print_tool(
+        logger.info(
             "Stripped local recipe revisions in lock file: "
             f"{', '.join(sorted(local_recipe_names))}"
         )
@@ -662,12 +662,12 @@ def build_command(args: argparse.Namespace, current_tool: str) -> None:
     if emscripten_build:
         # Use separate lock file for Emscripten builds
         lock_file = root / "conan_emscripten.lock"
-        print_tool("Emscripten build mode: cross-building via Conan")
-        print_tool(f"Lock file: {lock_file}")
+        logger.info("Emscripten build mode: cross-building via Conan")
+        logger.info(f"Lock file: {lock_file}")
 
     # Remove build configuration directory if -x flag is provided
     if args.rebuild and build_dir.exists():
-        print_tool(f"Rebuild flag (-x) detected. Removing build directory: {build_dir}")
+        logger.info(f"Rebuild flag (-x) detected. Removing build directory: {build_dir}")
         _remove_tree_with_retries(build_dir)
 
     # Create build directory if missing
@@ -682,16 +682,16 @@ def build_command(args: argparse.Namespace, current_tool: str) -> None:
         os.chdir(build_folder)
 
         if args.build_only:
-            print_tool("Build only mode (-b): Skipping configuration steps")
-            print_tool(f"Building with configuration: {args.build_type}")
+            logger.info("Build only mode (-b): Skipping configuration steps")
+            logger.info(f"Building with configuration: {args.build_type}")
         else:
             ensure_conan_profile()
             _export_local_conan_recipes(root, logs_dir, conan_config)
 
             if args.configure_only:
-                print_tool(f"Configuring with configuration: {args.build_type}")
+                logger.info(f"Configuring with configuration: {args.build_type}")
             else:
-                print_tool(f"Building with configuration: {args.build_type}")
+                logger.info(f"Building with configuration: {args.build_type}")
 
             # Handle lock file generation and usage
             should_create_lock = args.update_lock or not lock_file.exists()
@@ -705,60 +705,61 @@ def build_command(args: argparse.Namespace, current_tool: str) -> None:
             else:
                 host_profile = args.conan_profile
 
-            local_recipe_names = _get_local_recipe_names(root, conan_config)
-            if should_create_lock:
-                if args.update_lock:
-                    print_tool(
-                        "Update lock flag (-u) detected. Regenerating lock file..."
-                    )
+            with log_section("Conan dependencies"):
+                local_recipe_names = _get_local_recipe_names(root, conan_config)
+                if should_create_lock:
+                    if args.update_lock:
+                        logger.info(
+                            "Update lock flag (-u) detected. Regenerating lock file..."
+                        )
+                    else:
+                        logger.info("Lock file not found. Generating new lock file...")
+                    lock_log_file = logs_dir / f"conan_lock_create_{windowing}.log"
+                    conan_exe = find_venv_executable("conan")
+                    lock_args = [
+                        conan_exe,
+                        "lock",
+                        "create",
+                        str(root),  # Use absolute path to root instead of relative ".."
+                        "-o",
+                        f"&:windowing={windowing}",
+                        "--lockfile-out",
+                        str(lock_file),
+                        f"--profile:host={host_profile}",
+                        f"--profile:build={args.conan_profile}",
+                    ]
+                    run_command(lock_args, log_file=lock_log_file)
+                    # Strip revisions for local recipes in the lock file
+                    _strip_local_recipe_revisions(lock_file, local_recipe_names)
                 else:
-                    print_tool("Lock file not found. Generating new lock file...")
-                lock_log_file = logs_dir / f"conan_lock_create_{windowing}.log"
+                    logger.info(f"Lock file found. Using existing lock file: {lock_file}")
+
+                install_log_file = logs_dir / "conan_install.log"
                 conan_exe = find_venv_executable("conan")
-                lock_args = [
-                    conan_exe,
-                    "lock",
-                    "create",
-                    str(root),  # Use absolute path to root instead of relative ".."
-                    "-o",
-                    f"&:windowing={windowing}",
-                    "--lockfile-out",
-                    str(lock_file),
-                    f"--profile:host={host_profile}",
-                    f"--profile:build={args.conan_profile}",
-                ]
-                run_command(lock_args, log_file=lock_log_file)
-                # Strip revisions for local recipes in the lock file
-                _strip_local_recipe_revisions(lock_file, local_recipe_names)
-            else:
-                print_tool(f"Lock file found. Using existing lock file: {lock_file}")
 
-            install_log_file = logs_dir / "conan_install.log"
-            conan_exe = find_venv_executable("conan")
-
-            print_tool(f"Installing dependencies with Conan...")
-            run_command(
-                [
-                    conan_exe,
-                    "install",
-                    str(root),  # Use absolute path to root instead of relative ".."
-                    "--lockfile",
-                    str(lock_file),
-                    f"--output-folder={args.build_type}",
-                    f"--deployer-folder={conan_deps_root}",
-                    "--deployer=full_deploy",
-                    "--build=missing",
-                    f"--profile:host={host_profile}",
-                    f"--profile:build={args.conan_profile}",
-                    "-o",
-                    f"&:windowing={windowing}",
-                    "-s",
-                    "compiler.cppstd=17",
-                    "-s",
-                    f"build_type={args.build_type}",
-                ],
-                log_file=install_log_file,
-            )
+                logger.info("Installing dependencies with Conan...")
+                run_command(
+                    [
+                        conan_exe,
+                        "install",
+                        str(root),  # Use absolute path to root instead of relative ".."
+                        "--lockfile",
+                        str(lock_file),
+                        f"--output-folder={args.build_type}",
+                        f"--deployer-folder={conan_deps_root}",
+                        "--deployer=full_deploy",
+                        "--build=missing",
+                        f"--profile:host={host_profile}",
+                        f"--profile:build={args.conan_profile}",
+                        "-o",
+                        f"&:windowing={windowing}",
+                        "-s",
+                        "compiler.cppstd=17",
+                        "-s",
+                        f"build_type={args.build_type}",
+                    ],
+                    log_file=install_log_file,
+                )
 
             # Ensure Dawn and OpenUSD are deployed (Dawn not needed for Emscripten)
             dawn_deploy_dir = None
@@ -773,101 +774,101 @@ def build_command(args: argparse.Namespace, current_tool: str) -> None:
 
             # Execute prebuild steps
             if prebuild_steps:
-                print_tool("Running prebuild steps...")
-                execute_build_steps(
-                    root,
-                    config,
-                    context,
-                    logs_dir,
-                    prebuild_steps,
-                    "prebuild",
-                    current_tool,
-                )
+                with log_section("Prebuild steps"):
+                    execute_build_steps(
+                        root,
+                        config,
+                        context,
+                        logs_dir,
+                        prebuild_steps,
+                        "prebuild",
+                        current_tool,
+                    )
 
-            print_tool("Building targets...")
+            with log_section("CMake configure"):
+                configure_log_file = logs_dir / "cmake_configure.log"
+                cmake_exe = find_venv_executable("cmake")
+                _ensure_cmake_file_api_query(build_folder / args.build_type)
 
-            configure_log_file = logs_dir / "cmake_configure.log"
-            cmake_exe = find_venv_executable("cmake")
-            _ensure_cmake_file_api_query(build_folder / args.build_type)
+                if emscripten_build:
+                    # Emscripten: Use CMake presets (includes emsdk env, Ninja generator, toolchain)
+                    # Preset name is based on Conan os=Emscripten setting
+                    preset_name = f"conan-emscripten-{args.build_type.lower()}"
+                    # Ensure the emdawnwebgpu port file matching Dawn is available
+                    emdawnwebgpu_port = _ensure_emdawnwebgpu_port(root, build_folder)
+                    cmake_args = [
+                        cmake_exe,
+                        "--preset",
+                        preset_name,
+                        "-S",
+                        str(root),
+                        f"-DEMDAWNWEBGPU_PORT_FILE={emdawnwebgpu_port}",
+                    ]
+                else:
+                    # Desktop: Manual CMake configuration
+                    cmake_args = [
+                        cmake_exe,
+                        "-S",
+                        str(root),
+                        "-B",
+                        args.build_type,
+                        "-DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake",
+                        f"-DCMAKE_BUILD_TYPE={args.build_type}",
+                        f"-DPTS_WINDOWING={windowing}",
+                        "-DCMAKE_CXX_STANDARD=17",
+                        "-DCMAKE_CXX_STANDARD_REQUIRED=ON",
+                        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+                    ]
+                    if dawn_deploy_dir:
+                        dawn_cmake_dir = dawn_deploy_dir / "lib" / "cmake" / "Dawn"
+                        if dawn_cmake_dir.exists():
+                            cmake_args.append(f"-DDawn_DIR={dawn_cmake_dir}")
 
-            if emscripten_build:
-                # Emscripten: Use CMake presets (includes emsdk env, Ninja generator, toolchain)
-                # Preset name is based on Conan os=Emscripten setting
-                preset_name = f"conan-emscripten-{args.build_type.lower()}"
-                # Ensure the emdawnwebgpu port file matching Dawn is available
-                emdawnwebgpu_port = _ensure_emdawnwebgpu_port(root, build_folder)
-                cmake_args = [
-                    cmake_exe,
-                    "--preset",
-                    preset_name,
-                    "-S",
-                    str(root),
-                    f"-DEMDAWNWEBGPU_PORT_FILE={emdawnwebgpu_port}",
-                ]
-            else:
-                # Desktop: Manual CMake configuration
-                cmake_args = [
-                    cmake_exe,
-                    "-S",
-                    str(root),
-                    "-B",
-                    args.build_type,
-                    "-DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake",
-                    f"-DCMAKE_BUILD_TYPE={args.build_type}",
-                    f"-DPTS_WINDOWING={windowing}",
-                    "-DCMAKE_CXX_STANDARD=17",
-                    "-DCMAKE_CXX_STANDARD_REQUIRED=ON",
-                    "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-                ]
-                if dawn_deploy_dir:
-                    dawn_cmake_dir = dawn_deploy_dir / "lib" / "cmake" / "Dawn"
-                    if dawn_cmake_dir.exists():
-                        cmake_args.append(f"-DDawn_DIR={dawn_cmake_dir}")
-
-            run_command(cmake_args, log_file=configure_log_file)
+                run_command(cmake_args, log_file=configure_log_file)
 
             _generate_cpp_properties(root, build_dir, windowing)
 
         if not args.configure_only:
-            build_log_file = logs_dir / "cmake_build.log"
-            cmake_exe = find_venv_executable("cmake")
+            with log_section("CMake build"):
+                build_log_file = logs_dir / "cmake_build.log"
+                cmake_exe = find_venv_executable("cmake")
 
-            if emscripten_build:
-                # Emscripten: Use CMake build preset (includes emsdk environment)
-                # Preset name is based on Conan os=Emscripten setting
-                # Must run from project root where CMakeUserPresets.json is located
-                preset_name = f"conan-emscripten-{args.build_type.lower()}"
-                build_args = [cmake_exe, "--build", "--preset", preset_name]
-                os.chdir(root)
-                try:
+                if emscripten_build:
+                    # Emscripten: Use CMake build preset (includes emsdk environment)
+                    # Preset name is based on Conan os=Emscripten setting
+                    # Must run from project root where CMakeUserPresets.json is located
+                    preset_name = f"conan-emscripten-{args.build_type.lower()}"
+                    build_args = [cmake_exe, "--build", "--preset", preset_name]
+                    os.chdir(root)
+                    try:
+                        run_command(build_args, log_file=build_log_file)
+                    finally:
+                        os.chdir(build_folder)
+                else:
+                    # Desktop: Standard CMake build
+                    build_args = [
+                        cmake_exe,
+                        "--build",
+                        args.build_type,
+                        "--config",
+                        args.build_type,
+                    ]
                     run_command(build_args, log_file=build_log_file)
-                finally:
-                    os.chdir(build_folder)
-            else:
-                # Desktop: Standard CMake build
-                build_args = [
-                    cmake_exe,
-                    "--build",
-                    args.build_type,
-                    "--config",
-                    args.build_type,
-                ]
-                run_command(build_args, log_file=build_log_file)
 
             # Execute postbuild steps
             if postbuild_steps:
-                print_tool("Running postbuild steps...")
-                execute_build_steps(
-                    root,
-                    config,
-                    context,
-                    logs_dir,
-                    postbuild_steps,
-                    "postbuild",
-                    current_tool,
-                )
+                with log_section("Postbuild steps"):
+                    execute_build_steps(
+                        root,
+                        config,
+                        context,
+                        logs_dir,
+                        postbuild_steps,
+                        "postbuild",
+                        current_tool,
+                    )
         else:
-            print_tool("Configure only mode (-c): Skipping build step")
+            logger.info("Configure only mode (-c): Skipping build step")
 
         tests = _discover_test_targets(build_dir)
         launch_args = get_repo_tool_config_args(config, "launch")

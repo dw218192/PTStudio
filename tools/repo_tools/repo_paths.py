@@ -9,7 +9,7 @@ from repo_tools import (
     RepoTool,
     build_repo_context,
     load_repo_config,
-    print_tool,
+    logger,
 )
 
 
@@ -45,6 +45,6 @@ class RepoPathsTool(RepoTool):
             print(json.dumps(context, indent=4))
             return
         for key in sorted(context.keys()):
-            print_tool(f"{key}: {context[key]}")
+            logger.info(f"{key}: {context[key]}")
 
 

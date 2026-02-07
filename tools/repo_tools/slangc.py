@@ -12,7 +12,6 @@ from repo_tools import (
     build_repo_context,
     load_repo_config,
     logger,
-    print_tool,
     run_command,
     resolve_path,
     is_windows,
@@ -214,6 +213,6 @@ class SlangcTool(RepoTool):
             run_command(cmd, log_file=log_file)
             compiled += 1
 
-        print_tool(f"slangc compiled {compiled} shader(s)")
+        logger.info(f"slangc compiled {compiled} shader(s)")
         if skipped:
-            print_tool(f"slangc skipped {skipped} up-to-date shader(s)")
+            logger.info(f"slangc skipped {skipped} up-to-date shader(s)")

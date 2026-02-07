@@ -18,10 +18,10 @@ from repo_tools import (
     is_platform_compatible,
     is_windows,
     load_repo_config,
+    log_section,
     logger,
     normalize_build_type,
     normalize_env_config,
-    print_tool,
     resolve_env_vars,
 )
 
@@ -83,7 +83,7 @@ def _discover_executables(target_dir: Path, is_emscripten: bool = False) -> list
             if not file.is_file():
                 continue
             if is_emscripten:
-                if file.suffix.lower() == ".js":
+                if file.suffix.lower() in (".html", ".js"):
                     exe_paths.append(file)
             elif is_windows():
                 if file.suffix.lower() == ".exe":
@@ -95,7 +95,7 @@ def _discover_executables(target_dir: Path, is_emscripten: bool = False) -> list
                 except OSError:
                     continue
     except (PermissionError, OSError) as e:
-        print_tool(f"Warning: Could not scan {target_dir}: {e}")
+        logger.warning(f"Could not scan {target_dir}: {e}")
     return exe_paths
 
 
@@ -117,14 +117,16 @@ def _run_executable(
     capture_output: bool = False,
 ) -> subprocess.CompletedProcess:
     """Run an executable, using Node.js for Emscripten builds."""
-    is_emscripten = exe_path.suffix.lower() == ".js"
+    is_emscripten = exe_path.suffix.lower() in (".js", ".html")
 
     if is_emscripten:
         node_path = _get_node_path(context)
         if node_path is None:
             raise RuntimeError("Node.js not found. Build with --platform emscripten first.")
+        # Node runs the .js file; if we have an .html, use the sibling .js
+        js_path = exe_path.with_suffix(".js") if exe_path.suffix.lower() == ".html" else exe_path
         node_flags = ["--experimental-wasm-threads"]
-        cmd = [str(node_path)] + node_flags + [str(exe_path)] + args
+        cmd = [str(node_path)] + node_flags + [str(js_path)] + args
     else:
         cmd = [str(exe_path)] + args
 
@@ -143,19 +145,21 @@ def _can_run(context: RepoContext) -> bool:
     return is_platform_compatible(context["platform"])
 
 
-def _launch_browser(build_dir: Path) -> None:
+def _launch_browser(build_dir: Path, executable: str) -> None:
     """Launch Emscripten build in browser using local HTTP server."""
     bin_dir = build_dir / "bin"
     if not bin_dir.exists():
-        print_tool(f"ERROR: Build directory not found: {bin_dir}")
+        logger.error(f"Build directory not found: {bin_dir}")
         sys.exit(1)
 
-    html_files = list(bin_dir.glob("*.html"))
-    if not html_files:
-        print_tool(f"ERROR: No HTML shell file found in {bin_dir}")
+    # Try to find the requested executable's HTML file
+    target = bin_dir / f"{executable}.html"
+    if target.exists():
+        shell_file = target
+    else:
+        logger.error(f"Executable not found: {executable}.html in {bin_dir}")
         sys.exit(1)
 
-    shell_file = html_files[0]
     os.chdir(bin_dir)
     handler = http.server.SimpleHTTPRequestHandler
 
@@ -163,17 +167,17 @@ def _launch_browser(build_dir: Path) -> None:
         try:
             with socketserver.TCPServer(("", port), handler) as httpd:
                 url = f"http://localhost:{port}/{shell_file.name}"
-                print_tool(f"Starting HTTP server on port {port}")
-                print_tool(f"Opening {url}")
+                logger.info(f"Starting HTTP server on port {port}")
+                logger.info(f"Opening {url}")
                 webbrowser.open(url)
-                print_tool("Press Ctrl+C to stop the server")
+                logger.info("Press Ctrl+C to stop the server")
                 httpd.serve_forever()
                 break
         except OSError:
-            print_tool(f"Port {port} is in use, trying next port...")
+            logger.info(f"Port {port} is in use, trying next port...")
             continue
     else:
-        print_tool("ERROR: Could not find available port")
+        logger.error("Could not find available port")
         sys.exit(1)
 
 
@@ -187,8 +191,8 @@ def _run_tests(context: RepoContext, config: dict, env: dict, verbose: bool) -> 
 
     test_executables = _discover_executables(test_dir, is_emscripten)
     if not test_executables:
-        print_tool(f"No test executables found in: {test_dir}")
-        print_tool("Build the project first: ./pts build")
+        logger.error(f"No test executables found in: {test_dir}")
+        logger.info("Build the project first: ./pts build")
         return 1
 
     logger.info(f"Found {len(test_executables)} test executable(s)")
@@ -199,55 +203,50 @@ def _run_tests(context: RepoContext, config: dict, env: dict, verbose: bool) -> 
 
     for test_exe in sorted(test_executables):
         test_name = test_exe.stem
-        logger.info(f"\n{'=' * 70}")
-        logger.info(f"Running test: {test_name}")
-        logger.info(f"{'=' * 70}")
-
         log_file = logs_dir / f"test_{test_name}.log"
         test_args = ["--verbose"] if verbose else []
 
-        try:
-            result = _run_executable(test_exe, test_args, env, context, capture_output=True)
+        with log_section(f"Test: {test_name}"):
+            try:
+                result = _run_executable(test_exe, test_args, env, context, capture_output=True)
 
-            with open(log_file, "w", encoding="utf-8", errors="replace") as f:
-                f.write(f"Test: {test_name}\n")
-                f.write(f"Executable: {test_exe}\n")
-                f.write(f"Exit code: {result.returncode}\n")
-                f.write("=" * 70 + "\n")
-                f.write(result.stdout or "")
+                with open(log_file, "w", encoding="utf-8", errors="replace") as f:
+                    f.write(f"Test: {test_name}\n")
+                    f.write(f"Executable: {test_exe}\n")
+                    f.write(f"Exit code: {result.returncode}\n")
+                    f.write("=" * 70 + "\n")
+                    f.write(result.stdout or "")
 
-            if result.stdout:
-                for line in result.stdout.splitlines():
-                    logger.info(f"  {line}")
+                if result.stdout:
+                    for line in result.stdout.splitlines():
+                        logger.info(f"  {line}")
 
-            if result.returncode == 0:
-                logger.info(f"PASSED: {test_name}")
-                passed += 1
-            else:
-                logger.error(f"FAILED: {test_name} (exit code: {result.returncode})")
+                if result.returncode == 0:
+                    logger.info(f"PASSED: {test_name}")
+                    passed += 1
+                else:
+                    logger.error(f"FAILED: {test_name} (exit code: {result.returncode})")
+                    failed += 1
+                    failed_tests.append(test_name)
+
+            except Exception as e:
+                logger.error(f"FAILED: {test_name} (exception: {e})")
+                with open(log_file, "w", encoding="utf-8", errors="replace") as f:
+                    f.write(f"Test: {test_name}\nException: {e}\n")
                 failed += 1
                 failed_tests.append(test_name)
 
-        except Exception as e:
-            logger.error(f"FAILED: {test_name} (exception: {e})")
-            with open(log_file, "w", encoding="utf-8", errors="replace") as f:
-                f.write(f"Test: {test_name}\nException: {e}\n")
-            failed += 1
-            failed_tests.append(test_name)
+    with log_section("Test summary"):
+        logger.info(f"Total:  {passed + failed}")
+        logger.info(f"Passed: {passed}")
+        logger.info(f"Failed: {failed}")
 
-    logger.info(f"\n{'=' * 70}")
-    logger.info("TEST SUMMARY")
-    logger.info(f"{'=' * 70}")
-    logger.info(f"Total:  {passed + failed}")
-    logger.info(f"Passed: {passed}")
-    logger.info(f"Failed: {failed}")
-
-    if failed > 0:
-        logger.error("Failed tests:")
-        for name in failed_tests:
-            logger.error(f"  - {name}")
-        return 1
-    logger.info("All tests passed!")
+        if failed > 0:
+            logger.error("Failed tests:")
+            for name in failed_tests:
+                logger.error(f"  - {name}")
+            return 1
+        logger.info("All tests passed!")
     return 0
 
 
@@ -319,17 +318,17 @@ class LaunchTool(RepoTool):
 
         # WASM browser launch
         if is_emscripten and args.browser:
-            _launch_browser(build_dir)
+            _launch_browser(build_dir, args.executable)
             return
 
         # Check if we can run
         if not _can_run(context):
             from repo_tools import detect_platform_identifier
             if is_emscripten:
-                print_tool("Node.js not found. Use --browser or build with --platform emscripten first.")
+                logger.error("Node.js not found. Use --browser or build with --platform emscripten first.")
             else:
-                print_tool(f"ERROR: Cannot run {context['platform']} binaries on this host")
-                print_tool(f"Host platform: {detect_platform_identifier()}")
+                logger.error(f"Cannot run {context['platform']} binaries on this host")
+                logger.info(f"Host platform: {detect_platform_identifier()}")
             sys.exit(1)
 
         # Run tests
@@ -341,15 +340,15 @@ class LaunchTool(RepoTool):
         exe_paths = _discover_executables(bin_dir, is_emscripten)
 
         if not exe_paths:
-            print_tool(f"No executables found in: {bin_dir}")
-            print_tool("Build the project first: ./pts build")
+            logger.error(f"No executables found in: {bin_dir}")
+            logger.info("Build the project first: ./pts build")
             sys.exit(1)
 
         # Interactive mode
         if args.interactive:
             target_exe = _interactive_select(exe_paths)
             if target_exe is None:
-                print_tool("No executable selected.")
+                logger.info("No executable selected.")
                 sys.exit(0)
         else:
             target_exe = None
@@ -359,10 +358,10 @@ class LaunchTool(RepoTool):
                     break
 
         if target_exe is None:
-            print_tool(f"Executable not found: {args.executable}")
-            print_tool("Available executables:")
+            logger.error(f"Executable not found: {args.executable}")
+            logger.info("Available executables:")
             for exe in exe_paths:
-                print_tool(f"  {exe.stem}")
+                logger.info(f"  {exe.stem}")
             sys.exit(1)
 
         passthrough = getattr(args, "passthrough_args", [])

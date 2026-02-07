@@ -1,6 +1,7 @@
 """Shared utilities for repo tools."""
 
 import argparse
+import contextlib
 import functools
 import logging
 import os
@@ -9,7 +10,7 @@ import re
 import shutil
 import subprocess
 import sys
-from collections.abc import Mapping
+from collections.abc import Generator, Mapping
 from pathlib import Path
 from typing import Optional, TypedDict
 
@@ -132,8 +133,23 @@ def is_macos() -> bool:
     return platform.system() == "Darwin"
 
 
-def print_tool(message: str) -> None:
-    print(f"{Fore.CYAN}[pts]{Style.RESET_ALL} {message}", flush=True)
+def _is_ci() -> bool:
+    """Return True when running inside GitHub Actions."""
+    return os.environ.get("GITHUB_ACTIONS") == "true"
+
+
+@contextlib.contextmanager
+def log_section(title: str) -> Generator[None, None, None]:
+    """Foldable CI section (``::group::``) or styled terminal header."""
+    if _is_ci():
+        print(f"::group::{title}", flush=True)
+    else:
+        logger.info(f"── {title} ──")
+    try:
+        yield
+    finally:
+        if _is_ci():
+            print("::endgroup::", flush=True)
 
 
 def print_subprocess_line(line: str) -> None:
@@ -190,11 +206,11 @@ def ensure_conan_profile() -> None:
     profile_dir = Path.home() / ".conan2" / "profiles"
 
     if not profile_dir.exists() or not any(profile_dir.iterdir()):
-        print_tool("No Conan profiles found. Running 'conan profile detect'...")
+        logger.info("No Conan profiles found. Running 'conan profile detect'...")
         conan_exe = find_venv_executable("conan")
         subprocess.run([conan_exe, "profile", "detect"], check=True)
     else:
-        print_tool("Conan profiles already exist.")
+        logger.info("Conan profiles already exist.")
 
 
 def load_repo_config(root: Path) -> dict:

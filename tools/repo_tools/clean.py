@@ -8,7 +8,7 @@ from repo_tools import (
     RepoTool,
     build_repo_context,
     load_repo_config,
-    print_tool,
+    logger,
 )
 from repo_tools.build import _remove_tree_with_retries
 
@@ -45,26 +45,26 @@ def clean_command(args: argparse.Namespace) -> None:
             unique_targets.append(t)
 
     if not unique_targets:
-        print_tool("Nothing to clean.")
+        logger.info("Nothing to clean.")
         return
 
     for target in unique_targets:
         if not target.exists():
-            print_tool(f"Skip (not found): {target}")
+            logger.info(f"Skip (not found): {target}")
             continue
         if args.dry_run:
-            print_tool(f"Would remove: {target}")
+            logger.info(f"Would remove: {target}")
         else:
-            print_tool(f"Removing: {target}")
+            logger.info(f"Removing: {target}")
             if target.is_file():
                 target.unlink()
             else:
                 _remove_tree_with_retries(target)
 
     if args.dry_run:
-        print_tool("Dry run complete. No files were removed.")
+        logger.info("Dry run complete. No files were removed.")
     else:
-        print_tool("Clean complete.")
+        logger.info("Clean complete.")
 
 
 class CleanTool(RepoTool):

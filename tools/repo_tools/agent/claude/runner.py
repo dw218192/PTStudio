@@ -5,7 +5,6 @@ import subprocess
 from pathlib import Path
 
 from ..runner import AgentRunner
-from ... import print_tool
 
 
 class ClaudeRunner(AgentRunner):
