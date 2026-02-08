@@ -92,14 +92,21 @@ struct Application {
     }
 
     /**
+     * @brief Drive WebGPU async init forward. Returns true when the context is
+     *        ready and the frame should proceed; false if still initializing or
+     *        failed (caller should return early).
+     */
+    [[nodiscard]] bool ensure_webgpu_ready();
+
+    /**
      * @brief Process a single frame. Override in derived classes for custom frame behavior.
      */
     virtual void run_one_frame();
 
    private:
-    // Class invariants (enforced in constructor, throw on failure):
-    // - m_webgpu_context is non-null and in Ready state (initialization is completed
-    //   before derived class constructors run)
+    // Class invariants:
+    // - m_webgpu_context is non-null; may be Initializing after construction,
+    //   guaranteed Ready before loop() is called (driven by run_one_frame())
     // - m_windowing is always valid (non-null)
     // - m_viewport is always valid (non-null)
     // - m_logging_manager and m_plugin_manager are always valid (non-null)

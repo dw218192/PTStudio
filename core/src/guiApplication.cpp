@@ -2,7 +2,6 @@
 #include <core/guiApplication.h>
 #include <core/imgui/imhelper.h>
 #include <core/rendering/webgpuContext.h>
-#include <core/scopeUtils.h>
 #include <core/timeUtils.h>
 #include <imgui_internal.h>
 
@@ -17,11 +16,7 @@ GUIApplication::GUIApplication(std::string_view name, pts::LoggingManager& loggi
                                pts::PluginManager& plugin_manager, unsigned width, unsigned height,
                                float min_frame_time)
     : Application{name, logging_manager, plugin_manager, width, height, min_frame_time} {
-    SCOPE_FAIL {
-        ImGui::DestroyContext();
-    };
-
-    // Setup Dear ImGui context
+    // Setup Dear ImGui context (no WebGPU dependency)
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
@@ -37,10 +32,22 @@ GUIApplication::GUIApplication(std::string_view name, pts::LoggingManager& loggi
     viewport->on_scroll.connect([this](double dx, double dy) { on_scroll_event(dx, dy); });
     m_imgui_windowing = pts::rendering::create_imgui_windowing(*viewport, get_logging_manager());
 
-    // Create ImGui rendering components
+    // ImGui rendering components are created lazily in ensure_imgui_rendering()
+    // because the WebGPU context may still be initializing asynchronously.
+}
+
+GUIApplication::~GUIApplication() {
+    m_imgui_rendering.reset();
+    m_imgui_windowing.reset();
+    m_render_graph.reset();
+    ImGui::DestroyContext();
+}
+
+void GUIApplication::ensure_imgui_rendering() {
     auto* webgpu_context = get_webgpu_context();
     INVARIANT_MSG(webgpu_context != nullptr, "WebGPU context must be valid");
 
+    auto* viewport = get_viewport();
     auto imgui_components =
         pts::rendering::create_imgui_components(*webgpu_context, *viewport, get_logging_manager());
     INVARIANT_MSG(imgui_components.render_graph != nullptr,
@@ -55,13 +62,6 @@ GUIApplication::GUIApplication(std::string_view name, pts::LoggingManager& loggi
     resize_render_output(extent.w, extent.h);
 }
 
-GUIApplication::~GUIApplication() {
-    m_imgui_rendering.reset();
-    m_imgui_windowing.reset();
-    m_render_graph.reset();
-    ImGui::DestroyContext();
-}
-
 void GUIApplication::run_one_frame() {
     auto const now = get_time();
 
@@ -69,6 +69,16 @@ void GUIApplication::run_one_frame() {
     m_mouse_scroll_delta = glm::vec2{0.0f};
 
     get_windowing()->pump_events(pts::rendering::PumpEventMode::Poll);
+
+    if (!ensure_webgpu_ready()) {
+        return;
+    }
+
+    // Create ImGui rendering components once WebGPU context is ready
+    if (!m_imgui_rendering) {
+        ensure_imgui_rendering();
+    }
+
     poll_input_events();
 
     float delta_time = static_cast<float>(now - m_last_frame_time);

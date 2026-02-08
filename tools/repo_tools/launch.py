@@ -147,12 +147,15 @@ def _run_executable(
     else:
         cmd = [str(exe_path)] + args
 
-    if capture_output:
-        return subprocess.run(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, encoding="utf-8", errors="replace", env=env,
-        )
-    return subprocess.run(cmd, env=env)
+    try:
+        if capture_output:
+            return subprocess.run(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, encoding="utf-8", errors="replace", env=env,
+            )
+        return subprocess.run(cmd, env=env)
+    except KeyboardInterrupt:
+        sys.exit(0)
 
 
 def _can_run(context: RepoContext) -> bool:

@@ -20,6 +20,15 @@ ErrorScope::ErrorScope(const Device& device, WGPUErrorFilter filter, std::string
 ErrorScope::ErrorScope(const Device& device, std::initializer_list<WGPUErrorFilter> filters,
                        std::string_view logger_name, std::string_view context_label)
     : m_device(device), m_logger_name(logger_name), m_context_label(context_label) {
+#if defined(__EMSCRIPTEN__)
+    // On Emscripten, wgpuDevicePopErrorScope is backed by a JavaScript Promise
+    // that can only resolve when control returns to the browser event loop.
+    // The synchronous pop_and_wait() busy-loop would deadlock.  Skip error
+    // scopes entirely; the device's uncaptured-error callback still reports
+    // all errors asynchronously.
+    m_scope_count = 0;
+    static_cast<void>(filters);
+#else
     m_scope_count = filters.size();
     m_results.reserve(m_scope_count);
 
@@ -27,6 +36,7 @@ ErrorScope::ErrorScope(const Device& device, std::initializer_list<WGPUErrorFilt
     for (const auto filter : filters) {
         wgpuDevicePushErrorScope(device.handle(), filter);
     }
+#endif
 }
 
 ErrorScope::~ErrorScope() {

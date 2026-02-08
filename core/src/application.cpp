@@ -5,10 +5,9 @@
 #include <core/timeUtils.h>
 
 #include <chrono>
-#include <stdexcept>
 #include <thread>
 
-#ifdef __EMSCRIPTEN__
+#if defined(__EMSCRIPTEN__)
 #include <emscripten.h>
 #endif
 
@@ -42,37 +41,15 @@ Application::Application(std::string_view name, pts::LoggingManager& logging_man
     m_webgpu_context = pts::rendering::WebGpuContext::create(*m_viewport, get_logging_manager());
     INVARIANT_MSG(m_webgpu_context != nullptr, "WebGpuContext::create must return valid context");
 
-    // Drive WebGPU initialization to completion before derived class constructors run
-    while (!m_webgpu_context->is_ready() && !m_webgpu_context->is_failed()) {
-        m_windowing->pump_events(pts::rendering::PumpEventMode::Poll);
-        m_webgpu_context->tick_init();
-
-        if (m_viewport->should_close()) {
-            log(pts::LogLevel::Warning, "Window closed during WebGPU initialization");
-            break;
-        }
-
-        std::this_thread::yield();
-    }
-
-    if (m_webgpu_context->is_failed()) {
-        throw std::runtime_error("WebGPU context initialization failed");
-    }
-
-    // Check if window was closed during initialization (context still in Initializing state)
-    if (m_viewport->should_close() && !m_webgpu_context->is_ready()) {
-        throw std::runtime_error("Window closed during WebGPU initialization");
-    }
-
-    INVARIANT_MSG(m_webgpu_context->is_ready(), "WebGPU context must be ready after init loop");
-
-    log(pts::LogLevel::Info, "Application initialized");
+    // WebGPU initialization continues asynchronously; it will be driven to
+    // completion inside run_one_frame() so the browser event loop can yield
+    // between ticks (required on Emscripten).
 }
 
 Application::~Application() = default;
 
 void Application::run() {
-#ifdef __EMSCRIPTEN__
+#if defined(__EMSCRIPTEN__)
     // Emscripten requires yielding control to the browser via main loop callback
     emscripten_set_main_loop_arg(
         [](void* arg) {
@@ -87,10 +64,40 @@ void Application::run() {
 #endif
 }
 
+bool Application::ensure_webgpu_ready() {
+    // Already failed — nothing to do (emscripten_set_main_loop keeps calling
+    // even after request_close)
+    if (m_webgpu_context->is_failed()) {
+        return false;
+    }
+
+    if (m_webgpu_context->is_initializing()) {
+        m_webgpu_context->tick_init();
+
+        if (m_webgpu_context->is_failed()) {
+            log(pts::LogLevel::Error, "WebGPU context initialization failed");
+            m_viewport->request_close();
+            return false;
+        }
+
+        if (m_webgpu_context->is_initializing()) {
+            return false;  // still initializing — wait for next frame
+        }
+
+        log(pts::LogLevel::Info, "Application initialized");
+    }
+
+    return true;
+}
+
 void Application::run_one_frame() {
     auto const frame_start = std::chrono::steady_clock::now();
 
     m_windowing->pump_events(pts::rendering::PumpEventMode::Poll);
+
+    if (!ensure_webgpu_ready()) {
+        return;
+    }
 
     loop(m_delta_time);
 
@@ -104,7 +111,7 @@ void Application::run_one_frame() {
     auto const frame_duration = std::chrono::duration<float>(frame_end - frame_start).count();
     m_delta_time = frame_duration;
 
-#ifndef __EMSCRIPTEN__
+#if !defined(__EMSCRIPTEN__)
     if (m_min_frame_time > 0.0f && frame_duration < m_min_frame_time) {
         auto const sleep_duration = m_min_frame_time - frame_duration;
         std::this_thread::sleep_for(

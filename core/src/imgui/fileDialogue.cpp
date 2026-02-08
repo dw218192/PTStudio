@@ -1,12 +1,12 @@
 #include <core/imgui/fileDialogue.h>
 
-#ifndef __EMSCRIPTEN__
+#if !defined(__EMSCRIPTEN__)
 #include <portable-file-dialogs.h>
 #endif
 
 auto ImGui::FileDialogue(FileDialogueMode mode, const std::vector<std::string>& filters,
                          const std::string& default_path) -> std::string {
-#ifdef __EMSCRIPTEN__
+#if defined(__EMSCRIPTEN__)
     // File dialogs not supported in browser environment
     (void) mode;
     (void) filters;

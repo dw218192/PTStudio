@@ -11,8 +11,7 @@ class HelloTriangleApp : public pts::Application {
    public:
     HelloTriangleApp(pts::LoggingManager& logging_manager, pts::PluginManager& plugin_manager)
         : pts::Application("HelloTriangle", logging_manager, plugin_manager, 800, 600,
-                           1.0f / 60.0f),
-          m_pipeline(create_pipeline()) {
+                           1.0f / 60.0f) {
     }
 
     void loop(float dt) override {
@@ -21,6 +20,11 @@ class HelloTriangleApp : public pts::Application {
         auto* context = get_webgpu_context();
         if (!context) {
             return;
+        }
+
+        // Lazily create pipeline on first frame after context is ready
+        if (!m_pipeline.has_value()) {
+            m_pipeline.emplace(create_pipeline(*context));
         }
 
         WGPUTextureView view = context->surface().acquire_texture_view();
@@ -49,7 +53,7 @@ class HelloTriangleApp : public pts::Application {
 
         WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &pass_desc);
         if (pass != nullptr) {
-            wgpuRenderPassEncoderSetPipeline(pass, m_pipeline.handle());
+            wgpuRenderPassEncoderSetPipeline(pass, m_pipeline->handle());
             wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
             wgpuRenderPassEncoderEnd(pass);
             wgpuRenderPassEncoderRelease(pass);
@@ -67,12 +71,7 @@ class HelloTriangleApp : public pts::Application {
     }
 
    private:
-    auto create_pipeline() -> pts::webgpu::RenderPipeline {
-        auto* context = get_webgpu_context();
-        if (!context) {
-            throw std::runtime_error("WebGPU context not available");
-        }
-
+    auto create_pipeline(pts::rendering::WebGpuContext& context) -> pts::webgpu::RenderPipeline {
         constexpr const char* kShaderSource = R"(
 @vertex
 fn vs_main(@builtin(vertex_index) vertex_index : u32) -> @builtin(position) vec4f {
@@ -90,19 +89,19 @@ fn fs_main() -> @location(0) vec4f {
 }
 )";
 
-        auto shader = context->device().create_shader_module_from_source(kShaderSource);
+        auto shader = context.device().create_shader_module_from_source(kShaderSource);
 
         log(pts::LogLevel::Info, "Triangle pipeline initialized");
 
-        return pts::webgpu::RenderPipelineBuilder(context->device())
+        return pts::webgpu::RenderPipelineBuilder(context.device())
             .shader(shader)
             .vertex_entry("vs_main")
             .fragment_entry("fs_main")
-            .color_format(context->surface_format())
+            .color_format(context.surface_format())
             .build();
     }
 
-    pts::webgpu::RenderPipeline m_pipeline;
+    std::optional<pts::webgpu::RenderPipeline> m_pipeline;
 };
 
 int main() {

@@ -101,10 +101,11 @@ struct GUIApplication : Application {
     double m_last_frame_time{0.0};
     bool m_first_loop_done{false};
 
-    // Class invariants (enforced in constructor, throw on failure):
-    // - m_render_graph is always valid (non-null)
+    // Class invariants:
     // - m_imgui_windowing is always valid (non-null)
-    // - m_imgui_rendering is always valid (non-null)
+    // - m_render_graph and m_imgui_rendering are null until WebGPU context is
+    //   ready; guaranteed valid before loop() is called (created in run_one_frame)
+    void ensure_imgui_rendering();
     std::unique_ptr<pts::rendering::IRenderGraph> m_render_graph;
     std::unique_ptr<pts::rendering::IImguiWindowing> m_imgui_windowing;
     std::unique_ptr<pts::rendering::IImguiRendering> m_imgui_rendering;

@@ -21,7 +21,7 @@ namespace detail {
 // Automatically set during interface query before calling the getter function
 template <typename PluginClass>
 struct PluginInstanceStorage {
-#ifdef __EMSCRIPTEN__
+#if defined(__EMSCRIPTEN__)
     // Emscripten: single-threaded, no thread_local needed
     static PluginClass* instance;
 #else
@@ -30,7 +30,7 @@ struct PluginInstanceStorage {
 };
 
 template <typename PluginClass>
-#ifdef __EMSCRIPTEN__
+#if defined(__EMSCRIPTEN__)
 PluginClass* PluginInstanceStorage<PluginClass>::instance = nullptr;
 #else
 thread_local PluginClass* PluginInstanceStorage<PluginClass>::instance = nullptr;

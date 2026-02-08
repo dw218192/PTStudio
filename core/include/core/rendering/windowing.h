@@ -80,12 +80,20 @@ class IViewport {
     [[nodiscard]] virtual float content_scale() const noexcept = 0;
 
     /**
-     * @brief whether the window should close
+     * @brief Whether the window should close.
+     *
+     * On Emscripten this is a soft flag only — emscripten_set_main_loop keeps
+     * firing regardless. Callers must also check this in their frame function
+     * and skip work when true.
      */
     [[nodiscard]] virtual bool should_close() const noexcept = 0;
 
     /**
-     * @brief request the window to close
+     * @brief Request the window to close.
+     *
+     * On native platforms this causes the run-loop to exit. On Emscripten the
+     * browser owns the event loop, so this only sets the should_close() flag;
+     * there is no way to close the tab programmatically.
      */
     virtual void request_close() noexcept = 0;
 

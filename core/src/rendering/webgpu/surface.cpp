@@ -55,7 +55,7 @@ auto create_surface_for_handle(WGPUInstance instance,
 
     switch (handle.platform) {
         case rendering::NativePlatform::win32: {
-#ifdef __EMSCRIPTEN__
+#if defined(__EMSCRIPTEN__)
             return nullptr;
 #else
             WGPUSurfaceSourceWindowsHWND source = WGPU_SURFACE_SOURCE_WINDOWS_HWND_INIT;
@@ -65,7 +65,7 @@ auto create_surface_for_handle(WGPUInstance instance,
             return wgpuInstanceCreateSurface(instance, &descriptor);
 #endif
         }
-#ifdef __EMSCRIPTEN__
+#if defined(__EMSCRIPTEN__)
             return nullptr;
 #else
         case rendering::NativePlatform::xlib: {
@@ -77,7 +77,7 @@ auto create_surface_for_handle(WGPUInstance instance,
         }
 #endif
         case rendering::NativePlatform::emscripten: {
-#ifdef __EMSCRIPTEN__
+#if defined(__EMSCRIPTEN__)
             const char* selector =
                 handle.web.canvas_selector ? handle.web.canvas_selector : k_default_canvas_selector;
             WGPUEmscriptenSurfaceSourceCanvasHTMLSelector source =
@@ -200,7 +200,7 @@ auto Surface::create(const Device& device, const rendering::NativeViewportHandle
     // Query surface capabilities to pick optimal format/present mode.
     // wgpuDeviceGetAdapter is a Dawn extension unavailable in emdawnwebgpu,
     // so on Emscripten we use the defaults above.
-#ifndef __EMSCRIPTEN__
+#if !defined(__EMSCRIPTEN__)
     WGPUAdapter adapter = wgpuDeviceGetAdapter(device.handle());
     SCOPE_EXIT {
         if (adapter) wgpuAdapterRelease(adapter);
@@ -315,7 +315,7 @@ void Surface::present() {
     // emdawnwebgpu does not implement wgpuSurfacePresent; the browser
     // composites the surface automatically when control returns to the
     // event loop (via emscripten_set_main_loop / requestAnimationFrame).
-#ifndef __EMSCRIPTEN__
+#if !defined(__EMSCRIPTEN__)
     wgpuSurfacePresent(m_surface);
 #endif
     if (m_current_view != nullptr) {
