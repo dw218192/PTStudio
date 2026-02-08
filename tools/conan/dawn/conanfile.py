@@ -30,7 +30,7 @@ class DawnConan(ConanFile):
         tc.cache_variables["DAWN_BUILD_TESTS"] = False
         tc.cache_variables["DAWN_FETCH_DEPENDENCIES"] = True
         tc.cache_variables["TINT_BUILD_TESTS"] = False
-        tc.cache_variables["DAWN_BUILD_MONOLITHIC_LIBRARY"] = True
+        tc.cache_variables["DAWN_BUILD_MONOLITHIC_LIBRARY"] = "SHARED"
         tc.generate()
         deps = CMakeDeps(self)
         deps.generate()
