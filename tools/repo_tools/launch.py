@@ -101,6 +101,15 @@ def _discover_executables(target_dir: Path, is_emscripten: bool = False) -> list
                     continue
     except (PermissionError, OSError) as e:
         logger.warning(f"Could not scan {target_dir}: {e}")
+
+    if is_emscripten:
+        # Each Emscripten target emits .html + .js; deduplicate by stem, keep .js
+        by_stem: dict[str, Path] = {}
+        for f in exe_paths:
+            if f.stem not in by_stem or f.suffix.lower() == ".js":
+                by_stem[f.stem] = f
+        exe_paths = list(by_stem.values())
+
     return exe_paths
 
 
@@ -227,8 +236,9 @@ def _run_tests(context: RepoContext, config: dict, env: dict, verbose: bool) -> 
                     f.write(result.stdout or "")
 
                 if result.stdout:
-                    for line in result.stdout.splitlines():
-                        logger.info(f"  {line}")
+                    sys.stdout.write(result.stdout)
+                    if not result.stdout.endswith("\n"):
+                        sys.stdout.write("\n")
 
                 if result.returncode == 0:
                     logger.info(f"PASSED: {test_name}")

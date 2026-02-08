@@ -21,19 +21,25 @@ def clean_command(args: argparse.Namespace) -> None:
     build_root = Path(context["build_root"])
     build_dir = Path(context["build_dir"])
     conan_deps_root = Path(context["conan_deps_root"])
+    logs_root = Path(context["logs_root"])
 
     targets: list[Path] = []
 
     if args.all:
         targets.append(build_root)
-    else:
-        targets.append(build_dir)
-        if args.deps:
-            targets.append(conan_deps_root)
-
-    if args.locks:
+        targets.append(logs_root)
         for lock in root.glob("conan*.lock"):
             targets.append(lock)
+    else:
+        if args.build:
+            targets.append(build_dir)
+        if args.deps:
+            targets.append(conan_deps_root)
+        if args.logs:
+            targets.append(logs_root)
+        if args.locks:
+            for lock in root.glob("conan*.lock"):
+                targets.append(lock)
 
     # De-duplicate while preserving order
     seen: set[Path] = set()
@@ -73,19 +79,29 @@ class CleanTool(RepoTool):
 
     def setup(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
-            "--deps",
+            "--build",
             action="store_true",
-            help="Also remove deployed dependencies for the current platform",
+            help="Remove build output for the current platform and build type",
         )
         parser.add_argument(
-            "--all",
+            "--deps",
             action="store_true",
-            help="Remove entire _build/ directory (all platforms and configurations)",
+            help="Remove deployed dependencies for the current platform",
+        )
+        parser.add_argument(
+            "--logs",
+            action="store_true",
+            help="Remove log files",
         )
         parser.add_argument(
             "--locks",
             action="store_true",
             help="Remove conan*.lock files from the repository root",
+        )
+        parser.add_argument(
+            "--all",
+            action="store_true",
+            help="Remove everything (build root, logs, and lock files)",
         )
         parser.add_argument(
             "--dry-run",
@@ -102,9 +118,11 @@ class CleanTool(RepoTool):
         return argparse.Namespace(
             platform=context["platform"],
             build_type=context["build_type"],
+            build=False,
             deps=False,
-            all=False,
+            logs=False,
             locks=False,
+            all=False,
             dry_run=False,
         )
 

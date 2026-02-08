@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -27,6 +28,41 @@ from repo_tools import (
     run_command,
     logger,
 )
+
+
+def _get_emsdk_version(root: Path) -> str:
+    """Read the emsdk version from the local emsdk Conan recipe (single source of truth)."""
+    emsdk_conanfile = root / "tools" / "conan" / "emsdk" / "conanfile.py"
+    text = emsdk_conanfile.read_text()
+    match = re.search(r'^\s*version\s*=\s*"([^"]+)"', text, re.MULTILINE)
+    if not match:
+        raise RuntimeError(f"Could not parse emsdk version from {emsdk_conanfile}")
+    return match.group(1)
+
+
+def _get_emscripten_conan_flags(root: Path) -> list[str]:
+    """Return Conan CLI flags for Emscripten cross-builds.
+
+    All values are derived from the emsdk recipe (single source of truth).
+    These are passed as -s:h / -c:h overrides so no profile file is needed.
+    """
+    v = _get_emsdk_version(root)
+    return [
+        # Host settings
+        "-s:h", "os=Emscripten",
+        "-s:h", "arch=wasm",
+        "-s:h", "compiler=emcc",
+        "-s:h", f"compiler.version={v}",
+        "-s:h", "compiler.cppstd=17",
+        "-s:h", "compiler.libcxx=libc++",
+        # Host conf — build flags that propagate to all dependency builds
+        "-c:h", "tools.cmake.cmaketoolchain:generator=Ninja",
+        "-c:h", 'tools.cmake.cmake_layout:build_folder_vars=["settings.os"]',
+        "-c:h", "tools.build:cflags=['-pthread']",
+        "-c:h", "tools.build:cxxflags=['-pthread', '-DTBB_USE_ASSERT=0', '-fexceptions']",
+        "-c:h", "tools.build:exelinkflags=['-pthread', '-sALLOW_MEMORY_GROWTH=1', '-sMAXIMUM_MEMORY=4GB', '-sINITIAL_MEMORY=512MB']",
+        "-c:h", "tools.build:sharedlinkflags=['-pthread', '-sALLOW_MEMORY_GROWTH=1', '-sMAXIMUM_MEMORY=4GB', '-sINITIAL_MEMORY=512MB']",
+    ]
 
 
 def execute_build_steps(
@@ -683,14 +719,8 @@ def build_command(args: argparse.Namespace, current_tool: str) -> None:
             # Handle lock file generation and usage
             should_create_lock = args.update_lock or not lock_file.exists()
 
-            # Use local emscripten profile from repo root for Emscripten builds
-            if emscripten_build:
-                emscripten_profile = root / "conan_profile_emscripten"
-                if not emscripten_profile.exists():
-                    raise RuntimeError(f"Emscripten profile not found: {emscripten_profile}")
-                host_profile = str(emscripten_profile)
-            else:
-                host_profile = args.conan_profile
+            # Emscripten flags override the default host profile settings/conf
+            emscripten_flags = _get_emscripten_conan_flags(root) if emscripten_build else []
 
             with log_section("Conan dependencies"):
                 local_recipe_names = _get_local_recipe_names(root, conan_config)
@@ -707,13 +737,14 @@ def build_command(args: argparse.Namespace, current_tool: str) -> None:
                         conan_exe,
                         "lock",
                         "create",
-                        str(root),  # Use absolute path to root instead of relative ".."
+                        str(root),
                         "-o",
                         f"&:windowing={windowing}",
                         "--lockfile-out",
                         str(lock_file),
-                        f"--profile:host={host_profile}",
+                        f"--profile:host={args.conan_profile}",
                         f"--profile:build={args.conan_profile}",
+                        *emscripten_flags,
                     ]
                     run_command(lock_args, log_file=lock_log_file)
                     # Strip revisions for local recipes in the lock file
@@ -729,14 +760,14 @@ def build_command(args: argparse.Namespace, current_tool: str) -> None:
                     [
                         conan_exe,
                         "install",
-                        str(root),  # Use absolute path to root instead of relative ".."
+                        str(root),
                         "--lockfile",
                         str(lock_file),
                         f"--output-folder={args.build_type}",
                         f"--deployer-folder={conan_deps_root}",
                         "--deployer=full_deploy",
                         "--build=missing",
-                        f"--profile:host={host_profile}",
+                        f"--profile:host={args.conan_profile}",
                         f"--profile:build={args.conan_profile}",
                         "-o",
                         f"&:windowing={windowing}",
@@ -744,6 +775,7 @@ def build_command(args: argparse.Namespace, current_tool: str) -> None:
                         "compiler.cppstd=17",
                         "-s",
                         f"build_type={args.build_type}",
+                        *emscripten_flags,
                     ],
                     log_file=install_log_file,
                 )
