@@ -11,6 +11,7 @@ class DawnConan(ConanFile):
     license = "Apache-2.0"
     description = "Dawn WebGPU implementation"
     homepage = "https://dawn.googlesource.com/dawn"
+    package_type = "shared-library"
     settings = "os", "arch", "compiler", "build_type"
     options = {}
     default_options = {}
@@ -51,3 +52,5 @@ class DawnConan(ConanFile):
         self.cpp_info.set_property("cmake_file_name", "Dawn")
         self.cpp_info.set_property("cmake_target_name", "dawn::webgpu_dawn")
         self.cpp_info.libs = ["webgpu_dawn"]
+        self.cpp_info.bindirs = ["bin"]
+        self.cpp_info.libdirs = ["lib"]

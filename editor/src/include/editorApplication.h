@@ -29,9 +29,12 @@ struct EditorApplication final : GUIApplication {
     auto on_begin_first_loop() -> void override;
 
    public:
-    EditorApplication(std::string_view name, RenderConfig config, AppConfig app_config,
+    EditorApplication(std::string_view name, RenderConfig config,
                       pts::LoggingManager& logging_manager, pts::PluginManager& plugin_manager);
     ~EditorApplication() override;
+
+    void register_args(CommandLine& cli) override;
+    void process_args(const CommandLine& cli) override;
 
     auto create_input_actions() noexcept -> void;
     auto wrap_mouse_pos() noexcept -> void;

@@ -9,7 +9,6 @@ build:
   prebuild:
     format: {}
     slangc:
-      compiler_search_roots: "{build_deps_root}/slang/*/*"
       shaders:
         - input: "assets/shaders/test/*.slang"
           output: "assets/shaders/test/*.wgsl"
@@ -32,10 +31,3 @@ build:
   postbuild: {}
   conan:
     local_recipes: "tools/conan"
-
-launch:
-  env:
-    PATH:
-      - "{deps_root}/openusd/*/{build_type}/*/lib"
-      - "{deps_root}/onetbb/*/{build_type}/*/bin"
-      - "{deps_root}/dawn/*/{build_type}/*/bin"

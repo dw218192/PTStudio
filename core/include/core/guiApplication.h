@@ -3,6 +3,7 @@
 #include <core/application.h>
 #include <core/inputAction.h>
 #include <core/rendering/graph.h>
+#include <core/rendering/windowing.h>
 #include <core/signal.h>
 #include <imgui.h>
 
@@ -17,13 +18,20 @@
 
 namespace pts {
 namespace rendering {
+class WebGpuContext;
 class IImguiRendering;
 class IImguiWindowing;
 class IRenderGraph;
 }  // namespace rendering
 
 /**
- * @brief GUI application with ImGui support. Extends Application with UI capabilities.
+ * @brief GUI application with windowing, WebGPU rendering, and ImGui support.
+ *
+ * Extends Application with a window, a WebGPU context bound to that window,
+ * and an ImGui rendering pipeline.
+ *
+ * Subclasses override loop() to issue ImGui draw calls and/or custom
+ * WebGPU rendering. Override run_one_frame() to bypass the ImGui frame.
  */
 struct GUIApplication : Application {
     // used to help detect if the mouse enters/leaves certain imgui windows
@@ -39,7 +47,12 @@ struct GUIApplication : Application {
                    float min_frame_time);
     ~GUIApplication() override;
 
+    void run() override;
+
     void on_scroll_event(double x, double y) noexcept;
+
+    [[nodiscard]] auto get_window_width() const noexcept -> int;
+    [[nodiscard]] auto get_window_height() const noexcept -> int;
 
     [[nodiscard]] auto get_render_graph_api() const noexcept -> const PtsRenderGraphApi*;
     [[nodiscard]] auto get_render_output_texture() const noexcept -> PtsTexture;
@@ -65,7 +78,6 @@ struct GUIApplication : Application {
 
     // imgui helpers
     auto get_imgui_window_info(std::string_view name) noexcept -> ImGuiWindowInfo& {
-        // doesn't really care if the window exists or not
         return m_imgui_window_info[name];
     }
 
@@ -77,6 +89,45 @@ struct GUIApplication : Application {
     [[nodiscard]] auto get_min_frame_time() const noexcept {
         return m_min_frame_time;
     }
+
+    // Windowing / rendering accessors for subclasses
+    [[nodiscard]] auto get_webgpu_context() noexcept -> pts::rendering::WebGpuContext* {
+        return m_webgpu_context.get();
+    }
+    [[nodiscard]] auto get_webgpu_context() const noexcept -> const pts::rendering::WebGpuContext* {
+        return m_webgpu_context.get();
+    }
+
+    [[nodiscard]] auto get_windowing() noexcept -> pts::rendering::IWindowing* {
+        return m_windowing.get();
+    }
+    [[nodiscard]] auto get_windowing() const noexcept -> const pts::rendering::IWindowing* {
+        return m_windowing.get();
+    }
+
+    [[nodiscard]] auto get_viewport() noexcept -> pts::rendering::IViewport* {
+        return m_viewport.get();
+    }
+    [[nodiscard]] auto get_viewport() const noexcept -> const pts::rendering::IViewport* {
+        return m_viewport.get();
+    }
+
+    void on_framebuffer_resized() noexcept;
+
+    /**
+     * @brief Drive WebGPU async init forward. Returns true when the context is
+     *        ready and the frame should proceed; false if still initializing or
+     *        failed (caller should return early).
+     */
+    [[nodiscard]] bool ensure_webgpu_ready();
+
+    /**
+     * @brief Resize the WebGPU surface if the framebuffer was resized.
+     *
+     * Subclasses that override run_one_frame() should call this at the end
+     * of each frame to keep the surface in sync with the window size.
+     */
+    void handle_framebuffer_resize();
 
    protected:
     glm::vec2 m_mouse_scroll_delta;
@@ -101,7 +152,17 @@ struct GUIApplication : Application {
     double m_last_frame_time{0.0};
     bool m_first_loop_done{false};
 
+    // Windowing and rendering members
+    std::unique_ptr<pts::rendering::IWindowing> m_windowing;
+    std::unique_ptr<pts::rendering::IViewport> m_viewport;
+    std::unique_ptr<pts::rendering::WebGpuContext> m_webgpu_context;
+    bool m_framebuffer_resized{false};
+
     // Class invariants:
+    // - m_windowing is always valid (non-null)
+    // - m_viewport is always valid (non-null)
+    // - m_webgpu_context is non-null; may be Initializing after construction,
+    //   guaranteed Ready before loop() is called (driven by run_one_frame())
     // - m_imgui_windowing is always valid (non-null)
     // - m_render_graph and m_imgui_rendering are null until WebGPU context is
     //   ready; guaranteed valid before loop() is called (created in run_one_frame)

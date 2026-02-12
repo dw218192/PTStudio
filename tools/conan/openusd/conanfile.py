@@ -294,3 +294,10 @@ class OpenUSDConan(ConanFile):
             "usd_usdGeom",
             "usd_usdShade",
         ]
+
+        # USD installs DLLs in lib/ alongside .lib files.  With components
+        # defined, VirtualRunEnv only reads component-level bindirs — set
+        # them so the DLL directory appears on PATH at runtime.
+        if self.settings.os == "Windows":
+            for comp in self.cpp_info.components.values():
+                comp.bindirs = ["bin", "lib"]

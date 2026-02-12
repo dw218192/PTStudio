@@ -1,5 +1,6 @@
 #include "editorApplication.h"
 
+#include <core/commandLine.h>
 #include <core/imgui/fileDialogue.h>
 #include <core/imgui/imhelper.h>
 #include <core/loggingManager.h>
@@ -24,11 +25,10 @@ static constexpr auto k_console_win_name = "Console";
 static constexpr auto k_console_log_buffer_size = 1024;
 
 EditorApplication::EditorApplication(std::string_view name, RenderConfig config,
-                                     AppConfig app_config, pts::LoggingManager& logging_manager,
+                                     pts::LoggingManager& logging_manager,
                                      pts::PluginManager& plugin_manager)
     : GUIApplication{name,         logging_manager, plugin_manager,
                      config.width, config.height,   config.min_frame_time},
-      m_app_config{app_config},
       m_config{config} {
     get_imgui_window_info(k_scene_view_win_name).on_enter_region.connect([this] {
         on_mouse_enter_scene_viewport();
@@ -46,10 +46,6 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config,
     m_renderer_host_api.render_graph_api = get_render_graph_api();
     m_renderer_host_api.render_world_api = nullptr;
 
-    if (m_app_config.quit_on_start && get_viewport()) {
-        get_viewport()->request_close();
-    }
-
     m_renderer_plugin = get_plugin_manager().get_plugin_instance("editor.renderer");
     if (m_renderer_plugin) {
         m_renderer_interface =
@@ -64,6 +60,21 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config,
 }
 
 EditorApplication::~EditorApplication() {
+}
+
+void EditorApplication::register_args(CommandLine& cli) {
+    GUIApplication::register_args(cli);
+    cli.add_string("log-level", "Log level (trace, debug, info, warn, error, critical)");
+    cli.add_string("plugins-dir", "Search directory for plugins (relative to executable)");
+    cli.add_flag("quit-on-start", "Quit the application after starting, useful for testing");
+}
+
+void EditorApplication::process_args(const CommandLine& cli) {
+    GUIApplication::process_args(cli);
+    m_app_config.quit_on_start = cli.get_flag("quit-on-start");
+    if (m_app_config.quit_on_start && get_viewport()) {
+        get_viewport()->request_close();
+    }
 }
 
 auto EditorApplication::create_input_actions() noexcept -> void {

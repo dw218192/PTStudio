@@ -4,7 +4,6 @@ import argparse
 import glob
 import sys
 from pathlib import Path
-import shutil
 
 from repo_tools import (
     RepoContext,
@@ -12,9 +11,8 @@ from repo_tools import (
     build_repo_context,
     load_repo_config,
     logger,
-    run_command,
     resolve_path,
-    is_windows,
+    run_command,
 )
 
 
@@ -93,45 +91,6 @@ def _resolve_slang_shaders(
     return resolved, errors
 
 
-def _find_slangc(
-    root: Path, config: dict, context: RepoContext, args: argparse.Namespace
-) -> Path | None:
-    compiler_path = getattr(args, "compiler_path", None)
-    if compiler_path is None:
-        compiler_path = config.get("slangc", {}).get("compiler_path")
-    if compiler_path:
-        path = resolve_path(root, str(compiler_path), context)
-        if path.exists():
-            return path
-
-    search_roots = getattr(args, "compiler_search_roots", None)
-    if search_roots is None:
-        search_roots = config.get("slangc", {}).get("compiler_search_roots", [])
-    if isinstance(search_roots, (str, Path)):
-        search_roots = [search_roots]
-
-    candidates: list[Path] = []
-    for entry in search_roots or []:
-        candidate = resolve_path(root, str(entry), context)
-        for match in _expand_glob_paths(candidate):
-            if match.exists():
-                candidates.append(match)
-
-    exe_name = "slangc.exe" if is_windows() else "slangc"
-    for candidate_root in candidates:
-        if candidate_root.is_file():
-            if candidate_root.name == exe_name:
-                return candidate_root
-            continue
-        for path in candidate_root.rglob(exe_name):
-            return path
-
-    exe_path = shutil.which(exe_name)
-    if exe_path:
-        return Path(exe_path)
-    return None
-
-
 def _should_compile_shader(input_path: Path, output_path: Path, force: bool) -> bool:
     if force:
         return True
@@ -170,11 +129,17 @@ class SlangcTool(RepoTool):
         config = load_repo_config(root)
         platform_id = args.platform
         context = build_repo_context(root, args.build_type, config, platform_id)
-        compiler = _find_slangc(root, config, context, args)
 
-        if compiler is None:
-            logger.error("slangc compiler not found. Run 'pts.cmd build' (or './pts build' on bash) first.")
-            sys.exit(1)
+        # Explicit compiler path override from args or config
+        compiler_path = getattr(args, "compiler_path", None)
+        if compiler_path is None:
+            compiler_path = config.get("slangc", {}).get("compiler_path")
+        if compiler_path:
+            compiler = str(resolve_path(root, str(compiler_path), context))
+        else:
+            compiler = "slangc"
+
+        conanbuild = Path(context["build_dir"]) / "conanbuild"
 
         shaders, errors = _resolve_slang_shaders(root, config, context, args)
         if errors:
@@ -201,7 +166,7 @@ class SlangcTool(RepoTool):
             output_path.parent.mkdir(parents=True, exist_ok=True)
             log_file = logs_dir / f"slangc_{output_path.stem}.log"
             cmd = [
-                str(compiler),
+                compiler,
                 str(input_path),
                 "-o",
                 str(output_path),
@@ -209,7 +174,7 @@ class SlangcTool(RepoTool):
                 "wgsl",
             ]
             cmd.extend(args.passthrough_args)
-            run_command(cmd, log_file=log_file)
+            run_command(cmd, log_file=log_file, env_script=conanbuild)
             compiled += 1
 
         logger.info(f"slangc compiled {compiled} shader(s)")

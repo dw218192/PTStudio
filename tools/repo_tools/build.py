@@ -21,10 +21,9 @@ from repo_tools import (
     get_repo_tool_config_args,
     invoke_tool,
     is_windows,
+    load_conan_env,
     load_repo_config,
     log_section,
-    normalize_env_config,
-    resolve_env_vars,
     run_command,
     logger,
 )
@@ -302,28 +301,6 @@ def _remove_tree_with_retries(
             )
             time.sleep(delay)
 
-
-def _find_package_in_deploy(deps_root: Path, package_name: str) -> Path | None:
-    """Find a package in the full_deploy folder, returning the deepest content directory."""
-    host_dir = deps_root / package_name
-    if not host_dir.exists():
-        return None
-    # Navigate through version/build_type/arch structure to find the actual content
-    # Structure: full_deploy/host/<package>/<version>/<build_type>/<arch>/
-    current = host_dir
-    while current.is_dir():
-        subdirs = [d for d in current.iterdir() if d.is_dir()]
-        # Check if this looks like the package root (has lib/, bin/, include/, etc.)
-        if any((current / d).exists() for d in ["lib", "bin", "include", "cmake"]):
-            return current
-        if len(subdirs) == 1:
-            current = subdirs[0]
-        elif len(subdirs) > 1:
-            # Multiple subdirs - pick the first one (shouldn't happen normally)
-            current = subdirs[0]
-        else:
-            break
-    return None
 
 
 def _parse_conanfile_metadata(conanfile_path: Path) -> tuple[str | None, str | None]:
@@ -766,6 +743,7 @@ def build_command(args: argparse.Namespace, current_tool: str) -> None:
                         f"--output-folder={args.build_type}",
                         f"--deployer-folder={conan_deps_root}",
                         "--deployer=full_deploy",
+                        "--deployer=runtime_deploy",
                         "--build=missing",
                         f"--profile:host={args.conan_profile}",
                         f"--profile:build={args.conan_profile}",
@@ -780,17 +758,6 @@ def build_command(args: argparse.Namespace, current_tool: str) -> None:
                     log_file=install_log_file,
                 )
 
-            # Ensure Dawn and OpenUSD are deployed (Dawn not needed for Emscripten)
-            dawn_deploy_dir = None
-            if not emscripten_build:
-                dawn_deploy_dir = _find_package_in_deploy(Path(context["deps_root"]), "dawn")
-                if not dawn_deploy_dir:
-                    raise RuntimeError("Failed to find Dawn package in full_deploy")
-
-            openusd_deploy_dir = _find_package_in_deploy(Path(context["deps_root"]), "openusd")
-            if not openusd_deploy_dir:
-                raise RuntimeError("Failed to find OpenUSD package in full_deploy")
-
             # Execute prebuild steps
             if prebuild_steps:
                 with log_section("Prebuild steps"):
@@ -804,95 +771,71 @@ def build_command(args: argparse.Namespace, current_tool: str) -> None:
                         current_tool,
                     )
 
+            # Conan build environment script (vcvars on Windows for Ninja + MSVC)
+            conanbuild = build_dir / "conanbuild"
+
             with log_section("CMake configure"):
                 configure_log_file = logs_dir / "cmake_configure.log"
                 cmake_exe = find_venv_executable("cmake")
                 _ensure_cmake_file_api_query(build_folder / args.build_type)
 
+                bt = args.build_type.lower()
                 if emscripten_build:
-                    # Emscripten: Use CMake presets (includes emsdk env, Ninja generator, toolchain)
-                    # Preset name is based on Conan os=Emscripten setting
-                    preset_name = f"conan-emscripten-{args.build_type.lower()}"
-                    # Ensure the emdawnwebgpu port file matching Dawn is available
-                    emdawnwebgpu_port = _ensure_emdawnwebgpu_port(root, build_folder)
-                    cmake_args = [
-                        cmake_exe,
-                        "--preset",
-                        preset_name,
-                        "-S",
-                        str(root),
-                        f"-DEMDAWNWEBGPU_PORT_FILE={emdawnwebgpu_port}",
-                    ]
+                    preset_name = f"conan-emscripten-{bt}"
                 else:
-                    # Desktop: Manual CMake configuration
-                    cmake_args = [
-                        cmake_exe,
-                        "-S",
-                        str(root),
-                        "-B",
-                        args.build_type,
-                        "-DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake",
-                        f"-DCMAKE_BUILD_TYPE={args.build_type}",
-                        f"-DPTS_WINDOWING={windowing}",
-                        "-DCMAKE_CXX_STANDARD=17",
-                        "-DCMAKE_CXX_STANDARD_REQUIRED=ON",
-                        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-                    ]
-                    if dawn_deploy_dir:
-                        dawn_cmake_dir = dawn_deploy_dir / "lib" / "cmake" / "Dawn"
-                        if dawn_cmake_dir.exists():
-                            cmake_args.append(f"-DDawn_DIR={dawn_cmake_dir}")
+                    preset_name = f"conan-{bt}"
 
-                run_command(cmake_args, log_file=configure_log_file)
+                cmake_args = [
+                    cmake_exe,
+                    "--preset",
+                    preset_name,
+                    "-S",
+                    str(root),
+                ]
+                if emscripten_build:
+                    emdawnwebgpu_port = _ensure_emdawnwebgpu_port(root, build_folder)
+                    cmake_args.append(f"-DEMDAWNWEBGPU_PORT_FILE={emdawnwebgpu_port}")
+
+                run_command(cmake_args, log_file=configure_log_file, env_script=conanbuild)
 
             _generate_cpp_properties(root, build_dir, windowing)
 
-        if not args.configure_only:
-            with log_section("CMake build"):
-                build_log_file = logs_dir / "cmake_build.log"
-                cmake_exe = find_venv_executable("cmake")
+            if not args.configure_only:
+                with log_section("CMake build"):
+                    build_log_file = logs_dir / "cmake_build.log"
+                    cmake_exe = find_venv_executable("cmake")
 
-                if emscripten_build:
-                    # Emscripten: Use CMake build preset (includes emsdk environment)
-                    # Preset name is based on Conan os=Emscripten setting
-                    # Must run from project root where CMakeUserPresets.json is located
-                    preset_name = f"conan-emscripten-{args.build_type.lower()}"
+                    bt = args.build_type.lower()
+                    if emscripten_build:
+                        preset_name = f"conan-emscripten-{bt}"
+                    else:
+                        preset_name = f"conan-{bt}"
+
                     build_args = [cmake_exe, "--build", "--preset", preset_name]
+                    # Build presets require CMakeUserPresets.json at project root
                     os.chdir(root)
                     try:
-                        run_command(build_args, log_file=build_log_file)
+                        run_command(build_args, log_file=build_log_file, env_script=conanbuild)
                     finally:
                         os.chdir(build_folder)
-                else:
-                    # Desktop: Standard CMake build
-                    build_args = [
-                        cmake_exe,
-                        "--build",
-                        args.build_type,
-                        "--config",
-                        args.build_type,
-                    ]
-                    run_command(build_args, log_file=build_log_file)
 
-            # Execute postbuild steps
-            if postbuild_steps:
-                with log_section("Postbuild steps"):
-                    execute_build_steps(
-                        root,
-                        config,
-                        context,
-                        logs_dir,
-                        postbuild_steps,
-                        "postbuild",
-                        current_tool,
-                    )
-        else:
-            logger.info("Configure only mode (-c): Skipping build step")
+                # Execute postbuild steps
+                if postbuild_steps:
+                    with log_section("Postbuild steps"):
+                        execute_build_steps(
+                            root,
+                            config,
+                            context,
+                            logs_dir,
+                            postbuild_steps,
+                            "postbuild",
+                            current_tool,
+                        )
+            else:
+                logger.info("Configure only mode (-c): Skipping build step")
 
         tests = _discover_test_targets(build_dir)
-        launch_args = get_repo_tool_config_args(config, "launch")
-        env_config = normalize_env_config(launch_args.get("env"))
-        env_vars = resolve_env_vars(env_config, context)
+        env_vars = load_conan_env(build_dir, preset_type="test")
         _generate_launch_json(root, build_dir, args.build_type, tests, env_vars)
     finally:
         os.chdir(original_cwd)

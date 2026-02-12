@@ -8,27 +8,31 @@ set(CMAKE_CXX_STANDARD 17)
 find_package(doctest REQUIRED)
 
 # Test executables
-set(TEST_NAMES
-    testPluginSystem
-    testOpenUsd
-)
+set(TEST_NAMES)
 
-set(testPluginSystem_source testPluginSystem.cpp)
-set(testPluginSystem_libs core)
-set(testPluginSystem_includes ${CMAKE_SOURCE_DIR}/plugins/test_plugin/api)
+# Tests requiring native platform features (dynamic linking, browser WebGPU, boost)
+if(NOT EMSCRIPTEN)
+    list(APPEND TEST_NAMES testCommandLine)
+    set(testCommandLine_source testCommandLine.cpp)
+    set(testCommandLine_libs core)
 
+    list(APPEND TEST_NAMES testPluginSystem)
+    set(testPluginSystem_source testPluginSystem.cpp)
+    set(testPluginSystem_libs core)
+    set(testPluginSystem_includes ${CMAKE_SOURCE_DIR}/plugins/test_plugin/api)
+
+    list(APPEND TEST_NAMES testWebGpu)
+    set(testWebGpu_source testWebGpu.cpp)
+    set(testWebGpu_libs core)
+    set(testWebGpu_defines PTS_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+endif()
+
+# OpenUSD test - works on all platforms
+# Links core for TestApplication (provides event loop, WASM flags on Emscripten)
+list(APPEND TEST_NAMES testOpenUsd)
 set(testOpenUsd_source integration/testOpenUsd.cpp)
-set(testOpenUsd_libs openusd::usd_usd)
+set(testOpenUsd_libs core openusd::usd_usd)
 set(testOpenUsd_includes ${PXR_INCLUDE_DIRS})
-
-list(APPEND TEST_NAMES testWebGpu)
-set(testWebGpu_source testWebGpu.cpp)
-set(testWebGpu_libs core)
-set(testWebGpu_defines PTS_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
-
-list(APPEND TEST_NAMES testCommandLine)
-set(testCommandLine_source testCommandLine.cpp)
-set(testCommandLine_libs core)
 
 function(add_core_test target_name)
     message(STATUS "Building test: ${target_name}")
@@ -46,11 +50,18 @@ function(add_core_test target_name)
         target_compile_definitions(${target_name} PRIVATE ${${target_name}_defines})
     endif()
 
+    if(EMSCRIPTEN)
+        target_link_options(${target_name} PRIVATE
+            "-sEXIT_RUNTIME=1"
+            "-sPROXY_TO_PTHREAD=1"
+        )
+    endif()
+
     # Set output directory to bin/tests
     set_target_properties(${target_name} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tests
     )
-    
+
     # Ensure consistent output for multi-config generators
     foreach(config Debug Release RelWithDebInfo MinSizeRel)
         string(TOUPPER ${config} config_upper)

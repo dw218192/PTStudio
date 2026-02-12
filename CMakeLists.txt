@@ -81,6 +81,30 @@ else()
 endif()
 find_package(openusd CONFIG REQUIRED)
 
+# On Emscripten, embed OpenUSD plugInfo.json files into the WASM binary so the
+# plugin registry can discover types at runtime.  The Conan CMakeDeps generator
+# does not propagate the --embed-file link options from the upstream pxrTargets,
+# so we add them here to openusd::usd_plug (which every USD consumer links
+# transitively).
+if(EMSCRIPTEN)
+    if(DEFINED openusd_PACKAGE_FOLDER_DEBUG)
+        set(_pxr_usd_dir "${openusd_PACKAGE_FOLDER_DEBUG}/lib/usd")
+    elseif(DEFINED openusd_PACKAGE_FOLDER_RELEASE)
+        set(_pxr_usd_dir "${openusd_PACKAGE_FOLDER_RELEASE}/lib/usd")
+    endif()
+    if(DEFINED _pxr_usd_dir AND EXISTS "${_pxr_usd_dir}/plugInfo.json")
+        set(_embed_flags "SHELL:--embed-file ${_pxr_usd_dir}/plugInfo.json@/usd/plugInfo.json")
+        file(GLOB _pxr_modules RELATIVE "${_pxr_usd_dir}"
+             "${_pxr_usd_dir}/*/resources/plugInfo.json")
+        foreach(_module_path ${_pxr_modules})
+            list(APPEND _embed_flags
+                 "SHELL:--embed-file ${_pxr_usd_dir}/${_module_path}@/usd/${_module_path}")
+        endforeach()
+        set_property(TARGET openusd::usd_plug APPEND PROPERTY
+                     INTERFACE_LINK_OPTIONS ${_embed_flags})
+    endif()
+endif()
+
 if (NOT EMSCRIPTEN)
     if (PTS_WINDOWING STREQUAL "glfw")
         find_package(glfw3 REQUIRED)
@@ -108,13 +132,17 @@ if(EMSCRIPTEN)
     endif()
     target_compile_options(wasm_flags INTERFACE
         "--use-port=${EMDAWNWEBGPU_PORT_FILE}"
-        "--use-port=contrib.glfw3")
+        "--use-port=contrib.glfw3"
+        "-pthread"
+        "-fexceptions")
     target_link_options(wasm_flags INTERFACE
         "--use-port=${EMDAWNWEBGPU_PORT_FILE}"
         "--use-port=contrib.glfw3"
+        "-pthread"
         "-sALLOW_MEMORY_GROWTH=1"
         "-sMAXIMUM_MEMORY=4GB"
         "-sINITIAL_MEMORY=512MB"
+        "-fexceptions"
         "$<$<CONFIG:Release>:--closure=1>"
         "--shell-file=${CMAKE_SOURCE_DIR}/web/index.html"
         "--emrun")

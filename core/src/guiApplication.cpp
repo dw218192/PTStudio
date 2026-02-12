@@ -1,3 +1,4 @@
+#include <core/commandLine.h>
 #include <core/diagnostics.h>
 #include <core/guiApplication.h>
 #include <core/imgui/imhelper.h>
@@ -15,7 +16,24 @@ namespace pts {
 GUIApplication::GUIApplication(std::string_view name, pts::LoggingManager& logging_manager,
                                pts::PluginManager& plugin_manager, unsigned width, unsigned height,
                                float min_frame_time)
-    : Application{name, logging_manager, plugin_manager, width, height, min_frame_time} {
+    : Application{name, logging_manager, plugin_manager, min_frame_time} {
+    // Create windowing system
+    m_windowing = pts::rendering::create_windowing(get_logging_manager());
+    INVARIANT_MSG(m_windowing != nullptr, "create_windowing must return valid windowing system");
+
+    // Create viewport
+    auto viewport_desc = pts::rendering::ViewportDesc{
+        get_name().data(), width, height, true, true, true, true,
+    };
+    m_viewport = m_windowing->create_viewport(viewport_desc);
+    INVARIANT_MSG(m_viewport != nullptr, "create_viewport must return valid viewport");
+    m_viewport->on_drawable_resized.connect(
+        [this](pts::rendering::Extent2D) { on_framebuffer_resized(); });
+
+    // Create WebGPU context (starts async initialization)
+    m_webgpu_context = pts::rendering::WebGpuContext::create(*m_viewport, get_logging_manager());
+    INVARIANT_MSG(m_webgpu_context != nullptr, "WebGpuContext::create must return valid context");
+
     // Setup Dear ImGui context (no WebGPU dependency)
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -28,9 +46,8 @@ GUIApplication::GUIApplication(std::string_view name, pts::LoggingManager& loggi
     ImGui::StyleColorsDark();
 
     // Setup ImGui windowing backend
-    auto* viewport = get_viewport();
-    viewport->on_scroll.connect([this](double dx, double dy) { on_scroll_event(dx, dy); });
-    m_imgui_windowing = pts::rendering::create_imgui_windowing(*viewport, get_logging_manager());
+    m_viewport->on_scroll.connect([this](double dx, double dy) { on_scroll_event(dx, dy); });
+    m_imgui_windowing = pts::rendering::create_imgui_windowing(*m_viewport, get_logging_manager());
 
     // ImGui rendering components are created lazily in ensure_imgui_rendering()
     // because the WebGPU context may still be initializing asynchronously.
@@ -43,13 +60,67 @@ GUIApplication::~GUIApplication() {
     ImGui::DestroyContext();
 }
 
-void GUIApplication::ensure_imgui_rendering() {
-    auto* webgpu_context = get_webgpu_context();
-    INVARIANT_MSG(webgpu_context != nullptr, "WebGPU context must be valid");
+void GUIApplication::run() {
+#if defined(__EMSCRIPTEN__)
+    Application::run();
+#else
+    while (!m_viewport->should_close() && !should_stop()) {
+        run_one_frame();
+        check_frame_limit();
+    }
+#endif
+}
 
-    auto* viewport = get_viewport();
-    auto imgui_components =
-        pts::rendering::create_imgui_components(*webgpu_context, *viewport, get_logging_manager());
+bool GUIApplication::ensure_webgpu_ready() {
+    // Already failed
+    if (m_webgpu_context->is_failed()) {
+        return false;
+    }
+
+    if (m_webgpu_context->is_initializing()) {
+        m_webgpu_context->tick_init();
+
+        if (m_webgpu_context->is_failed()) {
+            log(pts::LogLevel::Error, "WebGPU context initialization failed");
+            m_viewport->request_close();
+            return false;
+        }
+
+        if (m_webgpu_context->is_initializing()) {
+            return false;  // still initializing — wait for next frame
+        }
+
+        log(pts::LogLevel::Info, "Application initialized");
+    }
+
+    return true;
+}
+
+void GUIApplication::on_framebuffer_resized() noexcept {
+    m_framebuffer_resized = true;
+}
+
+void GUIApplication::handle_framebuffer_resize() {
+    if (m_framebuffer_resized) {
+        auto const extent = m_viewport->drawable_extent();
+        m_webgpu_context->surface().resize(extent);
+        m_framebuffer_resized = false;
+    }
+}
+
+auto GUIApplication::get_window_width() const noexcept -> int {
+    return static_cast<int>(m_viewport->drawable_extent().w);
+}
+
+auto GUIApplication::get_window_height() const noexcept -> int {
+    return static_cast<int>(m_viewport->drawable_extent().h);
+}
+
+void GUIApplication::ensure_imgui_rendering() {
+    INVARIANT_MSG(m_webgpu_context != nullptr, "WebGPU context must be valid");
+
+    auto imgui_components = pts::rendering::create_imgui_components(*m_webgpu_context, *m_viewport,
+                                                                    get_logging_manager());
     INVARIANT_MSG(imgui_components.render_graph != nullptr,
                   "create_imgui_components must return valid render_graph");
     INVARIANT_MSG(imgui_components.imgui_rendering != nullptr,
@@ -58,7 +129,7 @@ void GUIApplication::ensure_imgui_rendering() {
     m_render_graph = std::move(imgui_components.render_graph);
     m_imgui_rendering = std::move(imgui_components.imgui_rendering);
 
-    auto const extent = viewport->drawable_extent();
+    auto const extent = m_viewport->drawable_extent();
     resize_render_output(extent.w, extent.h);
 }
 
@@ -68,7 +139,7 @@ void GUIApplication::run_one_frame() {
     // Poll and handle events (inputs, window resize, etc.)
     m_mouse_scroll_delta = glm::vec2{0.0f};
 
-    get_windowing()->pump_events(pts::rendering::PumpEventMode::Poll);
+    m_windowing->pump_events(pts::rendering::PumpEventMode::Poll);
 
     if (!ensure_webgpu_ready()) {
         return;
@@ -97,7 +168,7 @@ void GUIApplication::run_one_frame() {
             on_begin_first_loop();
             m_first_loop_done = true;
         }
-        if (get_viewport() && get_viewport()->should_close()) {
+        if (m_viewport && m_viewport->should_close()) {
             return;
         }
 
@@ -111,39 +182,35 @@ void GUIApplication::run_one_frame() {
         // process hover change events
         if (m_prev_hovered_widget != m_cur_hovered_widget) {
             if (m_prev_hovered_widget != k_no_hovered_widget) {
-                // call on_leave_region on the previous widget
                 auto it = m_imgui_window_info.find(m_prev_hovered_widget);
                 if (it != m_imgui_window_info.end()) {
                     it->second.on_leave_region();
                 }
             }
 
-            // call on_enter_region on the current widget
             auto it = m_imgui_window_info.find(m_cur_hovered_widget);
             if (it != m_imgui_window_info.end()) {
                 it->second.on_enter_region();
             }
         }
     }
+
+    handle_framebuffer_resize();
 }
 
 auto GUIApplication::get_render_graph_api() const noexcept -> const PtsRenderGraphApi* {
-    // Invariant: m_render_graph is always valid after construction
     return m_render_graph->api();
 }
 
 auto GUIApplication::get_render_output_texture() const noexcept -> PtsTexture {
-    // Invariant: m_render_graph is always valid after construction
     return m_render_graph->output_texture();
 }
 
 auto GUIApplication::get_render_output_imgui_id() const noexcept -> ImTextureID {
-    // Invariant: m_imgui_rendering is always valid after construction
     return m_imgui_rendering->output_id();
 }
 
 auto GUIApplication::resize_render_output(uint32_t width, uint32_t height) -> void {
-    // Invariant: m_render_graph and m_imgui_rendering are always valid after construction
     if (width == 0 || height == 0) {
         m_imgui_rendering->clear_render_output();
         return;
@@ -154,12 +221,10 @@ auto GUIApplication::resize_render_output(uint32_t width, uint32_t height) -> vo
 }
 
 auto GUIApplication::set_render_graph_current() -> void {
-    // Invariant: m_render_graph is always valid after construction
     m_render_graph->set_current();
 }
 
 auto GUIApplication::clear_render_graph_current() -> void {
-    // Invariant: m_render_graph is always valid after construction
     m_render_graph->clear_current();
 }
 
@@ -252,16 +317,16 @@ void GUIApplication::on_scroll_event(double x, double y) noexcept {
 }
 
 auto GUIApplication::get_window_extent() const noexcept -> glm::ivec2 {
-    if (!get_viewport()) {
+    if (!m_viewport) {
         return glm::ivec2{0, 0};
     }
-    auto const extent = get_viewport()->logical_extent();
+    auto const extent = m_viewport->logical_extent();
     return glm::ivec2{static_cast<int>(extent.w), static_cast<int>(extent.h)};
 }
 
 auto GUIApplication::set_cursor_pos(float x, float y) noexcept -> void {
-    if (get_viewport()) {
-        get_viewport()->set_cursor_pos(x, y);
+    if (m_viewport) {
+        m_viewport->set_cursor_pos(x, y);
     }
 }
 

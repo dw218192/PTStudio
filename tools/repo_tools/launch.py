@@ -2,6 +2,7 @@
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -9,9 +10,7 @@ from pathlib import Path
 from repo_tools import (
     RepoContext,
     RepoTool,
-    apply_env_overrides,
     build_repo_context,
-    get_repo_tool_config_args,
     is_platform_compatible,
     is_windows,
     load_repo_config,
@@ -19,37 +18,7 @@ from repo_tools import (
     logger,
     normalize_build_type,
     normalize_env_config,
-    resolve_env_vars,
 )
-
-def _get_node_path(context: RepoContext) -> Path | None:
-    """Get path to Node.js bundled inside the emsdk Conan package."""
-    build_deps = Path(context["build_deps_root"])
-    emsdk_dir = build_deps / "emsdk"
-
-    if not emsdk_dir.exists():
-        logger.debug(f"emsdk directory not found: {emsdk_dir}")
-        return None
-
-    # Navigate: emsdk/<version>/<arch>/bin/node/<node_version>/bin/node[.exe]
-    for version_dir in emsdk_dir.iterdir():
-        if not version_dir.is_dir():
-            continue
-        for arch_dir in version_dir.iterdir():
-            if not arch_dir.is_dir():
-                continue
-            node_base = arch_dir / "bin" / "node"
-            if not node_base.is_dir():
-                continue
-            for node_ver_dir in node_base.iterdir():
-                if not node_ver_dir.is_dir():
-                    continue
-                node_exe = node_ver_dir / "bin" / ("node.exe" if is_windows() else "node")
-                if node_exe.exists():
-                    return node_exe
-
-    logger.warning("Node.js not found in emsdk package")
-    return None
 
 
 def _interactive_select(exe_paths: list[Path]) -> Path | None:
@@ -113,93 +82,130 @@ def _discover_executables(target_dir: Path, is_emscripten: bool = False) -> list
     return exe_paths
 
 
-def _setup_environment(context: RepoContext, config: dict, env_overrides: dict | None) -> dict:
-    """Set up environment variables for running executables."""
-    config_args = get_repo_tool_config_args(config, "launch")
-    env_config = normalize_env_config(config_args.get("env"))
-    if env_overrides:
-        env_config.update(env_overrides)
-    env_vars = resolve_env_vars(env_config, context)
-    return apply_env_overrides(os.environ.copy(), env_vars)
+def _resolve_runtime_deploy_dir(build_dir: Path) -> Path | None:
+    """Return the runtime_deploy directory if it exists.
+
+    When Conan's ``runtime_deploy`` deployer is used, shared libraries are
+    copied into the deployer-folder (typically ``deps/``) as a flat directory.
+    This can be added to PATH directly, without needing a conanrun script.
+    """
+    deps_dir = build_dir.parent / "deps"
+    if not deps_dir.exists():
+        return None
+    # Check for at least one shared library to confirm runtime_deploy was used
+    dll_ext = ".dll" if is_windows() else ".so"
+    for _ in deps_dir.glob(f"*{dll_ext}"):
+        return deps_dir
+    return None
+
+
+def _resolve_env_script(build_dir: Path, is_emscripten: bool) -> Path | None:
+    """Return the correct Conan env script for the platform.
+
+    Native builds use ``conanrun`` (runtime DLL paths).
+    Emscripten builds use ``conanbuild`` (emsdk tools: node, emrun).
+    """
+    name = "conanbuild" if is_emscripten else "conanrun"
+    script = build_dir / name
+    suffix = ".bat" if is_windows() else ".sh"
+    resolved = script.with_suffix(suffix)
+    return resolved if resolved.exists() else None
+
+
+def _shell_wrap(cmd: list[str], env_script: Path | None) -> tuple[list[str] | str, bool]:
+    """Wrap a command to source an env script if available.
+
+    Returns (command, use_shell) suitable for subprocess.run.
+    """
+    if env_script is None:
+        return cmd, False
+    cmd_str = subprocess.list2cmdline(cmd)
+    if is_windows():
+        return f'call "{env_script}" >nul 2>&1 && {cmd_str}', True
+    return f'source "{env_script}" >/dev/null 2>&1 && {cmd_str}', True
 
 
 def _run_executable(
     exe_path: Path,
     args: list[str],
-    env: dict,
     context: RepoContext,
     capture_output: bool = False,
 ) -> subprocess.CompletedProcess:
-    """Run an executable.
+    """Run an executable inside the appropriate Conan env script.
+
+    For native builds, prefers the conanrun env script (always fresh after a
+    build) and falls back to the runtime_deploy directory (flat DLL copy for
+    CI test jobs where conan install wasn't run).
 
     For Emscripten builds, uses emrun (browser with logging) for interactive
     launches and Node.js for headless/captured output (tests).
     """
+    build_dir = Path(context["build_dir"])
     is_emscripten = exe_path.suffix.lower() in (".js", ".html")
 
+    # Resolve environment: prefer conanrun script for native builds (always
+    # fresh), fall back to runtime_deploy dir (for CI without conan install)
+    env_script: Path | None = None
+    extra_env: dict[str, str] = {}
+    if not is_emscripten:
+        env_script = _resolve_env_script(build_dir, is_emscripten=False)
+        if not env_script:
+            runtime_dir = _resolve_runtime_deploy_dir(build_dir)
+            if runtime_dir:
+                logger.debug(f"Using runtime_deploy: {runtime_dir}")
+                path_sep = ";" if is_windows() else ":"
+                extra_env["PATH"] = f"{runtime_dir}{path_sep}{os.environ.get('PATH', '')}"
+    else:
+        env_script = _resolve_env_script(build_dir, is_emscripten=True)
+
     if is_emscripten and not capture_output:
-        # Interactive launch: use emrun (serves files, opens browser, captures logs)
-        emrun = _get_emrun_path(context)
-        if emrun is None:
-            raise RuntimeError("emrun not found. Build with --platform emscripten first.")
         html_path = exe_path.with_suffix(".html") if exe_path.suffix.lower() != ".html" else exe_path
         logger.info(f"Launching {html_path.name} with emrun")
-        cmd = [sys.executable, str(emrun), str(html_path)] + args
+        cmd = [sys.executable, "emrun", str(html_path)] + args
     elif is_emscripten:
-        # Headless (tests): use Node.js
-        node_path = _get_node_path(context)
-        if node_path is None:
-            raise RuntimeError("Node.js not found. Build with --platform emscripten first.")
         js_path = exe_path.with_suffix(".js") if exe_path.suffix.lower() == ".html" else exe_path
         logger.info(f"Running {js_path.name} with Node.js")
-        cmd = [str(node_path), "--experimental-wasm-threads", str(js_path)] + args
+        cmd = ["node", "--experimental-wasm-threads", str(js_path)] + args
     else:
         cmd = [str(exe_path)] + args
+
+    run_cmd, use_shell = _shell_wrap(cmd, env_script)
+
+    # Merge extra_env into the process environment
+    run_env = None
+    if extra_env:
+        run_env = {**os.environ, **extra_env}
 
     try:
         if capture_output:
             return subprocess.run(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True, encoding="utf-8", errors="replace", env=env,
+                run_cmd, shell=use_shell, stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT, text=True, encoding="utf-8",
+                errors="replace", env=run_env,
             )
-        return subprocess.run(cmd, env=env)
+        return subprocess.run(run_cmd, shell=use_shell, env=run_env)
     except KeyboardInterrupt:
         sys.exit(0)
 
 
 def _can_run(context: RepoContext) -> bool:
     """Check if executables can be run on this host."""
+    build_dir = Path(context["build_dir"])
     if context["platform"] == "emscripten":
-        return _get_emrun_path(context) is not None or _get_node_path(context) is not None
+        # Node.js is required for headless WASM execution.
+        # Prefer the conanbuild script (provides emsdk tools including node),
+        # but also accept a system-installed node (e.g. CI runners).
+        if _resolve_env_script(build_dir, is_emscripten=True) is not None:
+            return True
+        return shutil.which("node") is not None
+    if _resolve_env_script(build_dir, is_emscripten=False) is not None:
+        return True
+    if _resolve_runtime_deploy_dir(build_dir) is not None:
+        return True
     return is_platform_compatible(context["platform"])
 
 
-def _get_emrun_path(context: RepoContext) -> Path | None:
-    """Get path to emrun bundled inside the emsdk Conan package."""
-    build_deps = Path(context["build_deps_root"])
-    emsdk_dir = build_deps / "emsdk"
-
-    if not emsdk_dir.exists():
-        logger.debug(f"emsdk directory not found: {emsdk_dir}")
-        return None
-
-    # Navigate: emsdk/<version>/<arch>/bin/upstream/emscripten/emrun.py
-    for version_dir in emsdk_dir.iterdir():
-        if not version_dir.is_dir():
-            continue
-        for arch_dir in version_dir.iterdir():
-            if not arch_dir.is_dir():
-                continue
-            emrun = arch_dir / "bin" / "upstream" / "emscripten" / "emrun.py"
-            if emrun.exists():
-                return emrun
-
-    logger.warning("emrun not found in emsdk package")
-    return None
-
-
-
-def _run_tests(context: RepoContext, config: dict, env: dict, verbose: bool) -> int:
+def _run_tests(context: RepoContext, verbose: bool) -> int:
     """Run all test executables and return exit code."""
     build_dir = Path(context["build_dir"])
     is_emscripten = context["platform"] == "emscripten"
@@ -226,7 +232,7 @@ def _run_tests(context: RepoContext, config: dict, env: dict, verbose: bool) -> 
 
         with log_section(f"Test: {test_name}"):
             try:
-                result = _run_executable(test_exe, test_args, env, context, capture_output=True)
+                result = _run_executable(test_exe, test_args, context, capture_output=True)
 
                 with open(log_file, "w", encoding="utf-8", errors="replace") as f:
                     f.write(f"Test: {test_name}\n")
@@ -326,8 +332,11 @@ class LaunchTool(RepoTool):
         build_dir = Path(context["build_dir"])
         is_emscripten = context["platform"] == "emscripten"
 
-        env_overrides = normalize_env_config(args.env) if args.env else None
-        env = _setup_environment(context, config, env_overrides)
+        # Apply --env overrides to the process environment so they propagate
+        # through the shell-wrapped command.
+        if args.env:
+            for key, value in normalize_env_config(args.env).items():
+                os.environ[key] = str(value)
 
         # Check if we can run
         if not _can_run(context):
@@ -341,7 +350,7 @@ class LaunchTool(RepoTool):
 
         # Run tests
         if args.test:
-            sys.exit(_run_tests(context, config, env, args.verbose))
+            sys.exit(_run_tests(context, args.verbose))
 
         # Run single executable
         bin_dir = build_dir / "bin"
@@ -372,5 +381,5 @@ class LaunchTool(RepoTool):
                 logger.info(f"  {exe.stem}")
             sys.exit(1)
 
-        result = _run_executable(target_exe, args.passthrough_args, env, context)
+        result = _run_executable(target_exe, args.passthrough_args, context)
         sys.exit(result.returncode)

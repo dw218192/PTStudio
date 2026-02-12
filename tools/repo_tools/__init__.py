@@ -28,8 +28,6 @@ class RepoContext(TypedDict):
     build_type: str
     conan_deps_root: str
     conan_lock: str
-    deps_root: str
-    build_deps_root: str
     build_dir: str
 
 
@@ -68,10 +66,6 @@ def get_repo_tool(name: str) -> RepoTool | None:
     return _REPO_TOOL_REGISTRY.get(name)
 
 
-def get_repo_tool_name(tool: RepoTool) -> str | None:
-    return tool.name if tool.name else None
-
-
 def create_repo_tool_args(name: str, context: RepoContext) -> argparse.Namespace:
     tool = get_repo_tool(name)
     if tool is None:
@@ -99,10 +93,6 @@ def invoke_tool(
         step_args = normalize_repo_tool_args(extra_args)
         apply_repo_tool_args(args, step_args)
     tool.execute(args)
-
-
-def list_repo_tools() -> list[str]:
-    return sorted(_REPO_TOOL_REGISTRY.keys())
 
 
 def register_repo_tool_parser(
@@ -145,14 +135,6 @@ if not logger.handlers:
 
 def is_windows() -> bool:
     return platform.system() == "Windows"
-
-
-def is_linux() -> bool:
-    return platform.system() == "Linux"
-
-
-def is_macos() -> bool:
-    return platform.system() == "Darwin"
 
 
 def _is_ci() -> bool:
@@ -199,13 +181,37 @@ def find_venv_executable(name: str) -> str:
     return name
 
 
-def run_command(cmd: list[str], log_file: Optional[Path] = None) -> None:
-    """Run a command and optionally tee output to a log file."""
+def run_command(
+    cmd: list[str],
+    log_file: Optional[Path] = None,
+    env_script: Optional[Path] = None,
+) -> None:
+    """Run a command and optionally tee output to a log file.
+
+    If *env_script* is provided and the file exists, the command is executed
+    inside a shell that sources the script first (``call`` on Windows,
+    ``source`` on POSIX).  Python's own ``os.environ`` is **not** modified.
+    """
+    use_shell = False
+    run_cmd: list[str] | str = cmd
+    if env_script is not None:
+        script = env_script
+        if not script.suffix:
+            script = script.with_suffix(".bat" if is_windows() else ".sh")
+        if script.exists():
+            cmd_str = subprocess.list2cmdline(cmd)
+            if is_windows():
+                run_cmd = f'call "{script}" >nul 2>&1 && {cmd_str}'
+            else:
+                run_cmd = f'source "{script}" >/dev/null 2>&1 && {cmd_str}'
+            use_shell = True
+
     if log_file:
         log_file.parent.mkdir(parents=True, exist_ok=True)
         with open(log_file, "w", encoding="utf-8", errors="replace") as f:
             process = subprocess.Popen(
-                cmd,
+                run_cmd,
+                shell=use_shell,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -220,7 +226,7 @@ def run_command(cmd: list[str], log_file: Optional[Path] = None) -> None:
             if process.returncode != 0:
                 sys.exit(process.returncode)
     else:
-        subprocess.run(cmd, check=True)
+        subprocess.run(run_cmd, shell=use_shell, check=True)
 
 
 def ensure_conan_profile() -> None:
@@ -418,59 +424,62 @@ def build_repo_context(root: Path, build_type: str, config: dict, platform_id: s
         conan_lock = _get_config_value(config, "paths.conan_lock", "conan_glfw.lock")
     resolved_conan_lock = str(resolve_path(root, conan_lock, template_context))
 
-    # Add deps_root for referencing deployed dependencies
-    # deps_root: host/target dependencies (libraries to link against)
-    # build_deps_root: build/tool dependencies (executables to run during build)
-    deps_root = Path(resolved_conan_deps_root) / "full_deploy" / "host"
-    build_deps_root = Path(resolved_conan_deps_root) / "full_deploy" / "build"
-
     context: RepoContext = {
         **template_context,
         "conan_lock": resolved_conan_lock,
-        "deps_root": str(deps_root),
-        "build_deps_root": str(build_deps_root),
         "build_dir": str(build_root / platform_id / build_type),
     }
     return context
 
 
-def resolve_env_vars(env_config: dict | None, context: RepoContext) -> dict:
-    """Resolve environment variables, expanding glob patterns."""
-    import glob
+def load_conan_env(build_dir: Path, preset_type: str = "test") -> dict[str, str]:
+    """Load environment variables from Conan-generated CMakePresets.json.
 
-    if not env_config:
+    Args:
+        build_dir: The build configuration directory (e.g., _build/windows-x64/Debug/).
+        preset_type: Which preset to read:
+            "test" for runtime env (DLL paths for launching/testing),
+            "configure" for build env (slang, emsdk, etc.).
+
+    Returns:
+        Dict of env var name -> resolved value. ``$penv{VAR}`` references are
+        replaced with the current process environment value.
+    """
+    import json
+
+    presets_path = build_dir / "CMakePresets.json"
+    if not presets_path.exists():
+        logger.warning(f"CMakePresets.json not found: {presets_path}")
         return {}
-    if "env" in env_config and isinstance(env_config.get("env"), dict):
-        env_config = env_config.get("env", {})
-    resolved = {}
-    for key, value in env_config.items():
-        if isinstance(value, list):
-            expanded_values = []
-            for item in value:
-                resolved_item = _resolve_template(str(item), context)
-                # Expand glob pattern - take the first match if multiple found
-                matches = sorted(glob.glob(resolved_item))
-                if len(matches) > 1:
-                    logger.warning(
-                        f"Glob pattern '{resolved_item}' matched multiple items: {matches}; "
-                        f"using first match: {matches[0]}"
-                    )
-                expanded_values.append(matches[0] if matches else resolved_item)
-            resolved[key] = os.pathsep.join(expanded_values)
-        else:
-            resolved[key] = _resolve_template(str(value), context)
+
+    presets = json.loads(presets_path.read_text(encoding="utf-8"))
+
+    key = {
+        "test": "testPresets",
+        "configure": "configurePresets",
+        "build": "buildPresets",
+    }.get(preset_type, f"{preset_type}Presets")
+
+    preset_list = presets.get(key, [])
+    if not preset_list:
+        logger.warning(f"No {key} found in {presets_path}")
+        return {}
+
+    env = preset_list[0].get("environment", {})
+    if not env:
+        return {}
+
+    resolved: dict[str, str] = {}
+    for var, value in env.items():
+        if not isinstance(value, str):
+            continue
+        result = re.sub(
+            r"\$penv\{([^}]+)\}",
+            lambda m: os.environ.get(m.group(1), ""),
+            value,
+        )
+        resolved[var] = result
     return resolved
-
-
-def apply_env_overrides(env: dict, overrides: dict) -> dict:
-    for key, value in overrides.items():
-        if key.upper() == "PATH":
-            if is_windows():  # case-insensitive on Windows
-                key = next((k for k in env if k.upper() == "PATH"), key)
-            env[key] = f"{value}{os.pathsep}{env.get(key, '')}"
-        else:
-            env[key] = value
-    return env
 
 
 def normalize_env_config(env_value: object) -> dict[str, object]:

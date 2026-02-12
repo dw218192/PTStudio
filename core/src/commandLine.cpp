@@ -39,6 +39,18 @@ void CommandLine::add_string(std::string_view name, std::string_view description
     }
 }
 
+void CommandLine::add_int(std::string_view name, std::string_view description,
+                          std::optional<int> default_value) {
+    std::string n(name);
+    std::string d(description);
+    if (default_value) {
+        m_impl->desc.add_options()(n.c_str(), po::value<int>()->default_value(*default_value),
+                                   d.c_str());
+    } else {
+        m_impl->desc.add_options()(n.c_str(), po::value<int>(), d.c_str());
+    }
+}
+
 auto CommandLine::parse(int argc, char* argv[]) -> bool {
     try {
         auto parsed = po::command_line_parser(argc, argv)
@@ -90,40 +102,46 @@ auto CommandLine::get_string(std::string_view name,
     return std::string(default_value);
 }
 
+auto CommandLine::get_int(std::string_view name, int default_value) const -> int {
+    std::string key(name);
+    if (m_impl->vm.count(key)) {
+        return m_impl->vm[key].as<int>();
+    }
+    return default_value;
+}
+
 auto CommandLine::has(std::string_view name) const -> bool {
     return m_impl->vm.count(std::string(name)) > 0;
 }
 
 }  // namespace pts
 
-#else  // Emscripten stubs
+#else  // Stubs for Emscripten (no command line in browser)
 
 namespace pts {
 
 CommandLine::CommandLine() = default;
 CommandLine::~CommandLine() = default;
-
-void CommandLine::add_flag(std::string_view /*name*/, std::string_view /*description*/) {
+void CommandLine::add_flag(std::string_view, std::string_view) {
 }
-
-void CommandLine::add_string(std::string_view /*name*/, std::string_view /*description*/,
-                             std::optional<std::string> /*default_value*/) {
+void CommandLine::add_string(std::string_view, std::string_view, std::optional<std::string>) {
 }
-
-auto CommandLine::parse(int /*argc*/, char* /*argv*/[]) -> bool {
+void CommandLine::add_int(std::string_view, std::string_view, std::optional<int>) {
+}
+auto CommandLine::parse(int, char*[]) -> bool {
     return true;
 }
-
-auto CommandLine::get_flag(std::string_view /*name*/) const -> bool {
+auto CommandLine::get_flag(std::string_view) const -> bool {
     return false;
 }
-
-auto CommandLine::get_string(std::string_view /*name*/,
+auto CommandLine::get_string(std::string_view,
                              std::string_view default_value) const -> std::string {
     return std::string(default_value);
 }
-
-auto CommandLine::has(std::string_view /*name*/) const -> bool {
+auto CommandLine::get_int(std::string_view, int default_value) const -> int {
+    return default_value;
+}
+auto CommandLine::has(std::string_view) const -> bool {
     return false;
 }
 

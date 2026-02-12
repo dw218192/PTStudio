@@ -1,21 +1,8 @@
-# PTStudio Agent Environment
+# PTStudio Project Overview
 
 ## Bash Tool Usage
 
-1. **Always use `./pts` entrypoint** - The Bash tool runs in bash, so use `./pts` (not `.\pts.cmd`).
-2. **All repository operations go through `./pts`**: `build`, `test`, `format`, `clean`, `python`, `launch`. Use `./pts -h` or `./pts <cmd> -h` for options. Do not attempt to infer the build system/test driver executable and environment.
-3. **Launch executables via `./pts launch <target>`** - This sets up DLL search paths (PATH) correctly. Never run built executables directly.
-4. **Do not launch GUI applications** - The agent environment has no display. Only run headless/CLI tools and tests.
+1. Check tools/repo_tools/agent/rules.toml for allowed commands.
+2. Most repository operations (building, testing, launching executables, etc.) may be done through `./pts`: Use `-h` flag on ./pts and its subcommands to find out more.
+3. Do not launch GUI applications without means of termination (e.g. through executable arguments or external tools) - the agent environment has no way of closing the window and will hang.
 
-## Project Overview
-
-**PTStudio**: C++17 3D editor/renderer using WebGPU (Dawn native, emdawnwebgpu for WASM), OpenUSD, plugin system.
-
-## Structure
-
-- **core/**: Static lib - windowing, WebGPU (`WebGpuContext`, `Device`, `Surface`), render graph, plugin system, ImGui
-- **editor/**: Main executable - ImGui-based editor UI, hosts renderer plugins
-- **plugins/**: Dynamic (static on WASM) - `renderers/editor/`, `test_plugin/`
-- **hello_triangle/**: Simple WebGPU example
-
-**Build output**: `_build/<config>/bin/` (executables), `_build/<config>/bin/plugins/` (plugins)

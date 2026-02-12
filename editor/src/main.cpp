@@ -13,20 +13,15 @@
 
 int main(int argc, char* argv[]) {
     try {
-        pts::CommandLine cli;
-        cli.add_string("log-level", "Log level (trace, debug, info, warn, error, critical)");
-        cli.add_string("plugins-dir", "Search directory for plugins (relative to executable)");
-        cli.add_flag("quit-on-start", "Quit the application after starting, useful for testing");
+        // Pre-parse for infrastructure args needed before app construction.
+        // Unrecognized args (like --num-frames) are silently ignored.
+        pts::CommandLine pre_cli;
+        pre_cli.add_string("log-level", "Log level (trace, debug, info, warn, error, critical)");
+        pre_cli.add_string("plugins-dir", "Search directory for plugins (relative to executable)");
+        pre_cli.parse(argc, argv);
 
-        if (!cli.parse(argc, argv)) {
-            return 0;  // --help was shown
-        }
-
-        auto log_level_str = cli.get_string("log-level", "info");
-        auto plugins_dir_str = cli.get_string("plugins-dir", "plugins");
-
-        pts::editor::AppConfig app_config;
-        app_config.quit_on_start = cli.get_flag("quit-on-start");
+        auto log_level_str = pre_cli.get_string("log-level", "info");
+        auto plugins_dir_str = pre_cli.get_string("plugins-dir", "plugins");
 
         auto opt_log_level = pts::from_string<pts::LogLevel>(log_level_str);
         if (!opt_log_level) {
@@ -55,10 +50,13 @@ int main(int argc, char* argv[]) {
             plugin_manager.load_plugin(plugin.id);
         }
 
-        // Run the application
-        pts::editor::EditorApplication{"Editor", render_config, app_config, logging_manager,
-                                       plugin_manager}
-            .run();
+        // Create application, init (register + parse + process args), and run
+        pts::editor::EditorApplication app{"Editor", render_config, logging_manager,
+                                           plugin_manager};
+        if (!app.init(argc, argv)) {
+            return 0;  // --help was shown
+        }
+        app.run();
 
         // Plugin manager and logging manager will be destroyed here, ensuring proper shutdown
     } catch (std::exception& e) {

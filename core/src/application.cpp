@@ -1,7 +1,6 @@
 #include <core/application.h>
+#include <core/commandLine.h>
 #include <core/diagnostics.h>
-#include <core/rendering/webgpuContext.h>
-#include <core/rendering/windowing.h>
 #include <core/timeUtils.h>
 
 #include <chrono>
@@ -14,8 +13,7 @@
 namespace pts {
 
 Application::Application(std::string_view name, pts::LoggingManager& logging_manager,
-                         pts::PluginManager& plugin_manager, unsigned width, unsigned height,
-                         float min_frame_time)
+                         pts::PluginManager& plugin_manager, float min_frame_time)
     : m_name{name.begin(), name.end()},
       m_logging_manager{&logging_manager},
       m_plugin_manager{&plugin_manager} {
@@ -23,27 +21,24 @@ Application::Application(std::string_view name, pts::LoggingManager& logging_man
     INVARIANT_MSG(m_logger != nullptr, "get_logger_shared must return valid logger");
     set_min_frame_time(min_frame_time);
     m_start_time = std::chrono::steady_clock::now();
+}
 
-    // Create windowing system
-    m_windowing = pts::rendering::create_windowing(get_logging_manager());
-    INVARIANT_MSG(m_windowing != nullptr, "create_windowing must return valid windowing system");
+bool Application::init(int argc, char* argv[]) {
+    CommandLine cli;
+    register_args(cli);
+    if (!cli.parse(argc, argv)) {
+        return false;
+    }
+    process_args(cli);
+    return true;
+}
 
-    // Create viewport
-    auto viewport_desc = pts::rendering::ViewportDesc{
-        get_name().data(), width, height, true, true, true, true,
-    };
-    m_viewport = m_windowing->create_viewport(viewport_desc);
-    INVARIANT_MSG(m_viewport != nullptr, "create_viewport must return valid viewport");
-    m_viewport->on_drawable_resized.connect(
-        [this](pts::rendering::Extent2D) { on_framebuffer_resized(); });
+void Application::register_args(CommandLine& cli) {
+    cli.add_int("num-frames", "Quit after N frames (0 = unlimited)", 0);
+}
 
-    // Create WebGPU context (starts async initialization)
-    m_webgpu_context = pts::rendering::WebGpuContext::create(*m_viewport, get_logging_manager());
-    INVARIANT_MSG(m_webgpu_context != nullptr, "WebGpuContext::create must return valid context");
-
-    // WebGPU initialization continues asynchronously; it will be driven to
-    // completion inside run_one_frame() so the browser event loop can yield
-    // between ticks (required on Emscripten).
+void Application::process_args(const CommandLine& cli) {
+    set_max_frames(cli.get_int("num-frames"));
 }
 
 Application::~Application() = default;
@@ -55,57 +50,21 @@ void Application::run() {
         [](void* arg) {
             auto* app = static_cast<Application*>(arg);
             app->run_one_frame();
+            app->check_frame_limit();
         },
         this, 0, true);
 #else
-    while (!m_viewport->should_close()) {
+    while (!m_should_stop) {
         run_one_frame();
+        check_frame_limit();
     }
 #endif
-}
-
-bool Application::ensure_webgpu_ready() {
-    // Already failed — nothing to do (emscripten_set_main_loop keeps calling
-    // even after request_close)
-    if (m_webgpu_context->is_failed()) {
-        return false;
-    }
-
-    if (m_webgpu_context->is_initializing()) {
-        m_webgpu_context->tick_init();
-
-        if (m_webgpu_context->is_failed()) {
-            log(pts::LogLevel::Error, "WebGPU context initialization failed");
-            m_viewport->request_close();
-            return false;
-        }
-
-        if (m_webgpu_context->is_initializing()) {
-            return false;  // still initializing — wait for next frame
-        }
-
-        log(pts::LogLevel::Info, "Application initialized");
-    }
-
-    return true;
 }
 
 void Application::run_one_frame() {
     auto const frame_start = std::chrono::steady_clock::now();
 
-    m_windowing->pump_events(pts::rendering::PumpEventMode::Poll);
-
-    if (!ensure_webgpu_ready()) {
-        return;
-    }
-
     loop(m_delta_time);
-
-    if (m_framebuffer_resized) {
-        auto const extent = m_viewport->drawable_extent();
-        m_webgpu_context->surface().resize(extent);
-        m_framebuffer_resized = false;
-    }
 
     auto const frame_end = std::chrono::steady_clock::now();
     auto const frame_duration = std::chrono::duration<float>(frame_end - frame_start).count();
@@ -121,14 +80,6 @@ void Application::run_one_frame() {
 #endif
 }
 
-auto Application::get_window_width() const noexcept -> int {
-    return static_cast<int>(m_viewport->drawable_extent().w);
-}
-
-auto Application::get_window_height() const noexcept -> int {
-    return static_cast<int>(m_viewport->drawable_extent().h);
-}
-
 auto Application::get_time() const noexcept -> float {
     return static_cast<float>(time_since_start(m_start_time));
 }
@@ -141,8 +92,25 @@ void Application::set_min_frame_time(float min_frame_time) noexcept {
     m_min_frame_time = min_frame_time;
 }
 
-void Application::on_framebuffer_resized() noexcept {
-    m_framebuffer_resized = true;
+void Application::set_max_frames(int n) noexcept {
+    m_max_frames = n;
+}
+
+auto Application::should_stop() const noexcept -> bool {
+    return m_should_stop;
+}
+
+void Application::check_frame_limit() noexcept {
+    if (m_max_frames > 0 && ++m_frame_count >= m_max_frames) {
+        request_stop();
+    }
+}
+
+void Application::request_stop() noexcept {
+    m_should_stop = true;
+#if defined(__EMSCRIPTEN__)
+    emscripten_cancel_main_loop();
+#endif
 }
 
 }  // namespace pts

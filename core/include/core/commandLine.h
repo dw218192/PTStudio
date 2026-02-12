@@ -33,6 +33,10 @@ class CommandLine {
     void add_string(std::string_view name, std::string_view description,
                     std::optional<std::string> default_value = std::nullopt);
 
+    /// Add an integer option with an optional default value.
+    void add_int(std::string_view name, std::string_view description,
+                 std::optional<int> default_value = std::nullopt);
+
     /// Parse argc/argv. Returns false if --help was requested (caller should exit).
     /// Unrecognized arguments are logged to stderr but do not cause failure.
     auto parse(int argc, char* argv[]) -> bool;
@@ -44,11 +48,14 @@ class CommandLine {
     [[nodiscard]] auto get_string(std::string_view name,
                                   std::string_view default_value = {}) const -> std::string;
 
+    /// Query an integer option. Returns default_value if not present.
+    [[nodiscard]] auto get_int(std::string_view name, int default_value = 0) const -> int;
+
     /// Query whether an option was explicitly provided on the command line.
     [[nodiscard]] auto has(std::string_view name) const -> bool;
 
-   private:
 #if PTS_ENABLE_PROGRAM_OPTIONS
+   private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;
 #endif
