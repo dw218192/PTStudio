@@ -1,15 +1,15 @@
 """Slang shader compilation command."""
 
-import argparse
 import glob
 import sys
 from pathlib import Path
+from typing import Any
 
-from repo_tools import (
-    RepoContext,
+import click
+
+from repo_tools.core import (
     RepoTool,
-    build_repo_context,
-    load_repo_config,
+    ToolContext,
     logger,
     resolve_path,
     run_command,
@@ -24,9 +24,9 @@ def _expand_glob_paths(pattern: Path) -> list[Path]:
 
 
 def _resolve_slang_shaders(
-    root: Path, config: dict, context: RepoContext, args: argparse.Namespace
+    root: Path, config: dict, tokens: dict[str, str], args: dict[str, Any]
 ) -> tuple[list[tuple[Path, Path]], int]:
-    shaders = getattr(args, "shaders", None)
+    shaders = args.get("shaders")
     if shaders is None:
         shaders = config.get("slangc", {}).get("shaders", [])
 
@@ -52,7 +52,7 @@ def _resolve_slang_shaders(
             continue
         output_value = shader.get("output")
 
-        input_pattern = resolve_path(root, str(input_value), context)
+        input_pattern = resolve_path(root, str(input_value), tokens)
         input_paths = [
             path for path in _expand_glob_paths(input_pattern) if path.is_file()
         ]
@@ -63,7 +63,7 @@ def _resolve_slang_shaders(
 
         output_pattern_text = None
         if output_value:
-            output_pattern_text = str(resolve_path(root, str(output_value), context))
+            output_pattern_text = str(resolve_path(root, str(output_value), tokens))
             if "*" not in output_pattern_text and len(input_paths) > 1:
                 logger.error(
                     "Output path must include '*' when multiple inputs match: "
@@ -103,52 +103,52 @@ class SlangcTool(RepoTool):
     name = "slangc"
     help = "Compile Slang shaders"
 
-    def setup(self, parser: argparse.ArgumentParser) -> None:
-        parser.add_argument(
+    def setup(self, cmd: click.Command) -> click.Command:
+        cmd = click.option(
             "--build-type",
-            choices=["Debug", "Release", "RelWithDebInfo", "MinSizeRel"],
+            type=click.Choice(["Debug", "Release", "RelWithDebInfo", "MinSizeRel"]),
+            default=None,
             help="Build configuration type (default: Debug)",
-        )
-        parser.add_argument(
+        )(cmd)
+        cmd = click.option(
             "-f",
             "--force",
-            action="store_true",
+            is_flag=True,
+            default=None,
             help="Recompile shaders even if outputs are up to date",
-        )
+        )(cmd)
+        return cmd
 
-    def default_args(self, context: RepoContext) -> argparse.Namespace:
-        return argparse.Namespace(
-            platform=context["platform"],
-            build_type=context["build_type"],
-            force=False,
-        )
+    def default_args(self, tokens: dict[str, str]) -> dict[str, Any]:
+        return {
+            "force": False,
+        }
 
-    def execute(self, args: argparse.Namespace) -> None:
+    def execute(self, ctx: ToolContext, args: dict[str, Any]) -> None:
         """Compile Slang shaders configured in config.yaml."""
-        root = Path(__file__).parent.parent.parent
-        config = load_repo_config(root)
-        platform_id = args.platform
-        context = build_repo_context(root, args.build_type, config, platform_id)
+        root = ctx.workspace_root
+        config = ctx.config
+        tokens = ctx.tokens
 
         # Explicit compiler path override from args or config
-        compiler_path = getattr(args, "compiler_path", None)
+        compiler_path = args.get("compiler_path")
         if compiler_path is None:
             compiler_path = config.get("slangc", {}).get("compiler_path")
         if compiler_path:
-            compiler = str(resolve_path(root, str(compiler_path), context))
+            compiler = str(resolve_path(root, str(compiler_path), tokens))
         else:
             compiler = "slangc"
 
-        conanbuild = Path(context["build_dir"]) / "conanbuild"
+        conanbuild = Path(tokens.get("build_dir", "")) / "conanbuild"
 
-        shaders, errors = _resolve_slang_shaders(root, config, context, args)
+        shaders, errors = _resolve_slang_shaders(root, config, tokens, args)
         if errors:
             sys.exit(1)
         if not shaders:
             logger.warning("No Slang shaders configured.")
             return
 
-        logs_dir = Path(context["logs_root"])
+        logs_dir = Path(tokens.get("logs_root", ""))
         logs_dir.mkdir(parents=True, exist_ok=True)
 
         compiled = 0
@@ -158,7 +158,7 @@ class SlangcTool(RepoTool):
                 logger.error(f"Shader input not found: {input_path}")
                 sys.exit(1)
 
-            if not _should_compile_shader(input_path, output_path, args.force):
+            if not _should_compile_shader(input_path, output_path, args["force"]):
                 logger.info(f"Skipping up-to-date shader: {input_path}")
                 skipped += 1
                 continue
@@ -173,7 +173,7 @@ class SlangcTool(RepoTool):
                 "-target",
                 "wgsl",
             ]
-            cmd.extend(args.passthrough_args)
+            cmd.extend(ctx.passthrough_args)
             run_command(cmd, log_file=log_file, env_script=conanbuild)
             compiled += 1
 

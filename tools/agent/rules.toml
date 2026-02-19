@@ -62,7 +62,7 @@ patterns = ['^git\b', '^gh\b']
 
 [[allow]]
 name = "build_tools"
-patterns = ['^\./pts\b', '^python\b', '^cmake\b', '^conan\b', '^ninja\b', '^make\b']
+patterns = ['^\./repo\b', '^python\b', '^cmake\b', '^conan\b', '^ninja\b', '^make\b']
 dir = "project_root"
 reason = "build tools must be run from within the project tree"
 

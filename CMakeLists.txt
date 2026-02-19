@@ -128,7 +128,7 @@ if(EMSCRIPTEN)
     # the pinned Dawn version and passes it via -DEMDAWNWEBGPU_PORT_FILE=.
     if(NOT EMDAWNWEBGPU_PORT_FILE)
         message(FATAL_ERROR "EMDAWNWEBGPU_PORT_FILE must be set for Emscripten builds. "
-            "Use the build tool (./pts build --platform emscripten) which downloads the correct version.")
+            "Use the build tool (./repo build --platform emscripten) which downloads the correct version.")
     endif()
     target_compile_options(wasm_flags INTERFACE
         "--use-port=${EMDAWNWEBGPU_PORT_FILE}"

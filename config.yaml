@@ -1,14 +1,23 @@
-repo_paths:
-  build_root: "_build"
-  logs_root: "_logs"
+tokens:
+  platform:
+    - windows-x64
+    - linux-x64
+    - emscripten
+  build_type:
+    - Debug
+    - Release
+    - RelWithDebInfo
+  build_root: {value: "{workspace_root}/_build", path: true}
+  logs_root: {value: "{workspace_root}/_logs", path: true}
+  build_dir: {value: "{build_root}/{platform}/{build_type}", path: true}
+  conan_deps_root: {value: "{build_root}/{platform}/deps", path: true}
   conan_lock: "conan_glfw.lock"
-  conan_deps_root: "{build_root}/{platform}/deps"
 
 build:
   windowing: "glfw"
   prebuild:
     format: {}
-    slangc:
+    slangc@!emscripten:
       shaders:
         - input: "assets/shaders/test/*.slang"
           output: "assets/shaders/test/*.wgsl"

@@ -1,23 +1,24 @@
 """Launch subcommand implementation - runs executables and tests."""
 
-import argparse
+from __future__ import annotations
+
 import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
-from repo_tools import (
-    RepoContext,
+import click
+
+from repo_tools.core import (
     RepoTool,
-    build_repo_context,
-    is_platform_compatible,
+    ToolContext,
+    detect_platform_identifier,
     is_windows,
-    load_repo_config,
     log_section,
     logger,
     normalize_build_type,
-    normalize_env_config,
 )
 
 
@@ -128,7 +129,7 @@ def _shell_wrap(cmd: list[str], env_script: Path | None) -> tuple[list[str] | st
 def _run_executable(
     exe_path: Path,
     args: list[str],
-    context: RepoContext,
+    context: dict[str, Any],
     capture_output: bool = False,
 ) -> subprocess.CompletedProcess:
     """Run an executable inside the appropriate Conan env script.
@@ -188,7 +189,7 @@ def _run_executable(
         sys.exit(0)
 
 
-def _can_run(context: RepoContext) -> bool:
+def _can_run(context: dict[str, Any]) -> bool:
     """Check if executables can be run on this host."""
     build_dir = Path(context["build_dir"])
     if context["platform"] == "emscripten":
@@ -202,10 +203,11 @@ def _can_run(context: RepoContext) -> bool:
         return True
     if _resolve_runtime_deploy_dir(build_dir) is not None:
         return True
-    return is_platform_compatible(context["platform"])
+    # Inline check: can only run natively if target matches host
+    return context["platform"] == detect_platform_identifier()
 
 
-def _run_tests(context: RepoContext, verbose: bool) -> int:
+def _run_tests(context: dict[str, Any], verbose: bool) -> int:
     """Run all test executables and return exit code."""
     build_dir = Path(context["build_dir"])
     is_emscripten = context["platform"] == "emscripten"
@@ -216,7 +218,7 @@ def _run_tests(context: RepoContext, verbose: bool) -> int:
     test_executables = _discover_executables(test_dir, is_emscripten)
     if not test_executables:
         logger.error(f"No test executables found in: {test_dir}")
-        logger.info("Build the project first: ./pts build")
+        logger.info("Build the project first: ./repo build")
         return 1
 
     logger.info(f"Found {len(test_executables)} test executable(s)")
@@ -279,68 +281,93 @@ class LaunchTool(RepoTool):
     name = "launch"
     help = "Launch executables or run tests"
 
-    def setup(self, parser: argparse.ArgumentParser) -> None:
-        parser.add_argument(
-            "executable", type=str, nargs="?", default=argparse.SUPPRESS,
-            help="Executable to launch (default: editor)",
-        )
-        parser.add_argument(
-            "-c", "--config", type=str.casefold,
-            choices=["debug", "release", "relwithdebinfo", "minsizerel"],
-            help="Build configuration (default: debug)",
-        )
-        parser.add_argument(
-            "--build-type",
-            choices=["Debug", "Release", "RelWithDebInfo", "MinSizeRel"],
-            help="Alias for --config",
-        )
-        parser.add_argument(
-            "--env", action="append",
+    def setup(self, cmd: click.Command) -> click.Command:
+        cmd = click.argument(
+            "executable",
+            required=False,
+            default=None,
+        )(cmd)
+        cmd = click.option(
+            "-c", "--config",
+            type=click.Choice(
+                ["debug", "release", "relwithdebinfo", "minsizerel"],
+                case_sensitive=False,
+            ),
+            default=None,
+            help="Build configuration (overrides --build-type)",
+        )(cmd)
+        cmd = click.option(
+            "--env",
+            multiple=True,
             help="Environment override (KEY=VALUE). Repeatable.",
-        )
-        parser.add_argument(
-            "--test", action="store_true",
+        )(cmd)
+        cmd = click.option(
+            "--test",
+            is_flag=True,
+            default=None,
             help="Run all test executables",
-        )
-        parser.add_argument(
-            "-v", "--verbose", action="store_true",
+        )(cmd)
+        cmd = click.option(
+            "-v", "--verbose",
+            is_flag=True,
+            default=None,
             help="Verbose output (for tests)",
-        )
-        parser.add_argument(
-            "-i", "--interactive", action="store_true",
+        )(cmd)
+        cmd = click.option(
+            "-i", "--interactive",
+            is_flag=True,
+            default=None,
             help="Interactive menu to select executable",
-        )
+        )(cmd)
+        return cmd
 
-    def default_args(self, context: RepoContext) -> argparse.Namespace:
-        return argparse.Namespace(
-            platform=context["platform"],
-            executable="editor",
-            config=context["build_type"].casefold(),
-            build_type=None,
-            env=None,
-            test=False,
-            verbose=False,
-            interactive=False,
-        )
+    def default_args(self, tokens: dict[str, str]) -> dict[str, Any]:
+        return {
+            "executable": "editor",
+            "config": None,
+            "env": (),
+            "test": False,
+            "verbose": False,
+            "interactive": False,
+        }
 
-    def execute(self, args: argparse.Namespace) -> None:
-        root = Path(__file__).parent.parent.parent
-        # Support both --config and --build-type
-        build_type = normalize_build_type(args.build_type or args.config)
-        config = load_repo_config(root)
-        context = build_repo_context(root, build_type, config, args.platform)
+    def execute(self, ctx: ToolContext, args: dict[str, Any]) -> None:
+        root = ctx.workspace_root
+
+        # Support both --config (tool-specific) and --build-type (group-level).
+        # --config takes precedence when explicitly provided.
+        config_val = args.get("config")
+        if config_val:
+            build_type = normalize_build_type(config_val)
+        else:
+            build_type = ctx.dimensions.get("build_type", "Debug")
+
+        platform_id = ctx.dimensions.get("platform", "")
+        is_emscripten = platform_id == "emscripten"
+
+        # Build a minimal context dict from tokens for helper functions
+        context: dict[str, Any] = {
+            "workspace_root": str(root),
+            "build_dir": ctx.tokens.get("build_dir", ""),
+            "platform": platform_id,
+            "build_type": build_type,
+            "logs_root": ctx.tokens.get("logs_root", ""),
+        }
+
         build_dir = Path(context["build_dir"])
-        is_emscripten = context["platform"] == "emscripten"
 
         # Apply --env overrides to the process environment so they propagate
         # through the shell-wrapped command.
-        if args.env:
-            for key, value in normalize_env_config(args.env).items():
-                os.environ[key] = str(value)
+        env_val = args.get("env")
+        if env_val:
+            for item in env_val:
+                text = str(item).strip()
+                if "=" in text:
+                    key, value = text.split("=", 1)
+                    os.environ[key] = value
 
         # Check if we can run
         if not _can_run(context):
-            from repo_tools import detect_platform_identifier
             if is_emscripten:
                 logger.error("emsdk not found. Build with --platform emscripten first.")
             else:
@@ -349,8 +376,8 @@ class LaunchTool(RepoTool):
             sys.exit(1)
 
         # Run tests
-        if args.test:
-            sys.exit(_run_tests(context, args.verbose))
+        if args.get("test"):
+            sys.exit(_run_tests(context, bool(args.get("verbose"))))
 
         # Run single executable
         bin_dir = build_dir / "bin"
@@ -358,28 +385,30 @@ class LaunchTool(RepoTool):
 
         if not exe_paths:
             logger.error(f"No executables found in: {bin_dir}")
-            logger.info("Build the project first: ./pts build")
+            logger.info("Build the project first: ./repo build")
             sys.exit(1)
 
         # Interactive mode
-        if args.interactive:
+        if args.get("interactive"):
             target_exe = _interactive_select(exe_paths)
             if target_exe is None:
                 logger.info("No executable selected.")
                 sys.exit(0)
         else:
+            executable_name = args.get("executable") or "editor"
             target_exe = None
             for exe in exe_paths:
-                if exe.stem == args.executable:
+                if exe.stem == executable_name:
                     target_exe = exe
                     break
 
         if target_exe is None:
-            logger.error(f"Executable not found: {args.executable}")
+            executable_name = args.get("executable") or "editor"
+            logger.error(f"Executable not found: {executable_name}")
             logger.info("Available executables:")
             for exe in exe_paths:
                 logger.info(f"  {exe.stem}")
             sys.exit(1)
 
-        result = _run_executable(target_exe, args.passthrough_args, context)
+        result = _run_executable(target_exe, ctx.passthrough_args, context)
         sys.exit(result.returncode)
