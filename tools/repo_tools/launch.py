@@ -1,4 +1,4 @@
-"""Launch subcommand implementation - runs executables and tests."""
+"""Launch subcommand implementation - runs executables."""
 
 from __future__ import annotations
 
@@ -279,7 +279,7 @@ def _run_tests(context: dict[str, Any], verbose: bool) -> int:
 
 class LaunchTool(RepoTool):
     name = "launch"
-    help = "Launch executables or run tests"
+    help = "Launch executables"
 
     def setup(self, cmd: click.Command) -> click.Command:
         cmd = click.argument(
@@ -302,18 +302,6 @@ class LaunchTool(RepoTool):
             help="Environment override (KEY=VALUE). Repeatable.",
         )(cmd)
         cmd = click.option(
-            "--test",
-            is_flag=True,
-            default=None,
-            help="Run all test executables",
-        )(cmd)
-        cmd = click.option(
-            "-v", "--verbose",
-            is_flag=True,
-            default=None,
-            help="Verbose output (for tests)",
-        )(cmd)
-        cmd = click.option(
             "-i", "--interactive",
             is_flag=True,
             default=None,
@@ -326,8 +314,6 @@ class LaunchTool(RepoTool):
             "executable": "editor",
             "config": None,
             "env": (),
-            "test": False,
-            "verbose": False,
             "interactive": False,
         }
 
@@ -348,10 +334,10 @@ class LaunchTool(RepoTool):
         # Build a minimal context dict from tokens for helper functions
         context: dict[str, Any] = {
             "workspace_root": str(root),
-            "build_dir": ctx.tokens.get("build_dir", ""),
+            "build_dir": ctx.tokens["build_dir"],
             "platform": platform_id,
             "build_type": build_type,
-            "logs_root": ctx.tokens.get("logs_root", ""),
+            "logs_root": ctx.tokens["logs_root"],
         }
 
         build_dir = Path(context["build_dir"])
@@ -374,10 +360,6 @@ class LaunchTool(RepoTool):
                 logger.error(f"Cannot run {context['platform']} binaries on this host")
                 logger.info(f"Host platform: {detect_platform_identifier()}")
             sys.exit(1)
-
-        # Run tests
-        if args.get("test"):
-            sys.exit(_run_tests(context, bool(args.get("verbose"))))
 
         # Run single executable
         bin_dir = build_dir / "bin"

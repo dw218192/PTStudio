@@ -1,6 +1,5 @@
 """Slang shader compilation command."""
 
-import glob
 import sys
 from pathlib import Path
 from typing import Any
@@ -10,17 +9,12 @@ import click
 from repo_tools.core import (
     RepoTool,
     ToolContext,
+    glob_paths,
     logger,
     resolve_path,
     run_command,
 )
 
-
-def _expand_glob_paths(pattern: Path) -> list[Path]:
-    pattern_text = str(pattern)
-    if any(char in pattern_text for char in ("*", "?", "[")):
-        return sorted(Path(match) for match in glob.glob(pattern_text, recursive=True))
-    return [pattern]
 
 
 def _resolve_slang_shaders(
@@ -54,7 +48,7 @@ def _resolve_slang_shaders(
 
         input_pattern = resolve_path(root, str(input_value), tokens)
         input_paths = [
-            path for path in _expand_glob_paths(input_pattern) if path.is_file()
+            path for path in glob_paths(input_pattern) if path.is_file()
         ]
         if not input_paths:
             logger.error(f"No shader inputs matched: {input_pattern}")
@@ -105,12 +99,6 @@ class SlangcTool(RepoTool):
 
     def setup(self, cmd: click.Command) -> click.Command:
         cmd = click.option(
-            "--build-type",
-            type=click.Choice(["Debug", "Release", "RelWithDebInfo", "MinSizeRel"]),
-            default=None,
-            help="Build configuration type (default: Debug)",
-        )(cmd)
-        cmd = click.option(
             "-f",
             "--force",
             is_flag=True,
@@ -139,7 +127,7 @@ class SlangcTool(RepoTool):
         else:
             compiler = "slangc"
 
-        conanbuild = Path(tokens.get("build_dir", "")) / "conanbuild"
+        conanbuild = Path(tokens["build_dir"]) / "conanbuild"
 
         shaders, errors = _resolve_slang_shaders(root, config, tokens, args)
         if errors:
@@ -148,7 +136,7 @@ class SlangcTool(RepoTool):
             logger.warning("No Slang shaders configured.")
             return
 
-        logs_dir = Path(tokens.get("logs_root", ""))
+        logs_dir = Path(tokens["logs_root"])
         logs_dir.mkdir(parents=True, exist_ok=True)
 
         compiled = 0

@@ -1,7 +1,0 @@
-# PTStudio Project Overview
-
-## Bash Tool Usage
-
-1. Check tools/agent/rules.toml for allowed commands.
-2. Most repository operations (building, testing, launching executables, etc.) may be done through `./repo`: Use `-h` flag on ./repo and its subcommands to find out more.
-3. Do not launch GUI applications without means of termination (e.g. through executable arguments or external tools) - the agent environment has no way of closing the window and will hang.

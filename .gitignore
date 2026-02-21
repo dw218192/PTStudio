@@ -17,3 +17,9 @@ __pycache__/
 
 # Generated embedded resources
 **/generated/
+
+# repokit
+_tools/
+repo
+repo.cmd
+_agent/

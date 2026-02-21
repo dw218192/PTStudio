@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import glob
 import hashlib
 import json
 import os
@@ -18,6 +17,7 @@ from jinja2 import Template
 from repo_tools.core import (
     RepoTool,
     ToolContext,
+    glob_paths,
     logger,
     resolve_path,
 )
@@ -41,13 +41,6 @@ class ResourceData:
     delimiter: str = ""
     hex_data: str = ""
 
-
-def _expand_glob_paths(pattern: Path) -> list[Path]:
-    """Expand glob pattern to list of matching files."""
-    pattern_text = str(pattern)
-    if any(char in pattern_text for char in ("*", "?", "[")):
-        return sorted(Path(match) for match in glob.glob(pattern_text, recursive=True))
-    return [pattern]
 
 
 def _find_common_ancestor(paths: list[Path]) -> Path:
@@ -197,7 +190,7 @@ def _resolve_resource_groups(
         input_files: list[Path] = []
         for pattern in input_patterns:
             input_pattern = resolve_path(root, str(pattern), tokens)
-            matched = [p for p in _expand_glob_paths(input_pattern) if p.is_file()]
+            matched = [p for p in glob_paths(input_pattern) if p.is_file()]
             input_files.extend(matched)
 
         if not input_files:
@@ -232,12 +225,6 @@ class EmbedTool(RepoTool):
     help = "Embed resources as C++ headers"
 
     def setup(self, cmd: click.Command) -> click.Command:
-        cmd = click.option(
-            "--build-type",
-            type=click.Choice(["Debug", "Release", "RelWithDebInfo", "MinSizeRel"]),
-            default=None,
-            help="Build configuration type (default: Debug)",
-        )(cmd)
         cmd = click.option(
             "-f",
             "--force",
@@ -277,7 +264,7 @@ class EmbedTool(RepoTool):
             raise FileNotFoundError(f"Template not found: {template_path}")
 
         # Centralize manifests in build directory
-        build_dir = tokens.get("build_dir", "")
+        build_dir = tokens["build_dir"]
         manifest_dir = Path(build_dir) / "embed"
         manifest_dir.mkdir(parents=True, exist_ok=True)
 
