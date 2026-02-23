@@ -32,6 +32,8 @@ class DawnConan(ConanFile):
         tc.cache_variables["DAWN_FETCH_DEPENDENCIES"] = True
         tc.cache_variables["TINT_BUILD_TESTS"] = False
         tc.cache_variables["DAWN_BUILD_MONOLITHIC_LIBRARY"] = "SHARED"
+        if self.settings.os == "Windows":
+            tc.cache_variables["DAWN_FORCE_SYSTEM_COMPONENT_LOAD"] = True
         tc.generate()
         deps = CMakeDeps(self)
         deps.generate()
