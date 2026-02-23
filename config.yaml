@@ -17,7 +17,7 @@ build:
   windowing: "glfw"
   prebuild:
     format: {}
-    slangc@!emscripten:
+    slangc:
       shaders:
         - input: "assets/shaders/test/*.slang"
           output: "assets/shaders/test/*.wgsl"
