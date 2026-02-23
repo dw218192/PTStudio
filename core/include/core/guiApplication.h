@@ -2,7 +2,6 @@
 
 #include <core/application.h>
 #include <core/inputAction.h>
-#include <core/rendering/graph.h>
 #include <core/rendering/windowing.h>
 #include <core/signal.h>
 #include <imgui.h>
@@ -21,7 +20,6 @@ namespace rendering {
 class WebGpuContext;
 class IImguiRendering;
 class IImguiWindowing;
-class IRenderGraph;
 }  // namespace rendering
 
 /**
@@ -53,13 +51,6 @@ struct GUIApplication : Application {
 
     [[nodiscard]] auto get_window_width() const noexcept -> int;
     [[nodiscard]] auto get_window_height() const noexcept -> int;
-
-    [[nodiscard]] auto get_render_graph_api() const noexcept -> const PtsRenderGraphApi*;
-    [[nodiscard]] auto get_render_output_texture() const noexcept -> PtsTexture;
-    [[nodiscard]] auto get_render_output_imgui_id() const noexcept -> ImTextureID;
-    auto resize_render_output(uint32_t width, uint32_t height) -> void;
-    auto set_render_graph_current() -> void;
-    auto clear_render_graph_current() -> void;
 
    protected:
     virtual auto handle_input(InputEvent const& event) noexcept -> void {
@@ -164,10 +155,9 @@ struct GUIApplication : Application {
     // - m_webgpu_context is non-null; may be Initializing after construction,
     //   guaranteed Ready before loop() is called (driven by run_one_frame())
     // - m_imgui_windowing is always valid (non-null)
-    // - m_render_graph and m_imgui_rendering are null until WebGPU context is
-    //   ready; guaranteed valid before loop() is called (created in run_one_frame)
+    // - m_imgui_rendering is null until WebGPU context is ready;
+    //   guaranteed valid before loop() is called (created in run_one_frame)
     void ensure_imgui_rendering();
-    std::unique_ptr<pts::rendering::IRenderGraph> m_render_graph;
     std::unique_ptr<pts::rendering::IImguiWindowing> m_imgui_windowing;
     std::unique_ptr<pts::rendering::IImguiRendering> m_imgui_rendering;
 };

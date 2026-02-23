@@ -22,9 +22,6 @@ class WebGpuImguiRendering final : public IImguiRendering {
     void new_frame() override;
     void render(bool framebuffer_resized) override;
     void resize() override;
-    auto set_render_output(IRenderGraph& render_graph) -> ImTextureID override;
-    void clear_render_output() override;
-    [[nodiscard]] auto output_id() const noexcept -> ImTextureID override;
 
     void render_before_imgui() override;
 

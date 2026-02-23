@@ -56,7 +56,6 @@ GUIApplication::GUIApplication(std::string_view name, pts::LoggingManager& loggi
 GUIApplication::~GUIApplication() {
     m_imgui_rendering.reset();
     m_imgui_windowing.reset();
-    m_render_graph.reset();
     ImGui::DestroyContext();
 }
 
@@ -121,16 +120,10 @@ void GUIApplication::ensure_imgui_rendering() {
 
     auto imgui_components = pts::rendering::create_imgui_components(*m_webgpu_context, *m_viewport,
                                                                     get_logging_manager());
-    INVARIANT_MSG(imgui_components.render_graph != nullptr,
-                  "create_imgui_components must return valid render_graph");
     INVARIANT_MSG(imgui_components.imgui_rendering != nullptr,
                   "create_imgui_components must return valid imgui_rendering");
 
-    m_render_graph = std::move(imgui_components.render_graph);
     m_imgui_rendering = std::move(imgui_components.imgui_rendering);
-
-    auto const extent = m_viewport->drawable_extent();
-    resize_render_output(extent.w, extent.h);
 }
 
 void GUIApplication::run_one_frame() {
@@ -196,36 +189,6 @@ void GUIApplication::run_one_frame() {
     }
 
     handle_framebuffer_resize();
-}
-
-auto GUIApplication::get_render_graph_api() const noexcept -> const PtsRenderGraphApi* {
-    return m_render_graph->api();
-}
-
-auto GUIApplication::get_render_output_texture() const noexcept -> PtsTexture {
-    return m_render_graph->output_texture();
-}
-
-auto GUIApplication::get_render_output_imgui_id() const noexcept -> ImTextureID {
-    return m_imgui_rendering->output_id();
-}
-
-auto GUIApplication::resize_render_output(uint32_t width, uint32_t height) -> void {
-    if (width == 0 || height == 0) {
-        m_imgui_rendering->clear_render_output();
-        return;
-    }
-    m_imgui_rendering->clear_render_output();
-    m_render_graph->resize(width, height);
-    m_imgui_rendering->set_render_output(*m_render_graph);
-}
-
-auto GUIApplication::set_render_graph_current() -> void {
-    m_render_graph->set_current();
-}
-
-auto GUIApplication::clear_render_graph_current() -> void {
-    m_render_graph->clear_current();
 }
 
 auto GUIApplication::on_begin_first_loop() -> void {

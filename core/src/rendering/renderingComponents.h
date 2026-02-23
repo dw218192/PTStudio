@@ -5,13 +5,11 @@
 #include <memory>
 
 #include "imguiBackend.h"
-#include "renderGraph.h"
 
 namespace pts::rendering {
 class WebGpuContext;
 
 struct ImGuiComponents {
-    std::unique_ptr<IRenderGraph> render_graph;
     std::unique_ptr<IImguiRendering> imgui_rendering;
 };
 
