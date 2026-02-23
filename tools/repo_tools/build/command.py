@@ -188,7 +188,7 @@ def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> 
         should_create_lock = args.get("update_lock") or not lock_file.exists()
 
         # Emscripten flags override the default host profile settings/conf
-        emscripten_flags = get_emscripten_conan_flags(root) if emscripten_build else []
+        emscripten_flags = get_emscripten_conan_flags(root, build_folder) if emscripten_build else []
 
         conan_exe = find_venv_executable("conan")
         with CommandGroup("Conan dependencies", cwd=build_folder) as g:

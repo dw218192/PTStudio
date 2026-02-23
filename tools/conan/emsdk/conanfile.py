@@ -39,7 +39,15 @@ class EmSDKConan(ConanFile):
 
     @property
     def _relative_paths(self):
-        return ["bin", os.path.join("bin", "upstream", "emscripten")]
+        paths = ["bin", os.path.join("bin", "upstream", "emscripten")]
+        # emsdk installs Node.js into bin/node/<version>/bin/
+        node_root = os.path.join(self.package_folder, "bin", "node")
+        if os.path.isdir(node_root):
+            for entry in os.listdir(node_root):
+                node_bin = os.path.join("bin", "node", entry, "bin")
+                if os.path.isdir(os.path.join(self.package_folder, node_bin)):
+                    paths.append(node_bin)
+        return paths
 
     @property
     def _paths(self):

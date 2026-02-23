@@ -28,11 +28,9 @@ if(NOT EMSCRIPTEN)
 endif()
 
 # OpenUSD test - works on all platforms
-# Links core for TestApplication (provides event loop, WASM flags on Emscripten)
 list(APPEND TEST_NAMES testOpenUsd)
-set(testOpenUsd_source integration/testOpenUsd.cpp)
-set(testOpenUsd_libs core openusd::usd_usd)
-set(testOpenUsd_includes ${PXR_INCLUDE_DIRS})
+set(testOpenUsd_source testOpenUsd.cpp)
+set(testOpenUsd_libs core)
 
 function(add_core_test target_name)
     message(STATUS "Building test: ${target_name}")

@@ -53,7 +53,7 @@ class OpenUSDConan(ConanFile):
     def configure(self):
         if self.options.shared:
             self.options.rm_safe("fPIC")
-        # Emscripten doesn't support shared libraries or hwloc
+        # Emscripten doesn't support hwloc
         if self.settings.os == "Emscripten":
             self.options["onetbb"].tbbbind = False
         else:

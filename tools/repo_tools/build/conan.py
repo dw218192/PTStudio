@@ -40,29 +40,52 @@ def get_emsdk_version(root: Path) -> str:
     return match.group(1)
 
 
-def get_emscripten_conan_flags(root: Path) -> list[str]:
+def _write_emscripten_profile(profile_path: Path, emsdk_version: str) -> None:
+    """Write a Conan profile for Emscripten cross-builds.
+
+    Using a profile (rather than CLI -s:h/-c:h overrides) allows [tool_requires]
+    to propagate emsdk and ninja to ALL dependency builds — not just the consumer.
+    Without this, packages like OpenUSD fail to find emcc when building from source.
+    """
+    content = f"""\
+[settings]
+os=Emscripten
+arch=wasm
+compiler=emcc
+compiler.version={emsdk_version}
+compiler.cppstd=17
+compiler.libcxx=libc++
+
+[options]
+*:shared=False
+
+[tool_requires]
+emsdk/{emsdk_version}
+ninja/1.13.2
+
+[conf]
+tools.cmake.cmaketoolchain:generator=Ninja
+tools.cmake.cmake_layout:build_folder_vars=["settings.os"]
+tools.build:cflags=['-pthread']
+tools.build:cxxflags=['-pthread', '-DTBB_USE_ASSERT=0', '-fexceptions']
+tools.build:exelinkflags=['-pthread', '-sALLOW_MEMORY_GROWTH=1', '-sMAXIMUM_MEMORY=4GB', '-sINITIAL_MEMORY=512MB']
+tools.build:sharedlinkflags=['-pthread', '-sALLOW_MEMORY_GROWTH=1', '-sMAXIMUM_MEMORY=4GB', '-sINITIAL_MEMORY=512MB']
+"""
+    profile_path.parent.mkdir(parents=True, exist_ok=True)
+    profile_path.write_text(content, encoding="utf-8")
+
+
+def get_emscripten_conan_flags(root: Path, build_folder: Path) -> list[str]:
     """Return Conan CLI flags for Emscripten cross-builds.
 
-    All values are derived from the emsdk recipe (single source of truth).
-    These are passed as -s:h / -c:h overrides so no profile file is needed.
+    Generates a host profile file in the build folder and returns flags that
+    reference it.  All values are derived from the emsdk recipe (single source
+    of truth).
     """
     v = get_emsdk_version(root)
-    return [
-        # Host settings
-        "-s:h", "os=Emscripten",
-        "-s:h", "arch=wasm",
-        "-s:h", "compiler=emcc",
-        "-s:h", f"compiler.version={v}",
-        "-s:h", "compiler.cppstd=17",
-        "-s:h", "compiler.libcxx=libc++",
-        # Host conf -- build flags that propagate to all dependency builds
-        "-c:h", "tools.cmake.cmaketoolchain:generator=Ninja",
-        "-c:h", 'tools.cmake.cmake_layout:build_folder_vars=["settings.os"]',
-        "-c:h", "tools.build:cflags=['-pthread']",
-        "-c:h", "tools.build:cxxflags=['-pthread', '-DTBB_USE_ASSERT=0', '-fexceptions']",
-        "-c:h", "tools.build:exelinkflags=['-pthread', '-sALLOW_MEMORY_GROWTH=1', '-sMAXIMUM_MEMORY=4GB', '-sINITIAL_MEMORY=512MB']",
-        "-c:h", "tools.build:sharedlinkflags=['-pthread', '-sALLOW_MEMORY_GROWTH=1', '-sMAXIMUM_MEMORY=4GB', '-sINITIAL_MEMORY=512MB']",
-    ]
+    profile_path = build_folder / "conan_profile_emscripten"
+    _write_emscripten_profile(profile_path, v)
+    return [f"--profile:host={profile_path}"]
 
 
 # ── Dawn / emdawnwebgpu ──────────────────────────────────────────────

@@ -8,6 +8,14 @@
 
 #if defined(__EMSCRIPTEN__)
 #include <emscripten.h>
+
+#include <cstdlib>
+// PROXY_TO_PTHREAD runs main() in a worker thread; --pre-js env vars don't
+// propagate.  Set USD plugin path and thread limit before static init.
+__attribute__((constructor)) static void usd_env_init() {
+    setenv("PXR_PLUGINPATH_NAME", "/usd", 0);
+    setenv("PXR_WORK_THREAD_LIMIT", "1", 0);
+}
 #endif
 
 namespace pts {
