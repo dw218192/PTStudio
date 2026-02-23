@@ -398,7 +398,8 @@ auto Device::create_shader_module_from_source(std::string_view wgsl_source) cons
     }
 
     WGPUShaderSourceWGSL wgsl_descriptor = WGPU_SHADER_SOURCE_WGSL_INIT;
-    wgsl_descriptor.code = WGPUStringView{wgsl_source.data(), wgsl_source.size()};
+    wgsl_descriptor.code.data = wgsl_source.data();
+    wgsl_descriptor.code.length = wgsl_source.size();
 
     WGPUShaderModuleDescriptor descriptor = {};
     descriptor.nextInChain = reinterpret_cast<WGPUChainedStruct*>(&wgsl_descriptor);

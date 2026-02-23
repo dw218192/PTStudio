@@ -82,7 +82,8 @@ auto create_surface_for_handle(WGPUInstance instance,
                 handle.web.canvas_selector ? handle.web.canvas_selector : k_default_canvas_selector;
             WGPUEmscriptenSurfaceSourceCanvasHTMLSelector source =
                 WGPU_EMSCRIPTEN_SURFACE_SOURCE_CANVAS_HTML_SELECTOR_INIT;
-            source.selector = WGPUStringView{selector, std::strlen(selector)};
+            source.selector.data = selector;
+            source.selector.length = std::strlen(selector);
             descriptor.nextInChain = reinterpret_cast<WGPUChainedStruct*>(&source);
             return wgpuInstanceCreateSurface(instance, &descriptor);
 #else

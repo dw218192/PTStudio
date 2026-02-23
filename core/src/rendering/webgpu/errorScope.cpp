@@ -20,15 +20,6 @@ ErrorScope::ErrorScope(const Device& device, WGPUErrorFilter filter, std::string
 ErrorScope::ErrorScope(const Device& device, std::initializer_list<WGPUErrorFilter> filters,
                        std::string_view logger_name, std::string_view context_label)
     : m_device(device), m_logger_name(logger_name), m_context_label(context_label) {
-#if defined(__EMSCRIPTEN__)
-    // On Emscripten, wgpuDevicePopErrorScope is backed by a JavaScript Promise
-    // that can only resolve when control returns to the browser event loop.
-    // The synchronous pop_and_wait() busy-loop would deadlock.  Skip error
-    // scopes entirely; the device's uncaptured-error callback still reports
-    // all errors asynchronously.
-    m_scope_count = 0;
-    static_cast<void>(filters);
-#else
     m_scope_count = filters.size();
     m_results.reserve(m_scope_count);
 
@@ -36,7 +27,6 @@ ErrorScope::ErrorScope(const Device& device, std::initializer_list<WGPUErrorFilt
     for (const auto filter : filters) {
         wgpuDevicePushErrorScope(device.handle(), filter);
     }
-#endif
 }
 
 ErrorScope::~ErrorScope() {
@@ -49,7 +39,6 @@ ErrorScope::~ErrorScope() {
 void ErrorScope::pop_and_throw_if_error() {
     pop_and_wait();
 
-#if !defined(__EMSCRIPTEN__)
     // Check if any scope captured an error
     bool has_error = false;
     for (const auto& result : m_results) {
@@ -66,17 +55,14 @@ void ErrorScope::pop_and_throw_if_error() {
             m_context_label.empty() ? std::string_view("WebGPU operation") : m_context_label;
         throw std::runtime_error(std::string("WebGPU ") + std::string(context_label) + " failed");
     }
-#endif
 }
 
-#if !defined(__EMSCRIPTEN__)
 namespace {
 struct PopCallbackData {
     ErrorScope::Result* result;
     std::atomic_size_t* pending;
 };
 }  // namespace
-#endif
 
 void ErrorScope::pop_and_wait() {
     if (m_popped) {
@@ -86,7 +72,6 @@ void ErrorScope::pop_and_wait() {
     m_results.clear();
     m_results.resize(m_scope_count);
 
-#if !defined(__EMSCRIPTEN__)
     // Pop all scopes in reverse order (LIFO)
     std::atomic_size_t pending{m_scope_count};
     std::vector<PopCallbackData> callback_data;
@@ -121,13 +106,11 @@ void ErrorScope::pop_and_wait() {
         wgpuInstanceProcessEvents(m_device.instance());
         std::this_thread::yield();
     }
-#endif
 
     m_popped = true;
 }
 
 void ErrorScope::log_all_errors() const {
-#if !defined(__EMSCRIPTEN__)
     for (std::size_t i = 0; i < m_results.size(); ++i) {
         const auto& result = m_results[i];
         if (result.status != WGPUPopErrorScopeStatus_Success ||
@@ -135,11 +118,9 @@ void ErrorScope::log_all_errors() const {
             log_error(result, i);
         }
     }
-#endif
 }
 
 void ErrorScope::log_error(const Result& result, std::size_t scope_index) const {
-#if !defined(__EMSCRIPTEN__)
     const auto& logger_name = m_logger_name.empty() ? k_webgpu_logger_name : m_logger_name;
     const auto context_label =
         m_context_label.empty() ? std::string_view("WebGPU operation") : m_context_label;
@@ -161,10 +142,6 @@ void ErrorScope::log_error(const Result& result, std::size_t scope_index) const 
         pts::log_or_cerr(logger_name, pts::LogLevel::Error, "Failed to create {}{} ({}): {}",
                          context_label, scope_info, error_type_name(result.type), message);
     }
-#else
-    static_cast<void>(result);
-    static_cast<void>(scope_index);
-#endif
 }
 
 }  // namespace pts::webgpu

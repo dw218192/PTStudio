@@ -12,8 +12,7 @@
 namespace pts::webgpu {
 class Device;
 
-#if !defined(__EMSCRIPTEN__)
-/// Convert WGPUPopErrorScopeStatus to string representation (Dawn-specific)
+/// Convert WGPUPopErrorScopeStatus to string representation
 inline auto status_name(WGPUPopErrorScopeStatus status) -> const char* {
     switch (status) {
         case WGPUPopErrorScopeStatus_Success:
@@ -26,7 +25,6 @@ inline auto status_name(WGPUPopErrorScopeStatus status) -> const char* {
             return "Unknown";
     }
 }
-#endif
 
 /// Convert WGPUErrorType to string representation
 inline auto error_type_name(WGPUErrorType type) -> const char* {
@@ -65,9 +63,7 @@ class ErrorScope {
    public:
     struct Result {
         WGPUErrorType type = WGPUErrorType_NoError;
-#if !defined(__EMSCRIPTEN__)
         WGPUPopErrorScopeStatus status = WGPUPopErrorScopeStatus_Success;
-#endif
         std::string message;
     };
 
