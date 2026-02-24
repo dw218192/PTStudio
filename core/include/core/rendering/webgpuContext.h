@@ -5,7 +5,6 @@
 #include <core/rendering/webgpu/webgpu.h>
 #include <core/rendering/windowing.h>
 
-#include <functional>
 #include <memory>
 #include <variant>
 

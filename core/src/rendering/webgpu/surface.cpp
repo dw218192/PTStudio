@@ -4,6 +4,7 @@
 #include <core/scopeUtils.h>
 
 #include <cstring>
+#include <stdexcept>
 
 namespace pts::webgpu {
 namespace {
@@ -65,9 +66,7 @@ auto create_surface_for_handle(WGPUInstance instance,
             return wgpuInstanceCreateSurface(instance, &descriptor);
 #endif
         }
-#if defined(__EMSCRIPTEN__)
-            return nullptr;
-#else
+#if !defined(__EMSCRIPTEN__)
         case rendering::NativePlatform::xlib: {
             WGPUSurfaceSourceXlibWindow source = WGPU_SURFACE_SOURCE_XLIB_WINDOW_INIT;
             source.display = handle.xlib.display;
@@ -280,13 +279,11 @@ auto Surface::acquire_texture_view() -> WGPUTextureView {
     WGPUSurfaceTexture surface_texture = WGPU_SURFACE_TEXTURE_INIT;
     wgpuSurfaceGetCurrentTexture(m_surface, &surface_texture);
 
-    // Ensure surface texture is released if not successfully assigned to m_current_texture
-    SCOPE_FAIL {
-        if (surface_texture.texture) wgpuTextureRelease(surface_texture.texture);
-    };
-
     if (surface_texture.status != WGPUSurfaceGetCurrentTextureStatus_SuccessOptimal &&
         surface_texture.status != WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal) {
+        if (surface_texture.texture) {
+            wgpuTextureRelease(surface_texture.texture);
+        }
         if (surface_texture.status == WGPUSurfaceGetCurrentTextureStatus_Outdated) {
             configure(m_width, m_height);
         }

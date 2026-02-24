@@ -1,11 +1,6 @@
 #include "editorApplication.h"
 
 #include <core/commandLine.h>
-#include <core/imgui/fileDialogue.h>
-#include <core/imgui/imhelper.h>
-#include <core/loggingManager.h>
-#include <core/rendering/webgpu/device.h>
-#include <core/rendering/webgpuContext.h>
 #include <imgui_internal.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 

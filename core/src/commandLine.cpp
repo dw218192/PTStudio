@@ -78,8 +78,6 @@ auto CommandLine::parse(int argc, char* argv[]) -> bool {
         }
 
         return true;
-    } catch (const std::exception&) {
-        throw;
     } catch (...) {
         throw std::runtime_error("Unknown error parsing command line arguments");
     }

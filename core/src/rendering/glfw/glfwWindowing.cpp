@@ -12,7 +12,6 @@
 #endif
 #include <core/loggingManager.h>
 
-#include <iostream>
 #include <memory>
 #include <stdexcept>
 

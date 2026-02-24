@@ -3,7 +3,6 @@
 #include <boost/assert.hpp>
 #include <cstdio>   // std::fputs, std::fprintf
 #include <cstdlib>  // std::abort
-#include <cstring>  // std::strrchr (optional)
 #include <string_view>
 
 #if !defined(PTS_DIAG_ENABLE_STACKTRACE)

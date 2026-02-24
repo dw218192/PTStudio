@@ -1,9 +1,8 @@
 #pragma once
 
+#include <core/defines.h>
 #include <core/rendering/webgpu/webgpu.h>
 
-#include <chrono>
-#include <cstdint>
 #include <initializer_list>
 #include <string>
 #include <string_view>

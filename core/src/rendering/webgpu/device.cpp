@@ -5,9 +5,7 @@
 #include <core/scopeUtils.h>
 #include <spdlog/spdlog.h>
 
-#include <cstdio>
 #include <stdexcept>
-#include <string>
 #include <thread>
 
 #include "logging.h"

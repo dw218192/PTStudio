@@ -5,7 +5,7 @@
 #include <core/scopeUtils.h>
 
 namespace {
-constexpr const char* k_webgpu_logger_name = "webgpu";
+constexpr const char* k_webgpu_logger_name = "WebGPU";
 }
 
 namespace pts::rendering {

@@ -7,10 +7,6 @@
 
 #include "../imguiBackend.h"
 
-namespace spdlog {
-class logger;
-}
-
 namespace pts::rendering {
 class GlfwImguiWindowing final : public IImguiWindowing {
    public:

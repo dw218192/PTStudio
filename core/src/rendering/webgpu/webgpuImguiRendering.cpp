@@ -3,7 +3,7 @@
 #include <imgui.h>
 #include <imgui_impl_wgpu.h>
 
-#include <memory>
+#include <stdexcept>
 
 namespace pts::rendering {
 WebGpuImguiRendering::WebGpuImguiRendering(WebGpuContext& context, IViewport& viewport,

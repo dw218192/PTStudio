@@ -1,19 +1,9 @@
 #pragma once
 
 #include <core/guiApplication.h>
-#include <core/inputAction.h>
-#include <core/loggingManager.h>
-#include <core/pluginManager.h>
 #include <core/renderConfig.h>
 #include <core/rendering/plugin.h>
-#include <core/signal.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
-
-#include <array>
-#include <cstdlib>
-#include <iostream>
-
-#include "imgui/includes.h"
 
 namespace pts::editor {
 struct AppConfig {
@@ -54,7 +44,6 @@ struct EditorApplication final : GUIApplication {
 
     AppConfig m_app_config;
 
-    std::string m_console_text;
     std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> m_console_log_sink;
 
     // rendering
@@ -65,7 +54,5 @@ struct EditorApplication final : GUIApplication {
 
     PluginHandle m_renderer_plugin{nullptr};
     RendererPluginInterfaceV1* m_renderer_interface{nullptr};
-    PtsHostApi m_renderer_host_api{};
-    uint64_t m_frame_index{0};
 };
 }  // namespace pts::editor

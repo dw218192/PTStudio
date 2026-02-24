@@ -5,7 +5,6 @@
 #include <core/loggingManager.h>
 #include <core/pluginManager.h>
 #include <core/renderConfig.h>
-#include <spdlog/spdlog.h>
 
 #include <iostream>
 

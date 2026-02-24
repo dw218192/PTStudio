@@ -8,12 +8,10 @@
 
 #include <array>
 #include <bitset>
-#include <functional>
 #include <glm/glm.hpp>
 #include <optional>
 #include <string_view>
 #include <unordered_map>
-#include <vector>
 
 namespace pts {
 namespace rendering {
@@ -129,7 +127,7 @@ struct GUIApplication : Application {
     std::array<std::string_view, ImGuiMouseButton_COUNT> m_mouse_initiated_window{};
     std::array<std::string_view, ImGuiKey_COUNT> m_key_initiated_window{};
 
-    float m_min_frame_time;
+    float m_min_frame_time{0.0f};
     std::unordered_map<std::string_view, ImGuiWindowInfo> m_imgui_window_info;
 
     std::string_view m_cur_hovered_widget, m_prev_hovered_widget;

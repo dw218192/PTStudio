@@ -1,6 +1,5 @@
 #pragma once
 #include <core/loggingManager.h>
-#include <fmt/core.h>
 #include <spdlog/spdlog.h>
 
 #include <chrono>

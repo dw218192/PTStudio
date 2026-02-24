@@ -1,17 +1,11 @@
 #include "renderingComponents.h"
 
 #include <core/rendering/webgpuContext.h>
-#include <imgui.h>
 
-#include <memory>
 #include <stdexcept>
 #include <utility>
 
 #include "webgpu/webgpuImguiRendering.h"
-
-namespace spdlog {
-class logger;
-}
 
 namespace pts::rendering {
 
