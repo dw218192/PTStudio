@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +13,7 @@ from repo_tools.core import (
     invoke_tool,
     logger,
     remove_tree_with_retries,
+    sanitized_subprocess_env,
 )
 
 from .conan import (
@@ -108,36 +107,6 @@ def execute_build_steps(
 # ── Helpers ──────────────────────────────────────────────────────────
 
 
-def _sanitized_build_env() -> dict[str, str]:
-    """Return env overrides that prevent Python env contamination in build subprocesses.
-
-    The repo shim (repo.cmd / repo) prepends the venv's Scripts directory to
-    PATH and sets PYTHONPATH for repo_tools imports.  These must not leak into
-    Conan/CMake subprocesses — they cause version mismatches when building
-    packages whose CMake runs Python scripts (e.g. Dawn's code generators
-    pick up the wrong stdlib).
-    """
-    env: dict[str, str] = {}
-
-    # Strip PYTHONPATH — only needed for repo_tools imports
-    env["PYTHONPATH"] = ""
-
-    # Strip PYTHONHOME if present
-    if "PYTHONHOME" in os.environ:
-        env["PYTHONHOME"] = ""
-
-    # Remove venv Scripts from PATH so build tools find system Python
-    venv_bin = os.path.normcase(os.path.normpath(str(Path(sys.executable).parent)))
-    path_parts = os.environ.get("PATH", "").split(os.pathsep)
-    clean_parts = [
-        p for p in path_parts
-        if os.path.normcase(os.path.normpath(p)) != venv_bin
-    ]
-    env["PATH"] = os.pathsep.join(clean_parts)
-
-    return env
-
-
 def _cmake_preset_name(build_type: str, emscripten: bool) -> str:
     bt = build_type.lower()
     return f"conan-emscripten-{bt}" if emscripten else f"conan-{bt}"
@@ -205,7 +174,7 @@ def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> 
     preset_name = _cmake_preset_name(build_type, emscripten_build)
 
     # Prevent the repo-tool venv from contaminating Conan/CMake subprocesses
-    build_env = _sanitized_build_env()
+    build_env = sanitized_subprocess_env()
 
     if args.get("build_only"):
         logger.info("Build only mode (-b): Skipping configuration steps")
