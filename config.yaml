@@ -15,7 +15,7 @@ repo:
     conan_lock: "conan_glfw.lock"
   extra_deps:
     - conan==2.22.2
-    - cmake==3.31.0
+    - cmake==3.31.1
     - jinja2==3.1.6
     - InquirerPy==0.3.4
 

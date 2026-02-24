@@ -21,6 +21,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -28,10 +30,10 @@ jobs:
           python-version: '3.12'
 
       - name: Bootstrap build environment
-        run: .\tools\bootstrap.ps1
+        run: .\tools\framework\bootstrap.ps1
 
       - name: Check code formatting
-        run: .\pts.cmd format --verify
+        run: .\repo.cmd format --verify
 
   # =============================================================================
   # Build (platform × build_type matrix)
@@ -45,13 +47,6 @@ jobs:
       matrix:
         platform: [windows-x64, emscripten]
         build_type: [Debug, Release]
-        include:
-          - platform: windows-x64
-            lock_file: conan_glfw.lock
-            build_prefix: _build
-          - platform: emscripten
-            lock_file: conan_emscripten.lock
-            build_prefix: _build/emscripten
 
     defaults:
       run:
@@ -69,7 +64,7 @@ jobs:
           python-version: '3.12'
 
       - name: Bootstrap build environment
-        run: .\tools\bootstrap.ps1
+        run: .\tools\framework\bootstrap.ps1
 
       - name: Cache Python dependencies
         uses: actions/cache@v4
@@ -77,7 +72,7 @@ jobs:
           path: |
             _tools/venv
             _tools/cache
-          key: windows-python-${{ hashFiles('tools/requirements.txt') }}
+          key: windows-python-${{ hashFiles('tools/pyproject.toml') }}
           restore-keys: |
             windows-python-
 
@@ -85,22 +80,22 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.conan2
-          key: ${{ matrix.platform }}-conan-${{ hashFiles('conanfile.py', matrix.lock_file) }}-${{ matrix.build_type }}
+          key: ${{ matrix.platform }}-conan-${{ hashFiles('conanfile.py', 'conan_*.lock') }}-${{ matrix.build_type }}
           restore-keys: |
             ${{ matrix.platform }}-conan-${{ hashFiles('conanfile.py') }}-${{ matrix.build_type }}
             ${{ matrix.platform }}-conan-
 
       - name: Build project
-        run: .\pts.cmd build --platform ${{ matrix.platform }} --build-type ${{ matrix.build_type }}
+        run: .\repo.cmd build --platform ${{ matrix.platform }} --build-type ${{ matrix.build_type }}
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: build-${{ matrix.platform }}-${{ matrix.build_type }}
           path: |
-            ${{ matrix.build_prefix }}/${{ matrix.build_type }}/bin/
-            ${{ matrix.build_prefix }}/deps/
-            !${{ matrix.build_prefix }}/deps/full_deploy/
+            _build/${{ matrix.platform }}/${{ matrix.build_type }}/bin/
+            _build/${{ matrix.platform }}/deps/
+            !_build/${{ matrix.platform }}/deps/full_deploy/
           retention-days: 3
 
   # =============================================================================
@@ -116,13 +111,6 @@ jobs:
       matrix:
         platform: [windows-x64, emscripten]
         build_type: [Debug, Release]
-        include:
-          - platform: windows-x64
-            lock_file: conan_glfw.lock
-            build_prefix: _build
-          - platform: emscripten
-            lock_file: conan_emscripten.lock
-            build_prefix: _build/emscripten
 
     defaults:
       run:
@@ -131,6 +119,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -138,16 +128,16 @@ jobs:
           python-version: '3.12'
 
       - name: Bootstrap build environment
-        run: .\tools\bootstrap.ps1
+        run: .\tools\framework\bootstrap.ps1
 
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
           name: build-${{ matrix.platform }}-${{ matrix.build_type }}
-          path: ${{ matrix.build_prefix }}/
+          path: _build/${{ matrix.platform }}/
 
       - name: Run tests
-        run: .\pts.cmd launch --test --platform ${{ matrix.platform }} --build-type ${{ matrix.build_type }}
+        run: .\repo.cmd test --platform ${{ matrix.platform }} --config ${{ matrix.build_type }}
 
       - name: Upload test results
         if: always()
