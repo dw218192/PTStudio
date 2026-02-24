@@ -46,8 +46,8 @@ auto choose_alpha_mode(const WGPUSurfaceCapabilities& capabilities) -> WGPUCompo
     return capabilities.alphaModes[0];
 }
 
-auto create_surface_for_handle(WGPUInstance instance,
-                               const rendering::NativeViewportHandle& handle) -> WGPUSurface {
+auto create_surface_for_handle(WGPUInstance instance, const rendering::NativeViewportHandle& handle)
+    -> WGPUSurface {
     if (instance == nullptr) {
         return nullptr;
     }

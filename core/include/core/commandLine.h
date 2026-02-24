@@ -45,8 +45,8 @@ class CommandLine {
     [[nodiscard]] auto get_flag(std::string_view name) const -> bool;
 
     /// Query a string option. Returns default_value if not present.
-    [[nodiscard]] auto get_string(std::string_view name,
-                                  std::string_view default_value = {}) const -> std::string;
+    [[nodiscard]] auto get_string(std::string_view name, std::string_view default_value = {}) const
+        -> std::string;
 
     /// Query an integer option. Returns default_value if not present.
     [[nodiscard]] auto get_int(std::string_view name, int default_value = 0) const -> int;

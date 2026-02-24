@@ -91,8 +91,8 @@ auto CommandLine::get_flag(std::string_view name) const -> bool {
     return false;
 }
 
-auto CommandLine::get_string(std::string_view name,
-                             std::string_view default_value) const -> std::string {
+auto CommandLine::get_string(std::string_view name, std::string_view default_value) const
+    -> std::string {
     std::string key(name);
     if (m_impl->vm.count(key)) {
         return m_impl->vm[key].as<std::string>();
@@ -132,8 +132,8 @@ auto CommandLine::parse(int, char*[]) -> bool {
 auto CommandLine::get_flag(std::string_view) const -> bool {
     return false;
 }
-auto CommandLine::get_string(std::string_view,
-                             std::string_view default_value) const -> std::string {
+auto CommandLine::get_string(std::string_view, std::string_view default_value) const
+    -> std::string {
     return std::string(default_value);
 }
 auto CommandLine::get_int(std::string_view, int default_value) const -> int {

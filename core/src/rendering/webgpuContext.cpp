@@ -44,8 +44,8 @@ auto WebGpuContext::operator=(WebGpuContext&& other) noexcept -> WebGpuContext& 
     return *this;
 }
 
-auto WebGpuContext::create(const IViewport& viewport,
-                           pts::LoggingManager& logging_manager) -> std::unique_ptr<WebGpuContext> {
+auto WebGpuContext::create(const IViewport& viewport, pts::LoggingManager& logging_manager)
+    -> std::unique_ptr<WebGpuContext> {
     auto logger = logging_manager.get_logger_shared(k_webgpu_logger_name);
 
     auto context = std::make_unique<WebGpuContext>(PrivateCtorTag{}, logger);

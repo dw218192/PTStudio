@@ -289,8 +289,8 @@ auto GUIApplication::set_cursor_pos(float x, float y) noexcept -> void {
     }
 }
 
-auto GUIApplication::begin_imgui_window(std::string_view name,
-                                        ImGuiWindowFlags flags) noexcept -> bool {
+auto GUIApplication::begin_imgui_window(std::string_view name, ImGuiWindowFlags flags) noexcept
+    -> bool {
     auto const ret = ImGui::Begin(name.data(), nullptr, flags);
     if (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows)) {
         m_cur_hovered_widget = name;
