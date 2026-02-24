@@ -23,3 +23,5 @@ _tools/
 repo
 repo.cmd
 _agent/
+tools/pyproject.toml
+tools/uv.lock
