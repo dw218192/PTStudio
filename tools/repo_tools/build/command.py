@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -106,6 +108,36 @@ def execute_build_steps(
 # ── Helpers ──────────────────────────────────────────────────────────
 
 
+def _sanitized_build_env() -> dict[str, str]:
+    """Return env overrides that prevent Python env contamination in build subprocesses.
+
+    The repo shim (repo.cmd / repo) prepends the venv's Scripts directory to
+    PATH and sets PYTHONPATH for repo_tools imports.  These must not leak into
+    Conan/CMake subprocesses — they cause version mismatches when building
+    packages whose CMake runs Python scripts (e.g. Dawn's code generators
+    pick up the wrong stdlib).
+    """
+    env: dict[str, str] = {}
+
+    # Strip PYTHONPATH — only needed for repo_tools imports
+    env["PYTHONPATH"] = ""
+
+    # Strip PYTHONHOME if present
+    if "PYTHONHOME" in os.environ:
+        env["PYTHONHOME"] = ""
+
+    # Remove venv Scripts from PATH so build tools find system Python
+    venv_bin = os.path.normcase(os.path.normpath(str(Path(sys.executable).parent)))
+    path_parts = os.environ.get("PATH", "").split(os.pathsep)
+    clean_parts = [
+        p for p in path_parts
+        if os.path.normcase(os.path.normpath(p)) != venv_bin
+    ]
+    env["PATH"] = os.pathsep.join(clean_parts)
+
+    return env
+
+
 def _cmake_preset_name(build_type: str, emscripten: bool) -> str:
     bt = build_type.lower()
     return f"conan-emscripten-{bt}" if emscripten else f"conan-{bt}"
@@ -172,6 +204,9 @@ def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> 
 
     preset_name = _cmake_preset_name(build_type, emscripten_build)
 
+    # Prevent the repo-tool venv from contaminating Conan/CMake subprocesses
+    build_env = _sanitized_build_env()
+
     if args.get("build_only"):
         logger.info("Build only mode (-b): Skipping configuration steps")
         logger.info(f"Building with configuration: {build_type}")
@@ -191,7 +226,7 @@ def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> 
         emscripten_flags = get_emscripten_conan_flags(root, build_folder) if emscripten_build else []
 
         conan_exe = find_venv_executable("conan")
-        with CommandGroup("Conan dependencies", cwd=build_folder) as g:
+        with CommandGroup("Conan dependencies", cwd=build_folder, env=build_env) as g:
             local_recipe_names = get_local_recipe_names(root, conan_config)
             if should_create_lock:
                 if args.get("update_lock"):
@@ -265,7 +300,7 @@ def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> 
         # Conan build environment script (vcvars on Windows for Ninja + MSVC)
         conanbuild = build_dir / "conanbuild"
 
-        with CommandGroup("CMake configure", cwd=build_folder) as g:
+        with CommandGroup("CMake configure", cwd=build_folder, env=build_env) as g:
             configure_log_file = logs_dir / "cmake_configure.log"
             cmake_exe = find_venv_executable("cmake")
             ensure_cmake_file_api_query(build_folder / build_type)
@@ -286,7 +321,7 @@ def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> 
         generate_cpp_properties(root, build_dir, windowing)
 
         if not args.get("configure_only"):
-            with CommandGroup("CMake build") as g:
+            with CommandGroup("CMake build", env=build_env) as g:
                 build_log_file = logs_dir / "cmake_build.log"
                 cmake_exe = find_venv_executable("cmake")
 

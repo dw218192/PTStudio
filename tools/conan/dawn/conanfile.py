@@ -1,8 +1,6 @@
 from conan import ConanFile
 from conan.tools.cmake import CMake, CMakeDeps, CMakeToolchain, cmake_layout
 from conan.tools.scm import Git
-from pathlib import Path
-import sys
 
 
 class DawnConan(ConanFile):
@@ -39,9 +37,8 @@ class DawnConan(ConanFile):
         deps.generate()
 
     def build(self) -> None:
-        self.run(
-            f"{sys.executable} tools/fetch_dawn_dependencies.py", cwd=self.source_folder
-        )
+        # DAWN_FETCH_DEPENDENCIES=True lets CMake handle dependency fetching
+        # via FetchContent — no need to run fetch_dawn_dependencies.py manually.
         cmake = CMake(self)
         cmake.configure()
         cmake.build()
