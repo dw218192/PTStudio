@@ -86,11 +86,11 @@ class EmSDKConan(ConanFile):
     def _tools_for_version(self):
         ret = {}
         # Select release-upstream from version (wasm-binaries)
-        with open(os.path.join(self.source_folder, "emscripten-releases-tags.json"), "r") as f:
+        with open(os.path.join(self.source_folder, "emscripten-releases-tags.json")) as f:
             data = json.load(f)
             ret["wasm"] = f"releases-upstream-{data['releases'][self.version]}-64bit"
         # Select python and node versions
-        with open(os.path.join(self.source_folder, "emsdk_manifest.json"), "r") as f:
+        with open(os.path.join(self.source_folder, "emsdk_manifest.json")) as f:
             data = json.load(f)
             tools = data["tools"]
             if self.settings.os == "Windows":
@@ -115,7 +115,7 @@ class EmSDKConan(ConanFile):
 
         # Install all required tools (including bundled node, needed by embuilder)
         required_tools = self._tools_for_version()
-        for key, value in required_tools.items():
+        for value in required_tools.values():
             self.run(f'"{emsdk}" install {value}', cwd=self.source_folder)
             self.run(f'"{emsdk}" activate {value}', cwd=self.source_folder)
 

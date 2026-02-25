@@ -78,8 +78,8 @@ auto CommandLine::parse(int argc, char* argv[]) -> bool {
         }
 
         return true;
-    } catch (...) {
-        throw std::runtime_error("Unknown error parsing command line arguments");
+    } catch (const std::exception& e) {
+        throw std::runtime_error(std::string("Error parsing command line arguments: ") + e.what());
     }
 }
 
@@ -109,7 +109,8 @@ auto CommandLine::get_int(std::string_view name, int default_value) const -> int
 }
 
 auto CommandLine::has(std::string_view name) const -> bool {
-    return m_impl->vm.count(std::string(name)) > 0;
+    auto it = m_impl->vm.find(std::string(name));
+    return it != m_impl->vm.end() && !it->second.defaulted();
 }
 
 }  // namespace pts

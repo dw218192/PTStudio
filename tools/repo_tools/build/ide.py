@@ -82,11 +82,11 @@ def _collect_target_compile_info(
                     (reply_dir / target["jsonFile"]).read_text(encoding="utf-8")
                 )
             elif include_plugins:
-                target_json = json.loads(
+                candidate = json.loads(
                     (reply_dir / target["jsonFile"]).read_text(encoding="utf-8")
                 )
-                if not _target_has_plugin_sources(target_json, plugins_root):
-                    target_json = None
+                if _target_has_plugin_sources(candidate, plugins_root):
+                    target_json = candidate
             if target_json is None:
                 continue
             for group in target_json.get("compileGroups", []):
@@ -230,7 +230,11 @@ def generate_launch_json(
 
 
 def _is_test_name(target_name: str) -> bool:
-    return target_name.startswith(("test_", "test"))
+    # Match testCamelCase or test_snake_case, but not e.g. "testing_utils"
+    if not target_name.startswith("test"):
+        return False
+    rest = target_name[4:]
+    return not rest or rest[0].isupper() or rest[0] == "_"
 
 
 def discover_test_targets(build_dir: Path) -> list[str]:

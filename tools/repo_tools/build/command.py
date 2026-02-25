@@ -37,11 +37,11 @@ from .ide import (
 
 
 def execute_build_steps(
-    root: Path,
+    _root: Path,
     config: dict,
     tokens: dict[str, str],
     dimensions: dict[str, str],
-    logs_dir: Path,
+    _logs_dir: Path,
     steps_config: dict,
     step_type: str,
     current_tool: str,
@@ -291,7 +291,6 @@ def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> 
         if not args.get("configure_only"):
             with CommandGroup("CMake build", env=build_env) as g:
                 build_log_file = logs_dir / "cmake_build.log"
-                cmake_exe = find_venv_executable("cmake")
 
                 build_args = [cmake_exe, "--build", "--preset", preset_name]
                 # Build presets require CMakeUserPresets.json at project root

@@ -32,7 +32,7 @@ struct Application {
      * parses argc/argv, then calls process_args(). Returns false if --help
      * was requested (caller should exit).
      */
-    bool init(int argc, char* argv[]);
+    [[nodiscard]] bool init(int argc, char* argv[]);
 
     /**
      * @brief Register command-line arguments. Override to add app-specific args.

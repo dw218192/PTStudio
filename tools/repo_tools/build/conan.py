@@ -139,7 +139,8 @@ def ensure_emdawnwebgpu_port(root: Path, build_folder: Path) -> Path:
     build_folder.mkdir(parents=True, exist_ok=True)
     tmp_file = port_file.with_suffix(".tmp")
     try:
-        urllib.request.urlretrieve(url, tmp_file)
+        with urllib.request.urlopen(url, timeout=60) as resp:
+            tmp_file.write_bytes(resp.read())
         tmp_file.replace(port_file)
     except Exception as e:
         tmp_file.unlink(missing_ok=True)

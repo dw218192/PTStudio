@@ -39,7 +39,7 @@ class CommandLine {
 
     /// Parse argc/argv. Returns false if --help was requested (caller should exit).
     /// Unrecognized arguments are logged to stderr but do not cause failure.
-    auto parse(int argc, char* argv[]) -> bool;
+    [[nodiscard]] auto parse(int argc, char* argv[]) -> bool;
 
     /// Query whether a flag was set.
     [[nodiscard]] auto get_flag(std::string_view name) const -> bool;
