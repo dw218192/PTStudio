@@ -12,6 +12,7 @@ repo:
     logs_root: {value: "{workspace_root}/_logs", path: true}
     build_dir: {value: "{build_root}/{platform}/{build_type}", path: true}
     conan_deps_root: {value: "{build_root}/{platform}/deps", path: true}
+    package_dir: {value: "{workspace_root}/_package/{platform}", path: true}
     conan_lock: "conan_glfw.lock"
   extra_deps:
     - conan==2.22.2
@@ -46,3 +47,18 @@ build:
   postbuild: {}
   conan:
     local_recipes: "tools/conan"
+
+package:
+  output_dir: "{package_dir}"
+  mappings:
+    - src: "{build_dir}/bin/**/*"
+      dest: "{build_type}/bin/"
+    - src: "{build_dir}/conanbuild*"
+      dest: "{build_type}/"
+    - src: "{conan_deps_root}/*.dll"
+      dest: "deps/"
+  mappings@emscripten:
+    - src: "{build_dir}/bin/**/*"
+      dest: "{build_type}/bin/"
+    - src: "{build_dir}/conanbuild*"
+      dest: "{build_type}/"

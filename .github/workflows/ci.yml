@@ -88,15 +88,14 @@ jobs:
       - name: Build project
         run: .\repo.cmd build --platform ${{ matrix.platform }} --build-type ${{ matrix.build_type }}
 
+      - name: Package build artifacts
+        run: .\repo.cmd package --platform ${{ matrix.platform }} --build-type ${{ matrix.build_type }}
+
       - name: Upload build artifacts
-        if: matrix.platform == 'windows-x64'
         uses: actions/upload-artifact@v4
         with:
           name: build-${{ matrix.platform }}-${{ matrix.build_type }}
-          path: |
-            _build/${{ matrix.platform }}/${{ matrix.build_type }}/bin/
-            _build/${{ matrix.platform }}/deps/
-            !_build/${{ matrix.platform }}/deps/full_deploy/
+          path: _package/${{ matrix.platform }}/
           if-no-files-found: error
           retention-days: 3
 
@@ -111,7 +110,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [windows-x64]
+        platform: [windows-x64, emscripten]
         build_type: [Debug, Release]
 
     defaults:
