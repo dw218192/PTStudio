@@ -13,7 +13,6 @@ repo:
     build_dir: {value: "{build_root}/{platform}/{build_type}", path: true}
     conan_deps_root: {value: "{build_root}/{platform}/deps", path: true}
     package_dir: {value: "{workspace_root}/_package/{platform}", path: true}
-    conan_lock: "conan_glfw.lock"
   extra_deps:
     - conan==2.22.2
     - cmake==3.31.1

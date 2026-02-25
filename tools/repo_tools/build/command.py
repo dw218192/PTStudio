@@ -143,8 +143,6 @@ def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> 
 
     # Conan-specific paths from tokens
     conan_deps_root = Path(tokens["conan_deps_root"])
-    conan_lock_name = tokens["conan_lock"]
-    lock_file = root / conan_lock_name
 
     conan_config = args.get("conan") or {}
     prebuild_steps = args.get("prebuild") or {}
@@ -155,10 +153,11 @@ def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> 
     # Emscripten build configuration
     emscripten_build = platform_id == "emscripten"
     if emscripten_build:
-        # Use separate lock file for Emscripten builds
         lock_file = root / "conan_emscripten.lock"
         logger.info("Emscripten build mode: cross-building via Conan")
         logger.info(f"Lock file: {lock_file}")
+    else:
+        lock_file = root / f"conan_{windowing}.lock"
 
     # Remove build configuration directory if -x flag is provided
     if args.get("rebuild") and build_dir.exists():
