@@ -18,7 +18,7 @@ from repo_tools.core import (
     is_windows,
     log_section,
     logger,
-    normalize_build_type,
+    to_cmake_build_type,
 )
 
 
@@ -324,7 +324,7 @@ class LaunchTool(RepoTool):
         # --config takes precedence when explicitly provided.
         config_val = args.get("config")
         if config_val:
-            build_type = normalize_build_type(config_val)
+            build_type = to_cmake_build_type(config_val)
         else:
             build_type = ctx.dimensions.get("build_type", "Debug")
 

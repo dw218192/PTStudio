@@ -12,7 +12,7 @@ from repo_tools.core import (
     RepoTool,
     ToolContext,
     logger,
-    normalize_build_type,
+    to_cmake_build_type,
 )
 from repo_tools.launch import _can_run, _run_tests
 
@@ -48,7 +48,7 @@ class TestTool(RepoTool):
     def execute(self, ctx: ToolContext, args: dict[str, Any]) -> None:
         config_val = args.get("config")
         if config_val:
-            build_type = normalize_build_type(config_val)
+            build_type = to_cmake_build_type(config_val)
         else:
             build_type = ctx.dimensions.get("build_type", "Debug")
 
