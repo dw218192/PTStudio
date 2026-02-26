@@ -71,4 +71,3 @@ class SlangConan(ConanFile):
         self.cpp_info.bindirs = ["bin"]
         self.cpp_info.libdirs = ["lib"]
         self.cpp_info.includedirs = ["include"]
-        self.buildenv_info.prepend_path("PATH", os.path.join(self.package_folder, "bin"))
