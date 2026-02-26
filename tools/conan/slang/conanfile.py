@@ -45,7 +45,8 @@ class SlangConan(ConanFile):
 
     def build(self) -> None:
         platform_tag = self._platform_tag()
-        archive_name = f"slang-{self.version}-{platform_tag}.zip"
+        ext = "zip" if self.settings.os == "Windows" else "tar.gz"
+        archive_name = f"slang-{self.version}-{platform_tag}.{ext}"
         url = (
             "https://github.com/shader-slang/slang/releases/download/"
             f"v{self.version}/{archive_name}"
@@ -65,10 +66,6 @@ class SlangConan(ConanFile):
 
     def package(self) -> None:
         copy(self, "*", src=self._slang_root(), dst=self.package_folder)
-        if self.settings.os != "Windows":
-            for f in os.scandir(os.path.join(self.package_folder, "bin")):
-                if f.is_file():
-                    os.chmod(f.path, 0o755)
 
     def package_info(self) -> None:
         self.cpp_info.bindirs = ["bin"]
