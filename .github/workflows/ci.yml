@@ -41,16 +41,27 @@ jobs:
 
   build:
     name: Build (${{ matrix.platform }}, ${{ matrix.build_type }})
-    runs-on: windows-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         platform: [windows-x64, emscripten]
         build_type: [Debug, Release]
+        include:
+          - platform: windows-x64
+            os: windows-latest
+            shell: pwsh
+            bootstrap: .\tools\framework\bootstrap.ps1
+            repo: .\repo.cmd
+          - platform: emscripten
+            os: ubuntu-latest
+            shell: bash
+            bootstrap: bash tools/framework/bootstrap.sh
+            repo: ./repo
 
     defaults:
       run:
-        shell: pwsh
+        shell: ${{ matrix.shell }}
 
     steps:
       - name: Checkout repository
@@ -64,7 +75,7 @@ jobs:
           python-version: '3.12'
 
       - name: Bootstrap build environment
-        run: .\tools\framework\bootstrap.ps1
+        run: ${{ matrix.bootstrap }}
 
       - name: Cache Python dependencies
         uses: actions/cache@v4
@@ -72,9 +83,9 @@ jobs:
           path: |
             _tools/venv
             _tools/cache
-          key: windows-python-${{ hashFiles('tools/pyproject.toml') }}
+          key: ${{ matrix.os }}-python-${{ hashFiles('tools/pyproject.toml') }}
           restore-keys: |
-            windows-python-
+            ${{ matrix.os }}-python-
 
       - name: Cache Conan packages
         uses: actions/cache@v4
@@ -86,10 +97,10 @@ jobs:
             ${{ matrix.platform }}-conan-
 
       - name: Build project
-        run: .\repo.cmd build --platform ${{ matrix.platform }} --build-type ${{ matrix.build_type }}
+        run: ${{ matrix.repo }} build --platform ${{ matrix.platform }} --build-type ${{ matrix.build_type }}
 
       - name: Package build artifacts
-        run: .\repo.cmd package --platform ${{ matrix.platform }} --build-type ${{ matrix.build_type }}
+        run: ${{ matrix.repo }} package --platform ${{ matrix.platform }} --build-type ${{ matrix.build_type }}
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -105,17 +116,28 @@ jobs:
 
   test:
     name: Test (${{ matrix.platform }}, ${{ matrix.build_type }})
-    runs-on: windows-latest
+    runs-on: ${{ matrix.os }}
     needs: build
     strategy:
       fail-fast: false
       matrix:
         platform: [windows-x64, emscripten]
         build_type: [Debug, Release]
+        include:
+          - platform: windows-x64
+            os: windows-latest
+            shell: pwsh
+            bootstrap: .\tools\framework\bootstrap.ps1
+            repo: .\repo.cmd
+          - platform: emscripten
+            os: ubuntu-latest
+            shell: bash
+            bootstrap: bash tools/framework/bootstrap.sh
+            repo: ./repo
 
     defaults:
       run:
-        shell: pwsh
+        shell: ${{ matrix.shell }}
 
     steps:
       - name: Checkout repository
@@ -129,7 +151,7 @@ jobs:
           python-version: '3.12'
 
       - name: Bootstrap build environment
-        run: .\tools\framework\bootstrap.ps1
+        run: ${{ matrix.bootstrap }}
 
       - name: Download build artifacts
         uses: actions/download-artifact@v4
@@ -138,7 +160,7 @@ jobs:
           path: _build/${{ matrix.platform }}/
 
       - name: Run tests
-        run: .\repo.cmd test --platform ${{ matrix.platform }} --build-type ${{ matrix.build_type }}
+        run: ${{ matrix.repo }} test --platform ${{ matrix.platform }} --build-type ${{ matrix.build_type }}
 
       - name: Upload test results
         if: always()

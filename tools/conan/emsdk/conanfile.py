@@ -67,7 +67,13 @@ class EmSDKConan(ConanFile):
 
     @property
     def _em_cache(self):
-        return os.path.join(self.package_folder, "bin", ".emscripten_cache")
+        # Place cache inside EMSCRIPTEN_ROOT so emscripten finds it by default
+        # without EM_CACHE env var. Conan's full_deploy deployer rewrites
+        # buildenv_info paths to the deploy folder, but CMake's compiler path
+        # (from conf_info) stays in the original Conan package. On Windows CI
+        # these can be on different drives, and emscripten's os.path.relpath()
+        # between EM_CACHE and EMSCRIPTEN_ROOT crashes with ValueError.
+        return os.path.join(self._emscripten, "cache")
 
     def generate(self):
         env = Environment()
@@ -180,8 +186,6 @@ class EmSDKConan(ConanFile):
 
         self.buildenv_info.define_path("EMSDK", self._emsdk)
         self.buildenv_info.define_path("EMSCRIPTEN", self._emscripten)
-        self.buildenv_info.define_path("EM_CONFIG", self._em_config)
-        self.buildenv_info.define_path("EM_CACHE", self._em_cache)
 
         compiler_executables = {
             "c": self._define_tool_var("emcc"),
