@@ -47,6 +47,16 @@ jobs:
       matrix:
         platform: [windows-x64, emscripten]
         build_type: [Debug, Release]
+        include:
+          # Emscripten's port system uses os.path.relpath() which fails across
+          # Windows drive letters.  Keep Conan on the same drive as the workspace.
+          - platform: emscripten
+            conan_home: .conan2
+          - platform: windows-x64
+            conan_home: ~/.conan2
+
+    env:
+      CONAN_HOME: ${{ matrix.conan_home }}
 
     defaults:
       run:
@@ -79,7 +89,7 @@ jobs:
       - name: Cache Conan packages
         uses: actions/cache@v4
         with:
-          path: ~/.conan2
+          path: ${{ matrix.conan_home }}
           key: ${{ matrix.platform }}-conan-${{ hashFiles('conanfile.py', 'conan_*.lock') }}-${{ matrix.build_type }}
           restore-keys: |
             ${{ matrix.platform }}-conan-${{ hashFiles('conanfile.py') }}-${{ matrix.build_type }}
