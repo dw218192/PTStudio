@@ -47,12 +47,16 @@ jobs:
       matrix:
         platform: [windows-x64, emscripten]
         build_type: [Debug, Release]
+        include:
+          # Emscripten's port system uses os.path.relpath() which fails across
+          # Windows drive letters.  Keep Conan on the same drive as the workspace.
+          - platform: emscripten
+            conan_home: .conan2
+          - platform: windows-x64
+            conan_home: ~/.conan2
 
-    # Emscripten's port system uses os.path.relpath() which fails across
-    # Windows drive letters.  Keep Conan on the workspace drive for all
-    # builds so emsdk and the project are always on the same mount.
     env:
-      CONAN_HOME: ${{ github.workspace }}/.conan2
+      CONAN_HOME: ${{ matrix.conan_home }}
 
     defaults:
       run:
@@ -63,25 +67,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
-
-      - name: Free disk space
-        run: |
-          # Remove large pre-installed tools to avoid running out of space
-          # when building OpenUSD or emsdk from source.
-          $dirs = @(
-            "C:\Program Files\dotnet\sdk",
-            "C:\Program Files\dotnet\shared",
-            "C:\Program Files (x86)\Microsoft SDKs\Azure",
-            "C:\Program Files\Microsoft SQL Server",
-            "C:\Android",
-            "$env:LOCALAPPDATA\Microsoft\AndroidStudio"
-          )
-          foreach ($d in $dirs) {
-            if (Test-Path $d) {
-              Remove-Item -Recurse -Force $d -ErrorAction SilentlyContinue
-              Write-Host "Removed $d"
-            }
-          }
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -104,7 +89,7 @@ jobs:
       - name: Cache Conan packages
         uses: actions/cache@v4
         with:
-          path: ${{ github.workspace }}/.conan2
+          path: ${{ matrix.conan_home }}
           key: ${{ matrix.platform }}-conan-${{ hashFiles('conanfile.py', 'conan_*.lock') }}-${{ matrix.build_type }}
           restore-keys: |
             ${{ matrix.platform }}-conan-${{ hashFiles('conanfile.py') }}-${{ matrix.build_type }}
