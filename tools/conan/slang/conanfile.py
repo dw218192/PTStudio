@@ -2,6 +2,7 @@ from conan import ConanFile
 from conan.errors import ConanInvalidConfiguration
 from conan.tools.files import copy, get
 import os
+import stat
 
 
 class SlangConan(ConanFile):
@@ -65,8 +66,18 @@ class SlangConan(ConanFile):
 
     def package(self) -> None:
         copy(self, "*", src=self._slang_root(), dst=self.package_folder)
+        # Zip extraction doesn't preserve Unix execute permissions
+        if self.settings.os != "Windows":
+            bin_dir = os.path.join(self.package_folder, "bin")
+            if os.path.isdir(bin_dir):
+                for entry in os.listdir(bin_dir):
+                    path = os.path.join(bin_dir, entry)
+                    if os.path.isfile(path):
+                        os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
     def package_info(self) -> None:
         self.cpp_info.bindirs = ["bin"]
         self.cpp_info.libdirs = ["lib"]
         self.cpp_info.includedirs = ["include"]
+        bin_path = os.path.join(self.package_folder, "bin")
+        self.buildenv_info.prepend_path("PATH", bin_path)
