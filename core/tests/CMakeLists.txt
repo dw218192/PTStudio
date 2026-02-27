@@ -27,10 +27,12 @@ if(NOT EMSCRIPTEN)
     set(testWebGpu_defines PTS_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 endif()
 
-# OpenUSD test - works on all platforms
-list(APPEND TEST_NAMES testOpenUsd)
-set(testOpenUsd_source testOpenUsd.cpp)
-set(testOpenUsd_libs core)
+# OpenUSD test - requires TBB which doesn't initialise under WASM yet
+if(NOT EMSCRIPTEN)
+    list(APPEND TEST_NAMES testOpenUsd)
+    set(testOpenUsd_source testOpenUsd.cpp)
+    set(testOpenUsd_libs core)
+endif()
 
 function(add_core_test target_name)
     message(STATUS "Building test: ${target_name}")
