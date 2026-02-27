@@ -8,11 +8,11 @@ import click
 
 from repo_tools.core import (
     RepoTool,
+    ShellCommand,
     ToolContext,
     glob_paths,
     logger,
     resolve_path,
-    run_command,
 )
 
 
@@ -162,7 +162,7 @@ class SlangcTool(RepoTool):
                 "wgsl",
             ]
             cmd.extend(ctx.passthrough_args)
-            run_command(cmd, log_file=log_file, env_script=conanbuild)
+            ShellCommand(cmd, env_script=conanbuild).exec(log_file=log_file)
             compiled += 1
 
         logger.info(f"slangc compiled {compiled} shader(s)")

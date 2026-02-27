@@ -13,6 +13,7 @@ import click
 
 from repo_tools.core import (
     RepoTool,
+    ShellCommand,
     ToolContext,
     detect_platform_identifier,
     is_windows,
@@ -113,19 +114,6 @@ def _resolve_env_script(build_dir: Path, is_emscripten: bool) -> Path | None:
     return resolved if resolved.exists() else None
 
 
-def _shell_wrap(cmd: list[str], env_script: Path | None) -> tuple[list[str] | str, bool]:
-    """Wrap a command to source an env script if available.
-
-    Returns (command, use_shell) suitable for subprocess.run.
-    """
-    if env_script is None:
-        return cmd, False
-    cmd_str = subprocess.list2cmdline(cmd)
-    if is_windows():
-        return f'call "{env_script}" >nul 2>&1 && {cmd_str}', True
-    return f'. "{env_script}" >/dev/null 2>&1 && {cmd_str}', True
-
-
 def _run_executable(
     exe_path: Path,
     args: list[str],
@@ -170,21 +158,15 @@ def _run_executable(
     else:
         cmd = [str(exe_path)] + args
 
-    run_cmd, use_shell = _shell_wrap(cmd, env_script)
-
-    # Merge extra_env into the process environment
-    run_env = None
-    if extra_env:
-        run_env = {**os.environ, **extra_env}
+    sc = ShellCommand(cmd, env_script=env_script, env=extra_env or None)
 
     try:
         if capture_output:
-            return subprocess.run(
-                run_cmd, shell=use_shell, stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT, text=True, encoding="utf-8",
-                errors="replace", env=run_env,
+            return sc.run(
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, encoding="utf-8", errors="replace",
             )
-        return subprocess.run(run_cmd, shell=use_shell, env=run_env)
+        return sc.run()
     except KeyboardInterrupt:
         sys.exit(0)
 

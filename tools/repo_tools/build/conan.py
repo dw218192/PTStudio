@@ -9,7 +9,7 @@ import subprocess
 import urllib.request
 from pathlib import Path
 
-from repo_tools.core import find_venv_executable, logger, run_command
+from repo_tools.core import ShellCommand, find_venv_executable, logger
 
 
 # ── Conan Profile ────────────────────────────────────────────────────
@@ -227,16 +227,13 @@ def export_local_conan_recipes(root: Path, logs_dir: Path, conan_config: dict) -
             )
             continue
         export_log_file = logs_dir / f"conan_export_{name}.log"
-        run_command(
-            [
-                conan_exe,
-                "export",
-                str(recipe_dir),
-                f"--name={name}",
-                f"--version={version}",
-            ],
-            log_file=export_log_file,
-        )
+        ShellCommand([
+            conan_exe,
+            "export",
+            str(recipe_dir),
+            f"--name={name}",
+            f"--version={version}",
+        ]).exec(log_file=export_log_file)
 
 
 def get_local_recipe_names(root: Path, conan_config: dict) -> set[str]:
