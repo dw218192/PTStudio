@@ -123,7 +123,7 @@ def _shell_wrap(cmd: list[str], env_script: Path | None) -> tuple[list[str] | st
     cmd_str = subprocess.list2cmdline(cmd)
     if is_windows():
         return f'call "{env_script}" >nul 2>&1 && {cmd_str}', True
-    return f'source "{env_script}" >/dev/null 2>&1 && {cmd_str}', True
+    return f'. "{env_script}" >/dev/null 2>&1 && {cmd_str}', True
 
 
 def _run_executable(
