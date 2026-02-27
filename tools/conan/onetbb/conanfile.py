@@ -99,12 +99,6 @@ class OneTBBConan(ConanFile):
         )
         tc.variables["BUILD_SHARED_LIBS"] = self.options.shared
 
-        # Disable pthreads on Emscripten — TBB's Web Worker scheduling doesn't
-        # work without PROXY_TO_PTHREAD, and the pthread stub produces broken
-        # WASM function tables (getWasmTableEntry crash during static init).
-        if self.settings.os == "Emscripten":
-            tc.cache_variables["EMSCRIPTEN_WITHOUT_PTHREAD"] = True
-
         # Cross-compilation: pass hwloc paths directly to CMake
         if self.options.get_safe("tbbbind", False) and cross_building(self):
             hwloc_pkg = self.dependencies["hwloc"].package_folder
