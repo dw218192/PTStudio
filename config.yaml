@@ -56,6 +56,8 @@ package:
       dest: "{build_type}/"
     - src: "{conan_deps_root}/*.dll"
       dest: "deps/"
+    - src: "{conan_deps_root}/usd/**/*"
+      dest: "deps/usd/"
   mappings@emscripten:
     - src: "{build_dir}/bin/**/*"
       dest: "{build_type}/bin/"
