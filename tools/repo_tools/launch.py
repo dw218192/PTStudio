@@ -154,7 +154,7 @@ def _run_executable(
     elif is_emscripten:
         js_path = exe_path.with_suffix(".js") if exe_path.suffix.lower() == ".html" else exe_path
         logger.info(f"Running {js_path.name} with Node.js")
-        cmd = ["node", "--experimental-wasm-threads", str(js_path)] + args
+        cmd = ["node", str(js_path)] + args
     else:
         cmd = [str(exe_path)] + args
 
