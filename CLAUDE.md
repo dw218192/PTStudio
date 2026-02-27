@@ -19,6 +19,16 @@ Uses the [repokit](tools/framework/README.md) framework. See that README for CLI
 - emsdk is a Conan `tool_requires`, Dawn version pins the emdawnwebgpu port version
 - The emsdk recipe does NOT export `EM_CACHE` or `EM_CONFIG` to consumers — emscripten defaults to `<EMSCRIPTEN_ROOT>/cache/`, which is always on the same drive as `em++`
 
+### OpenUSD + TBB on Emscripten
+
+Static-linking OpenUSD via Conan on Emscripten has several non-obvious failure modes:
+
+- **Constructor dead-stripping**: OpenUSD's plugin discovery relies on `Plug_InitConfig`, an `__attribute__((constructor))` in `initConfig.cpp`. When USD libraries are separate static `.a` archives (Conan components), the linker drops `initConfig.o` because nothing references its symbols. Fix: `--whole-archive` on `libusd_plug.a` (see `CMakeLists.txt`).
+- **TBB static init crashes**: Setting `PXR_WORK_THREAD_LIMIT` to non-zero forces `tbb::global_control` creation during `__wasm_call_ctors`, before TBB's function table is ready. Leave it at default (0).
+- **TBB + EMSCRIPTEN_WITHOUT_PTHREAD**: The Conan profile passes `-pthread` globally, so TBB source sees `__EMSCRIPTEN_PTHREADS__`. Don't override with `EMSCRIPTEN_WITHOUT_PTHREAD` — it creates contradictory state.
+- **"Cannot create a log file"**: A misleading secondary error from USD's crash handler. The real error is whatever triggered the abort; this message means `ArchGetTmpDir()` failed to create a temp file on the WASM virtual filesystem.
+- **Plugin resources**: Embed full `resources/` directories (not just `plugInfo.json`) — `generatedSchema.usda` is required for type registration.
+
 ## Code Conventions
 
 - C++17, `webgpu.h` API for rendering (same header for Dawn and emdawnwebgpu)

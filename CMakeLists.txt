@@ -81,11 +81,12 @@ else()
 endif()
 find_package(openusd CONFIG REQUIRED)
 
-# On Emscripten, embed OpenUSD plugInfo.json files into the WASM binary so the
-# plugin registry can discover types at runtime.  The Conan CMakeDeps generator
-# does not propagate the --embed-file link options from the upstream pxrTargets,
-# so we add them here to openusd::usd_plug (which every USD consumer links
-# transitively).
+# On Emscripten, embed OpenUSD plugin resources into the WASM virtual filesystem
+# so the Plug registry can discover types at runtime.  Conan's CMakeDeps does not
+# propagate the --embed-file link options from pxrTargets, so we replicate them
+# here on openusd::usd_plug (transitively linked by every USD consumer).
+# Embeds: top-level plugInfo.json, plus each module's resources/ directory
+# (plugInfo.json + generatedSchema.usda).
 if(EMSCRIPTEN)
     if(DEFINED openusd_PACKAGE_FOLDER_DEBUG)
         set(_pxr_usd_dir "${openusd_PACKAGE_FOLDER_DEBUG}/lib/usd")
@@ -94,14 +95,26 @@ if(EMSCRIPTEN)
     endif()
     if(DEFINED _pxr_usd_dir AND EXISTS "${_pxr_usd_dir}/plugInfo.json")
         set(_embed_flags "SHELL:--embed-file ${_pxr_usd_dir}/plugInfo.json@/usd/plugInfo.json")
-        file(GLOB _pxr_modules RELATIVE "${_pxr_usd_dir}"
-             "${_pxr_usd_dir}/*/resources/plugInfo.json")
-        foreach(_module_path ${_pxr_modules})
+        file(GLOB _pxr_res_dirs LIST_DIRECTORIES true "${_pxr_usd_dir}/*/resources")
+        foreach(_res_dir ${_pxr_res_dirs})
+            get_filename_component(_module_dir "${_res_dir}" DIRECTORY)
+            get_filename_component(_module_name "${_module_dir}" NAME)
             list(APPEND _embed_flags
-                 "SHELL:--embed-file ${_pxr_usd_dir}/${_module_path}@/usd/${_module_path}")
+                 "SHELL:--embed-file ${_res_dir}@/usd/${_module_name}/resources")
         endforeach()
         set_property(TARGET openusd::usd_plug APPEND PROPERTY
                      INTERFACE_LINK_OPTIONS ${_embed_flags})
+    endif()
+    # Force whole-archive on usd_plug so that Plug_InitConfig's
+    # __attribute__((constructor)) is not dead-stripped from the static archive.
+    # Without this, the linker drops initConfig.o (no referenced symbols) and
+    # automatic plugin discovery never runs.
+    find_library(_pxr_plug_lib NAMES usd_plug
+                 PATHS "${_pxr_usd_dir}/.." NO_DEFAULT_PATH)
+    if(_pxr_plug_lib)
+        set_property(TARGET openusd::usd_plug APPEND PROPERTY
+                     INTERFACE_LINK_OPTIONS
+                     "SHELL:-Wl,--whole-archive ${_pxr_plug_lib} -Wl,--no-whole-archive")
     endif()
 endif()
 
