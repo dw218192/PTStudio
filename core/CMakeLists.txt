@@ -91,9 +91,6 @@ PRIVATE
 	$<BUILD_INTERFACE:developer_flags>
 PUBLIC
 	openusd::usd_usd
-	openusd::usd_usdGeom
-	openusd::usd_usdShade
-	openusd::usd_usdLux
 	glm::glm
 	tinyobjloader
 	stb::stb
@@ -103,6 +100,11 @@ PUBLIC
 	spdlog::spdlog
 	nlohmann_json::nlohmann_json
 )
+
+# Optional USD schema modules (configured via PTS_USD_MODULES)
+foreach(_mod IN LISTS PTS_USD_MODULES)
+	target_link_libraries(${lib_name} PUBLIC openusd::usd_${_mod})
+endforeach()
 
 if (NOT EMSCRIPTEN)
 	target_link_libraries(${lib_name}

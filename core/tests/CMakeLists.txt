@@ -31,6 +31,7 @@ endif()
 list(APPEND TEST_NAMES testOpenUsd)
 set(testOpenUsd_source testOpenUsd.cpp)
 set(testOpenUsd_libs core)
+set(testOpenUsd_includes ${CMAKE_CURRENT_SOURCE_DIR}/generated)
 
 function(add_core_test target_name)
     message(STATUS "Building test: ${target_name}")

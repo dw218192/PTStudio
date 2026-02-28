@@ -140,6 +140,7 @@ def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> 
     build_dir = Path(tokens["build_dir"])
     logs_dir = Path(tokens["logs_root"])
     windowing = args.get("windowing", "glfw")
+    usd_modules = args.get("usd_modules") or []
 
     # Conan-specific paths from tokens
     conan_deps_root = Path(tokens["conan_deps_root"])
@@ -283,6 +284,8 @@ def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> 
             if emscripten_build:
                 emdawnwebgpu_port = ensure_emdawnwebgpu_port(root, build_folder)
                 cmake_args.append(f"-DEMDAWNWEBGPU_PORT_FILE={emdawnwebgpu_port}")
+            if usd_modules:
+                cmake_args.append(f"-DPTS_USD_MODULES={';'.join(usd_modules)}")
 
             g.run(cmake_args, log_file=configure_log_file, env_script=conanbuild)
 

@@ -34,7 +34,7 @@ TEST_CASE("WebGPU - Device init and basic resources") {
     CHECK(buffer.is_valid());
 
     // ShaderModule factory throws on failure; invariant enforces non-null
-    auto shader_source = test_resources::get_resource("simple.wgsl");
+    auto shader_source = test_resources::get_resource("shaders/test/simple.wgsl");
     REQUIRE(shader_source.has_value());
     auto shader = device.create_shader_module_from_source(shader_source.value());
     CHECK(shader.handle() != nullptr);

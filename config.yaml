@@ -21,6 +21,10 @@ repo:
 
 build:
   windowing: "glfw"
+  usd_modules:
+    - usdGeom
+    - usdShade
+    - usdLux
   prebuild:
     format: {}
     slangc:
@@ -41,6 +45,7 @@ build:
           namespace: "editor_resources"
         - input:
             - "assets/shaders/test/simple.wgsl"
+            - "assets/scenes/test_cube.usda"
           output: "core/tests/generated/embedded_test_resources.h"
           namespace: "test_resources"
   postbuild: {}

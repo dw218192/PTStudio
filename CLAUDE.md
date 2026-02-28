@@ -29,6 +29,10 @@ Static-linking OpenUSD via Conan on Emscripten has several non-obvious failure m
 - **"Cannot create a log file"**: A misleading secondary error from USD's crash handler. The real error is whatever triggered the abort; this message means `ArchGetTmpDir()` failed to create a temp file on the WASM virtual filesystem.
 - **Plugin resources**: Embed full `resources/` directories (not just `plugInfo.json`) — `generatedSchema.usda` is required for type registration.
 
+### Embed Tool Resource Keys
+
+The `embed` prebuild step generates C++ headers with `get_resource(key)` lookup. Resource keys are derived from input file paths by stripping the longest common prefix across all inputs in a group. Adding a new file to an embed group can change the common prefix and break existing lookups. When adding files to an embed resource group, always check that existing `get_resource()` callers still use the correct key.
+
 ## Code Conventions
 
 - C++17, `webgpu.h` API for rendering (same header for Dawn and emdawnwebgpu)

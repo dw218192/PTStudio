@@ -81,6 +81,11 @@ else()
 endif()
 find_package(openusd CONFIG REQUIRED)
 
+# Optional USD schema modules (beyond the always-linked usd_usd core).
+# Populated from config.yaml via the build tool's -DPTS_USD_MODULES flag.
+set(PTS_USD_MODULES "usdGeom;usdShade;usdLux" CACHE STRING
+    "Optional USD schema modules to link")
+
 # On Emscripten, embed OpenUSD plugin resources into the WASM virtual filesystem
 # so the Plug registry can discover types at runtime.  Conan's CMakeDeps does not
 # propagate the --embed-file link options from pxrTargets, so we replicate them
@@ -105,17 +110,24 @@ if(EMSCRIPTEN)
         set_property(TARGET openusd::usd_plug APPEND PROPERTY
                      INTERFACE_LINK_OPTIONS ${_embed_flags})
     endif()
-    # Force whole-archive on usd_plug so that Plug_InitConfig's
-    # __attribute__((constructor)) is not dead-stripped from the static archive.
-    # Without this, the linker drops initConfig.o (no referenced symbols) and
-    # automatic plugin discovery never runs.
-    find_library(_pxr_plug_lib NAMES usd_plug
-                 PATHS "${_pxr_usd_dir}/.." NO_DEFAULT_PATH)
-    if(_pxr_plug_lib)
-        set_property(TARGET openusd::usd_plug APPEND PROPERTY
-                     INTERFACE_LINK_OPTIONS
-                     "SHELL:-Wl,--whole-archive ${_pxr_plug_lib} -Wl,--no-whole-archive")
-    endif()
+    # Force --whole-archive on USD static archives whose ARCH_CONSTRUCTOR
+    # registrations (TfType, schema factories, resolvers, plugin discovery)
+    # would otherwise be dead-stripped by the linker.
+    set(_pxr_whole_archive_libs usd_plug usd_tf usd_sdf usd_ar)
+    foreach(_mod IN LISTS PTS_USD_MODULES)
+        list(APPEND _pxr_whole_archive_libs usd_${_mod})
+    endforeach()
+    list(REMOVE_DUPLICATES _pxr_whole_archive_libs)
+    foreach(_lib IN LISTS _pxr_whole_archive_libs)
+        find_library(_pxr_${_lib} NAMES ${_lib}
+                     PATHS "${_pxr_usd_dir}/.." NO_DEFAULT_PATH)
+        if(_pxr_${_lib})
+            set_property(TARGET openusd::${_lib} APPEND PROPERTY
+                         INTERFACE_LINK_OPTIONS
+                         "SHELL:-Wl,--whole-archive ${_pxr_${_lib}} -Wl,--no-whole-archive")
+        endif()
+        unset(_pxr_${_lib} CACHE)
+    endforeach()
 endif()
 
 if (NOT EMSCRIPTEN)
