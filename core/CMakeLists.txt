@@ -42,7 +42,9 @@ target_compile_definitions(imgui_backends PUBLIC IMGUI_IMPL_WEBGPU_BACKEND_DAWN)
 if(PTS_WINDOWING STREQUAL "glfw")
     target_link_libraries(imgui_backends PRIVATE glfw)
 endif()
-if(NOT EMSCRIPTEN)
+if(EMSCRIPTEN)
+    target_link_libraries(imgui_backends PUBLIC wasm_flags)
+else()
     target_link_libraries(imgui_backends PUBLIC dawn::webgpu_dawn)
 endif()
 
@@ -87,28 +89,32 @@ add_library(${lib_name} STATIC ${src_files})
 target_link_libraries(${lib_name}
 PRIVATE
 	$<BUILD_INTERFACE:developer_flags>
-	portable-file-dialogs::portable-file-dialogs
 PUBLIC
 	openusd::usd_usd
-	openusd::usd_usdGeom
-	openusd::usd_usdShade
-	openusd::usd_usdLux
 	glm::glm
 	tinyobjloader
 	stb::stb
 	imgui::imgui
 	imgui_backends
-	tl::expected
 	fmt::fmt
 	spdlog::spdlog
-	tcb-span::tcb-span
 	nlohmann_json::nlohmann_json
-	Boost::filesystem
-	Boost::container
 )
 
+# Optional USD schema modules (configured via PTS_USD_MODULES)
+foreach(_mod IN LISTS PTS_USD_MODULES)
+	target_link_libraries(${lib_name} PUBLIC openusd::usd_${_mod})
+endforeach()
+
 if (NOT EMSCRIPTEN)
-	target_link_libraries(${lib_name} PUBLIC dawn::webgpu_dawn)
+	target_link_libraries(${lib_name}
+		PRIVATE portable-file-dialogs::portable-file-dialogs
+		PUBLIC dawn::webgpu_dawn Boost::filesystem Boost::program_options
+		       Boost::stacktrace Boost::stacktrace_from_exception
+	)
+else()
+	# Use header-only Boost for Emscripten (filesystem not available)
+	target_link_libraries(${lib_name} PUBLIC wasm_flags Boost::boost)
 endif()
 
 if(PTS_WINDOWING STREQUAL "glfw")

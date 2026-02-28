@@ -161,7 +161,7 @@ void* PluginManager::query_interface_impl(PluginHandle plugin_handle, const char
 }
 
 size_t PluginManager::scan_directory(std::string_view exe_relative_dir) {
-#ifdef __EMSCRIPTEN__
+#if defined(__EMSCRIPTEN__)
     static_cast<void>(exe_relative_dir);
     m_logger->info("Web build: plugin scanning disabled (static plugins only)");
     return 0;
@@ -218,7 +218,7 @@ size_t PluginManager::scan_directory(std::string_view exe_relative_dir) {
 
 const PtsPluginDescriptor* PluginManager::try_invoke_plugin_entry_point(
     const PluginSharedLibrary& lib) {
-#ifdef __EMSCRIPTEN__
+#if defined(__EMSCRIPTEN__)
     static_cast<void>(lib);
     return nullptr;
 #else
@@ -251,7 +251,7 @@ const PtsPluginDescriptor* PluginManager::try_invoke_plugin_entry_point(
 
 bool PluginManager::try_load_descriptor(const std::filesystem::path& dll_path,
                                         PluginInfo& out_info) {
-#ifdef __EMSCRIPTEN__
+#if defined(__EMSCRIPTEN__)
     static_cast<void>(dll_path);
     static_cast<void>(out_info);
     return false;
@@ -387,7 +387,7 @@ bool PluginManager::load_plugin(std::string_view plugin_id) {
             // Create loaded plugin entry (static plugins have no backing library)
             m_loaded_plugins.emplace_back(std::string{plugin_id}, desc);
         } else {
-#ifdef __EMSCRIPTEN__
+#if defined(__EMSCRIPTEN__)
             m_logger->error("Dynamic plugins are not supported in web builds");
             return false;
 #else

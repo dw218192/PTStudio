@@ -4,6 +4,7 @@
 #include <core/scopeUtils.h>
 
 #include <cstring>
+#include <stdexcept>
 
 namespace pts::webgpu {
 namespace {
@@ -45,8 +46,8 @@ auto choose_alpha_mode(const WGPUSurfaceCapabilities& capabilities) -> WGPUCompo
     return capabilities.alphaModes[0];
 }
 
-auto create_surface_for_handle(WGPUInstance instance,
-                               const rendering::NativeViewportHandle& handle) -> WGPUSurface {
+auto create_surface_for_handle(WGPUInstance instance, const rendering::NativeViewportHandle& handle)
+    -> WGPUSurface {
     if (instance == nullptr) {
         return nullptr;
     }
@@ -55,12 +56,17 @@ auto create_surface_for_handle(WGPUInstance instance,
 
     switch (handle.platform) {
         case rendering::NativePlatform::win32: {
+#if defined(__EMSCRIPTEN__)
+            return nullptr;
+#else
             WGPUSurfaceSourceWindowsHWND source = WGPU_SURFACE_SOURCE_WINDOWS_HWND_INIT;
             source.hinstance = handle.win32.hinstance;
             source.hwnd = handle.win32.hwnd;
             descriptor.nextInChain = reinterpret_cast<WGPUChainedStruct*>(&source);
             return wgpuInstanceCreateSurface(instance, &descriptor);
+#endif
         }
+#if !defined(__EMSCRIPTEN__)
         case rendering::NativePlatform::xlib: {
             WGPUSurfaceSourceXlibWindow source = WGPU_SURFACE_SOURCE_XLIB_WINDOW_INIT;
             source.display = handle.xlib.display;
@@ -68,13 +74,15 @@ auto create_surface_for_handle(WGPUInstance instance,
             descriptor.nextInChain = reinterpret_cast<WGPUChainedStruct*>(&source);
             return wgpuInstanceCreateSurface(instance, &descriptor);
         }
+#endif
         case rendering::NativePlatform::emscripten: {
-#ifdef __EMSCRIPTEN__
+#if defined(__EMSCRIPTEN__)
             const char* selector =
                 handle.web.canvas_selector ? handle.web.canvas_selector : k_default_canvas_selector;
             WGPUEmscriptenSurfaceSourceCanvasHTMLSelector source =
                 WGPU_EMSCRIPTEN_SURFACE_SOURCE_CANVAS_HTML_SELECTOR_INIT;
-            source.selector = WGPUStringView{selector, std::strlen(selector)};
+            source.selector.data = selector;
+            source.selector.length = std::strlen(selector);
             descriptor.nextInChain = reinterpret_cast<WGPUChainedStruct*>(&source);
             return wgpuInstanceCreateSurface(instance, &descriptor);
 #else
@@ -189,6 +197,10 @@ auto Surface::create(const Device& device, const rendering::NativeViewportHandle
     WGPUCompositeAlphaMode alpha_mode = WGPUCompositeAlphaMode_Auto;
     WGPUTextureUsage usage = WGPUTextureUsage_RenderAttachment;
 
+    // Query surface capabilities to pick optimal format/present mode.
+    // wgpuDeviceGetAdapter is a Dawn extension unavailable in emdawnwebgpu,
+    // so on Emscripten we use the defaults above.
+#if !defined(__EMSCRIPTEN__)
     WGPUAdapter adapter = wgpuDeviceGetAdapter(device.handle());
     SCOPE_EXIT {
         if (adapter) wgpuAdapterRelease(adapter);
@@ -210,6 +222,7 @@ auto Surface::create(const Device& device, const rendering::NativeViewportHandle
             wgpuSurfaceCapabilitiesFreeMembers(capabilities);
         }
     }
+#endif
 
     return Surface(surface, device.handle(), format, usage, present_mode, alpha_mode, extent);
 }
@@ -266,13 +279,11 @@ auto Surface::acquire_texture_view() -> WGPUTextureView {
     WGPUSurfaceTexture surface_texture = WGPU_SURFACE_TEXTURE_INIT;
     wgpuSurfaceGetCurrentTexture(m_surface, &surface_texture);
 
-    // Ensure surface texture is released if not successfully assigned to m_current_texture
-    SCOPE_FAIL {
-        if (surface_texture.texture) wgpuTextureRelease(surface_texture.texture);
-    };
-
     if (surface_texture.status != WGPUSurfaceGetCurrentTextureStatus_SuccessOptimal &&
         surface_texture.status != WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal) {
+        if (surface_texture.texture) {
+            wgpuTextureRelease(surface_texture.texture);
+        }
         if (surface_texture.status == WGPUSurfaceGetCurrentTextureStatus_Outdated) {
             configure(m_width, m_height);
         }
@@ -299,7 +310,12 @@ void Surface::present() {
     if (!m_present_pending || m_surface == nullptr) {
         return;
     }
+    // emdawnwebgpu does not implement wgpuSurfacePresent; the browser
+    // composites the surface automatically when control returns to the
+    // event loop (via emscripten_set_main_loop / requestAnimationFrame).
+#if !defined(__EMSCRIPTEN__)
     wgpuSurfacePresent(m_surface);
+#endif
     if (m_current_view != nullptr) {
         wgpuTextureViewRelease(m_current_view);
         m_current_view = nullptr;

@@ -82,7 +82,7 @@ class PluginManager {
     NO_COPY_MOVE(PluginManager);
 
     /**
-     * @brief Scan a directory for plugin DLLs (*.dll/*.so/*.dylib).
+     * @brief Scan a directory for plugin DLLs (*.dll/ *.so/ *.dylib).
      * Does not load them, just discovers available plugins.
      *
      * @param exe_relative_dir The directory relative to the executable to scan for plugins.

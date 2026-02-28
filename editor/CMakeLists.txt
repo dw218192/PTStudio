@@ -21,9 +21,6 @@ PRIVATE
 	core
 	imguizmo::imguizmo
 	imgui_color_text_edit::imgui_color_text_edit
-	Boost::stacktrace
-	Boost::stacktrace_from_exception
-	Boost::program_options
 )
 if (MSVC)
 	target_compile_options(${exec_name} PRIVATE /bigobj)

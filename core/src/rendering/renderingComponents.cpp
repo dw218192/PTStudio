@@ -1,24 +1,17 @@
 #include "renderingComponents.h"
 
 #include <core/rendering/webgpuContext.h>
-#include <imgui.h>
 
-#include <memory>
 #include <stdexcept>
 #include <utility>
 
 #include "webgpu/webgpuImguiRendering.h"
-
-namespace spdlog {
-class logger;
-}
 
 namespace pts::rendering {
 
 auto create_imgui_components(WebGpuContext& webgpu_context, pts::rendering::IViewport& viewport,
                              pts::LoggingManager& logging_manager) -> ImGuiComponents {
     ImGuiComponents components;
-    components.render_graph = nullptr;
 
     auto webgpu_rendering =
         create_webgpu_imgui_rendering(webgpu_context, viewport, logging_manager);

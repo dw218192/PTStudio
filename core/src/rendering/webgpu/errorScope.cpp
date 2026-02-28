@@ -69,10 +69,10 @@ void ErrorScope::pop_and_wait() {
         return;
     }
 
-    // Pop all scopes in reverse order (LIFO)
     m_results.clear();
     m_results.resize(m_scope_count);
 
+    // Pop all scopes in reverse order (LIFO)
     std::atomic_size_t pending{m_scope_count};
     std::vector<PopCallbackData> callback_data;
     callback_data.reserve(m_scope_count);

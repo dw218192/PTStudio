@@ -7,10 +7,11 @@
 #include "glfwWindowing.h"
 
 #include <GLFW/glfw3.h>
+#if !defined(__EMSCRIPTEN__)
 #include <GLFW/glfw3native.h>
+#endif
 #include <core/loggingManager.h>
 
-#include <iostream>
 #include <memory>
 #include <stdexcept>
 
@@ -98,7 +99,10 @@ class GlfwViewport final : public IViewport {
         glfwSetWindowUserPointer(m_window, this);
         glfwSetScrollCallback(m_window, GlfwViewportCallbacks::scroll_func);
         glfwSetFramebufferSizeCallback(m_window, GlfwViewportCallbacks::framebuffer_resize_func);
+
+#if !defined(__EMSCRIPTEN__)
         glfwSetWindowCloseCallback(m_window, GlfwViewportCallbacks::close_func);
+#endif
     }
 
     ~GlfwViewport() override {
@@ -188,12 +192,15 @@ auto GlfwWindowing::create_viewport(const ViewportDesc& desc) -> std::unique_ptr
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, desc.resizable ? GLFW_TRUE : GLFW_FALSE);
     glfwWindowHint(GLFW_VISIBLE, desc.visible ? GLFW_TRUE : GLFW_FALSE);
+#if !defined(__EMSCRIPTEN__)
+    // GLFW_DECORATED is not supported on Emscripten (canvas is always undecorated)
     glfwWindowHint(GLFW_DECORATED, desc.decorated ? GLFW_TRUE : GLFW_FALSE);
-#ifdef GLFW_SCALE_TO_MONITOR
-    glfwWindowHint(GLFW_SCALE_TO_MONITOR, desc.high_dpi ? GLFW_TRUE : GLFW_FALSE);
 #endif
-#ifdef GLFW_COCOA_RETINA_FRAMEBUFFER
-    glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, desc.high_dpi ? GLFW_TRUE : GLFW_FALSE);
+#if defined(GLFW_SCALE_FRAMEBUFFER)
+    // GLFW 3.4+: replaces deprecated GLFW_SCALE_TO_MONITOR / GLFW_COCOA_RETINA_FRAMEBUFFER
+    glfwWindowHint(GLFW_SCALE_FRAMEBUFFER, desc.high_dpi ? GLFW_TRUE : GLFW_FALSE);
+#elif defined(GLFW_SCALE_TO_MONITOR)
+    glfwWindowHint(GLFW_SCALE_TO_MONITOR, desc.high_dpi ? GLFW_TRUE : GLFW_FALSE);
 #endif
 
     auto* window = glfwCreateWindow(static_cast<int>(desc.width), static_cast<int>(desc.height),

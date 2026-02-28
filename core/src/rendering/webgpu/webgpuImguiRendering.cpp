@@ -3,11 +3,7 @@
 #include <imgui.h>
 #include <imgui_impl_wgpu.h>
 
-#include <memory>
-
-#ifndef IMGUI_IMPL_WEBGPU_BACKEND_DAWN
-#define IMGUI_IMPL_WEBGPU_BACKEND_DAWN
-#endif
+#include <stdexcept>
 
 namespace pts::rendering {
 WebGpuImguiRendering::WebGpuImguiRendering(WebGpuContext& context, IViewport& viewport,
@@ -106,18 +102,6 @@ void WebGpuImguiRendering::render(bool framebuffer_resized) {
 void WebGpuImguiRendering::resize() {
     m_extent = m_viewport->drawable_extent();
     m_context->surface().resize(m_extent);
-}
-
-auto WebGpuImguiRendering::set_render_output(IRenderGraph& render_graph) -> ImTextureID {
-    static_cast<void>(render_graph);
-    return ImTextureID_Invalid;
-}
-
-void WebGpuImguiRendering::clear_render_output() {
-}
-
-auto WebGpuImguiRendering::output_id() const noexcept -> ImTextureID {
-    return ImTextureID_Invalid;
 }
 
 void WebGpuImguiRendering::render_before_imgui() {

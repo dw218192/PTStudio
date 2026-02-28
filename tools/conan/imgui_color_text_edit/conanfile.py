@@ -21,7 +21,7 @@ class ImGuiColorTextEditConan(ConanFile):
 
     def requirements(self):
         # Depend on imgui docking from Conan
-        self.requires("imgui/1.92.0-docking", transitive_headers=True)
+        self.requires("imgui/1.92.5-docking", transitive_headers=True)
 
     def config_options(self):
         if self.settings.os == "Windows":

@@ -9,26 +9,15 @@ on:
 
 jobs:
   # =============================================================================
-  # Windows Check, Build & Test (Current Platform)
+  # Formatting Check
   # =============================================================================
-  # To add Linux/macOS support in the future:
-  # 1. Duplicate these jobs with appropriate suffixes (e.g., check-and-build-linux)
-  # 2. Change runs-on to ubuntu-latest or macos-latest
-  # 3. Change shell to bash and use ./pts.sh instead of .\pts.cmd
-  # 4. Adjust cache paths (~/.conan2 works on Linux/macOS too)
-  
-  check-and-build-windows:
-    name: Check & Build (Windows, ${{ matrix.build_type }})
+
+  check-formatting:
+    name: Check formatting
     runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        build_type: [Debug, Release]
-    
     defaults:
       run:
         shell: pwsh
-    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -41,74 +30,44 @@ jobs:
           python-version: '3.12'
 
       - name: Bootstrap build environment
-        run: .\tools\bootstrap.ps1
+        run: .\tools\framework\bootstrap.ps1
 
       - name: Check code formatting
-        run: .\pts.cmd format --verify
+        run: .\repo.cmd format --verify
 
-      - name: Cache Python dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            _tools/venv
-            _tools/cache
-          key: windows-python-${{ hashFiles('tools/requirements.txt') }}
-          restore-keys: |
-            windows-python-
+  # =============================================================================
+  # Build (platform × build_type matrix)
+  # =============================================================================
 
-      - name: Cache Conan packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.conan2
-            _build/deps
-          key: windows-conan-${{ hashFiles('conanfile.py', 'conan_glfw.lock') }}-${{ matrix.build_type }}
-          restore-keys: |
-            windows-conan-${{ hashFiles('conanfile.py') }}-${{ matrix.build_type }}
-            windows-conan-
-
-      - name: Build project
-        run: .\pts.cmd build --build-type ${{ matrix.build_type }}
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-windows-${{ matrix.build_type }}
-          path: _build/${{ matrix.build_type }}/bin/
-          retention-days: 3
-      
-      - name: Upload dependency artifacts # needed to load DLLs
-        uses: actions/upload-artifact@v4
-        with:
-          name: deps-windows-${{ matrix.build_type }}
-          # a marker file ".clang-format" is added so that the zip preserves the directory structure
-          # see https://github.com/actions/upload-artifact/issues/174
-          path: |
-            _build/deps/**/openusd/**/${{ matrix.build_type }}/**/bin/
-            _build/deps/**/openusd/**/${{ matrix.build_type }}/**/lib/
-            _build/deps/**/onetbb/**/${{ matrix.build_type }}/**/bin/
-            _build/deps/**/onetbb/**/${{ matrix.build_type }}/**/lib/
-            _build/deps/**/dawn/**/${{ matrix.build_type }}/**/bin/
-            _build/deps/**/dawn/**/${{ matrix.build_type }}/**/lib/
-            .clang-format
-          retention-days: 3
-
-  test-windows:
-    name: Test (Windows, ${{ matrix.build_type }})
-    runs-on: windows-latest
-    needs: check-and-build-windows
+  build:
+    name: Build (${{ matrix.platform }}, ${{ matrix.build_type }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        platform: [windows-x64, emscripten]
         build_type: [Debug, Release]
-    
+        include:
+          - platform: windows-x64
+            os: windows-latest
+            shell: pwsh
+            bootstrap: .\tools\framework\bootstrap.ps1
+            repo: .\repo.cmd
+          - platform: emscripten
+            os: ubuntu-latest
+            shell: bash
+            bootstrap: bash tools/framework/bootstrap.sh
+            repo: ./repo
+
     defaults:
       run:
-        shell: pwsh
-    
+        shell: ${{ matrix.shell }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -116,27 +75,96 @@ jobs:
           python-version: '3.12'
 
       - name: Bootstrap build environment
-        run: .\tools\bootstrap.ps1
+        run: ${{ matrix.bootstrap }}
+
+      - name: Cache Python dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            _tools/venv
+            _tools/cache
+          key: ${{ matrix.os }}-python-${{ hashFiles('tools/pyproject.toml') }}
+          restore-keys: |
+            ${{ matrix.os }}-python-
+
+      - name: Cache Conan packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.conan2
+          key: ${{ matrix.platform }}-conan-${{ hashFiles('conanfile.py', 'conan_*.lock') }}-${{ matrix.build_type }}
+          restore-keys: |
+            ${{ matrix.platform }}-conan-${{ hashFiles('conanfile.py') }}-${{ matrix.build_type }}
+
+      - name: Build project
+        run: ${{ matrix.repo }} build --platform ${{ matrix.platform }} --build-type ${{ matrix.build_type }}
+
+      - name: Package build artifacts
+        run: ${{ matrix.repo }} package --platform ${{ matrix.platform }} --build-type ${{ matrix.build_type }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.platform }}-${{ matrix.build_type }}
+          path: _package/${{ matrix.platform }}/
+          if-no-files-found: error
+          retention-days: 3
+
+  # =============================================================================
+  # Test (platform × build_type matrix)
+  # =============================================================================
+
+  test:
+    name: Test (${{ matrix.platform }}, ${{ matrix.build_type }})
+    runs-on: ${{ matrix.os }}
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [windows-x64, emscripten]
+        build_type: [Debug, Release]
+        include:
+          - platform: windows-x64
+            os: windows-latest
+            shell: pwsh
+            bootstrap: .\tools\framework\bootstrap.ps1
+            repo: .\repo.cmd
+          - platform: emscripten
+            os: ubuntu-latest
+            shell: bash
+            bootstrap: bash tools/framework/bootstrap.sh
+            repo: ./repo
+
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Bootstrap build environment
+        run: ${{ matrix.bootstrap }}
 
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: build-windows-${{ matrix.build_type }}
-          path: _build/${{ matrix.build_type }}/bin/
-      
-      - name: Download dependency artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: deps-windows-${{ matrix.build_type }}
-          path: .
+          name: build-${{ matrix.platform }}-${{ matrix.build_type }}
+          path: _build/${{ matrix.platform }}/
 
       - name: Run tests
-        run: .\pts.cmd test --build-type ${{ matrix.build_type }}
+        run: ${{ matrix.repo }} test --platform ${{ matrix.platform }} --build-type ${{ matrix.build_type }}
 
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results-windows-${{ matrix.build_type }}
+          name: test-results-${{ matrix.platform }}-${{ matrix.build_type }}
           path: _logs/
           retention-days: 3

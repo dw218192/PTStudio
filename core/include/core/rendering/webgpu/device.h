@@ -3,10 +3,8 @@
 #include <core/rendering/webgpu/buffer.h>
 #include <core/rendering/webgpu/pipeline.h>
 #include <core/rendering/webgpu/shader.h>
-#include <core/rendering/webgpu/texture.h>
 
 #include <memory>
-#include <string>
 #include <string_view>
 #include <variant>
 

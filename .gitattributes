@@ -5,12 +5,12 @@
 
 # Shell scripts must use LF (Unix line endings)
 *.sh text eol=lf
-pts.sh text eol=lf
+repo text eol=lf
 
 # Windows scripts use CRLF
 *.cmd text eol=crlf
 *.ps1 text eol=crlf
-pts.cmd text eol=crlf
+repo.cmd text eol=crlf
 
 # Python files use LF
 *.py text eol=lf

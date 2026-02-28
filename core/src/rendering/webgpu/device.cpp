@@ -5,16 +5,10 @@
 #include <core/scopeUtils.h>
 #include <spdlog/spdlog.h>
 
-#include <cstdio>
 #include <stdexcept>
-#include <string>
 #include <thread>
 
 #include "logging.h"
-
-#ifdef __EMSCRIPTEN__
-#include <emscripten/html5_webgpu.h>
-#endif
 
 namespace pts::webgpu {
 
@@ -103,11 +97,7 @@ auto Device::create_async(std::shared_ptr<spdlog::logger> logger) -> std::unique
         return device;
     }
 
-#ifdef __EMSCRIPTEN__
-    logger->debug("Using Emscripten/Browser WebGPU backend");
-#else
-    logger->debug("Using Dawn/Native WebGPU backend");
-#endif
+    logger->debug("Using Dawn WebGPU backend");
 
     auto device = std::make_unique<Device>(PrivateCtorTag{}, logger, std::move(init_state));
     device->start_adapter_request();
@@ -283,11 +273,7 @@ void Device::finish_initialization() {
 
     m_state = ReadyState{instance, device, queue};
 
-#ifdef __EMSCRIPTEN__
-    m_logger->info("WebGPU device created successfully (Emscripten/Browser backend)");
-#else
-    m_logger->info("WebGPU device created successfully (Dawn/Native backend)");
-#endif
+    m_logger->info("WebGPU device created successfully (Dawn backend)");
     m_logger->debug("Device lost and uncaptured error callbacks are registered");
 }
 
@@ -410,7 +396,8 @@ auto Device::create_shader_module_from_source(std::string_view wgsl_source) cons
     }
 
     WGPUShaderSourceWGSL wgsl_descriptor = WGPU_SHADER_SOURCE_WGSL_INIT;
-    wgsl_descriptor.code = WGPUStringView{wgsl_source.data(), wgsl_source.size()};
+    wgsl_descriptor.code.data = wgsl_source.data();
+    wgsl_descriptor.code.length = wgsl_source.size();
 
     WGPUShaderModuleDescriptor descriptor = {};
     descriptor.nextInChain = reinterpret_cast<WGPUChainedStruct*>(&wgsl_descriptor);

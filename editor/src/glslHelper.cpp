@@ -10,8 +10,8 @@
 
 namespace {
 template <typename GetResourceFn>
-auto try_get_embedded_res(GetResourceFn get_resource,
-                          std::string_view path) -> std::optional<std::string> {
+auto try_get_embedded_res(GetResourceFn get_resource, std::string_view path)
+    -> std::optional<std::string> {
     if (auto res = get_resource(path)) {
         return std::string{*res};
     }

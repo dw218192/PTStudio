@@ -78,7 +78,8 @@ auto RenderPipelineBuilder::build() const -> RenderPipeline {
     // Vertex state
     WGPUVertexState vertex_state = {};
     vertex_state.module = m_shader_module;
-    vertex_state.entryPoint = WGPUStringView{m_vertex_entry.c_str(), m_vertex_entry.size()};
+    vertex_state.entryPoint.data = m_vertex_entry.c_str();
+    vertex_state.entryPoint.length = m_vertex_entry.size();
     vertex_state.bufferCount = 0;
     vertex_state.buffers = nullptr;
 
@@ -91,7 +92,8 @@ auto RenderPipelineBuilder::build() const -> RenderPipeline {
     // Fragment state
     WGPUFragmentState fragment_state = {};
     fragment_state.module = m_shader_module;
-    fragment_state.entryPoint = WGPUStringView{m_fragment_entry.c_str(), m_fragment_entry.size()};
+    fragment_state.entryPoint.data = m_fragment_entry.c_str();
+    fragment_state.entryPoint.length = m_fragment_entry.size();
     fragment_state.targetCount = 1;
     fragment_state.targets = &color_target;
 

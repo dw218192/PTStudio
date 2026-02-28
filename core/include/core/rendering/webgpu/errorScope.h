@@ -1,9 +1,8 @@
 #pragma once
 
+#include <core/defines.h>
 #include <core/rendering/webgpu/webgpu.h>
 
-#include <chrono>
-#include <cstdint>
 #include <initializer_list>
 #include <string>
 #include <string_view>
@@ -44,7 +43,7 @@ inline auto error_type_name(WGPUErrorType type) -> const char* {
     }
 }
 
-/// RAII wrapper for WebGPU error scopes.
+/// RAII wrapper for WebGPU error scopes
 ///
 /// Supports nested error scopes via multiple filters. Filters are pushed in order,
 /// and popped in reverse order (LIFO). If any scope captures an error, it will be reported.
@@ -62,8 +61,8 @@ inline auto error_type_name(WGPUErrorType type) -> const char* {
 class ErrorScope {
    public:
     struct Result {
-        WGPUPopErrorScopeStatus status = WGPUPopErrorScopeStatus_Success;
         WGPUErrorType type = WGPUErrorType_NoError;
+        WGPUPopErrorScopeStatus status = WGPUPopErrorScopeStatus_Success;
         std::string message;
     };
 
@@ -94,5 +93,4 @@ class ErrorScope {
     std::size_t m_scope_count = 0;
     bool m_popped = false;
 };
-
 }  // namespace pts::webgpu

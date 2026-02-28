@@ -1,25 +1,24 @@
 """Resource embedding tool using Jinja2 templates."""
 
-import argparse
-import glob
+from __future__ import annotations
+
 import hashlib
 import json
 import os
 import re
-import sys
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
+from typing import Any
 
+import click
 from jinja2 import Template
 
-from repo_tools import (
-    RepoContext,
+from repo_tools.core import (
     RepoTool,
-    build_repo_context,
-    load_repo_config,
+    ToolContext,
+    glob_paths,
     logger,
-    print_tool,
     resolve_path,
 )
 
@@ -42,13 +41,6 @@ class ResourceData:
     delimiter: str = ""
     hex_data: str = ""
 
-
-def _expand_glob_paths(pattern: Path) -> list[Path]:
-    """Expand glob pattern to list of matching files."""
-    pattern_text = str(pattern)
-    if any(char in pattern_text for char in ("*", "?", "[")):
-        return sorted(Path(match) for match in glob.glob(pattern_text, recursive=True))
-    return [pattern]
 
 
 def _find_common_ancestor(paths: list[Path]) -> Path:
@@ -115,7 +107,7 @@ def _process_resource(input_file: Path, base_path: Path) -> ResourceData:
 
 
 def _compute_file_hash(path: Path) -> str:
-    """Compute MD5 hash of file contents."""
+    """Compute SHA-256 hash of file contents."""
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
@@ -170,11 +162,11 @@ def _generate_embedded_header(
 
 
 def _resolve_resource_groups(
-    root: Path, config: dict, context: RepoContext, args: argparse.Namespace
+    root: Path, config: dict, tokens: dict[str, str], args: dict[str, Any]
 ) -> list[dict]:
     """Resolve resource groups from config."""
     embed_config = config.get("embed", {})
-    resources = getattr(args, "resources", None)
+    resources = args.get("resources", None)
     if resources is None:
         resources = embed_config.get("resources", [])
 
@@ -197,8 +189,8 @@ def _resolve_resource_groups(
         # Expand all input patterns
         input_files: list[Path] = []
         for pattern in input_patterns:
-            input_pattern = resolve_path(root, str(pattern), context)
-            matched = [p for p in _expand_glob_paths(input_pattern) if p.is_file()]
+            input_pattern = resolve_path(root, str(pattern), tokens)
+            matched = [p for p in glob_paths(input_pattern) if p.is_file()]
             input_files.extend(matched)
 
         if not input_files:
@@ -213,7 +205,7 @@ def _resolve_resource_groups(
                 unique_files.append(f)
         input_files = unique_files
 
-        output_path = resolve_path(root, str(output_value), context)
+        output_path = resolve_path(root, str(output_value), tokens)
         base_path = _find_common_ancestor(input_files)
 
         resolved.append(
@@ -232,40 +224,35 @@ class EmbedTool(RepoTool):
     name = "embed"
     help = "Embed resources as C++ headers"
 
-    def setup(self, parser: argparse.ArgumentParser) -> None:
-        parser.add_argument(
-            "--build-type",
-            choices=["Debug", "Release", "RelWithDebInfo", "MinSizeRel"],
-            help="Build configuration type (default: Debug)",
-        )
-        parser.add_argument(
+    def setup(self, cmd: click.Command) -> click.Command:
+        cmd = click.option(
             "-f",
             "--force",
-            action="store_true",
+            is_flag=True,
+            default=None,
             help="Regenerate all resources even if up to date",
-        )
+        )(cmd)
+        return cmd
 
-    def default_args(self, context: RepoContext) -> argparse.Namespace:
-        return argparse.Namespace(
-            build_type=context["build_type"],
-            force=False,
-            passthrough_args=[],
-        )
+    def default_args(self, tokens: dict[str, str]) -> dict[str, Any]:
+        return {
+            "force": False,
+        }
 
-    def execute(self, args: argparse.Namespace) -> None:
+    def execute(self, ctx: ToolContext, args: dict[str, Any]) -> None:
         """Embed resources as C++ headers."""
-        root = Path(__file__).parent.parent.parent
-        config = load_repo_config(root)
-        context = build_repo_context(root, args.build_type, config)
+        root = ctx.workspace_root
+        config = ctx.config
+        tokens = ctx.tokens
 
-        resource_groups = _resolve_resource_groups(root, config, context, args)
+        resource_groups = _resolve_resource_groups(root, config, tokens, args)
         if not resource_groups:
             logger.info("No resources configured for embedding.")
             return
 
         # Get template path from args or config (required)
         embed_config = config.get("embed", {})
-        template_path_str = getattr(args, "template", None)
+        template_path_str = args.get("template", None)
         if template_path_str is None:
             template_path_str = embed_config.get("template")
         if not template_path_str:
@@ -277,7 +264,8 @@ class EmbedTool(RepoTool):
             raise FileNotFoundError(f"Template not found: {template_path}")
 
         # Centralize manifests in build directory
-        manifest_dir = Path(context["build_dir"]) / "embed"
+        build_dir = tokens["build_dir"]
+        manifest_dir = Path(build_dir) / "embed"
         manifest_dir.mkdir(parents=True, exist_ok=True)
 
         embedded = 0
@@ -296,7 +284,7 @@ class EmbedTool(RepoTool):
             )
             manifest_path = manifest_dir / manifest_name
             needs_regen, current_hashes = _needs_regeneration(
-                input_files, output_path, manifest_path, args.force
+                input_files, output_path, manifest_path, args.get("force", False)
             )
 
             if not needs_regen:
@@ -319,6 +307,6 @@ class EmbedTool(RepoTool):
             _save_manifest(manifest_path, {"hashes": current_hashes})
             embedded += 1
 
-        print_tool(f"embed generated {embedded} header(s)")
+        logger.info(f"embed generated {embedded} header(s)")
         if skipped:
-            print_tool(f"embed skipped {skipped} up-to-date header(s)")
+            logger.info(f"embed skipped {skipped} up-to-date header(s)")

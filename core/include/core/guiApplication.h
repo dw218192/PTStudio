@@ -2,28 +2,32 @@
 
 #include <core/application.h>
 #include <core/inputAction.h>
-#include <core/rendering/graph.h>
+#include <core/rendering/windowing.h>
 #include <core/signal.h>
 #include <imgui.h>
 
 #include <array>
 #include <bitset>
-#include <functional>
 #include <glm/glm.hpp>
 #include <optional>
 #include <string_view>
 #include <unordered_map>
-#include <vector>
 
 namespace pts {
 namespace rendering {
+class WebGpuContext;
 class IImguiRendering;
 class IImguiWindowing;
-class IRenderGraph;
 }  // namespace rendering
 
 /**
- * @brief GUI application with ImGui support. Extends Application with UI capabilities.
+ * @brief GUI application with windowing, WebGPU rendering, and ImGui support.
+ *
+ * Extends Application with a window, a WebGPU context bound to that window,
+ * and an ImGui rendering pipeline.
+ *
+ * Subclasses override loop() to issue ImGui draw calls and/or custom
+ * WebGPU rendering. Override run_one_frame() to bypass the ImGui frame.
  */
 struct GUIApplication : Application {
     // used to help detect if the mouse enters/leaves certain imgui windows
@@ -42,18 +46,9 @@ struct GUIApplication : Application {
     void run() override;
 
     void on_scroll_event(double x, double y) noexcept;
-    /**
-     * @brief Called every frame. Override to handle the main loop.
-     * @param dt the time since the last frame
-     */
-    virtual void loop(float dt) = 0;
 
-    [[nodiscard]] auto get_render_graph_api() const noexcept -> const PtsRenderGraphApi*;
-    [[nodiscard]] auto get_render_output_texture() const noexcept -> PtsTexture;
-    [[nodiscard]] auto get_render_output_imgui_id() const noexcept -> ImTextureID;
-    auto resize_render_output(uint32_t width, uint32_t height) -> void;
-    auto set_render_graph_current() -> void;
-    auto clear_render_graph_current() -> void;
+    [[nodiscard]] auto get_window_width() const noexcept -> int;
+    [[nodiscard]] auto get_window_height() const noexcept -> int;
 
    protected:
     virtual auto handle_input(InputEvent const& event) noexcept -> void {
@@ -72,7 +67,6 @@ struct GUIApplication : Application {
 
     // imgui helpers
     auto get_imgui_window_info(std::string_view name) noexcept -> ImGuiWindowInfo& {
-        // doesn't really care if the window exists or not
         return m_imgui_window_info[name];
     }
 
@@ -85,6 +79,45 @@ struct GUIApplication : Application {
         return m_min_frame_time;
     }
 
+    // Windowing / rendering accessors for subclasses
+    [[nodiscard]] auto get_webgpu_context() noexcept -> pts::rendering::WebGpuContext* {
+        return m_webgpu_context.get();
+    }
+    [[nodiscard]] auto get_webgpu_context() const noexcept -> const pts::rendering::WebGpuContext* {
+        return m_webgpu_context.get();
+    }
+
+    [[nodiscard]] auto get_windowing() noexcept -> pts::rendering::IWindowing* {
+        return m_windowing.get();
+    }
+    [[nodiscard]] auto get_windowing() const noexcept -> const pts::rendering::IWindowing* {
+        return m_windowing.get();
+    }
+
+    [[nodiscard]] auto get_viewport() noexcept -> pts::rendering::IViewport* {
+        return m_viewport.get();
+    }
+    [[nodiscard]] auto get_viewport() const noexcept -> const pts::rendering::IViewport* {
+        return m_viewport.get();
+    }
+
+    void on_framebuffer_resized() noexcept;
+
+    /**
+     * @brief Drive WebGPU async init forward. Returns true when the context is
+     *        ready and the frame should proceed; false if still initializing or
+     *        failed (caller should return early).
+     */
+    [[nodiscard]] bool ensure_webgpu_ready();
+
+    /**
+     * @brief Resize the WebGPU surface if the framebuffer was resized.
+     *
+     * Subclasses that override run_one_frame() should call this at the end
+     * of each frame to keep the surface in sync with the window size.
+     */
+    void handle_framebuffer_resize();
+
    protected:
     glm::vec2 m_mouse_scroll_delta;
     glm::vec2 m_mouse_pos;
@@ -94,7 +127,7 @@ struct GUIApplication : Application {
     std::array<std::string_view, ImGuiMouseButton_COUNT> m_mouse_initiated_window{};
     std::array<std::string_view, ImGuiKey_COUNT> m_key_initiated_window{};
 
-    float m_min_frame_time;
+    float m_min_frame_time{0.0f};
     std::unordered_map<std::string_view, ImGuiWindowInfo> m_imgui_window_info;
 
     std::string_view m_cur_hovered_widget, m_prev_hovered_widget;
@@ -102,11 +135,27 @@ struct GUIApplication : Application {
 
     static constexpr auto k_no_hovered_widget = "";
 
-    // Class invariants (enforced in constructor, throw on failure):
-    // - m_render_graph is always valid (non-null)
+    void run_one_frame() override;
+
+   private:
+    double m_last_frame_time{0.0};
+    bool m_first_loop_done{false};
+
+    // Windowing and rendering members
+    std::unique_ptr<pts::rendering::IWindowing> m_windowing;
+    std::unique_ptr<pts::rendering::IViewport> m_viewport;
+    std::unique_ptr<pts::rendering::WebGpuContext> m_webgpu_context;
+    bool m_framebuffer_resized{false};
+
+    // Class invariants:
+    // - m_windowing is always valid (non-null)
+    // - m_viewport is always valid (non-null)
+    // - m_webgpu_context is non-null; may be Initializing after construction,
+    //   guaranteed Ready before loop() is called (driven by run_one_frame())
     // - m_imgui_windowing is always valid (non-null)
-    // - m_imgui_rendering is always valid (non-null)
-    std::unique_ptr<pts::rendering::IRenderGraph> m_render_graph;
+    // - m_imgui_rendering is null until WebGPU context is ready;
+    //   guaranteed valid before loop() is called (created in run_one_frame)
+    void ensure_imgui_rendering();
     std::unique_ptr<pts::rendering::IImguiWindowing> m_imgui_windowing;
     std::unique_ptr<pts::rendering::IImguiRendering> m_imgui_rendering;
 };

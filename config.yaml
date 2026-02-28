@@ -1,15 +1,33 @@
-repo_paths:
-  build_root: "_build"
-  logs_root: "_logs"
-  conan_lock: "conan_glfw.lock"
-  conan_deps_root: "{build_root}/deps"
+repo:
+  tokens:
+    platform:
+      - windows-x64
+      - linux-x64
+      - emscripten
+    build_type:
+      - Debug
+      - Release
+      - RelWithDebInfo
+    build_root: {value: "{workspace_root}/_build", path: true}
+    logs_root: {value: "{workspace_root}/_logs", path: true}
+    build_dir: {value: "{build_root}/{platform}/{build_type}", path: true}
+    conan_deps_root: {value: "{build_root}/{platform}/deps", path: true}
+    package_dir: {value: "{workspace_root}/_package/{platform}", path: true}
+  extra_deps:
+    - conan==2.22.2
+    - cmake==3.31.1
+    - jinja2==3.1.6
+    - InquirerPy==0.3.4
 
 build:
   windowing: "glfw"
+  usd_modules:
+    - usdGeom
+    - usdShade
+    - usdLux
   prebuild:
     format: {}
     slangc:
-      compiler_search_roots: "{deps_root}/slang/*/*"
       shaders:
         - input: "assets/shaders/test/*.slang"
           output: "assets/shaders/test/*.wgsl"
@@ -27,30 +45,26 @@ build:
           namespace: "editor_resources"
         - input:
             - "assets/shaders/test/simple.wgsl"
+            - "assets/scenes/test_cube.usda"
           output: "core/tests/generated/embedded_test_resources.h"
           namespace: "test_resources"
   postbuild: {}
   conan:
-    local_recipes:
-      - name: "slang"
-        version: "2026.1"
-        path: "tools/conan/slang"
-      - name: "dawn"
-        version: "20250428.160623"
-        path: "tools/conan/dawn"
-      - name: "openusd"
-        version: "25.02"
-        path: "tools/conan/openusd"
-      - name: "imguizmo"
-        version: "1.92"
-        path: "tools/conan/imguizmo"
-      - name: "imgui_color_text_edit"
-        version: "1.0"
-        path: "tools/conan/imgui_color_text_edit"
+    local_recipes: "tools/conan"
 
-launch:
-  env:
-    PATH:
-      - "{deps_root}/openusd/*/{build_type}/*/lib"
-      - "{deps_root}/onetbb/*/{build_type}/*/bin"
-      - "{deps_root}/dawn/*/{build_type}/*/bin"
+package:
+  output_dir: "{package_dir}"
+  mappings:
+    - src: "{build_dir}/bin/**/*"
+      dest: "{build_type}/bin/"
+    - src: "{build_dir}/conanbuild*"
+      dest: "{build_type}/"
+    - src: "{conan_deps_root}/*.dll"
+      dest: "deps/"
+    - src: "{conan_deps_root}/usd/**/*"
+      dest: "deps/usd/"
+  mappings@emscripten:
+    - src: "{build_dir}/bin/**/*"
+      dest: "{build_type}/bin/"
+    - src: "{build_dir}/conanbuild*"
+      dest: "{build_type}/"

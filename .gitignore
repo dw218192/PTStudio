@@ -13,3 +13,14 @@ __pycache__/
 
 # Generated embedded resources
 **/generated/
+
+# repokit
+_tools/
+repo
+repo.cmd
+_agent/
+tools/pyproject.toml
+tools/uv.lock
+
+# User-local Claude settings
+.claude/settings.local.json

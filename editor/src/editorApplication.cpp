@@ -1,16 +1,10 @@
 #include "editorApplication.h"
 
-#include <core/imgui/fileDialogue.h>
-#include <core/imgui/imhelper.h>
-#include <core/loggingManager.h>
-#include <core/rendering/webgpu/device.h>
-#include <core/rendering/webgpuContext.h>
+#include <core/commandLine.h>
 #include <imgui_internal.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 
-#include <cstring>
 #include <filesystem>
-#include <glm/gtc/type_ptr.hpp>
 
 #include "editorResources.h"
 
@@ -24,11 +18,10 @@ static constexpr auto k_console_win_name = "Console";
 static constexpr auto k_console_log_buffer_size = 1024;
 
 EditorApplication::EditorApplication(std::string_view name, RenderConfig config,
-                                     AppConfig app_config, pts::LoggingManager& logging_manager,
+                                     pts::LoggingManager& logging_manager,
                                      pts::PluginManager& plugin_manager)
     : GUIApplication{name,         logging_manager, plugin_manager,
                      config.width, config.height,   config.min_frame_time},
-      m_app_config{app_config},
       m_config{config} {
     get_imgui_window_info(k_scene_view_win_name).on_enter_region.connect([this] {
         on_mouse_enter_scene_viewport();
@@ -42,13 +35,6 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config,
     m_console_log_sink =
         std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(k_console_log_buffer_size);
     get_logging_manager().add_sink(m_console_log_sink);
-
-    m_renderer_host_api.render_graph_api = get_render_graph_api();
-    m_renderer_host_api.render_world_api = nullptr;
-
-    if (m_app_config.quit_on_start && get_viewport()) {
-        get_viewport()->request_close();
-    }
 
     m_renderer_plugin = get_plugin_manager().get_plugin_instance("editor.renderer");
     if (m_renderer_plugin) {
@@ -64,6 +50,21 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config,
 }
 
 EditorApplication::~EditorApplication() {
+}
+
+void EditorApplication::register_args(CommandLine& cli) {
+    GUIApplication::register_args(cli);
+    cli.add_string("log-level", "Log level (trace, debug, info, warn, error, critical)");
+    cli.add_string("plugins-dir", "Search directory for plugins (relative to executable)");
+    cli.add_flag("quit-on-start", "Quit the application after starting, useful for testing");
+}
+
+void EditorApplication::process_args(const CommandLine& cli) {
+    GUIApplication::process_args(cli);
+    m_app_config.quit_on_start = cli.get_flag("quit-on-start");
+    if (m_app_config.quit_on_start && get_viewport()) {
+        get_viewport()->request_close();
+    }
 }
 
 auto EditorApplication::create_input_actions() noexcept -> void {
@@ -104,41 +105,6 @@ auto EditorApplication::on_begin_first_loop() -> void {
 auto EditorApplication::loop(float dt) -> void {
     ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(),
                                  ImGuiDockNodeFlags_PassthruCentralNode);
-    if (m_renderer_interface && m_renderer_interface->build_graph) {
-        PtsFrameParams frame{};
-        frame.frame_index = m_frame_index++;
-        frame.time_seconds = get_time();
-        frame.wall_time = get_time();
-
-        glm::mat4 view{1.0f};
-        glm::mat4 proj{1.0f};
-        auto view_proj = proj * view;
-
-        PtsViewParams view_params{};
-        std::memcpy(view_params.view, glm::value_ptr(view), sizeof(view_params.view));
-        std::memcpy(view_params.proj, glm::value_ptr(proj), sizeof(view_params.proj));
-        std::memcpy(view_params.view_proj, glm::value_ptr(view_proj),
-                    sizeof(view_params.view_proj));
-        std::memset(view_params.prev_view_proj, 0, sizeof(view_params.prev_view_proj));
-        view_params.camera_pos[0] = 0.0f;
-        view_params.camera_pos[1] = 0.0f;
-        view_params.camera_pos[2] = 0.0f;
-        view_params.jitter_xy[0] = 0.0f;
-        view_params.jitter_xy[1] = 0.0f;
-        view_params.dt_seconds = dt;
-        view_params.frame_index = static_cast<uint32_t>(frame.frame_index);
-        view_params.viewport_w = m_config.width;
-        view_params.viewport_h = m_config.height;
-        view_params.near_plane = 0.1f;
-        view_params.far_plane = 100000.0f;
-
-        PtsFrameIO io{};
-        io.output = get_render_output_texture();
-
-        set_render_graph_current();
-        m_renderer_interface->build_graph(&m_renderer_host_api, &frame, &view_params, &io);
-        clear_render_graph_current();
-    }
 
     if (begin_imgui_window(k_scene_setting_win_name, ImGuiWindowFlags_NoMove)) {
         draw_scene_panel();
@@ -199,12 +165,7 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
         last_size = view_size;
     }
 
-    auto output = get_render_output_imgui_id();
-    if (output) {
-        ImGui::Image(output, view_size);
-    } else {
-        ImGui::TextUnformatted("Renderer output not available");
-    }
+    ImGui::TextUnformatted("Renderer output not available");
 }
 
 auto EditorApplication::draw_console_panel() const noexcept -> void {
@@ -240,7 +201,6 @@ auto EditorApplication::draw_console_panel() const noexcept -> void {
 }
 
 auto EditorApplication::on_render_config_change(RenderConfig const& conf) -> void {
-    resize_render_output(conf.width, conf.height);
     if (m_renderer_interface && m_renderer_interface->on_resize) {
         m_renderer_interface->on_resize(conf.width, conf.height);
     }

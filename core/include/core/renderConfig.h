@@ -1,4 +1,6 @@
 #pragma once
+#include <cmath>
+
 namespace pts {
 struct RenderConfig {
     RenderConfig(unsigned width, unsigned height, float fovy, float max_fps)

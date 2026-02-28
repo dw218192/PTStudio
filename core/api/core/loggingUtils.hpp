@@ -79,8 +79,8 @@ class PluginLogger final {
     LoggerHandle m_logger = nullptr;
 };
 
-[[nodiscard]] inline auto make_logger(PtsHostApi* host_api,
-                                      const char* logger_name) noexcept -> PluginLogger {
+[[nodiscard]] inline auto make_logger(PtsHostApi* host_api, const char* logger_name) noexcept
+    -> PluginLogger {
     return PluginLogger(host_api, logger_name);
 }
 
