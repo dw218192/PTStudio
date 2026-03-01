@@ -150,7 +150,7 @@ def _run_executable(
     if is_emscripten and not capture_output:
         html_path = exe_path.with_suffix(".html") if exe_path.suffix.lower() != ".html" else exe_path
         logger.info(f"Launching {html_path.name} with emrun")
-        cmd = [sys.executable, "emrun", str(html_path)] + args
+        cmd = ["emrun", "--kill_exit", str(html_path)] + args
     elif is_emscripten:
         js_path = exe_path.with_suffix(".js") if exe_path.suffix.lower() == ".html" else exe_path
         logger.info(f"Running {js_path.name} with Node.js")

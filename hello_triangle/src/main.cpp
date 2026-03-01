@@ -82,20 +82,17 @@ class HelloApp : public pts::GUIApplication {
         auto const& device = get_webgpu_context()->device();
 
         // Create command encoder
-        WGPUCommandEncoderDescriptor enc_desc{};
+        WGPUCommandEncoderDescriptor enc_desc = WGPU_COMMAND_ENCODER_DESCRIPTOR_INIT;
         WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device.handle(), &enc_desc);
 
         // Begin render pass
-        WGPURenderPassColorAttachment color_attachment{};
+        WGPURenderPassColorAttachment color_attachment = WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
         color_attachment.view = view;
         color_attachment.loadOp = WGPULoadOp_Clear;
         color_attachment.storeOp = WGPUStoreOp_Store;
         color_attachment.clearValue = WGPUColor{0.1, 0.1, 0.1, 1.0};
-#ifndef __EMSCRIPTEN__
-        color_attachment.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
-#endif
 
-        WGPURenderPassDescriptor pass_desc{};
+        WGPURenderPassDescriptor pass_desc = WGPU_RENDER_PASS_DESCRIPTOR_INIT;
         pass_desc.colorAttachmentCount = 1;
         pass_desc.colorAttachments = &color_attachment;
 
@@ -106,7 +103,7 @@ class HelloApp : public pts::GUIApplication {
         wgpuRenderPassEncoderRelease(pass);
 
         // Submit
-        WGPUCommandBufferDescriptor cmd_desc{};
+        WGPUCommandBufferDescriptor cmd_desc = WGPU_COMMAND_BUFFER_DESCRIPTOR_INIT;
         WGPUCommandBuffer cmd = wgpuCommandEncoderFinish(encoder, &cmd_desc);
         wgpuQueueSubmit(device.queue(), 1, &cmd);
         wgpuCommandBufferRelease(cmd);
