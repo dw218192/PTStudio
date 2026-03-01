@@ -52,6 +52,10 @@ build:
   conan:
     local_recipes: "tools/conan"
 
+publish:
+  output_dir: "{workspace_root}/_deploy"
+  input_dir: "{package_dir}/{build_type}/bin"
+
 package:
   output_dir: "{package_dir}"
   mappings:

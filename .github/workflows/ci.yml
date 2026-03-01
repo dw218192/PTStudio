@@ -168,3 +168,53 @@ jobs:
           name: test-results-${{ matrix.platform }}-${{ matrix.build_type }}
           path: _logs/
           retention-days: 3
+
+  # =============================================================================
+  # Deploy to GitHub Pages (develop branch only)
+  # =============================================================================
+
+  deploy-pages:
+    name: Deploy to GitHub Pages
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/develop') || github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Bootstrap build environment
+        run: bash tools/framework/bootstrap.sh
+
+      - name: Download emscripten Release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-emscripten-Release
+          path: _package/emscripten/
+
+      - name: Publish site
+        run: ./repo publish --platform emscripten --build-type Release
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _deploy
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
