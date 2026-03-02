@@ -1,22 +1,22 @@
 #include <core/commandLine.h>
 
-#if PTS_ENABLE_PROGRAM_OPTIONS
-
-#include <boost/program_options.hpp>
+#include <cxxopts.hpp>
 #include <iostream>
 #include <stdexcept>
-
-namespace po = boost::program_options;
 
 namespace pts {
 
 struct CommandLine::Impl {
-    po::options_description desc{"Options"};
-    po::variables_map vm;
+    cxxopts::Options options{"app", ""};
+    std::optional<cxxopts::ParseResult> result;
+
+    Impl() {
+        options.allow_unrecognised_options();
+    }
 };
 
 CommandLine::CommandLine() : m_impl(std::make_unique<Impl>()) {
-    m_impl->desc.add_options()("help,h", "produce help message");
+    m_impl->options.add_options()("h,help", "produce help message");
 }
 
 CommandLine::~CommandLine() = default;
@@ -24,7 +24,8 @@ CommandLine::~CommandLine() = default;
 void CommandLine::add_flag(std::string_view name, std::string_view description) {
     std::string n(name);
     std::string d(description);
-    m_impl->desc.add_options()(n.c_str(), po::bool_switch(), d.c_str());
+    m_impl->options.add_options()(
+        n, d, cxxopts::value<bool>()->default_value("false")->implicit_value("true"));
 }
 
 void CommandLine::add_string(std::string_view name, std::string_view description,
@@ -32,10 +33,10 @@ void CommandLine::add_string(std::string_view name, std::string_view description
     std::string n(name);
     std::string d(description);
     if (default_value) {
-        m_impl->desc.add_options()(
-            n.c_str(), po::value<std::string>()->default_value(*default_value), d.c_str());
+        m_impl->options.add_options()(n, d,
+                                      cxxopts::value<std::string>()->default_value(*default_value));
     } else {
-        m_impl->desc.add_options()(n.c_str(), po::value<std::string>(), d.c_str());
+        m_impl->options.add_options()(n, d, cxxopts::value<std::string>());
     }
 }
 
@@ -44,26 +45,18 @@ void CommandLine::add_int(std::string_view name, std::string_view description,
     std::string n(name);
     std::string d(description);
     if (default_value) {
-        m_impl->desc.add_options()(n.c_str(), po::value<int>()->default_value(*default_value),
-                                   d.c_str());
+        m_impl->options.add_options()(
+            n, d, cxxopts::value<int>()->default_value(std::to_string(*default_value)));
     } else {
-        m_impl->desc.add_options()(n.c_str(), po::value<int>(), d.c_str());
+        m_impl->options.add_options()(n, d, cxxopts::value<int>());
     }
 }
 
 auto CommandLine::parse(int argc, char* argv[]) -> bool {
     try {
-        auto parsed = po::command_line_parser(argc, argv)
-                          .options(m_impl->desc)
-                          .style(po::command_line_style::default_style &
-                                 ~po::command_line_style::allow_guessing)
-                          .allow_unregistered()
-                          .run();
+        auto result = m_impl->options.parse(argc, argv);
 
-        po::store(parsed, m_impl->vm);
-        po::notify(m_impl->vm);
-
-        auto unknown = po::collect_unrecognized(parsed.options, po::include_positional);
+        auto unknown = result.unmatched();
         if (!unknown.empty()) {
             std::cerr << "Ignoring unknown arguments:";
             for (const auto& arg : unknown) {
@@ -72,11 +65,13 @@ auto CommandLine::parse(int argc, char* argv[]) -> bool {
             std::cerr << std::endl;
         }
 
-        if (m_impl->vm.count("help")) {
-            std::cout << m_impl->desc << std::endl;
+        if (result.count("help")) {
+            std::cout << m_impl->options.help() << std::endl;
+            m_impl->result.emplace(std::move(result));
             return false;
         }
 
+        m_impl->result.emplace(std::move(result));
         return true;
     } catch (const std::exception& e) {
         throw std::runtime_error(std::string("Error parsing command line arguments: ") + e.what());
@@ -84,66 +79,40 @@ auto CommandLine::parse(int argc, char* argv[]) -> bool {
 }
 
 auto CommandLine::get_flag(std::string_view name) const -> bool {
-    std::string key(name);
-    if (m_impl->vm.count(key)) {
-        return m_impl->vm[key].as<bool>();
+    if (!m_impl->result) return false;
+    try {
+        return (*m_impl->result)[std::string(name)].as<bool>();
+    } catch (...) {
+        return false;
     }
-    return false;
 }
 
 auto CommandLine::get_string(std::string_view name, std::string_view default_value) const
     -> std::string {
-    std::string key(name);
-    if (m_impl->vm.count(key)) {
-        return m_impl->vm[key].as<std::string>();
+    if (!m_impl->result) return std::string(default_value);
+    try {
+        return (*m_impl->result)[std::string(name)].as<std::string>();
+    } catch (...) {
+        return std::string(default_value);
     }
-    return std::string(default_value);
 }
 
 auto CommandLine::get_int(std::string_view name, int default_value) const -> int {
-    std::string key(name);
-    if (m_impl->vm.count(key)) {
-        return m_impl->vm[key].as<int>();
+    if (!m_impl->result) return default_value;
+    try {
+        return (*m_impl->result)[std::string(name)].as<int>();
+    } catch (...) {
+        return default_value;
     }
-    return default_value;
 }
 
 auto CommandLine::has(std::string_view name) const -> bool {
-    auto it = m_impl->vm.find(std::string(name));
-    return it != m_impl->vm.end() && !it->second.defaulted();
+    if (!m_impl->result) return false;
+    try {
+        return m_impl->result->count(std::string(name)) > 0;
+    } catch (...) {
+        return false;
+    }
 }
 
 }  // namespace pts
-
-#else  // Stubs for Emscripten (no command line in browser)
-
-namespace pts {
-
-CommandLine::CommandLine() = default;
-CommandLine::~CommandLine() = default;
-void CommandLine::add_flag(std::string_view, std::string_view) {
-}
-void CommandLine::add_string(std::string_view, std::string_view, std::optional<std::string>) {
-}
-void CommandLine::add_int(std::string_view, std::string_view, std::optional<int>) {
-}
-auto CommandLine::parse(int, char*[]) -> bool {
-    return true;
-}
-auto CommandLine::get_flag(std::string_view) const -> bool {
-    return false;
-}
-auto CommandLine::get_string(std::string_view, std::string_view default_value) const
-    -> std::string {
-    return std::string(default_value);
-}
-auto CommandLine::get_int(std::string_view, int default_value) const -> int {
-    return default_value;
-}
-auto CommandLine::has(std::string_view) const -> bool {
-    return false;
-}
-
-}  // namespace pts
-
-#endif

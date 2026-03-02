@@ -77,8 +77,9 @@ find_package(nlohmann_json REQUIRED)
 if(EMSCRIPTEN)
     find_package(Boost REQUIRED)
 else()
-    find_package(Boost REQUIRED COMPONENTS filesystem program_options stacktrace stacktrace_from_exception)
+    find_package(Boost REQUIRED COMPONENTS filesystem stacktrace stacktrace_from_exception)
 endif()
+find_package(cxxopts REQUIRED)
 find_package(openusd CONFIG REQUIRED)
 
 # Optional USD schema modules (beyond the always-linked usd_usd core).

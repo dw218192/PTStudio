@@ -109,12 +109,11 @@ endforeach()
 if (NOT EMSCRIPTEN)
 	target_link_libraries(${lib_name}
 		PRIVATE portable-file-dialogs::portable-file-dialogs
-		PUBLIC dawn::webgpu_dawn Boost::filesystem Boost::program_options
+		PUBLIC dawn::webgpu_dawn Boost::filesystem cxxopts::cxxopts
 		       Boost::stacktrace Boost::stacktrace_from_exception
 	)
 else()
-	# Use header-only Boost for Emscripten (filesystem not available)
-	target_link_libraries(${lib_name} PUBLIC wasm_flags Boost::boost)
+	target_link_libraries(${lib_name} PUBLIC wasm_flags Boost::boost cxxopts::cxxopts)
 endif()
 
 if(PTS_WINDOWING STREQUAL "glfw")

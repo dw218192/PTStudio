@@ -67,9 +67,9 @@ ninja/1.13.2
 tools.cmake.cmaketoolchain:generator=Ninja
 tools.cmake.cmake_layout:build_folder_vars=["settings.os"]
 tools.build:cflags=['-pthread']
-tools.build:cxxflags=['-pthread', '-DTBB_USE_ASSERT=0', '-fexceptions']
-tools.build:exelinkflags=['-pthread', '-sALLOW_MEMORY_GROWTH=1', '-sMAXIMUM_MEMORY=4GB', '-sINITIAL_MEMORY=512MB']
-tools.build:sharedlinkflags=['-pthread', '-sALLOW_MEMORY_GROWTH=1', '-sMAXIMUM_MEMORY=4GB', '-sINITIAL_MEMORY=512MB']
+tools.build:cxxflags=['-pthread', '-fexceptions']
+tools.build:exelinkflags=['-pthread', '-fexceptions', '-sALLOW_MEMORY_GROWTH=1', '-sMAXIMUM_MEMORY=4GB', '-sINITIAL_MEMORY=512MB']
+tools.build:sharedlinkflags=['-pthread', '-fexceptions', '-sALLOW_MEMORY_GROWTH=1', '-sMAXIMUM_MEMORY=4GB', '-sINITIAL_MEMORY=512MB']
 """
     profile_path.parent.mkdir(parents=True, exist_ok=True)
     profile_path.write_text(content, encoding="utf-8")
