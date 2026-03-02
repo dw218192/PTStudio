@@ -2,6 +2,7 @@
 
 #include <cxxopts.hpp>
 #include <iostream>
+#include <set>
 #include <stdexcept>
 
 namespace pts {
@@ -9,6 +10,8 @@ namespace pts {
 struct CommandLine::Impl {
     cxxopts::Options options{"app", ""};
     std::optional<cxxopts::ParseResult> result;
+    std::set<std::string> registered;   // all registered option names
+    std::set<std::string> has_default;  // options registered with a default value
 
     Impl() {
         options.allow_unrecognised_options();
@@ -24,6 +27,8 @@ CommandLine::~CommandLine() = default;
 void CommandLine::add_flag(std::string_view name, std::string_view description) {
     std::string n(name);
     std::string d(description);
+    m_impl->registered.insert(n);
+    m_impl->has_default.insert(n);
     m_impl->options.add_options()(
         n, d, cxxopts::value<bool>()->default_value("false")->implicit_value("true"));
 }
@@ -32,7 +37,9 @@ void CommandLine::add_string(std::string_view name, std::string_view description
                              std::optional<std::string> default_value) {
     std::string n(name);
     std::string d(description);
+    m_impl->registered.insert(n);
     if (default_value) {
+        m_impl->has_default.insert(n);
         m_impl->options.add_options()(n, d,
                                       cxxopts::value<std::string>()->default_value(*default_value));
     } else {
@@ -44,7 +51,9 @@ void CommandLine::add_int(std::string_view name, std::string_view description,
                           std::optional<int> default_value) {
     std::string n(name);
     std::string d(description);
+    m_impl->registered.insert(n);
     if (default_value) {
+        m_impl->has_default.insert(n);
         m_impl->options.add_options()(
             n, d, cxxopts::value<int>()->default_value(std::to_string(*default_value)));
     } else {
@@ -79,40 +88,37 @@ auto CommandLine::parse(int argc, char* argv[]) -> bool {
 }
 
 auto CommandLine::get_flag(std::string_view name) const -> bool {
-    if (!m_impl->result) return false;
-    try {
-        return (*m_impl->result)[std::string(name)].as<bool>();
-    } catch (...) {
-        return false;
-    }
+    std::string key(name);
+    if (!m_impl->result || !m_impl->registered.count(key)) return false;
+    // Flags always have a registered default ("false"), so as<bool>() never throws.
+    return (*m_impl->result)[key].as<bool>();
 }
 
 auto CommandLine::get_string(std::string_view name, std::string_view default_value) const
     -> std::string {
-    if (!m_impl->result) return std::string(default_value);
-    try {
-        return (*m_impl->result)[std::string(name)].as<std::string>();
-    } catch (...) {
+    std::string key(name);
+    if (!m_impl->result || !m_impl->registered.count(key)) return std::string(default_value);
+    // Explicitly provided OR has a registered default → as<T>() returns the value.
+    // Not provided AND no registered default → return call-site default.
+    if (m_impl->result->count(key) == 0 && !m_impl->has_default.count(key)) {
         return std::string(default_value);
     }
+    return (*m_impl->result)[key].as<std::string>();
 }
 
 auto CommandLine::get_int(std::string_view name, int default_value) const -> int {
-    if (!m_impl->result) return default_value;
-    try {
-        return (*m_impl->result)[std::string(name)].as<int>();
-    } catch (...) {
+    std::string key(name);
+    if (!m_impl->result || !m_impl->registered.count(key)) return default_value;
+    if (m_impl->result->count(key) == 0 && !m_impl->has_default.count(key)) {
         return default_value;
     }
+    return (*m_impl->result)[key].as<int>();
 }
 
 auto CommandLine::has(std::string_view name) const -> bool {
-    if (!m_impl->result) return false;
-    try {
-        return m_impl->result->count(std::string(name)) > 0;
-    } catch (...) {
-        return false;
-    }
+    std::string key(name);
+    if (!m_impl->result || !m_impl->registered.count(key)) return false;
+    return m_impl->result->count(key) > 0;
 }
 
 }  // namespace pts
