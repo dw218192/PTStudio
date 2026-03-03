@@ -47,6 +47,11 @@ jobs:
       matrix:
         platform: [windows-x64, emscripten]
         build_type: [Debug, Release]
+        exclude:
+          # Emscripten Debug builds produce huge binaries (>1 GB) and are too
+          # slow for CI.  Only Release is built for WASM.
+          - platform: emscripten
+            build_type: Debug
         include:
           - platform: windows-x64
             os: windows-latest
@@ -122,6 +127,9 @@ jobs:
       matrix:
         platform: [windows-x64, emscripten]
         build_type: [Debug, Release]
+        exclude:
+          - platform: emscripten
+            build_type: Debug
         include:
           - platform: windows-x64
             os: windows-latest
