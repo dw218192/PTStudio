@@ -191,7 +191,11 @@ class _WasmHandler(http.server.SimpleHTTPRequestHandler):
 
         if data.startswith("^exit^"):
             code_str = data[6:]
-            _WasmHandler.page_exit_code = int(code_str) if code_str else 0
+            try:
+                _WasmHandler.page_exit_code = int(code_str) if code_str else 0
+            except ValueError:
+                logger.warning(f"Malformed exit code: {code_str!r}")
+                _WasmHandler.page_exit_code = 1
             self.send_response(200)
             self.end_headers()
             if _WasmHandler.server_ref:
@@ -200,7 +204,7 @@ class _WasmHandler(http.server.SimpleHTTPRequestHandler):
                 ).start()
             return
 
-        if data.startswith("^out^") or data.startswith("^err^"):
+        if data.startswith(("^out^", "^err^")):
             # Format: ^out^SEQ^message or ^err^SEQ^message
             try:
                 i = data.index("^", 5)
@@ -226,22 +230,22 @@ class _WasmHandler(http.server.SimpleHTTPRequestHandler):
         pass
 
 
-def _serve_emscripten(
-    html_path: Path,
-    args: list[str],
-    build_dir: Path,
-) -> subprocess.CompletedProcess:
+def _serve_emscripten(html_path: Path) -> subprocess.CompletedProcess:
     """Serve an Emscripten build and open a tracked browser process.
 
-    Uses a built-in HTTP server instead of emrun (which returns
-    ERR_EMPTY_RESPONSE on some platforms).  Handles the ``--emrun`` POST
-    protocol so stdout/stderr from the WASM page appear in the terminal.
+    Uses a built-in HTTP server with COOP/COEP headers and handles the
+    ``--emrun`` POST protocol so stdout/stderr from the WASM page appear
+    in the terminal.
     """
     serve_dir = str(html_path.parent)
     port = 6931
 
     handler = lambda *a, **kw: _WasmHandler(*a, directory=serve_dir, **kw)
-    server = http.server.ThreadingHTTPServer(("localhost", port), handler)
+    try:
+        server = http.server.ThreadingHTTPServer(("localhost", port), handler)
+    except OSError as e:
+        logger.error(f"Port {port} already in use: {e}")
+        sys.exit(1)
     _WasmHandler.page_exit_code = None
     _WasmHandler.server_ref = server
 
@@ -264,7 +268,7 @@ def _serve_emscripten(
         # can track.  Firefox: -no-remote -profile does the same.
         temp_profile = tempfile.mkdtemp(prefix="ptstudio_browser_")
         if "firefox" in browser_name:
-            browser_args = ["-no-remote", "-profile", temp_profile]
+            browser_args = ["-no-remote", "-profile", temp_profile, "-new-window"]
         else:
             browser_args = [f"--user-data-dir={temp_profile}"] + browser_args
 
@@ -312,8 +316,8 @@ def _run_executable(
     build) and falls back to the runtime_deploy directory (flat DLL copy for
     CI test jobs where conan install wasn't run).
 
-    For Emscripten builds, uses emrun (browser-based) for interactive launches
-    and Node.js for headless/captured output (tests).
+    For Emscripten builds, serves via a built-in HTTP server for interactive
+    launches, and uses Node.js for headless/captured output (tests).
     """
     build_dir = Path(context["build_dir"])
     is_emscripten = exe_path.suffix.lower() in (".js", ".html")
@@ -321,8 +325,8 @@ def _run_executable(
     # Interactive Emscripten launch — bypass batch wrapping entirely
     if is_emscripten and not capture_output:
         html_path = exe_path.with_suffix(".html") if exe_path.suffix.lower() != ".html" else exe_path
-        logger.info(f"Launching {html_path.name} with emrun")
-        return _serve_emscripten(html_path, args, build_dir)
+        logger.info(f"Launching {html_path.name} in browser")
+        return _serve_emscripten(html_path)
 
     # All other paths: use ShellCommand with env_script
     env_script: Path | None = None

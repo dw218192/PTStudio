@@ -175,8 +175,8 @@ jobs:
 
   deploy-pages:
     name: Deploy to GitHub Pages
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/develop') || github.event_name == 'workflow_dispatch'
-    needs: build
+    if: github.ref == 'refs/heads/develop' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs: [build, test]
     runs-on: ubuntu-latest
     permissions:
       pages: write

@@ -7,6 +7,7 @@
 #include <core/rendering/webgpuContext.h>
 
 #include <cstdio>
+#include <exception>
 #include <optional>
 
 #if defined(__EMSCRIPTEN__)
