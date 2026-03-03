@@ -185,7 +185,7 @@ def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> 
         except PermissionError:
             logger.warning(
                 f"Could not fully remove {build_dir} (files locked by another process). "
-                "Continuing with --build=* to force dependency rebuild."
+                "Continuing; dependency rebuild will be driven by host packages from the lock file."
             )
 
     # Create build directory if missing

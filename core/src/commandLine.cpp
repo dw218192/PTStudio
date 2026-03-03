@@ -1,9 +1,10 @@
 #include <core/commandLine.h>
 
-#include <cxxopts.hpp>
 #include <iostream>
 #include <set>
 #include <stdexcept>
+
+#include <cxxopts.hpp>
 
 namespace pts {
 

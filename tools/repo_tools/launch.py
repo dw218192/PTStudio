@@ -147,11 +147,14 @@ def _find_browser() -> tuple[Path, list[str]] | None:
         ]:
             search.append((d / "msedge.exe", _chromium_args))
         # Chrome
-        for d in [
-            Path(localappdata) / "Google/Chrome/Application" if localappdata else Path("."),
+        chrome_dirs: list[Path] = []
+        if localappdata:
+            chrome_dirs.append(Path(localappdata) / "Google/Chrome/Application")
+        chrome_dirs.extend([
             Path("C:/Program Files/Google/Chrome/Application"),
             Path("C:/Program Files (x86)/Google/Chrome/Application"),
-        ]:
+        ])
+        for d in chrome_dirs:
             search.append((d / "chrome.exe", _chromium_args))
         for exe, args in search:
             if exe.exists():
@@ -240,9 +243,10 @@ def _serve_emscripten(html_path: Path) -> subprocess.CompletedProcess:
     serve_dir = str(html_path.parent)
     port = 6931
 
-    handler = lambda *a, **kw: _WasmHandler(*a, directory=serve_dir, **kw)
+    def make_handler(*a: Any, **kw: Any) -> _WasmHandler:
+        return _WasmHandler(*a, directory=serve_dir, **kw)
     try:
-        server = http.server.ThreadingHTTPServer(("localhost", port), handler)
+        server = http.server.ThreadingHTTPServer(("localhost", port), make_handler)
     except OSError as e:
         logger.error(f"Port {port} already in use: {e}")
         sys.exit(1)
