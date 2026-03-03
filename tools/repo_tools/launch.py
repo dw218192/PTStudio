@@ -188,7 +188,12 @@ class _WasmHandler(http.server.SimpleHTTPRequestHandler):
         super().end_headers()
 
     def do_POST(self) -> None:  # noqa: N802
-        length = int(self.headers.get("Content-Length", 0))
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            self.send_response(400)
+            self.end_headers()
+            return
         data = self.rfile.read(length).decode("utf-8", errors="replace")
         data = unquote(data.replace("+", " "))
 
@@ -249,7 +254,7 @@ def _serve_emscripten(html_path: Path) -> subprocess.CompletedProcess:
         server = http.server.ThreadingHTTPServer(("localhost", port), make_handler)
     except OSError as e:
         logger.error(f"Port {port} already in use: {e}")
-        sys.exit(1)
+        return subprocess.CompletedProcess(args=[str(html_path)], returncode=1)
     _WasmHandler.page_exit_code = None
     _WasmHandler.server_ref = server
 
@@ -277,9 +282,12 @@ def _serve_emscripten(html_path: Path) -> subprocess.CompletedProcess:
             browser_args = [f"--user-data-dir={temp_profile}"] + browser_args
 
         logger.info(f"Opening {url} in {browser_exe.name}")
-        browser_proc = subprocess.Popen(
-            [str(browser_exe)] + browser_args + [url],
-        )
+        try:
+            browser_proc = subprocess.Popen(
+                [str(browser_exe), *browser_args, url],
+            )
+        except OSError as e:
+            logger.error(f"Failed to launch {browser_exe.name}: {e}")
     else:
         logger.info(f"Opening {url} in default browser (process not tracked)")
         webbrowser.open(url)
@@ -298,14 +306,18 @@ def _serve_emscripten(html_path: Path) -> subprocess.CompletedProcess:
         if browser_proc is not None and browser_proc.poll() is None:
             browser_proc.terminate()
     finally:
+        if server_thread.is_alive():
+            server.shutdown()
         server_thread.join(timeout=3)
+        server.server_close()
+        _WasmHandler.server_ref = None
         if temp_profile:
             shutil.rmtree(temp_profile, ignore_errors=True)
 
     if _WasmHandler.page_exit_code is not None:
         exit_code = _WasmHandler.page_exit_code
 
-    return subprocess.CompletedProcess(args=[], returncode=exit_code)
+    return subprocess.CompletedProcess(args=[str(html_path)], returncode=exit_code)
 
 
 def _run_executable(
