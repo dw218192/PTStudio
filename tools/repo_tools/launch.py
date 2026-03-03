@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
+import http.server
 import os
 import shutil
 import subprocess
 import sys
+import tempfile
+import threading
+import time
+import webbrowser
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 import click
 
+from repo_tools.build.conan import load_conan_env
 from repo_tools.core import (
     RepoTool,
     ShellCommand,
@@ -114,6 +121,185 @@ def _resolve_env_script(build_dir: Path, is_emscripten: bool) -> Path | None:
     return resolved if resolved.exists() else None
 
 
+
+def _find_browser() -> tuple[Path, list[str]] | None:
+    """Find a browser executable and return (path, isolation_args).
+
+    Isolation args prevent the browser from reusing an existing process so the
+    launched process is trackable (we can detect when the window closes).
+    """
+    _chromium_args = [
+        "--new-window",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-sync",
+        "--disable-extensions",
+        "--disable-background-networking",
+    ]
+
+    if is_windows():
+        localappdata = os.environ.get("LOCALAPPDATA", "")
+        search: list[tuple[Path, list[str]]] = []
+        # Edge (always on Windows 10+)
+        for d in [
+            Path("C:/Program Files (x86)/Microsoft/Edge/Application"),
+            Path("C:/Program Files/Microsoft/Edge/Application"),
+        ]:
+            search.append((d / "msedge.exe", _chromium_args))
+        # Chrome
+        for d in [
+            Path(localappdata) / "Google/Chrome/Application" if localappdata else Path("."),
+            Path("C:/Program Files/Google/Chrome/Application"),
+            Path("C:/Program Files (x86)/Google/Chrome/Application"),
+        ]:
+            search.append((d / "chrome.exe", _chromium_args))
+        for exe, args in search:
+            if exe.exists():
+                return exe, args
+    else:
+        for name in ["google-chrome", "chromium-browser", "chromium", "firefox"]:
+            which = shutil.which(name)
+            if which:
+                if "firefox" in name:
+                    return Path(which), ["-new-window"]
+                return Path(which), _chromium_args
+
+    return None
+
+
+class _WasmHandler(http.server.SimpleHTTPRequestHandler):
+    """HTTP handler for Emscripten builds.
+
+    Serves static files with COOP/COEP headers (required for
+    SharedArrayBuffer / -pthread) and handles the ``--emrun`` POST protocol
+    that forwards stdout/stderr from the browser to the terminal.
+    """
+
+    # Set by _serve_emscripten before the server starts.
+    page_exit_code: int | None = None
+    server_ref: http.server.HTTPServer | None = None
+
+    def end_headers(self) -> None:
+        self.send_header("Cross-Origin-Opener-Policy", "same-origin")
+        self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
+        super().end_headers()
+
+    def do_POST(self) -> None:  # noqa: N802
+        length = int(self.headers.get("Content-Length", 0))
+        data = self.rfile.read(length).decode("utf-8", errors="replace")
+        data = unquote(data.replace("+", " "))
+
+        if data.startswith("^exit^"):
+            code_str = data[6:]
+            _WasmHandler.page_exit_code = int(code_str) if code_str else 0
+            self.send_response(200)
+            self.end_headers()
+            if _WasmHandler.server_ref:
+                threading.Thread(
+                    target=_WasmHandler.server_ref.shutdown, daemon=True,
+                ).start()
+            return
+
+        if data.startswith("^out^") or data.startswith("^err^"):
+            # Format: ^out^SEQ^message or ^err^SEQ^message
+            try:
+                i = data.index("^", 5)
+                msg = data[i + 1:]
+            except ValueError:
+                msg = data[5:]
+            stream = sys.stderr if data.startswith("^err^") else sys.stdout
+            stream.write(msg)
+            if not msg.endswith("\n"):
+                stream.write("\n")
+            stream.flush()
+
+        self.send_response(200)
+        self.end_headers()
+
+    def guess_type(self, path: str) -> str:
+        if path.endswith(".wasm"):
+            return "application/wasm"
+        return super().guess_type(path)
+
+    def log_message(self, format: str, *args: Any) -> None:
+        # Suppress request-level noise; errors still go to stderr via log_error.
+        pass
+
+
+def _serve_emscripten(
+    html_path: Path,
+    args: list[str],
+    build_dir: Path,
+) -> subprocess.CompletedProcess:
+    """Serve an Emscripten build and open a tracked browser process.
+
+    Uses a built-in HTTP server instead of emrun (which returns
+    ERR_EMPTY_RESPONSE on some platforms).  Handles the ``--emrun`` POST
+    protocol so stdout/stderr from the WASM page appear in the terminal.
+    """
+    serve_dir = str(html_path.parent)
+    port = 6931
+
+    handler = lambda *a, **kw: _WasmHandler(*a, directory=serve_dir, **kw)
+    server = http.server.ThreadingHTTPServer(("localhost", port), handler)
+    _WasmHandler.page_exit_code = None
+    _WasmHandler.server_ref = server
+
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+
+    url = f"http://localhost:{port}/{html_path.name}"
+    logger.info(f"Serving {serve_dir} at http://localhost:{port}/")
+
+    # Launch browser with isolation flags for process tracking.
+    browser_proc: subprocess.Popen | None = None
+    temp_profile: str | None = None
+    browser_info = _find_browser()
+
+    if browser_info:
+        browser_exe, browser_args = browser_info
+        browser_name = browser_exe.stem.lower()
+
+        # Chromium: --user-data-dir forces a new instance whose lifetime we
+        # can track.  Firefox: -no-remote -profile does the same.
+        temp_profile = tempfile.mkdtemp(prefix="ptstudio_browser_")
+        if "firefox" in browser_name:
+            browser_args = ["-no-remote", "-profile", temp_profile]
+        else:
+            browser_args = [f"--user-data-dir={temp_profile}"] + browser_args
+
+        logger.info(f"Opening {url} in {browser_exe.name}")
+        browser_proc = subprocess.Popen(
+            [str(browser_exe)] + browser_args + [url],
+        )
+    else:
+        logger.info(f"Opening {url} in default browser (process not tracked)")
+        webbrowser.open(url)
+
+    # Wait until browser closes, page calls exit(), or Ctrl+C.
+    exit_code = 0
+    try:
+        while server_thread.is_alive():
+            if browser_proc is not None and browser_proc.poll() is not None:
+                logger.info("Browser closed, shutting down server")
+                server.shutdown()
+                break
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        server.shutdown()
+        if browser_proc is not None and browser_proc.poll() is None:
+            browser_proc.terminate()
+    finally:
+        server_thread.join(timeout=3)
+        if temp_profile:
+            shutil.rmtree(temp_profile, ignore_errors=True)
+
+    if _WasmHandler.page_exit_code is not None:
+        exit_code = _WasmHandler.page_exit_code
+
+    return subprocess.CompletedProcess(args=[], returncode=exit_code)
+
+
 def _run_executable(
     exe_path: Path,
     args: list[str],
@@ -126,14 +312,19 @@ def _run_executable(
     build) and falls back to the runtime_deploy directory (flat DLL copy for
     CI test jobs where conan install wasn't run).
 
-    For Emscripten builds, uses emrun (browser with logging) for interactive
-    launches and Node.js for headless/captured output (tests).
+    For Emscripten builds, uses emrun (browser-based) for interactive launches
+    and Node.js for headless/captured output (tests).
     """
     build_dir = Path(context["build_dir"])
     is_emscripten = exe_path.suffix.lower() in (".js", ".html")
 
-    # Resolve environment: prefer conanrun script for native builds (always
-    # fresh), fall back to runtime_deploy dir (for CI without conan install)
+    # Interactive Emscripten launch — bypass batch wrapping entirely
+    if is_emscripten and not capture_output:
+        html_path = exe_path.with_suffix(".html") if exe_path.suffix.lower() != ".html" else exe_path
+        logger.info(f"Launching {html_path.name} with emrun")
+        return _serve_emscripten(html_path, args, build_dir)
+
+    # All other paths: use ShellCommand with env_script
     env_script: Path | None = None
     extra_env: dict[str, str] = {}
     if not is_emscripten:
@@ -147,11 +338,7 @@ def _run_executable(
     else:
         env_script = _resolve_env_script(build_dir, is_emscripten=True)
 
-    if is_emscripten and not capture_output:
-        html_path = exe_path.with_suffix(".html") if exe_path.suffix.lower() != ".html" else exe_path
-        logger.info(f"Launching {html_path.name} with emrun")
-        cmd = ["emrun", "--kill_exit", str(html_path), "--"] + args
-    elif is_emscripten:
+    if is_emscripten:
         js_path = exe_path.with_suffix(".js") if exe_path.suffix.lower() == ".html" else exe_path
         logger.info(f"Running {js_path.name} with Node.js")
         cmd = ["node", str(js_path)] + args
@@ -175,9 +362,12 @@ def _can_run(context: dict[str, Any]) -> bool:
     """Check if executables can be run on this host."""
     build_dir = Path(context["build_dir"])
     if context["platform"] == "emscripten":
-        # Node.js is required for headless WASM execution.
-        # Prefer the conanbuild script (provides emsdk tools including node),
-        # but also accept a system-installed node (e.g. CI runners).
+        # Interactive launches need emrun (resolved from CMakePresets.json).
+        # Headless test runs need Node.js (resolved from conanbuild script or
+        # system PATH).
+        conan_env = load_conan_env(build_dir, preset_type="configure")
+        if conan_env.get("EMSCRIPTEN"):
+            return True
         if _resolve_env_script(build_dir, is_emscripten=True) is not None:
             return True
         return shutil.which("node") is not None

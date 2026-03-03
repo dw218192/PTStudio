@@ -1,10 +1,20 @@
+#include <core/commandLine.h>
+#include <core/enumUtils.h>
 #include <core/guiApplication.h>
 #include <core/loggingManager.h>
 #include <core/pluginManager.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
 #include <core/rendering/webgpuContext.h>
 
+#include <cstdio>
 #include <optional>
+
+#if defined(__EMSCRIPTEN__)
+#include <emscripten/emscripten.h>
+#define DIAG(msg) emscripten_log(EM_LOG_CONSOLE, ">>> " msg)
+#else
+#define DIAG(msg) std::fprintf(stderr, ">>> " msg "\n")
+#endif
 
 namespace {
 
@@ -51,6 +61,7 @@ class HelloApp : public pts::GUIApplication {
    private:
     std::optional<pts::webgpu::ShaderModule> m_shader;
     std::optional<pts::webgpu::RenderPipeline> m_pipeline;
+    bool m_diag_done = false;
 
     void create_pipeline() {
         auto const& device = get_webgpu_context()->device();
@@ -62,14 +73,25 @@ class HelloApp : public pts::GUIApplication {
     }
 
     void run_one_frame() override {
+        if (!m_diag_done) {
+            DIAG("run_one_frame entered");
+        }
         get_windowing()->pump_events(pts::rendering::PumpEventMode::Poll);
 
         if (!ensure_webgpu_ready()) {
+            if (!m_diag_done) {
+                DIAG("WebGPU not ready, waiting...");
+            }
             return;
+        }
+        if (!m_diag_done) {
+            DIAG("WebGPU ready");
         }
 
         if (!m_pipeline) {
+            DIAG("creating pipeline");
             create_pipeline();
+            DIAG("pipeline created");
         }
 
         auto& surface = get_webgpu_context()->surface();
@@ -111,6 +133,10 @@ class HelloApp : public pts::GUIApplication {
 
         surface.present();
         handle_framebuffer_resize();
+        if (!m_diag_done) {
+            DIAG("first frame rendered");
+            m_diag_done = true;
+        }
     }
 
     void loop(float) override {
@@ -118,8 +144,22 @@ class HelloApp : public pts::GUIApplication {
 };
 
 int main(int argc, char* argv[]) {
+    DIAG("main() entered");
+    pts::CommandLine pre_cli;
+    pre_cli.add_string("log-level", "Log level (trace, debug, info, warn, error, critical)");
+    if (!pre_cli.parse(argc, argv)) {
+        return 0;
+    }
+
+    auto log_level_str = pre_cli.get_string("log-level", "info");
+    auto opt_log_level = pts::from_string<pts::LogLevel>(log_level_str);
+    if (!opt_log_level) {
+        std::fprintf(stderr, "Invalid log level: %s\n", log_level_str.c_str());
+        return 1;
+    }
+
     pts::Config config;
-    config.level = pts::LogLevel::Info;
+    config.level = *opt_log_level;
     config.pattern = "[%H:%M:%S] [%^%L%$] [%n] %v";
 
     pts::LoggingManager logging_manager(config);
@@ -127,11 +167,15 @@ int main(int argc, char* argv[]) {
     pts::PluginManager plugin_manager(logger, logging_manager);
 
     try {
+        DIAG("creating HelloApp");
         HelloApp app(logging_manager, plugin_manager);
+        DIAG("HelloApp created, calling init");
         if (!app.init(argc, argv)) {
             return 0;
         }
+        DIAG("init done, calling run");
         app.run();
+        DIAG("run returned");
     } catch (const std::exception& e) {
         logging_manager.get_logger().error("Application error: {}", e.what());
         return 1;

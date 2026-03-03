@@ -20,6 +20,15 @@ ErrorScope::ErrorScope(const Device& device, WGPUErrorFilter filter, std::string
 ErrorScope::ErrorScope(const Device& device, std::initializer_list<WGPUErrorFilter> filters,
                        std::string_view logger_name, std::string_view context_label)
     : m_device(device), m_logger_name(logger_name), m_context_label(context_label) {
+#ifdef __EMSCRIPTEN__
+    // On Emscripten (emdawnwebgpu), wgpuDevicePopErrorScope returns a JS Promise.
+    // Synchronous busy-wait on pop_and_wait() deadlocks because the Promise can
+    // never resolve while the main thread is blocked. Disable error scopes here;
+    // the uncaptured error callback still catches errors.
+    m_scope_count = 0;
+    m_popped = true;
+    (void) filters;
+#else
     m_scope_count = filters.size();
     m_results.reserve(m_scope_count);
 
@@ -27,6 +36,7 @@ ErrorScope::ErrorScope(const Device& device, std::initializer_list<WGPUErrorFilt
     for (const auto filter : filters) {
         wgpuDevicePushErrorScope(device.handle(), filter);
     }
+#endif
 }
 
 ErrorScope::~ErrorScope() {
