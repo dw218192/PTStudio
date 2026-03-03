@@ -7,18 +7,9 @@
 #include <string>
 #include <string_view>
 
-#if !defined(PTS_ENABLE_PROGRAM_OPTIONS)
-#if defined(__EMSCRIPTEN__)
-#define PTS_ENABLE_PROGRAM_OPTIONS 0
-#else
-#define PTS_ENABLE_PROGRAM_OPTIONS 1
-#endif
-#endif
-
 namespace pts {
 
-/// Wrapper around boost::program_options that compiles to no-ops on Emscripten.
-/// On WASM all queries return their default values (there is no command line).
+/// CLI argument parser (wraps cxxopts).
 class CommandLine {
    public:
     NO_COPY_MOVE(CommandLine);
@@ -54,11 +45,9 @@ class CommandLine {
     /// Query whether an option was explicitly provided on the command line.
     [[nodiscard]] auto has(std::string_view name) const -> bool;
 
-#if PTS_ENABLE_PROGRAM_OPTIONS
    private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;
-#endif
 };
 
 }  // namespace pts

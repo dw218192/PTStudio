@@ -47,6 +47,11 @@ jobs:
       matrix:
         platform: [windows-x64, emscripten]
         build_type: [Debug, Release]
+        exclude:
+          # Emscripten Debug builds produce huge binaries (>1 GB) and are too
+          # slow for CI.  Only Release is built for WASM.
+          - platform: emscripten
+            build_type: Debug
         include:
           - platform: windows-x64
             os: windows-latest
@@ -122,6 +127,9 @@ jobs:
       matrix:
         platform: [windows-x64, emscripten]
         build_type: [Debug, Release]
+        exclude:
+          - platform: emscripten
+            build_type: Debug
         include:
           - platform: windows-x64
             os: windows-latest
@@ -168,3 +176,54 @@ jobs:
           name: test-results-${{ matrix.platform }}-${{ matrix.build_type }}
           path: _logs/
           retention-days: 3
+
+  # =============================================================================
+  # Deploy to GitHub Pages (develop branch only)
+  # =============================================================================
+
+  deploy-pages:
+    name: Deploy to GitHub Pages
+    if: github.ref == 'refs/heads/develop' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs: [build, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Bootstrap build environment
+        run: bash tools/framework/bootstrap.sh
+
+      - name: Download emscripten Release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-emscripten-Release
+          path: _package/emscripten/
+
+      - name: Publish site
+        run: ./repo publish --platform emscripten --build-type Release
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _deploy
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

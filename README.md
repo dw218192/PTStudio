@@ -17,6 +17,11 @@ https://github.com/dw218192/PTStudio/assets/31294154/4116308d-ee31-4d20-a449-f13
 - Build: `./repo build`
 - Test: `./repo test`
 
+### Emscripten (WASM) builds
+
+- Build: `./repo build --platform emscripten --build-type Release`
+- Only Release builds are supported. Debug builds produce binaries exceeding 1 GB and are impractical.
+
 ### Prerequisites
 - C++ Compiler Toolchain (GCC, Clang, MSVC, etc.)
 - GPU driver with Vulkan/OpenGL support

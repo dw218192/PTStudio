@@ -48,6 +48,11 @@ inline auto error_type_name(WGPUErrorType type) -> const char* {
 /// Supports nested error scopes via multiple filters. Filters are pushed in order,
 /// and popped in reverse order (LIFO). If any scope captures an error, it will be reported.
 ///
+/// On Emscripten, error scopes are disabled because wgpuDevicePopErrorScope
+/// returns a JS Promise that cannot be synchronously awaited without deadlocking.
+/// pop_and_throw_if_error() becomes a no-op; errors are still caught by the
+/// device's uncaptured error callback and logged.
+///
 /// Example with single filter:
 ///   ErrorScope scope(device, WGPUErrorFilter_Validation, "logger", "operation");
 ///   // ... WebGPU operations ...

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -107,6 +108,22 @@ def execute_build_steps(
 # ── Helpers ──────────────────────────────────────────────────────────
 
 
+def _host_package_names(lock_file: Path) -> list[str]:
+    """Read a Conan lock file and return the host requirement package names.
+
+    This excludes build_requires (b2, cmake, emsdk, etc.) so that ``--build=``
+    flags only force-rebuild host libraries, not build tools.
+    """
+    with open(lock_file) as f:
+        lock = json.load(f)
+    names = []
+    for ref in lock.get("requires", []):
+        # ref format: "name/version#revision%timestamp" or "name/version"
+        name = ref.split("/", 1)[0]
+        names.append(name)
+    return names
+
+
 def _cmake_preset_name(build_type: str, emscripten: bool) -> str:
     bt = build_type.lower()
     return f"conan-emscripten-{bt}" if emscripten else f"conan-{bt}"
@@ -163,7 +180,13 @@ def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> 
     # Remove build configuration directory if -x flag is provided
     if args.get("rebuild") and build_dir.exists():
         logger.info(f"Rebuild flag (-x) detected. Removing build directory: {build_dir}")
-        remove_tree_with_retries(build_dir)
+        try:
+            remove_tree_with_retries(build_dir)
+        except PermissionError:
+            logger.warning(
+                f"Could not fully remove {build_dir} (files locked by another process). "
+                "Continuing; dependency rebuild will be driven by host packages from the lock file."
+            )
 
     # Create build directory if missing
     build_folder.mkdir(parents=True, exist_ok=True)
@@ -226,31 +249,37 @@ def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> 
 
             install_log_file = logs_dir / "conan_install.log"
 
+            # Determine --build flags: rebuild all host packages (-x) or only missing
+            if args.get("rebuild"):
+                host_pkgs = _host_package_names(lock_file)
+                build_flags = [f"--build={name}/*" for name in host_pkgs]
+                logger.info(f"Forcing rebuild of {len(host_pkgs)} host packages")
+            else:
+                build_flags = ["--build=missing"]
+
             logger.info("Installing dependencies with Conan...")
-            g.run(
-                [
-                    conan_exe,
-                    "install",
-                    str(root),
-                    "--lockfile",
-                    str(lock_file),
-                    f"--output-folder={build_dir}",
-                    f"--deployer-folder={conan_deps_root}",
-                    "--deployer=full_deploy",
-                    "--deployer=runtime_deploy",
-                    "--build=missing",
-                    f"--profile:host={conan_profile}",
-                    f"--profile:build={conan_profile}",
-                    "-o",
-                    f"&:windowing={windowing}",
-                    "-s",
-                    "compiler.cppstd=17",
-                    "-s",
-                    f"build_type={build_type}",
-                    *emscripten_flags,
-                ],
-                log_file=install_log_file,
-            )
+            conan_install_args = [
+                conan_exe,
+                "install",
+                str(root),
+                "--lockfile",
+                str(lock_file),
+                f"--output-folder={build_dir}",
+                f"--deployer-folder={conan_deps_root}",
+                "--deployer=full_deploy",
+                "--deployer=runtime_deploy",
+                *build_flags,
+                f"--profile:host={conan_profile}",
+                f"--profile:build={conan_profile}",
+                "-o",
+                f"&:windowing={windowing}",
+                "-s",
+                "compiler.cppstd=17",
+                "-s",
+                f"build_type={build_type}",
+                *emscripten_flags,
+            ]
+            g.run(conan_install_args, log_file=install_log_file)
 
         # Execute prebuild steps
         if prebuild_steps:

@@ -37,6 +37,7 @@ class PTStudioConan(ConanFile):
         self.requires("tinyobjloader/2.0.0-rc10")
         self.requires("doctest/[>=0]")
         self.requires("boost/[>=0]")
+        self.requires("cxxopts/[>=3]")
         # Scene description
         self.requires("openusd/25.11-dev")
         

@@ -6,7 +6,7 @@
 #include <string>
 
 // Helper: build a mutable argv from string literals.
-// boost::program_options expects non-const char*, so we cast away const
+// cxxopts expects non-const char*, so we cast away const
 // (it never actually writes through the pointers).
 template <std::size_t N>
 static auto make_argv(const char* const (&args)[N]) -> std::array<char*, N> {
