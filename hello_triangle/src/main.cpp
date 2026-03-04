@@ -1,7 +1,7 @@
 #include <core/commandLine.h>
 #include <core/enumUtils.h>
-#include <core/guiApplication.h>
 #include <core/loggingManager.h>
+#include <core/playground.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
 #include <core/rendering/webgpuContext.h>
 
@@ -44,17 +44,17 @@ fn fs_main(@location(0) color: vec3f) -> @location(0) vec4f {
 
 }  // namespace
 
-class HelloApp : public pts::GUIApplication {
+class HelloApp : public pts::Playground {
    public:
     explicit HelloApp(pts::LoggingManager& logging_manager)
-        : pts::GUIApplication("Hello Triangle", logging_manager, 1280, 720, 1.0f / 60.0f) {
+        : pts::Playground({"Hello Triangle", 1280, 720}, logging_manager) {
     }
 
    private:
     std::optional<pts::webgpu::ShaderModule> m_shader;
     std::optional<pts::webgpu::RenderPipeline> m_pipeline;
 
-    void create_pipeline() {
+    void on_ready() override {
         auto const& device = get_webgpu_context()->device();
         m_shader.emplace(device.create_shader_module_from_source(k_shader_code));
         m_pipeline.emplace(pts::webgpu::RenderPipelineBuilder(device)
@@ -63,59 +63,11 @@ class HelloApp : public pts::GUIApplication {
                                .build());
     }
 
-    void run_one_frame() override {
-        get_windowing()->pump_events(pts::rendering::PumpEventMode::Poll);
-
-        if (!ensure_webgpu_ready()) {
-            return;
-        }
-
-        if (!m_pipeline) {
-            create_pipeline();
-        }
-
-        auto& surface = get_webgpu_context()->surface();
-        WGPUTextureView view = surface.acquire_texture_view();
-        if (!view) {
-            handle_framebuffer_resize();
-            return;
-        }
-
-        auto const& device = get_webgpu_context()->device();
-
-        // Create command encoder
-        WGPUCommandEncoderDescriptor enc_desc = WGPU_COMMAND_ENCODER_DESCRIPTOR_INIT;
-        WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device.handle(), &enc_desc);
-
-        // Begin render pass
-        WGPURenderPassColorAttachment color_attachment = WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
-        color_attachment.view = view;
-        color_attachment.loadOp = WGPULoadOp_Clear;
-        color_attachment.storeOp = WGPUStoreOp_Store;
-        color_attachment.clearValue = WGPUColor{0.1, 0.1, 0.1, 1.0};
-
-        WGPURenderPassDescriptor pass_desc = WGPU_RENDER_PASS_DESCRIPTOR_INIT;
-        pass_desc.colorAttachmentCount = 1;
-        pass_desc.colorAttachments = &color_attachment;
-
-        WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &pass_desc);
-        wgpuRenderPassEncoderSetPipeline(pass, m_pipeline->handle());
-        wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
-        wgpuRenderPassEncoderEnd(pass);
-        wgpuRenderPassEncoderRelease(pass);
-
-        // Submit
-        WGPUCommandBufferDescriptor cmd_desc = WGPU_COMMAND_BUFFER_DESCRIPTOR_INIT;
-        WGPUCommandBuffer cmd = wgpuCommandEncoderFinish(encoder, &cmd_desc);
-        wgpuQueueSubmit(device.queue(), 1, &cmd);
-        wgpuCommandBufferRelease(cmd);
-        wgpuCommandEncoderRelease(encoder);
-
-        surface.present();
-        handle_framebuffer_resize();
-    }
-
-    void loop(float) override {
+    void render(pts::FrameContext& ctx) override {
+        ctx.render_pass({}, [&](WGPURenderPassEncoder pass) {
+            wgpuRenderPassEncoderSetPipeline(pass, m_pipeline->handle());
+            wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
+        });
     }
 };
 
