@@ -2,7 +2,6 @@
 #include <core/enumUtils.h>
 #include <core/guiApplication.h>
 #include <core/loggingManager.h>
-#include <core/pluginManager.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
 #include <core/rendering/webgpuContext.h>
 
@@ -47,9 +46,8 @@ fn fs_main(@location(0) color: vec3f) -> @location(0) vec4f {
 
 class HelloApp : public pts::GUIApplication {
    public:
-    HelloApp(pts::LoggingManager& logging_manager, pts::PluginManager& plugin_manager)
-        : pts::GUIApplication("Hello Triangle", logging_manager, plugin_manager, 1280, 720,
-                              1.0f / 60.0f) {
+    explicit HelloApp(pts::LoggingManager& logging_manager)
+        : pts::GUIApplication("Hello Triangle", logging_manager, 1280, 720, 1.0f / 60.0f) {
     }
 
    private:
@@ -140,11 +138,9 @@ int main(int argc, char* argv[]) {
     config.pattern = "[%H:%M:%S] [%^%L%$] [%n] %v";
 
     pts::LoggingManager logging_manager(config);
-    auto logger = logging_manager.get_logger_shared("HelloTriangle");
-    pts::PluginManager plugin_manager(logger, logging_manager);
 
     try {
-        HelloApp app(logging_manager, plugin_manager);
+        HelloApp app(logging_manager);
         if (!app.init(argc, argv)) {
             return 0;
         }

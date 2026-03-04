@@ -13,10 +13,8 @@
 namespace pts {
 
 Application::Application(std::string_view name, pts::LoggingManager& logging_manager,
-                         pts::PluginManager& plugin_manager, float min_frame_time)
-    : m_name{name.begin(), name.end()},
-      m_logging_manager{&logging_manager},
-      m_plugin_manager{&plugin_manager} {
+                         float min_frame_time)
+    : m_name{name.begin(), name.end()}, m_logging_manager{&logging_manager} {
     m_logger = m_logging_manager->get_logger_shared(get_name().data());
     INVARIANT_MSG(m_logger != nullptr, "get_logger_shared must return valid logger");
     set_min_frame_time(min_frame_time);

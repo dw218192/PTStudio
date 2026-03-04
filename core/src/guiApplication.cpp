@@ -9,10 +9,8 @@
 namespace pts {
 
 GUIApplication::GUIApplication(std::string_view name, pts::LoggingManager& logging_manager,
-                               pts::PluginManager& plugin_manager, unsigned width, unsigned height,
-                               float min_frame_time)
-    : Application{name, logging_manager, plugin_manager, min_frame_time},
-      m_min_frame_time{min_frame_time} {
+                               unsigned width, unsigned height, float min_frame_time)
+    : Application{name, logging_manager, min_frame_time}, m_min_frame_time{min_frame_time} {
     // Create windowing system
     m_windowing = pts::rendering::create_windowing(get_logging_manager());
     INVARIANT_MSG(m_windowing != nullptr, "create_windowing must return valid windowing system");

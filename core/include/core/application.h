@@ -5,8 +5,6 @@
 #include <chrono>
 #include <memory>
 
-#include "pluginManager.h"
-
 namespace pts {
 
 class CommandLine;
@@ -14,15 +12,15 @@ class CommandLine;
 /**
  * @brief Headless base class for all applications.
  *
- * Provides logging, plugin management, an event loop (with Emscripten
- * support), and frame-rate timing.  Subclasses add windowing and
- * rendering as needed (see GUIApplication).
+ * Provides logging, an event loop (with Emscripten support), and
+ * frame-rate timing.  Subclasses add windowing and rendering as
+ * needed (see GUIApplication).
  */
 struct Application {
     NO_COPY_MOVE(Application);
 
     Application(std::string_view name, pts::LoggingManager& logging_manager,
-                pts::PluginManager& plugin_manager, float min_frame_time = 0.0f);
+                float min_frame_time = 0.0f);
     virtual ~Application();
 
     /**
@@ -82,9 +80,6 @@ struct Application {
     pts::LoggingManager& get_logging_manager() noexcept {
         return *m_logging_manager;
     }
-    pts::PluginManager& get_plugin_manager() noexcept {
-        return *m_plugin_manager;
-    }
     auto get_logger() noexcept -> std::shared_ptr<spdlog::logger> {
         return m_logger;
     }
@@ -104,12 +99,11 @@ struct Application {
 
    private:
     // Class invariants:
-    // - m_logging_manager and m_plugin_manager are always valid (non-null)
+    // - m_logging_manager is always valid (non-null)
     // - m_logger is always valid (non-null)
 
     std::string m_name;
     pts::LoggingManager* m_logging_manager;
-    pts::PluginManager* m_plugin_manager;
     std::shared_ptr<spdlog::logger> m_logger;
 
     std::chrono::steady_clock::time_point m_start_time;

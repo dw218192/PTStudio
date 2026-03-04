@@ -3,7 +3,6 @@
 #define DOCTEST_CONFIG_IMPLEMENT
 #include <core/application.h>
 #include <core/loggingManager.h>
-#include <core/pluginManager.h>
 #include <doctest/doctest.h>
 
 namespace pts::test {
@@ -13,8 +12,6 @@ namespace detail {
 struct TestDeps {
     pts::Config config{};
     pts::LoggingManager logging_manager{config};
-    std::shared_ptr<spdlog::logger> logger{logging_manager.get_logger_shared("test")};
-    pts::PluginManager plugin_manager{logger, logging_manager};
 };
 }  // namespace detail
 
@@ -31,7 +28,7 @@ struct TestDeps {
  *   PTS_TEST_MAIN()
  */
 struct TestApplication : private detail::TestDeps, public pts::Application {
-    TestApplication() : detail::TestDeps{}, Application("test", logging_manager, plugin_manager) {
+    TestApplication() : detail::TestDeps{}, Application("test", logging_manager) {
     }
 
     void loop(float /*dt*/) override {

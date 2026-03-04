@@ -7,5 +7,4 @@ endif()
 set(EMSCRIPTEN_ROOT "$ENV{EMSCRIPTEN}")
 include("${EMSCRIPTEN_ROOT}/cmake/Modules/Platform/Emscripten.cmake")
 
-set(PTS_STATIC_PLUGINS ON CACHE BOOL "" FORCE)
 set(PTS_WINDOWING "glfw" CACHE STRING "" FORCE)

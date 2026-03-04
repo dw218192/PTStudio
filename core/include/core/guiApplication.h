@@ -38,9 +38,8 @@ struct GUIApplication : Application {
 
     NO_COPY_MOVE(GUIApplication);
 
-    GUIApplication(std::string_view name, pts::LoggingManager& logging_manager,
-                   pts::PluginManager& plugin_manager, unsigned width, unsigned height,
-                   float min_frame_time);
+    GUIApplication(std::string_view name, pts::LoggingManager& logging_manager, unsigned width,
+                   unsigned height, float min_frame_time);
     ~GUIApplication() override;
 
     void run() override;

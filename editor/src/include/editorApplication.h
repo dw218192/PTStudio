@@ -2,7 +2,6 @@
 
 #include <core/guiApplication.h>
 #include <core/renderConfig.h>
-#include <core/rendering/plugin.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 
 namespace pts::editor {
@@ -20,7 +19,7 @@ struct EditorApplication final : GUIApplication {
 
    public:
     EditorApplication(std::string_view name, RenderConfig config,
-                      pts::LoggingManager& logging_manager, pts::PluginManager& plugin_manager);
+                      pts::LoggingManager& logging_manager);
     ~EditorApplication() override;
 
     void register_args(CommandLine& cli) override;
@@ -51,8 +50,5 @@ struct EditorApplication final : GUIApplication {
 
     // input handling
     std::vector<InputAction> m_input_actions;
-
-    PluginHandle m_renderer_plugin{nullptr};
-    RendererPluginInterfaceV1* m_renderer_interface{nullptr};
 };
 }  // namespace pts::editor

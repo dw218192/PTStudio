@@ -17,7 +17,7 @@ class PTStudioConan(ConanFile):
     default_options = {
         "build_tests": True,
         "windowing": "glfw",
-        # Boost configuration - need filesystem for DLL loading
+        # Boost configuration - need filesystem for path operations
         "boost/*:without_filesystem": False,
     }
 

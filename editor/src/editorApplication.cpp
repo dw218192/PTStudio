@@ -18,10 +18,8 @@ static constexpr auto k_console_win_name = "Console";
 static constexpr auto k_console_log_buffer_size = 1024;
 
 EditorApplication::EditorApplication(std::string_view name, RenderConfig config,
-                                     pts::LoggingManager& logging_manager,
-                                     pts::PluginManager& plugin_manager)
-    : GUIApplication{name,         logging_manager, plugin_manager,
-                     config.width, config.height,   config.min_frame_time},
+                                     pts::LoggingManager& logging_manager)
+    : GUIApplication{name, logging_manager, config.width, config.height, config.min_frame_time},
       m_config{config} {
     get_imgui_window_info(k_scene_view_win_name).on_enter_region.connect([this] {
         on_mouse_enter_scene_viewport();
@@ -36,16 +34,6 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config,
         std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(k_console_log_buffer_size);
     get_logging_manager().add_sink(m_console_log_sink);
 
-    m_renderer_plugin = get_plugin_manager().get_plugin_instance("editor.renderer");
-    if (m_renderer_plugin) {
-        m_renderer_interface =
-            static_cast<RendererPluginInterfaceV1*>(get_plugin_manager().query_interface(
-                m_renderer_plugin, RENDERER_PLUGIN_INTERFACE_V1_ID));
-    }
-    if (!m_renderer_interface) {
-        log(pts::LogLevel::Error, "Renderer plugin interface not found");
-    }
-
     log(pts::LogLevel::Info, "EditorApplication created (scene rewrite in progress)");
 }
 
@@ -55,7 +43,6 @@ EditorApplication::~EditorApplication() {
 void EditorApplication::register_args(CommandLine& cli) {
     GUIApplication::register_args(cli);
     cli.add_string("log-level", "Log level (trace, debug, info, warn, error, critical)");
-    cli.add_string("plugins-dir", "Search directory for plugins (relative to executable)");
     cli.add_flag("quit-on-start", "Quit the application after starting, useful for testing");
 }
 
@@ -200,10 +187,7 @@ auto EditorApplication::draw_console_panel() const noexcept -> void {
     ImGui::EndChild();
 }
 
-auto EditorApplication::on_render_config_change(RenderConfig const& conf) -> void {
-    if (m_renderer_interface && m_renderer_interface->on_resize) {
-        m_renderer_interface->on_resize(conf.width, conf.height);
-    }
+auto EditorApplication::on_render_config_change(RenderConfig const&) -> void {
 }
 
 auto EditorApplication::on_mouse_leave_scene_viewport() noexcept -> void {
