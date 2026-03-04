@@ -5,10 +5,18 @@
 #include <core/rendering/webgpu/shader.h>
 #include <core/rendering/webgpu/webgpu.h>
 
+#include <cstdint>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace pts::webgpu {
+
+struct VertexBufferLayout {
+    uint64_t stride;
+    WGPUVertexStepMode step_mode = WGPUVertexStepMode_Vertex;
+    std::vector<WGPUVertexAttribute> attributes;
+};
 
 class RenderPipelineBuilder {
    public:
@@ -26,6 +34,8 @@ class RenderPipelineBuilder {
     auto depth_write(bool enabled) -> RenderPipelineBuilder&;
     auto depth_compare(WGPUCompareFunction func) -> RenderPipelineBuilder&;
     auto sample_count(uint32_t count) -> RenderPipelineBuilder&;
+    auto vertex_buffer(VertexBufferLayout layout) -> RenderPipelineBuilder&;
+    auto pipeline_layout(WGPUPipelineLayout layout) -> RenderPipelineBuilder&;
 
     [[nodiscard]] auto build() const -> RenderPipeline;
 
@@ -44,6 +54,8 @@ class RenderPipelineBuilder {
     bool m_depth_write = false;
     WGPUCompareFunction m_depth_compare = WGPUCompareFunction_Always;
     uint32_t m_sample_count = 1;
+    std::vector<VertexBufferLayout> m_vertex_buffers;
+    WGPUPipelineLayout m_pipeline_layout = nullptr;
 };
 
 }  // namespace pts::webgpu

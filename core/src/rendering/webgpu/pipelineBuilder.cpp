@@ -1,6 +1,7 @@
 #include <core/diagnostics.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
 
+#include <optional>
 #include <stdexcept>
 
 namespace pts::webgpu {
@@ -69,19 +70,44 @@ auto RenderPipelineBuilder::sample_count(uint32_t count) -> RenderPipelineBuilde
     return *this;
 }
 
+auto RenderPipelineBuilder::vertex_buffer(VertexBufferLayout layout) -> RenderPipelineBuilder& {
+    m_vertex_buffers.push_back(std::move(layout));
+    return *this;
+}
+
+auto RenderPipelineBuilder::pipeline_layout(WGPUPipelineLayout layout) -> RenderPipelineBuilder& {
+    m_pipeline_layout = layout;
+    return *this;
+}
+
 auto RenderPipelineBuilder::build() const -> RenderPipeline {
     PRECONDITION_MSG(m_shader_module != nullptr, "shader module not set");
 
-    // Create empty pipeline layout
-    PipelineLayout layout = m_device.create_pipeline_layout();
+    // Use custom pipeline layout or create empty one
+    std::optional<PipelineLayout> owned_layout;
+    if (!m_pipeline_layout) {
+        owned_layout = m_device.create_pipeline_layout();
+    }
+    WGPUPipelineLayout layout_handle =
+        m_pipeline_layout ? m_pipeline_layout : owned_layout->handle();
+
+    // Convert stored vertex buffer layouts to WGPUVertexBufferLayout array
+    std::vector<WGPUVertexBufferLayout> wgpu_vertex_buffers(m_vertex_buffers.size());
+    for (size_t i = 0; i < m_vertex_buffers.size(); i++) {
+        wgpu_vertex_buffers[i] = {};
+        wgpu_vertex_buffers[i].arrayStride = m_vertex_buffers[i].stride;
+        wgpu_vertex_buffers[i].stepMode = m_vertex_buffers[i].step_mode;
+        wgpu_vertex_buffers[i].attributeCount = m_vertex_buffers[i].attributes.size();
+        wgpu_vertex_buffers[i].attributes = m_vertex_buffers[i].attributes.data();
+    }
 
     // Vertex state
     WGPUVertexState vertex_state = {};
     vertex_state.module = m_shader_module;
     vertex_state.entryPoint.data = m_vertex_entry.c_str();
     vertex_state.entryPoint.length = m_vertex_entry.size();
-    vertex_state.bufferCount = 0;
-    vertex_state.buffers = nullptr;
+    vertex_state.bufferCount = wgpu_vertex_buffers.size();
+    vertex_state.buffers = wgpu_vertex_buffers.empty() ? nullptr : wgpu_vertex_buffers.data();
 
     // Color target state
     WGPUColorTargetState color_target = {};
@@ -124,7 +150,7 @@ auto RenderPipelineBuilder::build() const -> RenderPipeline {
 
     // Pipeline descriptor
     WGPURenderPipelineDescriptor pipeline_desc = {};
-    pipeline_desc.layout = layout.handle();
+    pipeline_desc.layout = layout_handle;
     pipeline_desc.vertex = vertex_state;
     pipeline_desc.fragment = &fragment_state;
     pipeline_desc.primitive = primitive_state;
