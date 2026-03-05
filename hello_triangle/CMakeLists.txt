@@ -6,6 +6,10 @@ add_executable(hello_triangle
     src/main.cpp
 )
 
+target_include_directories(hello_triangle PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/generated
+)
+
 target_link_libraries(hello_triangle
     PRIVATE
         core

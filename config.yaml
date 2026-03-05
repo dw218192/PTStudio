@@ -48,6 +48,11 @@ build:
             - "assets/scenes/test_cube.usda"
           output: "core/tests/generated/embedded_test_resources.h"
           namespace: "test_resources"
+        - input:
+            - "hello_triangle/shaders/hello_triangle.wgsl"
+            - "hello_triangle/scenes/triangle.usda"
+          output: "hello_triangle/generated/embedded_resources.h"
+          namespace: "hello_triangle_resources"
   postbuild: {}
   conan:
     local_recipes: "tools/conan"

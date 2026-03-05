@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import click
-from jinja2 import Template
+from jinja2 import Environment
 
 from repo_tools.core import (
     RepoTool,
@@ -23,10 +23,13 @@ from repo_tools.core import (
 )
 
 
+_jinja_env = Environment(trim_blocks=True, lstrip_blocks=True, keep_trailing_newline=True)
+
+
 @cache
-def _load_template(template_path: Path) -> Template:
+def _load_template(template_path: Path):
     """Load and cache the Jinja2 template from file."""
-    return Template(template_path.read_text(encoding="utf-8"))
+    return _jinja_env.from_string(template_path.read_text(encoding="utf-8"))
 
 
 @dataclass
@@ -85,8 +88,7 @@ def _process_resource(input_file: Path, base_path: Path) -> ResourceData:
     data = input_file.read_bytes()
 
     if _is_text_content(data):
-        text = data.decode("utf-8")
-        # Use length of text (not bytes) since CRLF becomes LF in raw string literals
+        text = input_file.read_text(encoding="utf-8").rstrip("\n")
         return ResourceData(
             path=path_str,
             identifier=identifier,

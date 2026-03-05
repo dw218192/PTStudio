@@ -11,8 +11,8 @@
 namespace {{ namespace }} {
 
 namespace detail {
-
 {% for res in resources %}
+
 // Resource: {{ res.path }}
 // Size: {{ res.size }} bytes
 {% if res.is_text %}
@@ -22,8 +22,8 @@ inline constexpr std::size_t k_{{ res.identifier }}_size = sizeof(k_{{ res.ident
 inline constexpr const std::uint8_t k_{{ res.identifier }}_data[] = { {{ res.hex_data }} };
 inline constexpr std::size_t k_{{ res.identifier }}_size = {{ res.size }};
 {% endif %}
-
 {% endfor %}
+
 struct ResourceInfo {
     const char* data;
     std::size_t size;
@@ -32,7 +32,7 @@ struct ResourceInfo {
 inline const std::unordered_map<std::string_view, ResourceInfo>& get_resource_map() {
     static const std::unordered_map<std::string_view, ResourceInfo> resources = {
 {% for res in resources %}
-    {"{{ res.path }}", {reinterpret_cast<const char*>(k_{{ res.identifier }}_data), k_{{ res.identifier }}_size}},
+        {"{{ res.path }}", {reinterpret_cast<const char*>(k_{{ res.identifier }}_data), k_{{ res.identifier }}_size}},
 {% endfor %}
     };
     return resources;

@@ -130,27 +130,8 @@ set(PT_CORE_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/include PARENT_SCOPE)
 target_include_directories(${lib_name}
 PUBLIC
 	${CMAKE_CURRENT_SOURCE_DIR}/include
-	${CMAKE_CURRENT_SOURCE_DIR}/api
 PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}/include/core
-)
-
-# ============================================================================
-# ABI-Stable API Interface Target
-# ============================================================================
-# This interface library provides ABI-stable public headers for use by dyanmic libraries
-
-add_library(core_api INTERFACE)
-add_library(core::api ALIAS core_api)
-
-target_include_directories(core_api
-INTERFACE
-	${CMAKE_CURRENT_SOURCE_DIR}/api
-)
-
-target_link_libraries(core_api
-INTERFACE
-	fmt::fmt
 )
 
 # Build unit tests if enabled

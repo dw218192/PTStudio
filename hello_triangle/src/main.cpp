@@ -1,123 +1,155 @@
 #include <core/commandLine.h>
 #include <core/enumUtils.h>
-#include <core/guiApplication.h>
 #include <core/loggingManager.h>
-#include <core/pluginManager.h>
+#include <core/playground.h>
+#include <core/rendering/renderGraph.h>
+#include <core/rendering/renderWorld.h>
+#include <core/rendering/sceneLoader.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
 #include <core/rendering/webgpuContext.h>
+#include <embedded_resources.h>
+#include <pxr/usd/sdf/layer.h>
+#include <pxr/usd/usd/stage.h>
 
 #include <cstdio>
 #include <exception>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <optional>
+#include <stdexcept>
 
-namespace {
-
-constexpr auto k_shader_code = R"(
-struct VertexOutput {
-    @builtin(position) position: vec4f,
-    @location(0) color: vec3f,
-};
-
-@vertex
-fn vs_main(@builtin(vertex_index) idx: u32) -> VertexOutput {
-    var positions = array<vec2f, 3>(
-        vec2f( 0.0,  0.5),
-        vec2f(-0.5, -0.5),
-        vec2f( 0.5, -0.5),
-    );
-    var colors = array<vec3f, 3>(
-        vec3f(1.0, 0.0, 0.0),
-        vec3f(0.0, 1.0, 0.0),
-        vec3f(0.0, 0.0, 1.0),
-    );
-
-    var out: VertexOutput;
-    out.position = vec4f(positions[idx], 0.0, 1.0);
-    out.color = colors[idx];
-    return out;
-}
-
-@fragment
-fn fs_main(@location(0) color: vec3f) -> @location(0) vec4f {
-    return vec4f(color, 1.0);
-}
-)";
-
-}  // namespace
-
-class HelloApp : public pts::GUIApplication {
+class HelloApp : public pts::Playground {
    public:
-    HelloApp(pts::LoggingManager& logging_manager, pts::PluginManager& plugin_manager)
-        : pts::GUIApplication("Hello Triangle", logging_manager, plugin_manager, 1280, 720,
-                              1.0f / 60.0f) {
+    explicit HelloApp(pts::LoggingManager& logging_manager)
+        : pts::Playground({"Hello Triangle", 1280, 720}, logging_manager) {
+    }
+
+    ~HelloApp() override {
+        if (m_bind_group) {
+            wgpuBindGroupRelease(m_bind_group);
+        }
+        if (m_bind_group_layout) {
+            wgpuBindGroupLayoutRelease(m_bind_group_layout);
+        }
     }
 
    private:
+    pts::rendering::RenderWorld m_world;
+    pts::rendering::RenderGraph m_graph;
     std::optional<pts::webgpu::ShaderModule> m_shader;
     std::optional<pts::webgpu::RenderPipeline> m_pipeline;
+    pts::webgpu::Buffer m_uniform_buffer;
+    WGPUBindGroup m_bind_group = nullptr;
+    WGPUBindGroupLayout m_bind_group_layout = nullptr;
 
-    void create_pipeline() {
+    void on_ready() override {
         auto const& device = get_webgpu_context()->device();
-        m_shader.emplace(device.create_shader_module_from_source(k_shader_code));
+
+        auto usda = hello_triangle_resources::get_resource("scenes/triangle.usda");
+        if (!usda) {
+            throw std::runtime_error("missing embedded resource: scenes/triangle.usda");
+        }
+        auto shader_src = hello_triangle_resources::get_resource("shaders/hello_triangle.wgsl");
+        if (!shader_src) {
+            throw std::runtime_error("missing embedded resource: shaders/hello_triangle.wgsl");
+        }
+
+        // Load USD stage from embedded resource
+        auto layer = pxr::SdfLayer::CreateAnonymous(".usda");
+        layer->ImportFromString(std::string{*usda});
+        auto stage = pxr::UsdStage::Open(layer);
+        pts::rendering::populate_from_stage(m_world, stage, device);
+
+        // Create shader module
+        m_shader.emplace(device.create_shader_module_from_source(*shader_src));
+
+        // Create uniform buffer for MVP matrix
+        m_uniform_buffer = device.create_buffer(sizeof(glm::mat4),
+                                                WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
+
+        // Create bind group layout
+        WGPUBindGroupLayoutEntry bgl_entry = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+        bgl_entry.binding = 0;
+        bgl_entry.visibility = WGPUShaderStage_Vertex;
+        bgl_entry.buffer.type = WGPUBufferBindingType_Uniform;
+        bgl_entry.buffer.minBindingSize = sizeof(glm::mat4);
+
+        WGPUBindGroupLayoutDescriptor bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
+        bgl_desc.entryCount = 1;
+        bgl_desc.entries = &bgl_entry;
+        m_bind_group_layout = wgpuDeviceCreateBindGroupLayout(device.handle(), &bgl_desc);
+
+        // Create bind group
+        WGPUBindGroupEntry bg_entry = WGPU_BIND_GROUP_ENTRY_INIT;
+        bg_entry.binding = 0;
+        bg_entry.buffer = m_uniform_buffer.handle();
+        bg_entry.offset = 0;
+        bg_entry.size = sizeof(glm::mat4);
+
+        WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
+        bg_desc.layout = m_bind_group_layout;
+        bg_desc.entryCount = 1;
+        bg_desc.entries = &bg_entry;
+        m_bind_group = wgpuDeviceCreateBindGroup(device.handle(), &bg_desc);
+
+        // Create pipeline layout
+        WGPUPipelineLayoutDescriptor pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
+        pl_desc.bindGroupLayoutCount = 1;
+        pl_desc.bindGroupLayouts = &m_bind_group_layout;
+        WGPUPipelineLayout pipeline_layout =
+            wgpuDeviceCreatePipelineLayout(device.handle(), &pl_desc);
+
+        // Build render pipeline
         m_pipeline.emplace(pts::webgpu::RenderPipelineBuilder(device)
                                .shader(*m_shader)
                                .color_format(get_webgpu_context()->surface_format())
+                               .pipeline_layout(pipeline_layout)
+                               .vertex_buffer({sizeof(pts::rendering::Vertex),
+                                               WGPUVertexStepMode_Vertex,
+                                               {
+                                                   {nullptr, WGPUVertexFormat_Float32x3,
+                                                    offsetof(pts::rendering::Vertex, position), 0},
+                                                   {nullptr, WGPUVertexFormat_Float32x3,
+                                                    offsetof(pts::rendering::Vertex, normal), 1},
+                                                   {nullptr, WGPUVertexFormat_Float32x3,
+                                                    offsetof(pts::rendering::Vertex, color), 2},
+                                               }})
                                .build());
+
+        wgpuPipelineLayoutRelease(pipeline_layout);
     }
 
-    void run_one_frame() override {
-        get_windowing()->pump_events(pts::rendering::PumpEventMode::Poll);
-
-        if (!ensure_webgpu_ready()) {
-            return;
-        }
-
-        if (!m_pipeline) {
-            create_pipeline();
-        }
-
-        auto& surface = get_webgpu_context()->surface();
-        WGPUTextureView view = surface.acquire_texture_view();
-        if (!view) {
-            handle_framebuffer_resize();
-            return;
-        }
-
+    void render(pts::FrameContext& ctx) override {
         auto const& device = get_webgpu_context()->device();
 
-        // Create command encoder
-        WGPUCommandEncoderDescriptor enc_desc = WGPU_COMMAND_ENCODER_DESCRIPTOR_INIT;
-        WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device.handle(), &enc_desc);
+        // Compute MVP
+        float aspect = static_cast<float>(ctx.width()) / static_cast<float>(ctx.height());
+        auto proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
+        auto view = glm::lookAt(glm::vec3(0, 0, 2), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
+        auto vp = proj * view;
 
-        // Begin render pass
-        WGPURenderPassColorAttachment color_attachment = WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
-        color_attachment.view = view;
-        color_attachment.loadOp = WGPULoadOp_Clear;
-        color_attachment.storeOp = WGPUStoreOp_Store;
-        color_attachment.clearValue = WGPUColor{0.1, 0.1, 0.1, 1.0};
+        // Write MVP for each object and draw via RenderGraph
+        m_graph.clear();
+        m_graph.add_pass(
+            {"forward", ctx.surface_view(), ctx.surface_format()},
+            [&](WGPURenderPassEncoder pass, const pts::rendering::RenderWorld& world) {
+                wgpuRenderPassEncoderSetPipeline(pass, m_pipeline->handle());
+                for (const auto& obj : world.objects) {
+                    auto mvp = vp * obj.transform;
+                    wgpuQueueWriteBuffer(device.queue(), m_uniform_buffer.handle(), 0, &mvp,
+                                         sizeof(mvp));
+                    wgpuRenderPassEncoderSetBindGroup(pass, 0, m_bind_group, 0, nullptr);
 
-        WGPURenderPassDescriptor pass_desc = WGPU_RENDER_PASS_DESCRIPTOR_INIT;
-        pass_desc.colorAttachmentCount = 1;
-        pass_desc.colorAttachments = &color_attachment;
-
-        WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &pass_desc);
-        wgpuRenderPassEncoderSetPipeline(pass, m_pipeline->handle());
-        wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
-        wgpuRenderPassEncoderEnd(pass);
-        wgpuRenderPassEncoderRelease(pass);
-
-        // Submit
-        WGPUCommandBufferDescriptor cmd_desc = WGPU_COMMAND_BUFFER_DESCRIPTOR_INIT;
-        WGPUCommandBuffer cmd = wgpuCommandEncoderFinish(encoder, &cmd_desc);
-        wgpuQueueSubmit(device.queue(), 1, &cmd);
-        wgpuCommandBufferRelease(cmd);
-        wgpuCommandEncoderRelease(encoder);
-
-        surface.present();
-        handle_framebuffer_resize();
-    }
-
-    void loop(float) override {
+                    const auto& mesh = world.meshes[obj.mesh_index];
+                    wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh.vertex_buffer.handle(), 0,
+                                                         mesh.vertex_buffer.size());
+                    wgpuRenderPassEncoderSetIndexBuffer(pass, mesh.index_buffer.handle(),
+                                                        WGPUIndexFormat_Uint32, 0,
+                                                        mesh.index_buffer.size());
+                    wgpuRenderPassEncoderDrawIndexed(pass, mesh.index_count, 1, 0, 0, 0);
+                }
+            });
+        m_graph.execute(ctx.encoder(), m_world);
     }
 };
 
@@ -140,11 +172,9 @@ int main(int argc, char* argv[]) {
     config.pattern = "[%H:%M:%S] [%^%L%$] [%n] %v";
 
     pts::LoggingManager logging_manager(config);
-    auto logger = logging_manager.get_logger_shared("HelloTriangle");
-    pts::PluginManager plugin_manager(logger, logging_manager);
 
     try {
-        HelloApp app(logging_manager, plugin_manager);
+        HelloApp app(logging_manager);
         if (!app.init(argc, argv)) {
             return 0;
         }

@@ -7,8 +7,6 @@ project(${project_name} LANGUAGES CXX C)
 
 # Include custom CMake modules
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
-include(PluginHelpers)
-
 #default build type is Debug
 if (CMAKE_BUILD_TYPE STREQUAL "")
     set(CMAKE_BUILD_TYPE Debug)
@@ -19,15 +17,11 @@ endif ()
 if(NOT DEFINED CORE_BUILD_TESTS)
     option(CORE_BUILD_TESTS "Build core unit tests" ON)
 endif()
-if(NOT DEFINED PTS_STATIC_PLUGINS)
-    option(PTS_STATIC_PLUGINS "Build plugins as static libraries" OFF)
-endif()
 if(NOT DEFINED PTS_WINDOWING)
     set(PTS_WINDOWING "glfw")
 endif()
 
 if(EMSCRIPTEN)
-    set(PTS_STATIC_PLUGINS ON CACHE BOOL "" FORCE)
     set(CMAKE_EXECUTABLE_SUFFIX ".html")
 endif()
 
@@ -178,14 +172,6 @@ endif()
 add_subdirectory(core)
 add_subdirectory(hello_triangle)
 add_subdirectory(editor)
-
-# plugins
-add_subdirectory(plugins)
-
-# Link static plugins into the main executable when enabled.
-if(PTS_STATIC_PLUGINS)
-    target_link_libraries(editor PRIVATE pts::plugins)
-endif()
 
 # set editor as the start-up project
 set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT editor)
