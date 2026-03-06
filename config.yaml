@@ -31,6 +31,8 @@ build:
       shaders:
         - input: "assets/shaders/test/*.slang"
           output: "assets/shaders/test/*.wgsl"
+        - input: "hello_triangle/shaders/hello_triangle.slang"
+          output: "hello_triangle/generated/shaders/hello_triangle.wgsl"
     embed:
       template: "core/templates/embedded_resources.h.j2"
       resources:
@@ -49,7 +51,7 @@ build:
           output: "core/tests/generated/embedded_test_resources.h"
           namespace: "test_resources"
         - input:
-            - "hello_triangle/shaders/hello_triangle.wgsl"
+            - "hello_triangle/generated/shaders/hello_triangle.wgsl"
             - "hello_triangle/scenes/triangle.usda"
           output: "hello_triangle/generated/embedded_resources.h"
           namespace: "hello_triangle_resources"

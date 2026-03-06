@@ -49,9 +49,11 @@ class HelloApp : public pts::Playground {
         if (!usda) {
             throw std::runtime_error("missing embedded resource: scenes/triangle.usda");
         }
-        auto shader_src = hello_triangle_resources::get_resource("shaders/hello_triangle.wgsl");
+        auto shader_src =
+            hello_triangle_resources::get_resource("generated/shaders/hello_triangle.wgsl");
         if (!shader_src) {
-            throw std::runtime_error("missing embedded resource: shaders/hello_triangle.wgsl");
+            throw std::runtime_error(
+                "missing embedded resource: generated/shaders/hello_triangle.wgsl");
         }
 
         // Load USD stage from embedded resource
