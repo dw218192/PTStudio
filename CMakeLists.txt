@@ -108,7 +108,7 @@ if(EMSCRIPTEN)
     # Force --whole-archive on USD static archives whose ARCH_CONSTRUCTOR
     # registrations (TfType, schema factories, resolvers, plugin discovery)
     # would otherwise be dead-stripped by the linker.
-    set(_pxr_whole_archive_libs usd_plug usd_tf usd_sdf usd_ar)
+    set(_pxr_whole_archive_libs usd_plug usd_tf usd_sdf usd_ar usd_vt)
     foreach(_mod IN LISTS PTS_USD_MODULES)
         list(APPEND _pxr_whole_archive_libs usd_${_mod})
     endforeach()
@@ -159,6 +159,7 @@ if(EMSCRIPTEN)
         "--use-port=${EMDAWNWEBGPU_PORT_FILE}"
         "--use-port=contrib.glfw3"
         "-pthread"
+        "-sPTHREAD_POOL_SIZE=4"
         "-sALLOW_MEMORY_GROWTH=1"
         "-sMAXIMUM_MEMORY=4GB"
         "-sINITIAL_MEMORY=512MB"
