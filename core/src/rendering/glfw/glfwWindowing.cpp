@@ -14,6 +14,7 @@
 
 #include <memory>
 #include <stdexcept>
+#include <string_view>
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -88,6 +89,13 @@ struct GlfwViewportCallbacks {
 
 struct GlfwErrorCallback {
     static void error_func(int error, const char* description) {
+#ifdef __EMSCRIPTEN__
+        // Emscripten's contrib.glfw3 port doesn't support GLFW_MOUSE_PASSTHROUGH (0x2000D),
+        // which ImGui's GLFW backend sets unconditionally. Suppress this harmless warning.
+        if (std::string_view{description}.find("131085") != std::string_view::npos) {
+            return;
+        }
+#endif
         pts::log_or_cerr(k_glfw_logger_name, pts::LogLevel::Error, "GLFW error: {}: {}", error,
                          description);
     }

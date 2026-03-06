@@ -140,7 +140,6 @@ def generate_cpp_properties(root: Path, build_dir: Path, windowing: str) -> None
     include_paths = sorted(
         {_format_workspace_path(root, path) for path in include_dirs if path.exists()}
     )
-    browse_paths = include_paths
 
     vscode_dir = root / ".vscode"
     vscode_dir.mkdir(parents=True, exist_ok=True)
@@ -152,7 +151,6 @@ def generate_cpp_properties(root: Path, build_dir: Path, windowing: str) -> None
         "cStandard": "c17",
         "defines": sorted(defines),
         "includePath": include_paths,
-        "browse": {"path": browse_paths},
     }
     if compiler_path:
         config["compilerPath"] = compiler_path
