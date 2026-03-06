@@ -1,30 +1,41 @@
 #include <core/commandLine.h>
+#include <core/components/imguiComponent.h>
 #include <core/enumUtils.h>
 #include <core/loggingManager.h>
-#include <core/playground.h>
 #include <core/rendering/renderGraph.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/sceneLoader.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
 #include <core/rendering/webgpuContext.h>
+#include <core/windowedApplication.h>
 #include <embedded_resources.h>
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/usd/stage.h>
+#include <shader_metadata.h>
 
 #include <cstdio>
 #include <exception>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 
-class HelloApp : public pts::Playground {
+struct Uniforms {
+    glm::mat4 mvp;
+    float time;
+    float rotation;
+    float _pad[2];  // align to 16 bytes (std140)
+};
+
+class HelloApp : public pts::WindowedApplication {
    public:
     explicit HelloApp(pts::LoggingManager& logging_manager)
-        : pts::Playground({"Hello Triangle", 1280, 720}, logging_manager) {
+        : pts::WindowedApplication("Hello Triangle", logging_manager) {
     }
 
     ~HelloApp() override {
+        m_imgui.reset();
         if (m_bind_group) {
             wgpuBindGroupRelease(m_bind_group);
         }
@@ -42,16 +53,22 @@ class HelloApp : public pts::Playground {
     WGPUBindGroup m_bind_group = nullptr;
     WGPUBindGroupLayout m_bind_group_layout = nullptr;
 
+    std::unique_ptr<pts::ImGuiComponent> m_imgui;
+    float m_time_scale = 1.0f;
+    float m_rotation_speed = 1.0f;
+
     void on_ready() override {
-        auto const& device = get_webgpu_context()->device();
+        auto const& device = webgpu_context()->device();
 
         auto usda = hello_triangle_resources::get_resource("scenes/triangle.usda");
         if (!usda) {
             throw std::runtime_error("missing embedded resource: scenes/triangle.usda");
         }
-        auto shader_src = hello_triangle_resources::get_resource("shaders/hello_triangle.wgsl");
+        auto shader_src =
+            hello_triangle_resources::get_resource("generated/shaders/hello_triangle.wgsl");
         if (!shader_src) {
-            throw std::runtime_error("missing embedded resource: shaders/hello_triangle.wgsl");
+            throw std::runtime_error(
+                "missing embedded resource: generated/shaders/hello_triangle.wgsl");
         }
 
         // Load USD stage from embedded resource
@@ -63,28 +80,19 @@ class HelloApp : public pts::Playground {
         // Create shader module
         m_shader.emplace(device.create_shader_module_from_source(*shader_src));
 
-        // Create uniform buffer for MVP matrix
-        m_uniform_buffer = device.create_buffer(sizeof(glm::mat4),
+        // Create uniform buffer
+        m_uniform_buffer = device.create_buffer(sizeof(Uniforms),
                                                 WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
 
-        // Create bind group layout
-        WGPUBindGroupLayoutEntry bgl_entry = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-        bgl_entry.binding = 0;
-        bgl_entry.visibility = WGPUShaderStage_Vertex;
-        bgl_entry.buffer.type = WGPUBufferBindingType_Uniform;
-        bgl_entry.buffer.minBindingSize = sizeof(glm::mat4);
-
-        WGPUBindGroupLayoutDescriptor bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-        bgl_desc.entryCount = 1;
-        bgl_desc.entries = &bgl_entry;
-        m_bind_group_layout = wgpuDeviceCreateBindGroupLayout(device.handle(), &bgl_desc);
+        // Create bind group layout from shader reflection metadata
+        m_bind_group_layout = hello_triangle_shader::create_bind_group_layout_0(device.handle());
 
         // Create bind group
         WGPUBindGroupEntry bg_entry = WGPU_BIND_GROUP_ENTRY_INIT;
         bg_entry.binding = 0;
         bg_entry.buffer = m_uniform_buffer.handle();
         bg_entry.offset = 0;
-        bg_entry.size = sizeof(glm::mat4);
+        bg_entry.size = sizeof(Uniforms);
 
         WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
         bg_desc.layout = m_bind_group_layout;
@@ -99,45 +107,54 @@ class HelloApp : public pts::Playground {
         WGPUPipelineLayout pipeline_layout =
             wgpuDeviceCreatePipelineLayout(device.handle(), &pl_desc);
 
-        // Build render pipeline
+        // Build render pipeline using shader reflection metadata
         m_pipeline.emplace(pts::webgpu::RenderPipelineBuilder(device)
                                .shader(*m_shader)
-                               .color_format(get_webgpu_context()->surface_format())
+                               .color_format(webgpu_context()->surface_format())
                                .pipeline_layout(pipeline_layout)
-                               .vertex_buffer({sizeof(pts::rendering::Vertex),
-                                               WGPUVertexStepMode_Vertex,
-                                               {
-                                                   {nullptr, WGPUVertexFormat_Float32x3,
-                                                    offsetof(pts::rendering::Vertex, position), 0},
-                                                   {nullptr, WGPUVertexFormat_Float32x3,
-                                                    offsetof(pts::rendering::Vertex, normal), 1},
-                                                   {nullptr, WGPUVertexFormat_Float32x3,
-                                                    offsetof(pts::rendering::Vertex, color), 2},
-                                               }})
+                               .vertex_layout<hello_triangle_shader::VertexLayout>()
                                .build());
 
         wgpuPipelineLayoutRelease(pipeline_layout);
+
+        // Initialize ImGui
+        m_imgui = std::make_unique<pts::ImGuiComponent>(*viewport(), *webgpu_context(),
+                                                        get_logging_manager());
     }
 
     void render(pts::FrameContext& ctx) override {
-        auto const& device = get_webgpu_context()->device();
+        if (!m_imgui) return;
 
-        // Compute MVP
+        // Begin ImGui frame (scope ensures end_frame is always called)
+        auto scope = m_imgui->frame_scope();
+
+        ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(250, 0), ImGuiCond_FirstUseEver);
+        ImGui::Begin("Controls");
+        ImGui::SliderFloat("Time Scale", &m_time_scale, 0.0f, 5.0f);
+        ImGui::SliderFloat("Rotation Speed", &m_rotation_speed, 0.0f, 5.0f);
+        ImGui::End();
+
+        // 3D render pass (clears surface)
+        auto const& device = webgpu_context()->device();
         float aspect = static_cast<float>(ctx.width()) / static_cast<float>(ctx.height());
         auto proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
         auto view = glm::lookAt(glm::vec3(0, 0, 2), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
         auto vp = proj * view;
+        float t = get_time();
 
-        // Write MVP for each object and draw via RenderGraph
         m_graph.clear();
         m_graph.add_pass(
             {"forward", ctx.surface_view(), ctx.surface_format()},
             [&](WGPURenderPassEncoder pass, const pts::rendering::RenderWorld& world) {
                 wgpuRenderPassEncoderSetPipeline(pass, m_pipeline->handle());
                 for (const auto& obj : world.objects) {
-                    auto mvp = vp * obj.transform;
-                    wgpuQueueWriteBuffer(device.queue(), m_uniform_buffer.handle(), 0, &mvp,
-                                         sizeof(mvp));
+                    Uniforms uniforms;
+                    uniforms.mvp = vp * obj.transform;
+                    uniforms.time = t * m_time_scale;
+                    uniforms.rotation = t * m_rotation_speed;
+                    wgpuQueueWriteBuffer(device.queue(), m_uniform_buffer.handle(), 0, &uniforms,
+                                         sizeof(uniforms));
                     wgpuRenderPassEncoderSetBindGroup(pass, 0, m_bind_group, 0, nullptr);
 
                     const auto& mesh = world.meshes[obj.mesh_index];
@@ -150,6 +167,22 @@ class HelloApp : public pts::Playground {
                 }
             });
         m_graph.execute(ctx.encoder(), m_world);
+
+        // ImGui overlay pass (preserves 3D content)
+        WGPURenderPassColorAttachment color_attachment = WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
+        color_attachment.view = ctx.surface_view();
+        color_attachment.loadOp = WGPULoadOp_Load;
+        color_attachment.storeOp = WGPUStoreOp_Store;
+
+        WGPURenderPassDescriptor pass_desc = WGPU_RENDER_PASS_DESCRIPTOR_INIT;
+        pass_desc.colorAttachmentCount = 1;
+        pass_desc.colorAttachments = &color_attachment;
+
+        WGPURenderPassEncoder imgui_pass =
+            wgpuCommandEncoderBeginRenderPass(ctx.encoder(), &pass_desc);
+        scope.render_into(imgui_pass);
+        wgpuRenderPassEncoderEnd(imgui_pass);
+        wgpuRenderPassEncoderRelease(imgui_pass);
     }
 };
 

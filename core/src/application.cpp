@@ -12,12 +12,10 @@
 
 namespace pts {
 
-Application::Application(std::string_view name, pts::LoggingManager& logging_manager,
-                         float min_frame_time)
+Application::Application(std::string_view name, pts::LoggingManager& logging_manager)
     : m_name{name.begin(), name.end()}, m_logging_manager{&logging_manager} {
     m_logger = m_logging_manager->get_logger_shared(get_name().data());
     INVARIANT_MSG(m_logger != nullptr, "get_logger_shared must return valid logger");
-    set_min_frame_time(min_frame_time);
     m_start_time = std::chrono::steady_clock::now();
 }
 
@@ -33,10 +31,24 @@ bool Application::init(int argc, char* argv[]) {
 
 void Application::register_args(CommandLine& cli) {
     cli.add_int("num-frames", "Quit after N frames (0 = unlimited)", 0);
+    cli.add_int("width", "Window width", 1280);
+    cli.add_int("height", "Window height", 720);
+    cli.add_int("max-fps", "Maximum frames per second (0 = unlimited)", 60);
+    // --log-level is handled in main() before Application construction
+    // (LoggingManager must exist first). Registered here so --help shows it.
+    cli.add_string("log-level", "Log level (trace, debug, info, warn, error, critical)");
 }
 
 void Application::process_args(const CommandLine& cli) {
     set_max_frames(cli.get_int("num-frames"));
+    auto width = cli.get_int("width", 1280);
+    auto height = cli.get_int("height", 720);
+    m_width = static_cast<unsigned>(width > 0 ? width : 1280);
+    m_height = static_cast<unsigned>(height > 0 ? height : 720);
+    auto max_fps = cli.get_int("max-fps", 60);
+    if (max_fps > 0) {
+        set_min_frame_time(1.0f / static_cast<float>(max_fps));
+    }
 }
 
 Application::~Application() = default;

@@ -17,9 +17,13 @@ from repo_tools.core import (
 
 
 
+# ── Shader resolution ───────────────────────────────────────────────
+
+
 def _resolve_slang_shaders(
     root: Path, config: dict, tokens: dict[str, str], args: dict[str, Any]
-) -> tuple[list[tuple[Path, Path]], int]:
+) -> tuple[list[tuple[Path, Path, bool]], int]:
+    """Resolve shader entries, returning (input, output, reflect) tuples."""
     shaders = args.get("shaders")
     if shaders is None:
         shaders = config.get("slangc", {}).get("shaders", [])
@@ -30,7 +34,7 @@ def _resolve_slang_shaders(
         logger.warning("Slang shader configuration must be a list.")
         return [], 0
 
-    resolved: list[tuple[Path, Path]] = []
+    resolved: list[tuple[Path, Path, bool]] = []
     errors = 0
     seen_outputs: set[Path] = set()
 
@@ -45,6 +49,7 @@ def _resolve_slang_shaders(
         if not input_value:
             continue
         output_value = shader.get("output")
+        reflect = bool(shader.get("reflect", False))
 
         input_pattern = resolve_path(root, str(input_value), tokens)
         input_paths = [
@@ -80,7 +85,7 @@ def _resolve_slang_shaders(
                 errors += 1
                 continue
             seen_outputs.add(output_path)
-            resolved.append((input_path, output_path))
+            resolved.append((input_path, output_path, reflect))
 
     return resolved, errors
 
@@ -91,6 +96,31 @@ def _should_compile_shader(input_path: Path, output_path: Path, force: bool) -> 
     if not output_path.exists():
         return True
     return output_path.stat().st_mtime < input_path.stat().st_mtime
+
+
+def _emit_reflection_json(
+    compiler: str,
+    input_path: Path,
+    output_path: Path,
+    conanbuild: Path,
+    passthrough_args: list[str],
+) -> None:
+    """Emit reflection JSON via slangc -reflection-json."""
+    reflect_path = output_path.with_suffix(".reflect.json")
+    reflect_path.parent.mkdir(parents=True, exist_ok=True)
+
+    reflect_cmd = [
+        compiler,
+        str(input_path),
+        "-target", "wgsl",
+        "-reflection-json", str(reflect_path),
+    ]
+    reflect_cmd.extend(passthrough_args)
+
+    logs_dir = reflect_path.parent
+    log_file = logs_dir / f"slangc_reflect_{input_path.stem}.log"
+    ShellCommand(reflect_cmd, env_script=conanbuild).exec(log_file=log_file)
+    logger.info(f"slangc emitted reflection JSON: {reflect_path}")
 
 
 class SlangcTool(RepoTool):
@@ -141,29 +171,42 @@ class SlangcTool(RepoTool):
 
         compiled = 0
         skipped = 0
-        for input_path, output_path in shaders:
+        for input_path, output_path, reflect in shaders:
             if not input_path.exists():
                 logger.error(f"Shader input not found: {input_path}")
                 sys.exit(1)
 
-            if not _should_compile_shader(input_path, output_path, args["force"]):
+            if _should_compile_shader(input_path, output_path, args["force"]):
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                log_file = logs_dir / f"slangc_{output_path.stem}.log"
+                cmd = [
+                    compiler,
+                    str(input_path),
+                    "-o",
+                    str(output_path),
+                    "-target",
+                    "wgsl",
+                ]
+                cmd.extend(ctx.passthrough_args)
+                ShellCommand(cmd, env_script=conanbuild).exec(log_file=log_file)
+                compiled += 1
+            else:
                 logger.info(f"Skipping up-to-date shader: {input_path}")
                 skipped += 1
-                continue
 
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            log_file = logs_dir / f"slangc_{output_path.stem}.log"
-            cmd = [
-                compiler,
-                str(input_path),
-                "-o",
-                str(output_path),
-                "-target",
-                "wgsl",
-            ]
-            cmd.extend(ctx.passthrough_args)
-            ShellCommand(cmd, env_script=conanbuild).exec(log_file=log_file)
-            compiled += 1
+            # Emit reflection JSON sidecar if requested (even if WGSL was up-to-date)
+            if reflect:
+                reflect_path = output_path.with_suffix(".reflect.json")
+                needs_reflect = (
+                    args["force"]
+                    or not reflect_path.exists()
+                    or reflect_path.stat().st_mtime < output_path.stat().st_mtime
+                )
+                if needs_reflect:
+                    _emit_reflection_json(
+                        compiler, input_path, output_path,
+                        conanbuild, ctx.passthrough_args,
+                    )
 
         logger.info(f"slangc compiled {compiled} shader(s)")
         if skipped:

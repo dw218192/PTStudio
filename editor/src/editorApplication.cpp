@@ -1,6 +1,9 @@
 #include "editorApplication.h"
 
 #include <core/commandLine.h>
+#include <core/components/imguiComponent.h>
+#include <core/components/inputComponent.h>
+#include <core/rendering/windowing.h>
 #include <imgui_internal.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 
@@ -17,17 +20,8 @@ static constexpr auto k_scene_view_win_name = "Scene";
 static constexpr auto k_console_win_name = "Console";
 static constexpr auto k_console_log_buffer_size = 1024;
 
-EditorApplication::EditorApplication(std::string_view name, RenderConfig config,
-                                     pts::LoggingManager& logging_manager)
-    : GUIApplication{name, logging_manager, config.width, config.height, config.min_frame_time},
-      m_config{config} {
-    get_imgui_window_info(k_scene_view_win_name).on_enter_region.connect([this] {
-        on_mouse_enter_scene_viewport();
-    });
-    get_imgui_window_info(k_scene_view_win_name).on_leave_region.connect([this] {
-        on_mouse_leave_scene_viewport();
-    });
-
+EditorApplication::EditorApplication(std::string_view name, pts::LoggingManager& logging_manager)
+    : WindowedApplication{name, logging_manager} {
     create_input_actions();
 
     m_console_log_sink =
@@ -38,36 +32,91 @@ EditorApplication::EditorApplication(std::string_view name, RenderConfig config,
 }
 
 EditorApplication::~EditorApplication() {
+    m_input.reset();
+    m_imgui.reset();
 }
 
 void EditorApplication::register_args(CommandLine& cli) {
-    GUIApplication::register_args(cli);
-    cli.add_string("log-level", "Log level (trace, debug, info, warn, error, critical)");
+    WindowedApplication::register_args(cli);
     cli.add_flag("quit-on-start", "Quit the application after starting, useful for testing");
 }
 
 void EditorApplication::process_args(const CommandLine& cli) {
-    GUIApplication::process_args(cli);
+    WindowedApplication::process_args(cli);
     m_app_config.quit_on_start = cli.get_flag("quit-on-start");
-    if (m_app_config.quit_on_start && get_viewport()) {
-        get_viewport()->request_close();
+    if (m_app_config.quit_on_start && viewport()) {
+        viewport()->request_close();
     }
 }
 
-auto EditorApplication::create_input_actions() noexcept -> void {
-    m_input_actions.clear();
-}
+void EditorApplication::on_ready() {
+    m_imgui =
+        std::make_unique<ImGuiComponent>(*viewport(), *webgpu_context(), get_logging_manager());
+    m_input = std::make_unique<InputComponent>(*viewport());
+    m_input->set_handler([this](const InputEvent& e) { handle_input(e); });
 
-auto EditorApplication::wrap_mouse_pos() noexcept -> void {
-}
+    m_imgui->get_window_info(k_scene_view_win_name).on_enter_region.connect([this] {
+        on_mouse_enter_scene_viewport();
+    });
+    m_imgui->get_window_info(k_scene_view_win_name).on_leave_region.connect([this] {
+        on_mouse_leave_scene_viewport();
+    });
 
-auto EditorApplication::on_begin_first_loop() -> void {
     if (m_app_config.quit_on_start) {
-        get_viewport()->request_close();
+        viewport()->request_close();
+    }
+}
+
+void EditorApplication::update(float dt) {
+    if (!m_imgui) return;
+
+    m_input->reset_scroll_delta();
+    auto scope = m_imgui->frame_scope();
+
+    m_input->poll(get_time(), window_width(), window_height(), m_imgui->cur_hovered_widget());
+
+    if (m_first_frame) {
+        setup_docking_layout();
+        m_first_frame = false;
     }
 
-    GUIApplication::on_begin_first_loop();
+    if (viewport() && viewport()->should_close()) {
+        return;
+    }
 
+    // Draw UI
+    ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(),
+                                 ImGuiDockNodeFlags_PassthruCentralNode);
+
+    if (m_imgui->begin_window(k_scene_setting_win_name, ImGuiWindowFlags_NoMove)) {
+        draw_scene_panel();
+    }
+    m_imgui->end_window();
+
+    if (m_imgui->begin_window(k_inspector_win_name, ImGuiWindowFlags_NoMove)) {
+        draw_object_panel();
+    }
+    m_imgui->end_window();
+
+    if (m_imgui->begin_window(k_console_win_name, ImGuiWindowFlags_NoMove)) {
+        draw_console_panel();
+    }
+    m_imgui->end_window();
+
+    if (m_imgui->begin_window(k_scene_view_win_name, ImGuiWindowFlags_NoScrollWithMouse |
+                                                         ImGuiWindowFlags_NoMove |
+                                                         ImGuiWindowFlags_MenuBar)) {
+        draw_scene_viewport();
+    }
+    m_imgui->end_window();
+
+    wrap_mouse_pos();
+}
+
+void EditorApplication::render(FrameContext& /*ctx*/) {
+}
+
+void EditorApplication::setup_docking_layout() {
     if (ImGui::GetIO().IniFilename) {
         if (std::filesystem::exists(ImGui::GetIO().IniFilename)) {
             return;
@@ -89,33 +138,11 @@ auto EditorApplication::on_begin_first_loop() -> void {
     ImGui::DockBuilderDockWindow(k_console_win_name, down);
 }
 
-auto EditorApplication::loop(float dt) -> void {
-    ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(),
-                                 ImGuiDockNodeFlags_PassthruCentralNode);
+auto EditorApplication::create_input_actions() noexcept -> void {
+    m_input_actions.clear();
+}
 
-    if (begin_imgui_window(k_scene_setting_win_name, ImGuiWindowFlags_NoMove)) {
-        draw_scene_panel();
-    }
-    end_imgui_window();
-
-    if (begin_imgui_window(k_inspector_win_name, ImGuiWindowFlags_NoMove)) {
-        draw_object_panel();
-    }
-    end_imgui_window();
-
-    if (begin_imgui_window(k_console_win_name, ImGuiWindowFlags_NoMove)) {
-        draw_console_panel();
-    }
-    end_imgui_window();
-
-    if (begin_imgui_window(k_scene_view_win_name, ImGuiWindowFlags_NoScrollWithMouse |
-                                                      ImGuiWindowFlags_NoMove |
-                                                      ImGuiWindowFlags_MenuBar)) {
-        draw_scene_viewport();
-    }
-    end_imgui_window();
-
-    wrap_mouse_pos();
+auto EditorApplication::wrap_mouse_pos() noexcept -> void {
 }
 
 auto EditorApplication::draw_scene_panel() noexcept -> void {
@@ -146,9 +173,6 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
 
     if (std::abs(view_size.x - last_size.x) >= 0.01f ||
         std::abs(view_size.y - last_size.y) >= 0.01f) {
-        m_config.width = static_cast<unsigned>(view_size.x);
-        m_config.height = static_cast<unsigned>(view_size.y);
-        on_render_config_change(m_config);
         last_size = view_size;
     }
 
@@ -185,9 +209,6 @@ auto EditorApplication::draw_console_panel() const noexcept -> void {
         }
     }
     ImGui::EndChild();
-}
-
-auto EditorApplication::on_render_config_change(RenderConfig const&) -> void {
 }
 
 auto EditorApplication::on_mouse_leave_scene_viewport() noexcept -> void {
