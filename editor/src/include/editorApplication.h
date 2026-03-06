@@ -1,7 +1,7 @@
 #pragma once
 
-#include <core/windowedApplication.h>
 #include <core/inputAction.h>
+#include <core/windowedApplication.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 
 #include <memory>

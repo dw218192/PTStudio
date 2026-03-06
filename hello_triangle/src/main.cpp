@@ -1,16 +1,16 @@
 #include <core/commandLine.h>
 #include <core/enumUtils.h>
 #include <core/loggingManager.h>
-#include <core/windowedApplication.h>
 #include <core/rendering/renderGraph.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/sceneLoader.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
 #include <core/rendering/webgpuContext.h>
+#include <core/windowedApplication.h>
 #include <embedded_resources.h>
-#include <shader_metadata.h>
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/usd/stage.h>
+#include <shader_metadata.h>
 
 #include <cstdio>
 #include <exception>
@@ -71,8 +71,7 @@ class HelloApp : public pts::WindowedApplication {
                                                 WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
 
         // Create bind group layout from shader reflection metadata
-        m_bind_group_layout =
-            hello_triangle_shader::create_bind_group_layout_0(device.handle());
+        m_bind_group_layout = hello_triangle_shader::create_bind_group_layout_0(device.handle());
 
         // Create bind group
         WGPUBindGroupEntry bg_entry = WGPU_BIND_GROUP_ENTRY_INIT;

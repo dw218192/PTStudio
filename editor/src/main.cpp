@@ -13,7 +13,9 @@ int main(int argc, char* argv[]) {
         // Pre-parse for log-level (needed before LoggingManager construction).
         pts::CommandLine pre_cli;
         pre_cli.add_string("log-level", "Log level (trace, debug, info, warn, error, critical)");
-        pre_cli.parse(argc, argv);
+        if (!pre_cli.parse(argc, argv)) {
+            return 0;
+        }
 
         auto log_level_str = pre_cli.get_string("log-level", "info");
 

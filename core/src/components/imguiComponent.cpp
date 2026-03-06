@@ -12,9 +12,7 @@ namespace pts {
 ImGuiComponent::ImGuiComponent(rendering::IViewport& viewport,
                                rendering::WebGpuContext& webgpu_context,
                                LoggingManager& logging_manager)
-    : m_viewport{viewport},
-      m_webgpu_context{webgpu_context},
-      m_logging_manager{logging_manager} {
+    : m_viewport{viewport}, m_webgpu_context{webgpu_context}, m_logging_manager{logging_manager} {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();

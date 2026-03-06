@@ -3,6 +3,7 @@
 #include <core/commandLine.h>
 #include <core/components/imguiComponent.h>
 #include <core/components/inputComponent.h>
+#include <core/rendering/windowing.h>
 #include <imgui_internal.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 
@@ -19,8 +20,7 @@ static constexpr auto k_scene_view_win_name = "Scene";
 static constexpr auto k_console_win_name = "Console";
 static constexpr auto k_console_log_buffer_size = 1024;
 
-EditorApplication::EditorApplication(std::string_view name,
-                                     pts::LoggingManager& logging_manager)
+EditorApplication::EditorApplication(std::string_view name, pts::LoggingManager& logging_manager)
     : WindowedApplication{name, logging_manager} {
     create_input_actions();
 
@@ -50,8 +50,8 @@ void EditorApplication::process_args(const CommandLine& cli) {
 }
 
 void EditorApplication::on_ready() {
-    m_imgui = std::make_unique<ImGuiComponent>(*viewport(), *webgpu_context(),
-                                               get_logging_manager());
+    m_imgui =
+        std::make_unique<ImGuiComponent>(*viewport(), *webgpu_context(), get_logging_manager());
     m_input = std::make_unique<InputComponent>(*viewport());
     m_input->set_handler([this](const InputEvent& e) { handle_input(e); });
 
@@ -73,8 +73,7 @@ void EditorApplication::update(float dt) {
     m_input->reset_scroll_delta();
     m_imgui->begin_frame();
 
-    m_input->poll(get_time(), window_width(), window_height(),
-                  m_imgui->cur_hovered_widget());
+    m_input->poll(get_time(), window_width(), window_height(), m_imgui->cur_hovered_widget());
 
     if (m_first_frame) {
         setup_docking_layout();
@@ -105,8 +104,8 @@ void EditorApplication::update(float dt) {
     m_imgui->end_window();
 
     if (m_imgui->begin_window(k_scene_view_win_name, ImGuiWindowFlags_NoScrollWithMouse |
-                                                          ImGuiWindowFlags_NoMove |
-                                                          ImGuiWindowFlags_MenuBar)) {
+                                                         ImGuiWindowFlags_NoMove |
+                                                         ImGuiWindowFlags_MenuBar)) {
         draw_scene_viewport();
     }
     m_imgui->end_window();

@@ -1,6 +1,6 @@
 #include <core/diagnostics.h>
-#include <core/windowedApplication.h>
 #include <core/rendering/webgpuContext.h>
+#include <core/windowedApplication.h>
 
 namespace pts {
 
@@ -27,8 +27,7 @@ void WindowedApplication::init_windowing() {
     m_viewport->on_drawable_resized.connect(
         [this](pts::rendering::Extent2D) { m_framebuffer_resized = true; });
 
-    m_webgpu_context =
-        pts::rendering::WebGpuContext::create(*m_viewport, get_logging_manager());
+    m_webgpu_context = pts::rendering::WebGpuContext::create(*m_viewport, get_logging_manager());
     INVARIANT_MSG(m_webgpu_context != nullptr, "WebGpuContext::create must return valid context");
 }
 

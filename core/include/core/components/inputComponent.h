@@ -27,8 +27,7 @@ class InputComponent {
     void set_handler(InputHandler handler);
 
     /// Poll input state from ImGui. Call once per frame after ImGui::NewFrame().
-    void poll(float time, int window_width, int window_height,
-              std::string_view cur_hovered_widget);
+    void poll(float time, int window_width, int window_height, std::string_view cur_hovered_widget);
 
     [[nodiscard]] auto mouse_pos() const noexcept -> glm::vec2;
     [[nodiscard]] auto mouse_scroll_delta() const noexcept -> glm::vec2;

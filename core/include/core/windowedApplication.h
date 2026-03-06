@@ -109,10 +109,14 @@ struct WindowedApplication : Application {
     void run() override;
 
    protected:
-    virtual void on_ready() {}
-    virtual void render(FrameContext& /*ctx*/) {}
-    virtual void update(float /*dt*/) {}
-    virtual void on_resize(uint32_t /*w*/, uint32_t /*h*/) {}
+    virtual void on_ready() {
+    }
+    virtual void render(FrameContext& /*ctx*/) {
+    }
+    virtual void update(float /*dt*/) {
+    }
+    virtual void on_resize(uint32_t /*w*/, uint32_t /*h*/) {
+    }
 
     [[nodiscard]] auto webgpu_context() noexcept -> rendering::WebGpuContext*;
     [[nodiscard]] auto webgpu_context() const noexcept -> const rendering::WebGpuContext*;
@@ -126,7 +130,8 @@ struct WindowedApplication : Application {
     [[nodiscard]] auto depth_view() const noexcept -> WGPUTextureView;
 
    private:
-    void loop(float) final {}
+    void loop(float) final {
+    }
     void run_one_frame() override;
     void init_windowing();
     [[nodiscard]] bool ensure_webgpu_ready();

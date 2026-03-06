@@ -166,15 +166,25 @@ def parse_wgsl_reflection(wgsl: str) -> dict:
     vertex_body = _extract_function_body(wgsl, vertex_entry) if vertex_entry else ""
     fragment_body = _extract_function_body(wgsl, fragment_entry) if fragment_entry else ""
 
-    for bm in re.finditer(
-        r'@group\((\d+)\)\s+@binding\((\d+)\)\s+var<(\w+)>\s+(\w+)\s*:\s*(\w+)',
-        wgsl,
-    ):
-        group = int(bm.group(1))
-        binding = int(bm.group(2))
-        buf_type = bm.group(3)  # "uniform", "storage", etc.
-        var_name = bm.group(4)
-        type_name = bm.group(5)
+    # Match both @group(N) @binding(N) and @binding(N) @group(N) orderings
+    binding_re = re.compile(
+        r'(?:'
+        r'@group\((\d+)\)\s+@binding\((\d+)\)'  # group first
+        r'|'
+        r'@binding\((\d+)\)\s+@group\((\d+)\)'   # binding first
+        r')'
+        r'\s+var<(\w+)>\s+(\w+)\s*:\s*(\w+)'
+    )
+    for bm in binding_re.finditer(wgsl):
+        if bm.group(1) is not None:
+            group = int(bm.group(1))
+            binding = int(bm.group(2))
+        else:
+            binding = int(bm.group(3))
+            group = int(bm.group(4))
+        buf_type = bm.group(5)  # "uniform", "storage", etc.
+        var_name = bm.group(6)
+        type_name = bm.group(7)
 
         # Compute struct size
         struct_size = 0

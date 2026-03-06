@@ -3,8 +3,7 @@
 
 namespace pts {
 
-InputComponent::InputComponent(rendering::IViewport& viewport)
-    : m_viewport{viewport} {
+InputComponent::InputComponent(rendering::IViewport& viewport) : m_viewport{viewport} {
     m_viewport.on_scroll.connect([this](double dx, double dy) { on_scroll_event(dx, dy); });
 }
 
