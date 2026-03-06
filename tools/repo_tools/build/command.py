@@ -202,6 +202,14 @@ def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> 
     if args.get("build_only"):
         logger.info("Build only mode (-b): Skipping configuration steps")
         logger.info(f"Building with configuration: {build_type}")
+
+        conanbuild = build_dir / "conanbuild"
+        cmake_exe = find_venv_executable("cmake")
+
+        with CommandGroup("CMake build", env=build_env) as g:
+            build_log_file = logs_dir / "cmake_build.log"
+            build_args = [cmake_exe, "--build", "--preset", preset_name]
+            g.run(build_args, log_file=build_log_file, env_script=conanbuild, cwd=root)
     else:
         ensure_conan_profile()
         export_local_conan_recipes(root, logs_dir, conan_config)

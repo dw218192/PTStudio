@@ -58,6 +58,7 @@ compiler.libcxx=libc++
 
 [options]
 *:shared=False
+onetbb/*:tbb_asserts=False
 
 [tool_requires]
 emsdk/{emsdk_version}
@@ -67,7 +68,7 @@ ninja/1.13.2
 tools.cmake.cmaketoolchain:generator=Ninja
 tools.cmake.cmake_layout:build_folder_vars=["settings.os"]
 tools.build:cflags=['-pthread']
-tools.build:cxxflags=['-pthread', '-DTBB_USE_ASSERT=0', '-fexceptions']
+tools.build:cxxflags=['-pthread', '-fexceptions']
 tools.build:exelinkflags=['-pthread', '-fexceptions', '-sALLOW_MEMORY_GROWTH=1', '-sMAXIMUM_MEMORY=4GB', '-sINITIAL_MEMORY=512MB']
 tools.build:sharedlinkflags=['-pthread', '-fexceptions', '-sALLOW_MEMORY_GROWTH=1', '-sMAXIMUM_MEMORY=4GB', '-sINITIAL_MEMORY=512MB']
 """
