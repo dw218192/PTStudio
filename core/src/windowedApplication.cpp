@@ -1,5 +1,5 @@
 #include <core/diagnostics.h>
-#include <core/playground.h>
+#include <core/windowedApplication.h>
 #include <core/rendering/webgpuContext.h>
 
 namespace pts {
@@ -8,11 +8,12 @@ auto FrameContext::device() const noexcept -> const webgpu::Device& {
     return *m_device;
 }
 
-Playground::Playground(std::string_view name, pts::LoggingManager& logging_manager)
+WindowedApplication::WindowedApplication(std::string_view name,
+                                         pts::LoggingManager& logging_manager)
     : Application{name, logging_manager} {
 }
 
-void Playground::init_windowing() {
+void WindowedApplication::init_windowing() {
     if (m_windowing) return;
 
     m_windowing = pts::rendering::create_windowing(get_logging_manager());
@@ -31,7 +32,7 @@ void Playground::init_windowing() {
     INVARIANT_MSG(m_webgpu_context != nullptr, "WebGpuContext::create must return valid context");
 }
 
-Playground::~Playground() {
+WindowedApplication::~WindowedApplication() {
     if (m_depth_view) {
         wgpuTextureViewRelease(m_depth_view);
     }
@@ -41,7 +42,7 @@ Playground::~Playground() {
     }
 }
 
-void Playground::run() {
+void WindowedApplication::run() {
     init_windowing();
 #if defined(__EMSCRIPTEN__)
     Application::run();
@@ -53,7 +54,7 @@ void Playground::run() {
 #endif
 }
 
-bool Playground::ensure_webgpu_ready() {
+bool WindowedApplication::ensure_webgpu_ready() {
     if (m_webgpu_context->is_failed()) {
         return false;
     }
@@ -71,13 +72,13 @@ bool Playground::ensure_webgpu_ready() {
             return false;
         }
 
-        log(pts::LogLevel::Info, "Playground initialized");
+        log(pts::LogLevel::Info, "Application initialized");
     }
 
     return true;
 }
 
-void Playground::ensure_depth_buffer(uint32_t w, uint32_t h) {
+void WindowedApplication::ensure_depth_buffer(uint32_t w, uint32_t h) {
     if (m_depth_width == w && m_depth_height == h) {
         return;
     }
@@ -114,7 +115,7 @@ void Playground::ensure_depth_buffer(uint32_t w, uint32_t h) {
     m_depth_height = h;
 }
 
-void Playground::run_one_frame() {
+void WindowedApplication::run_one_frame() {
     m_windowing->pump_events(pts::rendering::PumpEventMode::Poll);
 
     if (!ensure_webgpu_ready()) {
@@ -126,7 +127,6 @@ void Playground::run_one_frame() {
         m_ready = true;
     }
 
-    // Handle resize
     if (m_framebuffer_resized) {
         auto const extent = m_viewport->drawable_extent();
         m_webgpu_context->surface().resize(extent);
@@ -163,16 +163,36 @@ void Playground::run_one_frame() {
     surface.present();
 }
 
-auto Playground::get_webgpu_context() noexcept -> pts::rendering::WebGpuContext* {
+auto WindowedApplication::webgpu_context() noexcept -> rendering::WebGpuContext* {
     return m_webgpu_context.get();
 }
 
-auto Playground::get_windowing() noexcept -> pts::rendering::IWindowing* {
+auto WindowedApplication::webgpu_context() const noexcept -> const rendering::WebGpuContext* {
+    return m_webgpu_context.get();
+}
+
+auto WindowedApplication::windowing() noexcept -> rendering::IWindowing* {
     return m_windowing.get();
 }
 
-auto Playground::get_viewport() noexcept -> pts::rendering::IViewport* {
+auto WindowedApplication::viewport() noexcept -> rendering::IViewport* {
     return m_viewport.get();
+}
+
+auto WindowedApplication::viewport() const noexcept -> const rendering::IViewport* {
+    return m_viewport.get();
+}
+
+auto WindowedApplication::window_width() const noexcept -> int {
+    return static_cast<int>(m_viewport->drawable_extent().w);
+}
+
+auto WindowedApplication::window_height() const noexcept -> int {
+    return static_cast<int>(m_viewport->drawable_extent().h);
+}
+
+auto WindowedApplication::depth_view() const noexcept -> WGPUTextureView {
+    return m_depth_view;
 }
 
 }  // namespace pts

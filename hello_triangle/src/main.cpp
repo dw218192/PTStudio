@@ -1,7 +1,7 @@
 #include <core/commandLine.h>
 #include <core/enumUtils.h>
 #include <core/loggingManager.h>
-#include <core/playground.h>
+#include <core/windowedApplication.h>
 #include <core/rendering/renderGraph.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/sceneLoader.h>
@@ -19,10 +19,10 @@
 #include <optional>
 #include <stdexcept>
 
-class HelloApp : public pts::Playground {
+class HelloApp : public pts::WindowedApplication {
    public:
     explicit HelloApp(pts::LoggingManager& logging_manager)
-        : pts::Playground("Hello Triangle", logging_manager) {
+        : pts::WindowedApplication("Hello Triangle", logging_manager) {
     }
 
     ~HelloApp() override {
@@ -44,7 +44,7 @@ class HelloApp : public pts::Playground {
     WGPUBindGroupLayout m_bind_group_layout = nullptr;
 
     void on_ready() override {
-        auto const& device = get_webgpu_context()->device();
+        auto const& device = webgpu_context()->device();
 
         auto usda = hello_triangle_resources::get_resource("scenes/triangle.usda");
         if (!usda) {
@@ -97,7 +97,7 @@ class HelloApp : public pts::Playground {
         // Build render pipeline using shader reflection metadata
         m_pipeline.emplace(pts::webgpu::RenderPipelineBuilder(device)
                                .shader(*m_shader)
-                               .color_format(get_webgpu_context()->surface_format())
+                               .color_format(webgpu_context()->surface_format())
                                .pipeline_layout(pipeline_layout)
                                .vertex_layout<hello_triangle_shader::VertexLayout>()
                                .build());
@@ -106,7 +106,7 @@ class HelloApp : public pts::Playground {
     }
 
     void render(pts::FrameContext& ctx) override {
-        auto const& device = get_webgpu_context()->device();
+        auto const& device = webgpu_context()->device();
 
         // Compute MVP
         float aspect = static_cast<float>(ctx.width()) / static_cast<float>(ctx.height());

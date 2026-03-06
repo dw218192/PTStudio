@@ -21,11 +21,11 @@ struct RenderPassDesc {
     bool depth = false;
 };
 
-struct Playground;
+struct WindowedApplication;
 
 class FrameContext {
     NO_COPY_MOVE(FrameContext);
-    friend struct Playground;
+    friend struct WindowedApplication;
 
    public:
     [[nodiscard]] auto device() const noexcept -> const webgpu::Device&;
@@ -100,38 +100,40 @@ class FrameContext {
     uint32_t m_height;
 };
 
-struct Playground : Application {
-    NO_COPY_MOVE(Playground);
+struct WindowedApplication : Application {
+    NO_COPY_MOVE(WindowedApplication);
 
-    explicit Playground(std::string_view name, pts::LoggingManager& logging_manager);
-    ~Playground() override;
+    explicit WindowedApplication(std::string_view name, pts::LoggingManager& logging_manager);
+    ~WindowedApplication() override;
 
     void run() override;
 
    protected:
-    virtual void on_ready() = 0;
-    virtual void render(FrameContext& ctx) = 0;
-    virtual void update(float /*dt*/) {
-    }
-    virtual void on_resize(uint32_t /*w*/, uint32_t /*h*/) {
-    }
+    virtual void on_ready() {}
+    virtual void render(FrameContext& /*ctx*/) {}
+    virtual void update(float /*dt*/) {}
+    virtual void on_resize(uint32_t /*w*/, uint32_t /*h*/) {}
 
-    [[nodiscard]] auto get_webgpu_context() noexcept -> pts::rendering::WebGpuContext*;
-    [[nodiscard]] auto get_windowing() noexcept -> pts::rendering::IWindowing*;
-    [[nodiscard]] auto get_viewport() noexcept -> pts::rendering::IViewport*;
+    [[nodiscard]] auto webgpu_context() noexcept -> rendering::WebGpuContext*;
+    [[nodiscard]] auto webgpu_context() const noexcept -> const rendering::WebGpuContext*;
+    [[nodiscard]] auto windowing() noexcept -> rendering::IWindowing*;
+    [[nodiscard]] auto viewport() noexcept -> rendering::IViewport*;
+    [[nodiscard]] auto viewport() const noexcept -> const rendering::IViewport*;
+    [[nodiscard]] auto window_width() const noexcept -> int;
+    [[nodiscard]] auto window_height() const noexcept -> int;
+
+    void ensure_depth_buffer(uint32_t w, uint32_t h);
+    [[nodiscard]] auto depth_view() const noexcept -> WGPUTextureView;
 
    private:
+    void loop(float) final {}
     void run_one_frame() override;
-    void loop(float) final {
-    }
-
     void init_windowing();
     [[nodiscard]] bool ensure_webgpu_ready();
-    void ensure_depth_buffer(uint32_t w, uint32_t h);
 
-    std::unique_ptr<pts::rendering::IWindowing> m_windowing;
-    std::unique_ptr<pts::rendering::IViewport> m_viewport;
-    std::unique_ptr<pts::rendering::WebGpuContext> m_webgpu_context;
+    std::unique_ptr<rendering::IWindowing> m_windowing;
+    std::unique_ptr<rendering::IViewport> m_viewport;
+    std::unique_ptr<rendering::WebGpuContext> m_webgpu_context;
 
     WGPUTexture m_depth_texture = nullptr;
     WGPUTextureView m_depth_view = nullptr;

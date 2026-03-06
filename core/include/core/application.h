@@ -14,7 +14,7 @@ class CommandLine;
  *
  * Provides logging, an event loop (with Emscripten support), and
  * frame-rate timing.  Subclasses add windowing and rendering as
- * needed (see GUIApplication).
+ * needed (see WindowedApplication).
  */
 struct Application {
     NO_COPY_MOVE(Application);
