@@ -19,6 +19,12 @@
 #include <optional>
 #include <stdexcept>
 
+struct Uniforms {
+    glm::mat4 mvp;
+    float time;
+    float _pad[3];  // align to 16 bytes (std140)
+};
+
 class HelloApp : public pts::WindowedApplication {
    public:
     explicit HelloApp(pts::LoggingManager& logging_manager)
@@ -66,8 +72,8 @@ class HelloApp : public pts::WindowedApplication {
         // Create shader module
         m_shader.emplace(device.create_shader_module_from_source(*shader_src));
 
-        // Create uniform buffer for MVP matrix
-        m_uniform_buffer = device.create_buffer(sizeof(glm::mat4),
+        // Create uniform buffer for MVP matrix + time
+        m_uniform_buffer = device.create_buffer(sizeof(Uniforms),
                                                 WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
 
         // Create bind group layout from shader reflection metadata
@@ -78,7 +84,7 @@ class HelloApp : public pts::WindowedApplication {
         bg_entry.binding = 0;
         bg_entry.buffer = m_uniform_buffer.handle();
         bg_entry.offset = 0;
-        bg_entry.size = sizeof(glm::mat4);
+        bg_entry.size = sizeof(Uniforms);
 
         WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
         bg_desc.layout = m_bind_group_layout;
@@ -120,9 +126,11 @@ class HelloApp : public pts::WindowedApplication {
             [&](WGPURenderPassEncoder pass, const pts::rendering::RenderWorld& world) {
                 wgpuRenderPassEncoderSetPipeline(pass, m_pipeline->handle());
                 for (const auto& obj : world.objects) {
-                    auto mvp = vp * obj.transform;
-                    wgpuQueueWriteBuffer(device.queue(), m_uniform_buffer.handle(), 0, &mvp,
-                                         sizeof(mvp));
+                    Uniforms uniforms;
+                    uniforms.mvp = vp * obj.transform;
+                    uniforms.time = get_time();
+                    wgpuQueueWriteBuffer(device.queue(), m_uniform_buffer.handle(), 0, &uniforms,
+                                         sizeof(uniforms));
                     wgpuRenderPassEncoderSetBindGroup(pass, 0, m_bind_group, 0, nullptr);
 
                     const auto& mesh = world.meshes[obj.mesh_index];

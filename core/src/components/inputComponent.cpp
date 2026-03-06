@@ -96,7 +96,7 @@ void InputComponent::poll(float time, int window_width, int window_height,
 }
 
 void InputComponent::on_scroll_event(double x, double y) noexcept {
-    m_mouse_scroll_delta = {x, y};
+    m_mouse_scroll_delta += glm::vec2{x, y};
 }
 
 void InputComponent::reset_scroll_delta() noexcept {

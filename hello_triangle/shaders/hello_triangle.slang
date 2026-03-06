@@ -1,5 +1,6 @@
 struct Uniforms {
     float4x4 mvp;
+    float time;
 };
 
 [[vk::binding(0, 0)]]
@@ -18,9 +19,25 @@ struct VsOut {
 
 [shader("vertex")]
 VsOut vs_main(VsIn input) {
+    // Rotate around Y axis
+    float c = cos(u.time);
+    float s = sin(u.time);
+    float3 rotated = float3(
+        input.position.x * c + input.position.z * s,
+        input.position.y,
+        -input.position.x * s + input.position.z * c
+    );
+
     VsOut output;
-    output.position = mul(u.mvp, float4(input.position, 1.0));
-    output.color = input.color;
+    output.position = mul(u.mvp, float4(rotated, 1.0));
+
+    // Animate color with time-based UV shift
+    float phase = u.time * 0.5;
+    output.color = input.color * 0.5 + 0.5 * float3(
+        sin(phase) * 0.5 + 0.5,
+        sin(phase + 2.094) * 0.5 + 0.5,
+        sin(phase + 4.189) * 0.5 + 0.5
+    );
     return output;
 }
 
