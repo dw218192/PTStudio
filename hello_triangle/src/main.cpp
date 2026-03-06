@@ -8,6 +8,7 @@
 #include <core/rendering/webgpu/pipelineBuilder.h>
 #include <core/rendering/webgpuContext.h>
 #include <embedded_resources.h>
+#include <shader_metadata.h>
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/usd/stage.h>
 
@@ -69,17 +70,9 @@ class HelloApp : public pts::Playground {
         m_uniform_buffer = device.create_buffer(sizeof(glm::mat4),
                                                 WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
 
-        // Create bind group layout
-        WGPUBindGroupLayoutEntry bgl_entry = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-        bgl_entry.binding = 0;
-        bgl_entry.visibility = WGPUShaderStage_Vertex;
-        bgl_entry.buffer.type = WGPUBufferBindingType_Uniform;
-        bgl_entry.buffer.minBindingSize = sizeof(glm::mat4);
-
-        WGPUBindGroupLayoutDescriptor bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-        bgl_desc.entryCount = 1;
-        bgl_desc.entries = &bgl_entry;
-        m_bind_group_layout = wgpuDeviceCreateBindGroupLayout(device.handle(), &bgl_desc);
+        // Create bind group layout from shader reflection metadata
+        m_bind_group_layout =
+            hello_triangle_shader::create_bind_group_layout_0(device.handle());
 
         // Create bind group
         WGPUBindGroupEntry bg_entry = WGPU_BIND_GROUP_ENTRY_INIT;
@@ -101,21 +94,12 @@ class HelloApp : public pts::Playground {
         WGPUPipelineLayout pipeline_layout =
             wgpuDeviceCreatePipelineLayout(device.handle(), &pl_desc);
 
-        // Build render pipeline
+        // Build render pipeline using shader reflection metadata
         m_pipeline.emplace(pts::webgpu::RenderPipelineBuilder(device)
                                .shader(*m_shader)
                                .color_format(get_webgpu_context()->surface_format())
                                .pipeline_layout(pipeline_layout)
-                               .vertex_buffer({sizeof(pts::rendering::Vertex),
-                                               WGPUVertexStepMode_Vertex,
-                                               {
-                                                   {nullptr, WGPUVertexFormat_Float32x3,
-                                                    offsetof(pts::rendering::Vertex, position), 0},
-                                                   {nullptr, WGPUVertexFormat_Float32x3,
-                                                    offsetof(pts::rendering::Vertex, normal), 1},
-                                                   {nullptr, WGPUVertexFormat_Float32x3,
-                                                    offsetof(pts::rendering::Vertex, color), 2},
-                                               }})
+                               .vertex_layout<hello_triangle_shader::VertexLayout>()
                                .build());
 
         wgpuPipelineLayoutRelease(pipeline_layout);

@@ -37,6 +37,19 @@ class RenderPipelineBuilder {
     auto vertex_buffer(VertexBufferLayout layout) -> RenderPipelineBuilder&;
     auto pipeline_layout(WGPUPipelineLayout layout) -> RenderPipelineBuilder&;
 
+    /// Configure vertex buffer layout from shader reflection metadata.
+    /// T must have static constexpr stride, step_mode, and attributes members.
+    template <typename VertexLayoutT>
+    auto vertex_layout() -> RenderPipelineBuilder& {
+        VertexBufferLayout layout;
+        layout.stride = VertexLayoutT::stride;
+        layout.step_mode = VertexLayoutT::step_mode;
+        for (const auto& attr : VertexLayoutT::attributes) {
+            layout.attributes.push_back(attr);
+        }
+        return vertex_buffer(std::move(layout));
+    }
+
     [[nodiscard]] auto build() const -> RenderPipeline;
 
    private:
