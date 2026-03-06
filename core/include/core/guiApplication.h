@@ -38,8 +38,7 @@ struct GUIApplication : Application {
 
     NO_COPY_MOVE(GUIApplication);
 
-    GUIApplication(std::string_view name, pts::LoggingManager& logging_manager, unsigned width,
-                   unsigned height, float min_frame_time);
+    GUIApplication(std::string_view name, pts::LoggingManager& logging_manager);
     ~GUIApplication() override;
 
     void run() override;
@@ -73,10 +72,6 @@ struct GUIApplication : Application {
 
     void end_imgui_window() noexcept;
     auto get_window_content_pos(std::string_view name) const noexcept -> std::optional<ImVec2>;
-
-    [[nodiscard]] auto get_min_frame_time() const noexcept {
-        return m_min_frame_time;
-    }
 
     // Windowing / rendering accessors for subclasses
     [[nodiscard]] auto get_webgpu_context() noexcept -> pts::rendering::WebGpuContext* {
@@ -126,7 +121,6 @@ struct GUIApplication : Application {
     std::array<std::string_view, ImGuiMouseButton_COUNT> m_mouse_initiated_window{};
     std::array<std::string_view, ImGuiKey_COUNT> m_key_initiated_window{};
 
-    float m_min_frame_time{0.0f};
     std::unordered_map<std::string_view, ImGuiWindowInfo> m_imgui_window_info;
 
     std::string_view m_cur_hovered_widget, m_prev_hovered_widget;
@@ -137,6 +131,8 @@ struct GUIApplication : Application {
     void run_one_frame() override;
 
    private:
+    void init_windowing();
+
     double m_last_frame_time{0.0};
     bool m_first_loop_done{false};
 
@@ -146,12 +142,12 @@ struct GUIApplication : Application {
     std::unique_ptr<pts::rendering::WebGpuContext> m_webgpu_context;
     bool m_framebuffer_resized{false};
 
-    // Class invariants:
-    // - m_windowing is always valid (non-null)
-    // - m_viewport is always valid (non-null)
-    // - m_webgpu_context is non-null; may be Initializing after construction,
+    // Class invariants (after init_windowing()):
+    // - m_windowing is valid (non-null)
+    // - m_viewport is valid (non-null)
+    // - m_webgpu_context is non-null; may be Initializing,
     //   guaranteed Ready before loop() is called (driven by run_one_frame())
-    // - m_imgui_windowing is always valid (non-null)
+    // - m_imgui_windowing is valid (non-null)
     // - m_imgui_rendering is null until WebGPU context is ready;
     //   guaranteed valid before loop() is called (created in run_one_frame)
     void ensure_imgui_rendering();

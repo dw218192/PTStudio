@@ -1,7 +1,6 @@
 #pragma once
 
 #include <core/guiApplication.h>
-#include <core/renderConfig.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 
 namespace pts::editor {
@@ -18,8 +17,7 @@ struct EditorApplication final : GUIApplication {
     auto on_begin_first_loop() -> void override;
 
    public:
-    EditorApplication(std::string_view name, RenderConfig config,
-                      pts::LoggingManager& logging_manager);
+    EditorApplication(std::string_view name, pts::LoggingManager& logging_manager);
     ~EditorApplication() override;
 
     void register_args(CommandLine& cli) override;
@@ -35,7 +33,6 @@ struct EditorApplication final : GUIApplication {
     auto draw_console_panel() const noexcept -> void;
 
     // events
-    auto on_render_config_change(RenderConfig const& conf) -> void;
     auto on_mouse_leave_scene_viewport() noexcept -> void;
     auto on_mouse_enter_scene_viewport() noexcept -> void;
 
@@ -45,8 +42,7 @@ struct EditorApplication final : GUIApplication {
 
     std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> m_console_log_sink;
 
-    // rendering
-    RenderConfig m_config;
+    float m_fovy = 60.0f;
 
     // input handling
     std::vector<InputAction> m_input_actions;

@@ -3,7 +3,6 @@
 #include <core/enumUtils.h>
 #include <core/error.h>
 #include <core/loggingManager.h>
-#include <core/renderConfig.h>
 
 #include <iostream>
 
@@ -11,8 +10,7 @@
 
 int main(int argc, char* argv[]) {
     try {
-        // Pre-parse for infrastructure args needed before app construction.
-        // Unrecognized args (like --num-frames) are silently ignored.
+        // Pre-parse for log-level (needed before LoggingManager construction).
         pts::CommandLine pre_cli;
         pre_cli.add_string("log-level", "Log level (trace, debug, info, warn, error, critical)");
         pre_cli.parse(argc, argv);
@@ -25,15 +23,13 @@ int main(int argc, char* argv[]) {
             return static_cast<int>(pts::ErrorCode::InvalidArgument);
         }
 
-        auto render_config = pts::RenderConfig{1280, 720, 60.0, 120.0};
-
         // Initialize logging manager
         pts::Config logging_config{};
         logging_config.level = *opt_log_level;
         pts::LoggingManager logging_manager{logging_config};
 
         // Create application, init (register + parse + process args), and run
-        pts::editor::EditorApplication app{"Editor", render_config, logging_manager};
+        pts::editor::EditorApplication app{"Editor", logging_manager};
         if (!app.init(argc, argv)) {
             return 0;  // --help was shown
         }

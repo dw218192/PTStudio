@@ -22,7 +22,7 @@
 class HelloApp : public pts::Playground {
    public:
     explicit HelloApp(pts::LoggingManager& logging_manager)
-        : pts::Playground({"Hello Triangle", 1280, 720}, logging_manager) {
+        : pts::Playground("Hello Triangle", logging_manager) {
     }
 
     ~HelloApp() override {

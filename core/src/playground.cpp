@@ -8,20 +8,26 @@ auto FrameContext::device() const noexcept -> const webgpu::Device& {
     return *m_device;
 }
 
-Playground::Playground(const PlaygroundConfig& config, pts::LoggingManager& logging_manager)
-    : Application{config.name, logging_manager, config.min_frame_time}, m_config{config} {
-    m_windowing = pts::rendering::create_windowing(logging_manager);
+Playground::Playground(std::string_view name, pts::LoggingManager& logging_manager)
+    : Application{name, logging_manager} {
+}
+
+void Playground::init_windowing() {
+    if (m_windowing) return;
+
+    m_windowing = pts::rendering::create_windowing(get_logging_manager());
     INVARIANT_MSG(m_windowing != nullptr, "create_windowing must return valid windowing system");
 
     auto viewport_desc = pts::rendering::ViewportDesc{
-        get_name().data(), config.width, config.height, true, true, true, true,
+        get_name().data(), m_width, m_height, true, true, true, true,
     };
     m_viewport = m_windowing->create_viewport(viewport_desc);
     INVARIANT_MSG(m_viewport != nullptr, "create_viewport must return valid viewport");
     m_viewport->on_drawable_resized.connect(
         [this](pts::rendering::Extent2D) { m_framebuffer_resized = true; });
 
-    m_webgpu_context = pts::rendering::WebGpuContext::create(*m_viewport, logging_manager);
+    m_webgpu_context =
+        pts::rendering::WebGpuContext::create(*m_viewport, get_logging_manager());
     INVARIANT_MSG(m_webgpu_context != nullptr, "WebGpuContext::create must return valid context");
 }
 
@@ -36,6 +42,7 @@ Playground::~Playground() {
 }
 
 void Playground::run() {
+    init_windowing();
 #if defined(__EMSCRIPTEN__)
     Application::run();
 #else

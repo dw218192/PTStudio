@@ -16,13 +16,6 @@ namespace webgpu {
 class Device;
 }
 
-struct PlaygroundConfig {
-    std::string_view name;
-    unsigned width = 1280;
-    unsigned height = 720;
-    float min_frame_time = 1.0f / 60.0f;
-};
-
 struct RenderPassDesc {
     WGPUColor clear_color = {0.1, 0.1, 0.1, 1.0};
     bool depth = false;
@@ -110,7 +103,7 @@ class FrameContext {
 struct Playground : Application {
     NO_COPY_MOVE(Playground);
 
-    explicit Playground(const PlaygroundConfig& config, pts::LoggingManager& logging_manager);
+    explicit Playground(std::string_view name, pts::LoggingManager& logging_manager);
     ~Playground() override;
 
     void run() override;
@@ -132,6 +125,7 @@ struct Playground : Application {
     void loop(float) final {
     }
 
+    void init_windowing();
     [[nodiscard]] bool ensure_webgpu_ready();
     void ensure_depth_buffer(uint32_t w, uint32_t h);
 
@@ -144,7 +138,6 @@ struct Playground : Application {
     uint32_t m_depth_width = 0;
     uint32_t m_depth_height = 0;
 
-    PlaygroundConfig m_config;
     bool m_ready = false;
     bool m_framebuffer_resized = false;
 };

@@ -19,8 +19,7 @@ class CommandLine;
 struct Application {
     NO_COPY_MOVE(Application);
 
-    Application(std::string_view name, pts::LoggingManager& logging_manager,
-                float min_frame_time = 0.0f);
+    Application(std::string_view name, pts::LoggingManager& logging_manager);
     virtual ~Application();
 
     /**
@@ -90,12 +89,18 @@ struct Application {
     /// Increment the frame counter; calls request_stop() when the limit is hit.
     void check_frame_limit() noexcept;
 
+    // Common args accessible to subclasses (set by process_args)
+    unsigned m_width = 1280;
+    unsigned m_height = 720;
+
     /**
      * @brief Process a single frame. Override in derived classes for custom frame behavior.
      *
      * Base implementation: compute timing, call loop(dt), enforce frame-rate cap.
      */
     virtual void run_one_frame();
+
+    float m_min_frame_time{0.0f};
 
    private:
     // Class invariants:
@@ -107,7 +112,6 @@ struct Application {
     std::shared_ptr<spdlog::logger> m_logger;
 
     std::chrono::steady_clock::time_point m_start_time;
-    float m_min_frame_time{0.0f};
     float m_delta_time{0.0f};
     int m_max_frames{0};
     int m_frame_count{0};

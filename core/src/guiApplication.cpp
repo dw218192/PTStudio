@@ -8,16 +8,20 @@
 
 namespace pts {
 
-GUIApplication::GUIApplication(std::string_view name, pts::LoggingManager& logging_manager,
-                               unsigned width, unsigned height, float min_frame_time)
-    : Application{name, logging_manager, min_frame_time}, m_min_frame_time{min_frame_time} {
+GUIApplication::GUIApplication(std::string_view name, pts::LoggingManager& logging_manager)
+    : Application{name, logging_manager} {
+}
+
+void GUIApplication::init_windowing() {
+    if (m_windowing) return;
+
     // Create windowing system
     m_windowing = pts::rendering::create_windowing(get_logging_manager());
     INVARIANT_MSG(m_windowing != nullptr, "create_windowing must return valid windowing system");
 
     // Create viewport
     auto viewport_desc = pts::rendering::ViewportDesc{
-        get_name().data(), width, height, true, true, true, true,
+        get_name().data(), m_width, m_height, true, true, true, true,
     };
     m_viewport = m_windowing->create_viewport(viewport_desc);
     INVARIANT_MSG(m_viewport != nullptr, "create_viewport must return valid viewport");
@@ -32,9 +36,9 @@ GUIApplication::GUIApplication(std::string_view name, pts::LoggingManager& loggi
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;  // Enable Keyboard Controls
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;   // Enable Gamepad Controls
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;      // Enable Docking
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
@@ -42,18 +46,18 @@ GUIApplication::GUIApplication(std::string_view name, pts::LoggingManager& loggi
     // Setup ImGui windowing backend
     m_viewport->on_scroll.connect([this](double dx, double dy) { on_scroll_event(dx, dy); });
     m_imgui_windowing = pts::rendering::create_imgui_windowing(*m_viewport, get_logging_manager());
-
-    // ImGui rendering components are created lazily in ensure_imgui_rendering()
-    // because the WebGPU context may still be initializing asynchronously.
 }
 
 GUIApplication::~GUIApplication() {
     m_imgui_rendering.reset();
     m_imgui_windowing.reset();
-    ImGui::DestroyContext();
+    if (m_windowing) {
+        ImGui::DestroyContext();
+    }
 }
 
 void GUIApplication::run() {
+    init_windowing();
 #if defined(__EMSCRIPTEN__)
     Application::run();
 #else
