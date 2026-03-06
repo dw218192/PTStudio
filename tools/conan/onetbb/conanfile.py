@@ -99,6 +99,14 @@ class OneTBBConan(ConanFile):
         )
         tc.variables["BUILD_SHARED_LIBS"] = self.options.shared
 
+        # Suppress TBB debug assertions for static builds.
+        # oneTBB has a known bug (uxlfoundation/oneTBB#920) where the
+        # intrusive-list assertion fires during arena init with static
+        # linking + debug. This is a TBB-internal invariant violation that
+        # doesn't cause observable problems.
+        if not self.options.shared:
+            tc.preprocessor_definitions["TBB_USE_ASSERT"] = "0"
+
         # Cross-compilation: pass hwloc paths directly to CMake
         if self.options.get_safe("tbbbind", False) and cross_building(self):
             hwloc_pkg = self.dependencies["hwloc"].package_folder
