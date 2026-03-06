@@ -100,6 +100,19 @@ def _collect_target_compile_info(
 # ── VS Code Generation ───────────────────────────────────────────────
 
 
+def _detect_compiler_path(build_dir: Path) -> str | None:
+    """Try to find the C++ compiler path from CMakeCache.txt."""
+    cache_file = build_dir / "CMakeCache.txt"
+    if not cache_file.exists():
+        return "cl.exe" if is_windows() else None
+    text = cache_file.read_text(encoding="utf-8", errors="replace")
+    for line in text.splitlines():
+        if line.startswith("CMAKE_CXX_COMPILER:"):
+            _, _, value = line.partition("=")
+            return value.strip()
+    return "cl.exe" if is_windows() else None
+
+
 def generate_cpp_properties(root: Path, build_dir: Path, windowing: str) -> None:
     """Generate .vscode/c_cpp_properties.json from CMake File API data."""
     # Use CMake file-api outputs for accuracy across generators/platforms.
@@ -131,6 +144,8 @@ def generate_cpp_properties(root: Path, build_dir: Path, windowing: str) -> None
 
     vscode_dir = root / ".vscode"
     vscode_dir.mkdir(parents=True, exist_ok=True)
+    compiler_path = _detect_compiler_path(build_dir)
+
     config = {
         "name": "PTStudio",
         "cppStandard": "c++17",
@@ -139,6 +154,13 @@ def generate_cpp_properties(root: Path, build_dir: Path, windowing: str) -> None
         "includePath": include_paths,
         "browse": {"path": browse_paths},
     }
+    if compiler_path:
+        config["compilerPath"] = compiler_path
+    if is_windows():
+        config["intelliSenseMode"] = "msvc-x64"
+    else:
+        config["intelliSenseMode"] = "gcc-x64"
+
     payload = {"version": 4, "configurations": [config]}
     (vscode_dir / "c_cpp_properties.json").write_text(
         json.dumps(payload, indent=4) + "\n", encoding="utf-8"
