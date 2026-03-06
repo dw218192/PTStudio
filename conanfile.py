@@ -58,6 +58,7 @@ class PTStudioConan(ConanFile):
             self.tool_requires("emsdk/4.0.10")
             self.tool_requires("ninja/1.13.2")
         self.tool_requires("slang/2026.1")
+        self.tool_requires("slang_reflect/1.0")
 
     def configure(self):
         # Configure package options

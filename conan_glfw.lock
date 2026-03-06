@@ -24,6 +24,7 @@
         "boost/1.90.0#d5e8defe7355494953be18524a7f135b%1765955095.179"
     ],
     "build_requires": [
+        "slang_reflect/1.0",
         "slang/2026.1",
         "pkgconf/2.1.0#21f96520faf7660b99f872e956d2ac13%1755505630.82",
         "ninja/1.13.2#c8c5dc2a52ed6e4e42a66d75b4717ceb%1764096931.974",

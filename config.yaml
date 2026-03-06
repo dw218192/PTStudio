@@ -33,13 +33,14 @@ build:
           output: "assets/shaders/test/*.wgsl"
         - input: "hello_triangle/shaders/hello_triangle.slang"
           output: "hello_triangle/generated/shaders/hello_triangle.wgsl"
-          reflect: true
-    shader_codegen:
-      template: "core/templates/shader_metadata.h.j2"
+    slang_reflect:
       shaders:
-        - reflect: "hello_triangle/generated/shaders/hello_triangle.reflect.json"
+        - input: "hello_triangle/shaders/hello_triangle.slang"
           output: "hello_triangle/generated/shader_metadata.h"
           namespace: "hello_triangle_shader"
+          entries:
+            - "vs_main:vertex"
+            - "fs_main:fragment"
     embed:
       template: "core/templates/embedded_resources.h.j2"
       resources:
