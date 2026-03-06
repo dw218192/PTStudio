@@ -80,7 +80,7 @@ bool ImGuiComponent::is_ready() const noexcept {
 }
 
 auto ImGuiComponent::get_window_info(std::string_view name) noexcept -> WindowInfo& {
-    return m_window_info[name];
+    return m_window_info[std::string{name}];
 }
 
 auto ImGuiComponent::begin_window(std::string_view name, ImGuiWindowFlags flags) noexcept -> bool {

@@ -30,7 +30,7 @@ void InputComponent::poll(float time, int window_width, int window_height,
     }
 
     // key events (keyboard only, ImGuiKey values)
-    for (ImGuiKey key = ImGuiKey_NamedKey_BEGIN; key <= ImGuiKey_Oem102;
+    for (ImGuiKey key = ImGuiKey_NamedKey_BEGIN; key < ImGuiKey_NamedKey_END;
          key = static_cast<ImGuiKey>(key + 1)) {
         auto const key_index = static_cast<size_t>(key);
         std::optional<Input> input;
@@ -63,7 +63,7 @@ void InputComponent::poll(float time, int window_width, int window_height,
     if (glm::length(m_mouse_scroll_delta) > 0 && m_handler) {
         auto input = Input{InputType::MOUSE, ActionType::SCROLL, ImGuiMouseButton_Middle};
         m_handler(InputEvent{input, m_mouse_pos, screen_dim, m_mouse_scroll_delta,
-                             m_mouse_initiated_window[ImGuiMouseButton_Middle], time});
+                             cur_hovered_widget, time});
     }
 
     for (int i = 0; i < static_cast<int>(m_mouse_states.size()); ++i) {

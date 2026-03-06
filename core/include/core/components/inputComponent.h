@@ -9,6 +9,7 @@
 #include <functional>
 #include <glm/glm.hpp>
 #include <optional>
+#include <string>
 #include <string_view>
 
 namespace pts {
@@ -45,8 +46,8 @@ class InputComponent {
     std::optional<glm::vec2> m_last_mouse_pos{std::nullopt};
     std::bitset<ImGuiMouseButton_COUNT> m_mouse_states{};
     std::bitset<ImGuiKey_COUNT> m_key_states{};
-    std::array<std::string_view, ImGuiMouseButton_COUNT> m_mouse_initiated_window{};
-    std::array<std::string_view, ImGuiKey_COUNT> m_key_initiated_window{};
+    std::array<std::string, ImGuiMouseButton_COUNT> m_mouse_initiated_window{};
+    std::array<std::string, ImGuiKey_COUNT> m_key_initiated_window{};
 
     static constexpr auto k_no_hovered_widget = "";
 };

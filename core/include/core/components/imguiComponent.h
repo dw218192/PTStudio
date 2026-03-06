@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <unordered_map>
 
@@ -56,10 +57,10 @@ class ImGuiComponent {
     std::unique_ptr<rendering::IImguiWindowing> m_imgui_windowing;
     std::unique_ptr<rendering::IImguiRendering> m_imgui_rendering;
 
-    std::unordered_map<std::string_view, WindowInfo> m_window_info;
-    std::string_view m_cur_hovered_widget;
-    std::string_view m_prev_hovered_widget;
-    std::string_view m_cur_focused_widget;
+    std::unordered_map<std::string, WindowInfo> m_window_info;
+    std::string m_cur_hovered_widget;
+    std::string m_prev_hovered_widget;
+    std::string m_cur_focused_widget;
 
     static constexpr auto k_no_hovered_widget = "";
 };

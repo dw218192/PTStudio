@@ -41,8 +41,10 @@ void Application::register_args(CommandLine& cli) {
 
 void Application::process_args(const CommandLine& cli) {
     set_max_frames(cli.get_int("num-frames"));
-    m_width = static_cast<unsigned>(cli.get_int("width", 1280));
-    m_height = static_cast<unsigned>(cli.get_int("height", 720));
+    auto width = cli.get_int("width", 1280);
+    auto height = cli.get_int("height", 720);
+    m_width = static_cast<unsigned>(width > 0 ? width : 1280);
+    m_height = static_cast<unsigned>(height > 0 ? height : 720);
     auto max_fps = cli.get_int("max-fps", 60);
     if (max_fps > 0) {
         set_min_frame_time(1.0f / static_cast<float>(max_fps));
