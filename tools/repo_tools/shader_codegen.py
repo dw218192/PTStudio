@@ -1,4 +1,4 @@
-"""Shader reflection codegen — generates C++ headers from reflection JSON."""
+"""Shader reflection codegen — generates C++ headers from Slang reflection JSON."""
 
 from __future__ import annotations
 
@@ -28,83 +28,197 @@ def _load_template(template_path: Path):
     return _jinja_env.from_string(template_path.read_text(encoding="utf-8"))
 
 
-def _visibility_flags(visibility: list[str]) -> str:
-    """Convert visibility list to WGPUShaderStage flags expression."""
+# ── Slang reflection JSON → template context ────────────────────────
+
+
+def _slang_type_to_vertex_format(type_info: dict) -> tuple[str, int]:
+    """Map a Slang reflection type to (WGPUVertexFormat, byte_size)."""
+    kind = type_info.get("kind")
+
+    if kind == "scalar":
+        scalar = type_info.get("scalarType")
+        return {
+            "float32": ("WGPUVertexFormat_Float32", 4),
+            "int32": ("WGPUVertexFormat_Sint32", 4),
+            "uint32": ("WGPUVertexFormat_Uint32", 4),
+        }[scalar]
+
+    if kind == "vector":
+        count = type_info["elementCount"]
+        scalar = type_info["elementType"]["scalarType"]
+        table = {
+            ("float32", 2): ("WGPUVertexFormat_Float32x2", 8),
+            ("float32", 3): ("WGPUVertexFormat_Float32x3", 12),
+            ("float32", 4): ("WGPUVertexFormat_Float32x4", 16),
+            ("int32", 2): ("WGPUVertexFormat_Sint32x2", 8),
+            ("int32", 3): ("WGPUVertexFormat_Sint32x3", 12),
+            ("int32", 4): ("WGPUVertexFormat_Sint32x4", 16),
+            ("uint32", 2): ("WGPUVertexFormat_Uint32x2", 8),
+            ("uint32", 3): ("WGPUVertexFormat_Uint32x3", 12),
+            ("uint32", 4): ("WGPUVertexFormat_Uint32x4", 16),
+        }
+        return table[(scalar, count)]
+
+    raise ValueError(f"Unsupported vertex input type: {type_info}")
+
+
+def _extract_vertex_inputs(param: dict) -> list[dict]:
+    """Extract vertex input attributes from a Slang entry point parameter."""
+    binding = param.get("binding", {})
+    if binding.get("kind") != "varyingInput":
+        return []
+
+    type_info = param.get("type", {})
+
+    # Struct parameter — each field is a separate vertex attribute
+    if type_info.get("kind") == "struct":
+        inputs = []
+        for field in type_info.get("fields", []):
+            fb = field.get("binding", {})
+            if fb.get("kind") != "varyingInput":
+                continue
+            fmt, size = _slang_type_to_vertex_format(field["type"])
+            inputs.append({
+                "location": fb["index"],
+                "name": field["name"],
+                "format": fmt,
+                "size": size,
+            })
+        return inputs
+
+    # Scalar/vector parameter — single attribute
+    fmt, size = _slang_type_to_vertex_format(type_info)
+    return [{
+        "location": binding["index"],
+        "name": param.get("name", ""),
+        "format": fmt,
+        "size": size,
+    }]
+
+
+def _binding_struct_size(type_info: dict) -> int:
+    """Extract the buffer size from a Slang binding type."""
+    # constantBuffer → elementVarLayout.binding.size
+    evl = type_info.get("elementVarLayout", {})
+    evl_binding = evl.get("binding", {})
+    if "size" in evl_binding:
+        return evl_binding["size"]
+    return 0
+
+
+def _binding_buffer_type(type_info: dict) -> str:
+    """Map Slang type kind to WGPUBufferBindingType suffix."""
+    kind = type_info.get("kind", "")
+    if kind == "constantBuffer":
+        return "Uniform"
+    if kind in ("structuredBuffer", "rwStructuredBuffer"):
+        return "Storage" if "rw" in kind.lower() else "ReadOnlyStorage"
+    return "Uniform"
+
+
+def _visibility_flags(stages: list[str]) -> str:
+    """Convert stage list to WGPUShaderStage flags expression."""
     parts = []
-    if "vertex" in visibility:
+    if "vertex" in stages:
         parts.append("WGPUShaderStage_Vertex")
-    if "fragment" in visibility:
+    if "fragment" in stages:
         parts.append("WGPUShaderStage_Fragment")
     if not parts:
         parts.append("WGPUShaderStage_Vertex | WGPUShaderStage_Fragment")
     return " | ".join(parts)
 
 
-def _buffer_type_field(buffer_type: str) -> str:
-    """Return the struct field assignment for buffer type."""
-    mapping = {
-        "WGPUBufferBindingType_Uniform": "Uniform",
-        "WGPUBufferBindingType_Storage": "Storage",
-        "WGPUBufferBindingType_ReadOnlyStorage": "ReadOnlyStorage",
-    }
-    return mapping.get(buffer_type, "Uniform")
+def _count_fragment_outputs(fragment_ep: dict) -> int:
+    """Count color attachment outputs from a fragment entry point."""
+    result = fragment_ep.get("result", {})
+    result_type = result.get("type", {})
+
+    # Struct return — count fields with varyingOutput binding
+    if result_type.get("kind") == "struct":
+        count = 0
+        for field in result_type.get("fields", []):
+            fb = field.get("binding", {})
+            if fb.get("kind") == "varyingOutput":
+                count += 1
+        return max(count, 1)
+
+    # Single output
+    rb = result.get("binding", {})
+    if rb.get("kind") == "varyingOutput":
+        return 1
+    return 1
 
 
 def _build_template_data(reflection: dict, namespace: str) -> dict:
-    """Transform reflection JSON into template context variables."""
-    ep = reflection.get("entry_points", {})
-    vertex_entry = ep.get("vertex", "vs_main")
-    fragment_entry = ep.get("fragment", "fs_main")
+    """Transform Slang reflection JSON into template context variables."""
+    entry_points = reflection.get("entryPoints", [])
+    vertex_ep = next((ep for ep in entry_points if ep["stage"] == "vertex"), None)
+    fragment_ep = next((ep for ep in entry_points if ep["stage"] == "fragment"), None)
 
-    # Vertex layout
-    vertex_inputs = reflection.get("vertex_inputs", [])
+    vertex_entry = vertex_ep["name"] if vertex_ep else "vs_main"
+    fragment_entry = fragment_ep["name"] if fragment_ep else "fs_main"
+
+    # ── Vertex layout ──
     vertex_layout = None
-    if vertex_inputs:
-        # Compute stride and offsets
-        offset = 0
-        attrs = []
-        for vi in sorted(vertex_inputs, key=lambda x: x["location"]):
-            attrs.append({
-                "format": vi.get("format", ""),
-                "offset": offset,
-                "location": vi["location"],
-                "name": vi.get("name", ""),
-            })
-            offset += vi.get("size", 0)
+    if vertex_ep:
+        all_inputs = []
+        for param in vertex_ep.get("parameters", []):
+            all_inputs.extend(_extract_vertex_inputs(param))
 
-        vertex_layout = {
-            "stride": offset,
-            "attributes": attrs,
-        }
+        if all_inputs:
+            all_inputs.sort(key=lambda x: x["location"])
+            offset = 0
+            attrs = []
+            for vi in all_inputs:
+                attrs.append({
+                    "format": vi["format"],
+                    "offset": offset,
+                    "location": vi["location"],
+                    "name": vi["name"],
+                })
+                offset += vi["size"]
+            vertex_layout = {"stride": offset, "attributes": attrs}
 
-    # Bind groups — group bindings by group number
-    bindings = reflection.get("bindings", [])
+    # ── Bind groups ──
+    # Top-level parameters are global bindings (uniforms, storage buffers, etc.)
+    global_params = reflection.get("parameters", [])
+    # Group 0 is the default; Slang uses registerSpace for multi-group layouts
     groups: dict[int, list[dict]] = {}
-    for b in bindings:
-        g = b["group"]
-        groups.setdefault(g, []).append(b)
+
+    for param in global_params:
+        pb = param.get("binding", {})
+        if pb.get("kind") != "descriptorTableSlot":
+            continue
+
+        binding_idx = pb.get("index", 0)
+        # registerSpace for group, defaulting to 0
+        group_idx = pb.get("space", 0)
+        type_info = param.get("type", {})
+
+        # Determine visibility from entry point usage
+        visibility = []
+        for ep in entry_points:
+            for b in ep.get("bindings", []):
+                if b["name"] == param["name"] and b["binding"].get("used", 0):
+                    visibility.append(ep["stage"])
+
+        entry = {
+            "binding": binding_idx,
+            "visibility": _visibility_flags(visibility),
+            "buffer_type": _binding_buffer_type(type_info),
+            "min_binding_size": _binding_struct_size(type_info),
+            "var_name": param.get("name", ""),
+            "type_name": type_info.get("elementType", {}).get("name", ""),
+        }
+        groups.setdefault(group_idx, []).append(entry)
 
     bind_groups = []
     for group_num in sorted(groups):
         entries = sorted(groups[group_num], key=lambda x: x["binding"])
-        bind_groups.append({
-            "group": group_num,
-            "entries": [
-                {
-                    "binding": e["binding"],
-                    "visibility": _visibility_flags(e.get("visibility", [])),
-                    "buffer_type": _buffer_type_field(e.get("buffer_type", "")),
-                    "min_binding_size": e.get("struct_size", 0),
-                    "var_name": e.get("var_name", ""),
-                    "type_name": e.get("type_name", ""),
-                }
-                for e in entries
-            ],
-        })
+        bind_groups.append({"group": group_num, "entries": entries})
 
-    # Fragment outputs
-    fragment_outputs = reflection.get("fragment_outputs", [])
-    color_attachment_count = len(fragment_outputs)
+    # ── Fragment outputs ──
+    color_attachment_count = _count_fragment_outputs(fragment_ep) if fragment_ep else 1
 
     return {
         "namespace": namespace,
