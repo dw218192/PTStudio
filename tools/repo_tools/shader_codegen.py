@@ -37,11 +37,14 @@ def _slang_type_to_vertex_format(type_info: dict) -> tuple[str, int]:
 
     if kind == "scalar":
         scalar = type_info.get("scalarType")
-        return {
+        scalar_map = {
             "float32": ("WGPUVertexFormat_Float32", 4),
             "int32": ("WGPUVertexFormat_Sint32", 4),
             "uint32": ("WGPUVertexFormat_Uint32", 4),
-        }[scalar]
+        }
+        if scalar not in scalar_map:
+            raise ValueError(f"Unsupported scalar type '{scalar}' in vertex input: {type_info}")
+        return scalar_map[scalar]
 
     if kind == "vector":
         count = type_info["elementCount"]
@@ -57,7 +60,12 @@ def _slang_type_to_vertex_format(type_info: dict) -> tuple[str, int]:
             ("uint32", 3): ("WGPUVertexFormat_Uint32x3", 12),
             ("uint32", 4): ("WGPUVertexFormat_Uint32x4", 16),
         }
-        return table[(scalar, count)]
+        key = (scalar, count)
+        if key not in table:
+            raise ValueError(
+                f"Unsupported vector type '{scalar}x{count}' in vertex input: {type_info}"
+            )
+        return table[key]
 
     raise ValueError(f"Unsupported vertex input type: {type_info}")
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/defines.h>
+#include <core/rendering/webgpu/webgpu.h>
 #include <core/signal.h>
 #include <imgui.h>
 
@@ -29,13 +30,39 @@ class ImGuiComponent {
         Signal<void()> on_enter_region;
     };
 
+    /// RAII scope that pairs begin_frame / end_frame.
+    /// Destructor calls end_frame() (full render) unless render_into() was called first.
+    class FrameScope {
+        NO_COPY_MOVE(FrameScope);
+
+       public:
+        ~FrameScope();
+
+        /// Finalize ImGui and render draw data into an existing render pass.
+        /// After this call, the destructor is a no-op.
+        void render_into(WGPURenderPassEncoder pass);
+
+       private:
+        friend class ImGuiComponent;
+        explicit FrameScope(ImGuiComponent& owner);
+        ImGuiComponent* m_owner;
+    };
+
     explicit ImGuiComponent(rendering::IViewport& viewport,
                             rendering::WebGpuContext& webgpu_context,
                             LoggingManager& logging_manager);
     ~ImGuiComponent();
 
+    /// Begin a new ImGui frame and return an RAII scope guard.
+    [[nodiscard]] FrameScope frame_scope();
+
     void begin_frame();
+
+    /// Finalize and render using own surface + command encoder (editor pattern).
     void end_frame();
+
+    /// Finalize and render into an existing render pass (overlay pattern).
+    void end_frame(WGPURenderPassEncoder pass);
 
     [[nodiscard]] bool is_ready() const noexcept;
 
@@ -49,6 +76,7 @@ class ImGuiComponent {
 
    private:
     void ensure_rendering_backend();
+    void update_widget_tracking();
 
     rendering::IViewport& m_viewport;
     rendering::WebGpuContext& m_webgpu_context;

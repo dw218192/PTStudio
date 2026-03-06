@@ -6,6 +6,7 @@
 
 #include <array>
 #include <bitset>
+#include <boost/signals2/connection.hpp>
 #include <functional>
 #include <glm/glm.hpp>
 #include <optional>
@@ -40,14 +41,15 @@ class InputComponent {
    private:
     rendering::IViewport& m_viewport;
     InputHandler m_handler;
+    boost::signals2::scoped_connection m_scroll_connection;
 
     glm::vec2 m_mouse_scroll_delta{0.0f};
     glm::vec2 m_mouse_pos{0.0f};
     std::optional<glm::vec2> m_last_mouse_pos{std::nullopt};
     std::bitset<ImGuiMouseButton_COUNT> m_mouse_states{};
-    std::bitset<ImGuiKey_COUNT> m_key_states{};
+    std::bitset<ImGuiKey_NamedKey_COUNT> m_key_states{};
     std::array<std::string, ImGuiMouseButton_COUNT> m_mouse_initiated_window{};
-    std::array<std::string, ImGuiKey_COUNT> m_key_initiated_window{};
+    std::array<std::string, ImGuiKey_NamedKey_COUNT> m_key_initiated_window{};
 
     static constexpr auto k_no_hovered_widget = "";
 };

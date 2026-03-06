@@ -1,6 +1,7 @@
 struct Uniforms {
     float4x4 mvp;
     float time;
+    float rotation;
 };
 
 [[vk::binding(0, 0)]]
@@ -20,8 +21,8 @@ struct VsOut {
 [shader("vertex")]
 VsOut vs_main(VsIn input) {
     // Rotate around Y axis
-    float c = cos(u.time);
-    float s = sin(u.time);
+    float c = cos(u.rotation);
+    float s = sin(u.rotation);
     float3 rotated = float3(
         input.position.x * c + input.position.z * s,
         input.position.y,

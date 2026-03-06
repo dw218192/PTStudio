@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace pts::webgpu {
@@ -44,6 +45,7 @@ class RenderPipelineBuilder {
         VertexBufferLayout layout;
         layout.stride = VertexLayoutT::stride;
         layout.step_mode = VertexLayoutT::step_mode;
+        layout.attributes.reserve(VertexLayoutT::attributes.size());
         for (const auto& attr : VertexLayoutT::attributes) {
             layout.attributes.push_back(attr);
         }

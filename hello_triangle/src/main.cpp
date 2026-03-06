@@ -1,4 +1,5 @@
 #include <core/commandLine.h>
+#include <core/components/imguiComponent.h>
 #include <core/enumUtils.h>
 #include <core/loggingManager.h>
 #include <core/rendering/renderGraph.h>
@@ -16,13 +17,15 @@
 #include <exception>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 
 struct Uniforms {
     glm::mat4 mvp;
     float time;
-    float _pad[3];  // align to 16 bytes (std140)
+    float rotation;
+    float _pad[2];  // align to 16 bytes (std140)
 };
 
 class HelloApp : public pts::WindowedApplication {
@@ -32,6 +35,7 @@ class HelloApp : public pts::WindowedApplication {
     }
 
     ~HelloApp() override {
+        m_imgui.reset();
         if (m_bind_group) {
             wgpuBindGroupRelease(m_bind_group);
         }
@@ -48,6 +52,10 @@ class HelloApp : public pts::WindowedApplication {
     pts::webgpu::Buffer m_uniform_buffer;
     WGPUBindGroup m_bind_group = nullptr;
     WGPUBindGroupLayout m_bind_group_layout = nullptr;
+
+    std::unique_ptr<pts::ImGuiComponent> m_imgui;
+    float m_time_scale = 1.0f;
+    float m_rotation_speed = 1.0f;
 
     void on_ready() override {
         auto const& device = webgpu_context()->device();
@@ -72,7 +80,7 @@ class HelloApp : public pts::WindowedApplication {
         // Create shader module
         m_shader.emplace(device.create_shader_module_from_source(*shader_src));
 
-        // Create uniform buffer for MVP matrix + time
+        // Create uniform buffer
         m_uniform_buffer = device.create_buffer(sizeof(Uniforms),
                                                 WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
 
@@ -108,18 +116,33 @@ class HelloApp : public pts::WindowedApplication {
                                .build());
 
         wgpuPipelineLayoutRelease(pipeline_layout);
+
+        // Initialize ImGui
+        m_imgui = std::make_unique<pts::ImGuiComponent>(*viewport(), *webgpu_context(),
+                                                        get_logging_manager());
     }
 
     void render(pts::FrameContext& ctx) override {
-        auto const& device = webgpu_context()->device();
+        if (!m_imgui) return;
 
-        // Compute MVP
+        // Begin ImGui frame (scope ensures end_frame is always called)
+        auto scope = m_imgui->frame_scope();
+
+        ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(250, 0), ImGuiCond_FirstUseEver);
+        ImGui::Begin("Controls");
+        ImGui::SliderFloat("Time Scale", &m_time_scale, 0.0f, 5.0f);
+        ImGui::SliderFloat("Rotation Speed", &m_rotation_speed, 0.0f, 5.0f);
+        ImGui::End();
+
+        // 3D render pass (clears surface)
+        auto const& device = webgpu_context()->device();
         float aspect = static_cast<float>(ctx.width()) / static_cast<float>(ctx.height());
         auto proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
         auto view = glm::lookAt(glm::vec3(0, 0, 2), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
         auto vp = proj * view;
+        float t = get_time();
 
-        // Write MVP for each object and draw via RenderGraph
         m_graph.clear();
         m_graph.add_pass(
             {"forward", ctx.surface_view(), ctx.surface_format()},
@@ -128,7 +151,8 @@ class HelloApp : public pts::WindowedApplication {
                 for (const auto& obj : world.objects) {
                     Uniforms uniforms;
                     uniforms.mvp = vp * obj.transform;
-                    uniforms.time = get_time();
+                    uniforms.time = t * m_time_scale;
+                    uniforms.rotation = t * m_rotation_speed;
                     wgpuQueueWriteBuffer(device.queue(), m_uniform_buffer.handle(), 0, &uniforms,
                                          sizeof(uniforms));
                     wgpuRenderPassEncoderSetBindGroup(pass, 0, m_bind_group, 0, nullptr);
@@ -143,6 +167,22 @@ class HelloApp : public pts::WindowedApplication {
                 }
             });
         m_graph.execute(ctx.encoder(), m_world);
+
+        // ImGui overlay pass (preserves 3D content)
+        WGPURenderPassColorAttachment color_attachment = WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
+        color_attachment.view = ctx.surface_view();
+        color_attachment.loadOp = WGPULoadOp_Load;
+        color_attachment.storeOp = WGPUStoreOp_Store;
+
+        WGPURenderPassDescriptor pass_desc = WGPU_RENDER_PASS_DESCRIPTOR_INIT;
+        pass_desc.colorAttachmentCount = 1;
+        pass_desc.colorAttachments = &color_attachment;
+
+        WGPURenderPassEncoder imgui_pass =
+            wgpuCommandEncoderBeginRenderPass(ctx.encoder(), &pass_desc);
+        scope.render_into(imgui_pass);
+        wgpuRenderPassEncoderEnd(imgui_pass);
+        wgpuRenderPassEncoderRelease(imgui_pass);
     }
 };
 

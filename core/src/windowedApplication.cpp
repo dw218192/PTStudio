@@ -183,10 +183,12 @@ auto WindowedApplication::viewport() const noexcept -> const rendering::IViewpor
 }
 
 auto WindowedApplication::window_width() const noexcept -> int {
+    if (!m_viewport) return static_cast<int>(m_width);
     return static_cast<int>(m_viewport->drawable_extent().w);
 }
 
 auto WindowedApplication::window_height() const noexcept -> int {
+    if (!m_viewport) return static_cast<int>(m_height);
     return static_cast<int>(m_viewport->drawable_extent().h);
 }
 

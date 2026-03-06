@@ -71,7 +71,7 @@ void EditorApplication::update(float dt) {
     if (!m_imgui) return;
 
     m_input->reset_scroll_delta();
-    m_imgui->begin_frame();
+    auto scope = m_imgui->frame_scope();
 
     m_input->poll(get_time(), window_width(), window_height(), m_imgui->cur_hovered_widget());
 
@@ -111,8 +111,6 @@ void EditorApplication::update(float dt) {
     m_imgui->end_window();
 
     wrap_mouse_pos();
-
-    m_imgui->end_frame();
 }
 
 void EditorApplication::render(FrameContext& /*ctx*/) {

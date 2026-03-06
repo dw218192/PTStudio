@@ -2,12 +2,33 @@
 #include <core/diagnostics.h>
 #include <core/rendering/webgpuContext.h>
 #include <core/rendering/windowing.h>
+#include <imgui_impl_wgpu.h>
 #include <imgui_internal.h>
 
 #include "../rendering/imguiBackend.h"
 #include "../rendering/renderingComponents.h"
 
 namespace pts {
+
+// ── FrameScope ──────────────────────────────────────────────────────
+
+ImGuiComponent::FrameScope::FrameScope(ImGuiComponent& owner) : m_owner{&owner} {
+    m_owner->begin_frame();
+}
+
+ImGuiComponent::FrameScope::~FrameScope() {
+    if (m_owner) {
+        m_owner->end_frame();
+    }
+}
+
+void ImGuiComponent::FrameScope::render_into(WGPURenderPassEncoder pass) {
+    INVARIANT_MSG(m_owner, "render_into called on already-consumed FrameScope");
+    m_owner->end_frame(pass);
+    m_owner = nullptr;
+}
+
+// ── ImGuiComponent ──────────────────────────────────────────────────
 
 ImGuiComponent::ImGuiComponent(rendering::IViewport& viewport,
                                rendering::WebGpuContext& webgpu_context,
@@ -44,6 +65,10 @@ void ImGuiComponent::ensure_rendering_backend() {
     m_imgui_rendering = std::move(imgui_components.imgui_rendering);
 }
 
+auto ImGuiComponent::frame_scope() -> FrameScope {
+    return FrameScope{*this};
+}
+
 void ImGuiComponent::begin_frame() {
     ensure_rendering_backend();
 
@@ -59,7 +84,16 @@ void ImGuiComponent::begin_frame() {
 void ImGuiComponent::end_frame() {
     ImGui::Render();
     m_imgui_rendering->render(false);
+    update_widget_tracking();
+}
 
+void ImGuiComponent::end_frame(WGPURenderPassEncoder pass) {
+    ImGui::Render();
+    ImGui_ImplWGPU_RenderDrawData(ImGui::GetDrawData(), pass);
+    update_widget_tracking();
+}
+
+void ImGuiComponent::update_widget_tracking() {
     if (m_prev_hovered_widget != m_cur_hovered_widget) {
         if (m_prev_hovered_widget != k_no_hovered_widget) {
             auto it = m_window_info.find(m_prev_hovered_widget);

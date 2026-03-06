@@ -4,8 +4,8 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <string_view>
 #include <optional>
+#include <string_view>
 #include <unordered_map>
 
 namespace hello_triangle_resources {
@@ -13,8 +13,9 @@ namespace hello_triangle_resources {
 namespace detail {
 
 // Resource: generated/shaders/hello_triangle.wgsl
-// Size: 2043 bytes
-inline constexpr const char k_hello_triangle_wgsl_data[] = R"(struct _MatrixStorage_float4x4_ColMajorstd140_0
+// Size: 2083 bytes
+inline constexpr const char k_hello_triangle_wgsl_data[] =
+    R"(struct _MatrixStorage_float4x4_ColMajorstd140_0
 {
     @align(16) data_0 : array<vec4<f32>, i32(4)>,
 };
@@ -23,6 +24,7 @@ struct Uniforms_std140_0
 {
     @align(16) mvp_0 : _MatrixStorage_float4x4_ColMajorstd140_0,
     @align(16) time_0 : f32,
+    @align(4) rotation_0 : f32,
 };
 
 @binding(0) @group(0) var<uniform> u_0 : Uniforms_std140_0;
@@ -42,8 +44,8 @@ struct vertexInput_0
 @vertex
 fn vs_main( _S1 : vertexInput_0) -> VsOut_0
 {
-    var c_0 : f32 = cos(u_0.time_0);
-    var s_0 : f32 = sin(u_0.time_0);
+    var c_0 : f32 = cos(u_0.rotation_0);
+    var s_0 : f32 = sin(u_0.rotation_0);
     var _S2 : f32 = _S1.position_1.x;
     var _S3 : f32 = _S1.position_1.z;
     var output_0 : VsOut_0;
@@ -93,13 +95,15 @@ struct ResourceInfo {
 
 inline const std::unordered_map<std::string_view, ResourceInfo>& get_resource_map() {
     static const std::unordered_map<std::string_view, ResourceInfo> resources = {
-        {"generated/shaders/hello_triangle.wgsl", {reinterpret_cast<const char*>(k_hello_triangle_wgsl_data), k_hello_triangle_wgsl_size}},
-        {"scenes/triangle.usda", {reinterpret_cast<const char*>(k_triangle_usda_data), k_triangle_usda_size}},
+        {"generated/shaders/hello_triangle.wgsl",
+         {reinterpret_cast<const char*>(k_hello_triangle_wgsl_data), k_hello_triangle_wgsl_size}},
+        {"scenes/triangle.usda",
+         {reinterpret_cast<const char*>(k_triangle_usda_data), k_triangle_usda_size}},
     };
     return resources;
 }
 
-} // namespace detail
+}  // namespace detail
 
 /// Returns the embedded resource data for the given path, or std::nullopt if not found.
 inline std::optional<std::string_view> get_resource(std::string_view path) {
@@ -117,4 +121,4 @@ inline bool has_resource(std::string_view path) {
     return resources.find(path) != resources.end();
 }
 
-} // namespace hello_triangle_resources
+}  // namespace hello_triangle_resources

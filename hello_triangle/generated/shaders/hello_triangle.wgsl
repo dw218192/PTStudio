@@ -7,6 +7,7 @@ struct Uniforms_std140_0
 {
     @align(16) mvp_0 : _MatrixStorage_float4x4_ColMajorstd140_0,
     @align(16) time_0 : f32,
+    @align(4) rotation_0 : f32,
 };
 
 @binding(0) @group(0) var<uniform> u_0 : Uniforms_std140_0;
@@ -26,8 +27,8 @@ struct vertexInput_0
 @vertex
 fn vs_main( _S1 : vertexInput_0) -> VsOut_0
 {
-    var c_0 : f32 = cos(u_0.time_0);
-    var s_0 : f32 = sin(u_0.time_0);
+    var c_0 : f32 = cos(u_0.rotation_0);
+    var s_0 : f32 = sin(u_0.rotation_0);
     var _S2 : f32 = _S1.position_1.x;
     var _S3 : f32 = _S1.position_1.z;
     var output_0 : VsOut_0;

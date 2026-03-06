@@ -4,7 +4,8 @@
 namespace pts {
 
 InputComponent::InputComponent(rendering::IViewport& viewport) : m_viewport{viewport} {
-    m_viewport.on_scroll.connect([this](double dx, double dy) { on_scroll_event(dx, dy); });
+    m_scroll_connection =
+        m_viewport.on_scroll.connect([this](double dx, double dy) { on_scroll_event(dx, dy); });
 }
 
 InputComponent::~InputComponent() = default;
@@ -32,7 +33,7 @@ void InputComponent::poll(float time, int window_width, int window_height,
     // key events (keyboard only, ImGuiKey values)
     for (ImGuiKey key = ImGuiKey_NamedKey_BEGIN; key < ImGuiKey_NamedKey_END;
          key = static_cast<ImGuiKey>(key + 1)) {
-        auto const key_index = static_cast<size_t>(key);
+        auto const key_index = static_cast<size_t>(key - ImGuiKey_NamedKey_BEGIN);
         std::optional<Input> input;
         auto const key_state = ImGui::IsKeyDown(key);
         if (key_state) {
