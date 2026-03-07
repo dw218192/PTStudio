@@ -159,7 +159,7 @@ if(EMSCRIPTEN)
         "--use-port=${EMDAWNWEBGPU_PORT_FILE}"
         "--use-port=contrib.glfw3"
         "-pthread"
-        "-sPTHREAD_POOL_SIZE=navigator.hardwareConcurrency"
+        "-sPTHREAD_POOL_SIZE=(typeof navigator!=='undefined'?navigator.hardwareConcurrency:4)||4"
         "-sALLOW_MEMORY_GROWTH=1"
         "-sMAXIMUM_MEMORY=4GB"
         "-sINITIAL_MEMORY=512MB"
