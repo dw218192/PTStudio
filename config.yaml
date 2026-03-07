@@ -57,6 +57,7 @@ build:
             - "editor/generated/shaders/forward.wgsl"
             - "editor/shaders/**/*.*"
             - "editor/icons/*.*"
+            - "editor/scenes/*.*"
           output: "editor/generated/embedded_resources.h"
           namespace: "editor_resources"
         - input:
