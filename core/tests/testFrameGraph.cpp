@@ -47,16 +47,12 @@ TEST_CASE("FrameGraph - single-pass Clear") {
     desc.height = 64;
     desc.format = WGPUTextureFormat_BGRA8Unorm;
 
-    pts::rendering::ResourceHandle color_handle;
-    f.graph.add_pass("clear_pass", [&](pts::rendering::PassBuilder& builder) {
-        color_handle = builder.create("color", desc);
-        return [](WGPURenderPassEncoder) {};
-    });
+    auto color = f.graph.create("color", desc);
+    f.graph.add_pass("clear_pass").color(color).execute([](WGPURenderPassEncoder) {});
 
     f.graph.compile();
 
-    auto view = f.graph.get_texture_view(color_handle);
-    CHECK(view != nullptr);
+    CHECK(f.graph.get_texture_view(color) != nullptr);
 
     auto encoder = f.create_encoder();
     f.graph.execute(encoder);
@@ -74,16 +70,10 @@ TEST_CASE("FrameGraph - two-pass Clear then Load") {
     desc.format = WGPUTextureFormat_BGRA8Unorm;
     desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
 
-    pts::rendering::ResourceHandle color_handle;
-    f.graph.add_pass("first_pass", [&](pts::rendering::PassBuilder& builder) {
-        color_handle = builder.create("color", desc);
-        return [](WGPURenderPassEncoder) {};
-    });
+    auto color = f.graph.create("color", desc);
+    f.graph.add_pass("first_pass").color(color).execute([](WGPURenderPassEncoder) {});
 
-    f.graph.add_pass("second_pass", [&](pts::rendering::PassBuilder& builder) {
-        builder.write_color(color_handle);
-        return [](WGPURenderPassEncoder) {};
-    });
+    f.graph.add_pass("second_pass").color(color).execute([](WGPURenderPassEncoder) {});
 
     f.graph.compile();
 
@@ -107,18 +97,19 @@ TEST_CASE("FrameGraph - depth read-only") {
     depth_desc.height = 64;
     depth_desc.format = WGPUTextureFormat_Depth24Plus;
 
-    pts::rendering::ResourceHandle depth_handle;
-    f.graph.add_pass("depth_write_pass", [&](pts::rendering::PassBuilder& builder) {
-        builder.create("color0", color_desc);
-        depth_handle = builder.create("depth", depth_desc);
-        return [](WGPURenderPassEncoder) {};
-    });
+    auto color0 = f.graph.create("color0", color_desc);
+    auto depth = f.graph.create("depth", depth_desc);
+    auto color1 = f.graph.create("color1", color_desc);
 
-    f.graph.add_pass("depth_read_pass", [&](pts::rendering::PassBuilder& builder) {
-        builder.create("color1", color_desc);
-        builder.read_depth(depth_handle);
-        return [](WGPURenderPassEncoder) {};
-    });
+    f.graph.add_pass("depth_write_pass")
+        .color(color0)
+        .depth(depth)
+        .execute([](WGPURenderPassEncoder) {});
+
+    f.graph.add_pass("depth_read_pass")
+        .color(color1)
+        .depth_readonly(depth)
+        .execute([](WGPURenderPassEncoder) {});
 
     f.graph.compile();
 
@@ -138,20 +129,23 @@ TEST_CASE("FrameGraph - backward dependency throws") {
     desc.format = WGPUTextureFormat_BGRA8Unorm;
     desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
 
-    // Import a resource so both passes can reference it
-    auto shared = f.graph.import("shared", nullptr, desc);
+    pts::rendering::TextureDesc depth_desc;
+    depth_desc.width = 64;
+    depth_desc.height = 64;
+    depth_desc.format = WGPUTextureFormat_Depth24Plus;
 
-    // Pass 0 reads a resource that won't be written until pass 1
-    f.graph.add_pass("reader", [&](pts::rendering::PassBuilder& builder) {
-        builder.read_color(shared);
-        return [](WGPURenderPassEncoder) {};
-    });
+    auto depth_res = f.graph.create("depth", depth_desc);
 
-    // Pass 1 is the first writer
-    f.graph.add_pass("writer", [&](pts::rendering::PassBuilder& builder) {
-        builder.write_color(shared);
-        return [](WGPURenderPassEncoder) {};
-    });
+    // Pass 0 reads depth that won't be written until pass 1
+    f.graph.add_pass("reader")
+        .color(f.graph.create("color0", desc))
+        .depth_readonly(depth_res)
+        .execute([](WGPURenderPassEncoder) {});
+
+    f.graph.add_pass("writer")
+        .color(f.graph.create("color1", desc))
+        .depth(depth_res)
+        .execute([](WGPURenderPassEncoder) {});
 
     CHECK_THROWS_AS(f.graph.compile(), std::runtime_error);
 }
@@ -166,21 +160,15 @@ TEST_CASE("FrameGraph - cache reuse on same desc") {
 
     // Frame 1
     f.graph.begin_frame();
-    pts::rendering::ResourceHandle h1;
-    f.graph.add_pass("pass", [&](pts::rendering::PassBuilder& builder) {
-        h1 = builder.create("color", desc);
-        return [](WGPURenderPassEncoder) {};
-    });
+    auto h1 = f.graph.create("color", desc);
+    f.graph.add_pass("pass").color(h1).execute([](WGPURenderPassEncoder) {});
     f.graph.compile();
     auto view1 = f.graph.get_texture_view(h1);
 
     // Frame 2 - same desc, should reuse
     f.graph.begin_frame();
-    pts::rendering::ResourceHandle h2;
-    f.graph.add_pass("pass", [&](pts::rendering::PassBuilder& builder) {
-        h2 = builder.create("color", desc);
-        return [](WGPURenderPassEncoder) {};
-    });
+    auto h2 = f.graph.create("color", desc);
+    f.graph.add_pass("pass").color(h2).execute([](WGPURenderPassEncoder) {});
     f.graph.compile();
     auto view2 = f.graph.get_texture_view(h2);
 
@@ -197,11 +185,8 @@ TEST_CASE("FrameGraph - cache invalidation on resize") {
 
     // Frame 1
     f.graph.begin_frame();
-    pts::rendering::ResourceHandle h1;
-    f.graph.add_pass("pass", [&](pts::rendering::PassBuilder& builder) {
-        h1 = builder.create("color", desc);
-        return [](WGPURenderPassEncoder) {};
-    });
+    auto h1 = f.graph.create("color", desc);
+    f.graph.add_pass("pass").color(h1).execute([](WGPURenderPassEncoder) {});
     f.graph.compile();
     auto view1 = f.graph.get_texture_view(h1);
 
@@ -210,11 +195,8 @@ TEST_CASE("FrameGraph - cache invalidation on resize") {
     desc.height = 128;
 
     f.graph.begin_frame();
-    pts::rendering::ResourceHandle h2;
-    f.graph.add_pass("pass", [&](pts::rendering::PassBuilder& builder) {
-        h2 = builder.create("color", desc);
-        return [](WGPURenderPassEncoder) {};
-    });
+    auto h2 = f.graph.create("color", desc);
+    f.graph.add_pass("pass").color(h2).execute([](WGPURenderPassEncoder) {});
     f.graph.compile();
     auto view2 = f.graph.get_texture_view(h2);
 
@@ -234,23 +216,16 @@ TEST_CASE("FrameGraph - cache eviction of unused resources") {
 
     // Frame 1 - create "color_a" and "color_b"
     f.graph.begin_frame();
-    f.graph.add_pass("pass_a", [&](pts::rendering::PassBuilder& builder) {
-        builder.create("color_a", desc);
-        return [](WGPURenderPassEncoder) {};
-    });
-    f.graph.add_pass("pass_b", [&](pts::rendering::PassBuilder& builder) {
-        builder.create("color_b", desc);
-        return [](WGPURenderPassEncoder) {};
-    });
+    auto a1 = f.graph.create("color_a", desc);
+    auto b1 = f.graph.create("color_b", desc);
+    f.graph.add_pass("pass_a").color(a1).execute([](WGPURenderPassEncoder) {});
+    f.graph.add_pass("pass_b").color(b1).execute([](WGPURenderPassEncoder) {});
     f.graph.compile();
 
     // Frame 2 - only "color_a", "color_b" should be evicted
     f.graph.begin_frame();
-    pts::rendering::ResourceHandle ha;
-    f.graph.add_pass("pass_a", [&](pts::rendering::PassBuilder& builder) {
-        ha = builder.create("color_a", desc);
-        return [](WGPURenderPassEncoder) {};
-    });
+    auto ha = f.graph.create("color_a", desc);
+    f.graph.add_pass("pass_a").color(ha).execute([](WGPURenderPassEncoder) {});
     f.graph.compile();
 
     // color_a should still exist

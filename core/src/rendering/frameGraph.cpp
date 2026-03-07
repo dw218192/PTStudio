@@ -26,75 +26,41 @@ PassBuilder::PassBuilder(FrameGraph& graph, uint32_t pass_index)
     : m_graph(graph), m_pass_index(pass_index) {
 }
 
-ResourceHandle PassBuilder::create(std::string name, TextureDesc desc) {
-    ResourceHandle h;
-    h.index = static_cast<uint32_t>(m_graph.m_resources.size());
-    FrameGraph::Resource res;
-    res.name = std::move(name);
-    res.desc = desc;
-    res.first_writer = m_pass_index;
-    m_graph.m_resources.push_back(std::move(res));
-
-    // Auto-register as write
-    auto& pass = m_graph.m_passes[m_pass_index];
-    if (desc.format == WGPUTextureFormat_Depth24Plus ||
-        desc.format == WGPUTextureFormat_Depth32Float ||
-        desc.format == WGPUTextureFormat_Depth24PlusStencil8 ||
-        desc.format == WGPUTextureFormat_Depth32FloatStencil8) {
-        pass.depth_attachment = {h, false, true};
-        pass.has_depth = true;
-    } else {
-        pass.color_attachments.push_back({h, false, true});
-    }
-    return h;
-}
-
-ResourceHandle PassBuilder::read_color(ResourceHandle h) {
-    auto& pass = m_graph.m_passes[m_pass_index];
-    pass.color_attachments.push_back({h, true, false});
-    return h;
-}
-
-ResourceHandle PassBuilder::write_color(ResourceHandle h) {
+PassBuilder& PassBuilder::color(ResourceHandle h) {
     auto& pass = m_graph.m_passes[m_pass_index];
     auto& res = m_graph.m_resources[h.index];
     if (res.first_writer == UINT32_MAX) {
         res.first_writer = m_pass_index;
     }
     pass.color_attachments.push_back({h, false, true});
-    return h;
+    return *this;
 }
 
-ResourceHandle PassBuilder::read_depth(ResourceHandle h) {
-    auto& pass = m_graph.m_passes[m_pass_index];
-    pass.depth_attachment.handle = h;
-    pass.depth_attachment.is_read = true;
-    pass.has_depth = true;
-    return h;
-}
-
-ResourceHandle PassBuilder::write_depth(ResourceHandle h) {
+PassBuilder& PassBuilder::depth(ResourceHandle h) {
     auto& pass = m_graph.m_passes[m_pass_index];
     auto& res = m_graph.m_resources[h.index];
     if (res.first_writer == UINT32_MAX) {
         res.first_writer = m_pass_index;
     }
-    pass.depth_attachment.handle = h;
-    pass.depth_attachment.is_write = true;
+    pass.depth_attachment = {h, true, true};
     pass.has_depth = true;
-    return h;
+    return *this;
 }
 
-void PassBuilder::set_present(ResourceHandle h) {
+PassBuilder& PassBuilder::depth_readonly(ResourceHandle h) {
+    auto& pass = m_graph.m_passes[m_pass_index];
+    pass.depth_attachment = {h, true, false};
+    pass.has_depth = true;
+    return *this;
+}
+
+PassBuilder& PassBuilder::present(ResourceHandle h) {
     m_graph.m_resources[h.index].is_present = true;
+    return *this;
 }
 
-void PassBuilder::set_color_load_op(WGPULoadOp op) {
-    m_graph.m_passes[m_pass_index].color_load_op_override = op;
-}
-
-void PassBuilder::set_depth_load_op(WGPULoadOp op) {
-    m_graph.m_passes[m_pass_index].depth_load_op_override = op;
+void PassBuilder::execute(ExecuteFn fn) {
+    m_graph.m_passes[m_pass_index].execute_fn = std::move(fn);
 }
 
 // --- FrameGraph ---
@@ -120,15 +86,23 @@ ResourceHandle FrameGraph::import(std::string name, WGPUTextureView view, Textur
     return h;
 }
 
-void FrameGraph::add_pass(std::string name, std::function<ExecuteFn(PassBuilder&)> setup) {
+ResourceHandle FrameGraph::create(std::string name, TextureDesc desc) {
+    ResourceHandle h;
+    h.index = static_cast<uint32_t>(m_resources.size());
+    Resource res;
+    res.name = std::move(name);
+    res.desc = desc;
+    m_resources.push_back(std::move(res));
+    return h;
+}
+
+PassBuilder FrameGraph::add_pass(std::string name) {
     Pass pass;
     pass.name = std::move(name);
     pass.index = static_cast<uint32_t>(m_passes.size());
     m_passes.push_back(std::move(pass));
 
-    PassBuilder builder(*this, static_cast<uint32_t>(m_passes.size() - 1));
-    auto exec_fn = setup(builder);
-    m_passes.back().execute_fn = std::move(exec_fn);
+    return PassBuilder(*this, static_cast<uint32_t>(m_passes.size() - 1));
 }
 
 void FrameGraph::begin_frame() {
@@ -162,20 +136,16 @@ void FrameGraph::compile() {
         }
     }
 
-    // Derive load/store ops (user overrides take precedence)
+    // Derive load/store ops
     for (auto& pass : m_passes) {
         // Color attachments
         if (!pass.color_attachments.empty()) {
-            if (pass.color_load_op_override) {
-                pass.color_load_op = *pass.color_load_op_override;
+            auto& att = pass.color_attachments[0];
+            auto& res = m_resources[att.handle.index];
+            if (att.is_write && res.first_writer == pass.index) {
+                pass.color_load_op = WGPULoadOp_Clear;
             } else {
-                auto& att = pass.color_attachments[0];
-                auto& res = m_resources[att.handle.index];
-                if (att.is_write && res.first_writer == pass.index) {
-                    pass.color_load_op = WGPULoadOp_Clear;
-                } else {
-                    pass.color_load_op = WGPULoadOp_Load;
-                }
+                pass.color_load_op = WGPULoadOp_Load;
             }
             pass.color_store_op = WGPUStoreOp_Store;
         }
@@ -189,9 +159,6 @@ void FrameGraph::compile() {
                 pass.depth_read_only = true;
                 pass.depth_load_op = WGPULoadOp_Undefined;
                 pass.depth_store_op = WGPUStoreOp_Undefined;
-            } else if (pass.depth_load_op_override) {
-                pass.depth_load_op = *pass.depth_load_op_override;
-                pass.depth_store_op = WGPUStoreOp_Store;
             } else if (att.is_write && res.first_writer == pass.index) {
                 pass.depth_load_op = WGPULoadOp_Clear;
                 pass.depth_store_op = WGPUStoreOp_Store;

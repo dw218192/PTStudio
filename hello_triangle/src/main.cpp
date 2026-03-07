@@ -157,10 +157,8 @@ class HelloApp : public pts::WindowedApplication {
         auto surface = m_graph->import("surface", ctx.surface_view(), surface_desc);
 
         // 3D render pass (clears surface)
-        m_graph->add_pass("forward", [&](pts::rendering::PassBuilder& builder) {
-            builder.write_color(surface);
-            builder.set_present(surface);
-            return [&](WGPURenderPassEncoder pass) {
+        m_graph->add_pass("forward").color(surface).present(surface).execute(
+            [&](WGPURenderPassEncoder pass) {
                 wgpuRenderPassEncoderSetPipeline(pass, m_pipeline->handle());
                 for (const auto& obj : m_world.objects) {
                     Uniforms uniforms;
@@ -179,14 +177,11 @@ class HelloApp : public pts::WindowedApplication {
                                                         mesh.index_buffer.size());
                     wgpuRenderPassEncoderDrawIndexed(pass, mesh.index_count, 1, 0, 0, 0);
                 }
-            };
-        });
+            });
 
         // ImGui overlay pass (preserves 3D content via Load)
-        m_graph->add_pass("imgui", [&](pts::rendering::PassBuilder& builder) {
-            builder.write_color(surface);
-            return [&](WGPURenderPassEncoder pass) { scope.render_into(pass); };
-        });
+        m_graph->add_pass("imgui").color(surface).execute(
+            [&](WGPURenderPassEncoder pass) { scope.render_into(pass); });
 
         m_graph->compile();
         m_graph->execute(ctx.encoder());

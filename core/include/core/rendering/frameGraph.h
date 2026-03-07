@@ -36,17 +36,15 @@ struct TextureDesc {
     float depth_clear_value = 1.0f;
 };
 
+using ExecuteFn = std::function<void(WGPURenderPassEncoder)>;
+
 class PassBuilder {
    public:
-    ResourceHandle create(std::string name, TextureDesc desc);
-    ResourceHandle read_color(ResourceHandle h);
-    ResourceHandle write_color(ResourceHandle h);
-    ResourceHandle read_depth(ResourceHandle h);
-    ResourceHandle write_depth(ResourceHandle h);
-    void set_present(ResourceHandle h);
-
-    void set_color_load_op(WGPULoadOp op);
-    void set_depth_load_op(WGPULoadOp op);
+    PassBuilder& color(ResourceHandle h);
+    PassBuilder& depth(ResourceHandle h);
+    PassBuilder& depth_readonly(ResourceHandle h);
+    PassBuilder& present(ResourceHandle h);
+    void execute(ExecuteFn fn);
 
    private:
     friend class FrameGraph;
@@ -55,8 +53,6 @@ class PassBuilder {
     FrameGraph& m_graph;
     uint32_t m_pass_index;
 };
-
-using ExecuteFn = std::function<void(WGPURenderPassEncoder)>;
 
 class FrameGraph {
    public:
@@ -67,8 +63,9 @@ class FrameGraph {
     FrameGraph& operator=(const FrameGraph&) = delete;
 
     ResourceHandle import(std::string name, WGPUTextureView view, TextureDesc desc);
+    ResourceHandle create(std::string name, TextureDesc desc);
 
-    void add_pass(std::string name, std::function<ExecuteFn(PassBuilder&)> setup);
+    PassBuilder add_pass(std::string name);
 
     void begin_frame();
     void compile();
@@ -106,10 +103,6 @@ class FrameGraph {
         DepthAttachmentInfo depth_attachment;
         bool has_depth = false;
         ExecuteFn execute_fn;
-
-        // User overrides (set via PassBuilder)
-        std::optional<WGPULoadOp> color_load_op_override;
-        std::optional<WGPULoadOp> depth_load_op_override;
 
         // Derived during compile
         WGPULoadOp color_load_op = WGPULoadOp_Clear;

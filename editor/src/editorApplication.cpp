@@ -312,28 +312,28 @@ void EditorApplication::render(FrameContext& ctx) {
         auto view_mat = m_camera.view_matrix();
         auto proj_mat = m_camera.projection_matrix(aspect);
 
-        m_frame_graph->add_pass("forward", [&](rendering::PassBuilder& builder) {
-            rendering::TextureDesc color_desc;
-            color_desc.width = m_viewport_width;
-            color_desc.height = m_viewport_height;
-            color_desc.format = WGPUTextureFormat_RGBA8Unorm;
-            color_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment |
-                                                             WGPUTextureUsage_TextureBinding);
-            color_desc.clear_color = {0.15, 0.15, 0.18, 1.0};
-            auto scene_color = builder.create("scene_color", color_desc);
+        rendering::TextureDesc color_desc;
+        color_desc.width = m_viewport_width;
+        color_desc.height = m_viewport_height;
+        color_desc.format = WGPUTextureFormat_RGBA8Unorm;
+        color_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment |
+                                                         WGPUTextureUsage_TextureBinding);
+        color_desc.clear_color = {0.15, 0.15, 0.18, 1.0};
+        auto scene_color = m_frame_graph->create("scene_color", color_desc);
 
-            rendering::TextureDesc depth_desc;
-            depth_desc.width = m_viewport_width;
-            depth_desc.height = m_viewport_height;
-            depth_desc.format = WGPUTextureFormat_Depth24Plus;
-            auto scene_depth = builder.create("scene_depth", depth_desc);
+        rendering::TextureDesc depth_desc;
+        depth_desc.width = m_viewport_width;
+        depth_desc.height = m_viewport_height;
+        depth_desc.format = WGPUTextureFormat_Depth24Plus;
+        auto scene_depth = m_frame_graph->create("scene_depth", depth_desc);
 
-            builder.write_color(scene_color);
-            builder.write_depth(scene_depth);
-            scene_color_handle = scene_color;
-            scene_depth_handle = scene_depth;
+        scene_color_handle = scene_color;
+        scene_depth_handle = scene_depth;
 
-            return [=, this](WGPURenderPassEncoder pass) {
+        m_frame_graph->add_pass("forward")
+            .color(scene_color)
+            .depth(scene_depth)
+            .execute([=, this](WGPURenderPassEncoder pass) {
                 wgpuRenderPassEncoderSetPipeline(pass, m_forward_pipeline->handle());
                 for (const auto& obj : m_world.objects) {
                     ForwardUniforms u;
@@ -351,8 +351,7 @@ void EditorApplication::render(FrameContext& ctx) {
                                                         mesh.index_buffer.size());
                     wgpuRenderPassEncoderDrawIndexed(pass, mesh.index_count, 1, 0, 0, 0);
                 }
-            };
-        });
+            });
 
         // Grid pass — renders after forward pass, reads depth, blends over color
         if (m_grid_pipeline.has_value()) {
@@ -360,11 +359,10 @@ void EditorApplication::render(FrameContext& ctx) {
             auto inv_vp_mat = glm::inverse(vp_mat);
             auto cam_pos = m_camera.position();
 
-            m_frame_graph->add_pass("grid", [&](rendering::PassBuilder& builder) {
-                builder.write_color(scene_color_handle);
-                builder.read_depth(scene_depth_handle);
-
-                return [=, this](WGPURenderPassEncoder pass) {
+            m_frame_graph->add_pass("grid")
+                .color(scene_color)
+                .depth_readonly(scene_depth)
+                .execute([=, this](WGPURenderPassEncoder pass) {
                     GridUniforms gu;
                     gu.inv_vp = inv_vp_mat;
                     gu.vp = vp_mat;
@@ -376,17 +374,13 @@ void EditorApplication::render(FrameContext& ctx) {
                     wgpuRenderPassEncoderSetPipeline(pass, m_grid_pipeline->handle());
                     wgpuRenderPassEncoderSetBindGroup(pass, 0, m_grid_bind_group, 0, nullptr);
                     wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
-                };
-            });
+                });
         }
     }
 
     // ImGui overlay pass
-    m_frame_graph->add_pass("imgui", [&](rendering::PassBuilder& builder) {
-        builder.write_color(surface);
-        builder.set_present(surface);
-        return [&](WGPURenderPassEncoder pass) { scope.render_into(pass); };
-    });
+    m_frame_graph->add_pass("imgui").color(surface).present(surface).execute(
+        [&](WGPURenderPassEncoder pass) { scope.render_into(pass); });
 
     m_frame_graph->compile();
     m_frame_graph->execute(ctx.encoder());
