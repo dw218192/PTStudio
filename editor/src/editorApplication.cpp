@@ -333,7 +333,7 @@ void EditorApplication::render(FrameContext& ctx) {
         m_frame_graph->add_pass("forward")
             .color(scene_color)
             .depth(scene_depth)
-            .execute([=, this](WGPURenderPassEncoder pass) {
+            .execute([=](WGPURenderPassEncoder pass) {
                 wgpuRenderPassEncoderSetPipeline(pass, m_forward_pipeline->handle());
                 for (const auto& obj : m_world.objects) {
                     ForwardUniforms u;
@@ -362,7 +362,7 @@ void EditorApplication::render(FrameContext& ctx) {
             m_frame_graph->add_pass("grid")
                 .color(scene_color)
                 .depth_readonly(scene_depth)
-                .execute([=, this](WGPURenderPassEncoder pass) {
+                .execute([=](WGPURenderPassEncoder pass) {
                     GridUniforms gu;
                     gu.inv_vp = inv_vp_mat;
                     gu.vp = vp_mat;
