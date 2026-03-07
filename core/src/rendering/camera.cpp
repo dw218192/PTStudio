@@ -70,4 +70,12 @@ auto OrbitCamera::fov_y_degrees() const -> float {
     return m_fov_y;
 }
 
+auto OrbitCamera::near_plane() const -> float {
+    return m_near;
+}
+
+auto OrbitCamera::far_plane() const -> float {
+    return m_far;
+}
+
 }  // namespace pts::rendering

@@ -67,7 +67,8 @@ ResourceHandle PassBuilder::write_color(ResourceHandle h) {
 
 ResourceHandle PassBuilder::read_depth(ResourceHandle h) {
     auto& pass = m_graph.m_passes[m_pass_index];
-    pass.depth_attachment = {h, true, false};
+    pass.depth_attachment.handle = h;
+    pass.depth_attachment.is_read = true;
     pass.has_depth = true;
     return h;
 }
@@ -78,13 +79,22 @@ ResourceHandle PassBuilder::write_depth(ResourceHandle h) {
     if (res.first_writer == UINT32_MAX) {
         res.first_writer = m_pass_index;
     }
-    pass.depth_attachment = {h, false, true};
+    pass.depth_attachment.handle = h;
+    pass.depth_attachment.is_write = true;
     pass.has_depth = true;
     return h;
 }
 
 void PassBuilder::set_present(ResourceHandle h) {
     m_graph.m_resources[h.index].is_present = true;
+}
+
+void PassBuilder::set_color_load_op(WGPULoadOp op) {
+    m_graph.m_passes[m_pass_index].color_load_op_override = op;
+}
+
+void PassBuilder::set_depth_load_op(WGPULoadOp op) {
+    m_graph.m_passes[m_pass_index].depth_load_op_override = op;
 }
 
 // --- FrameGraph ---
@@ -152,16 +162,20 @@ void FrameGraph::compile() {
         }
     }
 
-    // Derive load/store ops
+    // Derive load/store ops (user overrides take precedence)
     for (auto& pass : m_passes) {
         // Color attachments
         if (!pass.color_attachments.empty()) {
-            auto& att = pass.color_attachments[0];
-            auto& res = m_resources[att.handle.index];
-            if (att.is_write && res.first_writer == pass.index) {
-                pass.color_load_op = WGPULoadOp_Clear;
+            if (pass.color_load_op_override) {
+                pass.color_load_op = *pass.color_load_op_override;
             } else {
-                pass.color_load_op = WGPULoadOp_Load;
+                auto& att = pass.color_attachments[0];
+                auto& res = m_resources[att.handle.index];
+                if (att.is_write && res.first_writer == pass.index) {
+                    pass.color_load_op = WGPULoadOp_Clear;
+                } else {
+                    pass.color_load_op = WGPULoadOp_Load;
+                }
             }
             pass.color_store_op = WGPUStoreOp_Store;
         }
@@ -175,6 +189,9 @@ void FrameGraph::compile() {
                 pass.depth_read_only = true;
                 pass.depth_load_op = WGPULoadOp_Undefined;
                 pass.depth_store_op = WGPUStoreOp_Undefined;
+            } else if (pass.depth_load_op_override) {
+                pass.depth_load_op = *pass.depth_load_op_override;
+                pass.depth_store_op = WGPUStoreOp_Store;
             } else if (att.is_write && res.first_writer == pass.index) {
                 pass.depth_load_op = WGPULoadOp_Clear;
                 pass.depth_store_op = WGPUStoreOp_Store;

@@ -80,6 +80,13 @@ struct EditorApplication final : WindowedApplication {
     WGPUBindGroup m_bind_group = nullptr;
     WGPUBindGroupLayout m_bind_group_layout = nullptr;
 
+    // Grid
+    std::optional<webgpu::ShaderModule> m_grid_shader;
+    std::optional<webgpu::RenderPipeline> m_grid_pipeline;
+    webgpu::Buffer m_grid_uniform_buffer;
+    WGPUBindGroup m_grid_bind_group = nullptr;
+    WGPUBindGroupLayout m_grid_bind_group_layout = nullptr;
+
     // Viewport tracking
     uint32_t m_viewport_width = 0;
     uint32_t m_viewport_height = 0;

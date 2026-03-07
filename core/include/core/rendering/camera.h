@@ -33,6 +33,8 @@ class OrbitCamera {
     [[nodiscard]] auto position() const -> glm::vec3;
     [[nodiscard]] auto distance() const -> float;
     [[nodiscard]] auto fov_y_degrees() const -> float;
+    [[nodiscard]] auto near_plane() const -> float;
+    [[nodiscard]] auto far_plane() const -> float;
 
    private:
     glm::vec3 m_target{0.0f, 0.0f, 0.0f};

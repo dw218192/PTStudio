@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -43,6 +44,9 @@ class PassBuilder {
     ResourceHandle read_depth(ResourceHandle h);
     ResourceHandle write_depth(ResourceHandle h);
     void set_present(ResourceHandle h);
+
+    void set_color_load_op(WGPULoadOp op);
+    void set_depth_load_op(WGPULoadOp op);
 
    private:
     friend class FrameGraph;
@@ -102,6 +106,10 @@ class FrameGraph {
         DepthAttachmentInfo depth_attachment;
         bool has_depth = false;
         ExecuteFn execute_fn;
+
+        // User overrides (set via PassBuilder)
+        std::optional<WGPULoadOp> color_load_op_override;
+        std::optional<WGPULoadOp> depth_load_op_override;
 
         // Derived during compile
         WGPULoadOp color_load_op = WGPULoadOp_Clear;

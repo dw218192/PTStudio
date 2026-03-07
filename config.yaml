@@ -37,6 +37,9 @@ build:
         - input: "editor/shaders/forward.slang"
           output: "editor/generated/shaders/forward.wgsl"
           reflect: true
+        - input: "editor/shaders/grid.slang"
+          output: "editor/generated/shaders/grid.wgsl"
+          reflect: true
     shader_codegen:
       template: "core/templates/shader_metadata.h.j2"
       shaders:
@@ -46,6 +49,9 @@ build:
         - reflect: "editor/generated/shaders/forward.reflect.json"
           output: "editor/generated/shader_metadata.h"
           namespace: "editor_shader"
+        - reflect: "editor/generated/shaders/grid.reflect.json"
+          output: "editor/generated/grid_shader_metadata.h"
+          namespace: "editor_grid_shader"
     embed:
       template: "core/templates/embedded_resources.h.j2"
       resources:
@@ -55,6 +61,7 @@ build:
           namespace: "core_resources"
         - input:
             - "editor/generated/shaders/forward.wgsl"
+            - "editor/generated/shaders/grid.wgsl"
             - "editor/shaders/**/*.*"
             - "editor/icons/*.*"
             - "editor/scenes/*.*"

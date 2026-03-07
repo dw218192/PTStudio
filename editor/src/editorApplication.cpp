@@ -6,7 +6,9 @@
 #include <core/imgui/fileDialogue.h>
 #include <core/rendering/sceneLoader.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
+#include <core/rendering/webgpuContext.h>
 #include <core/rendering/windowing.h>
+#include <grid_shader_metadata.h>
 #include <imgui_internal.h>
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/usd/stage.h>
@@ -37,6 +39,16 @@ struct ForwardUniforms {
 };
 static_assert(sizeof(ForwardUniforms) == 144, "ForwardUniforms must match shader std140 layout");
 
+struct GridUniforms {
+    glm::mat4 inv_vp;
+    glm::mat4 vp;
+    glm::vec3 camera_pos;
+    float near_plane;
+    float far_plane;
+    float _pad[3];
+};
+static_assert(sizeof(GridUniforms) == 160, "GridUniforms must match shader std140 layout");
+
 EditorApplication::EditorApplication(std::string_view name, pts::LoggingManager& logging_manager)
     : WindowedApplication{name, logging_manager} {
     create_input_actions();
@@ -52,6 +64,12 @@ EditorApplication::~EditorApplication() {
     m_input.reset();
     m_imgui.reset();
 
+    if (m_grid_bind_group) {
+        wgpuBindGroupRelease(m_grid_bind_group);
+    }
+    if (m_grid_bind_group_layout) {
+        wgpuBindGroupLayoutRelease(m_grid_bind_group_layout);
+    }
     if (m_bind_group) {
         wgpuBindGroupRelease(m_bind_group);
     }
@@ -104,7 +122,7 @@ void EditorApplication::on_ready() {
         rendering::populate_from_stage(m_world, stage, device);
         log(LogLevel::Info, "Loaded default scene ({} objects)", m_world.objects.size());
     } else {
-        log(LogLevel::Warn, "Missing embedded resource: scenes/default.usda");
+        log(LogLevel::Warning, "Missing embedded resource: scenes/default.usda");
     }
 
     // Load forward shader
@@ -156,6 +174,65 @@ void EditorApplication::on_ready() {
                                    .build());
 
     wgpuPipelineLayoutRelease(pipeline_layout);
+
+    // ── Grid pipeline ──
+
+    auto grid_shader_src = editor_resources::get_resource("generated/shaders/grid.wgsl");
+    if (!grid_shader_src) {
+        log(LogLevel::Error, "Missing embedded resource: generated/shaders/grid.wgsl");
+    } else {
+        m_grid_shader.emplace(device.create_shader_module_from_source(*grid_shader_src));
+
+        // Grid uniform buffer
+        m_grid_uniform_buffer = device.create_buffer(
+            sizeof(GridUniforms),
+            static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
+
+        // Bind group layout from reflection
+        m_grid_bind_group_layout = editor_grid_shader::create_bind_group_layout_0(device.handle());
+
+        // Bind group
+        WGPUBindGroupEntry grid_bg_entry = WGPU_BIND_GROUP_ENTRY_INIT;
+        grid_bg_entry.binding = 0;
+        grid_bg_entry.buffer = m_grid_uniform_buffer.handle();
+        grid_bg_entry.offset = 0;
+        grid_bg_entry.size = sizeof(GridUniforms);
+
+        WGPUBindGroupDescriptor grid_bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
+        grid_bg_desc.layout = m_grid_bind_group_layout;
+        grid_bg_desc.entryCount = 1;
+        grid_bg_desc.entries = &grid_bg_entry;
+        m_grid_bind_group = wgpuDeviceCreateBindGroup(device.handle(), &grid_bg_desc);
+
+        // Pipeline layout
+        WGPUPipelineLayoutDescriptor grid_pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
+        grid_pl_desc.bindGroupLayoutCount = 1;
+        grid_pl_desc.bindGroupLayouts = &m_grid_bind_group_layout;
+        WGPUPipelineLayout grid_pipeline_layout =
+            wgpuDeviceCreatePipelineLayout(device.handle(), &grid_pl_desc);
+
+        // Premultiplied alpha blending
+        WGPUBlendState blend_state = {};
+        blend_state.color.srcFactor = WGPUBlendFactor_One;
+        blend_state.color.dstFactor = WGPUBlendFactor_OneMinusSrcAlpha;
+        blend_state.color.operation = WGPUBlendOperation_Add;
+        blend_state.alpha.srcFactor = WGPUBlendFactor_One;
+        blend_state.alpha.dstFactor = WGPUBlendFactor_OneMinusSrcAlpha;
+        blend_state.alpha.operation = WGPUBlendOperation_Add;
+
+        m_grid_pipeline.emplace(webgpu::RenderPipelineBuilder(device)
+                                    .shader(*m_grid_shader)
+                                    .color_format(WGPUTextureFormat_RGBA8Unorm)
+                                    .depth_format(WGPUTextureFormat_Depth24Plus)
+                                    .depth_write(false)
+                                    .depth_compare(WGPUCompareFunction_Less)
+                                    .cull_mode(WGPUCullMode_None)
+                                    .blend_state(blend_state)
+                                    .pipeline_layout(grid_pipeline_layout)
+                                    .build());
+
+        wgpuPipelineLayoutRelease(grid_pipeline_layout);
+    }
 
     // Camera defaults
     m_camera.set_target({0.0f, 0.0f, 0.0f});
@@ -214,6 +291,7 @@ void EditorApplication::render(FrameContext& ctx) {
 
     // ── Frame graph ──
     auto const& device = ctx.device();
+    auto queue = device.queue();
 
     m_frame_graph->begin_frame();
 
@@ -225,10 +303,11 @@ void EditorApplication::render(FrameContext& ctx) {
     auto surface = m_frame_graph->import("surface", ctx.surface_view(), surface_desc);
 
     rendering::ResourceHandle scene_color_handle;
-    bool has_forward_pass =
+    rendering::ResourceHandle scene_depth_handle;
+    bool has_viewport =
         m_forward_pipeline.has_value() && m_viewport_width > 0 && m_viewport_height > 0;
 
-    if (has_forward_pass) {
+    if (has_viewport) {
         float aspect = static_cast<float>(m_viewport_width) / static_cast<float>(m_viewport_height);
         auto view_mat = m_camera.view_matrix();
         auto proj_mat = m_camera.projection_matrix(aspect);
@@ -252,6 +331,7 @@ void EditorApplication::render(FrameContext& ctx) {
             builder.write_color(scene_color);
             builder.write_depth(scene_depth);
             scene_color_handle = scene_color;
+            scene_depth_handle = scene_depth;
 
             return [=, this](WGPURenderPassEncoder pass) {
                 wgpuRenderPassEncoderSetPipeline(pass, m_forward_pipeline->handle());
@@ -261,8 +341,7 @@ void EditorApplication::render(FrameContext& ctx) {
                     u.model = obj.transform;
                     u.sun_dir = glm::normalize(glm::vec3(0.3f, 1.0f, 0.5f));
                     u.time = 0.0f;
-                    wgpuQueueWriteBuffer(device.queue(), m_uniform_buffer.handle(), 0, &u,
-                                         sizeof(u));
+                    wgpuQueueWriteBuffer(queue, m_uniform_buffer.handle(), 0, &u, sizeof(u));
                     wgpuRenderPassEncoderSetBindGroup(pass, 0, m_bind_group, 0, nullptr);
                     const auto& mesh = m_world.meshes[obj.mesh_index];
                     wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh.vertex_buffer.handle(), 0,
@@ -274,6 +353,32 @@ void EditorApplication::render(FrameContext& ctx) {
                 }
             };
         });
+
+        // Grid pass — renders after forward pass, reads depth, blends over color
+        if (m_grid_pipeline.has_value()) {
+            auto vp_mat = proj_mat * view_mat;
+            auto inv_vp_mat = glm::inverse(vp_mat);
+            auto cam_pos = m_camera.position();
+
+            m_frame_graph->add_pass("grid", [&](rendering::PassBuilder& builder) {
+                builder.write_color(scene_color_handle);
+                builder.read_depth(scene_depth_handle);
+
+                return [=, this](WGPURenderPassEncoder pass) {
+                    GridUniforms gu;
+                    gu.inv_vp = inv_vp_mat;
+                    gu.vp = vp_mat;
+                    gu.camera_pos = cam_pos;
+                    gu.near_plane = m_camera.near_plane();
+                    gu.far_plane = m_camera.far_plane();
+                    gu._pad[0] = gu._pad[1] = gu._pad[2] = 0.0f;
+                    wgpuQueueWriteBuffer(queue, m_grid_uniform_buffer.handle(), 0, &gu, sizeof(gu));
+                    wgpuRenderPassEncoderSetPipeline(pass, m_grid_pipeline->handle());
+                    wgpuRenderPassEncoderSetBindGroup(pass, 0, m_grid_bind_group, 0, nullptr);
+                    wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
+                };
+            });
+        }
     }
 
     // ImGui overlay pass
@@ -287,7 +392,7 @@ void EditorApplication::render(FrameContext& ctx) {
     m_frame_graph->execute(ctx.encoder());
 
     // Store scene color view for next frame's ImGui::Image
-    if (has_forward_pass && scene_color_handle.is_valid()) {
+    if (has_viewport && scene_color_handle.is_valid()) {
         m_scene_color_view = m_frame_graph->get_texture_view(scene_color_handle);
     }
 
