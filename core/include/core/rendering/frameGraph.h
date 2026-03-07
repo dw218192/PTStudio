@@ -1,0 +1,134 @@
+#pragma once
+
+#include <core/rendering/webgpu/webgpu.h>
+
+#include <cstdint>
+#include <functional>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+namespace spdlog {
+class logger;
+}
+
+namespace pts::webgpu {
+class Device;
+}
+
+namespace pts::rendering {
+
+struct ResourceHandle {
+    uint32_t index = UINT32_MAX;
+    [[nodiscard]] bool is_valid() const {
+        return index != UINT32_MAX;
+    }
+};
+
+struct TextureDesc {
+    uint32_t width = 0;
+    uint32_t height = 0;
+    WGPUTextureFormat format = WGPUTextureFormat_BGRA8Unorm;
+    WGPUTextureUsage usage = WGPUTextureUsage_RenderAttachment;
+    WGPUColor clear_color = {0, 0, 0, 1};
+    float depth_clear_value = 1.0f;
+};
+
+class PassBuilder {
+   public:
+    ResourceHandle create(std::string name, TextureDesc desc);
+    ResourceHandle read_color(ResourceHandle h);
+    ResourceHandle write_color(ResourceHandle h);
+    ResourceHandle read_depth(ResourceHandle h);
+    ResourceHandle write_depth(ResourceHandle h);
+    void set_present(ResourceHandle h);
+
+   private:
+    friend class FrameGraph;
+    explicit PassBuilder(class FrameGraph& graph, uint32_t pass_index);
+
+    FrameGraph& m_graph;
+    uint32_t m_pass_index;
+};
+
+using ExecuteFn = std::function<void(WGPURenderPassEncoder)>;
+
+class FrameGraph {
+   public:
+    explicit FrameGraph(const webgpu::Device& device, std::shared_ptr<spdlog::logger> logger);
+    ~FrameGraph();
+
+    FrameGraph(const FrameGraph&) = delete;
+    FrameGraph& operator=(const FrameGraph&) = delete;
+
+    ResourceHandle import(std::string name, WGPUTextureView view, TextureDesc desc);
+
+    void add_pass(std::string name, std::function<ExecuteFn(PassBuilder&)> setup);
+
+    void begin_frame();
+    void compile();
+    void execute(WGPUCommandEncoder encoder);
+
+    [[nodiscard]] WGPUTextureView get_texture_view(ResourceHandle h) const;
+
+   private:
+    friend class PassBuilder;
+
+    struct Resource {
+        std::string name;
+        TextureDesc desc;
+        WGPUTextureView imported_view = nullptr;  // non-null for imported resources
+        uint32_t first_writer = UINT32_MAX;
+        bool is_present = false;
+    };
+
+    struct ColorAttachmentInfo {
+        ResourceHandle handle;
+        bool is_read = false;
+        bool is_write = false;
+    };
+
+    struct DepthAttachmentInfo {
+        ResourceHandle handle;
+        bool is_read = false;
+        bool is_write = false;
+    };
+
+    struct Pass {
+        std::string name;
+        uint32_t index = 0;
+        std::vector<ColorAttachmentInfo> color_attachments;
+        DepthAttachmentInfo depth_attachment;
+        bool has_depth = false;
+        ExecuteFn execute_fn;
+
+        // Derived during compile
+        WGPULoadOp color_load_op = WGPULoadOp_Clear;
+        WGPUStoreOp color_store_op = WGPUStoreOp_Store;
+        WGPULoadOp depth_load_op = WGPULoadOp_Clear;
+        WGPUStoreOp depth_store_op = WGPUStoreOp_Store;
+        bool depth_read_only = false;
+    };
+
+    struct CachedTexture {
+        WGPUTexture texture = nullptr;
+        WGPUTextureView view = nullptr;
+        TextureDesc desc;
+        bool used_this_frame = false;
+
+        void destroy();
+    };
+
+    void allocate_textures();
+    void evict_unused();
+
+    const webgpu::Device& m_device;
+    std::shared_ptr<spdlog::logger> m_logger;
+
+    std::vector<Resource> m_resources;
+    std::vector<Pass> m_passes;
+    std::unordered_map<std::string, CachedTexture> m_texture_cache;
+};
+
+}  // namespace pts::rendering

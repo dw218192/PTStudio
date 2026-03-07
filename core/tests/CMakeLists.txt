@@ -20,6 +20,10 @@ if(NOT EMSCRIPTEN)
     set(testWebGpu_source testWebGpu.cpp)
     set(testWebGpu_libs core)
     set(testWebGpu_defines PTS_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
+    list(APPEND TEST_NAMES testFrameGraph)
+    set(testFrameGraph_source testFrameGraph.cpp)
+    set(testFrameGraph_libs core)
 endif()
 
 # OpenUSD test - works on all platforms
