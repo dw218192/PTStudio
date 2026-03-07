@@ -29,6 +29,7 @@ endif()
 target_include_directories(${exec_name}
 PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}/src/include
+	${CMAKE_CURRENT_SOURCE_DIR}/generated
 	${CMAKE_SOURCE_DIR}  # For generated headers (core/generated, editor/generated)
 )
 

@@ -34,12 +34,18 @@ build:
         - input: "hello_triangle/shaders/hello_triangle.slang"
           output: "hello_triangle/generated/shaders/hello_triangle.wgsl"
           reflect: true
+        - input: "editor/shaders/forward.slang"
+          output: "editor/generated/shaders/forward.wgsl"
+          reflect: true
     shader_codegen:
       template: "core/templates/shader_metadata.h.j2"
       shaders:
         - reflect: "hello_triangle/generated/shaders/hello_triangle.reflect.json"
           output: "hello_triangle/generated/shader_metadata.h"
           namespace: "hello_triangle_shader"
+        - reflect: "editor/generated/shaders/forward.reflect.json"
+          output: "editor/generated/shader_metadata.h"
+          namespace: "editor_shader"
     embed:
       template: "core/templates/embedded_resources.h.j2"
       resources:
@@ -48,6 +54,7 @@ build:
           output: "core/generated/embedded_resources.h"
           namespace: "core_resources"
         - input:
+            - "editor/generated/shaders/forward.wgsl"
             - "editor/shaders/**/*.*"
             - "editor/icons/*.*"
           output: "editor/generated/embedded_resources.h"
