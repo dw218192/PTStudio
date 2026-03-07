@@ -133,6 +133,9 @@ class PublishTool(RepoTool):
             else:
                 remove_tree_with_retries(output_dir)
 
+        # Locate static assets (e.g. coi-serviceworker.js) from web/ dir
+        web_dir = ctx.workspace_root / "web"
+
         with log_section("Publishing"):
             total_files = 0
             for stem in apps:
@@ -152,6 +155,19 @@ class PublishTool(RepoTool):
                         dest.parent.mkdir(parents=True, exist_ok=True)
                         shutil.copy2(src, dest)
                     copied += 1
+
+                # Copy static web assets (service workers, etc.) into each app dir
+                for asset in web_dir.glob("*.js"):
+                    if asset.name.startswith("_"):
+                        continue
+                    dest = app_dir / asset.name
+                    if dry_run:
+                        logger.info(f"  {asset} -> {dest}")
+                    else:
+                        dest.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(asset, dest)
+                    copied += 1
+
                 total_files += copied
                 logger.info(f"  {stem}: {copied} file(s)")
 
