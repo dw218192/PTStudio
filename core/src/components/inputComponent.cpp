@@ -51,7 +51,7 @@ void InputComponent::poll(float time, int window_width, int window_height,
             input = Input{InputType::KEYBOARD, ActionType::RELEASE, static_cast<int>(key)};
         }
         if (input && m_handler) {
-            auto event = InputEvent{*input,     m_mouse_pos,          *m_last_mouse_pos,
+            auto event = InputEvent{*input,     m_mouse_pos,  *m_last_mouse_pos,
                                     screen_dim, scroll_delta, cur_hovered_widget,
                                     time};
             m_handler(event);
@@ -67,8 +67,8 @@ void InputComponent::poll(float time, int window_width, int window_height,
     // scroll
     if (glm::length(scroll_delta) > 0 && m_handler) {
         auto input = Input{InputType::MOUSE, ActionType::SCROLL, ImGuiMouseButton_Middle};
-        m_handler(InputEvent{input, m_mouse_pos, screen_dim, scroll_delta,
-                             cur_hovered_widget, time});
+        m_handler(
+            InputEvent{input, m_mouse_pos, screen_dim, scroll_delta, cur_hovered_widget, time});
     }
 
     for (int i = 0; i < static_cast<int>(m_mouse_states.size()); ++i) {
@@ -88,7 +88,7 @@ void InputComponent::poll(float time, int window_width, int window_height,
         }
 
         if (input && m_handler) {
-            auto event = InputEvent{*input,     m_mouse_pos,          *m_last_mouse_pos,
+            auto event = InputEvent{*input,     m_mouse_pos,  *m_last_mouse_pos,
                                     screen_dim, scroll_delta, m_mouse_initiated_window[i],
                                     time};
             m_handler(event);
