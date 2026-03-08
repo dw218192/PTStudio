@@ -56,13 +56,8 @@ build:
       template: "core/templates/embedded_resources.h.j2"
       resources:
         - input:
-            - "core/shaders/*.*"
-          output: "core/generated/embedded_resources.h"
-          namespace: "core_resources"
-        - input:
             - "editor/generated/shaders/forward.wgsl"
             - "editor/generated/shaders/grid.wgsl"
-            - "editor/shaders/**/*.*"
             - "editor/icons/*.*"
             - "editor/scenes/*.*"
           output: "editor/generated/embedded_resources.h"
@@ -80,6 +75,35 @@ build:
   postbuild: {}
   conan:
     local_recipes: "tools/conan"
+
+agent:
+  required_criteria+:
+    - "Build succeeds (repo_build)"
+    - "All existing tests pass (repo_test)"
+    - "If there is a new feature, it must have tests that cover the code path"
+    - "Fail loud: use macros in <core/diagnostics.h> instead of silent null checks, fallbacks, or defensive state management."
+    - "Follows naming conventions: UpperCamelCase types, snake_case methods/vars, m_ private members, kCamelCase constants, lowerCamelCase files"
+    - "Never hide errors with silent fallbacks, empty catch blocks, or swallowed return codes."
+    - "Never disable or skip unit tests without explicit justification."
+  prompts:
+    common: >
+      C++17 codebase. Naming: UpperCamelCase types, snake_case functions/variables,
+      m_prefix for private members, kCamelCase for constexpr constants,
+      lowerCamelCase.cpp files, snake_case directories.
+      Public API boundaries must be noexcept and return error_code or boost::result —
+      never let exceptions escape. Use ABI-safe types only at DLL boundaries
+      (fixed-width ints, POD structs, opaque handles — no std::string/vector).
+      Prefer Rule of Zero, RAII, string_view/span for non-owning views.
+      Use #pragma once, include what you use, forward-declare in headers.
+
+clean:
+  paths+:
+    - "{workspace_root}/_build"
+    - "{workspace_root}/_logs"
+    - "{workspace_root}/_package"
+    - "{workspace_root}/_deploy"
+    - "{workspace_root}/**/generated"
+    - "{workspace_root}/CMakeUserPresets.json"
 
 publish:
   output_dir: "{workspace_root}/_deploy"

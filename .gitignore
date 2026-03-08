@@ -24,3 +24,5 @@ tools/uv.lock
 
 # User-local Claude settings
 .claude/settings.local.json
+repo.ps1
+config.local.yaml

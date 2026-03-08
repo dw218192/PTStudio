@@ -1,8 +1,8 @@
+#include <core/diagnostics.h>
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/webgpu/device.h>
 #include <spdlog/spdlog.h>
 
-#include <cassert>
 #include <stdexcept>
 
 namespace pts::rendering {
@@ -273,7 +273,7 @@ void FrameGraph::evict_unused() {
 TextureRef FrameGraph::get_texture_ref(ResourceHandle h) const {
     TextureRef ref;
     auto& res = m_resources[h.index];
-    assert(!res.external_view && "get_texture_ref() cannot be used on external resources");
+    PRECONDITION_MSG(!res.external_view, "get_texture_ref() cannot be used on external resources");
     auto it = m_texture_cache.find(res.name);
     if (it != m_texture_cache.end()) {
         ref.m_cached = it->second;

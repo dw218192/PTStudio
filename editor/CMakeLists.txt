@@ -20,7 +20,6 @@ PRIVATE
 	$<BUILD_INTERFACE:developer_flags>
 	core
 	imguizmo::imguizmo
-	imgui_color_text_edit::imgui_color_text_edit
 )
 if (MSVC)
 	target_compile_options(${exec_name} PRIVATE /bigobj)
