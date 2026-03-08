@@ -52,7 +52,7 @@ TEST_CASE("FrameGraph - single-pass Clear") {
 
     f.graph.compile();
 
-    CHECK(f.graph.get_texture_view(color) != nullptr);
+    CHECK(f.graph.get_texture_ref(color).view() != nullptr);
 
     auto encoder = f.create_encoder();
     f.graph.execute(encoder);
@@ -163,14 +163,14 @@ TEST_CASE("FrameGraph - cache reuse on same desc") {
     auto h1 = f.graph.create("color", desc);
     f.graph.add_pass("pass").color(h1).execute([](WGPURenderPassEncoder) {});
     f.graph.compile();
-    auto view1 = f.graph.get_texture_view(h1);
+    auto view1 = f.graph.get_texture_ref(h1).view();
 
     // Frame 2 - same desc, should reuse
     f.graph.begin_frame();
     auto h2 = f.graph.create("color", desc);
     f.graph.add_pass("pass").color(h2).execute([](WGPURenderPassEncoder) {});
     f.graph.compile();
-    auto view2 = f.graph.get_texture_view(h2);
+    auto view2 = f.graph.get_texture_ref(h2).view();
 
     CHECK(view1 == view2);
 }
@@ -188,7 +188,7 @@ TEST_CASE("FrameGraph - cache invalidation on resize") {
     auto h1 = f.graph.create("color", desc);
     f.graph.add_pass("pass").color(h1).execute([](WGPURenderPassEncoder) {});
     f.graph.compile();
-    auto view1 = f.graph.get_texture_view(h1);
+    auto view1 = f.graph.get_texture_ref(h1).view();
 
     // Frame 2 - different size
     desc.width = 128;
@@ -198,7 +198,7 @@ TEST_CASE("FrameGraph - cache invalidation on resize") {
     auto h2 = f.graph.create("color", desc);
     f.graph.add_pass("pass").color(h2).execute([](WGPURenderPassEncoder) {});
     f.graph.compile();
-    auto view2 = f.graph.get_texture_view(h2);
+    auto view2 = f.graph.get_texture_ref(h2).view();
 
     CHECK(view1 != nullptr);
     CHECK(view2 != nullptr);
@@ -229,5 +229,85 @@ TEST_CASE("FrameGraph - cache eviction of unused resources") {
     f.graph.compile();
 
     // color_a should still exist
-    CHECK(f.graph.get_texture_view(ha) != nullptr);
+    CHECK(f.graph.get_texture_ref(ha).view() != nullptr);
+}
+
+TEST_CASE("FrameGraph - TextureRef survives cache invalidation") {
+    TestFixture f;
+
+    pts::rendering::TextureDesc desc;
+    desc.width = 64;
+    desc.height = 64;
+    desc.format = WGPUTextureFormat_BGRA8Unorm;
+
+    // Frame 1 — create texture and hold a TextureRef
+    f.graph.begin_frame();
+    auto h1 = f.graph.create("color", desc);
+    f.graph.add_pass("pass").color(h1).execute([](WGPURenderPassEncoder) {});
+    f.graph.compile();
+    auto ref1 = f.graph.get_texture_ref(h1);
+    CHECK(ref1.view() != nullptr);
+
+    // Frame 2 — resize triggers cache invalidation
+    desc.width = 128;
+    desc.height = 128;
+
+    f.graph.begin_frame();
+    auto h2 = f.graph.create("color", desc);
+    f.graph.add_pass("pass").color(h2).execute([](WGPURenderPassEncoder) {});
+    f.graph.compile();
+    auto ref2 = f.graph.get_texture_ref(h2);
+
+    // Old ref still holds a valid (non-null) view via ref-counting
+    CHECK(ref1.view() != nullptr);
+    CHECK(ref2.view() != nullptr);
+    CHECK(ref1.view() != ref2.view());
+}
+
+TEST_CASE("FrameGraph - read() backward dependency throws") {
+    TestFixture f;
+
+    f.graph.begin_frame();
+
+    pts::rendering::TextureDesc desc;
+    desc.width = 64;
+    desc.height = 64;
+    desc.format = WGPUTextureFormat_BGRA8Unorm;
+    desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
+
+    auto color = f.graph.create("color", desc);
+
+    // Pass 0 reads color that won't be written until pass 1
+    f.graph.add_pass("reader")
+        .color(f.graph.create("surface", desc))
+        .read(color)
+        .execute([](WGPURenderPassEncoder) {});
+
+    f.graph.add_pass("writer").color(color).execute([](WGPURenderPassEncoder) {});
+
+    CHECK_THROWS_AS(f.graph.compile(), std::runtime_error);
+}
+
+TEST_CASE("FrameGraph - read() valid forward dependency") {
+    TestFixture f;
+
+    f.graph.begin_frame();
+
+    pts::rendering::TextureDesc desc;
+    desc.width = 64;
+    desc.height = 64;
+    desc.format = WGPUTextureFormat_BGRA8Unorm;
+    desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
+
+    auto color = f.graph.create("color", desc);
+
+    // Pass 0 writes color, pass 1 reads it — valid forward dependency
+    f.graph.add_pass("writer").color(color).execute([](WGPURenderPassEncoder) {});
+
+    f.graph.add_pass("reader")
+        .color(f.graph.create("surface", desc))
+        .read(color)
+        .execute([](WGPURenderPassEncoder) {});
+
+    CHECK_NOTHROW(f.graph.compile());
 }

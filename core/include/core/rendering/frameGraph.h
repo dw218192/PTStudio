@@ -2,6 +2,8 @@
 
 #include <core/rendering/webgpu/webgpu.h>
 
+#include <boost/intrusive_ptr.hpp>
+#include <boost/smart_ptr/intrusive_ref_counter.hpp>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -36,6 +38,37 @@ struct TextureDesc {
     float depth_clear_value = 1.0f;
 };
 
+namespace detail {
+
+struct CachedTexture : boost::intrusive_ref_counter<CachedTexture, boost::thread_unsafe_counter> {
+    WGPUTexture texture = nullptr;
+    WGPUTextureView view = nullptr;
+    TextureDesc desc;
+    bool used_this_frame = false;
+
+    ~CachedTexture();
+    CachedTexture() = default;
+    CachedTexture(const CachedTexture&) = delete;
+    CachedTexture& operator=(const CachedTexture&) = delete;
+};
+
+}  // namespace detail
+
+class TextureRef {
+   public:
+    WGPUTextureView view() const {
+        return m_cached ? m_cached->view : m_imported_view;
+    }
+    explicit operator bool() const {
+        return m_cached || m_imported_view;
+    }
+
+   private:
+    friend class FrameGraph;
+    boost::intrusive_ptr<detail::CachedTexture> m_cached;
+    WGPUTextureView m_imported_view = nullptr;
+};
+
 using ExecuteFn = std::function<void(WGPURenderPassEncoder)>;
 
 class PassBuilder {
@@ -44,6 +77,7 @@ class PassBuilder {
     PassBuilder& depth(ResourceHandle h);
     PassBuilder& depth_readonly(ResourceHandle h);
     PassBuilder& present(ResourceHandle h);
+    PassBuilder& read(ResourceHandle h);
     void execute(ExecuteFn fn);
 
    private:
@@ -71,10 +105,12 @@ class FrameGraph {
     void compile();
     void execute(WGPUCommandEncoder encoder);
 
-    [[nodiscard]] WGPUTextureView get_texture_view(ResourceHandle h) const;
+    [[nodiscard]] TextureRef get_texture_ref(ResourceHandle h) const;
 
    private:
     friend class PassBuilder;
+
+    [[nodiscard]] WGPUTextureView resolve_view(ResourceHandle h) const;
 
     struct Resource {
         std::string name;
@@ -102,6 +138,7 @@ class FrameGraph {
         std::vector<ColorAttachmentInfo> color_attachments;
         DepthAttachmentInfo depth_attachment;
         bool has_depth = false;
+        std::vector<ResourceHandle> reads;
         ExecuteFn execute_fn;
 
         // Derived during compile
@@ -112,15 +149,6 @@ class FrameGraph {
         bool depth_read_only = false;
     };
 
-    struct CachedTexture {
-        WGPUTexture texture = nullptr;
-        WGPUTextureView view = nullptr;
-        TextureDesc desc;
-        bool used_this_frame = false;
-
-        void destroy();
-    };
-
     void allocate_textures();
     void evict_unused();
 
@@ -129,7 +157,7 @@ class FrameGraph {
 
     std::vector<Resource> m_resources;
     std::vector<Pass> m_passes;
-    std::unordered_map<std::string, CachedTexture> m_texture_cache;
+    std::unordered_map<std::string, boost::intrusive_ptr<detail::CachedTexture>> m_texture_cache;
 };
 
 }  // namespace pts::rendering

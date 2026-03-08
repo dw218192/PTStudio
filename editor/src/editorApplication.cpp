@@ -379,15 +379,18 @@ void EditorApplication::render(FrameContext& ctx) {
     }
 
     // ImGui overlay pass
-    m_frame_graph->add_pass("imgui").color(surface).present(surface).execute(
-        [&](WGPURenderPassEncoder pass) { scope.render_into(pass); });
+    auto imgui_builder = m_frame_graph->add_pass("imgui").color(surface).present(surface);
+    if (has_viewport && scene_color_handle.is_valid()) {
+        imgui_builder.read(scene_color_handle);
+    }
+    imgui_builder.execute([&](WGPURenderPassEncoder pass) { scope.render_into(pass); });
 
     m_frame_graph->compile();
     m_frame_graph->execute(ctx.encoder());
 
-    // Store scene color view for next frame's ImGui::Image
+    // Store scene color ref for next frame's ImGui::Image
     if (has_viewport && scene_color_handle.is_valid()) {
-        m_scene_color_view = m_frame_graph->get_texture_view(scene_color_handle);
+        m_scene_color_ref = m_frame_graph->get_texture_ref(scene_color_handle);
     }
 
     wrap_mouse_pos();
@@ -465,9 +468,9 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
         m_viewport_height = h;
     }
 
-    if (m_scene_color_view && m_viewport_width > 0 && m_viewport_height > 0) {
+    if (m_scene_color_ref && m_viewport_width > 0 && m_viewport_height > 0) {
         ImGui::Image(
-            reinterpret_cast<ImTextureID>(m_scene_color_view),
+            reinterpret_cast<ImTextureID>(m_scene_color_ref.view()),
             ImVec2(static_cast<float>(m_viewport_width), static_cast<float>(m_viewport_height)));
     } else {
         ImGui::TextUnformatted("Renderer output not available");

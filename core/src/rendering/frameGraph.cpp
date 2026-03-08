@@ -8,15 +8,13 @@ namespace pts::rendering {
 
 // --- CachedTexture ---
 
-void FrameGraph::CachedTexture::destroy() {
+detail::CachedTexture::~CachedTexture() {
     if (view) {
         wgpuTextureViewRelease(view);
-        view = nullptr;
     }
     if (texture) {
         wgpuTextureDestroy(texture);
         wgpuTextureRelease(texture);
-        texture = nullptr;
     }
 }
 
@@ -59,6 +57,12 @@ PassBuilder& PassBuilder::present(ResourceHandle h) {
     return *this;
 }
 
+PassBuilder& PassBuilder::read(ResourceHandle h) {
+    auto& pass = m_graph.m_passes[m_pass_index];
+    pass.reads.push_back(h);
+    return *this;
+}
+
 void PassBuilder::execute(ExecuteFn fn) {
     m_graph.m_passes[m_pass_index].execute_fn = std::move(fn);
 }
@@ -70,9 +74,7 @@ FrameGraph::FrameGraph(const webgpu::Device& device, std::shared_ptr<spdlog::log
 }
 
 FrameGraph::~FrameGraph() {
-    for (auto& [name, cached] : m_texture_cache) {
-        cached.destroy();
-    }
+    m_texture_cache.clear();
 }
 
 ResourceHandle FrameGraph::import(std::string name, WGPUTextureView view, TextureDesc desc) {
@@ -109,7 +111,7 @@ void FrameGraph::begin_frame() {
     m_resources.clear();
     m_passes.clear();
     for (auto& [name, cached] : m_texture_cache) {
-        cached.used_this_frame = false;
+        cached->used_this_frame = false;
     }
 }
 
@@ -129,6 +131,15 @@ void FrameGraph::compile() {
             auto& res = m_resources[pass.depth_attachment.handle.index];
             if (pass.depth_attachment.is_read && res.first_writer != UINT32_MAX &&
                 res.first_writer > pass.index) {
+                throw std::runtime_error("FrameGraph: backward dependency in pass '" + pass.name +
+                                         "' reading resource '" + res.name +
+                                         "' written by later pass");
+            }
+        }
+        for (auto& rh : pass.reads) {
+            if (!rh.is_valid()) continue;
+            auto& res = m_resources[rh.index];
+            if (res.first_writer != UINT32_MAX && res.first_writer > pass.index) {
                 throw std::runtime_error("FrameGraph: backward dependency in pass '" + pass.name +
                                          "' reading resource '" + res.name +
                                          "' written by later pass");
@@ -185,16 +196,15 @@ void FrameGraph::allocate_textures() {
         if (res.imported_view) continue;  // Imported resources already have a view
 
         auto it = m_texture_cache.find(res.name);
-        if (it != m_texture_cache.end() && descs_match(it->second.desc, res.desc)) {
+        if (it != m_texture_cache.end() && descs_match(it->second->desc, res.desc)) {
             // Reuse cached texture
-            it->second.used_this_frame = true;
+            it->second->used_this_frame = true;
             continue;
         }
 
-        // Destroy old cache entry if desc changed
+        // Overwrite cache entry if desc changed (old intrusive_ptr released automatically)
         if (it != m_texture_cache.end()) {
             m_logger->debug("FrameGraph: recreating texture '{}' (desc changed)", res.name);
-            it->second.destroy();
             m_texture_cache.erase(it);
         }
 
@@ -215,11 +225,11 @@ void FrameGraph::allocate_textures() {
         view_desc.arrayLayerCount = 1;
         WGPUTextureView view = wgpuTextureCreateView(texture, &view_desc);
 
-        CachedTexture cached;
-        cached.texture = texture;
-        cached.view = view;
-        cached.desc = res.desc;
-        cached.used_this_frame = true;
+        auto cached = boost::intrusive_ptr<detail::CachedTexture>(new detail::CachedTexture());
+        cached->texture = texture;
+        cached->view = view;
+        cached->desc = res.desc;
+        cached->used_this_frame = true;
         m_texture_cache[res.name] = cached;
 
         m_logger->debug("FrameGraph: created texture '{}' ({}x{})", res.name, res.desc.width,
@@ -229,9 +239,8 @@ void FrameGraph::allocate_textures() {
 
 void FrameGraph::evict_unused() {
     for (auto it = m_texture_cache.begin(); it != m_texture_cache.end();) {
-        if (!it->second.used_this_frame) {
+        if (!it->second->used_this_frame) {
             m_logger->debug("FrameGraph: evicting unused texture '{}'", it->first);
-            it->second.destroy();
             it = m_texture_cache.erase(it);
         } else {
             ++it;
@@ -239,14 +248,28 @@ void FrameGraph::evict_unused() {
     }
 }
 
-WGPUTextureView FrameGraph::get_texture_view(ResourceHandle h) const {
+TextureRef FrameGraph::get_texture_ref(ResourceHandle h) const {
+    TextureRef ref;
+    auto& res = m_resources[h.index];
+    if (res.imported_view) {
+        ref.m_imported_view = res.imported_view;
+        return ref;
+    }
+    auto it = m_texture_cache.find(res.name);
+    if (it != m_texture_cache.end()) {
+        ref.m_cached = it->second;
+    }
+    return ref;
+}
+
+WGPUTextureView FrameGraph::resolve_view(ResourceHandle h) const {
     auto& res = m_resources[h.index];
     if (res.imported_view) {
         return res.imported_view;
     }
     auto it = m_texture_cache.find(res.name);
     if (it != m_texture_cache.end()) {
-        return it->second.view;
+        return it->second->view;
     }
     return nullptr;
 }
@@ -258,7 +281,7 @@ void FrameGraph::execute(WGPUCommandEncoder encoder) {
 
         if (has_color) {
             auto& att = pass.color_attachments[0];
-            color_attachment.view = get_texture_view(att.handle);
+            color_attachment.view = resolve_view(att.handle);
             color_attachment.loadOp = pass.color_load_op;
             color_attachment.storeOp = pass.color_store_op;
             color_attachment.clearValue = m_resources[att.handle.index].desc.clear_color;
@@ -268,7 +291,7 @@ void FrameGraph::execute(WGPUCommandEncoder encoder) {
             WGPU_RENDER_PASS_DEPTH_STENCIL_ATTACHMENT_INIT;
         if (pass.has_depth) {
             auto& att = pass.depth_attachment;
-            depth_attachment.view = get_texture_view(att.handle);
+            depth_attachment.view = resolve_view(att.handle);
             depth_attachment.depthLoadOp = pass.depth_load_op;
             depth_attachment.depthStoreOp = pass.depth_store_op;
             depth_attachment.depthClearValue = m_resources[att.handle.index].desc.depth_clear_value;

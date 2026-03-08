@@ -90,6 +90,6 @@ struct EditorApplication final : WindowedApplication {
     // Viewport tracking
     uint32_t m_viewport_width = 0;
     uint32_t m_viewport_height = 0;
-    WGPUTextureView m_scene_color_view = nullptr;
+    rendering::TextureRef m_scene_color_ref;
 };
 }  // namespace pts::editor
