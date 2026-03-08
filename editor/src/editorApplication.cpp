@@ -295,13 +295,6 @@ void EditorApplication::render(FrameContext& ctx) {
 
     m_frame_graph->begin_frame();
 
-    rendering::TextureDesc surface_desc;
-    surface_desc.width = ctx.width();
-    surface_desc.height = ctx.height();
-    surface_desc.format = ctx.surface_format();
-    surface_desc.clear_color = {0.08, 0.08, 0.12, 1.0};
-    auto surface = m_frame_graph->import("surface", ctx.surface_view(), surface_desc);
-
     rendering::ResourceHandle scene_color_handle;
     rendering::ResourceHandle scene_depth_handle;
     bool has_viewport =
@@ -379,7 +372,9 @@ void EditorApplication::render(FrameContext& ctx) {
     }
 
     // ImGui overlay pass
-    auto imgui_builder = m_frame_graph->add_pass("imgui").color(surface).present(surface);
+    auto imgui_builder = m_frame_graph->add_pass("imgui")
+                             .color(ctx.surface_view(), WGPUColor{0.08, 0.08, 0.12, 1.0})
+                             .present();
     if (has_viewport && scene_color_handle.is_valid()) {
         imgui_builder.read(scene_color_handle);
     }

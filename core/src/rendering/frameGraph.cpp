@@ -2,6 +2,7 @@
 #include <core/rendering/webgpu/device.h>
 #include <spdlog/spdlog.h>
 
+#include <cassert>
 #include <stdexcept>
 
 namespace pts::rendering {
@@ -52,8 +53,40 @@ PassBuilder& PassBuilder::depth_readonly(ResourceHandle h) {
     return *this;
 }
 
-PassBuilder& PassBuilder::present(ResourceHandle h) {
-    m_graph.m_resources[h.index].is_present = true;
+PassBuilder& PassBuilder::color(WGPUTextureView view, WGPUColor clear_color) {
+    // Dedup by pointer identity
+    for (uint32_t i = 0; i < m_graph.m_resources.size(); ++i) {
+        if (m_graph.m_resources[i].external_view == view) {
+            return color(ResourceHandle{i});
+        }
+    }
+    ResourceHandle h;
+    h.index = static_cast<uint32_t>(m_graph.m_resources.size());
+    FrameGraph::Resource res;
+    res.desc.clear_color = clear_color;
+    res.external_view = view;
+    m_graph.m_resources.push_back(std::move(res));
+    return color(h);
+}
+
+PassBuilder& PassBuilder::depth(WGPUTextureView view, float clear_value) {
+    // Dedup by pointer identity
+    for (uint32_t i = 0; i < m_graph.m_resources.size(); ++i) {
+        if (m_graph.m_resources[i].external_view == view) {
+            return depth(ResourceHandle{i});
+        }
+    }
+    ResourceHandle h;
+    h.index = static_cast<uint32_t>(m_graph.m_resources.size());
+    FrameGraph::Resource res;
+    res.desc.depth_clear_value = clear_value;
+    res.external_view = view;
+    m_graph.m_resources.push_back(std::move(res));
+    return depth(h);
+}
+
+PassBuilder& PassBuilder::present() {
+    m_graph.m_passes[m_pass_index].is_present = true;
     return *this;
 }
 
@@ -75,17 +108,6 @@ FrameGraph::FrameGraph(const webgpu::Device& device, std::shared_ptr<spdlog::log
 
 FrameGraph::~FrameGraph() {
     m_texture_cache.clear();
-}
-
-ResourceHandle FrameGraph::import(std::string name, WGPUTextureView view, TextureDesc desc) {
-    ResourceHandle h;
-    h.index = static_cast<uint32_t>(m_resources.size());
-    Resource res;
-    res.name = std::move(name);
-    res.desc = desc;
-    res.imported_view = view;
-    m_resources.push_back(std::move(res));
-    return h;
 }
 
 ResourceHandle FrameGraph::create(std::string name, TextureDesc desc) {
@@ -193,7 +215,7 @@ static bool descs_match(const TextureDesc& a, const TextureDesc& b) {
 
 void FrameGraph::allocate_textures() {
     for (auto& res : m_resources) {
-        if (res.imported_view) continue;  // Imported resources already have a view
+        if (res.external_view) continue;
 
         auto it = m_texture_cache.find(res.name);
         if (it != m_texture_cache.end() && descs_match(it->second->desc, res.desc)) {
@@ -251,10 +273,7 @@ void FrameGraph::evict_unused() {
 TextureRef FrameGraph::get_texture_ref(ResourceHandle h) const {
     TextureRef ref;
     auto& res = m_resources[h.index];
-    if (res.imported_view) {
-        ref.m_imported_view = res.imported_view;
-        return ref;
-    }
+    assert(!res.external_view && "get_texture_ref() cannot be used on external resources");
     auto it = m_texture_cache.find(res.name);
     if (it != m_texture_cache.end()) {
         ref.m_cached = it->second;
@@ -264,8 +283,8 @@ TextureRef FrameGraph::get_texture_ref(ResourceHandle h) const {
 
 WGPUTextureView FrameGraph::resolve_view(ResourceHandle h) const {
     auto& res = m_resources[h.index];
-    if (res.imported_view) {
-        return res.imported_view;
+    if (res.external_view) {
+        return res.external_view;
     }
     auto it = m_texture_cache.find(res.name);
     if (it != m_texture_cache.end()) {

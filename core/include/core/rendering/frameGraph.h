@@ -57,16 +57,15 @@ struct CachedTexture : boost::intrusive_ref_counter<CachedTexture, boost::thread
 class TextureRef {
    public:
     WGPUTextureView view() const {
-        return m_cached ? m_cached->view : m_imported_view;
+        return m_cached ? m_cached->view : nullptr;
     }
     explicit operator bool() const {
-        return m_cached || m_imported_view;
+        return m_cached != nullptr;
     }
 
    private:
     friend class FrameGraph;
     boost::intrusive_ptr<detail::CachedTexture> m_cached;
-    WGPUTextureView m_imported_view = nullptr;
 };
 
 using ExecuteFn = std::function<void(WGPURenderPassEncoder)>;
@@ -74,9 +73,11 @@ using ExecuteFn = std::function<void(WGPURenderPassEncoder)>;
 class PassBuilder {
    public:
     PassBuilder& color(ResourceHandle h);
+    PassBuilder& color(WGPUTextureView view, WGPUColor clear_color = {});
     PassBuilder& depth(ResourceHandle h);
+    PassBuilder& depth(WGPUTextureView view, float clear_value = 1.0f);
     PassBuilder& depth_readonly(ResourceHandle h);
-    PassBuilder& present(ResourceHandle h);
+    PassBuilder& present();
     PassBuilder& read(ResourceHandle h);
     void execute(ExecuteFn fn);
 
@@ -96,7 +97,6 @@ class FrameGraph {
     FrameGraph(const FrameGraph&) = delete;
     FrameGraph& operator=(const FrameGraph&) = delete;
 
-    ResourceHandle import(std::string name, WGPUTextureView view, TextureDesc desc);
     ResourceHandle create(std::string name, TextureDesc desc);
 
     PassBuilder add_pass(std::string name);
@@ -115,9 +115,8 @@ class FrameGraph {
     struct Resource {
         std::string name;
         TextureDesc desc;
-        WGPUTextureView imported_view = nullptr;  // non-null for imported resources
+        WGPUTextureView external_view = nullptr;
         uint32_t first_writer = UINT32_MAX;
-        bool is_present = false;
     };
 
     struct ColorAttachmentInfo {
@@ -138,6 +137,7 @@ class FrameGraph {
         std::vector<ColorAttachmentInfo> color_attachments;
         DepthAttachmentInfo depth_attachment;
         bool has_depth = false;
+        bool is_present = false;
         std::vector<ResourceHandle> reads;
         ExecuteFn execute_fn;
 

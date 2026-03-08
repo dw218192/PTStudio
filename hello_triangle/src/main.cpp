@@ -149,16 +149,11 @@ class HelloApp : public pts::WindowedApplication {
 
         m_graph->begin_frame();
 
-        pts::rendering::TextureDesc surface_desc;
-        surface_desc.width = ctx.width();
-        surface_desc.height = ctx.height();
-        surface_desc.format = ctx.surface_format();
-        surface_desc.clear_color = {0.1, 0.1, 0.1, 1.0};
-        auto surface = m_graph->import("surface", ctx.surface_view(), surface_desc);
-
         // 3D render pass (clears surface)
-        m_graph->add_pass("forward").color(surface).present(surface).execute(
-            [&](WGPURenderPassEncoder pass) {
+        m_graph->add_pass("forward")
+            .color(ctx.surface_view(), WGPUColor{0.1, 0.1, 0.1, 1.0})
+            .present()
+            .execute([&](WGPURenderPassEncoder pass) {
                 wgpuRenderPassEncoderSetPipeline(pass, m_pipeline->handle());
                 for (const auto& obj : m_world.objects) {
                     Uniforms uniforms;
@@ -180,8 +175,9 @@ class HelloApp : public pts::WindowedApplication {
             });
 
         // ImGui overlay pass (preserves 3D content via Load)
-        m_graph->add_pass("imgui").color(surface).execute(
-            [&](WGPURenderPassEncoder pass) { scope.render_into(pass); });
+        m_graph->add_pass("imgui")
+            .color(ctx.surface_view())
+            .execute([&](WGPURenderPassEncoder pass) { scope.render_into(pass); });
 
         m_graph->compile();
         m_graph->execute(ctx.encoder());
