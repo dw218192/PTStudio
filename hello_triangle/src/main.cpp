@@ -128,6 +128,7 @@ class HelloApp : public pts::WindowedApplication {
 
     void render(pts::FrameContext& ctx) override {
         if (!m_imgui) return;
+        if (ctx.width() == 0 || ctx.height() == 0) return;
 
         // Begin ImGui frame (scope ensures end_frame is always called)
         auto scope = m_imgui->frame_scope();

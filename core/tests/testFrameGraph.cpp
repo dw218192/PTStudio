@@ -222,14 +222,17 @@ TEST_CASE("FrameGraph - cache eviction of unused resources") {
     f.graph.add_pass("pass_b").color(b1).execute([](WGPURenderPassEncoder) {});
     f.graph.compile();
 
+    CHECK(f.graph.cached_texture_count() == 2);
+
     // Frame 2 - only "color_a", "color_b" should be evicted
     f.graph.begin_frame();
     auto ha = f.graph.create("color_a", desc);
     f.graph.add_pass("pass_a").color(ha).execute([](WGPURenderPassEncoder) {});
     f.graph.compile();
 
-    // color_a should still exist
+    // color_a should still exist, color_b should be evicted
     CHECK(f.graph.get_texture_ref(ha).view() != nullptr);
+    CHECK(f.graph.cached_texture_count() == 1);
 }
 
 TEST_CASE("FrameGraph - TextureRef survives cache invalidation") {

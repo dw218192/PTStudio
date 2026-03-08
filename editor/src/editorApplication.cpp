@@ -253,10 +253,10 @@ void EditorApplication::render(FrameContext& ctx) {
     if (!m_imgui) return;
     if (viewport() && viewport()->should_close()) return;
 
-    m_input->reset_scroll_delta();
     auto scope = m_imgui->frame_scope();
 
-    m_input->poll(get_time(), window_width(), window_height(), m_imgui->cur_hovered_widget());
+    // Poll input — prev_hovered_widget makes this order-independent from UI drawing
+    m_input->poll(get_time(), window_width(), window_height(), m_imgui->prev_hovered_widget());
 
     if (m_first_frame) {
         setup_docking_layout();

@@ -16,6 +16,10 @@ void InputComponent::set_handler(InputHandler handler) {
 
 void InputComponent::poll(float time, int window_width, int window_height,
                           std::string_view cur_hovered_widget) {
+    // Snapshot and reset scroll delta atomically — poll() consumes accumulated scroll
+    auto scroll_delta = m_mouse_scroll_delta;
+    m_mouse_scroll_delta = glm::vec2{0.0f};
+
     auto screen_dim = glm::ivec2{window_width, window_height};
     auto mouse_pos = ImGui::GetMousePos();
     if (!ImGui::IsMousePosValid(&mouse_pos)) {
@@ -48,7 +52,7 @@ void InputComponent::poll(float time, int window_width, int window_height,
         }
         if (input && m_handler) {
             auto event = InputEvent{*input,     m_mouse_pos,          *m_last_mouse_pos,
-                                    screen_dim, m_mouse_scroll_delta, cur_hovered_widget,
+                                    screen_dim, scroll_delta, cur_hovered_widget,
                                     time};
             m_handler(event);
             if (input->action_type == ActionType::RELEASE) {
@@ -61,9 +65,9 @@ void InputComponent::poll(float time, int window_width, int window_height,
     // mouse events
 
     // scroll
-    if (glm::length(m_mouse_scroll_delta) > 0 && m_handler) {
+    if (glm::length(scroll_delta) > 0 && m_handler) {
         auto input = Input{InputType::MOUSE, ActionType::SCROLL, ImGuiMouseButton_Middle};
-        m_handler(InputEvent{input, m_mouse_pos, screen_dim, m_mouse_scroll_delta,
+        m_handler(InputEvent{input, m_mouse_pos, screen_dim, scroll_delta,
                              cur_hovered_widget, time});
     }
 
@@ -85,7 +89,7 @@ void InputComponent::poll(float time, int window_width, int window_height,
 
         if (input && m_handler) {
             auto event = InputEvent{*input,     m_mouse_pos,          *m_last_mouse_pos,
-                                    screen_dim, m_mouse_scroll_delta, m_mouse_initiated_window[i],
+                                    screen_dim, scroll_delta, m_mouse_initiated_window[i],
                                     time};
             m_handler(event);
             if (input->action_type == ActionType::RELEASE) {
@@ -98,10 +102,6 @@ void InputComponent::poll(float time, int window_width, int window_height,
 
 void InputComponent::on_scroll_event(double x, double y) noexcept {
     m_mouse_scroll_delta += glm::vec2{x, y};
-}
-
-void InputComponent::reset_scroll_delta() noexcept {
-    m_mouse_scroll_delta = glm::vec2{0.0f};
 }
 
 auto InputComponent::mouse_pos() const noexcept -> glm::vec2 {

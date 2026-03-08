@@ -7,6 +7,8 @@ def Xform "Root"
 {
     def Mesh "Cube"
     {
+        uniform token subdivisionScheme = "none"
+
         point3f[] points = [
             (-0.5, -0.5, -0.5),
             ( 0.5, -0.5, -0.5),

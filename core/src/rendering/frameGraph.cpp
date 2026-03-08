@@ -14,7 +14,6 @@ detail::CachedTexture::~CachedTexture() {
         wgpuTextureViewRelease(view);
     }
     if (texture) {
-        wgpuTextureDestroy(texture);
         wgpuTextureRelease(texture);
     }
 }
@@ -111,6 +110,10 @@ FrameGraph::~FrameGraph() {
 }
 
 ResourceHandle FrameGraph::create(std::string name, TextureDesc desc) {
+    for (auto& existing : m_resources) {
+        PRECONDITION_MSG(existing.name != name,
+                         "FrameGraph::create() called with duplicate resource name");
+    }
     ResourceHandle h;
     h.index = static_cast<uint32_t>(m_resources.size());
     Resource res;
@@ -138,6 +141,12 @@ void FrameGraph::begin_frame() {
 }
 
 void FrameGraph::compile() {
+    // Validate single color attachment (MRT not yet supported)
+    for (auto& pass : m_passes) {
+        PRECONDITION_MSG(pass.color_attachments.size() <= 1,
+                         "FrameGraph: pass has multiple color attachments (MRT not supported)");
+    }
+
     // Validate no backward dependencies
     for (auto& pass : m_passes) {
         for (auto& att : pass.color_attachments) {

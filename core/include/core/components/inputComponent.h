@@ -36,8 +36,6 @@ class InputComponent {
 
     void on_scroll_event(double x, double y) noexcept;
 
-    void reset_scroll_delta() noexcept;
-
    private:
     rendering::IViewport& m_viewport;
     InputHandler m_handler;

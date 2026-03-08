@@ -71,7 +71,10 @@ class ImGuiComponent {
     void end_window() noexcept;
     auto get_window_content_pos(std::string_view name) const noexcept -> std::optional<ImVec2>;
 
+    /// Widget hovered during the current frame (only valid after begin_window calls).
     [[nodiscard]] auto cur_hovered_widget() const noexcept -> std::string_view;
+    /// Widget hovered during the previous frame (stable — safe to read at any point).
+    [[nodiscard]] auto prev_hovered_widget() const noexcept -> std::string_view;
     [[nodiscard]] auto cur_focused_widget() const noexcept -> std::string_view;
 
    private:

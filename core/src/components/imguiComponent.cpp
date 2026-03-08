@@ -145,6 +145,10 @@ auto ImGuiComponent::cur_hovered_widget() const noexcept -> std::string_view {
     return m_cur_hovered_widget;
 }
 
+auto ImGuiComponent::prev_hovered_widget() const noexcept -> std::string_view {
+    return m_prev_hovered_widget;
+}
+
 auto ImGuiComponent::cur_focused_widget() const noexcept -> std::string_view {
     return m_cur_focused_widget;
 }

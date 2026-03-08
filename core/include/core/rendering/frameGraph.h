@@ -106,6 +106,9 @@ class FrameGraph {
     void execute(WGPUCommandEncoder encoder);
 
     [[nodiscard]] TextureRef get_texture_ref(ResourceHandle h) const;
+    [[nodiscard]] size_t cached_texture_count() const {
+        return m_texture_cache.size();
+    }
 
    private:
     friend class PassBuilder;
