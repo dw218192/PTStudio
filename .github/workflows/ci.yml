@@ -86,9 +86,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            _tools/venv
-            _tools/cache
-          key: ${{ matrix.os }}-python-${{ hashFiles('tools/pyproject.toml') }}
+            tools/framework/_managed/venv
+            tools/framework/_managed/cache
+          key: ${{ matrix.os }}-python-${{ hashFiles('tools/framework/pyproject.toml') }}
           restore-keys: |
             ${{ matrix.os }}-python-
 

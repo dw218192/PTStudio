@@ -33,8 +33,6 @@ class PTStudioConan(ConanFile):
         self.requires("glm/[>=0]")
 
         # Utility libraries
-        self.requires("stb/[>=0]")
-        self.requires("tinyobjloader/2.0.0-rc10")
         self.requires("doctest/[>=0]")
         self.requires("boost/[>=0]")
         self.requires("cxxopts/[>=3]")
@@ -51,7 +49,6 @@ class PTStudioConan(ConanFile):
         # GUI libraries (from Conan)
         self.requires("imgui/1.92.5-docking")
         self.requires("imguizmo/1.92")
-        self.requires("imgui_color_text_edit/1.0")
 
     def build_requirements(self):
         if self.settings.os == "Emscripten":

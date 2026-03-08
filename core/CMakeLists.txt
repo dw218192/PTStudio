@@ -92,8 +92,6 @@ PRIVATE
 PUBLIC
 	openusd::usd_usd
 	glm::glm
-	tinyobjloader
-	stb::stb
 	imgui::imgui
 	imgui_backends
 	fmt::fmt

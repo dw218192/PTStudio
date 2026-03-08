@@ -63,8 +63,6 @@ target_compile_definitions(developer_flags INTERFACE
 target_compile_features(developer_flags INTERFACE cxx_std_17)
 
 find_package(glm REQUIRED)
-find_package(tinyobjloader REQUIRED)
-find_package(stb REQUIRED)
 find_package(fmt REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(nlohmann_json REQUIRED)
@@ -137,7 +135,6 @@ endif()
 # GUI libraries from Conan
 find_package(imgui REQUIRED)
 find_package(imguizmo REQUIRED)
-find_package(imgui_color_text_edit REQUIRED)
 
 
 # Emscripten configuration - centralized flags for all targets

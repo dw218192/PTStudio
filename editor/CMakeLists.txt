@@ -20,7 +20,6 @@ PRIVATE
 	$<BUILD_INTERFACE:developer_flags>
 	core
 	imguizmo::imguizmo
-	imgui_color_text_edit::imgui_color_text_edit
 )
 if (MSVC)
 	target_compile_options(${exec_name} PRIVATE /bigobj)
@@ -29,6 +28,7 @@ endif()
 target_include_directories(${exec_name}
 PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}/src/include
+	${CMAKE_CURRENT_SOURCE_DIR}/generated
 	${CMAKE_SOURCE_DIR}  # For generated headers (core/generated, editor/generated)
 )
 

@@ -2,7 +2,7 @@
 #include <core/components/imguiComponent.h>
 #include <core/enumUtils.h>
 #include <core/loggingManager.h>
-#include <core/rendering/renderGraph.h>
+#include <core/rendering/frameGraph.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/sceneLoader.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
@@ -46,7 +46,7 @@ class HelloApp : public pts::WindowedApplication {
 
    private:
     pts::rendering::RenderWorld m_world;
-    pts::rendering::RenderGraph m_graph;
+    std::unique_ptr<pts::rendering::FrameGraph> m_graph;
     std::optional<pts::webgpu::ShaderModule> m_shader;
     std::optional<pts::webgpu::RenderPipeline> m_pipeline;
     pts::webgpu::Buffer m_uniform_buffer;
@@ -120,10 +120,15 @@ class HelloApp : public pts::WindowedApplication {
         // Initialize ImGui
         m_imgui = std::make_unique<pts::ImGuiComponent>(*viewport(), *webgpu_context(),
                                                         get_logging_manager());
+
+        // Initialize FrameGraph
+        m_graph = std::make_unique<pts::rendering::FrameGraph>(
+            device, get_logging_manager().get_logger_shared("frame_graph"));
     }
 
     void render(pts::FrameContext& ctx) override {
         if (!m_imgui) return;
+        if (ctx.width() == 0 || ctx.height() == 0) return;
 
         // Begin ImGui frame (scope ensures end_frame is always called)
         auto scope = m_imgui->frame_scope();
@@ -135,7 +140,7 @@ class HelloApp : public pts::WindowedApplication {
         ImGui::SliderFloat("Rotation Speed", &m_rotation_speed, 0.0f, 5.0f);
         ImGui::End();
 
-        // 3D render pass (clears surface)
+        // Build frame graph
         auto const& device = webgpu_context()->device();
         float aspect = static_cast<float>(ctx.width()) / static_cast<float>(ctx.height());
         auto proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
@@ -143,12 +148,15 @@ class HelloApp : public pts::WindowedApplication {
         auto vp = proj * view;
         float t = get_time();
 
-        m_graph.clear();
-        m_graph.add_pass(
-            {"forward", ctx.surface_view(), ctx.surface_format()},
-            [&](WGPURenderPassEncoder pass, const pts::rendering::RenderWorld& world) {
+        m_graph->begin_frame();
+
+        // 3D render pass (clears surface)
+        m_graph->add_pass("forward")
+            .color(ctx.surface_view(), WGPUColor{0.1, 0.1, 0.1, 1.0})
+            .present()
+            .execute([&](WGPURenderPassEncoder pass) {
                 wgpuRenderPassEncoderSetPipeline(pass, m_pipeline->handle());
-                for (const auto& obj : world.objects) {
+                for (const auto& obj : m_world.objects) {
                     Uniforms uniforms;
                     uniforms.mvp = vp * obj.transform;
                     uniforms.time = t * m_time_scale;
@@ -157,7 +165,7 @@ class HelloApp : public pts::WindowedApplication {
                                          sizeof(uniforms));
                     wgpuRenderPassEncoderSetBindGroup(pass, 0, m_bind_group, 0, nullptr);
 
-                    const auto& mesh = world.meshes[obj.mesh_index];
+                    const auto& mesh = m_world.meshes[obj.mesh_index];
                     wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh.vertex_buffer.handle(), 0,
                                                          mesh.vertex_buffer.size());
                     wgpuRenderPassEncoderSetIndexBuffer(pass, mesh.index_buffer.handle(),
@@ -166,23 +174,14 @@ class HelloApp : public pts::WindowedApplication {
                     wgpuRenderPassEncoderDrawIndexed(pass, mesh.index_count, 1, 0, 0, 0);
                 }
             });
-        m_graph.execute(ctx.encoder(), m_world);
 
-        // ImGui overlay pass (preserves 3D content)
-        WGPURenderPassColorAttachment color_attachment = WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
-        color_attachment.view = ctx.surface_view();
-        color_attachment.loadOp = WGPULoadOp_Load;
-        color_attachment.storeOp = WGPUStoreOp_Store;
+        // ImGui overlay pass (preserves 3D content via Load)
+        m_graph->add_pass("imgui")
+            .color(ctx.surface_view())
+            .execute([&](WGPURenderPassEncoder pass) { scope.render_into(pass); });
 
-        WGPURenderPassDescriptor pass_desc = WGPU_RENDER_PASS_DESCRIPTOR_INIT;
-        pass_desc.colorAttachmentCount = 1;
-        pass_desc.colorAttachments = &color_attachment;
-
-        WGPURenderPassEncoder imgui_pass =
-            wgpuCommandEncoderBeginRenderPass(ctx.encoder(), &pass_desc);
-        scope.render_into(imgui_pass);
-        wgpuRenderPassEncoderEnd(imgui_pass);
-        wgpuRenderPassEncoderRelease(imgui_pass);
+        m_graph->compile();
+        m_graph->execute(ctx.encoder());
     }
 };
 

@@ -1,10 +1,19 @@
 #pragma once
 
 #include <core/inputAction.h>
+#include <core/rendering/camera.h>
+#include <core/rendering/frameGraph.h>
+#include <core/rendering/renderWorld.h>
+#include <core/rendering/webgpu/buffer.h>
+#include <core/rendering/webgpu/pipeline.h>
+#include <core/rendering/webgpu/shader.h>
+#include <core/rendering/webgpu/webgpu.h>
 #include <core/windowedApplication.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace pts {
@@ -56,11 +65,31 @@ struct EditorApplication final : WindowedApplication {
 
     std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> m_console_log_sink;
 
-    float m_fovy = 60.0f;
-
     // input handling
     std::vector<InputAction> m_input_actions;
 
     bool m_first_frame{true};
+
+    // Rendering
+    std::unique_ptr<rendering::FrameGraph> m_frame_graph;
+    rendering::OrbitCamera m_camera;
+    rendering::RenderWorld m_world;
+    std::optional<webgpu::ShaderModule> m_forward_shader;
+    std::optional<webgpu::RenderPipeline> m_forward_pipeline;
+    webgpu::Buffer m_uniform_buffer;
+    WGPUBindGroup m_bind_group = nullptr;
+    WGPUBindGroupLayout m_bind_group_layout = nullptr;
+
+    // Grid
+    std::optional<webgpu::ShaderModule> m_grid_shader;
+    std::optional<webgpu::RenderPipeline> m_grid_pipeline;
+    webgpu::Buffer m_grid_uniform_buffer;
+    WGPUBindGroup m_grid_bind_group = nullptr;
+    WGPUBindGroupLayout m_grid_bind_group_layout = nullptr;
+
+    // Viewport tracking
+    uint32_t m_viewport_width = 0;
+    uint32_t m_viewport_height = 0;
+    rendering::TextureRef m_scene_color_ref;
 };
 }  // namespace pts::editor
