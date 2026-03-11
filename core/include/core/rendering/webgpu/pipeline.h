@@ -44,4 +44,24 @@ class RenderPipeline {
     WGPURenderPipeline m_pipeline;
 };
 
+/// RAII wrapper for WGPUComputePipeline.
+/// Invariant: handle is non-null after construction (moved-from state is null but unusable).
+class ComputePipeline {
+   public:
+    explicit ComputePipeline(WGPUComputePipeline pipeline);
+
+    ComputePipeline(const ComputePipeline&) = delete;
+    auto operator=(const ComputePipeline&) -> ComputePipeline& = delete;
+
+    ComputePipeline(ComputePipeline&& other) noexcept;
+    auto operator=(ComputePipeline&& other) noexcept -> ComputePipeline&;
+
+    ~ComputePipeline();
+
+    [[nodiscard]] auto handle() const noexcept -> WGPUComputePipeline;
+
+   private:
+    WGPUComputePipeline m_pipeline;
+};
+
 }  // namespace pts::webgpu
