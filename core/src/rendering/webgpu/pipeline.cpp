@@ -67,4 +67,36 @@ auto RenderPipeline::handle() const noexcept -> WGPURenderPipeline {
     return m_pipeline;
 }
 
+// ComputePipeline implementation
+
+ComputePipeline::ComputePipeline(WGPUComputePipeline pipeline) : m_pipeline(pipeline) {
+    INVARIANT_MSG(m_pipeline != nullptr, "handle is null");
+}
+
+ComputePipeline::ComputePipeline(ComputePipeline&& other) noexcept : m_pipeline(other.m_pipeline) {
+    other.m_pipeline = nullptr;
+}
+
+auto ComputePipeline::operator=(ComputePipeline&& other) noexcept -> ComputePipeline& {
+    if (this != &other) {
+        if (m_pipeline != nullptr) {
+            wgpuComputePipelineRelease(m_pipeline);
+        }
+        m_pipeline = other.m_pipeline;
+        other.m_pipeline = nullptr;
+    }
+    return *this;
+}
+
+ComputePipeline::~ComputePipeline() {
+    if (m_pipeline != nullptr) {
+        wgpuComputePipelineRelease(m_pipeline);
+    }
+}
+
+auto ComputePipeline::handle() const noexcept -> WGPUComputePipeline {
+    ASSERT_MSG(m_pipeline != nullptr, "use after move");
+    return m_pipeline;
+}
+
 }  // namespace pts::webgpu
