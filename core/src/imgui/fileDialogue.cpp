@@ -1,32 +1,30 @@
 #include <core/imgui/fileDialogue.h>
-#include <imgui.h>
-#include <nfd.h>
 
-auto ImGui::FileDialogue(FileDialogueMode mode, const char* filter,
-                         const char* defaultPath) -> std::string {
-    nfdchar_t* outPath = nullptr;
-    nfdresult_t result;
-    if (mode == FileDialogueMode::OPEN) {
-        result = NFD_OpenDialog(filter, defaultPath, &outPath);
-    } else {
-        result = NFD_SaveDialog(filter, defaultPath, &outPath);
-    }
+#if !defined(__EMSCRIPTEN__)
+#include <portable-file-dialogs.h>
+#endif
 
-    if (result == NFD_OKAY) {
-        std::string path = outPath;
-        free(outPath);
-        return path;
-    } else if (result == NFD_CANCEL) {
-        return {};
-    } else {
-        ImGui::OpenPopup("Error");
-    }
-    if (ImGui::BeginPopupModal("Error", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("Error opening file dialogue");
-        if (ImGui::Button("OK")) {
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::EndPopup();
-    }
+auto ImGui::FileDialogue(FileDialogueMode mode, const std::vector<std::string>& filters,
+                         const std::string& default_path) -> std::string {
+#if defined(__EMSCRIPTEN__)
+    // File dialogs not supported in browser environment
+    (void) mode;
+    (void) filters;
+    (void) default_path;
     return {};
+#else
+    if (mode == FileDialogueMode::Open) {
+        auto selection = pfd::open_file("Open File", default_path, filters).result();
+        if (!selection.empty()) {
+            return selection[0];
+        }
+    } else {
+        auto result = pfd::save_file("Save File", default_path, filters).result();
+        if (!result.empty()) {
+            return result;
+        }
+    }
+
+    return {};
+#endif
 }
