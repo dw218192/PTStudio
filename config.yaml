@@ -1,0 +1,127 @@
+repo:
+  tokens:
+    platform:
+      - windows-x64
+      - linux-x64
+      - emscripten
+    build_type:
+      - Debug
+      - Release
+      - RelWithDebInfo
+    build_root: {value: "{workspace_root}/_build", path: true}
+    logs_root: {value: "{workspace_root}/_logs", path: true}
+    build_dir: {value: "{build_root}/{platform}/{build_type}", path: true}
+    conan_deps_root: {value: "{build_root}/{platform}/deps", path: true}
+    package_dir: {value: "{workspace_root}/_package/{platform}", path: true}
+  extra_deps:
+    - conan==2.22.2
+    - cmake==3.31.1
+    - jinja2==3.1.6
+    - InquirerPy==0.3.4
+
+build:
+  windowing: "glfw"
+  usd_modules:
+    - usdGeom
+    - usdShade
+    - usdLux
+  prebuild:
+    format: {}
+    slangc:
+      shaders:
+        - input: "assets/shaders/test/*.slang"
+          output: "assets/shaders/test/*.wgsl"
+        - input: "hello_triangle/shaders/hello_triangle.slang"
+          output: "hello_triangle/generated/shaders/hello_triangle.wgsl"
+          reflect: true
+        - input: "editor/shaders/forward.slang"
+          output: "editor/generated/shaders/forward.wgsl"
+          reflect: true
+        - input: "editor/shaders/grid.slang"
+          output: "editor/generated/shaders/grid.wgsl"
+          reflect: true
+    shader_codegen:
+      template: "core/templates/shader_metadata.h.j2"
+      shaders:
+        - reflect: "hello_triangle/generated/shaders/hello_triangle.reflect.json"
+          output: "hello_triangle/generated/shader_metadata.h"
+          namespace: "hello_triangle_shader"
+        - reflect: "editor/generated/shaders/forward.reflect.json"
+          output: "editor/generated/shader_metadata.h"
+          namespace: "editor_shader"
+        - reflect: "editor/generated/shaders/grid.reflect.json"
+          output: "editor/generated/grid_shader_metadata.h"
+          namespace: "editor_grid_shader"
+    embed:
+      template: "core/templates/embedded_resources.h.j2"
+      resources:
+        - input:
+            - "editor/generated/shaders/forward.wgsl"
+            - "editor/generated/shaders/grid.wgsl"
+            - "editor/icons/*.*"
+            - "editor/scenes/*.*"
+          output: "editor/generated/embedded_resources.h"
+          namespace: "editor_resources"
+        - input:
+            - "assets/shaders/test/simple.wgsl"
+            - "assets/scenes/test_cube.usda"
+          output: "core/tests/generated/embedded_test_resources.h"
+          namespace: "test_resources"
+        - input:
+            - "hello_triangle/generated/shaders/hello_triangle.wgsl"
+            - "hello_triangle/scenes/triangle.usda"
+          output: "hello_triangle/generated/embedded_resources.h"
+          namespace: "hello_triangle_resources"
+  postbuild: {}
+  conan:
+    local_recipes: "tools/conan"
+
+agent:
+  required_criteria+:
+    - "Build succeeds (repo_build)"
+    - "All existing tests pass (repo_test)"
+    - "If there is a new feature, it must have tests that cover the code path"
+    - "Fail loud: use macros in <core/diagnostics.h> instead of silent null checks, fallbacks, or defensive state management."
+    - "Follows naming conventions: UpperCamelCase types, snake_case methods/vars, m_ private members, kCamelCase constants, lowerCamelCase files"
+    - "Never hide errors with silent fallbacks, empty catch blocks, or swallowed return codes."
+    - "Never disable or skip unit tests without explicit justification."
+  prompts:
+    common: >
+      C++17 codebase. Naming: UpperCamelCase types, snake_case functions/variables,
+      m_prefix for private members, kCamelCase for constexpr constants,
+      lowerCamelCase.cpp files, snake_case directories.
+      Public API boundaries must be noexcept and return error_code or boost::result —
+      never let exceptions escape. Use ABI-safe types only at DLL boundaries
+      (fixed-width ints, POD structs, opaque handles — no std::string/vector).
+      Prefer Rule of Zero, RAII, string_view/span for non-owning views.
+      Use #pragma once, include what you use, forward-declare in headers.
+
+clean:
+  paths+:
+    - "{workspace_root}/_build"
+    - "{workspace_root}/_logs"
+    - "{workspace_root}/_package"
+    - "{workspace_root}/_deploy"
+    - "{workspace_root}/**/generated"
+    - "{workspace_root}/CMakeUserPresets.json"
+
+publish:
+  output_dir: "{workspace_root}/_deploy"
+  input_dir: "{package_dir}/{build_type}/bin"
+
+package:
+  output_dir: "{package_dir}"
+  mappings:
+    - src: "{build_dir}/bin/**/*"
+      dest: "{build_type}/bin/"
+    - src: "{build_dir}/conanbuild*"
+      dest: "{build_type}/"
+    - src: "{conan_deps_root}/*.dll"
+      dest: "deps/"
+    - src: "{conan_deps_root}/usd/**/*"
+      dest: "deps/usd/"
+  mappings@emscripten:
+    - src: "{build_dir}/bin/**/*"
+      dest: "{build_type}/bin/"
+    - src: "{build_dir}/conanbuild*"
+      dest: "{build_type}/"

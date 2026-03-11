@@ -1,13 +1,3 @@
-[submodule "ext/imgui"]
-	path = ext/imgui
-	url = https://github.com/ocornut/imgui.git
-	branch = docking
-[submodule "ext/ImGuizmo"]
-	path = ext/ImGuizmo
-	url = https://github.com/CedricGuillemet/ImGuizmo.git
-[submodule "ext/cmrc"]
-	path = ext/cmrc
-	url = https://github.com/vector-of-bool/cmrc.git
-[submodule "ext/nativefiledialog"]
-	path = ext/nativefiledialog
-	url = https://github.com/mlabbe/nativefiledialog.git
+[submodule "tools/framework"]
+	path = tools/framework
+	url = https://github.com/dw218192/repokit.git
