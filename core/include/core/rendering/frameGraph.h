@@ -68,7 +68,13 @@ class TextureRef {
     boost::intrusive_ptr<detail::CachedTexture> m_cached;
 };
 
-using ExecuteFn = std::function<void(WGPURenderPassEncoder)>;
+enum class PassType { Render, Compute };
+
+using ExecuteRenderFn = std::function<void(WGPURenderPassEncoder)>;
+using ExecuteComputeFn = std::function<void(WGPUComputePassEncoder)>;
+
+// Keep backward-compatible alias
+using ExecuteFn = ExecuteRenderFn;
 
 class PassBuilder {
    public:
@@ -79,7 +85,9 @@ class PassBuilder {
     PassBuilder& depth_readonly(ResourceHandle h);
     PassBuilder& present();
     PassBuilder& read(ResourceHandle h);
-    void execute(ExecuteFn fn);
+    PassBuilder& storage_write(ResourceHandle h);
+    void execute(ExecuteRenderFn fn);
+    void execute(ExecuteComputeFn fn);
 
    private:
     friend class FrameGraph;
@@ -98,6 +106,7 @@ class FrameGraph {
     FrameGraph& operator=(const FrameGraph&) = delete;
 
     ResourceHandle create(std::string name, TextureDesc desc);
+    ResourceHandle find_or_create(std::string name, TextureDesc desc);
 
     PassBuilder add_pass(std::string name);
 
@@ -126,6 +135,10 @@ class FrameGraph {
         ResourceHandle handle;
         bool is_read = false;
         bool is_write = false;
+
+        // Derived during compile (per-attachment load/store ops for MRT)
+        WGPULoadOp load_op = WGPULoadOp_Clear;
+        WGPUStoreOp store_op = WGPUStoreOp_Store;
     };
 
     struct DepthAttachmentInfo {
@@ -137,16 +150,16 @@ class FrameGraph {
     struct Pass {
         std::string name;
         uint32_t index = 0;
+        PassType type = PassType::Render;
         std::vector<ColorAttachmentInfo> color_attachments;
         DepthAttachmentInfo depth_attachment;
         bool has_depth = false;
         bool is_present = false;
         std::vector<ResourceHandle> reads;
-        ExecuteFn execute_fn;
+        ExecuteRenderFn render_fn;
+        ExecuteComputeFn compute_fn;
 
         // Derived during compile
-        WGPULoadOp color_load_op = WGPULoadOp_Clear;
-        WGPUStoreOp color_store_op = WGPUStoreOp_Store;
         WGPULoadOp depth_load_op = WGPULoadOp_Clear;
         WGPUStoreOp depth_store_op = WGPUStoreOp_Store;
         bool depth_read_only = false;

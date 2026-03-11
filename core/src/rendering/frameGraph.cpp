@@ -30,6 +30,11 @@ PassBuilder& PassBuilder::color(ResourceHandle h) {
     if (res.first_writer == UINT32_MAX) {
         res.first_writer = m_pass_index;
     }
+    // Auto-infer RenderAttachment usage for managed resources
+    if (!res.external_view) {
+        res.desc.usage =
+            static_cast<WGPUTextureUsage>(res.desc.usage | WGPUTextureUsage_RenderAttachment);
+    }
     pass.color_attachments.push_back({h, false, true});
     return *this;
 }
@@ -92,11 +97,40 @@ PassBuilder& PassBuilder::present() {
 PassBuilder& PassBuilder::read(ResourceHandle h) {
     auto& pass = m_graph.m_passes[m_pass_index];
     pass.reads.push_back(h);
+    // Auto-infer TextureBinding usage for managed resources
+    auto& res = m_graph.m_resources[h.index];
+    if (!res.external_view) {
+        res.desc.usage =
+            static_cast<WGPUTextureUsage>(res.desc.usage | WGPUTextureUsage_TextureBinding);
+    }
     return *this;
 }
 
-void PassBuilder::execute(ExecuteFn fn) {
-    m_graph.m_passes[m_pass_index].execute_fn = std::move(fn);
+PassBuilder& PassBuilder::storage_write(ResourceHandle h) {
+    auto& pass = m_graph.m_passes[m_pass_index];
+    auto& res = m_graph.m_resources[h.index];
+    if (res.first_writer == UINT32_MAX) {
+        res.first_writer = m_pass_index;
+    }
+    // Auto-infer StorageBinding usage for managed resources
+    if (!res.external_view) {
+        res.desc.usage =
+            static_cast<WGPUTextureUsage>(res.desc.usage | WGPUTextureUsage_StorageBinding);
+    }
+    pass.reads.push_back(h);
+    return *this;
+}
+
+void PassBuilder::execute(ExecuteRenderFn fn) {
+    auto& pass = m_graph.m_passes[m_pass_index];
+    pass.type = PassType::Render;
+    pass.render_fn = std::move(fn);
+}
+
+void PassBuilder::execute(ExecuteComputeFn fn) {
+    auto& pass = m_graph.m_passes[m_pass_index];
+    pass.type = PassType::Compute;
+    pass.compute_fn = std::move(fn);
 }
 
 // --- FrameGraph ---
@@ -123,6 +157,22 @@ ResourceHandle FrameGraph::create(std::string name, TextureDesc desc) {
     return h;
 }
 
+ResourceHandle FrameGraph::find_or_create(std::string name, TextureDesc desc) {
+    for (uint32_t i = 0; i < m_resources.size(); ++i) {
+        if (m_resources[i].name == name) {
+            auto& existing = m_resources[i];
+            INVARIANT_MSG(existing.desc.format == desc.format,
+                          "find_or_create: format mismatch for existing resource");
+            INVARIANT_MSG(existing.desc.width == desc.width,
+                          "find_or_create: width mismatch for existing resource");
+            INVARIANT_MSG(existing.desc.height == desc.height,
+                          "find_or_create: height mismatch for existing resource");
+            return ResourceHandle{i};
+        }
+    }
+    return create(std::move(name), desc);
+}
+
 PassBuilder FrameGraph::add_pass(std::string name) {
     Pass pass;
     pass.name = std::move(name);
@@ -141,12 +191,6 @@ void FrameGraph::begin_frame() {
 }
 
 void FrameGraph::compile() {
-    // Validate single color attachment (MRT not yet supported)
-    for (auto& pass : m_passes) {
-        PRECONDITION_MSG(pass.color_attachments.size() <= 1,
-                         "FrameGraph: pass has multiple color attachments (MRT not supported)");
-    }
-
     // Validate no backward dependencies
     for (auto& pass : m_passes) {
         for (auto& att : pass.color_attachments) {
@@ -180,16 +224,20 @@ void FrameGraph::compile() {
 
     // Derive load/store ops
     for (auto& pass : m_passes) {
-        // Color attachments
-        if (!pass.color_attachments.empty()) {
-            auto& att = pass.color_attachments[0];
+        // Skip load/store derivation for compute passes
+        if (pass.type == PassType::Compute) {
+            continue;
+        }
+
+        // Color attachments - per-attachment load/store ops (MRT)
+        for (auto& att : pass.color_attachments) {
             auto& res = m_resources[att.handle.index];
             if (att.is_write && res.first_writer == pass.index) {
-                pass.color_load_op = WGPULoadOp_Clear;
+                att.load_op = WGPULoadOp_Clear;
             } else {
-                pass.color_load_op = WGPULoadOp_Load;
+                att.load_op = WGPULoadOp_Load;
             }
-            pass.color_store_op = WGPUStoreOp_Store;
+            att.store_op = WGPUStoreOp_Store;
         }
 
         // Depth attachment
@@ -304,43 +352,57 @@ WGPUTextureView FrameGraph::resolve_view(ResourceHandle h) const {
 
 void FrameGraph::execute(WGPUCommandEncoder encoder) {
     for (auto& pass : m_passes) {
-        WGPURenderPassColorAttachment color_attachment = WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
-        bool has_color = !pass.color_attachments.empty();
+        if (pass.type == PassType::Compute) {
+            WGPUComputePassDescriptor desc = WGPU_COMPUTE_PASS_DESCRIPTOR_INIT;
+            desc.label = {pass.name.c_str(), pass.name.size()};
+            auto enc = wgpuCommandEncoderBeginComputePass(encoder, &desc);
+            if (pass.compute_fn) pass.compute_fn(enc);
+            wgpuComputePassEncoderEnd(enc);
+            wgpuComputePassEncoderRelease(enc);
+        } else {
+            // Build MRT color attachment array
+            std::vector<WGPURenderPassColorAttachment> color_attachments;
+            color_attachments.reserve(pass.color_attachments.size());
 
-        if (has_color) {
-            auto& att = pass.color_attachments[0];
-            color_attachment.view = resolve_view(att.handle);
-            color_attachment.loadOp = pass.color_load_op;
-            color_attachment.storeOp = pass.color_store_op;
-            color_attachment.clearValue = m_resources[att.handle.index].desc.clear_color;
-        }
+            for (auto& att : pass.color_attachments) {
+                WGPURenderPassColorAttachment color_attachment =
+                    WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
+                color_attachment.view = resolve_view(att.handle);
+                color_attachment.loadOp = att.load_op;
+                color_attachment.storeOp = att.store_op;
+                color_attachment.clearValue = m_resources[att.handle.index].desc.clear_color;
+                color_attachments.push_back(color_attachment);
+            }
 
-        WGPURenderPassDepthStencilAttachment depth_attachment =
-            WGPU_RENDER_PASS_DEPTH_STENCIL_ATTACHMENT_INIT;
-        if (pass.has_depth) {
-            auto& att = pass.depth_attachment;
-            depth_attachment.view = resolve_view(att.handle);
-            depth_attachment.depthLoadOp = pass.depth_load_op;
-            depth_attachment.depthStoreOp = pass.depth_store_op;
-            depth_attachment.depthClearValue = m_resources[att.handle.index].desc.depth_clear_value;
-            depth_attachment.depthReadOnly = pass.depth_read_only;
-        }
+            WGPURenderPassDepthStencilAttachment depth_attachment =
+                WGPU_RENDER_PASS_DEPTH_STENCIL_ATTACHMENT_INIT;
+            if (pass.has_depth) {
+                auto& att = pass.depth_attachment;
+                depth_attachment.view = resolve_view(att.handle);
+                depth_attachment.depthLoadOp = pass.depth_load_op;
+                depth_attachment.depthStoreOp = pass.depth_store_op;
+                depth_attachment.depthClearValue =
+                    m_resources[att.handle.index].desc.depth_clear_value;
+                depth_attachment.depthReadOnly = pass.depth_read_only;
+            }
 
-        WGPURenderPassDescriptor pass_desc = WGPU_RENDER_PASS_DESCRIPTOR_INIT;
-        if (has_color) {
-            pass_desc.colorAttachmentCount = 1;
-            pass_desc.colorAttachments = &color_attachment;
-        }
-        if (pass.has_depth) {
-            pass_desc.depthStencilAttachment = &depth_attachment;
-        }
+            WGPURenderPassDescriptor pass_desc = WGPU_RENDER_PASS_DESCRIPTOR_INIT;
+            if (!color_attachments.empty()) {
+                pass_desc.colorAttachmentCount = color_attachments.size();
+                pass_desc.colorAttachments = color_attachments.data();
+            }
+            if (pass.has_depth) {
+                pass_desc.depthStencilAttachment = &depth_attachment;
+            }
 
-        WGPURenderPassEncoder pass_encoder = wgpuCommandEncoderBeginRenderPass(encoder, &pass_desc);
-        if (pass.execute_fn) {
-            pass.execute_fn(pass_encoder);
+            WGPURenderPassEncoder pass_encoder =
+                wgpuCommandEncoderBeginRenderPass(encoder, &pass_desc);
+            if (pass.render_fn) {
+                pass.render_fn(pass_encoder);
+            }
+            wgpuRenderPassEncoderEnd(pass_encoder);
+            wgpuRenderPassEncoderRelease(pass_encoder);
         }
-        wgpuRenderPassEncoderEnd(pass_encoder);
-        wgpuRenderPassEncoderRelease(pass_encoder);
     }
 }
 
