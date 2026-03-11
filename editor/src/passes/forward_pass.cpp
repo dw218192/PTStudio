@@ -86,16 +86,12 @@ void ForwardPass::setup(const webgpu::Device& device) {
     wgpuPipelineLayoutRelease(pipeline_layout);
 
     m_state = Ready{
-        std::move(shader),
-        std::move(pipeline),
-        std::move(uniform_buffer),
-        bind_group,
-        bind_group_layout,
+        std::move(shader), std::move(pipeline), std::move(uniform_buffer),
+        bind_group,        bind_group_layout,
     };
 }
 
-void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg,
-                                     const rendering::PassContext& ctx) {
+void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::PassContext& ctx) {
     PRECONDITION(is_ready());
     auto& ready = std::get<Ready>(m_state);
 

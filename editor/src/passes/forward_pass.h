@@ -26,8 +26,7 @@ class ForwardPass final : public rendering::IScenePass {
     [[nodiscard]] auto is_ready() const noexcept -> bool override;
 
     void setup(const webgpu::Device& device) override;
-    void add_to_frame_graph(rendering::FrameGraph& fg,
-                            const rendering::PassContext& ctx) override;
+    void add_to_frame_graph(rendering::FrameGraph& fg, const rendering::PassContext& ctx) override;
 
    private:
     struct Ready {

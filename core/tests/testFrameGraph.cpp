@@ -329,10 +329,9 @@ TEST_CASE("FrameGraph - MRT: two color attachments") {
     auto color1 = f.graph.create("color1", desc);
 
     bool executed = false;
-    f.graph.add_pass("mrt_pass")
-        .color(color0)
-        .color(color1)
-        .execute([&](WGPURenderPassEncoder) { executed = true; });
+    f.graph.add_pass("mrt_pass").color(color0).color(color1).execute([&](WGPURenderPassEncoder) {
+        executed = true;
+    });
 
     f.graph.compile();
 
@@ -360,16 +359,10 @@ TEST_CASE("FrameGraph - MRT: second pass loads both attachments") {
     auto color1 = f.graph.create("color1", desc);
 
     // Pass 0 writes both attachments (first writer -> Clear)
-    f.graph.add_pass("mrt_write")
-        .color(color0)
-        .color(color1)
-        .execute([](WGPURenderPassEncoder) {});
+    f.graph.add_pass("mrt_write").color(color0).color(color1).execute([](WGPURenderPassEncoder) {});
 
     // Pass 1 writes both again (not first writer -> Load)
-    f.graph.add_pass("mrt_load")
-        .color(color0)
-        .color(color1)
-        .execute([](WGPURenderPassEncoder) {});
+    f.graph.add_pass("mrt_load").color(color0).color(color1).execute([](WGPURenderPassEncoder) {});
 
     f.graph.compile();
 
@@ -417,9 +410,7 @@ TEST_CASE("FrameGraph - compute then render pass") {
     auto storage_tex = f.graph.create("storage", storage_desc);
 
     // Compute pass writes storage texture
-    f.graph.add_pass("compute")
-        .storage_write(storage_tex)
-        .execute([](WGPUComputePassEncoder) {});
+    f.graph.add_pass("compute").storage_write(storage_tex).execute([](WGPUComputePassEncoder) {});
 
     pts::rendering::TextureDesc color_desc;
     color_desc.width = 64;
@@ -429,10 +420,7 @@ TEST_CASE("FrameGraph - compute then render pass") {
     auto color = f.graph.create("color", color_desc);
 
     // Render pass reads storage texture result
-    f.graph.add_pass("render")
-        .color(color)
-        .read(storage_tex)
-        .execute([](WGPURenderPassEncoder) {});
+    f.graph.add_pass("render").color(color).read(storage_tex).execute([](WGPURenderPassEncoder) {});
 
     f.graph.compile();
 

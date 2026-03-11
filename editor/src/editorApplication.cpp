@@ -193,16 +193,8 @@ void EditorApplication::render(FrameContext& ctx) {
         auto proj_mat = m_camera.projection_matrix(aspect);
 
         rendering::PassContext pass_ctx{
-            device,
-            queue,
-            m_camera,
-            m_world,
-            m_viewport_width,
-            m_viewport_height,
-            view_mat,
-            proj_mat,
-            get_time(),
-            0,
+            device,   queue,    m_camera,   m_world, m_viewport_width, m_viewport_height,
+            view_mat, proj_mat, get_time(), 0,
         };
 
         for (auto& pass : m_passes) {

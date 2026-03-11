@@ -97,16 +97,12 @@ void GridPass::setup(const webgpu::Device& device) {
     wgpuPipelineLayoutRelease(pipeline_layout);
 
     m_state = Ready{
-        std::move(shader),
-        std::move(pipeline),
-        std::move(uniform_buffer),
-        bind_group,
-        bind_group_layout,
+        std::move(shader), std::move(pipeline), std::move(uniform_buffer),
+        bind_group,        bind_group_layout,
     };
 }
 
-void GridPass::add_to_frame_graph(rendering::FrameGraph& fg,
-                                  const rendering::PassContext& ctx) {
+void GridPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::PassContext& ctx) {
     PRECONDITION(is_ready());
     auto& ready = std::get<Ready>(m_state);
 
@@ -137,18 +133,17 @@ void GridPass::add_to_frame_graph(rendering::FrameGraph& fg,
     auto vp_mat = proj_mat * view_mat;
     auto inv_vp_mat = glm::inverse(vp_mat);
 
-    fg.add_pass("grid").color(color).depth_readonly(depth).execute(
-        [=](WGPURenderPassEncoder pass) {
-            GridUniforms gu;
-            gu.inv_vp = inv_vp_mat;
-            gu.vp = vp_mat;
-            gu.camera_pos = cam_pos;
-            gu.near_plane = near_plane;
-            gu.far_plane = far_plane;
-            gu._pad[0] = gu._pad[1] = gu._pad[2] = 0.0f;
-            wgpuQueueWriteBuffer(queue, uniform_buf, 0, &gu, sizeof(gu));
-            wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
-            wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 0, nullptr);
-            wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
-        });
+    fg.add_pass("grid").color(color).depth_readonly(depth).execute([=](WGPURenderPassEncoder pass) {
+        GridUniforms gu;
+        gu.inv_vp = inv_vp_mat;
+        gu.vp = vp_mat;
+        gu.camera_pos = cam_pos;
+        gu.near_plane = near_plane;
+        gu.far_plane = far_plane;
+        gu._pad[0] = gu._pad[1] = gu._pad[2] = 0.0f;
+        wgpuQueueWriteBuffer(queue, uniform_buf, 0, &gu, sizeof(gu));
+        wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
+        wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 0, nullptr);
+        wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
+    });
 }
