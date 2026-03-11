@@ -1,30 +1,29 @@
 #include "editorApplication.h"
 
+#include <core/commandLine.h>
+#include <core/components/imguiComponent.h>
+#include <core/components/inputComponent.h>
 #include <core/imgui/fileDialogue.h>
-#include <core/imgui/imhelper.h>
-#include <core/imgui/reflectedField.h>
-#include <core/legacy/boundingVolume.h>
-#include <core/legacy/camera.h>
-#include <core/legacy/intersection.h>
-#include <core/legacy/jsonArchive.h>
-#include <core/legacy/light.h>
-#include <core/legacy/renderableObject.h>
-#include <core/legacy/scene.h>
-#include <core/legacy/sceneObject.h>
-#include <core/logging.h>
+#include <core/rendering/sceneLoader.h>
+#include <core/rendering/webgpu/pipelineBuilder.h>
+#include <core/rendering/webgpuContext.h>
+#include <core/rendering/windowing.h>
+#include <grid_shader_metadata.h>
 #include <imgui_internal.h>
+#include <pxr/usd/sdf/layer.h>
+#include <pxr/usd/usd/stage.h>
+#include <shader_metadata.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
-#include <vulkan_raytracer/vulkanRayTracingRenderer.h>
 
 #include <filesystem>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <stdexcept>
 
-#include "debugDrawer.h"
-#include "editorRenderer.h"
 #include "editorResources.h"
-#include "imgui/editorFields.h"
 
-using namespace PTS;
-using namespace PTS::Editor;
+using namespace pts;
+using namespace pts::editor;
 
 static constexpr auto k_scene_setting_win_name = "Scene Settings";
 static constexpr auto k_inspector_win_name = "Inspector";
@@ -32,263 +31,374 @@ static constexpr auto k_scene_view_win_name = "Scene";
 static constexpr auto k_console_win_name = "Console";
 static constexpr auto k_console_log_buffer_size = 1024;
 
-EditorApplication::EditorApplication(std::string_view name, RenderConfig config,
-                                     pts::LoggingManager& logging_manager)
-    : GLFWApplication{name, config.width, config.height, config.min_frame_time},
-      m_config{config},
-      m_cam{config.fovy, config.get_aspect(), LookAtParams{}},
-      m_archive{new JsonArchive},
-      m_logging_manager{&logging_manager} {
-    // default renderers
-    add_renderer(std::make_unique<EditorRenderer>(config));
-    add_renderer(std::make_unique<Vk::VulkanRayTracingRenderer>(config));
+struct ForwardUniforms {
+    glm::mat4 mvp;
+    glm::mat4 model;
+    glm::vec3 sun_dir;
+    float time;
+};
+static_assert(sizeof(ForwardUniforms) == 144, "ForwardUniforms must match shader std140 layout");
 
-    // callbacks
-    get_imgui_window_info(k_scene_view_win_name).on_enter_region +=
-        [this] { on_mouse_enter_scene_viewport(); };
-    get_imgui_window_info(k_scene_view_win_name).on_leave_region +=
-        [this] { on_mouse_leave_scene_viewport(); };
+struct GridUniforms {
+    glm::mat4 inv_vp;
+    glm::mat4 vp;
+    glm::vec3 camera_pos;
+    float near_plane;
+    float far_plane;
+    float _pad[3];
+};
+static_assert(sizeof(GridUniforms) == 160, "GridUniforms must match shader std140 layout");
 
-    m_scene.get_callback_list(SceneChangeType::OBJECT_ADDED) +=
-        [this](Ref<SceneObject> obj) { this->on_add_oject(obj); };
-    m_scene.get_callback_list(SceneChangeType::OBJECT_REMOVED) +=
-        [this](Ref<SceneObject> obj) { this->on_remove_object(obj); };
-
-    // input actions
+EditorApplication::EditorApplication(std::string_view name, pts::LoggingManager& logging_manager)
+    : WindowedApplication{name, logging_manager} {
     create_input_actions();
 
-    // logging
     m_console_log_sink =
         std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(k_console_log_buffer_size);
-    m_logging_manager->add_sink(m_console_log_sink);
+    get_logging_manager().add_sink(m_console_log_sink);
 
     log(pts::LogLevel::Info, "EditorApplication created");
 }
 
-auto EditorApplication::create_input_actions() noexcept -> void {
-    // initialize input actions
-    auto obj_selected =
-        InputActionConstraint{[this](InputEvent const&) { return m_control_state.get_cur_obj(); }};
-    auto not_using_gizmo =
-        InputActionConstraint{[this](InputEvent const&) { return !ImGuizmo::IsUsing(); }};
-    auto scene_view_focused = InputActionConstraint{
-        [this](InputEvent const&) { return get_cur_focused_widget() == k_scene_view_win_name; }};
-    auto scene_view_hovered = InputActionConstraint{
-        [this](InputEvent const&) { return get_cur_hovered_widget() == k_scene_view_win_name; }};
-    auto initiated_in_scene_view = InputActionConstraint{[this](InputEvent const& event) {
-        return event.initiated_window == k_scene_view_win_name;
-    }};
+EditorApplication::~EditorApplication() {
+    m_input.reset();
+    m_imgui.reset();
 
-    // object manipulation
-    auto get_cam_accel_factor = [this]() {
-        // zoom and move faster if we are far away from the origin
-        auto dist = length(m_cam.get_eye());
-        auto accel_factor = dist / 1.5f * get_delta_time();
-        return accel_factor;
-    };
-
-    auto translate_mode = InputAction{
-        {InputType::KEYBOARD, ActionType::PRESS, ImGuiKey_W}, [this](InputEvent const& event) {
-            m_control_state.gizmo_state.op = ImGuizmo::OPERATION::TRANSLATE;
-        }};
-    auto rotate_mode = InputAction{{InputType::KEYBOARD, ActionType::PRESS, ImGuiKey_E},
-                                   [this](InputEvent const& event) {
-                                       m_control_state.gizmo_state.op = ImGuizmo::OPERATION::ROTATE;
-                                   }};
-    auto scale_mode = InputAction{{InputType::KEYBOARD, ActionType::PRESS, ImGuiKey_R},
-                                  [this](InputEvent const& event) {
-                                      m_control_state.gizmo_state.op = ImGuizmo::OPERATION::SCALE;
-                                  }};
-    auto toggle_snap = InputAction{
-        {InputType::KEYBOARD, ActionType::PRESS, ImGuiKey_X}, [this](InputEvent const& event) {
-            m_control_state.gizmo_state.snap = !m_control_state.gizmo_state.snap;
-        }};
-
-    auto delete_obj = InputAction{{InputType::KEYBOARD, ActionType::PRESS, ImGuiKey_Delete},
-                                  [this](InputEvent const& event) {
-                                      if ((get_cur_focused_widget() == k_scene_view_win_name ||
-                                           get_cur_focused_widget() == k_scene_setting_win_name) &&
-                                          get_cur_focused_widget() == get_cur_hovered_widget()) {
-                                          m_scene.remove_object(*m_control_state.get_cur_obj());
-                                      }
-                                  }};
-
-    auto focus_on_obj = InputAction{
-        {InputType::KEYBOARD, ActionType::PRESS, ImGuiKey_F}, [this](InputEvent const& event) {
-            BoundingBox local_bound;
-            if (auto obj = m_control_state.get_cur_obj()->as<RenderableObject>()) {
-                local_bound = obj->get_bound();
-            } else if (auto light = m_control_state.get_cur_obj()->as<Light>()) {
-                local_bound = BoundingBox{glm::vec3{-0.5f}, glm::vec3{0.5f}};
-            }
-            LookAtParams params;
-            params.center =
-                m_control_state.get_cur_obj()->get_transform(TransformSpace::WORLD).get_position();
-            params.eye = params.center + local_bound.get_extent() * 2.0f;
-            params.up = glm::vec3{0, 1, 0};
-            m_cam.set(params);
-        }};
-    auto select_obj =
-        InputAction{{InputType::MOUSE, ActionType::PRESS, ImGuiMouseButton_Left},
-                    [this](InputEvent const& event) {
-                        if (!m_control_state.is_outside_view &&
-                            (glfwGetTime() - event.time) <= k_object_select_mouse_time) {
-                            try_select_object();
-                        }
-                    }};
-    auto deselect_obj =
-        InputAction{{InputType::KEYBOARD, ActionType::PRESS, ImGuiKey_Escape},
-                    [this](InputEvent const& event) { m_control_state.set_cur_obj(nullptr); }};
-
-    auto cam_pedestal = InputAction{
-        {InputType::MOUSE, ActionType::HOLD, ImGuiMouseButton_Middle},
-        [this, get_cam_accel_factor](InputEvent const& event) {
-            auto pedestal =
-                glm::vec3{0, m_control_state.move_sensitivity * event.normalized_mouse_delta.y, 0};
-            m_cam.set_delta_dolly(pedestal * std::sqrtf(get_cam_accel_factor() * 100.0f));
-        }};
-    auto cam_pan =
-        InputAction{{InputType::MOUSE, ActionType::HOLD, ImGuiMouseButton_Left},
-                    [this, get_cam_accel_factor](InputEvent const& event) {
-                        auto dolly = glm::vec3{
-                            -m_control_state.move_sensitivity * event.normalized_mouse_delta.x, 0,
-                            m_control_state.move_sensitivity * event.normalized_mouse_delta.y};
-                        m_cam.set_delta_dolly(dolly * std::sqrtf(get_cam_accel_factor() * 100.0f));
-                    }};
-    auto cam_rotate =
-        InputAction{{InputType::MOUSE, ActionType::HOLD, ImGuiMouseButton_Right},
-                    [this](InputEvent const& event) {
-                        m_cam.set_delta_rotation(
-                            {m_control_state.rot_sensitivity * event.normalized_mouse_delta.y,
-                             m_control_state.rot_sensitivity * event.normalized_mouse_delta.x, 0});
-                    }};
-    auto cam_zoom =
-        InputAction{{InputType::MOUSE, ActionType::SCROLL, ImGuiMouseButton_Middle},
-                    [this, get_cam_accel_factor](InputEvent const& event) {
-                        m_cam.set_delta_zoom(event.mouse_scroll_delta.y * get_cam_accel_factor());
-                    }};
-
-    auto on_begin_cam_pedestal =
-        InputAction{{InputType::MOUSE, ActionType::PRESS, cam_pedestal.get_input().key_or_button},
-                    [this](InputEvent const&) { ++m_control_state.is_changing_scene_cam; }};
-    auto on_begin_cam_pan =
-        InputAction{{InputType::MOUSE, ActionType::PRESS, cam_pan.get_input().key_or_button},
-                    [this](InputEvent const&) { ++m_control_state.is_changing_scene_cam; }};
-    auto on_begin_cam_rotate =
-        InputAction{{InputType::MOUSE, ActionType::PRESS, cam_rotate.get_input().key_or_button},
-                    [this](InputEvent const&) { ++m_control_state.is_changing_scene_cam; }};
-    auto on_end_cam_pedestal =
-        InputAction{{InputType::MOUSE, ActionType::RELEASE, cam_pedestal.get_input().key_or_button},
-                    [this](InputEvent const&) {
-                        m_control_state.is_changing_scene_cam =
-                            std::max(m_control_state.is_changing_scene_cam - 1, 0);
-                    }};
-    auto on_end_cam_pan =
-        InputAction{{InputType::MOUSE, ActionType::RELEASE, cam_pan.get_input().key_or_button},
-                    [this](InputEvent const&) {
-                        m_control_state.is_changing_scene_cam =
-                            std::max(m_control_state.is_changing_scene_cam - 1, 0);
-                    }};
-    auto on_end_cam_rotate =
-        InputAction{{InputType::MOUSE, ActionType::RELEASE, cam_rotate.get_input().key_or_button},
-                    [this](InputEvent const&) {
-                        m_control_state.is_changing_scene_cam =
-                            std::max(m_control_state.is_changing_scene_cam - 1, 0);
-                    }};
-
-    m_input_actions = {
-        translate_mode.add_constraint(obj_selected),
-        rotate_mode.add_constraint(obj_selected),
-        scale_mode.add_constraint(obj_selected),
-        toggle_snap.add_constraint(obj_selected),
-        delete_obj.add_constraint(obj_selected),
-        focus_on_obj.add_constraint(scene_view_focused).add_constraint(obj_selected),
-        select_obj.add_constraint(scene_view_focused).add_constraint(scene_view_hovered),
-        deselect_obj.add_constraint(scene_view_focused)
-            .add_constraint(scene_view_hovered)
-            .add_constraint(obj_selected),
-        cam_pedestal.add_constraint(initiated_in_scene_view).add_constraint(not_using_gizmo),
-        cam_pan.add_constraint(initiated_in_scene_view).add_constraint(not_using_gizmo),
-        cam_rotate.add_constraint(initiated_in_scene_view).add_constraint(not_using_gizmo),
-        cam_zoom.add_constraint(scene_view_focused)
-            .add_constraint(scene_view_hovered)
-            .add_constraint(not_using_gizmo),
-        on_begin_cam_pedestal.add_constraint(initiated_in_scene_view)
-            .add_constraint(not_using_gizmo),
-        on_begin_cam_pan.add_constraint(initiated_in_scene_view).add_constraint(not_using_gizmo),
-        on_begin_cam_rotate.add_constraint(initiated_in_scene_view).add_constraint(not_using_gizmo),
-        on_end_cam_pedestal.add_constraint(initiated_in_scene_view).add_constraint(not_using_gizmo),
-        on_end_cam_pan.add_constraint(initiated_in_scene_view).add_constraint(not_using_gizmo),
-        on_end_cam_rotate.add_constraint(initiated_in_scene_view).add_constraint(not_using_gizmo),
-    };
-}
-
-auto EditorApplication::wrap_mouse_pos() noexcept -> void {
-    if (m_control_state.is_changing_scene_cam) {
-        auto iwx = int{}, iwy = int{};
-        glfwGetWindowSize(m_window, &iwx, &iwy);
-        auto const wx = static_cast<float>(iwx);
-        auto const wy = static_cast<float>(iwy);
-        static constexpr auto eps = 0.1f;
-
-        auto changed{false};
-        if (m_mouse_pos.x > wx + eps) {
-            m_mouse_pos.x = 0;
-            changed = true;
-        }
-        if (m_mouse_pos.y > wy + eps) {
-            m_mouse_pos.y = 0;
-            changed = true;
-        }
-        if (m_mouse_pos.x < -eps) {
-            m_mouse_pos.x = wx;
-            changed = true;
-        }
-        if (m_mouse_pos.y < -eps) {
-            m_mouse_pos.y = wy;
-            changed = true;
-        }
-
-        if (changed) {
-            glfwSetCursorPos(m_window, m_mouse_pos.x, m_mouse_pos.y);
-        }
+    if (m_grid_bind_group) {
+        wgpuBindGroupRelease(m_grid_bind_group);
+    }
+    if (m_grid_bind_group_layout) {
+        wgpuBindGroupLayoutRelease(m_grid_bind_group_layout);
+    }
+    if (m_bind_group) {
+        wgpuBindGroupRelease(m_bind_group);
+    }
+    if (m_bind_group_layout) {
+        wgpuBindGroupLayoutRelease(m_bind_group_layout);
     }
 }
 
-auto EditorApplication::add_renderer(std::unique_ptr<Renderer> renderer) noexcept -> void {
-    if (!renderer) {
-        this->log(pts::LogLevel::Error, "add_renderer(): renderer is null");
+void EditorApplication::register_args(CommandLine& cli) {
+    WindowedApplication::register_args(cli);
+    cli.add_flag("quit-on-start", "Quit the application after starting, useful for testing");
+}
+
+void EditorApplication::process_args(const CommandLine& cli) {
+    WindowedApplication::process_args(cli);
+    m_app_config.quit_on_start = cli.get_flag("quit-on-start");
+    if (m_app_config.quit_on_start && viewport()) {
+        viewport()->request_close();
+    }
+}
+
+void EditorApplication::on_ready() {
+    auto const& device = webgpu_context()->device();
+
+    // ImGui + Input
+    m_imgui =
+        std::make_unique<ImGuiComponent>(*viewport(), *webgpu_context(), get_logging_manager());
+    m_input = std::make_unique<InputComponent>(*viewport());
+    m_input->set_handler([this](const InputEvent& e) { handle_input(e); });
+
+    m_imgui->get_window_info(k_scene_view_win_name).on_enter_region.connect([this] {
+        on_mouse_enter_scene_viewport();
+    });
+    m_imgui->get_window_info(k_scene_view_win_name).on_leave_region.connect([this] {
+        on_mouse_leave_scene_viewport();
+    });
+
+    // ── Rendering init ──
+
+    // Frame graph
+    m_frame_graph = std::make_unique<rendering::FrameGraph>(
+        device, get_logging_manager().get_logger_shared("frame_graph"));
+
+    // Load default scene
+    auto usda = editor_resources::get_resource("scenes/default.usda");
+    if (usda) {
+        auto layer = pxr::SdfLayer::CreateAnonymous(".usda");
+        layer->ImportFromString(std::string{*usda});
+        auto stage = pxr::UsdStage::Open(layer);
+        rendering::populate_from_stage(m_world, stage, device);
+        log(LogLevel::Info, "Loaded default scene ({} objects)", m_world.objects.size());
+    } else {
+        log(LogLevel::Warning, "Missing embedded resource: scenes/default.usda");
+    }
+
+    // Load forward shader
+    auto shader_src = editor_resources::get_resource("generated/shaders/forward.wgsl");
+    if (!shader_src) {
+        log(LogLevel::Error, "Missing embedded resource: generated/shaders/forward.wgsl");
+        if (m_app_config.quit_on_start) viewport()->request_close();
         return;
     }
+    m_forward_shader.emplace(device.create_shader_module_from_source(*shader_src));
 
-    // initialize renderer
-    check_error(renderer->init(this));
-    check_error(renderer->open_scene(m_scene));
+    // Uniform buffer
+    m_uniform_buffer = device.create_buffer(
+        sizeof(ForwardUniforms),
+        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
 
-    // editor renderer-specific initialization
-    if (auto p_editor_renderer = dynamic_cast<EditorRenderer*>(renderer.get()); p_editor_renderer) {
-        m_control_state.get_on_selected_obj_change_callback_list() +=
-            [p_editor_renderer](auto&& obj) {
-                p_editor_renderer->on_selected_editable_change(obj);
-            };
+    // Bind group layout from shader reflection
+    m_bind_group_layout = editor_shader::create_bind_group_layout_0(device.handle());
+
+    // Bind group
+    WGPUBindGroupEntry bg_entry = WGPU_BIND_GROUP_ENTRY_INIT;
+    bg_entry.binding = 0;
+    bg_entry.buffer = m_uniform_buffer.handle();
+    bg_entry.offset = 0;
+    bg_entry.size = sizeof(ForwardUniforms);
+
+    WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
+    bg_desc.layout = m_bind_group_layout;
+    bg_desc.entryCount = 1;
+    bg_desc.entries = &bg_entry;
+    m_bind_group = wgpuDeviceCreateBindGroup(device.handle(), &bg_desc);
+
+    // Pipeline layout
+    WGPUPipelineLayoutDescriptor pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
+    pl_desc.bindGroupLayoutCount = 1;
+    pl_desc.bindGroupLayouts = &m_bind_group_layout;
+    WGPUPipelineLayout pipeline_layout = wgpuDeviceCreatePipelineLayout(device.handle(), &pl_desc);
+
+    // Build render pipeline with depth testing and back-face culling
+    m_forward_pipeline.emplace(webgpu::RenderPipelineBuilder(device)
+                                   .shader(*m_forward_shader)
+                                   .color_format(WGPUTextureFormat_RGBA8Unorm)
+                                   .depth_format(WGPUTextureFormat_Depth24Plus)
+                                   .depth_write(true)
+                                   .depth_compare(WGPUCompareFunction_Less)
+                                   .cull_mode(WGPUCullMode_Back)
+                                   .pipeline_layout(pipeline_layout)
+                                   .vertex_layout<editor_shader::VertexLayout>()
+                                   .build());
+
+    wgpuPipelineLayoutRelease(pipeline_layout);
+
+    // ── Grid pipeline ──
+
+    auto grid_shader_src = editor_resources::get_resource("generated/shaders/grid.wgsl");
+    if (!grid_shader_src) {
+        log(LogLevel::Error, "Missing embedded resource: generated/shaders/grid.wgsl");
+    } else {
+        m_grid_shader.emplace(device.create_shader_module_from_source(*grid_shader_src));
+
+        // Grid uniform buffer
+        m_grid_uniform_buffer = device.create_buffer(
+            sizeof(GridUniforms),
+            static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
+
+        // Bind group layout from reflection
+        m_grid_bind_group_layout = editor_grid_shader::create_bind_group_layout_0(device.handle());
+
+        // Bind group
+        WGPUBindGroupEntry grid_bg_entry = WGPU_BIND_GROUP_ENTRY_INIT;
+        grid_bg_entry.binding = 0;
+        grid_bg_entry.buffer = m_grid_uniform_buffer.handle();
+        grid_bg_entry.offset = 0;
+        grid_bg_entry.size = sizeof(GridUniforms);
+
+        WGPUBindGroupDescriptor grid_bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
+        grid_bg_desc.layout = m_grid_bind_group_layout;
+        grid_bg_desc.entryCount = 1;
+        grid_bg_desc.entries = &grid_bg_entry;
+        m_grid_bind_group = wgpuDeviceCreateBindGroup(device.handle(), &grid_bg_desc);
+
+        // Pipeline layout
+        WGPUPipelineLayoutDescriptor grid_pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
+        grid_pl_desc.bindGroupLayoutCount = 1;
+        grid_pl_desc.bindGroupLayouts = &m_grid_bind_group_layout;
+        WGPUPipelineLayout grid_pipeline_layout =
+            wgpuDeviceCreatePipelineLayout(device.handle(), &grid_pl_desc);
+
+        // Premultiplied alpha blending
+        WGPUBlendState blend_state = {};
+        blend_state.color.srcFactor = WGPUBlendFactor_One;
+        blend_state.color.dstFactor = WGPUBlendFactor_OneMinusSrcAlpha;
+        blend_state.color.operation = WGPUBlendOperation_Add;
+        blend_state.alpha.srcFactor = WGPUBlendFactor_One;
+        blend_state.alpha.dstFactor = WGPUBlendFactor_OneMinusSrcAlpha;
+        blend_state.alpha.operation = WGPUBlendOperation_Add;
+
+        m_grid_pipeline.emplace(webgpu::RenderPipelineBuilder(device)
+                                    .shader(*m_grid_shader)
+                                    .color_format(WGPUTextureFormat_RGBA8Unorm)
+                                    .depth_format(WGPUTextureFormat_Depth24Plus)
+                                    .depth_write(false)
+                                    .depth_compare(WGPUCompareFunction_Less)
+                                    .cull_mode(WGPUCullMode_None)
+                                    .blend_state(blend_state)
+                                    .pipeline_layout(grid_pipeline_layout)
+                                    .build());
+
+        wgpuPipelineLayoutRelease(grid_pipeline_layout);
     }
 
-    m_renderers.emplace_back(std::move(renderer));
+    // Camera defaults
+    m_camera.set_target({0.0f, 0.0f, 0.0f});
+    m_camera.set_distance(3.0f);
+    m_camera.set_fov_y(60.0f);
+
+    if (m_app_config.quit_on_start) {
+        viewport()->request_close();
+    }
 }
 
-auto EditorApplication::on_begin_first_loop() -> void {
-    GLFWApplication::on_begin_first_loop();
+void EditorApplication::update(float /*dt*/) {
+    // Input polling and ImGui drawing happen in render() to ensure proper
+    // synchronization with ImGui::NewFrame() and the FrameGraph.
+}
 
-    // do layout initialization work
+void EditorApplication::render(FrameContext& ctx) {
+    if (!m_imgui) return;
+    if (viewport() && viewport()->should_close()) return;
+
+    auto scope = m_imgui->frame_scope();
+
+    // Poll input — prev_hovered_widget makes this order-independent from UI drawing
+    m_input->poll(get_time(), window_width(), window_height(), m_imgui->prev_hovered_widget());
+
+    if (m_first_frame) {
+        setup_docking_layout();
+        m_first_frame = false;
+    }
+
+    // Draw UI
+    ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(),
+                                 ImGuiDockNodeFlags_PassthruCentralNode);
+
+    if (m_imgui->begin_window(k_scene_setting_win_name, ImGuiWindowFlags_NoMove)) {
+        draw_scene_panel();
+    }
+    m_imgui->end_window();
+
+    if (m_imgui->begin_window(k_inspector_win_name, ImGuiWindowFlags_NoMove)) {
+        draw_object_panel();
+    }
+    m_imgui->end_window();
+
+    if (m_imgui->begin_window(k_console_win_name, ImGuiWindowFlags_NoMove)) {
+        draw_console_panel();
+    }
+    m_imgui->end_window();
+
+    if (m_imgui->begin_window(k_scene_view_win_name, ImGuiWindowFlags_NoScrollWithMouse |
+                                                         ImGuiWindowFlags_NoMove |
+                                                         ImGuiWindowFlags_MenuBar)) {
+        draw_scene_viewport();
+    }
+    m_imgui->end_window();
+
+    // ── Frame graph ──
+    auto const& device = ctx.device();
+    auto queue = device.queue();
+
+    m_frame_graph->begin_frame();
+
+    rendering::ResourceHandle scene_color_handle;
+    rendering::ResourceHandle scene_depth_handle;
+    bool has_viewport =
+        m_forward_pipeline.has_value() && m_viewport_width > 0 && m_viewport_height > 0;
+
+    if (has_viewport) {
+        float aspect = static_cast<float>(m_viewport_width) / static_cast<float>(m_viewport_height);
+        auto view_mat = m_camera.view_matrix();
+        auto proj_mat = m_camera.projection_matrix(aspect);
+
+        rendering::TextureDesc color_desc;
+        color_desc.width = m_viewport_width;
+        color_desc.height = m_viewport_height;
+        color_desc.format = WGPUTextureFormat_RGBA8Unorm;
+        color_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment |
+                                                         WGPUTextureUsage_TextureBinding);
+        color_desc.clear_color = {0.15, 0.15, 0.18, 1.0};
+        auto scene_color = m_frame_graph->create("scene_color", color_desc);
+
+        rendering::TextureDesc depth_desc;
+        depth_desc.width = m_viewport_width;
+        depth_desc.height = m_viewport_height;
+        depth_desc.format = WGPUTextureFormat_Depth24Plus;
+        auto scene_depth = m_frame_graph->create("scene_depth", depth_desc);
+
+        scene_color_handle = scene_color;
+        scene_depth_handle = scene_depth;
+
+        m_frame_graph->add_pass("forward")
+            .color(scene_color)
+            .depth(scene_depth)
+            .execute([=](WGPURenderPassEncoder pass) {
+                wgpuRenderPassEncoderSetPipeline(pass, m_forward_pipeline->handle());
+                for (const auto& obj : m_world.objects) {
+                    ForwardUniforms u;
+                    u.mvp = proj_mat * view_mat * obj.transform;
+                    u.model = obj.transform;
+                    u.sun_dir = glm::normalize(glm::vec3(0.3f, 1.0f, 0.5f));
+                    u.time = 0.0f;
+                    wgpuQueueWriteBuffer(queue, m_uniform_buffer.handle(), 0, &u, sizeof(u));
+                    wgpuRenderPassEncoderSetBindGroup(pass, 0, m_bind_group, 0, nullptr);
+                    const auto& mesh = m_world.meshes[obj.mesh_index];
+                    wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh.vertex_buffer.handle(), 0,
+                                                         mesh.vertex_buffer.size());
+                    wgpuRenderPassEncoderSetIndexBuffer(pass, mesh.index_buffer.handle(),
+                                                        WGPUIndexFormat_Uint32, 0,
+                                                        mesh.index_buffer.size());
+                    wgpuRenderPassEncoderDrawIndexed(pass, mesh.index_count, 1, 0, 0, 0);
+                }
+            });
+
+        // Grid pass — renders after forward pass, reads depth, blends over color
+        if (m_grid_pipeline.has_value()) {
+            auto vp_mat = proj_mat * view_mat;
+            auto inv_vp_mat = glm::inverse(vp_mat);
+            auto cam_pos = m_camera.position();
+
+            m_frame_graph->add_pass("grid")
+                .color(scene_color)
+                .depth_readonly(scene_depth)
+                .execute([=](WGPURenderPassEncoder pass) {
+                    GridUniforms gu;
+                    gu.inv_vp = inv_vp_mat;
+                    gu.vp = vp_mat;
+                    gu.camera_pos = cam_pos;
+                    gu.near_plane = m_camera.near_plane();
+                    gu.far_plane = m_camera.far_plane();
+                    gu._pad[0] = gu._pad[1] = gu._pad[2] = 0.0f;
+                    wgpuQueueWriteBuffer(queue, m_grid_uniform_buffer.handle(), 0, &gu, sizeof(gu));
+                    wgpuRenderPassEncoderSetPipeline(pass, m_grid_pipeline->handle());
+                    wgpuRenderPassEncoderSetBindGroup(pass, 0, m_grid_bind_group, 0, nullptr);
+                    wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
+                });
+        }
+    }
+
+    // ImGui overlay pass
+    auto imgui_builder = m_frame_graph->add_pass("imgui")
+                             .color(ctx.surface_view(), WGPUColor{0.08, 0.08, 0.12, 1.0})
+                             .present();
+    if (has_viewport && scene_color_handle.is_valid()) {
+        imgui_builder.read(scene_color_handle);
+    }
+    imgui_builder.execute([&](WGPURenderPassEncoder pass) { scope.render_into(pass); });
+
+    m_frame_graph->compile();
+    m_frame_graph->execute(ctx.encoder());
+
+    // Store scene color ref for next frame's ImGui::Image
+    if (has_viewport && scene_color_handle.is_valid()) {
+        m_scene_color_ref = m_frame_graph->get_texture_ref(scene_color_handle);
+    }
+
+    wrap_mouse_pos();
+}
+
+void EditorApplication::setup_docking_layout() {
     if (ImGui::GetIO().IniFilename) {
-        // if we already have a saved layout, do nothing
         if (std::filesystem::exists(ImGui::GetIO().IniFilename)) {
             return;
         }
     }
 
-    // create an UI that covers the whole window, for docking
-    auto id = ImGui::DockSpaceOverViewport(ImGui::GetMainViewport(),
+    auto id = ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(),
                                            ImGuiDockNodeFlags_PassthruCentralNode);
     ImGui::DockBuilderRemoveNode(id);
     ImGui::DockBuilderAddNode(id);
@@ -303,46 +413,11 @@ auto EditorApplication::on_begin_first_loop() -> void {
     ImGui::DockBuilderDockWindow(k_console_win_name, down);
 }
 
-auto EditorApplication::loop(float dt) -> void {
-    // ImGuizmo
-    ImGuizmo::BeginFrame();
-
-    ImGui::DockSpaceOverViewport(ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
-    auto const render_tex = check_error(get_cur_renderer().render(m_cam));
-
-    // draw left panel
-    if (begin_imgui_window(k_scene_setting_win_name, ImGuiWindowFlags_NoMove)) {
-        draw_scene_panel();
-    }
-    end_imgui_window();
-
-    // draw right panel
-    if (begin_imgui_window(k_inspector_win_name, ImGuiWindowFlags_NoMove)) {
-        draw_object_panel();
-    }
-    end_imgui_window();
-
-    // draw bottom panel
-    if (begin_imgui_window(k_console_win_name, ImGuiWindowFlags_NoMove)) {
-        draw_console_panel();
-    }
-    end_imgui_window();
-
-    // draw the scene view
-    if (begin_imgui_window(k_scene_view_win_name, ImGuiWindowFlags_NoScrollWithMouse |
-                                                      ImGuiWindowFlags_NoMove |
-                                                      ImGuiWindowFlags_MenuBar)) {
-        draw_scene_viewport(render_tex);
-    }
-    end_imgui_window();
-
-    check_error(get_cur_renderer().draw_imgui());
-
-    wrap_mouse_pos();
+auto EditorApplication::create_input_actions() noexcept -> void {
+    m_input_actions.clear();
 }
 
-auto EditorApplication::quit(int code) -> void {
-    std::exit(code);
+auto EditorApplication::wrap_mouse_pos() noexcept -> void {
 }
 
 auto EditorApplication::draw_scene_panel() noexcept -> void {
@@ -350,239 +425,50 @@ auto EditorApplication::draw_scene_panel() noexcept -> void {
     ImGui::Separator();
 
     if (ImGui::Button("Open Scene")) {
-        auto const path = FileDialogue(ImGui::FileDialogueMode::OPEN, m_archive->get_ext().data());
+        auto path = ImGui::FileDialogue(ImGui::FileDialogueMode::Open,
+                                        {"USD Files", "*.usda *.usdc *.usd", "All Files", "*"});
         if (!path.empty()) {
-            check_error(m_archive->load_file(path, m_scene, m_cam));
-            on_scene_opened(m_scene);
+            auto stage = pxr::UsdStage::Open(path);
+            if (stage) {
+                m_world.clear();
+                rendering::populate_from_stage(m_world, stage, webgpu_context()->device());
+                log(LogLevel::Info, "Loaded scene: {} ({} objects)", path, m_world.objects.size());
+            } else {
+                log(LogLevel::Error, "Failed to open scene: {}", path);
+            }
         }
     }
     ImGui::SameLine();
-    if (ImGui::Button("Save Scene")) {
-        auto const path = FileDialogue(ImGui::FileDialogueMode::SAVE, m_archive->get_ext().data());
-        if (!path.empty()) {
-            check_error(m_archive->save_file(m_scene, m_cam, path));
-        }
-    }
-
-    if (ImGui::CollapsingHeader("Editor Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::Text("Move Sensitivity");
-        ImGui::SliderFloat("##Move Sensitivity", &m_control_state.move_sensitivity, 1.0f, 10.0f);
-        ImGui::Text("Rotate Sensitivity");
-        ImGui::SliderFloat("##Rotate Sensitivity", &m_control_state.rot_sensitivity, 2.0f, 100.0f);
-    }
-
-    if (ImGui::CollapsingHeader("Performance", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::Checkbox("Unlimited FPS", &m_control_state.unlimited_fps);
-        if (m_control_state.unlimited_fps) {
-            set_min_frame_time(0.0f);
-        }
-
-        ImGui::BeginDisabled(m_control_state.unlimited_fps);
-        {
-            auto cap = m_control_state.unlimited_fps ? std::numeric_limits<float>::infinity()
-                                                     : 1 / get_min_frame_time();
-
-            ImGui::Text("FPS Cap");
-            ImGui::SameLine();
-            if (ImGui::SliderFloat("##FPS Cap", &cap, 1.0f, 1000.0f)) {
-                set_min_frame_time(1 / cap);
-            }
-        }
-        ImGui::EndDisabled();
-
-        ImGui::Text("Current FPS: %.2f", 1.0f / get_delta_time());
-    }
-
-    // draw scene object list
-    ImGui::Spacing();
-    if (ImGui::CollapsingHeader("Scene Objects", ImGuiTreeNodeFlags_DefaultOpen)) {
-        if (ImGui::BeginListBox("##Scene Objects", {0, 200})) {
-            for (auto editable_ref : m_scene.get_editables()) {
-                auto&& editable = editable_ref.get();
-                if (!editable.is_editable()) {
-                    // should not be possible, objects with _NoEdit flag should not be in the
-                    // editable list
-                    this->log(pts::LogLevel::Error,
-                              "Editable with _NoEdit flag found in m_scene.get_editables()");
-                    continue;
-                }
-
-                auto display_name = std::string{editable.get_name()};
-                if (!(editable.get_edit_flags() & Visible)) {
-                    display_name += " (hidden)";
-                    ImGui::PushStyleColor(ImGuiCol_Text, {0.5f, 0.5f, 0.5f, 1.0f});
-                }
-                if (!(editable.get_edit_flags() & Selectable)) {
-                    display_name += " (unselectable)";
-                    ImGui::PushStyleColor(ImGuiCol_Text, {0.5f, 0.5f, 0.5f, 1.0f});
-                }
-
-                if (ImGui::Selectable(display_name.c_str(),
-                                      m_control_state.get_cur_obj() == &editable)) {
-                    m_control_state.set_cur_obj(&editable);
-                }
-
-                if (!(editable.get_edit_flags() & Visible)) {
-                    ImGui::PopStyleColor();
-                }
-                if (!(editable.get_edit_flags() & Selectable)) {
-                    ImGui::PopStyleColor();
-                }
-            }
-
-            ImGui::EndListBox();
-        }
-        ImGui::Spacing();
-
-        if (ImGui::BeginMenu("Add Object")) {
-            if (ImGui::MenuItem("Triangle")) {
-                m_scene.emplace_object<RenderableObject>(RenderableObject::make_triangle_obj(
-                    m_scene, k_editable_flags, Material{}, Transform{}));
-            }
-            if (ImGui::MenuItem("Cube")) {
-                m_scene.emplace_object<RenderableObject>(RenderableObject::make_cube_obj(
-                    m_scene, k_editable_flags, Material{}, Transform{}));
-            }
-            if (ImGui::MenuItem("Sphere")) {
-                m_scene.emplace_object<RenderableObject>(RenderableObject::make_sphere_obj(
-                    m_scene, k_editable_flags, Material{}, Transform{}));
-            }
-            if (ImGui::MenuItem("Quad")) {
-                m_scene.emplace_object<RenderableObject>(RenderableObject::make_quad_obj(
-                    m_scene, k_editable_flags, Material{}, Transform{}));
-            }
-
-            if (ImGui::MenuItem("Import .obj File")) {
-                auto const path = FileDialogue(ImGui::FileDialogueMode::OPEN, "obj");
-                if (!path.empty()) {
-                    std::string warning;
-                    auto obj = check_error(RenderableObject::from_obj(m_scene, k_editable_flags,
-                                                                      Material{}, path, &warning));
-                    m_scene.emplace_object<RenderableObject>(std::move(obj));
-                    this->log(pts::LogLevel::Warning, warning);
-                }
-            }
-            if (ImGui::MenuItem("Add Light")) {
-                m_scene.emplace_object<Light>(m_scene, Transform{}, k_editable_flags,
-                                              LightType::Point, glm::vec3(1.0f), 1.0f);
-            }
-
-            ImGui::EndMenu();
-        }
-    }
+    ImGui::BeginDisabled();
+    ImGui::Button("Save Scene");
+    ImGui::EndDisabled();
 }
 
 auto EditorApplication::draw_object_panel() noexcept -> void {
-    if (ImGui::CollapsingHeader("Object Properties", ImGuiTreeNodeFlags_DefaultOpen)) {
-        if (auto const editable = m_control_state.get_cur_obj()) {
-            // NOTE: no safety check here, cuz I'm lazy
-            if (ImGui::InputText("Name", m_control_state.obj_name_buf.data(),
-                                 m_control_state.obj_name_buf.size(),
-                                 ImGuiInputTextFlags_EnterReturnsTrue)) {
-                editable->set_name(m_control_state.obj_name_buf.data());
-            }
-
-            auto&& gizmo_state = m_control_state.gizmo_state;
-            auto trans = editable->get_transform(TransformSpace::LOCAL);
-            if (ImGui::TransformField("Transform", trans, gizmo_state.op, gizmo_state.mode,
-                                      gizmo_state.snap, gizmo_state.snap_scale)) {
-                editable->set_transform(trans, TransformSpace::LOCAL);
-            }
-
-            // editable-specific fields
-            if (auto const obj = editable->as<RenderableObject>()) {
-                ImGui::ReflectedField("Object Data", *obj);
-            } else if (auto const light = editable->as<Light>()) {
-                ImGui::ReflectedField("Light", *light);
-            }
-        } else {
-            ImGui::Text("No object selected");
-        }
-    }
+    ImGui::TextUnformatted("Scene system rewrite in progress.");
 }
 
-auto EditorApplication::draw_scene_viewport(TextureHandle render_buf) noexcept -> void {
+auto EditorApplication::draw_scene_viewport() noexcept -> void {
     if (ImGui::BeginMenuBar()) {
-        ImGui::Text("Select Renderer");
-        ImGui::SameLine();
-        if (ImGui::Combo(
-                "##Select Renderer", &m_control_state.cur_renderer_idx,
-                [](void* data, int idx, char const** out_text) {
-                    auto const& renderers =
-                        *static_cast<std::vector<std::unique_ptr<Renderer>> const*>(data);
-                    *out_text = renderers[idx]->get_name().data();
-                    return true;
-                },
-                &m_renderers, m_renderers.size())) {
-            on_render_config_change(m_config);
-        }
-
+        ImGui::TextUnformatted("Renderer: editor.renderer");
         ImGui::EndMenuBar();
     }
 
-    if (get_cur_renderer().valid()) {
-        static auto last_size = ImVec2{0, 0};
+    auto const avail = ImGui::GetContentRegionAvail();
+    auto w = static_cast<uint32_t>(avail.x > 0.0f ? avail.x : 0.0f);
+    auto h = static_cast<uint32_t>(avail.y > 0.0f ? avail.y : 0.0f);
 
-        auto const v_min = ImGui::GetWindowContentRegionMin();
-        auto const v_max = ImGui::GetWindowContentRegionMax();
-        auto const view_size = v_max - v_min;
+    if (w != m_viewport_width || h != m_viewport_height) {
+        m_viewport_width = w;
+        m_viewport_height = h;
+    }
 
-        if (std::abs(view_size.x - last_size.x) >= 0.01f ||
-            std::abs(view_size.y - last_size.y) >= 0.01f) {
-            m_config.width = static_cast<unsigned>(view_size.x);
-            m_config.height = static_cast<unsigned>(view_size.y);
-            on_render_config_change(m_config);
-            last_size = view_size;
-        }
-
-        check_error(render_buf->bind());
-        auto uv0 = ImVec2{0, 0};
-        auto uv1 = ImVec2{1, 1};
-
-        if (render_buf->get_width() != m_config.width) {
-            uv1.x = m_config.width / static_cast<float>(render_buf->get_width());
-        }
-        if (render_buf->get_height() != m_config.height) {
-            uv1.y = m_config.height / static_cast<float>(render_buf->get_height());
-        }
-        // imgui uses top-left as origin, but OpenGL use bottom-left
-        uv0.y = uv1.y;
-        uv1.y = 0;
-
-        ImGui::Image(render_buf->get_id(), view_size, uv0, uv1);
-        render_buf->unbind();
-
-        // draw x,y,z axis ref
-
-        // TODO: figure out why ImGuiConfigFlags_ViewportsEnable makes these not work
-        // auto const vp_size = glm::ivec2{ m_config.width, m_config.height };
-        // auto const axis_origin = m_cam.viewport_to_world(glm::vec2 {30, 30}, vp_size,0.0f);
-        // constexpr float axis_len = 0.01f;
-        // get_debug_drawer().begin_relative(to_glm(ImGui::GetWindowPos() + v_min));
-        // get_debug_drawer().draw_line_3d(m_cam, vp_size, axis_origin, axis_origin + glm::vec3{
-        // axis_len, 0, 0 }, { 1, 0, 0 }, 2.0f, 0.0f); get_debug_drawer().draw_line_3d(m_cam,
-        // vp_size, axis_origin, axis_origin + glm::vec3{ 0, axis_len, 0 }, { 0, 1, 0 }, 2.0f,
-        // 0.0f); get_debug_drawer().draw_line_3d(m_cam, vp_size, axis_origin, axis_origin +
-        // glm::vec3{ 0, 0, axis_len }, { 0, 0, 1 }, 2.0f, 0.0f); get_debug_drawer().end_relative();
-
-        // draw gizmos
-        if (m_control_state.get_cur_obj()) {
-            auto const win = ImGui::GetCurrentWindow();
-            auto const& gizmo_state = m_control_state.gizmo_state;
-
-            ImGuizmo::SetDrawlist(win->DrawList);
-            ImGuizmo::SetRect(win->Pos.x, win->Pos.y, win->Size.x, win->Size.y);
-
-            auto mat =
-                m_control_state.get_cur_obj()->get_transform(TransformSpace::LOCAL).get_matrix();
-            if (Manipulate(value_ptr(m_cam.get_view()), value_ptr(m_cam.get_projection()),
-                           gizmo_state.op, gizmo_state.mode, value_ptr(mat), nullptr,
-                           gizmo_state.snap ? value_ptr(gizmo_state.snap_scale) : nullptr)) {
-                m_control_state.get_cur_obj()->set_transform(Transform{mat}, TransformSpace::LOCAL);
-            }
-        }
+    if (m_scene_color_ref && m_viewport_width > 0 && m_viewport_height > 0) {
+        ImGui::Image(
+            reinterpret_cast<ImTextureID>(m_scene_color_ref.view()),
+            ImVec2(static_cast<float>(m_viewport_width), static_cast<float>(m_viewport_height)));
     } else {
-        ImGui::Text("Renderer not found");
+        ImGui::TextUnformatted("Renderer output not available");
     }
 }
 
@@ -618,104 +504,31 @@ auto EditorApplication::draw_console_panel() const noexcept -> void {
     ImGui::EndChild();
 }
 
-auto EditorApplication::on_scene_opened(Scene& scene) -> void {
-    m_cam.set_aspect(m_config.get_aspect());
-    m_control_state.set_cur_obj(nullptr);
-
-    for (auto&& renderer : m_renderers) {
-        check_error(renderer->open_scene(scene));
-    }
-}
-
-auto EditorApplication::on_render_config_change(RenderConfig const& conf) -> void {
-    m_cam.set_aspect(conf.get_aspect());
-    m_cam.set_fov(conf.fovy);
-    for (auto&& renderer : m_renderers) {
-        check_error(renderer->set_render_config(conf));
-    }
-}
-
 auto EditorApplication::on_mouse_leave_scene_viewport() noexcept -> void {
-    m_control_state.is_outside_view = true;
 }
 
 auto EditorApplication::on_mouse_enter_scene_viewport() noexcept -> void {
-    m_control_state.is_outside_view = false;
-}
-
-auto EditorApplication::try_select_object() noexcept -> void {
-    auto pos = ImGui::GetMousePos();
-    auto const win_pos = get_window_content_pos(k_scene_view_win_name);
-    if (!win_pos) {
-        this->log(pts::LogLevel::Error, "scene view not found");
-        return;
-    }
-    if (get_cur_hovered_widget() != k_scene_view_win_name) {
-        return;
-    }
-    if (get_cur_focused_widget() != k_scene_view_win_name) {
-        return;
-    }
-
-    // convert to viewport space
-    pos = pos - win_pos.value();
-    auto const ray = m_cam.viewport_to_ray(to_glm(pos), {m_config.width, m_config.height});
-    if (auto const res = m_scene.ray_cast_editable(ray)) {
-        m_control_state.set_cur_obj(res);  // note: deselection is handled by key press
-    }
 }
 
 auto EditorApplication::handle_input(InputEvent const& event) noexcept -> void {
-    for (auto&& action : m_input_actions) {
-        action(event);
-    }
-}
+    if (event.initiated_window != k_scene_view_win_name) return;
 
-auto EditorApplication::on_remove_object(Ref<SceneObject> obj) -> void {
-    if (obj.get().is_editable()) {
-        m_control_state.set_cur_obj(nullptr);
-    }
-}
-
-auto EditorApplication::on_add_oject(Ref<SceneObject> obj) -> void {
-    if (obj.get().is_editable()) {
-        m_control_state.set_cur_obj(&obj.get());
-        // adjust camera if needed
-        // imagine that the camera view is a sphere
-        // if the scene bound is outside the sphere, move the camera to a better position
-        auto const new_bbox = m_scene.get_scene_bound();
-        auto const radius = length(m_cam.get_eye() - m_cam.get_center());
-        auto const new_radius = length(new_bbox.get_extent());
-        if (new_radius > radius * 1.5f) {
-            m_cam.set(m_scene.get_good_cam_start());
+    if (event.input.input_type == InputType::MOUSE) {
+        // Right-click drag: orbit camera
+        if (event.input.key_or_button == ImGuiMouseButton_Right &&
+            event.input.action_type == ActionType::HOLD) {
+            m_camera.orbit(event.normalized_mouse_delta.x, event.normalized_mouse_delta.y);
         }
-    }
-}
 
-auto EditorApplication::get_cur_renderer() noexcept -> Renderer& {
-    if (m_control_state.cur_renderer_idx >= m_renderers.size() ||
-        m_control_state.cur_renderer_idx < 0) {
-        this->log(pts::LogLevel::Error, "the current renderer is no longer valid");
-        m_control_state.cur_renderer_idx = k_default_renderer_idx;
-    }
+        // Middle-click drag: pan camera
+        if (event.input.key_or_button == ImGuiMouseButton_Middle &&
+            event.input.action_type == ActionType::HOLD) {
+            m_camera.pan(event.normalized_mouse_delta.x, event.normalized_mouse_delta.y);
+        }
 
-    return *m_renderers[m_control_state.cur_renderer_idx];
-}
-
-auto EditorApplication::ControlState::set_cur_obj(ObserverPtr<SceneObject> obj) noexcept -> void {
-    if (obj == m_cur_obj) {
-        return;
-    }
-
-    if (ImGuizmo::IsUsing()) {
-        // let gizmos finish
-        return;
-    }
-
-    m_cur_obj = obj;
-    m_on_selected_obj_change_callback_list(obj);
-    if (obj) {
-        std::fill(obj_name_buf.begin(), obj_name_buf.end(), '\0');
-        std::copy(obj->get_name().begin(), obj->get_name().end(), obj_name_buf.begin());
+        // Scroll: zoom
+        if (event.input.action_type == ActionType::SCROLL) {
+            m_camera.zoom(event.mouse_scroll_delta.y);
+        }
     }
 }

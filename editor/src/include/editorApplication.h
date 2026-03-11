@@ -1,146 +1,95 @@
 #pragma once
 
-#include <core/legacy/archive.h>
-#include <core/legacy/callbackList.h>
-#include <core/legacy/camera.h>
-#include <core/legacy/scene.h>
-#include <core/logging.h>
-#include <gl_utils/glTexture.h>
+#include <core/inputAction.h>
+#include <core/rendering/camera.h>
+#include <core/rendering/frameGraph.h>
+#include <core/rendering/renderWorld.h>
+#include <core/rendering/webgpu/buffer.h>
+#include <core/rendering/webgpu/pipeline.h>
+#include <core/rendering/webgpu/shader.h>
+#include <core/rendering/webgpu/webgpu.h>
+#include <core/windowedApplication.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 
-#include <array>
-#include <cstdlib>
-#include <iostream>
+#include <cstdint>
+#include <memory>
+#include <optional>
+#include <vector>
 
-#include "editorRenderer.h"
-#include "glfwApplication.h"
-#include "imgui/includes.h"
-#include "inputAction.h"
+namespace pts {
+class ImGuiComponent;
+class InputComponent;
+}  // namespace pts
 
-namespace PTS::Editor {
-constexpr auto k_init_move_sensitivity = 5.0f;
-constexpr auto k_init_rot_sensitivity = 60.0f;
-constexpr auto k_object_select_mouse_time = 1.0f;
-constexpr auto k_default_renderer_idx = 0;
+namespace pts::editor {
+struct AppConfig {
+    bool quit_on_start{false};
+};
 
-struct EditorApplication final : GLFWApplication {
+struct EditorApplication final : WindowedApplication {
     NO_COPY_MOVE(EditorApplication);
 
-    auto add_renderer(std::unique_ptr<Renderer> renderer) noexcept -> void;
-    auto loop(float dt) -> void override;
-    auto quit(int code) -> void override;
-    /**
-     * @brief Checks a result returned from some function. Prints the error and Terminates the
-     * program on error.
-     * @tparam T Type of the real return value
-     * @tparam E Type of the error return value
-     * @param res the result
-     * @return The real return value if no error
-     */
-    template <typename T, typename E>
-    static constexpr auto check_error(tl::expected<T, E> const& res) -> decltype(auto);
-    template <typename T, typename E>
-    static constexpr auto check_error(tl::expected<T, E>&& res) -> decltype(auto);
+    EditorApplication(std::string_view name, pts::LoggingManager& logging_manager);
+    ~EditorApplication() override;
+
+    void register_args(CommandLine& cli) override;
+    void process_args(const CommandLine& cli) override;
 
    protected:
-    auto on_begin_first_loop() -> void override;
+    void on_ready() override;
+    void update(float dt) override;
+    void render(FrameContext& ctx) override;
 
-   public:
-    EditorApplication(std::string_view name, RenderConfig config,
-                      pts::LoggingManager& logging_manager);
-    ~EditorApplication() override = default;
-
+   private:
+    void setup_docking_layout();
     auto create_input_actions() noexcept -> void;
     auto wrap_mouse_pos() noexcept -> void;
 
     // imgui rendering
     auto draw_scene_panel() noexcept -> void;
     auto draw_object_panel() noexcept -> void;
-    auto draw_scene_viewport(TextureHandle render_buf) noexcept -> void;
+    auto draw_scene_viewport() noexcept -> void;
     auto draw_console_panel() const noexcept -> void;
 
     // events
-    auto on_scene_opened(Scene& scene) -> void;
-    auto on_render_config_change(RenderConfig const& conf) -> void;
     auto on_mouse_leave_scene_viewport() noexcept -> void;
     auto on_mouse_enter_scene_viewport() noexcept -> void;
 
-    // other helpers
-    auto try_select_object() noexcept -> void;
-    auto handle_input(InputEvent const& event) noexcept -> void override;
-    auto on_remove_object(Ref<SceneObject> obj) -> void;
-    auto on_add_oject(Ref<SceneObject> obj) -> void;
-    auto get_cur_renderer() noexcept -> Renderer&;
+    auto handle_input(InputEvent const& event) noexcept -> void;
 
-    std::string m_console_text;
+    // Components
+    std::unique_ptr<ImGuiComponent> m_imgui;
+    std::unique_ptr<InputComponent> m_input;
+
+    AppConfig m_app_config;
+
     std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> m_console_log_sink;
-    pts::LoggingManager* m_logging_manager;
-
-    // rendering
-    RenderConfig m_config;
-    Scene m_scene;
-    Camera m_cam;
 
     // input handling
     std::vector<InputAction> m_input_actions;
 
-    // rendering
-    std::vector<std::unique_ptr<Renderer>> m_renderers;
-    std::unique_ptr<Archive> m_archive;
+    bool m_first_frame{true};
 
-    struct ControlState {
-        using ObjChangeCallback = std::function<void(ObserverPtr<SceneObject>)>;
+    // Rendering
+    std::unique_ptr<rendering::FrameGraph> m_frame_graph;
+    rendering::OrbitCamera m_camera;
+    rendering::RenderWorld m_world;
+    std::optional<webgpu::ShaderModule> m_forward_shader;
+    std::optional<webgpu::RenderPipeline> m_forward_pipeline;
+    webgpu::Buffer m_uniform_buffer;
+    WGPUBindGroup m_bind_group = nullptr;
+    WGPUBindGroupLayout m_bind_group_layout = nullptr;
 
-        auto set_cur_obj(ObserverPtr<SceneObject> obj) noexcept -> void;
-        auto get_cur_obj() const noexcept {
-            return m_cur_obj;
-        }
+    // Grid
+    std::optional<webgpu::ShaderModule> m_grid_shader;
+    std::optional<webgpu::RenderPipeline> m_grid_pipeline;
+    webgpu::Buffer m_grid_uniform_buffer;
+    WGPUBindGroup m_grid_bind_group = nullptr;
+    WGPUBindGroupLayout m_grid_bind_group_layout = nullptr;
 
-        auto get_on_selected_obj_change_callback_list() -> auto& {
-            return m_on_selected_obj_change_callback_list;
-        }
-
-        float move_sensitivity = k_init_move_sensitivity;
-        float rot_sensitivity = k_init_rot_sensitivity;
-        std::array<char, 1024> obj_name_buf{};
-        bool is_outside_view{false};
-        int cur_renderer_idx{k_default_renderer_idx};
-
-        struct GizmoState {
-            ImGuizmo::OPERATION op{ImGuizmo::OPERATION::TRANSLATE};
-            ImGuizmo::MODE mode{ImGuizmo::MODE::WORLD};
-            bool snap{false};
-            glm::vec3 snap_scale{1.0};
-        } gizmo_state{};
-
-        bool unlimited_fps{true};
-        int is_changing_scene_cam{0};
-
-       private:
-        ObserverPtr<SceneObject> m_cur_obj{nullptr};
-        CallbackList<void(ObserverPtr<SceneObject>)> m_on_selected_obj_change_callback_list;
-    } m_control_state;
+    // Viewport tracking
+    uint32_t m_viewport_width = 0;
+    uint32_t m_viewport_height = 0;
+    rendering::TextureRef m_scene_color_ref;
 };
-
-template <typename T, typename E>
-constexpr auto EditorApplication::check_error(tl::expected<T, E> const& res) -> decltype(auto) {
-    if (!res) {
-        std::cerr << res.error() << std::endl;
-        std::exit(-1);
-    }
-    if constexpr (!std::is_void_v<T>) {
-        return res.value();
-    }
-}
-
-template <typename T, typename E>
-constexpr auto EditorApplication::check_error(tl::expected<T, E>&& res) -> decltype(auto) {
-    if (!res) {
-        std::cerr << res.error() << std::endl;
-        std::exit(-1);
-    }
-    if constexpr (!std::is_void_v<T>) {
-        return std::move(res).value();
-    }
-}
-}  // namespace PTS::Editor
+}  // namespace pts::editor
