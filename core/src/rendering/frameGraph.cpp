@@ -191,7 +191,7 @@ void FrameGraph::begin_frame() {
 }
 
 void FrameGraph::compile() {
-    // Validate no backward dependencies
+    // Validate no backward dependencies (passes must be added in topological order)
     for (auto& pass : m_passes) {
         for (auto& att : pass.color_attachments) {
             if (!att.handle.is_valid()) continue;

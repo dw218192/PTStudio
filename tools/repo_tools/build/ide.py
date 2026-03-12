@@ -165,6 +165,27 @@ def generate_cpp_properties(root: Path, build_dir: Path, windowing: str) -> None
     )
 
 
+def _find_nsight_graphics() -> Path | None:
+    """Find Nsight Graphics CLI executable on this host."""
+    import shutil
+
+    # Check PATH first
+    ngfx = shutil.which("ngfx")
+    if ngfx:
+        return Path(ngfx)
+
+    if not is_windows():
+        return None
+
+    # Scan common install locations, pick the newest version
+    base = Path("C:/Program Files/NVIDIA Corporation")
+    if not base.exists():
+        return None
+    candidates = sorted(base.glob("Nsight Graphics */host/windows-desktop-nomad-x64/ngfx.exe"),
+                        reverse=True)
+    return candidates[0] if candidates else None
+
+
 def generate_launch_json(
     root: Path,
     build_dir: Path,
@@ -215,6 +236,34 @@ def generate_launch_json(
                 "environment": env_entries,
             }
         )
+
+        # Nsight Graphics frame debugger
+        ngfx_path = _find_nsight_graphics()
+        if ngfx_path:
+            # Build PATH env for the child process via ngfx --env flag.
+            # Format: "KEY=VALUE; KEY2=VALUE2;"
+            path_value = env_vars.get("PATH", "")
+            ngfx_args = [
+                "--activity=Frame Debugger",
+                "--platform=Windows",
+                f"--exe={editor_path}",
+                f"--dir={root}",
+                "--wait-hotkey",
+            ]
+            if path_value:
+                ngfx_args.append(f"--env=PATH={path_value};")
+            launch_configs.append(
+                {
+                    "name": "PTStudio Editor (Nsight Graphics)",
+                    "type": "cppvsdbg",
+                    "request": "launch",
+                    "program": str(ngfx_path),
+                    "args": ngfx_args,
+                    "cwd": "${workspaceFolder}",
+                    "console": "integratedTerminal",
+                }
+            )
+
     for test_name in test_names:
         if is_windows():
             test_path = build_dir / "bin" / "tests" / f"{test_name}.exe"
