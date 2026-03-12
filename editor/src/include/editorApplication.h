@@ -6,6 +6,7 @@
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/webgpu/webgpu.h>
 #include <core/windowedApplication.h>
+#include <pxr/usd/usd/stage.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 
 #include <cstdint>
@@ -78,9 +79,19 @@ struct EditorApplication final : WindowedApplication {
     std::vector<std::unique_ptr<rendering::IScenePass>> m_passes;
     size_t m_active_config_index = 0;
 
+    // USD stage
+    pxr::UsdStageRefPtr m_stage;
+
+    // Selection & gizmo
+    int m_selected_object = -1;
+    enum class GizmoOp { Translate, Rotate, Scale };
+    GizmoOp m_gizmo_op = GizmoOp::Translate;
+
     // Viewport tracking
     uint32_t m_viewport_width = 0;
     uint32_t m_viewport_height = 0;
+    float m_viewport_x = 0.0f;
+    float m_viewport_y = 0.0f;
     rendering::TextureRef m_scene_color_ref;
 };
 }  // namespace pts::editor

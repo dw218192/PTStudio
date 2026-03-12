@@ -167,7 +167,8 @@ void populate_from_stage(RenderWorld& world, const pxr::UsdStageRefPtr& stage,
         RenderObject obj;
         obj.mesh_index = mesh_index;
         obj.transform = transform;
-        world.objects.push_back(obj);
+        obj.prim_path = prim.GetPath().GetString();
+        world.objects.push_back(std::move(obj));
     }
 }
 
