@@ -180,6 +180,27 @@ def _find_renderdoc() -> Path | None:
     return candidate if candidate.exists() else None
 
 
+def _find_nsight_graphics() -> Path | None:
+    """Find Nsight Graphics CLI executable on this host."""
+    import shutil
+
+    ngfx = shutil.which("ngfx")
+    if ngfx:
+        return Path(ngfx)
+
+    if not is_windows():
+        return None
+
+    base = Path("C:/Program Files/NVIDIA Corporation")
+    if not base.exists():
+        return None
+    candidates = sorted(
+        base.glob("Nsight Graphics */host/windows-desktop-nomad-x64/ngfx-capture.exe"),
+        reverse=True,
+    )
+    return candidates[0] if candidates else None
+
+
 def generate_launch_json(
     root: Path,
     build_dir: Path,
@@ -247,11 +268,17 @@ def generate_launch_json(
                     "autoConnect": True,
                     "commandLine": "",
                     "environment": [
-                        {"separator": "Platform style",
-                         "type": "Prepend",
-                         "variable": "PATH",
-                         "value": path_value}
-                    ] if path_value else [],
+                        e for e in [
+                            {"separator": "Platform style",
+                             "type": "Prepend",
+                             "variable": "PATH",
+                             "value": path_value} if path_value else None,
+                            {"separator": "Platform style",
+                             "type": "Set",
+                             "variable": "PTSTUDIO_GPU_BACKEND",
+                             "value": "Vulkan"},
+                        ] if e is not None
+                    ],
                     "executable": str(editor_path),
                     "inject": False,
                     "numQueuedFrames": 0,
@@ -285,6 +312,28 @@ def generate_launch_json(
                     "args": [str(cap_file)],
                     "cwd": "${workspaceFolder}",
                     "console": "integratedTerminal",
+                }
+            )
+
+        # Nsight Graphics frame debugger
+        nsight_path = _find_nsight_graphics()
+        if nsight_path:
+            nsight_env = list(env_entries) + [
+                {"name": "PTSTUDIO_GPU_BACKEND", "value": "Vulkan"},
+            ]
+            launch_configs.append(
+                {
+                    "name": "PTStudio Editor (Nsight Graphics)",
+                    "type": "cppvsdbg",
+                    "request": "launch",
+                    "program": str(nsight_path),
+                    "args": [
+                        f"--exe={editor_path}",
+                        "--capture-hotkey=F11",
+                    ],
+                    "cwd": "${workspaceFolder}",
+                    "console": "integratedTerminal",
+                    "environment": nsight_env,
                 }
             )
 
