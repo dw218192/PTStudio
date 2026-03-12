@@ -16,6 +16,7 @@
 #include <ImGuizmo.h>  // must follow imgui.h
 // clang-format on
 #include <pxr/usd/sdf/layer.h>
+#include <pxr/usd/sdf/path.h>
 #include <pxr/usd/usd/stage.h>
 #include <pxr/usd/usdGeom/xformable.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
@@ -59,11 +60,97 @@ EditorApplication::EditorApplication(std::string_view name, pts::LoggingManager&
 }
 
 EditorApplication::~EditorApplication() {
+    revoke_stage_listener();
     m_passes.clear();
     m_world.clear();
     m_stage.Reset();
     m_input.reset();
     m_imgui.reset();
+}
+
+void EditorApplication::StageListener::handle(const pxr::UsdNotice::ObjectsChanged& notice,
+                                              const pxr::UsdStageWeakPtr& /*sender*/) {
+    PRECONDITION(cb);
+    cb(ctx, notice);
+}
+
+void EditorApplication::register_stage_listener() {
+    revoke_stage_listener();
+    if (!m_stage) return;
+
+    m_stage_listener = std::make_unique<StageListener>();
+    m_stage_listener->ctx = this;
+    m_stage_listener->cb = [](void* self, const pxr::UsdNotice::ObjectsChanged& notice) {
+        static_cast<EditorApplication*>(self)->on_objects_changed(notice);
+    };
+
+    m_listener_key = pxr::TfNotice::Register(pxr::TfCreateWeakPtr(m_stage_listener.get()),
+                                             &StageListener::handle, m_stage);
+}
+
+void EditorApplication::revoke_stage_listener() {
+    if (m_listener_key.IsValid()) {
+        pxr::TfNotice::Revoke(m_listener_key);
+    }
+    m_stage_listener.reset();
+    m_dirty_xform_paths.clear();
+    m_needs_full_resync = false;
+}
+
+void EditorApplication::on_objects_changed(const pxr::UsdNotice::ObjectsChanged& notice) {
+    // Resynced paths require full re-extraction
+    for (const auto& path : notice.GetResyncedPaths()) {
+        if (path == pxr::SdfPath::AbsoluteRootPath()) continue;
+        m_needs_full_resync = true;
+        return;
+    }
+
+    // Info-only changes: check if they are xform properties
+    for (const auto& path : notice.GetChangedInfoOnlyPaths()) {
+        // Property paths have a prim parent; check if the property is xform-related
+        if (!path.IsPrimPath() && !path.IsPropertyPath()) continue;
+        auto prim_path = path.IsPropertyPath() ? path.GetPrimPath() : path;
+        m_dirty_xform_paths.push_back(prim_path.GetString());
+    }
+}
+
+void EditorApplication::process_dirty_prims() {
+    if (!m_stage) return;
+
+    auto const& device = webgpu_context()->device();
+
+    if (m_needs_full_resync) {
+        m_world.clear();
+        m_selected_object = -1;
+        rendering::populate_from_stage(m_world, m_stage, device);
+        log(LogLevel::Info, "Full resync: {} objects", m_world.objects.size());
+        m_needs_full_resync = false;
+        m_dirty_xform_paths.clear();
+        return;
+    }
+
+    if (m_dirty_xform_paths.empty()) return;
+
+    // Update transforms for dirty prims
+    for (const auto& dirty_path : m_dirty_xform_paths) {
+        for (auto& obj : m_world.objects) {
+            if (obj.prim_path != dirty_path) continue;
+
+            auto prim = m_stage->GetPrimAtPath(pxr::SdfPath(obj.prim_path));
+            INVARIANT_MSG(prim.IsValid(),
+                          "prim_path on RenderObject must reference a valid USD prim");
+
+            pxr::UsdGeomXformable xformable(prim);
+            if (!xformable) continue;
+
+            pxr::GfMatrix4d xf =
+                xformable.ComputeLocalToWorldTransform(pxr::UsdTimeCode::Default());
+            for (int r = 0; r < 4; ++r)
+                for (int c = 0; c < 4; ++c) obj.transform[c][r] = static_cast<float>(xf[r][c]);
+            break;
+        }
+    }
+    m_dirty_xform_paths.clear();
 }
 
 void EditorApplication::register_args(CommandLine& cli) {
@@ -108,6 +195,7 @@ void EditorApplication::on_ready() {
         layer->ImportFromString(std::string{*usda});
         m_stage = pxr::UsdStage::Open(layer);
         rendering::populate_from_stage(m_world, m_stage, device);
+        register_stage_listener();
         log(LogLevel::Info, "Loaded default scene ({} objects)", m_world.objects.size());
     } else {
         log(LogLevel::Warning, "Missing embedded resource: scenes/default.usda");
@@ -148,6 +236,9 @@ void EditorApplication::update(float /*dt*/) {
 void EditorApplication::render(FrameContext& ctx) {
     if (!m_imgui) return;
     if (viewport() && viewport()->should_close()) return;
+
+    // Process deferred USD change notifications before rendering
+    process_dirty_prims();
 
     auto scope = m_imgui->frame_scope();
     ImGuizmo::BeginFrame();
@@ -280,10 +371,12 @@ auto EditorApplication::draw_scene_panel() noexcept -> void {
         if (!path.empty()) {
             auto stage = pxr::UsdStage::Open(path);
             if (stage) {
+                revoke_stage_listener();
                 m_world.clear();
                 m_selected_object = -1;
                 m_stage = stage;
                 rendering::populate_from_stage(m_world, m_stage, webgpu_context()->device());
+                register_stage_listener();
                 log(LogLevel::Info, "Loaded scene: {} ({} objects)", path, m_world.objects.size());
             } else {
                 log(LogLevel::Error, "Failed to open scene: {}", path);
@@ -339,10 +432,8 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
     }
 
     // ── ImGuizmo gizmo ──
-    if (m_selected_object >= 0 &&
-        m_selected_object < static_cast<int>(m_world.objects.size()) &&
+    if (m_selected_object >= 0 && m_selected_object < static_cast<int>(m_world.objects.size()) &&
         m_viewport_width > 0 && m_viewport_height > 0) {
-
         float aspect = static_cast<float>(m_viewport_width) / static_cast<float>(m_viewport_height);
         auto view_mat = m_camera.view_matrix();
         auto proj_mat = m_camera.projection_matrix(aspect);
@@ -350,28 +441,33 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
         auto& obj = m_world.objects[m_selected_object];
 
         ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList());
-        ImGuizmo::SetRect(m_viewport_x, m_viewport_y,
-                          static_cast<float>(m_viewport_width),
+        ImGuizmo::SetRect(m_viewport_x, m_viewport_y, static_cast<float>(m_viewport_width),
                           static_cast<float>(m_viewport_height));
 
         ImGuizmo::OPERATION op = ImGuizmo::TRANSLATE;
         switch (m_gizmo_op) {
-            case GizmoOp::Translate: op = ImGuizmo::TRANSLATE; break;
-            case GizmoOp::Rotate:    op = ImGuizmo::ROTATE; break;
-            case GizmoOp::Scale:     op = ImGuizmo::SCALE; break;
+            case GizmoOp::Translate:
+                op = ImGuizmo::TRANSLATE;
+                break;
+            case GizmoOp::Rotate:
+                op = ImGuizmo::ROTATE;
+                break;
+            case GizmoOp::Scale:
+                op = ImGuizmo::SCALE;
+                break;
         }
 
-        ImGuizmo::Manipulate(
-            glm::value_ptr(view_mat),
-            glm::value_ptr(proj_mat),
-            op,
-            ImGuizmo::WORLD,
-            glm::value_ptr(obj.transform));
+        // Use a temporary matrix so ImGuizmo doesn't directly modify RenderWorld.
+        // The notice handler is the single source of truth for RenderWorld transforms.
+        glm::mat4 gizmo_transform = obj.transform;
+        ImGuizmo::Manipulate(glm::value_ptr(view_mat), glm::value_ptr(proj_mat), op,
+                             ImGuizmo::WORLD, glm::value_ptr(gizmo_transform));
 
-        // Write back to USD stage when gizmo is actively used
+        // Write to USD stage only — the ObjectsChanged notice will update RenderWorld
         if (ImGuizmo::IsUsing() && m_stage) {
             auto prim = m_stage->GetPrimAtPath(pxr::SdfPath(obj.prim_path));
-            INVARIANT_MSG(prim.IsValid(), "prim_path on RenderObject must reference a valid USD prim");
+            INVARIANT_MSG(prim.IsValid(),
+                          "prim_path on RenderObject must reference a valid USD prim");
 
             pxr::UsdGeomXformable xformable(prim);
             INVARIANT_MSG(xformable, "selected prim must be UsdGeomXformable");
@@ -380,10 +476,18 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
             pxr::GfMatrix4d gf_mat;
             for (int r = 0; r < 4; ++r)
                 for (int c = 0; c < 4; ++c)
-                    gf_mat[r][c] = static_cast<double>(obj.transform[c][r]);
+                    gf_mat[r][c] = static_cast<double>(gizmo_transform[c][r]);
 
-            xformable.ClearXformOpOrder();
-            xformable.AddTransformOp().Set(gf_mat);
+            // Reuse existing transform op to avoid resync notices on every frame.
+            // Only clear+recreate when the op order doesn't match expectations.
+            bool reset_xform_stack = false;
+            auto ops = xformable.GetOrderedXformOps(&reset_xform_stack);
+            if (ops.size() == 1 && ops[0].GetOpType() == pxr::UsdGeomXformOp::TypeTransform) {
+                ops[0].Set(gf_mat);
+            } else {
+                xformable.ClearXformOpOrder();
+                xformable.AddTransformOp().Set(gf_mat);
+            }
         }
     }
 }
@@ -432,11 +536,20 @@ auto EditorApplication::handle_input(InputEvent const& event) noexcept -> void {
     if (event.input.input_type == InputType::KEYBOARD &&
         event.input.action_type == ActionType::PRESS) {
         switch (event.input.key_or_button) {
-            case ImGuiKey_W: m_gizmo_op = GizmoOp::Translate; break;
-            case ImGuiKey_E: m_gizmo_op = GizmoOp::Rotate; break;
-            case ImGuiKey_R: m_gizmo_op = GizmoOp::Scale; break;
-            case ImGuiKey_Escape: m_selected_object = -1; break;
-            default: break;
+            case ImGuiKey_W:
+                m_gizmo_op = GizmoOp::Translate;
+                break;
+            case ImGuiKey_E:
+                m_gizmo_op = GizmoOp::Rotate;
+                break;
+            case ImGuiKey_R:
+                m_gizmo_op = GizmoOp::Scale;
+                break;
+            case ImGuiKey_Escape:
+                m_selected_object = -1;
+                break;
+            default:
+                break;
         }
     }
 
