@@ -12,13 +12,18 @@
 #include <core/rendering/webgpuContext.h>
 #include <core/rendering/windowing.h>
 #include <imgui_internal.h>
+// clang-format off
+#include <ImGuizmo.h>  // must follow imgui.h
+// clang-format on
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/usd/stage.h>
+#include <pxr/usd/usdGeom/xformable.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 
 #include <filesystem>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include <stdexcept>
 
 #include "editorResources.h"
@@ -55,6 +60,8 @@ EditorApplication::EditorApplication(std::string_view name, pts::LoggingManager&
 
 EditorApplication::~EditorApplication() {
     m_passes.clear();
+    m_world.clear();
+    m_stage.Reset();
     m_input.reset();
     m_imgui.reset();
 }
@@ -99,8 +106,8 @@ void EditorApplication::on_ready() {
     if (usda) {
         auto layer = pxr::SdfLayer::CreateAnonymous(".usda");
         layer->ImportFromString(std::string{*usda});
-        auto stage = pxr::UsdStage::Open(layer);
-        rendering::populate_from_stage(m_world, stage, device);
+        m_stage = pxr::UsdStage::Open(layer);
+        rendering::populate_from_stage(m_world, m_stage, device);
         log(LogLevel::Info, "Loaded default scene ({} objects)", m_world.objects.size());
     } else {
         log(LogLevel::Warning, "Missing embedded resource: scenes/default.usda");
@@ -143,6 +150,7 @@ void EditorApplication::render(FrameContext& ctx) {
     if (viewport() && viewport()->should_close()) return;
 
     auto scope = m_imgui->frame_scope();
+    ImGuizmo::BeginFrame();
 
     // Poll input — prev_hovered_widget makes this order-independent from UI drawing
     m_input->poll(get_time(), window_width(), window_height(), m_imgui->prev_hovered_widget());
@@ -273,7 +281,9 @@ auto EditorApplication::draw_scene_panel() noexcept -> void {
             auto stage = pxr::UsdStage::Open(path);
             if (stage) {
                 m_world.clear();
-                rendering::populate_from_stage(m_world, stage, webgpu_context()->device());
+                m_selected_object = -1;
+                m_stage = stage;
+                rendering::populate_from_stage(m_world, m_stage, webgpu_context()->device());
                 log(LogLevel::Info, "Loaded scene: {} ({} objects)", path, m_world.objects.size());
             } else {
                 log(LogLevel::Error, "Failed to open scene: {}", path);
@@ -287,7 +297,17 @@ auto EditorApplication::draw_scene_panel() noexcept -> void {
 }
 
 auto EditorApplication::draw_object_panel() noexcept -> void {
-    ImGui::TextUnformatted("Scene system rewrite in progress.");
+    ImGui::Text("Objects (%zu)", m_world.objects.size());
+    ImGui::Separator();
+
+    for (int i = 0; i < static_cast<int>(m_world.objects.size()); ++i) {
+        auto const& obj = m_world.objects[i];
+        auto const& label = obj.prim_path.empty() ? std::to_string(i) : obj.prim_path;
+        bool selected = (m_selected_object == i);
+        if (ImGui::Selectable(label.c_str(), selected)) {
+            m_selected_object = selected ? -1 : i;
+        }
+    }
 }
 
 auto EditorApplication::draw_scene_viewport() noexcept -> void {
@@ -305,12 +325,66 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
         m_viewport_height = h;
     }
 
+    // Track viewport screen position for ImGuizmo
+    auto const cursor_pos = ImGui::GetCursorScreenPos();
+    m_viewport_x = cursor_pos.x;
+    m_viewport_y = cursor_pos.y;
+
     if (m_scene_color_ref && m_viewport_width > 0 && m_viewport_height > 0) {
         ImGui::Image(
             reinterpret_cast<ImTextureID>(m_scene_color_ref.view()),
             ImVec2(static_cast<float>(m_viewport_width), static_cast<float>(m_viewport_height)));
     } else {
         ImGui::TextUnformatted("Renderer output not available");
+    }
+
+    // ── ImGuizmo gizmo ──
+    if (m_selected_object >= 0 &&
+        m_selected_object < static_cast<int>(m_world.objects.size()) &&
+        m_viewport_width > 0 && m_viewport_height > 0) {
+
+        float aspect = static_cast<float>(m_viewport_width) / static_cast<float>(m_viewport_height);
+        auto view_mat = m_camera.view_matrix();
+        auto proj_mat = m_camera.projection_matrix(aspect);
+
+        auto& obj = m_world.objects[m_selected_object];
+
+        ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList());
+        ImGuizmo::SetRect(m_viewport_x, m_viewport_y,
+                          static_cast<float>(m_viewport_width),
+                          static_cast<float>(m_viewport_height));
+
+        ImGuizmo::OPERATION op = ImGuizmo::TRANSLATE;
+        switch (m_gizmo_op) {
+            case GizmoOp::Translate: op = ImGuizmo::TRANSLATE; break;
+            case GizmoOp::Rotate:    op = ImGuizmo::ROTATE; break;
+            case GizmoOp::Scale:     op = ImGuizmo::SCALE; break;
+        }
+
+        ImGuizmo::Manipulate(
+            glm::value_ptr(view_mat),
+            glm::value_ptr(proj_mat),
+            op,
+            ImGuizmo::WORLD,
+            glm::value_ptr(obj.transform));
+
+        // Write back to USD stage when gizmo is actively used
+        if (ImGuizmo::IsUsing() && m_stage) {
+            auto prim = m_stage->GetPrimAtPath(pxr::SdfPath(obj.prim_path));
+            INVARIANT_MSG(prim.IsValid(), "prim_path on RenderObject must reference a valid USD prim");
+
+            pxr::UsdGeomXformable xformable(prim);
+            INVARIANT_MSG(xformable, "selected prim must be UsdGeomXformable");
+
+            // Convert glm::mat4 (column-major) -> GfMatrix4d (row-major) via transpose
+            pxr::GfMatrix4d gf_mat;
+            for (int r = 0; r < 4; ++r)
+                for (int c = 0; c < 4; ++c)
+                    gf_mat[r][c] = static_cast<double>(obj.transform[c][r]);
+
+            xformable.ClearXformOpOrder();
+            xformable.AddTransformOp().Set(gf_mat);
+        }
     }
 }
 
@@ -354,6 +428,17 @@ auto EditorApplication::on_mouse_enter_scene_viewport() noexcept -> void {
 
 auto EditorApplication::handle_input(InputEvent const& event) noexcept -> void {
     if (event.initiated_window != k_scene_view_win_name) return;
+
+    if (event.input.input_type == InputType::KEYBOARD &&
+        event.input.action_type == ActionType::PRESS) {
+        switch (event.input.key_or_button) {
+            case ImGuiKey_W: m_gizmo_op = GizmoOp::Translate; break;
+            case ImGuiKey_E: m_gizmo_op = GizmoOp::Rotate; break;
+            case ImGuiKey_R: m_gizmo_op = GizmoOp::Scale; break;
+            case ImGuiKey_Escape: m_selected_object = -1; break;
+            default: break;
+        }
+    }
 
     if (event.input.input_type == InputType::MOUSE) {
         // Right-click drag: orbit camera
