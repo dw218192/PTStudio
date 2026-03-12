@@ -7,6 +7,7 @@
 
 #include <cstdlib>
 #include <stdexcept>
+#include <string_view>
 #include <thread>
 
 #include "logging.h"
@@ -163,6 +164,8 @@ void Device::start_adapter_request() {
         } else if (val == "D3D12" || val == "d3d12") {
             options.backendType = WGPUBackendType_D3D12;
             m_logger->info("Using D3D12 backend (PTSTUDIO_GPU_BACKEND)");
+        } else {
+            m_logger->warn("Unknown PTSTUDIO_GPU_BACKEND='{}', using default", val);
         }
     }
 

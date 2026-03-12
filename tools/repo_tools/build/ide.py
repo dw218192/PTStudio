@@ -181,10 +181,10 @@ def _find_renderdoc() -> Path | None:
 
 
 def _find_nsight_graphics() -> Path | None:
-    """Find Nsight Graphics CLI executable on this host."""
+    """Find Nsight Graphics capture CLI executable on this host."""
     import shutil
 
-    ngfx = shutil.which("ngfx")
+    ngfx = shutil.which("ngfx-capture")
     if ngfx:
         return Path(ngfx)
 
