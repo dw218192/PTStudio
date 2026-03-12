@@ -165,6 +165,42 @@ def generate_cpp_properties(root: Path, build_dir: Path, windowing: str) -> None
     )
 
 
+def _find_renderdoc() -> Path | None:
+    """Find RenderDoc UI executable on this host."""
+    import shutil
+
+    rdoc = shutil.which("qrenderdoc")
+    if rdoc:
+        return Path(rdoc)
+
+    if not is_windows():
+        return None
+
+    candidate = Path("C:/Program Files/RenderDoc/qrenderdoc.exe")
+    return candidate if candidate.exists() else None
+
+
+def _find_nsight_graphics() -> Path | None:
+    """Find Nsight Graphics capture CLI executable on this host."""
+    import shutil
+
+    ngfx = shutil.which("ngfx-capture")
+    if ngfx:
+        return Path(ngfx)
+
+    if not is_windows():
+        return None
+
+    base = Path("C:/Program Files/NVIDIA Corporation")
+    if not base.exists():
+        return None
+    candidates = sorted(
+        base.glob("Nsight Graphics */host/windows-desktop-nomad-x64/ngfx-capture.exe"),
+        reverse=True,
+    )
+    return candidates[0] if candidates else None
+
+
 def generate_launch_json(
     root: Path,
     build_dir: Path,
@@ -215,6 +251,92 @@ def generate_launch_json(
                 "environment": env_entries,
             }
         )
+
+        # RenderDoc frame capture (F12 or PrintScreen to capture)
+        renderdoc_path = _find_renderdoc()
+        if renderdoc_path:
+            # Generate a .cap file so RenderDoc launches the app with
+            # the correct working directory and environment.
+            cap_file = root / "_build" / "editor.cap"
+            path_value = env_vars.get("PATH", "")
+            env_str = ""
+            if path_value:
+                env_str = f"PATH={path_value}"
+            cap_content = {
+                "rdocCaptureSettings": 1,
+                "settings": {
+                    "autoConnect": True,
+                    "commandLine": "",
+                    "environment": [
+                        e for e in [
+                            {"separator": "Platform style",
+                             "type": "Prepend",
+                             "variable": "PATH",
+                             "value": path_value} if path_value else None,
+                            {"separator": "Platform style",
+                             "type": "Set",
+                             "variable": "PTSTUDIO_GPU_BACKEND",
+                             "value": "Vulkan"},
+                        ] if e is not None
+                    ],
+                    "executable": str(editor_path),
+                    "inject": False,
+                    "numQueuedFrames": 0,
+                    "options": {
+                        "allowFullscreen": True,
+                        "allowVSync": True,
+                        "apiValidation": True,
+                        "captureAllCmdLists": True,
+                        "captureCallstacks": False,
+                        "debugOutputMute": True,
+                        "delayForDebugger": 0,
+                        "hookIntoChildren": False,
+                        "refAllResources": False,
+                        "verifyBufferAccess": False,
+                    },
+                    "queuedFrameCap": 0,
+                    "workingDir": str(root),
+                },
+            }
+            cap_file.parent.mkdir(parents=True, exist_ok=True)
+            cap_file.write_text(
+                json.dumps(cap_content, indent=4) + "\n", encoding="utf-8"
+            )
+
+            launch_configs.append(
+                {
+                    "name": "PTStudio Editor (RenderDoc)",
+                    "type": "cppvsdbg",
+                    "request": "launch",
+                    "program": str(renderdoc_path),
+                    "args": [str(cap_file)],
+                    "cwd": "${workspaceFolder}",
+                    "console": "integratedTerminal",
+                }
+            )
+
+        # Nsight Graphics frame debugger
+        nsight_path = _find_nsight_graphics()
+        if nsight_path:
+            nsight_env = list(env_entries) + [
+                {"name": "PTSTUDIO_GPU_BACKEND", "value": "Vulkan"},
+            ]
+            launch_configs.append(
+                {
+                    "name": "PTStudio Editor (Nsight Graphics)",
+                    "type": "cppvsdbg",
+                    "request": "launch",
+                    "program": str(nsight_path),
+                    "args": [
+                        f"--exe={editor_path}",
+                        "--capture-hotkey=F11",
+                    ],
+                    "cwd": "${workspaceFolder}",
+                    "console": "integratedTerminal",
+                    "environment": nsight_env,
+                }
+            )
+
     for test_name in test_names:
         if is_windows():
             test_path = build_dir / "bin" / "tests" / f"{test_name}.exe"

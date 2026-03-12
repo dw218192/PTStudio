@@ -314,3 +314,200 @@ TEST_CASE("FrameGraph - read() valid forward dependency") {
 
     CHECK_NOTHROW(f.graph.compile());
 }
+
+TEST_CASE("FrameGraph - MRT: two color attachments") {
+    TestFixture f;
+
+    f.graph.begin_frame();
+
+    pts::rendering::TextureDesc desc;
+    desc.width = 64;
+    desc.height = 64;
+    desc.format = WGPUTextureFormat_BGRA8Unorm;
+
+    auto color0 = f.graph.create("color0", desc);
+    auto color1 = f.graph.create("color1", desc);
+
+    bool executed = false;
+    f.graph.add_pass("mrt_pass").color(color0).color(color1).execute([&](WGPURenderPassEncoder) {
+        executed = true;
+    });
+
+    f.graph.compile();
+
+    CHECK(f.graph.get_texture_ref(color0).view() != nullptr);
+    CHECK(f.graph.get_texture_ref(color1).view() != nullptr);
+
+    auto encoder = f.create_encoder();
+    f.graph.execute(encoder);
+    f.submit(encoder);
+
+    CHECK(executed);
+}
+
+TEST_CASE("FrameGraph - MRT: second pass loads both attachments") {
+    TestFixture f;
+
+    f.graph.begin_frame();
+
+    pts::rendering::TextureDesc desc;
+    desc.width = 64;
+    desc.height = 64;
+    desc.format = WGPUTextureFormat_BGRA8Unorm;
+
+    auto color0 = f.graph.create("color0", desc);
+    auto color1 = f.graph.create("color1", desc);
+
+    // Pass 0 writes both attachments (first writer -> Clear)
+    f.graph.add_pass("mrt_write").color(color0).color(color1).execute([](WGPURenderPassEncoder) {});
+
+    // Pass 1 writes both again (not first writer -> Load)
+    f.graph.add_pass("mrt_load").color(color0).color(color1).execute([](WGPURenderPassEncoder) {});
+
+    f.graph.compile();
+
+    auto encoder = f.create_encoder();
+    f.graph.execute(encoder);
+    f.submit(encoder);
+}
+
+TEST_CASE("FrameGraph - compute pass") {
+    TestFixture f;
+
+    f.graph.begin_frame();
+
+    pts::rendering::TextureDesc desc;
+    desc.width = 64;
+    desc.height = 64;
+    desc.format = WGPUTextureFormat_RGBA8Unorm;
+
+    auto storage_tex = f.graph.create("storage", desc);
+
+    bool executed = false;
+    f.graph.add_pass("compute_pass")
+        .storage_write(storage_tex)
+        .execute([&](WGPUComputePassEncoder) { executed = true; });
+
+    f.graph.compile();
+
+    auto encoder = f.create_encoder();
+    f.graph.execute(encoder);
+    f.submit(encoder);
+
+    CHECK(executed);
+}
+
+TEST_CASE("FrameGraph - compute then render pass") {
+    TestFixture f;
+
+    f.graph.begin_frame();
+
+    pts::rendering::TextureDesc storage_desc;
+    storage_desc.width = 64;
+    storage_desc.height = 64;
+    storage_desc.format = WGPUTextureFormat_RGBA8Unorm;
+
+    auto storage_tex = f.graph.create("storage", storage_desc);
+
+    // Compute pass writes storage texture
+    f.graph.add_pass("compute").storage_write(storage_tex).execute([](WGPUComputePassEncoder) {});
+
+    pts::rendering::TextureDesc color_desc;
+    color_desc.width = 64;
+    color_desc.height = 64;
+    color_desc.format = WGPUTextureFormat_BGRA8Unorm;
+
+    auto color = f.graph.create("color", color_desc);
+
+    // Render pass reads storage texture result
+    f.graph.add_pass("render").color(color).read(storage_tex).execute([](WGPURenderPassEncoder) {});
+
+    f.graph.compile();
+
+    auto encoder = f.create_encoder();
+    f.graph.execute(encoder);
+    f.submit(encoder);
+}
+
+TEST_CASE("FrameGraph - find_or_create creates on first call") {
+    TestFixture f;
+
+    f.graph.begin_frame();
+
+    pts::rendering::TextureDesc desc;
+    desc.width = 64;
+    desc.height = 64;
+    desc.format = WGPUTextureFormat_BGRA8Unorm;
+
+    auto h1 = f.graph.find_or_create("color", desc);
+    CHECK(h1.is_valid());
+    CHECK(h1.index == 0);
+}
+
+TEST_CASE("FrameGraph - find_or_create returns existing handle") {
+    TestFixture f;
+
+    f.graph.begin_frame();
+
+    pts::rendering::TextureDesc desc;
+    desc.width = 64;
+    desc.height = 64;
+    desc.format = WGPUTextureFormat_BGRA8Unorm;
+
+    auto h1 = f.graph.find_or_create("color", desc);
+    auto h2 = f.graph.find_or_create("color", desc);
+
+    CHECK(h1.index == h2.index);
+}
+
+TEST_CASE("FrameGraph - find_or_create different names create different handles") {
+    TestFixture f;
+
+    f.graph.begin_frame();
+
+    pts::rendering::TextureDesc desc;
+    desc.width = 64;
+    desc.height = 64;
+    desc.format = WGPUTextureFormat_BGRA8Unorm;
+
+    auto h1 = f.graph.find_or_create("color_a", desc);
+    auto h2 = f.graph.find_or_create("color_b", desc);
+
+    CHECK(h1.index != h2.index);
+}
+
+TEST_CASE("FrameGraph - usage auto-inference from read()") {
+    TestFixture f;
+
+    f.graph.begin_frame();
+
+    pts::rendering::TextureDesc desc;
+    desc.width = 64;
+    desc.height = 64;
+    desc.format = WGPUTextureFormat_BGRA8Unorm;
+    // Start with only RenderAttachment
+    desc.usage = WGPUTextureUsage_RenderAttachment;
+
+    auto color = f.graph.create("color", desc);
+
+    // Pass 0 writes color
+    f.graph.add_pass("writer").color(color).execute([](WGPURenderPassEncoder) {});
+
+    pts::rendering::TextureDesc surface_desc;
+    surface_desc.width = 64;
+    surface_desc.height = 64;
+    surface_desc.format = WGPUTextureFormat_BGRA8Unorm;
+
+    // Pass 1 reads color — should auto-add TextureBinding
+    f.graph.add_pass("reader")
+        .color(f.graph.create("surface", surface_desc))
+        .read(color)
+        .execute([](WGPURenderPassEncoder) {});
+
+    // Should compile and execute without error (TextureBinding auto-inferred)
+    f.graph.compile();
+
+    auto encoder = f.create_encoder();
+    f.graph.execute(encoder);
+    f.submit(encoder);
+}

@@ -58,6 +58,7 @@ target_compile_options(developer_flags INTERFACE
 target_compile_definitions(developer_flags INTERFACE
     PTS_WINDOWING="${PTS_WINDOWING}"
     "PTS_WINDOWING_${PTS_WINDOWING}=1"
+    $<$<CXX_COMPILER_ID:MSVC>:NOMINMAX>
 )
 
 target_compile_features(developer_flags INTERFACE cxx_std_17)

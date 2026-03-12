@@ -4,22 +4,22 @@
 #include <core/rendering/camera.h>
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/renderWorld.h>
-#include <core/rendering/webgpu/buffer.h>
-#include <core/rendering/webgpu/pipeline.h>
-#include <core/rendering/webgpu/shader.h>
 #include <core/rendering/webgpu/webgpu.h>
 #include <core/windowedApplication.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 
 #include <cstdint>
 #include <memory>
-#include <optional>
 #include <vector>
 
 namespace pts {
 class ImGuiComponent;
 class InputComponent;
 }  // namespace pts
+
+namespace pts::rendering {
+class IScenePass;
+}
 
 namespace pts::editor {
 struct AppConfig {
@@ -42,6 +42,7 @@ struct EditorApplication final : WindowedApplication {
 
    private:
     void setup_docking_layout();
+    void set_renderer_config(size_t index);
     auto create_input_actions() noexcept -> void;
     auto wrap_mouse_pos() noexcept -> void;
 
@@ -74,18 +75,8 @@ struct EditorApplication final : WindowedApplication {
     std::unique_ptr<rendering::FrameGraph> m_frame_graph;
     rendering::OrbitCamera m_camera;
     rendering::RenderWorld m_world;
-    std::optional<webgpu::ShaderModule> m_forward_shader;
-    std::optional<webgpu::RenderPipeline> m_forward_pipeline;
-    webgpu::Buffer m_uniform_buffer;
-    WGPUBindGroup m_bind_group = nullptr;
-    WGPUBindGroupLayout m_bind_group_layout = nullptr;
-
-    // Grid
-    std::optional<webgpu::ShaderModule> m_grid_shader;
-    std::optional<webgpu::RenderPipeline> m_grid_pipeline;
-    webgpu::Buffer m_grid_uniform_buffer;
-    WGPUBindGroup m_grid_bind_group = nullptr;
-    WGPUBindGroupLayout m_grid_bind_group_layout = nullptr;
+    std::vector<std::unique_ptr<rendering::IScenePass>> m_passes;
+    size_t m_active_config_index = 0;
 
     // Viewport tracking
     uint32_t m_viewport_width = 0;

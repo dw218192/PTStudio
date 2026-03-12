@@ -5,7 +5,9 @@
 #include <core/scopeUtils.h>
 #include <spdlog/spdlog.h>
 
+#include <cstdlib>
 #include <stdexcept>
+#include <string_view>
 #include <thread>
 
 #include "logging.h"
@@ -152,6 +154,20 @@ void Device::start_adapter_request() {
 
     WGPURequestAdapterOptions options = {};
     options.backendType = WGPUBackendType_Undefined;
+
+    // Allow overriding the backend via environment variable (e.g. for RenderDoc/Nsight).
+    if (const char* env = std::getenv("PTSTUDIO_GPU_BACKEND")) {
+        std::string_view val(env);
+        if (val == "Vulkan" || val == "vulkan") {
+            options.backendType = WGPUBackendType_Vulkan;
+            m_logger->info("Using Vulkan backend (PTSTUDIO_GPU_BACKEND)");
+        } else if (val == "D3D12" || val == "d3d12") {
+            options.backendType = WGPUBackendType_D3D12;
+            m_logger->info("Using D3D12 backend (PTSTUDIO_GPU_BACKEND)");
+        } else {
+            m_logger->warn("Unknown PTSTUDIO_GPU_BACKEND='{}', using default", val);
+        }
+    }
 
     WGPURequestAdapterCallbackInfo callback = WGPU_REQUEST_ADAPTER_CALLBACK_INFO_INIT;
     callback.mode = WGPUCallbackMode_AllowProcessEvents;

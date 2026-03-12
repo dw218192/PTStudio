@@ -6,7 +6,20 @@
 
 namespace pts::webgpu {
 
+// ---------------------------------------------------------------------------
+// RenderPipelineBuilder
+// ---------------------------------------------------------------------------
+
 RenderPipelineBuilder::RenderPipelineBuilder(const Device& device) : m_device(device) {
+    // Initialize with one default color target (BGRA8Unorm, write-all, no blend).
+    WGPUColorTargetState default_target = {};
+    default_target.format = WGPUTextureFormat_BGRA8Unorm;
+    default_target.writeMask = WGPUColorWriteMask_All;
+    default_target.blend = nullptr;
+
+    m_color_targets.push_back(default_target);
+    m_blend_states.push_back({});
+    m_has_blend.push_back(false);
 }
 
 auto RenderPipelineBuilder::shader(const ShaderModule& module) -> RenderPipelineBuilder& {
@@ -24,8 +37,10 @@ auto RenderPipelineBuilder::fragment_entry(std::string_view name) -> RenderPipel
     return *this;
 }
 
-auto RenderPipelineBuilder::color_format(WGPUTextureFormat format) -> RenderPipelineBuilder& {
-    m_color_format = format;
+auto RenderPipelineBuilder::color_format(WGPUTextureFormat format, uint32_t index)
+    -> RenderPipelineBuilder& {
+    ensure_target_count(index);
+    m_color_targets[index].format = format;
     return *this;
 }
 
@@ -44,9 +59,11 @@ auto RenderPipelineBuilder::front_face(WGPUFrontFace face) -> RenderPipelineBuil
     return *this;
 }
 
-auto RenderPipelineBuilder::blend_state(const WGPUBlendState& blend) -> RenderPipelineBuilder& {
-    m_blend_state = blend;
-    m_has_blend = true;
+auto RenderPipelineBuilder::blend_state(const WGPUBlendState& blend, uint32_t index)
+    -> RenderPipelineBuilder& {
+    ensure_target_count(index);
+    m_blend_states[index] = blend;
+    m_has_blend[index] = true;
     return *this;
 }
 
@@ -80,6 +97,20 @@ auto RenderPipelineBuilder::pipeline_layout(WGPUPipelineLayout layout) -> Render
     return *this;
 }
 
+void RenderPipelineBuilder::ensure_target_count(uint32_t index) {
+    auto required = static_cast<size_t>(index) + 1;
+    while (m_color_targets.size() < required) {
+        WGPUColorTargetState target = {};
+        target.format = WGPUTextureFormat_BGRA8Unorm;
+        target.writeMask = WGPUColorWriteMask_All;
+        target.blend = nullptr;
+
+        m_color_targets.push_back(target);
+        m_blend_states.push_back({});
+        m_has_blend.push_back(false);
+    }
+}
+
 auto RenderPipelineBuilder::build() const -> RenderPipeline {
     PRECONDITION_MSG(m_shader_module != nullptr, "shader module not set");
 
@@ -109,19 +140,21 @@ auto RenderPipelineBuilder::build() const -> RenderPipeline {
     vertex_state.bufferCount = wgpu_vertex_buffers.size();
     vertex_state.buffers = wgpu_vertex_buffers.empty() ? nullptr : wgpu_vertex_buffers.data();
 
-    // Color target state
-    WGPUColorTargetState color_target = {};
-    color_target.format = m_color_format;
-    color_target.writeMask = WGPUColorWriteMask_All;
-    color_target.blend = m_has_blend ? &m_blend_state : nullptr;
+    // Build color targets with fixup of interior blend pointers.
+    // Copy vectors so we can safely set pointer into local blend_states copy.
+    auto color_targets = m_color_targets;
+    auto blend_states = m_blend_states;
+    for (size_t i = 0; i < color_targets.size(); i++) {
+        color_targets[i].blend = m_has_blend[i] ? &blend_states[i] : nullptr;
+    }
 
     // Fragment state
     WGPUFragmentState fragment_state = {};
     fragment_state.module = m_shader_module;
     fragment_state.entryPoint.data = m_fragment_entry.c_str();
     fragment_state.entryPoint.length = m_fragment_entry.size();
-    fragment_state.targetCount = 1;
-    fragment_state.targets = &color_target;
+    fragment_state.targetCount = static_cast<uint32_t>(color_targets.size());
+    fragment_state.targets = color_targets.data();
 
     // Primitive state with sensible defaults
     WGPUPrimitiveState primitive_state = {};
@@ -165,6 +198,53 @@ auto RenderPipelineBuilder::build() const -> RenderPipeline {
     }
 
     return RenderPipeline(pipeline);
+}
+
+// ---------------------------------------------------------------------------
+// ComputePipelineBuilder
+// ---------------------------------------------------------------------------
+
+ComputePipelineBuilder::ComputePipelineBuilder(const Device& device) : m_device(device) {
+}
+
+auto ComputePipelineBuilder::shader(const ShaderModule& module) -> ComputePipelineBuilder& {
+    m_shader = module.handle();
+    return *this;
+}
+
+auto ComputePipelineBuilder::entry_point(std::string_view name) -> ComputePipelineBuilder& {
+    m_entry_point = std::string(name);
+    return *this;
+}
+
+auto ComputePipelineBuilder::pipeline_layout(WGPUPipelineLayout layout) -> ComputePipelineBuilder& {
+    m_layout = layout;
+    return *this;
+}
+
+auto ComputePipelineBuilder::build() const -> ComputePipeline {
+    PRECONDITION_MSG(m_shader != nullptr, "shader module not set");
+
+    // Use custom pipeline layout or create empty one
+    std::optional<PipelineLayout> owned_layout;
+    if (!m_layout) {
+        owned_layout = m_device.create_pipeline_layout();
+    }
+    WGPUPipelineLayout layout_handle = m_layout ? m_layout : owned_layout->handle();
+
+    WGPUComputePipelineDescriptor desc = {};
+    desc.layout = layout_handle;
+    desc.compute.module = m_shader;
+    desc.compute.entryPoint.data = m_entry_point.c_str();
+    desc.compute.entryPoint.length = m_entry_point.size();
+
+    WGPUComputePipeline pipeline = wgpuDeviceCreateComputePipeline(m_device.handle(), &desc);
+
+    if (pipeline == nullptr) {
+        throw std::runtime_error("ComputePipelineBuilder: failed to create compute pipeline");
+    }
+
+    return ComputePipeline(pipeline);
 }
 
 }  // namespace pts::webgpu
