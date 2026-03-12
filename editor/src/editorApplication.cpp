@@ -339,10 +339,8 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
     }
 
     // ── ImGuizmo gizmo ──
-    if (m_selected_object >= 0 &&
-        m_selected_object < static_cast<int>(m_world.objects.size()) &&
+    if (m_selected_object >= 0 && m_selected_object < static_cast<int>(m_world.objects.size()) &&
         m_viewport_width > 0 && m_viewport_height > 0) {
-
         float aspect = static_cast<float>(m_viewport_width) / static_cast<float>(m_viewport_height);
         auto view_mat = m_camera.view_matrix();
         auto proj_mat = m_camera.projection_matrix(aspect);
@@ -350,28 +348,30 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
         auto& obj = m_world.objects[m_selected_object];
 
         ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList());
-        ImGuizmo::SetRect(m_viewport_x, m_viewport_y,
-                          static_cast<float>(m_viewport_width),
+        ImGuizmo::SetRect(m_viewport_x, m_viewport_y, static_cast<float>(m_viewport_width),
                           static_cast<float>(m_viewport_height));
 
         ImGuizmo::OPERATION op = ImGuizmo::TRANSLATE;
         switch (m_gizmo_op) {
-            case GizmoOp::Translate: op = ImGuizmo::TRANSLATE; break;
-            case GizmoOp::Rotate:    op = ImGuizmo::ROTATE; break;
-            case GizmoOp::Scale:     op = ImGuizmo::SCALE; break;
+            case GizmoOp::Translate:
+                op = ImGuizmo::TRANSLATE;
+                break;
+            case GizmoOp::Rotate:
+                op = ImGuizmo::ROTATE;
+                break;
+            case GizmoOp::Scale:
+                op = ImGuizmo::SCALE;
+                break;
         }
 
-        ImGuizmo::Manipulate(
-            glm::value_ptr(view_mat),
-            glm::value_ptr(proj_mat),
-            op,
-            ImGuizmo::WORLD,
-            glm::value_ptr(obj.transform));
+        ImGuizmo::Manipulate(glm::value_ptr(view_mat), glm::value_ptr(proj_mat), op,
+                             ImGuizmo::WORLD, glm::value_ptr(obj.transform));
 
         // Write back to USD stage when gizmo is actively used
         if (ImGuizmo::IsUsing() && m_stage) {
             auto prim = m_stage->GetPrimAtPath(pxr::SdfPath(obj.prim_path));
-            INVARIANT_MSG(prim.IsValid(), "prim_path on RenderObject must reference a valid USD prim");
+            INVARIANT_MSG(prim.IsValid(),
+                          "prim_path on RenderObject must reference a valid USD prim");
 
             pxr::UsdGeomXformable xformable(prim);
             INVARIANT_MSG(xformable, "selected prim must be UsdGeomXformable");
@@ -379,8 +379,7 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
             // Convert glm::mat4 (column-major) -> GfMatrix4d (row-major) via transpose
             pxr::GfMatrix4d gf_mat;
             for (int r = 0; r < 4; ++r)
-                for (int c = 0; c < 4; ++c)
-                    gf_mat[r][c] = static_cast<double>(obj.transform[c][r]);
+                for (int c = 0; c < 4; ++c) gf_mat[r][c] = static_cast<double>(obj.transform[c][r]);
 
             xformable.ClearXformOpOrder();
             xformable.AddTransformOp().Set(gf_mat);
@@ -432,11 +431,20 @@ auto EditorApplication::handle_input(InputEvent const& event) noexcept -> void {
     if (event.input.input_type == InputType::KEYBOARD &&
         event.input.action_type == ActionType::PRESS) {
         switch (event.input.key_or_button) {
-            case ImGuiKey_W: m_gizmo_op = GizmoOp::Translate; break;
-            case ImGuiKey_E: m_gizmo_op = GizmoOp::Rotate; break;
-            case ImGuiKey_R: m_gizmo_op = GizmoOp::Scale; break;
-            case ImGuiKey_Escape: m_selected_object = -1; break;
-            default: break;
+            case ImGuiKey_W:
+                m_gizmo_op = GizmoOp::Translate;
+                break;
+            case ImGuiKey_E:
+                m_gizmo_op = GizmoOp::Rotate;
+                break;
+            case ImGuiKey_R:
+                m_gizmo_op = GizmoOp::Scale;
+                break;
+            case ImGuiKey_Escape:
+                m_selected_object = -1;
+                break;
+            default:
+                break;
         }
     }
 
