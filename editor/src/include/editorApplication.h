@@ -6,11 +6,15 @@
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/webgpu/webgpu.h>
 #include <core/windowedApplication.h>
+#include <pxr/base/tf/notice.h>
+#include <pxr/base/tf/weakBase.h>
+#include <pxr/usd/usd/notice.h>
 #include <pxr/usd/usd/stage.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace pts {
@@ -79,8 +83,27 @@ struct EditorApplication final : WindowedApplication {
     std::vector<std::unique_ptr<rendering::IScenePass>> m_passes;
     size_t m_active_config_index = 0;
 
-    // USD stage
+    // USD stage + change tracking
     pxr::UsdStageRefPtr m_stage;
+
+    struct StageListener : pxr::TfWeakBase {
+        using Callback = void (*)(void*, const pxr::UsdNotice::ObjectsChanged&);
+        void* ctx{};
+        Callback cb{};
+        void handle(const pxr::UsdNotice::ObjectsChanged& notice,
+                    const pxr::UsdStageWeakPtr& sender);
+    };
+
+    std::unique_ptr<StageListener> m_stage_listener;
+    pxr::TfNotice::Key m_listener_key;
+
+    void register_stage_listener();
+    void revoke_stage_listener();
+    void on_objects_changed(const pxr::UsdNotice::ObjectsChanged& notice);
+    void process_dirty_prims();
+
+    bool m_needs_full_resync{false};
+    std::vector<std::string> m_dirty_xform_paths;
 
     // Selection & gizmo
     int m_selected_object = -1;
