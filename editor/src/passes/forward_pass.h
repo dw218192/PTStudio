@@ -6,7 +6,7 @@
 #include <core/rendering/webgpu/shader.h>
 #include <core/rendering/webgpu/webgpu.h>
 
-#include <optional>
+#include <cstdint>
 #include <string_view>
 #include <variant>
 
@@ -28,13 +28,18 @@ class ForwardPass final : public rendering::IScenePass {
     void setup(const webgpu::Device& device) override;
     void add_to_frame_graph(rendering::FrameGraph& fg, const rendering::PassContext& ctx) override;
 
+    static constexpr uint32_t kUniformAlign = 256;
+
    private:
+    void ensure_capacity(const webgpu::Device& device, uint32_t object_count);
+
     struct Ready {
         webgpu::ShaderModule shader;
         webgpu::RenderPipeline pipeline;
         webgpu::Buffer uniform_buffer;
         WGPUBindGroup bind_group = nullptr;
         WGPUBindGroupLayout bind_group_layout = nullptr;
+        uint32_t capacity = 0;
     };
 
     std::variant<std::monostate, Ready> m_state;

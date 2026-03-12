@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -127,6 +128,32 @@ def _host_package_names(lock_file: Path) -> list[str]:
 def _cmake_preset_name(build_type: str, emscripten: bool) -> str:
     bt = build_type.lower()
     return f"conan-emscripten-{bt}" if emscripten else f"conan-{bt}"
+
+
+def _deploy_is_current(lock_file: Path, conan_deps_root: Path, build_type: str) -> bool:
+    """Check if the deploy folder is already up-to-date with the lock file.
+
+    Compares a hash of the lock file contents + build_type against a sentinel
+    stored in the deploy folder.  Returns True when they match (deploy can be
+    skipped), False otherwise.
+    """
+    sentinel = conan_deps_root / ".deploy_hash"
+    if not sentinel.exists() or not conan_deps_root.exists():
+        return False
+    h = hashlib.sha256()
+    h.update(lock_file.read_bytes())
+    h.update(build_type.encode())
+    return sentinel.read_text().strip() == h.hexdigest()
+
+
+def _write_deploy_sentinel(lock_file: Path, conan_deps_root: Path, build_type: str) -> None:
+    """Write the deploy sentinel after a successful deploy."""
+    conan_deps_root.mkdir(parents=True, exist_ok=True)
+    sentinel = conan_deps_root / ".deploy_hash"
+    h = hashlib.sha256()
+    h.update(lock_file.read_bytes())
+    h.update(build_type.encode())
+    sentinel.write_text(h.hexdigest())
 
 
 # ── Main Build Logic ─────────────────────────────────────────────────
@@ -266,6 +293,21 @@ def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> 
                 build_flags = ["--build=missing"]
 
             logger.info("Installing dependencies with Conan...")
+
+            # Skip deployers when the lock file hasn't changed since the
+            # last successful deploy — avoids the full_deploy delete-and-
+            # recopy that fails when another process holds a file handle.
+            skip_deploy = _deploy_is_current(lock_file, conan_deps_root, build_type)
+            deployer_flags: list[str] = []
+            if skip_deploy:
+                logger.info("Deploy is current (lock file unchanged) — skipping deployers")
+            else:
+                deployer_flags = [
+                    f"--deployer-folder={conan_deps_root}",
+                    "--deployer=full_deploy",
+                    "--deployer=runtime_deploy",
+                ]
+
             conan_install_args = [
                 conan_exe,
                 "install",
@@ -273,9 +315,7 @@ def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> 
                 "--lockfile",
                 str(lock_file),
                 f"--output-folder={build_dir}",
-                f"--deployer-folder={conan_deps_root}",
-                "--deployer=full_deploy",
-                "--deployer=runtime_deploy",
+                *deployer_flags,
                 *build_flags,
                 f"--profile:host={conan_profile}",
                 f"--profile:build={conan_profile}",
@@ -288,6 +328,9 @@ def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> 
                 *emscripten_flags,
             ]
             g.run(conan_install_args, log_file=install_log_file)
+
+            if not skip_deploy:
+                _write_deploy_sentinel(lock_file, conan_deps_root, build_type)
 
         # Execute prebuild steps
         if prebuild_steps:

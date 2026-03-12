@@ -122,6 +122,7 @@ void EditorApplication::on_ready() {
 void EditorApplication::set_renderer_config(size_t index) {
     PRECONDITION(index < kRendererConfigs.size());
     m_passes.clear();
+    m_passes.reserve(kRendererConfigs[index].pass_factories.size());
     for (auto& factory : kRendererConfigs[index].pass_factories) {
         m_passes.push_back(factory());
     }

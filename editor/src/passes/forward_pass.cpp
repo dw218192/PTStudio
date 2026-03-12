@@ -23,6 +23,8 @@ struct ForwardUniforms {
     float time;
 };
 static_assert(sizeof(ForwardUniforms) == 144, "ForwardUniforms must match shader std140 layout");
+static_assert(ForwardPass::kUniformAlign >= sizeof(ForwardUniforms),
+              "Alignment must be >= uniform struct size");
 
 ForwardPass::~ForwardPass() {
     if (auto* ready = std::get_if<Ready>(&m_state)) {
@@ -49,12 +51,26 @@ void ForwardPass::setup(const webgpu::Device& device) {
 
     auto shader = device.create_shader_module_from_source(*shader_src);
 
+    uint32_t initial_capacity = 64;
     auto uniform_buffer = device.create_buffer(
-        sizeof(ForwardUniforms),
+        kUniformAlign * initial_capacity,
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
 
-    auto bind_group_layout = editor_shader::create_bind_group_layout_0(device.handle());
+    // Create bind group layout with hasDynamicOffset for per-object uniforms
+    WGPUBindGroupLayoutEntry entry0 = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    entry0.binding = 0;
+    entry0.visibility =
+        static_cast<WGPUShaderStage>(WGPUShaderStage_Vertex | WGPUShaderStage_Fragment);
+    entry0.buffer.type = WGPUBufferBindingType_Uniform;
+    entry0.buffer.hasDynamicOffset = true;
+    entry0.buffer.minBindingSize = sizeof(ForwardUniforms);
 
+    WGPUBindGroupLayoutDescriptor bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
+    bgl_desc.entryCount = 1;
+    bgl_desc.entries = &entry0;
+    auto bind_group_layout = wgpuDeviceCreateBindGroupLayout(device.handle(), &bgl_desc);
+
+    // Bind group: offset=0, size=sizeof(ForwardUniforms); dynamic offset applied per draw
     WGPUBindGroupEntry bg_entry = WGPU_BIND_GROUP_ENTRY_INIT;
     bg_entry.binding = 0;
     bg_entry.buffer = uniform_buffer.handle();
@@ -87,13 +103,50 @@ void ForwardPass::setup(const webgpu::Device& device) {
 
     m_state = Ready{
         std::move(shader), std::move(pipeline), std::move(uniform_buffer),
-        bind_group,        bind_group_layout,
+        bind_group,        bind_group_layout,   initial_capacity,
     };
+}
+
+void ForwardPass::ensure_capacity(const webgpu::Device& device, uint32_t object_count) {
+    auto& ready = std::get<Ready>(m_state);
+    if (object_count <= ready.capacity) return;
+
+    uint32_t new_capacity = ready.capacity;
+    while (new_capacity < object_count) {
+        new_capacity *= 2;
+    }
+
+    ready.uniform_buffer = device.create_buffer(
+        kUniformAlign * new_capacity,
+        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
+
+    // Recreate bind group pointing to new buffer
+    if (ready.bind_group) {
+        wgpuBindGroupRelease(ready.bind_group);
+    }
+
+    WGPUBindGroupEntry bg_entry = WGPU_BIND_GROUP_ENTRY_INIT;
+    bg_entry.binding = 0;
+    bg_entry.buffer = ready.uniform_buffer.handle();
+    bg_entry.offset = 0;
+    bg_entry.size = sizeof(ForwardUniforms);
+
+    WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
+    bg_desc.layout = ready.bind_group_layout;
+    bg_desc.entryCount = 1;
+    bg_desc.entries = &bg_entry;
+    ready.bind_group = wgpuDeviceCreateBindGroup(device.handle(), &bg_desc);
+    ready.capacity = new_capacity;
 }
 
 void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::PassContext& ctx) {
     PRECONDITION(is_ready());
     auto& ready = std::get<Ready>(m_state);
+
+    auto object_count = static_cast<uint32_t>(ctx.world.objects.size());
+    if (object_count > 0) {
+        ensure_capacity(ctx.device, object_count);
+    }
 
     rendering::TextureDesc color_desc;
     color_desc.width = ctx.viewport_width;
@@ -118,18 +171,25 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
     auto bind_group = ready.bind_group;
     const auto& world = ctx.world;
 
+    // Write all per-object uniforms before encoding the render pass.
+    // Each object gets its own aligned slice so dynamic offsets work correctly.
+    for (uint32_t i = 0; i < object_count; ++i) {
+        const auto& obj = world.objects[i];
+        ForwardUniforms u;
+        u.mvp = proj_mat * view_mat * obj.transform;
+        u.model = obj.transform;
+        u.sun_dir = glm::normalize(glm::vec3(0.3f, 1.0f, 0.5f));
+        u.time = elapsed_time;
+        wgpuQueueWriteBuffer(queue, uniform_buf, i * kUniformAlign, &u, sizeof(u));
+    }
+
     fg.add_pass("forward").color(color).depth(depth).execute(
         [=, &world](WGPURenderPassEncoder pass) {
             wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
-            for (const auto& obj : world.objects) {
-                ForwardUniforms u;
-                u.mvp = proj_mat * view_mat * obj.transform;
-                u.model = obj.transform;
-                u.sun_dir = glm::normalize(glm::vec3(0.3f, 1.0f, 0.5f));
-                u.time = elapsed_time;
-                wgpuQueueWriteBuffer(queue, uniform_buf, 0, &u, sizeof(u));
-                wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 0, nullptr);
-                const auto& mesh = world.meshes[obj.mesh_index];
+            for (uint32_t i = 0; i < static_cast<uint32_t>(world.objects.size()); ++i) {
+                uint32_t dyn_offset = i * kUniformAlign;
+                wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 1, &dyn_offset);
+                const auto& mesh = world.meshes[world.objects[i].mesh_index];
                 wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh.vertex_buffer.handle(), 0,
                                                      mesh.vertex_buffer.size());
                 wgpuRenderPassEncoderSetIndexBuffer(pass, mesh.index_buffer.handle(),

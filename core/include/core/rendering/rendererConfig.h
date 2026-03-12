@@ -2,7 +2,7 @@
 
 #include <functional>
 #include <memory>
-#include <string_view>
+#include <string>
 #include <vector>
 
 namespace pts::rendering {
@@ -12,7 +12,7 @@ class IScenePass;
 using PassFactory = std::function<std::unique_ptr<IScenePass>()>;
 
 struct RendererConfig {
-    std::string_view name;
+    std::string name;
     std::vector<PassFactory> pass_factories;
 };
 
