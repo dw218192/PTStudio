@@ -165,25 +165,19 @@ def generate_cpp_properties(root: Path, build_dir: Path, windowing: str) -> None
     )
 
 
-def _find_nsight_graphics() -> Path | None:
-    """Find Nsight Graphics CLI executable on this host."""
+def _find_renderdoc() -> Path | None:
+    """Find RenderDoc UI executable on this host."""
     import shutil
 
-    # Check PATH first
-    ngfx = shutil.which("ngfx")
-    if ngfx:
-        return Path(ngfx)
+    rdoc = shutil.which("qrenderdoc")
+    if rdoc:
+        return Path(rdoc)
 
     if not is_windows():
         return None
 
-    # Scan common install locations, pick the newest version
-    base = Path("C:/Program Files/NVIDIA Corporation")
-    if not base.exists():
-        return None
-    candidates = sorted(base.glob("Nsight Graphics */host/windows-desktop-nomad-x64/ngfx.exe"),
-                        reverse=True)
-    return candidates[0] if candidates else None
+    candidate = Path("C:/Program Files/RenderDoc/qrenderdoc.exe")
+    return candidate if candidate.exists() else None
 
 
 def generate_launch_json(
@@ -237,28 +231,58 @@ def generate_launch_json(
             }
         )
 
-        # Nsight Graphics frame debugger
-        ngfx_path = _find_nsight_graphics()
-        if ngfx_path:
-            # Build PATH env for the child process via ngfx --env flag.
-            # Format: "KEY=VALUE; KEY2=VALUE2;"
+        # RenderDoc frame capture (F12 or PrintScreen to capture)
+        renderdoc_path = _find_renderdoc()
+        if renderdoc_path:
+            # Generate a .cap file so RenderDoc launches the app with
+            # the correct working directory and environment.
+            cap_file = root / "_build" / "editor.cap"
             path_value = env_vars.get("PATH", "")
-            ngfx_args = [
-                "--activity=Frame Debugger",
-                "--platform=Windows",
-                f"--exe={editor_path}",
-                f"--dir={root}",
-                "--wait-hotkey",
-            ]
+            env_str = ""
             if path_value:
-                ngfx_args.append(f"--env=PATH={path_value};")
+                env_str = f"PATH={path_value}"
+            cap_content = {
+                "rdocCaptureSettings": 1,
+                "settings": {
+                    "autoConnect": True,
+                    "commandLine": "",
+                    "environment": [
+                        {"separator": "Platform style",
+                         "type": "Prepend",
+                         "variable": "PATH",
+                         "value": path_value}
+                    ] if path_value else [],
+                    "executable": str(editor_path),
+                    "inject": False,
+                    "numQueuedFrames": 0,
+                    "options": {
+                        "allowFullscreen": True,
+                        "allowVSync": True,
+                        "apiValidation": True,
+                        "captureAllCmdLists": True,
+                        "captureCallstacks": False,
+                        "debugOutputMute": True,
+                        "delayForDebugger": 0,
+                        "hookIntoChildren": False,
+                        "refAllResources": False,
+                        "verifyBufferAccess": False,
+                    },
+                    "queuedFrameCap": 0,
+                    "workingDir": str(root),
+                },
+            }
+            cap_file.parent.mkdir(parents=True, exist_ok=True)
+            cap_file.write_text(
+                json.dumps(cap_content, indent=4) + "\n", encoding="utf-8"
+            )
+
             launch_configs.append(
                 {
-                    "name": "PTStudio Editor (Nsight Graphics)",
+                    "name": "PTStudio Editor (RenderDoc)",
                     "type": "cppvsdbg",
                     "request": "launch",
-                    "program": str(ngfx_path),
-                    "args": ngfx_args,
+                    "program": str(renderdoc_path),
+                    "args": [str(cap_file)],
                     "cwd": "${workspaceFolder}",
                     "console": "integratedTerminal",
                 }

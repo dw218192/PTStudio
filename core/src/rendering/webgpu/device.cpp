@@ -151,7 +151,7 @@ void Device::start_adapter_request() {
     PRECONDITION(init_state->instance != nullptr);
 
     WGPURequestAdapterOptions options = {};
-    options.backendType = WGPUBackendType_Undefined;
+    options.backendType = WGPUBackendType_Vulkan;
 
     WGPURequestAdapterCallbackInfo callback = WGPU_REQUEST_ADAPTER_CALLBACK_INFO_INIT;
     callback.mode = WGPUCallbackMode_AllowProcessEvents;

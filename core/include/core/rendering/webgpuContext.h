@@ -30,7 +30,7 @@ enum class WebGpuContextState {
  * The application owns this context and passes it to rendering backends.
  *
  * State is modeled using std::variant to enforce invariants at the type level:
- * - InitializingState: async request in flight; device/surface not yet available.
+ * - InitializingState: async device creation in flight; surface not yet available.
  * - ReadyState: device and surface are valid and usable.
  * - FailedState: context is not usable.
  */
@@ -68,32 +68,11 @@ class WebGpuContext {
     [[nodiscard]] auto surface_format() const noexcept -> WGPUTextureFormat;
 
    private:
-    /// Internal init phase within Initializing state
-    enum class InitPhase {
-        RequestingAdapter,
-        RequestingDevice,
-        CreatingSurface,
-    };
-
-    /// State when context is initializing (adapter/device request in flight)
+    /// State when context is initializing (device creation in flight)
     struct InitializingState {
-        // Viewport data for surface creation
         NativeViewportHandle viewport_handle{};
         Extent2D viewport_extent{};
-
-        // WebGPU handles during init
-        WGPUInstance instance = nullptr;
-        WGPUAdapter adapter = nullptr;
-        WGPUDevice device = nullptr;
-        WGPUQueue queue = nullptr;
-
-        // Request completion flags (set synchronously by callbacks during ProcessEvents)
-        bool adapter_request_done = false;
-        bool device_request_done = false;
-        WGPURequestAdapterStatus adapter_status = WGPURequestAdapterStatus_Error;
-        WGPURequestDeviceStatus device_status = WGPURequestDeviceStatus_Error;
-
-        InitPhase phase = InitPhase::RequestingAdapter;
+        std::unique_ptr<pts::webgpu::Device> device;
     };
 
     /// State when context is ready and usable
@@ -119,14 +98,8 @@ class WebGpuContext {
     explicit WebGpuContext(PrivateCtorTag, std::shared_ptr<spdlog::logger> logger);
 
    private:
-    // Transition helpers
-    void start_adapter_request();
-    void start_device_request();
     void finish_initialization();
     void set_failed();
-
-    // Helper to release resources in current state
-    void release_resources();
 
     // Helper to get state enum from variant
     [[nodiscard]] auto get_state_enum() const noexcept -> WebGpuContextState;
