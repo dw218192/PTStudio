@@ -109,7 +109,13 @@ void BufferReadback::on_tick() {
     if (m_needs_map) {
         WGPUBufferMapCallbackInfo map_cb = WGPU_BUFFER_MAP_CALLBACK_INFO_INIT;
         map_cb.mode = WGPUCallbackMode_AllowProcessEvents;
-        map_cb.callback = [](WGPUMapAsyncStatus, WGPUStringView, void*, void*) {};
+        map_cb.callback = [](WGPUMapAsyncStatus status, WGPUStringView, void* self_ptr, void*) {
+            auto* self = static_cast<BufferReadback*>(self_ptr);
+            if (status != WGPUMapAsyncStatus_Success) {
+                self->transition<IdleState>();
+            }
+        };
+        map_cb.userdata1 = this;
         wgpuBufferMapAsync(m_buffer, WGPUMapMode_Read, 0, 256, map_cb);
         m_needs_map = false;
         return;

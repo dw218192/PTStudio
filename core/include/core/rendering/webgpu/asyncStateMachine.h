@@ -22,27 +22,27 @@ class AsyncStateMachine {
     // -- state queries --------------------------------------------------------
 
     template <typename S>
-    bool is() const {
+    [[nodiscard]] bool is() const {
         return std::holds_alternative<S>(m_state);
     }
 
     template <typename S>
-    S& get() {
+    [[nodiscard]] S& get() {
         return std::get<S>(m_state);
     }
 
     template <typename S>
-    const S& get() const {
+    [[nodiscard]] const S& get() const {
         return std::get<S>(m_state);
     }
 
     template <typename S>
-    S* get_if() {
+    [[nodiscard]] S* get_if() {
         return std::get_if<S>(&m_state);
     }
 
     template <typename S>
-    const S* get_if() const {
+    [[nodiscard]] const S* get_if() const {
         return std::get_if<S>(&m_state);
     }
 

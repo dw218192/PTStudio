@@ -5,6 +5,9 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
+#include <cstdint>
+#include <thread>
+
 namespace {
 
 auto create_test_logger() -> std::shared_ptr<spdlog::logger> {
@@ -542,9 +545,9 @@ TEST_CASE("FrameGraph - picking texture CopySrc readback") {
     wgpuBufferMapAsync(readback, WGPUMapMode_Read, 0, 256, map_cb);
 
     // Poll until the GPU work completes and the buffer is mapped
-    for (int i = 0; i < 100; ++i) {
+    while (wgpuBufferGetMapState(readback) != WGPUBufferMapState_Mapped) {
         wgpuInstanceProcessEvents(f.device.instance());
-        if (wgpuBufferGetMapState(readback) == WGPUBufferMapState_Mapped) break;
+        std::this_thread::yield();
     }
 
     REQUIRE(wgpuBufferGetMapState(readback) == WGPUBufferMapState_Mapped);

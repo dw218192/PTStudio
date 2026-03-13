@@ -608,13 +608,26 @@ auto EditorApplication::handle_input(InputEvent const& event) noexcept -> void {
         if (rmb_held && event.input.action_type == ActionType::HOLD) {
             float fwd = 0.0f, right = 0.0f, up = 0.0f;
             switch (event.input.key_or_button) {
-                case ImGuiKey_W: fwd += 1.0f; break;
-                case ImGuiKey_S: fwd -= 1.0f; break;
-                case ImGuiKey_D: right += 1.0f; break;
-                case ImGuiKey_A: right -= 1.0f; break;
-                case ImGuiKey_E: up += 1.0f; break;
-                case ImGuiKey_Q: up -= 1.0f; break;
-                default: break;
+                case ImGuiKey_W:
+                    fwd += 1.0f;
+                    break;
+                case ImGuiKey_S:
+                    fwd -= 1.0f;
+                    break;
+                case ImGuiKey_D:
+                    right += 1.0f;
+                    break;
+                case ImGuiKey_A:
+                    right -= 1.0f;
+                    break;
+                case ImGuiKey_E:
+                    up += 1.0f;
+                    break;
+                case ImGuiKey_Q:
+                    up -= 1.0f;
+                    break;
+                default:
+                    break;
             }
             if (fwd != 0.0f || right != 0.0f || up != 0.0f) {
                 m_camera.move(fwd, right, up, ImGui::GetIO().DeltaTime);

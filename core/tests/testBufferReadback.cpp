@@ -71,6 +71,7 @@ TEST_CASE("BufferReadback - full readback of known pixel value") {
     REQUIRE(cmd_buf);
     wgpuQueueSubmit(device.queue(), 1, &cmd_buf);
     wgpuCommandBufferRelease(cmd_buf);
+    wgpuCommandEncoderRelease(encoder);
 
     // Poll until mapped (tick_until_settled uses wgpuInstanceProcessEvents)
     rb.tick_until_settled();

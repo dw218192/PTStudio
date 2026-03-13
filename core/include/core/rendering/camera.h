@@ -55,7 +55,7 @@ class OrbitCamera {
     static constexpr float k_zoom_speed = 0.15f;
     static constexpr float k_min_distance = 0.1f;
     static constexpr float k_max_distance = 500.0f;
-    static constexpr float k_max_pitch = 1.5f;   // ~86 degrees, avoid flipping
+    static constexpr float k_max_pitch = 1.5f;  // ~86 degrees, avoid flipping
     static constexpr float k_move_speed = 5.0f;
 };
 

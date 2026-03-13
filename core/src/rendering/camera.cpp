@@ -49,8 +49,8 @@ void OrbitCamera::move(float forward, float right_amount, float up_amount, float
     auto up_dir = glm::vec3(0.0f, 1.0f, 0.0f);
     auto forward_dir = glm::normalize(m_target - position());
 
-    auto offset = (forward_dir * forward + right_dir * right_amount + up_dir * up_amount) *
-                  k_move_speed * dt;
+    auto offset =
+        (forward_dir * forward + right_dir * right_amount + up_dir * up_amount) * k_move_speed * dt;
     m_target += offset;
 }
 
