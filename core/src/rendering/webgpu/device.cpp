@@ -22,39 +22,29 @@ Device::Device(WGPUInstance instance, WGPUDevice device, WGPUQueue queue,
     INVARIANT_MSG(queue != nullptr, "queue handle is null");
     INVARIANT_MSG(m_logger != nullptr, "logger is null");
 
-    m_state = ReadyState{instance, device, queue};
+    transition<DeviceReadyState>(instance, device, queue);
 
     m_logger->debug("Device constructed successfully (device={}, queue={})",
                     static_cast<void*>(device), static_cast<void*>(queue));
 }
 
-Device::Device(PrivateCtorTag, std::shared_ptr<spdlog::logger> logger, InitializingState init_state)
-    : m_state(std::move(init_state)), m_logger(std::move(logger)) {
+Device::Device(PrivateCtorTag, std::shared_ptr<spdlog::logger> logger,
+               DeviceInitializingState init_state)
+    : m_logger(std::move(logger)) {
     INVARIANT_MSG(m_logger != nullptr, "logger is null");
+    transition<DeviceInitializingState>(std::move(init_state));
 }
 
-Device::Device(Device&& other) noexcept : m_state(FailedState{}), m_logger(nullptr) {
-    // Moving during initialization is unsafe: async callbacks hold raw pointers to
-    // InitializingState
-    INVARIANT_MSG(!std::holds_alternative<InitializingState>(other.m_state),
-                  "Device cannot be moved during initialization");
-    m_state = std::move(other.m_state);
-    m_logger = std::move(other.m_logger);
-    other.m_state = FailedState{};
+Device::Device(Device&& other) noexcept
+    : Base(std::move(other)), m_logger(std::move(other.m_logger)) {
 }
 
 auto Device::operator=(Device&& other) noexcept -> Device& {
     if (this != &other) {
-        // Moving during initialization is unsafe: async callbacks hold raw pointers to
-        // InitializingState
-        INVARIANT_MSG(!std::holds_alternative<InitializingState>(m_state),
-                      "Device cannot be move-assigned to during initialization");
-        INVARIANT_MSG(!std::holds_alternative<InitializingState>(other.m_state),
-                      "Device cannot be move-assigned from during initialization");
+        INVARIANT(!is_pending());
         release_resources();
-        m_state = std::move(other.m_state);
+        Base::operator=(std::move(other));
         m_logger = std::move(other.m_logger);
-        other.m_state = FailedState{};
     }
     return *this;
 }
@@ -69,11 +59,7 @@ auto Device::create(std::shared_ptr<spdlog::logger> logger) -> Device {
     auto device = create_async(logger);
     POSTCONDITION_MSG(device != nullptr, "create_async returned nullptr");
 
-    // Poll until ready or failed
-    while (!device->is_ready() && !device->is_failed()) {
-        device->tick_init();
-        std::this_thread::yield();
-    }
+    device->tick_until_settled();
 
     if (device->is_failed()) {
         throw std::runtime_error("Failed to create WebGPU device");
@@ -87,14 +73,14 @@ auto Device::create_async(std::shared_ptr<spdlog::logger> logger) -> std::unique
 
     logger->info("Creating WebGPU device...");
 
-    InitializingState init_state{};
+    DeviceInitializingState init_state{};
 
     // Create WebGPU instance
     WGPUInstanceDescriptor instance_descriptor = WGPU_INSTANCE_DESCRIPTOR_INIT;
     init_state.instance = wgpuCreateInstance(&instance_descriptor);
     if (init_state.instance == nullptr) {
         logger->error("Failed to create WebGPU instance");
-        auto device = std::make_unique<Device>(PrivateCtorTag{}, logger, InitializingState{});
+        auto device = std::make_unique<Device>(PrivateCtorTag{}, logger, DeviceInitializingState{});
         device->set_failed();
         return device;
     }
@@ -108,16 +94,20 @@ auto Device::create_async(std::shared_ptr<spdlog::logger> logger) -> std::unique
 }
 
 void Device::tick_init() {
-    auto* init_state = std::get_if<InitializingState>(&m_state);
+    if (!is_pending()) {
+        return;
+    }
+    tick();
+}
+
+void Device::on_tick() {
+    auto* init_state = get_if<DeviceInitializingState>();
     if (init_state == nullptr) {
         return;
     }
 
-    // Process WebGPU events to advance callbacks
-    wgpuInstanceProcessEvents(init_state->instance);
-
     switch (init_state->phase) {
-        case InitPhase::RequestingAdapter:
+        case DeviceInitPhase::RequestingAdapter:
             if (init_state->adapter_request_done) {
                 if (init_state->adapter_status != WGPURequestAdapterStatus_Success ||
                     init_state->adapter == nullptr) {
@@ -131,7 +121,7 @@ void Device::tick_init() {
             }
             break;
 
-        case InitPhase::RequestingDevice:
+        case DeviceInitPhase::RequestingDevice:
             if (init_state->device_request_done) {
                 if (init_state->device_status != WGPURequestDeviceStatus_Success ||
                     init_state->device == nullptr) {
@@ -147,8 +137,22 @@ void Device::tick_init() {
     }
 }
 
+auto Device::is_pending() const -> bool {
+    return is<DeviceInitializingState>();
+}
+
+auto Device::wgpu_instance() const -> WGPUInstance {
+    if (auto* init = get_if<DeviceInitializingState>()) {
+        return init->instance;
+    }
+    if (auto* ready = get_if<DeviceReadyState>()) {
+        return ready->instance;
+    }
+    return nullptr;
+}
+
 void Device::start_adapter_request() {
-    auto* init_state = std::get_if<InitializingState>(&m_state);
+    auto* init_state = get_if<DeviceInitializingState>();
     PRECONDITION(init_state != nullptr);
     PRECONDITION(init_state->instance != nullptr);
 
@@ -174,7 +178,7 @@ void Device::start_adapter_request() {
     callback.callback = [](WGPURequestAdapterStatus status, WGPUAdapter adapter, WGPUStringView,
                            void* userdata1, void*) {
         PRECONDITION(userdata1 != nullptr);
-        auto* init_data = static_cast<InitializingState*>(userdata1);
+        auto* init_data = static_cast<DeviceInitializingState*>(userdata1);
         init_data->adapter_status = status;
         init_data->adapter = adapter;
         init_data->adapter_request_done = true;
@@ -183,11 +187,11 @@ void Device::start_adapter_request() {
 
     m_logger->debug("Requesting WebGPU adapter...");
     wgpuInstanceRequestAdapter(init_state->instance, &options, callback);
-    init_state->phase = InitPhase::RequestingAdapter;
+    init_state->phase = DeviceInitPhase::RequestingAdapter;
 }
 
 void Device::start_device_request() {
-    auto* init_state = std::get_if<InitializingState>(&m_state);
+    auto* init_state = get_if<DeviceInitializingState>();
     PRECONDITION(init_state != nullptr);
     PRECONDITION(init_state->adapter != nullptr);
 
@@ -247,7 +251,7 @@ void Device::start_device_request() {
     callback.callback = [](WGPURequestDeviceStatus status, WGPUDevice device, WGPUStringView,
                            void* userdata1, void*) {
         PRECONDITION(userdata1 != nullptr);
-        auto* init_data = static_cast<InitializingState*>(userdata1);
+        auto* init_data = static_cast<DeviceInitializingState*>(userdata1);
         init_data->device_status = status;
         init_data->device = device;
         init_data->device_request_done = true;
@@ -256,11 +260,11 @@ void Device::start_device_request() {
 
     m_logger->debug("Requesting WebGPU device...");
     wgpuAdapterRequestDevice(init_state->adapter, &device_descriptor, callback);
-    init_state->phase = InitPhase::RequestingDevice;
+    init_state->phase = DeviceInitPhase::RequestingDevice;
 }
 
 void Device::finish_initialization() {
-    auto* init_state = std::get_if<InitializingState>(&m_state);
+    auto* init_state = get_if<DeviceInitializingState>();
     PRECONDITION(init_state != nullptr);
     PRECONDITION(init_state->device != nullptr);
 
@@ -287,7 +291,7 @@ void Device::finish_initialization() {
     init_state->instance = nullptr;
     init_state->device = nullptr;
 
-    m_state = ReadyState{instance, device, queue};
+    transition<DeviceReadyState>(instance, device, queue);
 
     m_logger->info("WebGPU device created successfully (Dawn backend)");
     m_logger->debug("Device lost and uncaptured error callbacks are registered");
@@ -295,14 +299,14 @@ void Device::finish_initialization() {
 
 void Device::set_failed() {
     release_resources();
-    m_state = FailedState{};
+    transition<DeviceFailedState>();
 }
 
 void Device::release_resources() {
     std::visit(
         [](auto& state) {
             using T = std::decay_t<decltype(state)>;
-            if constexpr (std::is_same_v<T, InitializingState>) {
+            if constexpr (std::is_same_v<T, DeviceInitializingState>) {
                 if (state.adapter) {
                     wgpuAdapterRelease(state.adapter);
                 }
@@ -312,7 +316,7 @@ void Device::release_resources() {
                 if (state.instance) {
                     wgpuInstanceRelease(state.instance);
                 }
-            } else if constexpr (std::is_same_v<T, ReadyState>) {
+            } else if constexpr (std::is_same_v<T, DeviceReadyState>) {
                 if (state.queue) {
                     wgpuQueueRelease(state.queue);
                 }
@@ -327,55 +331,46 @@ void Device::release_resources() {
         m_state);
 }
 
-auto Device::get_state_enum() const noexcept -> DeviceState {
-    return std::visit(
-        [](const auto& state) -> DeviceState {
-            using T = std::decay_t<decltype(state)>;
-            if constexpr (std::is_same_v<T, InitializingState>) {
-                return DeviceState::Initializing;
-            } else if constexpr (std::is_same_v<T, ReadyState>) {
-                return DeviceState::Ready;
-            } else {
-                return DeviceState::Failed;
-            }
-        },
-        m_state);
-}
-
 auto Device::state() const noexcept -> DeviceState {
-    return get_state_enum();
+    if (is<DeviceInitializingState>()) {
+        return DeviceState::Initializing;
+    }
+    if (is<DeviceReadyState>()) {
+        return DeviceState::Ready;
+    }
+    return DeviceState::Failed;
 }
 
 auto Device::is_ready() const noexcept -> bool {
-    return std::holds_alternative<ReadyState>(m_state);
+    return is<DeviceReadyState>();
 }
 
 auto Device::is_failed() const noexcept -> bool {
-    return std::holds_alternative<FailedState>(m_state);
+    return is<DeviceFailedState>();
 }
 
 auto Device::is_initializing() const noexcept -> bool {
-    return std::holds_alternative<InitializingState>(m_state);
+    return is<DeviceInitializingState>();
 }
 
 auto Device::instance() const noexcept -> WGPUInstance {
     PRECONDITION_MSG(is_ready(), "instance() called when not Ready");
-    return std::get<ReadyState>(m_state).instance;
+    return get<DeviceReadyState>().instance;
 }
 
 auto Device::handle() const noexcept -> WGPUDevice {
     PRECONDITION_MSG(is_ready(), "handle() called when not Ready");
-    return std::get<ReadyState>(m_state).device;
+    return get<DeviceReadyState>().device;
 }
 
 auto Device::queue() const noexcept -> WGPUQueue {
     PRECONDITION_MSG(is_ready(), "queue() called when not Ready");
-    return std::get<ReadyState>(m_state).queue;
+    return get<DeviceReadyState>().queue;
 }
 
 auto Device::create_buffer(std::size_t size, WGPUBufferUsage usage) const -> Buffer {
     PRECONDITION_MSG(is_ready(), "create_buffer() called when not Ready");
-    const auto& ready = std::get<ReadyState>(m_state);
+    const auto& ready = get<DeviceReadyState>();
     m_logger->debug("Creating buffer (size={}, usage={})", size, usage);
 
     WGPUBufferDescriptor descriptor = {};
@@ -404,7 +399,7 @@ auto Device::create_buffer(std::size_t size, WGPUBufferUsage usage) const -> Buf
 
 auto Device::create_shader_module_from_source(std::string_view wgsl_source) const -> ShaderModule {
     PRECONDITION_MSG(is_ready(), "create_shader_module_from_source() called when not Ready");
-    const auto& ready = std::get<ReadyState>(m_state);
+    const auto& ready = get<DeviceReadyState>();
     m_logger->debug("Creating shader module from source ({} bytes)", wgsl_source.size());
 
     if (wgsl_source.empty()) {
@@ -437,7 +432,7 @@ auto Device::create_shader_module_from_source(std::string_view wgsl_source) cons
 
 auto Device::create_pipeline_layout() const -> PipelineLayout {
     PRECONDITION_MSG(is_ready(), "create_pipeline_layout() called when not Ready");
-    const auto& ready = std::get<ReadyState>(m_state);
+    const auto& ready = get<DeviceReadyState>();
     m_logger->debug("Creating empty pipeline layout");
 
     WGPUPipelineLayoutDescriptor layout_desc = {};
