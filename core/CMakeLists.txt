@@ -79,6 +79,11 @@ file(GLOB_RECURSE core_webgpu_sources
 )
 list(APPEND core_rendering_sources ${core_webgpu_sources})
 
+file(GLOB_RECURSE core_adapter_sources
+	${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/adapters/*.*
+)
+list(APPEND core_rendering_sources ${core_adapter_sources})
+
 set(src_files ${core_src_files} ${core_rendering_sources})
 list(REMOVE_DUPLICATES src_files)
 

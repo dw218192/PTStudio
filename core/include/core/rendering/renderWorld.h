@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/rendering/vertex.h>
 #include <core/rendering/webgpu/buffer.h>
 
 #include <cstdint>
@@ -8,13 +9,6 @@
 #include <vector>
 
 namespace pts::rendering {
-
-struct Vertex {
-    float position[3];
-    float normal[3];
-    float color[3];
-    float uv[2];
-};
 
 struct Mesh {
     webgpu::Buffer vertex_buffer;
