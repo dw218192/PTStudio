@@ -61,7 +61,7 @@ auto Device::create(std::shared_ptr<spdlog::logger> logger) -> Device {
 
     device->tick_until_settled();
 
-    if (device->is_failed()) {
+    if (device->is<DeviceFailedState>()) {
         throw std::runtime_error("Failed to create WebGPU device");
     }
 
@@ -91,13 +91,6 @@ auto Device::create_async(std::shared_ptr<spdlog::logger> logger) -> std::unique
     device->start_adapter_request();
 
     return device;
-}
-
-void Device::tick_init() {
-    if (!is_pending()) {
-        return;
-    }
-    tick();
 }
 
 void Device::on_tick() {
@@ -331,45 +324,23 @@ void Device::release_resources() {
         m_state);
 }
 
-auto Device::state() const noexcept -> DeviceState {
-    if (is<DeviceInitializingState>()) {
-        return DeviceState::Initializing;
-    }
-    if (is<DeviceReadyState>()) {
-        return DeviceState::Ready;
-    }
-    return DeviceState::Failed;
-}
-
-auto Device::is_ready() const noexcept -> bool {
-    return is<DeviceReadyState>();
-}
-
-auto Device::is_failed() const noexcept -> bool {
-    return is<DeviceFailedState>();
-}
-
-auto Device::is_initializing() const noexcept -> bool {
-    return is<DeviceInitializingState>();
-}
-
 auto Device::instance() const noexcept -> WGPUInstance {
-    PRECONDITION_MSG(is_ready(), "instance() called when not Ready");
+    PRECONDITION_MSG(is<DeviceReadyState>(), "instance() called when not Ready");
     return get<DeviceReadyState>().instance;
 }
 
 auto Device::handle() const noexcept -> WGPUDevice {
-    PRECONDITION_MSG(is_ready(), "handle() called when not Ready");
+    PRECONDITION_MSG(is<DeviceReadyState>(), "handle() called when not Ready");
     return get<DeviceReadyState>().device;
 }
 
 auto Device::queue() const noexcept -> WGPUQueue {
-    PRECONDITION_MSG(is_ready(), "queue() called when not Ready");
+    PRECONDITION_MSG(is<DeviceReadyState>(), "queue() called when not Ready");
     return get<DeviceReadyState>().queue;
 }
 
 auto Device::create_buffer(std::size_t size, WGPUBufferUsage usage) const -> Buffer {
-    PRECONDITION_MSG(is_ready(), "create_buffer() called when not Ready");
+    PRECONDITION_MSG(is<DeviceReadyState>(), "create_buffer() called when not Ready");
     const auto& ready = get<DeviceReadyState>();
     m_logger->debug("Creating buffer (size={}, usage={})", size, usage);
 
@@ -398,7 +369,8 @@ auto Device::create_buffer(std::size_t size, WGPUBufferUsage usage) const -> Buf
 }
 
 auto Device::create_shader_module_from_source(std::string_view wgsl_source) const -> ShaderModule {
-    PRECONDITION_MSG(is_ready(), "create_shader_module_from_source() called when not Ready");
+    PRECONDITION_MSG(is<DeviceReadyState>(),
+                     "create_shader_module_from_source() called when not Ready");
     const auto& ready = get<DeviceReadyState>();
     m_logger->debug("Creating shader module from source ({} bytes)", wgsl_source.size());
 
@@ -431,7 +403,7 @@ auto Device::create_shader_module_from_source(std::string_view wgsl_source) cons
 }
 
 auto Device::create_pipeline_layout() const -> PipelineLayout {
-    PRECONDITION_MSG(is_ready(), "create_pipeline_layout() called when not Ready");
+    PRECONDITION_MSG(is<DeviceReadyState>(), "create_pipeline_layout() called when not Ready");
     const auto& ready = get<DeviceReadyState>();
     m_logger->debug("Creating empty pipeline layout");
 

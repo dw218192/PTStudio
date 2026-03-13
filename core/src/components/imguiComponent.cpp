@@ -55,7 +55,8 @@ ImGuiComponent::~ImGuiComponent() {
 void ImGuiComponent::ensure_rendering_backend() {
     if (m_imgui_rendering) return;
 
-    INVARIANT_MSG(m_webgpu_context.is_ready(), "WebGPU context must be ready");
+    INVARIANT_MSG(m_webgpu_context.is<rendering::ContextReadyState>(),
+                  "WebGPU context must be ready");
 
     auto imgui_components =
         rendering::create_imgui_components(m_webgpu_context, m_viewport, m_logging_manager);

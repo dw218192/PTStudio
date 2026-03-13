@@ -34,7 +34,7 @@ auto WebGpuContext::create(const IViewport& viewport, pts::LoggingManager& loggi
     auto context = std::make_unique<WebGpuContext>(PrivateCtorTag{}, logger);
 
     auto device = pts::webgpu::Device::create_async(logger);
-    if (device->is_failed()) {
+    if (device->is<pts::webgpu::DeviceFailedState>()) {
         context->transition<ContextFailedState>();
         return context;
     }
@@ -50,13 +50,6 @@ auto WebGpuContext::create(const IViewport& viewport, pts::LoggingManager& loggi
     return context;
 }
 
-void WebGpuContext::tick_init() {
-    if (!is_pending()) {
-        return;
-    }
-    tick();
-}
-
 void WebGpuContext::on_tick() {
     auto* init_state = get_if<ContextInitializingState>();
     if (init_state == nullptr) {
@@ -66,14 +59,14 @@ void WebGpuContext::on_tick() {
     PRECONDITION(init_state->device != nullptr);
 
     // Advance device initialization
-    init_state->device->tick_init();
+    init_state->device->tick();
 
-    if (init_state->device->is_failed()) {
+    if (init_state->device->is<pts::webgpu::DeviceFailedState>()) {
         set_failed();
         return;
     }
 
-    if (init_state->device->is_ready()) {
+    if (init_state->device->is<pts::webgpu::DeviceReadyState>()) {
         finish_initialization();
     }
 }
@@ -92,7 +85,7 @@ void WebGpuContext::finish_initialization() {
     auto* init_state = get_if<ContextInitializingState>();
     PRECONDITION(init_state != nullptr);
     PRECONDITION(init_state->device != nullptr);
-    PRECONDITION(init_state->device->is_ready());
+    PRECONDITION(init_state->device->is<pts::webgpu::DeviceReadyState>());
 
     // Create Surface
     pts::webgpu::Surface surface_wrapper = pts::webgpu::Surface::create(
@@ -108,40 +101,18 @@ void WebGpuContext::set_failed() {
     transition<ContextFailedState>();
 }
 
-auto WebGpuContext::state() const noexcept -> WebGpuContextState {
-    if (is<ContextInitializingState>()) {
-        return WebGpuContextState::Initializing;
-    }
-    if (is<ContextReadyState>()) {
-        return WebGpuContextState::Ready;
-    }
-    return WebGpuContextState::Failed;
-}
-
-auto WebGpuContext::is_ready() const noexcept -> bool {
-    return is<ContextReadyState>();
-}
-
-auto WebGpuContext::is_failed() const noexcept -> bool {
-    return is<ContextFailedState>();
-}
-
-auto WebGpuContext::is_initializing() const noexcept -> bool {
-    return is<ContextInitializingState>();
-}
-
 auto WebGpuContext::device() const noexcept -> const pts::webgpu::Device& {
-    PRECONDITION_MSG(is_ready(), "device() called when not Ready");
+    PRECONDITION_MSG(is<ContextReadyState>(), "device() called when not Ready");
     return get<ContextReadyState>().device;
 }
 
 auto WebGpuContext::surface() noexcept -> pts::webgpu::Surface& {
-    PRECONDITION_MSG(is_ready(), "surface() called when not Ready");
+    PRECONDITION_MSG(is<ContextReadyState>(), "surface() called when not Ready");
     return get<ContextReadyState>().surface;
 }
 
 auto WebGpuContext::surface_format() const noexcept -> WGPUTextureFormat {
-    PRECONDITION_MSG(is_ready(), "surface_format() called when not Ready");
+    PRECONDITION_MSG(is<ContextReadyState>(), "surface_format() called when not Ready");
     return get<ContextReadyState>().surface.format();
 }
 

@@ -15,13 +15,6 @@ class logger;
 
 namespace pts::webgpu {
 
-/// State of the Device during its lifecycle.
-enum class DeviceState {
-    Initializing,  ///< Adapter/device request in flight; usage disallowed
-    Ready,         ///< Device is valid and usable
-    Failed,        ///< Initialization failed; device is not usable
-};
-
 /// Internal init phase within Initializing state
 enum class DeviceInitPhase {
     RequestingAdapter,
@@ -73,13 +66,16 @@ struct DeviceReadyState {
 /// State when initialization failed
 struct DeviceFailedState {};
 
-class Device : private AsyncStateMachine<Device, DeviceInitializingState, DeviceReadyState,
-                                         DeviceFailedState> {
+class Device : public AsyncStateMachine<Device, DeviceInitializingState, DeviceReadyState,
+                                        DeviceFailedState> {
     using Base =
         AsyncStateMachine<Device, DeviceInitializingState, DeviceReadyState, DeviceFailedState>;
-    friend Base;
 
    public:
+    using Base::is;
+    using Base::tick;
+    using Base::tick_until_settled;
+
     /// Constructor for creating a Device with already-acquired handles.
     /// Enforces invariants: all handles must be non-null or throws std::runtime_error.
     /// Device starts in Ready state.
@@ -99,23 +95,15 @@ class Device : private AsyncStateMachine<Device, DeviceInitializingState, Device
     [[nodiscard]] static auto create(std::shared_ptr<spdlog::logger> logger) -> Device;
 
     /// Async factory: starts device creation and returns Initializing device.
-    /// Call tick_init() until is_ready() or is_failed().
+    /// Call tick() until is<DeviceReadyState>() or is<DeviceFailedState>().
     [[nodiscard]] static auto create_async(std::shared_ptr<spdlog::logger> logger)
         -> std::unique_ptr<Device>;
 
-    /// Process WebGPU events to advance initialization. Call until is_ready() or is_failed().
-    void tick_init();
-
-    [[nodiscard]] auto state() const noexcept -> DeviceState;
-    [[nodiscard]] auto is_ready() const noexcept -> bool;
-    [[nodiscard]] auto is_failed() const noexcept -> bool;
-    [[nodiscard]] auto is_initializing() const noexcept -> bool;
-
-    /// Access instance handle. Only valid when state() == Ready.
+    /// Access instance handle. Only valid when is<DeviceReadyState>().
     [[nodiscard]] auto instance() const noexcept -> WGPUInstance;
-    /// Access device handle. Only valid when state() == Ready.
+    /// Access device handle. Only valid when is<DeviceReadyState>().
     [[nodiscard]] auto handle() const noexcept -> WGPUDevice;
-    /// Access queue handle. Only valid when state() == Ready.
+    /// Access queue handle. Only valid when is<DeviceReadyState>().
     [[nodiscard]] auto queue() const noexcept -> WGPUQueue;
 
     [[nodiscard]] auto create_buffer(std::size_t size, WGPUBufferUsage usage) const -> Buffer;
@@ -124,20 +112,18 @@ class Device : private AsyncStateMachine<Device, DeviceInitializingState, Device
     [[nodiscard]] auto create_pipeline_layout() const -> PipelineLayout;
 
    private:
-    // Tag type to enable make_unique with private constructor
     struct PrivateCtorTag {};
 
    public:
-    // Constructor accessible via make_unique (use PrivateCtorTag to prevent public use)
     explicit Device(PrivateCtorTag, std::shared_ptr<spdlog::logger> logger,
                     DeviceInitializingState init_state);
 
-   private:
     // CRTP interface for AsyncStateMachine
     void on_tick();
     [[nodiscard]] auto is_pending() const -> bool;
     [[nodiscard]] auto wgpu_instance() const -> WGPUInstance;
 
+   private:
     void start_adapter_request();
     void start_device_request();
     void finish_initialization();
