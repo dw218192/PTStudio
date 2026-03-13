@@ -16,12 +16,14 @@ struct VsIn {
     float3 position : POSITION;
     float3 normal   : NORMAL;
     float3 color    : COLOR;
+    float2 uv       : TEXCOORD;
 };
 
 struct VsOut {
-    float4 position   : SV_Position;
+    float4 position     : SV_Position;
     float3 world_normal : NORMAL;
-    float3 color      : COLOR;
+    float3 color        : COLOR;
+    float2 uv           : TEXCOORD;
 };
 
 [shader("vertex")]
@@ -30,6 +32,7 @@ VsOut vs_main(VsIn input) {
     output.position = mul(u.mvp, float4(input.position, 1.0));
     output.world_normal = normalize(mul(u.model, float4(input.normal, 0.0)).xyz);
     output.color = input.color;
+    output.uv = input.uv;
     return output;
 }
 

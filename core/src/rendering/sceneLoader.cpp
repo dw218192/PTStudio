@@ -28,11 +28,19 @@ void populate_from_stage(RenderWorld& world, const pxr::UsdStageRefPtr& stage,
         mesh.GetFaceVertexIndicesAttr().Get(&face_vertex_indices);
 
         // Read displayColor
-        pxr::VtVec3fArray display_colors;
         auto primvars_api = pxr::UsdGeomPrimvarsAPI(prim);
+
+        pxr::VtVec3fArray display_colors;
         auto color_pv = primvars_api.GetPrimvar(pxr::TfToken("displayColor"));
         if (color_pv) {
             color_pv.Get(&display_colors);
+        }
+
+        // Read UVs (primvars:st)
+        pxr::VtVec2fArray uvs;
+        auto uv_pv = primvars_api.GetPrimvar(pxr::TfToken("st"));
+        if (uv_pv) {
+            uv_pv.Get(&uvs);
         }
 
         // Build vertex and index arrays
@@ -119,6 +127,19 @@ void populate_from_stage(RenderWorld& world, const pxr::UsdStageRefPtr& stage,
                     v.color[0] = 1.0f;
                     v.color[1] = 1.0f;
                     v.color[2] = 1.0f;
+                }
+
+                // UVs
+                if (!uvs.empty()) {
+                    if (uvs.size() == face_vertex_indices.size()) {
+                        // faceVarying interpolation
+                        v.uv[0] = uvs[fv_offset + j][0];
+                        v.uv[1] = uvs[fv_offset + j][1];
+                    } else if (uvs.size() == points.size()) {
+                        // vertex interpolation
+                        v.uv[0] = uvs[pt_idx][0];
+                        v.uv[1] = uvs[pt_idx][1];
+                    }
                 }
 
                 vertices.push_back(v);
