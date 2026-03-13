@@ -101,6 +101,7 @@ struct EditorApplication final : WindowedApplication {
     void revoke_stage_listener();
     void on_objects_changed(const pxr::UsdNotice::ObjectsChanged& notice);
     void process_dirty_prims();
+    void normalize_xform_ops(const std::string& prim_path);
 
     bool m_needs_full_resync{false};
     std::vector<std::string> m_dirty_xform_paths;

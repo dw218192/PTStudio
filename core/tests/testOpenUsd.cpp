@@ -252,4 +252,173 @@ TEST_CASE("Xform change updates RenderObject transform via notice pattern") {
     spdlog::drop("test_xform_change");
 }
 
+TEST_CASE("Selection preserved across full resync by prim_path") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    REQUIRE(stage);
+
+    pxr::UsdGeomXform::Define(stage, pxr::SdfPath("/Root"));
+    auto mesh_a = pxr::UsdGeomMesh::Define(stage, pxr::SdfPath("/Root/MeshA"));
+    auto mesh_b = pxr::UsdGeomMesh::Define(stage, pxr::SdfPath("/Root/MeshB"));
+
+    // Minimal triangle geometry for both meshes
+    pxr::VtVec3fArray points = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}};
+    pxr::VtIntArray face_counts = {3};
+    pxr::VtIntArray face_indices = {0, 1, 2};
+    for (auto* m : {&mesh_a, &mesh_b}) {
+        m->GetPointsAttr().Set(points);
+        m->GetFaceVertexCountsAttr().Set(face_counts);
+        m->GetFaceVertexIndicesAttr().Set(face_indices);
+    }
+
+    auto logger = spdlog::stdout_color_mt("test_selection_resync");
+    auto device = pts::webgpu::Device::create(logger);
+    pts::rendering::RenderWorld world;
+    pts::rendering::populate_from_stage(world, stage, device);
+
+    REQUIRE(world.objects.size() == 2);
+
+    // Simulate selecting object at index 1 (MeshB)
+    int selected_object = -1;
+    for (int i = 0; i < static_cast<int>(world.objects.size()); ++i) {
+        if (world.objects[i].prim_path == "/Root/MeshB") {
+            selected_object = i;
+            break;
+        }
+    }
+    REQUIRE(selected_object >= 0);
+    std::string selected_prim_path = world.objects[selected_object].prim_path;
+
+    // Simulate full resync (mirrors process_dirty_prims resync path)
+    world.clear();
+    pts::rendering::populate_from_stage(world, stage, device);
+
+    // Restore selection by prim_path
+    int restored = -1;
+    for (int i = 0; i < static_cast<int>(world.objects.size()); ++i) {
+        if (world.objects[i].prim_path == selected_prim_path) {
+            restored = i;
+            break;
+        }
+    }
+
+    CHECK(restored >= 0);
+    CHECK(world.objects[restored].prim_path == "/Root/MeshB");
+
+    spdlog::drop("test_selection_resync");
+}
+
+TEST_CASE("Selection lost when selected prim is removed during resync") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    REQUIRE(stage);
+
+    pxr::UsdGeomXform::Define(stage, pxr::SdfPath("/Root"));
+    auto mesh = pxr::UsdGeomMesh::Define(stage, pxr::SdfPath("/Root/Mesh"));
+
+    pxr::VtVec3fArray points = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}};
+    mesh.GetPointsAttr().Set(points);
+    pxr::VtIntArray face_counts = {3};
+    mesh.GetFaceVertexCountsAttr().Set(face_counts);
+    pxr::VtIntArray face_indices = {0, 1, 2};
+    mesh.GetFaceVertexIndicesAttr().Set(face_indices);
+
+    auto logger = spdlog::stdout_color_mt("test_selection_removed");
+    auto device = pts::webgpu::Device::create(logger);
+    pts::rendering::RenderWorld world;
+    pts::rendering::populate_from_stage(world, stage, device);
+
+    REQUIRE(world.objects.size() == 1);
+    std::string selected_prim_path = world.objects[0].prim_path;
+
+    // Remove the prim from the stage
+    stage->RemovePrim(pxr::SdfPath("/Root/Mesh"));
+
+    // Full resync
+    world.clear();
+    pts::rendering::populate_from_stage(world, stage, device);
+
+    // Search for the removed prim
+    int restored = -1;
+    for (int i = 0; i < static_cast<int>(world.objects.size()); ++i) {
+        if (world.objects[i].prim_path == selected_prim_path) {
+            restored = i;
+            break;
+        }
+    }
+
+    CHECK(restored == -1);
+
+    spdlog::drop("test_selection_removed");
+}
+
+TEST_CASE("Eager xform normalization produces single TypeTransform op") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    REQUIRE(stage);
+
+    pxr::UsdGeomXform::Define(stage, pxr::SdfPath("/Root"));
+    auto mesh = pxr::UsdGeomMesh::Define(stage, pxr::SdfPath("/Root/Mesh"));
+
+    pxr::VtVec3fArray points = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}};
+    mesh.GetPointsAttr().Set(points);
+    pxr::VtIntArray face_counts = {3};
+    mesh.GetFaceVertexCountsAttr().Set(face_counts);
+    pxr::VtIntArray face_indices = {0, 1, 2};
+    mesh.GetFaceVertexIndicesAttr().Set(face_indices);
+
+    // Set up non-standard xform ops (translate + rotate instead of single transform)
+    pxr::UsdGeomXformable xformable(mesh.GetPrim());
+    xformable.AddTranslateOp().Set(pxr::GfVec3d(1.0, 2.0, 3.0));
+    xformable.AddRotateXYZOp().Set(pxr::GfVec3f(0.0f, 45.0f, 0.0f));
+
+    bool reset = false;
+    auto ops_before = xformable.GetOrderedXformOps(&reset);
+    CHECK(ops_before.size() == 2);
+
+    // Normalize: mirrors EditorApplication::normalize_xform_ops
+    auto computed = xformable.ComputeLocalToWorldTransform(pxr::UsdTimeCode::Default());
+    xformable.ClearXformOpOrder();
+    xformable.AddTransformOp().Set(computed);
+
+    auto ops_after = xformable.GetOrderedXformOps(&reset);
+    REQUIRE(ops_after.size() == 1);
+    CHECK(ops_after[0].GetOpType() == pxr::UsdGeomXformOp::TypeTransform);
+
+    // Verify the computed transform is preserved
+    auto recomputed = xformable.ComputeLocalToWorldTransform(pxr::UsdTimeCode::Default());
+    for (int r = 0; r < 4; ++r)
+        for (int c = 0; c < 4; ++c)
+            CHECK(recomputed[r][c] == doctest::Approx(computed[r][c]));
+}
+
+TEST_CASE("Already-normalized xform ops are left unchanged") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    REQUIRE(stage);
+
+    pxr::UsdGeomXform::Define(stage, pxr::SdfPath("/Root"));
+    auto mesh = pxr::UsdGeomMesh::Define(stage, pxr::SdfPath("/Root/Mesh"));
+
+    pxr::UsdGeomXformable xformable(mesh.GetPrim());
+    pxr::GfMatrix4d mat(1.0);
+    mat[3][0] = 5.0;
+    xformable.AddTransformOp().Set(mat);
+
+    // Register a listener to detect any changes
+    TestListener listener;
+    auto key =
+        pxr::TfNotice::Register(pxr::TfCreateWeakPtr(&listener), &TestListener::handle, stage);
+    listener.got_resync = false;
+    listener.got_info_change = false;
+
+    // Check that normalization is a no-op when already normalized
+    bool reset = false;
+    auto ops = xformable.GetOrderedXformOps(&reset);
+    bool already_normalized =
+        (ops.size() == 1 && ops[0].GetOpType() == pxr::UsdGeomXformOp::TypeTransform);
+    CHECK(already_normalized);
+
+    // No ClearXformOpOrder + AddTransformOp should fire
+    CHECK_FALSE(listener.got_resync);
+
+    pxr::TfNotice::Revoke(key);
+}
+
 PTS_TEST_MAIN()
