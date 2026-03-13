@@ -9,6 +9,8 @@
 #include <GLFW/glfw3.h>
 #if !defined(__EMSCRIPTEN__)
 #include <GLFW/glfw3native.h>
+#else
+#include <GLFW/emscripten_glfw3.h>
 #endif
 #include <core/loggingManager.h>
 
@@ -216,6 +218,12 @@ auto GlfwWindowing::create_viewport(const ViewportDesc& desc) -> std::unique_ptr
     if (!window) {
         throw std::runtime_error("Failed to create GLFW window");
     }
+
+#if defined(__EMSCRIPTEN__)
+    // Make the canvas track the browser window size so it always fills the viewport.
+    // contrib.glfw3 handles resize observation and hi-DPI scaling internally.
+    emscripten::glfw3::MakeCanvasResizable(window, "window");
+#endif
 
     if (!m_primary_window) {
         m_primary_window = window;

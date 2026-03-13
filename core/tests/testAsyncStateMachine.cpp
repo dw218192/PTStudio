@@ -116,14 +116,8 @@ TEST_CASE("AsyncStateMachine - tick calls on_tick") {
     CHECK(m.tick_count == 2);
 }
 
-TEST_CASE("AsyncStateMachine - tick_until_settled loops until not pending"
-           * doctest::skip(
-#ifdef __EMSCRIPTEN__
-               true  // tick_until_settled aborts on Emscripten (synchronous blocking forbidden)
-#else
-               false
-#endif
-               )) {
+#ifndef __EMSCRIPTEN__
+TEST_CASE("AsyncStateMachine - tick_until_settled loops until not pending") {
     AutoSettleMachine am;
     am.transition<Requesting>(1);
     CHECK(am.is_pending());
@@ -132,6 +126,7 @@ TEST_CASE("AsyncStateMachine - tick_until_settled loops until not pending"
     CHECK(am.is<Ready>());
     CHECK(am.get<Ready>().result == 99);
 }
+#endif  // !__EMSCRIPTEN__
 
 TEST_CASE("AsyncStateMachine - move when not pending") {
     FakeMachine m;

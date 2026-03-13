@@ -124,5 +124,6 @@ struct EditorApplication final : WindowedApplication {
     bool m_pick_requested = false;
     uint32_t m_pick_x = 0;
     uint32_t m_pick_y = 0;
+
 };
 }  // namespace pts::editor
