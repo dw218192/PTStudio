@@ -161,8 +161,8 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
     picking_desc.width = ctx.viewport_width;
     picking_desc.height = ctx.viewport_height;
     picking_desc.format = WGPUTextureFormat_R32Uint;
-    picking_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment |
-                                                       WGPUTextureUsage_CopySrc);
+    picking_desc.usage =
+        static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_CopySrc);
     picking_desc.clear_color = {static_cast<double>(UINT32_MAX), 0, 0, 0};
 
     rendering::TextureDesc depth_desc;
@@ -196,8 +196,11 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
         wgpuQueueWriteBuffer(queue, uniform_buf, i * kUniformAlign, &u, sizeof(u));
     }
 
-    fg.add_pass("forward").color(color).color(picking_ids).depth(depth).execute(
-        [=, &world](WGPURenderPassEncoder pass) {
+    fg.add_pass("forward")
+        .color(color)
+        .color(picking_ids)
+        .depth(depth)
+        .execute([=, &world](WGPURenderPassEncoder pass) {
             wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
             for (uint32_t i = 0; i < static_cast<uint32_t>(world.objects.size()); ++i) {
                 uint32_t dyn_offset = i * kUniformAlign;

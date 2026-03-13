@@ -385,8 +385,7 @@ TEST_CASE("Eager xform normalization produces single TypeTransform op") {
     // Verify the computed transform is preserved
     auto recomputed = xformable.ComputeLocalToWorldTransform(pxr::UsdTimeCode::Default());
     for (int r = 0; r < 4; ++r)
-        for (int c = 0; c < 4; ++c)
-            CHECK(recomputed[r][c] == doctest::Approx(computed[r][c]));
+        for (int c = 0; c < 4; ++c) CHECK(recomputed[r][c] == doctest::Approx(computed[r][c]));
 }
 
 TEST_CASE("Already-normalized xform ops are left unchanged") {

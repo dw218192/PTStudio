@@ -589,9 +589,9 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
             // must exist by the time the user drags the gizmo.
             bool reset_xform_stack = false;
             auto ops = xformable.GetOrderedXformOps(&reset_xform_stack);
-            INVARIANT_MSG(ops.size() == 1 &&
-                              ops[0].GetOpType() == pxr::UsdGeomXformOp::TypeTransform,
-                          "xform ops must be normalized to a single TypeTransform before gizmo use");
+            INVARIANT_MSG(
+                ops.size() == 1 && ops[0].GetOpType() == pxr::UsdGeomXformOp::TypeTransform,
+                "xform ops must be normalized to a single TypeTransform before gizmo use");
             ops[0].Set(gf_mat);
         }
     }
@@ -664,8 +664,7 @@ auto EditorApplication::handle_input(InputEvent const& event) noexcept -> void {
             event.input.action_type == ActionType::PRESS && !ImGuizmo::IsOver()) {
             auto local_x = event.mouse_pos.x - m_viewport_x;
             auto local_y = event.mouse_pos.y - m_viewport_y;
-            if (local_x >= 0 && local_y >= 0 &&
-                local_x < static_cast<float>(m_viewport_width) &&
+            if (local_x >= 0 && local_y >= 0 && local_x < static_cast<float>(m_viewport_width) &&
                 local_y < static_cast<float>(m_viewport_height)) {
                 m_pick_x = static_cast<uint32_t>(local_x);
                 m_pick_y = static_cast<uint32_t>(local_y);
