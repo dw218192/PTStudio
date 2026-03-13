@@ -61,6 +61,30 @@ TEST_CASE("OpenUSD - Load USDA from embedded string") {
     }
 }
 
+namespace {
+struct TestListener : pxr::TfWeakBase {
+    bool got_resync{false};
+    bool got_info_change{false};
+    std::vector<std::string> resynced_paths;
+    std::vector<std::string> changed_info_paths;
+
+    void handle(const pxr::UsdNotice::ObjectsChanged& notice,
+                const pxr::UsdStageWeakPtr& /*sender*/) {
+        for (const auto& p : notice.GetResyncedPaths()) {
+            got_resync = true;
+            resynced_paths.push_back(p.GetString());
+        }
+        for (const auto& p : notice.GetChangedInfoOnlyPaths()) {
+            got_info_change = true;
+            changed_info_paths.push_back(p.GetString());
+        }
+    }
+};
+}  // namespace
+
+// GPU-dependent tests — Device::create() requires native Dawn (not available in node.js)
+#ifndef __EMSCRIPTEN__
+
 TEST_CASE("populate_from_stage populates prim_path on RenderObjects") {
     // Build a stage with a Mesh prim
     auto stage = pxr::UsdStage::CreateInMemory();
@@ -90,27 +114,6 @@ TEST_CASE("populate_from_stage populates prim_path on RenderObjects") {
 
     spdlog::drop("test_populate");
 }
-
-namespace {
-struct TestListener : pxr::TfWeakBase {
-    bool got_resync{false};
-    bool got_info_change{false};
-    std::vector<std::string> resynced_paths;
-    std::vector<std::string> changed_info_paths;
-
-    void handle(const pxr::UsdNotice::ObjectsChanged& notice,
-                const pxr::UsdStageWeakPtr& /*sender*/) {
-        for (const auto& p : notice.GetResyncedPaths()) {
-            got_resync = true;
-            resynced_paths.push_back(p.GetString());
-        }
-        for (const auto& p : notice.GetChangedInfoOnlyPaths()) {
-            got_info_change = true;
-            changed_info_paths.push_back(p.GetString());
-        }
-    }
-};
-}  // namespace
 
 TEST_CASE("USD ObjectsChanged fires on xform property edit") {
     auto stage = pxr::UsdStage::CreateInMemory();
@@ -349,6 +352,8 @@ TEST_CASE("Selection lost when selected prim is removed during resync") {
 
     spdlog::drop("test_selection_removed");
 }
+
+#endif  // !__EMSCRIPTEN__
 
 TEST_CASE("Eager xform normalization produces single TypeTransform op") {
     auto stage = pxr::UsdStage::CreateInMemory();

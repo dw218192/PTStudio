@@ -116,7 +116,14 @@ TEST_CASE("AsyncStateMachine - tick calls on_tick") {
     CHECK(m.tick_count == 2);
 }
 
-TEST_CASE("AsyncStateMachine - tick_until_settled loops until not pending") {
+TEST_CASE("AsyncStateMachine - tick_until_settled loops until not pending"
+           * doctest::skip(
+#ifdef __EMSCRIPTEN__
+               true  // tick_until_settled aborts on Emscripten (synchronous blocking forbidden)
+#else
+               false
+#endif
+               )) {
     AutoSettleMachine am;
     am.transition<Requesting>(1);
     CHECK(am.is_pending());
@@ -149,4 +156,53 @@ TEST_CASE("AsyncStateMachine - move assignment when not pending") {
 TEST_CASE("AsyncStateMachine - copy is deleted") {
     CHECK_FALSE(std::is_copy_constructible_v<FakeMachine>);
     CHECK_FALSE(std::is_copy_assignable_v<FakeMachine>);
+}
+
+// -- Regression test: transition with self-referencing args ----------------
+// Verifies that transition() is safe when args reference data inside the
+// current variant state (construct-then-emplace, not emplace-in-place).
+
+struct HoldingState {
+    std::unique_ptr<int> value;
+};
+
+struct ConsumedState {
+    int consumed;
+    explicit ConsumedState(int v) : consumed{v} {
+    }
+};
+
+using SelfRefBase =
+    pts::webgpu::AsyncStateMachine<class SelfRefMachine, HoldingState, ConsumedState>;
+
+class SelfRefMachine : public SelfRefBase {
+   public:
+    using SelfRefBase::get;
+    using SelfRefBase::get_if;
+    using SelfRefBase::is;
+    using SelfRefBase::transition;
+
+    void on_tick() {
+    }
+    bool is_pending() const {
+        return false;
+    }
+    WGPUInstance wgpu_instance() const {
+        return nullptr;
+    }
+};
+
+TEST_CASE("AsyncStateMachine - transition is safe with self-referencing args") {
+    SelfRefMachine m;
+    auto* holding = m.get_if<HoldingState>();
+    REQUIRE(holding != nullptr);
+    holding->value = std::make_unique<int>(42);
+
+    // This passes a reference to data inside the current variant state.
+    // Before the fix, emplace would destroy HoldingState (freeing the int)
+    // before constructing ConsumedState — use-after-free.
+    m.transition<ConsumedState>(*holding->value);
+
+    CHECK(m.is<ConsumedState>());
+    CHECK(m.get<ConsumedState>().consumed == 42);
 }

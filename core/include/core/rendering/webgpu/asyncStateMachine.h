@@ -48,9 +48,13 @@ class AsyncStateMachine {
 
     // -- transitions ----------------------------------------------------------
 
+    /// Transition to a new state. Safe even when args reference data inside
+    /// the current state — the new state is fully constructed before the old
+    /// one is destroyed.
     template <typename S, typename... Args>
     void transition(Args&&... args) {
-        m_state.template emplace<S>(std::forward<Args>(args)...);
+        S new_state(std::forward<Args>(args)...);
+        m_state.template emplace<S>(std::move(new_state));
     }
 
     // -- tick / poll ----------------------------------------------------------
