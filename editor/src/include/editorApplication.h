@@ -4,6 +4,7 @@
 #include <core/rendering/camera.h>
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/renderWorld.h>
+#include <core/rendering/webgpu/buffer.h>
 #include <core/rendering/webgpu/webgpu.h>
 #include <core/windowedApplication.h>
 #include <pxr/base/tf/notice.h>
@@ -117,5 +118,12 @@ struct EditorApplication final : WindowedApplication {
     float m_viewport_x = 0.0f;
     float m_viewport_y = 0.0f;
     rendering::TextureRef m_scene_color_ref;
+
+    // GPU picking
+    webgpu::Buffer m_picking_readback_buffer;
+    bool m_pick_requested = false;
+    bool m_picking_pending = false;
+    uint32_t m_pick_x = 0;
+    uint32_t m_pick_y = 0;
 };
 }  // namespace pts::editor

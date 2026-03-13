@@ -59,6 +59,9 @@ class TextureRef {
     WGPUTextureView view() const {
         return m_cached ? m_cached->view : nullptr;
     }
+    WGPUTexture texture() const {
+        return m_cached ? m_cached->texture : nullptr;
+    }
     explicit operator bool() const {
         return m_cached != nullptr;
     }

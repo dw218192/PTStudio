@@ -234,6 +234,10 @@ void EditorApplication::on_ready() {
         log(LogLevel::Warning, "Missing embedded resource: scenes/default.usda");
     }
 
+    // GPU picking readback buffer (256 bytes = minimum bytesPerRow for WebGPU copy)
+    m_picking_readback_buffer = device.create_buffer(
+        256, static_cast<WGPUBufferUsage>(WGPUBufferUsage_CopyDst | WGPUBufferUsage_MapRead));
+
     // Set up renderer passes
     set_renderer_config(0);
 
@@ -356,6 +360,73 @@ void EditorApplication::render(FrameContext& ctx) {
 
     m_frame_graph->compile();
     m_frame_graph->execute(ctx.encoder());
+
+    // ── GPU picking readback ──
+
+    // Process pending readback from previous frame
+    if (m_picking_pending) {
+#ifndef __EMSCRIPTEN__
+        wgpuDeviceTick(device.handle());
+#endif
+        auto map_state = wgpuBufferGetMapState(m_picking_readback_buffer.handle());
+        if (map_state == WGPUBufferMapState_Mapped) {
+            auto* data = static_cast<const uint32_t*>(wgpuBufferGetConstMappedRange(
+                m_picking_readback_buffer.handle(), 0, sizeof(uint32_t)));
+            INVARIANT(data);
+            uint32_t picked_id = *data;
+            wgpuBufferUnmap(m_picking_readback_buffer.handle());
+            m_picking_pending = false;
+
+            if (picked_id == UINT32_MAX) {
+                m_selected_object = -1;
+            } else if (picked_id < static_cast<uint32_t>(m_world.objects.size())) {
+                m_selected_object = static_cast<int>(picked_id);
+                if (m_stage) {
+                    normalize_xform_ops(m_world.objects[m_selected_object].prim_path);
+                }
+            }
+        }
+    }
+
+    // Copy picked pixel to readback buffer
+    if (m_pick_requested && has_viewport && !m_picking_pending) {
+        rendering::TextureDesc picking_desc;
+        picking_desc.width = m_viewport_width;
+        picking_desc.height = m_viewport_height;
+        picking_desc.format = WGPUTextureFormat_R32Uint;
+        picking_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment |
+                                                           WGPUTextureUsage_CopySrc);
+        picking_desc.clear_color = {static_cast<double>(UINT32_MAX), 0, 0, 0};
+        auto picking_handle = m_frame_graph->find_or_create("picking_ids", picking_desc);
+        auto picking_ref = m_frame_graph->get_texture_ref(picking_handle);
+
+        if (picking_ref && m_pick_x < m_viewport_width && m_pick_y < m_viewport_height) {
+            WGPUTexelCopyTextureInfo src = WGPU_TEXEL_COPY_TEXTURE_INFO_INIT;
+            src.texture = picking_ref.texture();
+            src.mipLevel = 0;
+            src.origin = {m_pick_x, m_pick_y, 0};
+
+            WGPUTexelCopyBufferInfo dst = WGPU_TEXEL_COPY_BUFFER_INFO_INIT;
+            dst.buffer = m_picking_readback_buffer.handle();
+            dst.layout.offset = 0;
+            dst.layout.bytesPerRow = 256;
+            dst.layout.rowsPerImage = 1;
+
+            WGPUExtent3D extent = {1, 1, 1};
+            wgpuCommandEncoderCopyTextureToBuffer(ctx.encoder(), &src, &dst, &extent);
+
+            m_pick_requested = false;
+            m_picking_pending = true;
+
+            WGPUBufferMapCallbackInfo map_cb = WGPU_BUFFER_MAP_CALLBACK_INFO_INIT;
+            map_cb.mode = WGPUCallbackMode_AllowProcessEvents;
+            map_cb.callback = [](WGPUMapAsyncStatus, WGPUStringView, void*, void*) {};
+            wgpuBufferMapAsync(m_picking_readback_buffer.handle(), WGPUMapMode_Read, 0, 256,
+                               map_cb);
+        } else {
+            m_pick_requested = false;
+        }
+    }
 
     // Store scene color ref for next frame's ImGui::Image
     if (has_viewport && scene_color_handle.is_valid()) {
@@ -588,6 +659,20 @@ auto EditorApplication::handle_input(InputEvent const& event) noexcept -> void {
     }
 
     if (event.input.input_type == InputType::MOUSE) {
+        // Left-click: pick object under cursor
+        if (event.input.key_or_button == ImGuiMouseButton_Left &&
+            event.input.action_type == ActionType::PRESS && !ImGuizmo::IsOver()) {
+            auto local_x = event.mouse_pos.x - m_viewport_x;
+            auto local_y = event.mouse_pos.y - m_viewport_y;
+            if (local_x >= 0 && local_y >= 0 &&
+                local_x < static_cast<float>(m_viewport_width) &&
+                local_y < static_cast<float>(m_viewport_height)) {
+                m_pick_x = static_cast<uint32_t>(local_x);
+                m_pick_y = static_cast<uint32_t>(local_y);
+                m_pick_requested = true;
+            }
+        }
+
         // Right-click drag: orbit camera
         if (event.input.key_or_button == ImGuiMouseButton_Right &&
             event.input.action_type == ActionType::HOLD) {
