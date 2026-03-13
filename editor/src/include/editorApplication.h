@@ -94,7 +94,7 @@ struct EditorApplication final : WindowedApplication {
                     const pxr::UsdStageWeakPtr& sender);
     };
 
-    std::unique_ptr<StageListener> m_stage_listener;
+    StageListener m_stage_listener;
     pxr::TfNotice::Key m_listener_key;
 
     void register_stage_listener();

@@ -78,13 +78,12 @@ void EditorApplication::register_stage_listener() {
     revoke_stage_listener();
     if (!m_stage) return;
 
-    m_stage_listener = std::make_unique<StageListener>();
-    m_stage_listener->ctx = this;
-    m_stage_listener->cb = [](void* self, const pxr::UsdNotice::ObjectsChanged& notice) {
+    m_stage_listener.ctx = this;
+    m_stage_listener.cb = [](void* self, const pxr::UsdNotice::ObjectsChanged& notice) {
         static_cast<EditorApplication*>(self)->on_objects_changed(notice);
     };
 
-    m_listener_key = pxr::TfNotice::Register(pxr::TfCreateWeakPtr(m_stage_listener.get()),
+    m_listener_key = pxr::TfNotice::Register(pxr::TfCreateWeakPtr(&m_stage_listener),
                                              &StageListener::handle, m_stage);
 }
 
@@ -92,7 +91,6 @@ void EditorApplication::revoke_stage_listener() {
     if (m_listener_key.IsValid()) {
         pxr::TfNotice::Revoke(m_listener_key);
     }
-    m_stage_listener.reset();
     m_dirty_xform_paths.clear();
     m_needs_full_resync = false;
 }
