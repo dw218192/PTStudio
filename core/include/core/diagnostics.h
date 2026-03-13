@@ -15,6 +15,9 @@
 #endif
 
 #if PTS_DIAG_ENABLE_STACKTRACE
+#if defined(_MSC_VER) && !defined(NOMINMAX)
+#define NOMINMAX
+#endif
 #include <boost/stacktrace/stacktrace.hpp>
 #include <boost/stacktrace/stacktrace_fwd.hpp>
 #include <iostream>

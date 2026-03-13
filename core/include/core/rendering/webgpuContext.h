@@ -1,12 +1,12 @@
 #pragma once
 
+#include <core/rendering/webgpu/asyncStateMachine.h>
 #include <core/rendering/webgpu/device.h>
 #include <core/rendering/webgpu/surface.h>
 #include <core/rendering/webgpu/webgpu.h>
 #include <core/rendering/windowing.h>
 
 #include <memory>
-#include <variant>
 
 namespace spdlog {
 class logger;
@@ -25,16 +25,43 @@ enum class WebGpuContextState {
     Failed,        ///< Initialization failed; context is not usable
 };
 
+/// State when context is initializing (device creation in flight)
+struct ContextInitializingState {
+    NativeViewportHandle viewport_handle{};
+    Extent2D viewport_extent{};
+    std::unique_ptr<pts::webgpu::Device> device;
+};
+
+/// State when context is ready and usable
+struct ContextReadyState {
+    pts::webgpu::Device device;
+    pts::webgpu::Surface surface;
+
+    ContextReadyState(pts::webgpu::Device d, pts::webgpu::Surface s)
+        : device(std::move(d)), surface(std::move(s)) {
+    }
+
+    ContextReadyState(ContextReadyState&&) noexcept = default;
+    auto operator=(ContextReadyState&&) noexcept -> ContextReadyState& = default;
+
+    ContextReadyState(const ContextReadyState&) = delete;
+    auto operator=(const ContextReadyState&) -> ContextReadyState& = delete;
+};
+
+/// State when initialization failed
+struct ContextFailedState {};
+
 /**
  * @brief WebGPU rendering context bundling device, surface, and callbacks.
  * The application owns this context and passes it to rendering backends.
- *
- * State is modeled using std::variant to enforce invariants at the type level:
- * - InitializingState: async device creation in flight; surface not yet available.
- * - ReadyState: device and surface are valid and usable.
- * - FailedState: context is not usable.
  */
-class WebGpuContext {
+class WebGpuContext
+    : private pts::webgpu::AsyncStateMachine<WebGpuContext, ContextInitializingState,
+                                             ContextReadyState, ContextFailedState> {
+    using Base = pts::webgpu::AsyncStateMachine<WebGpuContext, ContextInitializingState,
+                                                ContextReadyState, ContextFailedState>;
+    friend Base;
+
    public:
     ~WebGpuContext();
 
@@ -68,28 +95,6 @@ class WebGpuContext {
     [[nodiscard]] auto surface_format() const noexcept -> WGPUTextureFormat;
 
    private:
-    /// State when context is initializing (device creation in flight)
-    struct InitializingState {
-        NativeViewportHandle viewport_handle{};
-        Extent2D viewport_extent{};
-        std::unique_ptr<pts::webgpu::Device> device;
-    };
-
-    /// State when context is ready and usable
-    struct ReadyState {
-        pts::webgpu::Device device;
-        pts::webgpu::Surface surface;
-
-        ReadyState(pts::webgpu::Device d, pts::webgpu::Surface s)
-            : device(std::move(d)), surface(std::move(s)) {
-        }
-    };
-
-    /// State when initialization failed
-    struct FailedState {};
-
-    using State = std::variant<InitializingState, ReadyState, FailedState>;
-
     // Tag type to enable make_unique with private constructor
     struct PrivateCtorTag {};
 
@@ -98,13 +103,14 @@ class WebGpuContext {
     explicit WebGpuContext(PrivateCtorTag, std::shared_ptr<spdlog::logger> logger);
 
    private:
+    // CRTP interface for AsyncStateMachine
+    void on_tick();
+    [[nodiscard]] auto is_pending() const -> bool;
+    [[nodiscard]] auto wgpu_instance() const -> WGPUInstance;
+
     void finish_initialization();
     void set_failed();
 
-    // Helper to get state enum from variant
-    [[nodiscard]] auto get_state_enum() const noexcept -> WebGpuContextState;
-
-    State m_state = FailedState{};
     std::shared_ptr<spdlog::logger> m_logger;
 };
 
