@@ -4,12 +4,19 @@
 #include <core/rendering/camera.h>
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/renderWorld.h>
+#include <core/rendering/webgpu/bufferReadback.h>
 #include <core/rendering/webgpu/webgpu.h>
 #include <core/windowedApplication.h>
+#include <pxr/base/tf/notice.h>
+#include <pxr/base/tf/weakBase.h>
+#include <pxr/usd/usd/notice.h>
+#include <pxr/usd/usd/stage.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 
 #include <cstdint>
 #include <memory>
+#include <string>
+#include <string_view>
 #include <vector>
 
 namespace pts {
@@ -78,9 +85,45 @@ struct EditorApplication final : WindowedApplication {
     std::vector<std::unique_ptr<rendering::IScenePass>> m_passes;
     size_t m_active_config_index = 0;
 
+    // USD stage + change tracking
+    pxr::UsdStageRefPtr m_stage;
+
+    struct StageListener : pxr::TfWeakBase {
+        using Callback = void (*)(void*, const pxr::UsdNotice::ObjectsChanged&);
+        void* ctx{};
+        Callback cb{};
+        void handle(const pxr::UsdNotice::ObjectsChanged& notice,
+                    const pxr::UsdStageWeakPtr& sender);
+    };
+
+    StageListener m_stage_listener;
+    pxr::TfNotice::Key m_listener_key;
+
+    void register_stage_listener();
+    void revoke_stage_listener();
+    void on_objects_changed(const pxr::UsdNotice::ObjectsChanged& notice);
+    void process_dirty_prims();
+    void normalize_xform_ops(const std::string& prim_path);
+
+    bool m_needs_full_resync{false};
+    std::vector<std::string> m_dirty_xform_paths;
+
+    // Selection & gizmo
+    int m_selected_object = -1;
+    enum class GizmoOp { Translate, Rotate, Scale };
+    GizmoOp m_gizmo_op = GizmoOp::Translate;
+
     // Viewport tracking
     uint32_t m_viewport_width = 0;
     uint32_t m_viewport_height = 0;
+    float m_viewport_x = 0.0f;
+    float m_viewport_y = 0.0f;
     rendering::TextureRef m_scene_color_ref;
+
+    // GPU picking
+    webgpu::BufferReadback m_picking_readback;
+    bool m_pick_requested = false;
+    uint32_t m_pick_x = 0;
+    uint32_t m_pick_y = 0;
 };
 }  // namespace pts::editor

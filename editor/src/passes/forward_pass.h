@@ -28,7 +28,7 @@ class ForwardPass final : public rendering::IScenePass {
     void setup(const webgpu::Device& device) override;
     void add_to_frame_graph(rendering::FrameGraph& fg, const rendering::PassContext& ctx) override;
 
-    static constexpr uint32_t kUniformAlign = 256;
+    static constexpr uint32_t k_uniform_align = 256;
 
    private:
     void ensure_capacity(const webgpu::Device& device, uint32_t object_count);

@@ -1,12 +1,13 @@
 #pragma once
 
+#include <core/rendering/webgpu/asyncStateMachine.h>
 #include <core/rendering/webgpu/buffer.h>
 #include <core/rendering/webgpu/pipeline.h>
 #include <core/rendering/webgpu/shader.h>
 
 #include <memory>
 #include <string_view>
-#include <variant>
+#include <utility>
 
 namespace spdlog {
 class logger;
@@ -14,15 +15,67 @@ class logger;
 
 namespace pts::webgpu {
 
-/// State of the Device during its lifecycle.
-enum class DeviceState {
-    Initializing,  ///< Adapter/device request in flight; usage disallowed
-    Ready,         ///< Device is valid and usable
-    Failed,        ///< Initialization failed; device is not usable
+/// Internal init phase within Initializing state
+enum class DeviceInitPhase {
+    RequestingAdapter,
+    RequestingDevice,
 };
 
-class Device {
+/// State when device is initializing (adapter/device request in flight)
+struct DeviceInitializingState {
+    WGPUInstance instance = nullptr;
+    WGPUAdapter adapter = nullptr;
+    WGPUDevice device = nullptr;
+
+    bool adapter_request_done = false;
+    bool device_request_done = false;
+    WGPURequestAdapterStatus adapter_status = WGPURequestAdapterStatus_Error;
+    WGPURequestDeviceStatus device_status = WGPURequestDeviceStatus_Error;
+
+    DeviceInitPhase phase = DeviceInitPhase::RequestingAdapter;
+};
+
+/// State when device is ready and usable.
+/// Move zeroes the source to prevent double-release of raw WebGPU handles.
+struct DeviceReadyState {
+    WGPUInstance instance = nullptr;
+    WGPUDevice device = nullptr;
+    WGPUQueue queue = nullptr;
+
+    DeviceReadyState() = default;
+    DeviceReadyState(WGPUInstance i, WGPUDevice d, WGPUQueue q) : instance(i), device(d), queue(q) {
+    }
+
+    DeviceReadyState(DeviceReadyState&& o) noexcept
+        : instance(std::exchange(o.instance, nullptr)),
+          device(std::exchange(o.device, nullptr)),
+          queue(std::exchange(o.queue, nullptr)) {
+    }
+
+    auto operator=(DeviceReadyState&& o) noexcept -> DeviceReadyState& {
+        instance = std::exchange(o.instance, nullptr);
+        device = std::exchange(o.device, nullptr);
+        queue = std::exchange(o.queue, nullptr);
+        return *this;
+    }
+
+    DeviceReadyState(const DeviceReadyState&) = delete;
+    auto operator=(const DeviceReadyState&) -> DeviceReadyState& = delete;
+};
+
+/// State when initialization failed
+struct DeviceFailedState {};
+
+class Device : public AsyncStateMachine<Device, DeviceInitializingState, DeviceReadyState,
+                                        DeviceFailedState> {
+    using Base =
+        AsyncStateMachine<Device, DeviceInitializingState, DeviceReadyState, DeviceFailedState>;
+
    public:
+    using Base::is;
+    using Base::tick;
+    using Base::tick_until_settled;
+
     /// Constructor for creating a Device with already-acquired handles.
     /// Enforces invariants: all handles must be non-null or throws std::runtime_error.
     /// Device starts in Ready state.
@@ -38,27 +91,19 @@ class Device {
     ~Device();
 
     /// Blocking factory: creates device with error callbacks registered.
-    /// Internally uses create_async() + tick_init() loop. Throws on failure.
+    /// Internally uses create_async() + tick_until_settled(). Throws on failure.
     [[nodiscard]] static auto create(std::shared_ptr<spdlog::logger> logger) -> Device;
 
     /// Async factory: starts device creation and returns Initializing device.
-    /// Call tick_init() until is_ready() or is_failed().
+    /// Call tick() until is<DeviceReadyState>() or is<DeviceFailedState>().
     [[nodiscard]] static auto create_async(std::shared_ptr<spdlog::logger> logger)
         -> std::unique_ptr<Device>;
 
-    /// Process WebGPU events to advance initialization. Call until is_ready() or is_failed().
-    void tick_init();
-
-    [[nodiscard]] auto state() const noexcept -> DeviceState;
-    [[nodiscard]] auto is_ready() const noexcept -> bool;
-    [[nodiscard]] auto is_failed() const noexcept -> bool;
-    [[nodiscard]] auto is_initializing() const noexcept -> bool;
-
-    /// Access instance handle. Only valid when state() == Ready.
+    /// Access instance handle. Only valid when is<DeviceReadyState>().
     [[nodiscard]] auto instance() const noexcept -> WGPUInstance;
-    /// Access device handle. Only valid when state() == Ready.
+    /// Access device handle. Only valid when is<DeviceReadyState>().
     [[nodiscard]] auto handle() const noexcept -> WGPUDevice;
-    /// Access queue handle. Only valid when state() == Ready.
+    /// Access queue handle. Only valid when is<DeviceReadyState>().
     [[nodiscard]] auto queue() const noexcept -> WGPUQueue;
 
     [[nodiscard]] auto create_buffer(std::size_t size, WGPUBufferUsage usage) const -> Buffer;
@@ -67,45 +112,16 @@ class Device {
     [[nodiscard]] auto create_pipeline_layout() const -> PipelineLayout;
 
    private:
-    /// Internal init phase within Initializing state
-    enum class InitPhase {
-        RequestingAdapter,
-        RequestingDevice,
-    };
-
-    /// State when device is initializing (adapter/device request in flight)
-    struct InitializingState {
-        WGPUInstance instance = nullptr;
-        WGPUAdapter adapter = nullptr;
-        WGPUDevice device = nullptr;  // Set by callback before transitioning to Ready
-
-        bool adapter_request_done = false;
-        bool device_request_done = false;
-        WGPURequestAdapterStatus adapter_status = WGPURequestAdapterStatus_Error;
-        WGPURequestDeviceStatus device_status = WGPURequestDeviceStatus_Error;
-
-        InitPhase phase = InitPhase::RequestingAdapter;
-    };
-
-    /// State when device is ready and usable
-    struct ReadyState {
-        WGPUInstance instance = nullptr;
-        WGPUDevice device = nullptr;
-        WGPUQueue queue = nullptr;
-    };
-
-    /// State when initialization failed
-    struct FailedState {};
-
-    using State = std::variant<InitializingState, ReadyState, FailedState>;
-
-    // Tag type to enable make_unique with private constructor
     struct PrivateCtorTag {};
 
    public:
-    // Constructor accessible via make_unique (use PrivateCtorTag to prevent public use)
     explicit Device(PrivateCtorTag, std::shared_ptr<spdlog::logger> logger,
-                    InitializingState init_state);
+                    DeviceInitializingState init_state);
+
+    // CRTP interface for AsyncStateMachine
+    void on_tick();
+    [[nodiscard]] auto is_pending() const -> bool;
+    [[nodiscard]] auto wgpu_instance() const -> WGPUInstance;
 
    private:
     void start_adapter_request();
@@ -113,13 +129,8 @@ class Device {
     void finish_initialization();
     void set_failed();
 
-    // Helper to release resources in current state
     void release_resources();
 
-    // Helper to get state enum from variant
-    [[nodiscard]] auto get_state_enum() const noexcept -> DeviceState;
-
-    State m_state = FailedState{};
     std::shared_ptr<spdlog::logger> m_logger;
 };
 

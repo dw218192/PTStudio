@@ -77,18 +77,19 @@ build:
     local_recipes: "tools/conan"
 
 agent:
+  allowlist_extra: "allowlist_extra.toml"
   required_criteria+:
     - "Build succeeds (repo_build)"
     - "All existing tests pass (repo_test)"
     - "If there is a new feature, it must have tests that cover the code path"
     - "Fail loud: use macros in <core/diagnostics.h> instead of silent null checks, fallbacks, or defensive state management."
-    - "Follows naming conventions: UpperCamelCase types, snake_case methods/vars, m_ private members, kCamelCase constants, lowerCamelCase files"
+    - "Follows naming conventions: UpperCamelCase types, snake_case methods/vars, m_ private members, k_snake_case constants, lowerCamelCase files"
     - "Never hide errors with silent fallbacks, empty catch blocks, or swallowed return codes."
     - "Never disable or skip unit tests without explicit justification."
   prompts:
     common: >
       C++17 codebase. Naming: UpperCamelCase types, snake_case functions/variables,
-      m_prefix for private members, kCamelCase for constexpr constants,
+      m_prefix for private members, k_snake_case for constexpr constants,
       lowerCamelCase.cpp files, snake_case directories.
       Public API boundaries must be noexcept and return error_code or boost::result —
       never let exceptions escape. Use ABI-safe types only at DLL boundaries

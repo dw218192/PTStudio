@@ -24,6 +24,10 @@ class OrbitCamera {
     /// Zoom: change distance to target. delta > 0 zooms in.
     void zoom(float delta);
 
+    /// Move: translate target along the camera's local axes.
+    /// forward > 0 moves toward the look direction, right > 0 moves rightward, up > 0 moves upward.
+    void move(float forward, float right, float up, float dt);
+
     // ── Output ──
     [[nodiscard]] auto view_matrix() const -> glm::mat4;
     [[nodiscard]] auto projection_matrix(float aspect_ratio) const -> glm::mat4;
@@ -52,6 +56,7 @@ class OrbitCamera {
     static constexpr float k_min_distance = 0.1f;
     static constexpr float k_max_distance = 500.0f;
     static constexpr float k_max_pitch = 1.5f;  // ~86 degrees, avoid flipping
+    static constexpr float k_move_speed = 5.0f;
 };
 
 }  // namespace pts::rendering

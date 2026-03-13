@@ -10,12 +10,17 @@ find_package(doctest REQUIRED)
 # Test executables
 set(TEST_NAMES)
 
-# Tests requiring native platform features (dynamic linking, browser WebGPU, boost)
-if(NOT EMSCRIPTEN)
-    list(APPEND TEST_NAMES testCommandLine)
-    set(testCommandLine_source testCommandLine.cpp)
-    set(testCommandLine_libs core)
+# Non-GPU tests — run on all platforms including Emscripten (via node.js)
+list(APPEND TEST_NAMES testCommandLine)
+set(testCommandLine_source testCommandLine.cpp)
+set(testCommandLine_libs core)
 
+list(APPEND TEST_NAMES testAsyncStateMachine)
+set(testAsyncStateMachine_source testAsyncStateMachine.cpp)
+set(testAsyncStateMachine_libs core)
+
+# GPU tests — require native WebGPU (Dawn); no browser/node.js GPU access
+if(NOT EMSCRIPTEN)
     list(APPEND TEST_NAMES testWebGpu)
     set(testWebGpu_source testWebGpu.cpp)
     set(testWebGpu_libs core)
@@ -24,6 +29,10 @@ if(NOT EMSCRIPTEN)
     list(APPEND TEST_NAMES testFrameGraph)
     set(testFrameGraph_source testFrameGraph.cpp)
     set(testFrameGraph_libs core)
+
+    list(APPEND TEST_NAMES testBufferReadback)
+    set(testBufferReadback_source testBufferReadback.cpp)
+    set(testBufferReadback_libs core)
 endif()
 
 # OpenUSD test - works on all platforms

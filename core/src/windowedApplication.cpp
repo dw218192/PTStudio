@@ -54,20 +54,20 @@ void WindowedApplication::run() {
 }
 
 bool WindowedApplication::ensure_webgpu_ready() {
-    if (m_webgpu_context->is_failed()) {
+    if (m_webgpu_context->is<rendering::ContextFailedState>()) {
         return false;
     }
 
-    if (m_webgpu_context->is_initializing()) {
-        m_webgpu_context->tick_init();
+    if (m_webgpu_context->is<rendering::ContextInitializingState>()) {
+        m_webgpu_context->tick();
 
-        if (m_webgpu_context->is_failed()) {
+        if (m_webgpu_context->is<rendering::ContextFailedState>()) {
             log(pts::LogLevel::Error, "WebGPU context initialization failed");
             m_viewport->request_close();
             return false;
         }
 
-        if (m_webgpu_context->is_initializing()) {
+        if (m_webgpu_context->is<rendering::ContextInitializingState>()) {
             return false;
         }
 

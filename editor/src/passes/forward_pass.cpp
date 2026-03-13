@@ -21,9 +21,11 @@ struct ForwardUniforms {
     glm::mat4 model;
     glm::vec3 sun_dir;
     float time;
+    uint32_t object_id;
+    uint32_t _pad[3];
 };
-static_assert(sizeof(ForwardUniforms) == 144, "ForwardUniforms must match shader std140 layout");
-static_assert(ForwardPass::kUniformAlign >= sizeof(ForwardUniforms),
+static_assert(sizeof(ForwardUniforms) == 160, "ForwardUniforms must match shader std140 layout");
+static_assert(ForwardPass::k_uniform_align >= sizeof(ForwardUniforms),
               "Alignment must be >= uniform struct size");
 
 ForwardPass::~ForwardPass() {
@@ -53,7 +55,7 @@ void ForwardPass::setup(const webgpu::Device& device) {
 
     uint32_t initial_capacity = 64;
     auto uniform_buffer = device.create_buffer(
-        kUniformAlign * initial_capacity,
+        k_uniform_align * initial_capacity,
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
 
     // Create bind group layout with hasDynamicOffset for per-object uniforms
@@ -91,6 +93,7 @@ void ForwardPass::setup(const webgpu::Device& device) {
     auto pipeline = webgpu::RenderPipelineBuilder(device)
                         .shader(shader)
                         .color_format(WGPUTextureFormat_RGBA8Unorm)
+                        .color_format(WGPUTextureFormat_R32Uint, 1)
                         .depth_format(WGPUTextureFormat_Depth24Plus)
                         .depth_write(true)
                         .depth_compare(WGPUCompareFunction_Less)
@@ -117,7 +120,7 @@ void ForwardPass::ensure_capacity(const webgpu::Device& device, uint32_t object_
     }
 
     ready.uniform_buffer = device.create_buffer(
-        kUniformAlign * new_capacity,
+        k_uniform_align * new_capacity,
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
 
     // Recreate bind group pointing to new buffer
@@ -154,12 +157,21 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
     color_desc.format = WGPUTextureFormat_RGBA8Unorm;
     color_desc.clear_color = {0.15, 0.15, 0.18, 1.0};
 
+    rendering::TextureDesc picking_desc;
+    picking_desc.width = ctx.viewport_width;
+    picking_desc.height = ctx.viewport_height;
+    picking_desc.format = WGPUTextureFormat_R32Uint;
+    picking_desc.usage =
+        static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_CopySrc);
+    picking_desc.clear_color = {static_cast<double>(UINT32_MAX), 0, 0, 0};
+
     rendering::TextureDesc depth_desc;
     depth_desc.width = ctx.viewport_width;
     depth_desc.height = ctx.viewport_height;
     depth_desc.format = WGPUTextureFormat_Depth24Plus;
 
     auto color = fg.find_or_create("scene_color", color_desc);
+    auto picking_ids = fg.find_or_create("picking_ids", picking_desc);
     auto depth = fg.find_or_create("scene_depth", depth_desc);
 
     auto queue = ctx.queue;
@@ -175,19 +187,23 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
     // Each object gets its own aligned slice so dynamic offsets work correctly.
     for (uint32_t i = 0; i < object_count; ++i) {
         const auto& obj = world.objects[i];
-        ForwardUniforms u;
+        ForwardUniforms u{};
         u.mvp = proj_mat * view_mat * obj.transform;
         u.model = obj.transform;
         u.sun_dir = glm::normalize(glm::vec3(0.3f, 1.0f, 0.5f));
         u.time = elapsed_time;
-        wgpuQueueWriteBuffer(queue, uniform_buf, i * kUniformAlign, &u, sizeof(u));
+        u.object_id = i;
+        wgpuQueueWriteBuffer(queue, uniform_buf, i * k_uniform_align, &u, sizeof(u));
     }
 
-    fg.add_pass("forward").color(color).depth(depth).execute(
-        [=, &world](WGPURenderPassEncoder pass) {
+    fg.add_pass("forward")
+        .color(color)
+        .color(picking_ids)
+        .depth(depth)
+        .execute([=, &world](WGPURenderPassEncoder pass) {
             wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
             for (uint32_t i = 0; i < static_cast<uint32_t>(world.objects.size()); ++i) {
-                uint32_t dyn_offset = i * kUniformAlign;
+                uint32_t dyn_offset = i * k_uniform_align;
                 wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 1, &dyn_offset);
                 const auto& mesh = world.meshes[world.objects[i].mesh_index];
                 wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh.vertex_buffer.handle(), 0,

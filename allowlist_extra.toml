@@ -1,0 +1,6 @@
+# Project-specific allowlist extensions.
+# Merged with the framework default (allowlist_default.toml) at agent launch.
+
+[[allow]]
+name = "diagnostics"
+commands = ["handle64", "handle"]

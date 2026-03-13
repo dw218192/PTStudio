@@ -43,6 +43,17 @@ void OrbitCamera::zoom(float delta) {
     m_distance = std::clamp(m_distance, k_min_distance, k_max_distance);
 }
 
+void OrbitCamera::move(float forward, float right_amount, float up_amount, float dt) {
+    auto view = view_matrix();
+    auto right_dir = glm::vec3(view[0][0], view[1][0], view[2][0]);
+    auto up_dir = glm::vec3(0.0f, 1.0f, 0.0f);
+    auto forward_dir = glm::normalize(m_target - position());
+
+    auto offset =
+        (forward_dir * forward + right_dir * right_amount + up_dir * up_amount) * k_move_speed * dt;
+    m_target += offset;
+}
+
 auto OrbitCamera::view_matrix() const -> glm::mat4 {
     return glm::lookAt(position(), m_target, glm::vec3(0.0f, 1.0f, 0.0f));
 }
