@@ -78,13 +78,12 @@ void EditorApplication::register_stage_listener() {
     revoke_stage_listener();
     if (!m_stage) return;
 
-    m_stage_listener = std::make_unique<StageListener>();
-    m_stage_listener->ctx = this;
-    m_stage_listener->cb = [](void* self, const pxr::UsdNotice::ObjectsChanged& notice) {
+    m_stage_listener.ctx = this;
+    m_stage_listener.cb = [](void* self, const pxr::UsdNotice::ObjectsChanged& notice) {
         static_cast<EditorApplication*>(self)->on_objects_changed(notice);
     };
 
-    m_listener_key = pxr::TfNotice::Register(pxr::TfCreateWeakPtr(m_stage_listener.get()),
+    m_listener_key = pxr::TfNotice::Register(pxr::TfCreateWeakPtr(&m_stage_listener),
                                              &StageListener::handle, m_stage);
 }
 
@@ -92,7 +91,8 @@ void EditorApplication::revoke_stage_listener() {
     if (m_listener_key.IsValid()) {
         pxr::TfNotice::Revoke(m_listener_key);
     }
-    m_stage_listener.reset();
+    m_stage_listener.ctx = nullptr;
+    m_stage_listener.cb = nullptr;
     m_dirty_xform_paths.clear();
     m_needs_full_resync = false;
 }
@@ -120,9 +120,25 @@ void EditorApplication::process_dirty_prims() {
     auto const& device = webgpu_context()->device();
 
     if (m_needs_full_resync) {
+        std::string selected_prim_path;
+        if (m_selected_object >= 0 &&
+            m_selected_object < static_cast<int>(m_world.objects.size())) {
+            selected_prim_path = m_world.objects[m_selected_object].prim_path;
+        }
+
         m_world.clear();
         m_selected_object = -1;
         rendering::populate_from_stage(m_world, m_stage, device);
+
+        if (!selected_prim_path.empty()) {
+            for (int i = 0; i < static_cast<int>(m_world.objects.size()); ++i) {
+                if (m_world.objects[i].prim_path == selected_prim_path) {
+                    m_selected_object = i;
+                    break;
+                }
+            }
+        }
+
         log(LogLevel::Info, "Full resync: {} objects", m_world.objects.size());
         m_needs_full_resync = false;
         m_dirty_xform_paths.clear();
@@ -151,6 +167,23 @@ void EditorApplication::process_dirty_prims() {
         }
     }
     m_dirty_xform_paths.clear();
+}
+
+void EditorApplication::normalize_xform_ops(const std::string& prim_path) {
+    PRECONDITION(m_stage);
+    auto prim = m_stage->GetPrimAtPath(pxr::SdfPath(prim_path));
+    INVARIANT_MSG(prim.IsValid(), "prim_path on RenderObject must reference a valid USD prim");
+
+    pxr::UsdGeomXformable xformable(prim);
+    if (!xformable) return;
+
+    bool reset_xform_stack = false;
+    auto ops = xformable.GetOrderedXformOps(&reset_xform_stack);
+    if (ops.size() == 1 && ops[0].GetOpType() == pxr::UsdGeomXformOp::TypeTransform) return;
+
+    auto xf = xformable.ComputeLocalToWorldTransform(pxr::UsdTimeCode::Default());
+    xformable.ClearXformOpOrder();
+    xformable.AddTransformOp().Set(xf);
 }
 
 void EditorApplication::register_args(CommandLine& cli) {
@@ -399,6 +432,9 @@ auto EditorApplication::draw_object_panel() noexcept -> void {
         bool selected = (m_selected_object == i);
         if (ImGui::Selectable(label.c_str(), selected)) {
             m_selected_object = selected ? -1 : i;
+            if (m_selected_object >= 0 && m_stage) {
+                normalize_xform_ops(m_world.objects[m_selected_object].prim_path);
+            }
         }
     }
 }
@@ -478,16 +514,14 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
                 for (int c = 0; c < 4; ++c)
                     gf_mat[r][c] = static_cast<double>(gizmo_transform[c][r]);
 
-            // Reuse existing transform op to avoid resync notices on every frame.
-            // Only clear+recreate when the op order doesn't match expectations.
+            // Xform ops are normalized at selection time; a single TypeTransform op
+            // must exist by the time the user drags the gizmo.
             bool reset_xform_stack = false;
             auto ops = xformable.GetOrderedXformOps(&reset_xform_stack);
-            if (ops.size() == 1 && ops[0].GetOpType() == pxr::UsdGeomXformOp::TypeTransform) {
-                ops[0].Set(gf_mat);
-            } else {
-                xformable.ClearXformOpOrder();
-                xformable.AddTransformOp().Set(gf_mat);
-            }
+            INVARIANT_MSG(ops.size() == 1 &&
+                              ops[0].GetOpType() == pxr::UsdGeomXformOp::TypeTransform,
+                          "xform ops must be normalized to a single TypeTransform before gizmo use");
+            ops[0].Set(gf_mat);
         }
     }
 }
