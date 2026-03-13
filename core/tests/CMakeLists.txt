@@ -28,6 +28,10 @@ if(NOT EMSCRIPTEN)
     list(APPEND TEST_NAMES testAsyncStateMachine)
     set(testAsyncStateMachine_source testAsyncStateMachine.cpp)
     set(testAsyncStateMachine_libs core)
+
+    list(APPEND TEST_NAMES testBufferReadback)
+    set(testBufferReadback_source testBufferReadback.cpp)
+    set(testBufferReadback_libs core)
 endif()
 
 # OpenUSD test - works on all platforms
