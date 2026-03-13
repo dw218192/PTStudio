@@ -476,6 +476,87 @@ TEST_CASE("FrameGraph - find_or_create different names create different handles"
     CHECK(h1.index != h2.index);
 }
 
+TEST_CASE("FrameGraph - picking texture CopySrc readback") {
+    TestFixture f;
+
+    f.graph.begin_frame();
+
+    pts::rendering::TextureDesc color_desc;
+    color_desc.width = 64;
+    color_desc.height = 64;
+    color_desc.format = WGPUTextureFormat_BGRA8Unorm;
+
+    pts::rendering::TextureDesc picking_desc;
+    picking_desc.width = 64;
+    picking_desc.height = 64;
+    picking_desc.format = WGPUTextureFormat_R32Uint;
+    picking_desc.usage =
+        static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_CopySrc);
+    picking_desc.clear_color = {static_cast<double>(UINT32_MAX), 0, 0, 0};
+
+    auto color = f.graph.create("scene_color", color_desc);
+    auto picking = f.graph.create("picking_ids", picking_desc);
+
+    f.graph.add_pass("forward").color(color).color(picking).execute([](WGPURenderPassEncoder) {});
+
+    f.graph.compile();
+
+    // Verify both textures were allocated
+    auto color_ref = f.graph.get_texture_ref(color);
+    auto picking_ref = f.graph.get_texture_ref(picking);
+    CHECK(color_ref.view() != nullptr);
+    CHECK(picking_ref.view() != nullptr);
+    CHECK(picking_ref.texture() != nullptr);
+
+    auto encoder = f.create_encoder();
+    f.graph.execute(encoder);
+
+    // Create a readback buffer (256 bytes = WebGPU minimum bytesPerRow)
+    WGPUBufferDescriptor buf_desc = WGPU_BUFFER_DESCRIPTOR_INIT;
+    buf_desc.size = 256;
+    buf_desc.usage = WGPUBufferUsage_CopyDst | WGPUBufferUsage_MapRead;
+    auto readback = wgpuDeviceCreateBuffer(f.device.handle(), &buf_desc);
+    REQUIRE(readback != nullptr);
+
+    // Copy a single pixel from the picking texture to the readback buffer
+    WGPUTexelCopyTextureInfo src = WGPU_TEXEL_COPY_TEXTURE_INFO_INIT;
+    src.texture = picking_ref.texture();
+    src.mipLevel = 0;
+    src.origin = {0, 0, 0};
+
+    WGPUTexelCopyBufferInfo dst = WGPU_TEXEL_COPY_BUFFER_INFO_INIT;
+    dst.buffer = readback;
+    dst.layout.offset = 0;
+    dst.layout.bytesPerRow = 256;
+    dst.layout.rowsPerImage = 1;
+
+    WGPUExtent3D extent = {1, 1, 1};
+    wgpuCommandEncoderCopyTextureToBuffer(encoder, &src, &dst, &extent);
+
+    f.submit(encoder);
+
+    // Map and read back — the clear color should be UINT32_MAX (sentinel)
+    WGPUBufferMapCallbackInfo map_cb = WGPU_BUFFER_MAP_CALLBACK_INFO_INIT;
+    map_cb.mode = WGPUCallbackMode_AllowProcessEvents;
+    map_cb.callback = [](WGPUMapAsyncStatus, WGPUStringView, void*, void*) {};
+    wgpuBufferMapAsync(readback, WGPUMapMode_Read, 0, 256, map_cb);
+
+    // Poll until the GPU work completes and the buffer is mapped
+    for (int i = 0; i < 100; ++i) {
+        wgpuInstanceProcessEvents(f.device.instance());
+        if (wgpuBufferGetMapState(readback) == WGPUBufferMapState_Mapped) break;
+    }
+
+    REQUIRE(wgpuBufferGetMapState(readback) == WGPUBufferMapState_Mapped);
+    auto* data =
+        static_cast<const uint32_t*>(wgpuBufferGetConstMappedRange(readback, 0, sizeof(uint32_t)));
+    REQUIRE(data != nullptr);
+    CHECK(*data == UINT32_MAX);
+    wgpuBufferUnmap(readback);
+
+    wgpuBufferRelease(readback);
+}
+
 TEST_CASE("FrameGraph - usage auto-inference from read()") {
     TestFixture f;
 
