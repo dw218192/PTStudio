@@ -4,7 +4,7 @@
 #include <core/rendering/camera.h>
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/renderWorld.h>
-#include <core/rendering/webgpu/buffer.h>
+#include <core/rendering/webgpu/bufferReadback.h>
 #include <core/rendering/webgpu/webgpu.h>
 #include <core/windowedApplication.h>
 #include <pxr/base/tf/notice.h>
@@ -120,9 +120,8 @@ struct EditorApplication final : WindowedApplication {
     rendering::TextureRef m_scene_color_ref;
 
     // GPU picking
-    webgpu::Buffer m_picking_readback_buffer;
+    webgpu::BufferReadback m_picking_readback;
     bool m_pick_requested = false;
-    bool m_picking_pending = false;
     uint32_t m_pick_x = 0;
     uint32_t m_pick_y = 0;
 };

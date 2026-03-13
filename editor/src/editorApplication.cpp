@@ -234,10 +234,6 @@ void EditorApplication::on_ready() {
         log(LogLevel::Warning, "Missing embedded resource: scenes/default.usda");
     }
 
-    // GPU picking readback buffer (256 bytes = minimum bytesPerRow for WebGPU copy)
-    m_picking_readback_buffer = device.create_buffer(
-        256, static_cast<WGPUBufferUsage>(WGPUBufferUsage_CopyDst | WGPUBufferUsage_MapRead));
-
     // Set up renderer passes
     set_renderer_config(0);
 
@@ -362,34 +358,20 @@ void EditorApplication::render(FrameContext& ctx) {
     m_frame_graph->execute(ctx.encoder());
 
     // ── GPU picking readback ──
+    m_picking_readback.tick();
 
-    // Process pending readback from previous frame
-    if (m_picking_pending) {
-#ifndef __EMSCRIPTEN__
-        wgpuDeviceTick(device.handle());
-#endif
-        auto map_state = wgpuBufferGetMapState(m_picking_readback_buffer.handle());
-        if (map_state == WGPUBufferMapState_Mapped) {
-            auto* data = static_cast<const uint32_t*>(wgpuBufferGetConstMappedRange(
-                m_picking_readback_buffer.handle(), 0, sizeof(uint32_t)));
-            INVARIANT(data);
-            uint32_t picked_id = *data;
-            wgpuBufferUnmap(m_picking_readback_buffer.handle());
-            m_picking_pending = false;
-
-            if (picked_id == UINT32_MAX) {
-                m_selected_object = -1;
-            } else if (picked_id < static_cast<uint32_t>(m_world.objects.size())) {
-                m_selected_object = static_cast<int>(picked_id);
-                if (m_stage) {
-                    normalize_xform_ops(m_world.objects[m_selected_object].prim_path);
-                }
+    if (auto picked_id = m_picking_readback.try_read_u32()) {
+        if (*picked_id == UINT32_MAX) {
+            m_selected_object = -1;
+        } else if (*picked_id < static_cast<uint32_t>(m_world.objects.size())) {
+            m_selected_object = static_cast<int>(*picked_id);
+            if (m_stage) {
+                normalize_xform_ops(m_world.objects[m_selected_object].prim_path);
             }
         }
     }
 
-    // Copy picked pixel to readback buffer
-    if (m_pick_requested && has_viewport && !m_picking_pending) {
+    if (m_pick_requested && has_viewport && !m_picking_readback.is_pending()) {
         rendering::TextureDesc picking_desc;
         picking_desc.width = m_viewport_width;
         picking_desc.height = m_viewport_height;
@@ -401,28 +383,9 @@ void EditorApplication::render(FrameContext& ctx) {
         auto picking_ref = m_frame_graph->get_texture_ref(picking_handle);
 
         if (picking_ref && m_pick_x < m_viewport_width && m_pick_y < m_viewport_height) {
-            WGPUTexelCopyTextureInfo src = WGPU_TEXEL_COPY_TEXTURE_INFO_INIT;
-            src.texture = picking_ref.texture();
-            src.mipLevel = 0;
-            src.origin = {m_pick_x, m_pick_y, 0};
-
-            WGPUTexelCopyBufferInfo dst = WGPU_TEXEL_COPY_BUFFER_INFO_INIT;
-            dst.buffer = m_picking_readback_buffer.handle();
-            dst.layout.offset = 0;
-            dst.layout.bytesPerRow = 256;
-            dst.layout.rowsPerImage = 1;
-
-            WGPUExtent3D extent = {1, 1, 1};
-            wgpuCommandEncoderCopyTextureToBuffer(ctx.encoder(), &src, &dst, &extent);
-
+            m_picking_readback.request(ctx.encoder(), picking_ref.texture(), m_pick_x, m_pick_y,
+                                       device.handle(), device.instance());
             m_pick_requested = false;
-            m_picking_pending = true;
-
-            WGPUBufferMapCallbackInfo map_cb = WGPU_BUFFER_MAP_CALLBACK_INFO_INIT;
-            map_cb.mode = WGPUCallbackMode_AllowProcessEvents;
-            map_cb.callback = [](WGPUMapAsyncStatus, WGPUStringView, void*, void*) {};
-            wgpuBufferMapAsync(m_picking_readback_buffer.handle(), WGPUMapMode_Read, 0, 256,
-                               map_cb);
         } else {
             m_pick_requested = false;
         }
