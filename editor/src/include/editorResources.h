@@ -4,16 +4,18 @@
 
 namespace pts {
 constexpr auto k_editor_tutorial_text = R"(This is a simple editor.
-Basic Operations:
-- Left click to select object
-- Left click + drag to move/rotate/scale with gizmo
-- Right click + drag to orbit camera
-- Middle click + drag to pan camera
+Camera:
+- Right click + drag to orbit
+- Middle click + drag to pan
 - Scroll to zoom
-- Press Escape to deselect object
-- Press Delete to delete selected object
-- Press F to focus on selected object
-- Press W/E/R to switch between translate/rotate/scale gizmo
-- Press X to toggle snap
+- Hold right click + WASD to fly, Q/E for down/up
+
+Object Manipulation:
+- Left click to select, Escape to deselect
+- Left click + drag gizmo to transform
+- W/E/R to switch translate/rotate/scale gizmo
+- X to toggle snap
+- Delete to delete selected object
+- F to focus on selected object
 )";
 }  // namespace pts
