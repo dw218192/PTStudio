@@ -24,6 +24,10 @@ if(NOT EMSCRIPTEN)
     list(APPEND TEST_NAMES testFrameGraph)
     set(testFrameGraph_source testFrameGraph.cpp)
     set(testFrameGraph_libs core)
+
+    list(APPEND TEST_NAMES testAsyncStateMachine)
+    set(testAsyncStateMachine_source testAsyncStateMachine.cpp)
+    set(testAsyncStateMachine_libs core)
 endif()
 
 # OpenUSD test - works on all platforms
