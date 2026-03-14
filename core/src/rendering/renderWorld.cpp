@@ -7,6 +7,7 @@ void RenderWorld::clear() {
     objects.clear();
     materials.clear();
     lights.clear();
+    material_cache.clear();
 }
 
 }  // namespace pts::rendering

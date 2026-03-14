@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <glm/glm.hpp>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace pts::rendering {
@@ -57,6 +58,7 @@ struct RenderWorld {
     std::vector<RenderObject> objects;
     std::vector<Material> materials;
     std::vector<Light> lights;
+    std::unordered_map<std::string, uint32_t> material_cache;
     void clear();
 };
 
