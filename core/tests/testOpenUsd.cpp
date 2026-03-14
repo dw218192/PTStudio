@@ -12,6 +12,9 @@
 #include <pxr/usd/usdGeom/mesh.h>
 #include <pxr/usd/usdGeom/xform.h>
 #include <pxr/usd/usdGeom/xformable.h>
+#include <pxr/usd/usdShade/material.h>
+#include <pxr/usd/usdShade/materialBindingAPI.h>
+#include <pxr/usd/usdShade/shader.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
 #include <string>
@@ -351,6 +354,119 @@ TEST_CASE("Selection lost when selected prim is removed during resync") {
     CHECK(restored == -1);
 
     spdlog::drop("test_selection_removed");
+}
+
+TEST_CASE("Material extraction from UsdPreviewSurface") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    REQUIRE(stage);
+
+    pxr::UsdGeomXform::Define(stage, pxr::SdfPath("/Root"));
+
+    // Create mesh with geometry
+    auto mesh = pxr::UsdGeomMesh::Define(stage, pxr::SdfPath("/Root/Mesh"));
+    pxr::VtVec3fArray points = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}};
+    mesh.GetPointsAttr().Set(points);
+    mesh.GetFaceVertexCountsAttr().Set(pxr::VtIntArray{3});
+    mesh.GetFaceVertexIndicesAttr().Set(pxr::VtIntArray{0, 1, 2});
+
+    // Create material with UsdPreviewSurface shader
+    auto material = pxr::UsdShadeMaterial::Define(stage, pxr::SdfPath("/Root/Mat"));
+    auto shader = pxr::UsdShadeShader::Define(stage, pxr::SdfPath("/Root/Mat/Surface"));
+    shader.CreateIdAttr(pxr::VtValue(pxr::TfToken("UsdPreviewSurface")));
+    shader.CreateInput(pxr::TfToken("diffuseColor"), pxr::SdfValueTypeNames->Color3f)
+        .Set(pxr::GfVec3f(0.8f, 0.2f, 0.1f));
+    shader.CreateInput(pxr::TfToken("metallic"), pxr::SdfValueTypeNames->Float).Set(0.9f);
+    shader.CreateInput(pxr::TfToken("roughness"), pxr::SdfValueTypeNames->Float).Set(0.3f);
+    shader.CreateInput(pxr::TfToken("opacity"), pxr::SdfValueTypeNames->Float).Set(0.7f);
+    material.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(),
+                                                   pxr::TfToken("surface"));
+
+    // Bind material to mesh
+    pxr::UsdShadeMaterialBindingAPI::Apply(mesh.GetPrim()).Bind(material);
+
+    auto logger = spdlog::stdout_color_mt("test_material");
+    auto device = pts::webgpu::Device::create(logger);
+    pts::rendering::RenderWorld world;
+    pts::rendering::populate_from_stage(world, stage, device);
+
+    REQUIRE(world.objects.size() == 1);
+    REQUIRE(world.materials.size() == 1);
+    CHECK(world.objects[0].material_index == 0);
+
+    auto& mat = world.materials[0];
+    CHECK(mat.diffuse_color.x == doctest::Approx(0.8f));
+    CHECK(mat.diffuse_color.y == doctest::Approx(0.2f));
+    CHECK(mat.diffuse_color.z == doctest::Approx(0.1f));
+    CHECK(mat.metallic == doctest::Approx(0.9f));
+    CHECK(mat.roughness == doctest::Approx(0.3f));
+    CHECK(mat.opacity == doctest::Approx(0.7f));
+
+    spdlog::drop("test_material");
+}
+
+TEST_CASE("Prim without material gets k_no_material") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    REQUIRE(stage);
+
+    pxr::UsdGeomXform::Define(stage, pxr::SdfPath("/Root"));
+    auto mesh = pxr::UsdGeomMesh::Define(stage, pxr::SdfPath("/Root/Mesh"));
+    pxr::VtVec3fArray points = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}};
+    mesh.GetPointsAttr().Set(points);
+    mesh.GetFaceVertexCountsAttr().Set(pxr::VtIntArray{3});
+    mesh.GetFaceVertexIndicesAttr().Set(pxr::VtIntArray{0, 1, 2});
+
+    auto logger = spdlog::stdout_color_mt("test_no_material");
+    auto device = pts::webgpu::Device::create(logger);
+    pts::rendering::RenderWorld world;
+    pts::rendering::populate_from_stage(world, stage, device);
+
+    REQUIRE(world.objects.size() == 1);
+    CHECK(world.objects[0].material_index == pts::rendering::k_no_material);
+    CHECK(world.materials.empty());
+
+    spdlog::drop("test_no_material");
+}
+
+TEST_CASE("Shared material is deduplicated") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    REQUIRE(stage);
+
+    pxr::UsdGeomXform::Define(stage, pxr::SdfPath("/Root"));
+
+    // Two meshes sharing one material
+    auto mesh_a = pxr::UsdGeomMesh::Define(stage, pxr::SdfPath("/Root/MeshA"));
+    auto mesh_b = pxr::UsdGeomMesh::Define(stage, pxr::SdfPath("/Root/MeshB"));
+    pxr::VtVec3fArray points = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}};
+    pxr::VtIntArray face_counts = {3};
+    pxr::VtIntArray face_indices = {0, 1, 2};
+    for (auto* m : {&mesh_a, &mesh_b}) {
+        m->GetPointsAttr().Set(points);
+        m->GetFaceVertexCountsAttr().Set(face_counts);
+        m->GetFaceVertexIndicesAttr().Set(face_indices);
+    }
+
+    auto material = pxr::UsdShadeMaterial::Define(stage, pxr::SdfPath("/Root/SharedMat"));
+    auto shader = pxr::UsdShadeShader::Define(stage, pxr::SdfPath("/Root/SharedMat/Surface"));
+    shader.CreateIdAttr(pxr::VtValue(pxr::TfToken("UsdPreviewSurface")));
+    shader.CreateInput(pxr::TfToken("diffuseColor"), pxr::SdfValueTypeNames->Color3f)
+        .Set(pxr::GfVec3f(0.5f, 0.5f, 0.5f));
+    material.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(),
+                                                   pxr::TfToken("surface"));
+
+    pxr::UsdShadeMaterialBindingAPI::Apply(mesh_a.GetPrim()).Bind(material);
+    pxr::UsdShadeMaterialBindingAPI::Apply(mesh_b.GetPrim()).Bind(material);
+
+    auto logger = spdlog::stdout_color_mt("test_dedup_material");
+    auto device = pts::webgpu::Device::create(logger);
+    pts::rendering::RenderWorld world;
+    pts::rendering::populate_from_stage(world, stage, device);
+
+    REQUIRE(world.objects.size() == 2);
+    CHECK(world.materials.size() == 1);
+    CHECK(world.objects[0].material_index == world.objects[1].material_index);
+    CHECK(world.objects[0].material_index == 0);
+
+    spdlog::drop("test_dedup_material");
 }
 
 #endif  // !__EMSCRIPTEN__

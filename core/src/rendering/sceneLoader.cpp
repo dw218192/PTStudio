@@ -3,11 +3,61 @@
 #include <core/rendering/sceneLoader.h>
 #include <pxr/usd/usd/primRange.h>
 #include <pxr/usd/usdGeom/xformable.h>
+#include <pxr/usd/usdShade/material.h>
+#include <pxr/usd/usdShade/materialBindingAPI.h>
+#include <pxr/usd/usdShade/shader.h>
+
+#include <unordered_map>
 
 namespace pts::rendering {
 
+namespace {
+
+uint32_t extract_material(RenderWorld& world, const pxr::UsdPrim& prim,
+                          std::unordered_map<std::string, uint32_t>& material_cache) {
+    auto binding = pxr::UsdShadeMaterialBindingAPI(prim).ComputeBoundMaterial();
+    if (!binding) return k_no_material;
+
+    auto mat_path = binding.GetPath().GetString();
+
+    auto it = material_cache.find(mat_path);
+    if (it != material_cache.end()) return it->second;
+
+    Material mat;
+
+    auto surface = binding.ComputeSurfaceSource();
+    if (surface) {
+        pxr::TfToken shader_id;
+        surface.GetShaderId(&shader_id);
+        if (shader_id == pxr::TfToken("UsdPreviewSurface")) {
+            if (auto input = surface.GetInput(pxr::TfToken("diffuseColor"))) {
+                pxr::GfVec3f color;
+                if (input.Get(&color)) mat.diffuse_color = {color[0], color[1], color[2]};
+            }
+            if (auto input = surface.GetInput(pxr::TfToken("metallic"))) {
+                input.Get(&mat.metallic);
+            }
+            if (auto input = surface.GetInput(pxr::TfToken("roughness"))) {
+                input.Get(&mat.roughness);
+            }
+            if (auto input = surface.GetInput(pxr::TfToken("opacity"))) {
+                input.Get(&mat.opacity);
+            }
+        }
+    }
+
+    auto index = static_cast<uint32_t>(world.materials.size());
+    world.materials.push_back(mat);
+    material_cache[mat_path] = index;
+    return index;
+}
+
+}  // namespace
+
 void populate_from_stage(RenderWorld& world, const pxr::UsdStageRefPtr& stage,
                          const webgpu::Device& device) {
+    std::unordered_map<std::string, uint32_t> material_cache;
+
     for (const auto& prim : pxr::UsdPrimRange(stage->GetPseudoRoot())) {
         for (const auto* adapter : k_schema_adapters()) {
             if (!adapter->can_adapt(prim)) continue;
@@ -47,6 +97,7 @@ void populate_from_stage(RenderWorld& world, const pxr::UsdStageRefPtr& stage,
 
             RenderObject obj;
             obj.mesh_index = mesh_index;
+            obj.material_index = extract_material(world, prim, material_cache);
             obj.transform = transform;
             obj.prim_path = prim.GetPath().GetString();
             world.objects.push_back(std::move(obj));
