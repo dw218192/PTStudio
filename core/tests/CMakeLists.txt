@@ -41,6 +41,12 @@ set(testOpenUsd_source testOpenUsd.cpp)
 set(testOpenUsd_libs core)
 set(testOpenUsd_includes ${CMAKE_CURRENT_SOURCE_DIR}/generated)
 
+# Geometric adapter tests - works on all platforms (no GPU needed)
+list(APPEND TEST_NAMES testGeometricAdapters)
+set(testGeometricAdapters_source testGeometricAdapters.cpp)
+set(testGeometricAdapters_libs core)
+set(testGeometricAdapters_includes ${CMAKE_CURRENT_SOURCE_DIR}/generated)
+
 function(add_core_test target_name)
     message(STATUS "Building test: ${target_name}")
     add_executable(${target_name} ${${target_name}_source})

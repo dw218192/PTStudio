@@ -4,15 +4,15 @@
 
 namespace pts::rendering {
 
-class MeshAdapter final : public ISchemaAdapter {
+class SphereAdapter final : public ISchemaAdapter {
    public:
-    static const MeshAdapter& instance();
+    static const SphereAdapter& instance();
 
     bool can_adapt(const pxr::UsdPrim& prim) const override;
     std::optional<AdapterResult> adapt(const pxr::UsdPrim& prim) const override;
 
    private:
-    MeshAdapter() = default;
+    SphereAdapter() = default;
 };
 
 }  // namespace pts::rendering

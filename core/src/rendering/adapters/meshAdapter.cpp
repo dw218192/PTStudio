@@ -1,5 +1,5 @@
+#include <core/rendering/adapters/adapterUtils.h>
 #include <core/rendering/adapters/meshAdapter.h>
-
 #include <pxr/usd/usdGeom/mesh.h>
 #include <pxr/usd/usdGeom/primvarsAPI.h>
 
@@ -32,11 +32,7 @@ std::optional<AdapterResult> MeshAdapter::adapt(const pxr::UsdPrim& prim) const 
 
     auto primvars_api = pxr::UsdGeomPrimvarsAPI(prim);
 
-    pxr::VtVec3fArray display_colors;
-    auto color_pv = primvars_api.GetPrimvar(pxr::TfToken("displayColor"));
-    if (color_pv) {
-        color_pv.Get(&display_colors);
-    }
+    auto display_colors = read_display_color(prim);
 
     pxr::VtVec2fArray uvs;
     auto uv_pv = primvars_api.GetPrimvar(pxr::TfToken("st"));

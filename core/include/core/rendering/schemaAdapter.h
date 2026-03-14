@@ -1,11 +1,11 @@
 #pragma once
 
+#include <core/rendering/vertex.h>
+#include <pxr/usd/usd/prim.h>
+
 #include <cstdint>
 #include <optional>
 #include <vector>
-
-#include <core/rendering/vertex.h>
-#include <pxr/usd/usd/prim.h>
 
 namespace pts::rendering {
 
@@ -15,7 +15,7 @@ struct AdapterResult {
 };
 
 class ISchemaAdapter {
-public:
+   public:
     virtual ~ISchemaAdapter() = default;
     virtual bool can_adapt(const pxr::UsdPrim& prim) const = 0;
     virtual std::optional<AdapterResult> adapt(const pxr::UsdPrim& prim) const = 0;
