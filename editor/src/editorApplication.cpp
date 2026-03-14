@@ -222,7 +222,7 @@ void EditorApplication::on_ready() {
         device, get_logging_manager().get_logger_shared("frame_graph"));
 
     // Load default scene
-    auto usda = editor_resources::get_resource("assets/scenes/material_sphere.usda");
+    auto usda = editor_resources::get_resource("assets/scenes/primitives.usda");
     if (usda) {
         auto layer = pxr::SdfLayer::CreateAnonymous(".usda");
         layer->ImportFromString(std::string{*usda});
@@ -231,7 +231,7 @@ void EditorApplication::on_ready() {
         register_stage_listener();
         log(LogLevel::Info, "Loaded default scene ({} objects)", m_world.objects.size());
     } else {
-        log(LogLevel::Warning, "Missing embedded resource: assets/scenes/material_sphere.usda");
+        log(LogLevel::Warning, "Missing embedded resource: assets/scenes/primitives.usda");
     }
 
     // Set up renderer passes
