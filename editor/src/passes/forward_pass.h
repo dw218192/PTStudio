@@ -37,9 +37,11 @@ class ForwardPass final : public rendering::IScenePass {
         webgpu::ShaderModule shader;
         webgpu::RenderPipeline pipeline;
         webgpu::Buffer uniform_buffer;
+        webgpu::Buffer material_buffer;
         WGPUBindGroup bind_group = nullptr;
         WGPUBindGroupLayout bind_group_layout = nullptr;
         uint32_t capacity = 0;
+        uint32_t material_capacity = 0;
     };
 
     std::variant<std::monostate, Ready> m_state;

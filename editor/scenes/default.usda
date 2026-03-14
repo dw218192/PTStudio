@@ -53,4 +53,66 @@ def Xform "Root"
             interpolation = "uniform"
         )
     }
+
+    def Mesh "MaterialSphere" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Root/Materials/BlueMetal>
+
+        uniform token subdivisionScheme = "none"
+        double3 xformOp:translate = (2.0, 0.0, 0.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+
+        point3f[] points = [
+            (-0.5, -0.5, -0.5),
+            ( 0.5, -0.5, -0.5),
+            ( 0.5,  0.5, -0.5),
+            (-0.5,  0.5, -0.5),
+            (-0.5, -0.5,  0.5),
+            ( 0.5, -0.5,  0.5),
+            ( 0.5,  0.5,  0.5),
+            (-0.5,  0.5,  0.5)
+        ]
+
+        int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
+
+        int[] faceVertexIndices = [
+            4, 5, 6, 7,
+            1, 0, 3, 2,
+            5, 1, 2, 6,
+            0, 4, 7, 3,
+            7, 6, 2, 3,
+            0, 1, 5, 4
+        ]
+
+        normal3f[] normals = [
+            ( 0,  0,  1), ( 0,  0,  1), ( 0,  0,  1), ( 0,  0,  1),
+            ( 0,  0, -1), ( 0,  0, -1), ( 0,  0, -1), ( 0,  0, -1),
+            ( 1,  0,  0), ( 1,  0,  0), ( 1,  0,  0), ( 1,  0,  0),
+            (-1,  0,  0), (-1,  0,  0), (-1,  0,  0), (-1,  0,  0),
+            ( 0,  1,  0), ( 0,  1,  0), ( 0,  1,  0), ( 0,  1,  0),
+            ( 0, -1,  0), ( 0, -1,  0), ( 0, -1,  0), ( 0, -1,  0)
+        ] (
+            interpolation = "faceVarying"
+        )
+    }
+
+    def Scope "Materials"
+    {
+        def Material "BlueMetal"
+        {
+            token outputs:surface.connect = </Root/Materials/BlueMetal/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.2, 0.4, 0.9)
+                float inputs:metallic = 0.8
+                float inputs:roughness = 0.2
+                float inputs:opacity = 1.0
+                token outputs:surface
+            }
+        }
+    }
 }

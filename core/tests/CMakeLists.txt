@@ -33,6 +33,10 @@ if(NOT EMSCRIPTEN)
     list(APPEND TEST_NAMES testBufferReadback)
     set(testBufferReadback_source testBufferReadback.cpp)
     set(testBufferReadback_libs core)
+
+    list(APPEND TEST_NAMES testMaterialBuffer)
+    set(testMaterialBuffer_source testMaterialBuffer.cpp)
+    set(testMaterialBuffer_libs core)
 endif()
 
 # OpenUSD test - works on all platforms
