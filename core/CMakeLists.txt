@@ -9,16 +9,9 @@ set(lib_name "core")
 # provided as source files in res/bindings/ and must be compiled by the consumer
 
 # Get imgui package folder from Conan (set by CMakeDeps generator)
-# The variable imgui_PACKAGE_FOLDER_DEBUG/RELEASE is set by Conan
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(IMGUI_PKG_ROOT "${imgui_PACKAGE_FOLDER_DEBUG}")
-else()
-    set(IMGUI_PKG_ROOT "${imgui_PACKAGE_FOLDER_RELEASE}")
-endif()
-# Fallback: try without build type suffix
-if(NOT IMGUI_PKG_ROOT)
-    set(IMGUI_PKG_ROOT "${imgui_PACKAGE_FOLDER}")
-endif()
+# The variable imgui_PACKAGE_FOLDER_<CONFIG> is set by Conan
+string(TOUPPER "${CMAKE_BUILD_TYPE}" _build_type_upper)
+set(IMGUI_PKG_ROOT "${imgui_PACKAGE_FOLDER_${_build_type_upper}}")
 set(IMGUI_BINDINGS_DIR "${IMGUI_PKG_ROOT}/res/bindings")
 
 # Collect backend sources based on configuration

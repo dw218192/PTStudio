@@ -25,6 +25,7 @@ build:
     - usdGeom
     - usdShade
     - usdLux
+    - geomUtil
   prebuild:
     format: {}
     slangc:

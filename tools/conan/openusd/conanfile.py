@@ -2,7 +2,7 @@ from conan import ConanFile
 from conan.errors import ConanInvalidConfiguration
 from conan.tools.build import check_min_cppstd
 from conan.tools.cmake import CMake, CMakeDeps, CMakeToolchain, cmake_layout
-from conan.tools.files import copy, get
+from conan.tools.files import copy, get, save
 from conan.tools.scm import Git, Version
 import os
 
@@ -60,12 +60,22 @@ class OpenUSDConan(ConanFile):
             # onetbb requires hwloc to be shared on desktop platforms
             self.options["onetbb"].hwloc = True
             self.options["hwloc"].shared = True
+        # OpenSubdiv: CPU-only, no GPU backends
+        self.options["opensubdiv"].with_opengl = False
+        self.options["opensubdiv"].with_tbb = False
+        self.options["opensubdiv"].with_omp = False
+        self.options["opensubdiv"].with_cuda = False
+        self.options["opensubdiv"].with_clew = False
+        self.options["opensubdiv"].with_opencl = False
+        self.options["opensubdiv"].with_dx = False
+        self.options["opensubdiv"].with_metal = False
 
     def layout(self) -> None:
         cmake_layout(self, src_folder="src")
 
     def requirements(self) -> None:
         self.requires("onetbb/2021.12.0", transitive_headers=True, transitive_libs=True)
+        self.requires("opensubdiv/3.6.0", transitive_headers=True, transitive_libs=True)
 
     def build_requirements(self) -> None:
         self.tool_requires("cmake/[>=3.24 <4]")
@@ -98,9 +108,12 @@ class OpenUSDConan(ConanFile):
         tc.variables["PXR_BUILD_TUTORIALS"] = False
         tc.variables["PXR_BUILD_HTML_DOCUMENTATION"] = False
         tc.variables["PXR_ENABLE_PYTHON_SUPPORT"] = False
-        # Disable imaging and optional features
-        tc.variables["PXR_BUILD_IMAGING"] = False
+        # Enable imaging subset (pxOsd + geomUtil only, no full imaging stack)
+        tc.variables["PXR_BUILD_IMAGING"] = True
         tc.variables["PXR_BUILD_USD_IMAGING"] = False
+        tc.variables["PXR_ENABLE_GL_SUPPORT"] = False
+        tc.variables["PXR_ENABLE_VULKAN_SUPPORT"] = False
+        tc.variables["PXR_ENABLE_METAL_SUPPORT"] = False
         tc.variables["PXR_ENABLE_PTEX_SUPPORT"] = False
         tc.variables["PXR_ENABLE_OPENVDB_SUPPORT"] = False
         tc.variables["PXR_ENABLE_MATERIALX_SUPPORT"] = False
@@ -112,12 +125,24 @@ class OpenUSDConan(ConanFile):
         tc.variables["PXR_BUILD_MONOLITHIC"] = False
         # Tell USD to use Conan's TBB target
         tc.variables["TBB_tbb_LIBRARY"] = "onetbb::onetbb"
+        # Pass OpenSubdiv paths so USD's FindOpenSubdiv.cmake can locate them
+        osd = self.dependencies["opensubdiv"]
+        osd_root = osd.package_folder.replace("\\", "/")
+        tc.cache_variables["OPENSUBDIV_INCLUDE_DIR"] = f"{osd_root}/include"
+        osd_libdir = f"{osd_root}/lib"
+        if self.settings.os == "Windows":
+            tc.cache_variables["OPENSUBDIV_OSDCPU_LIBRARY"] = f"{osd_libdir}/osdCPU.lib"
+        else:
+            tc.cache_variables["OPENSUBDIV_OSDCPU_LIBRARY"] = f"{osd_libdir}/libosdCPU.a"
         tc.generate()
 
         deps = CMakeDeps(self)
         deps.generate()
 
     def build(self) -> None:
+        # Patch imaging CMakeLists to only build pxOsd + geomUtil (skip hdSt, hgi, etc.)
+        imaging_cmakelists = os.path.join(self.source_folder, "pxr", "imaging", "CMakeLists.txt")
+        save(self, imaging_cmakelists, "add_subdirectory(pxOsd)\nadd_subdirectory(geomUtil)\n")
         cmake = CMake(self)
         cmake.configure()
         cmake.build()
@@ -293,6 +318,23 @@ class OpenUSDConan(ConanFile):
             "usd_usd",
             "usd_usdGeom",
             "usd_usdShade",
+        ]
+
+        self.cpp_info.components["usd_pxOsd"].libs = ["usd_pxOsd"]
+        self.cpp_info.components["usd_pxOsd"].requires = [
+            "usd_tf",
+            "usd_gf",
+            "usd_vt",
+            "opensubdiv::opensubdiv",
+        ]
+
+        self.cpp_info.components["usd_geomUtil"].libs = ["usd_geomUtil"]
+        self.cpp_info.components["usd_geomUtil"].requires = [
+            "usd_arch",
+            "usd_gf",
+            "usd_tf",
+            "usd_vt",
+            "usd_pxOsd",
         ]
 
         # USD installs DLLs in lib/ alongside .lib files.  With components
