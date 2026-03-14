@@ -4,11 +4,10 @@
 #include <pxr/usd/usd/prim.h>
 
 #include <cstdint>
+#include <glm/glm.hpp>
 #include <optional>
 #include <variant>
 #include <vector>
-
-#include <glm/glm.hpp>
 
 namespace pts::rendering {
 

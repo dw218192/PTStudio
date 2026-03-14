@@ -59,7 +59,7 @@ build:
             - "editor/generated/shaders/forward.wgsl"
             - "editor/generated/shaders/grid.wgsl"
             - "editor/icons/*.*"
-            - "editor/scenes/*.*"
+            - "assets/scenes/material_sphere.usda"
           output: "editor/generated/embedded_resources.h"
           namespace: "editor_resources"
         - input:

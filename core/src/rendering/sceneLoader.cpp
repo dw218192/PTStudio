@@ -83,16 +83,14 @@ void populate_from_stage(RenderWorld& world, const pxr::UsdStageRefPtr& stage,
                             static_cast<WGPUBufferUsage>(WGPUBufferUsage_Vertex |
                                                          WGPUBufferUsage_CopyDst));
                         wgpuQueueWriteBuffer(device.queue(), vertex_buf.handle(), 0,
-                                             r.vertices.data(),
-                                             r.vertices.size() * sizeof(Vertex));
+                                             r.vertices.data(), r.vertices.size() * sizeof(Vertex));
 
                         auto index_buf = device.create_buffer(
                             r.indices.size() * sizeof(uint32_t),
                             static_cast<WGPUBufferUsage>(WGPUBufferUsage_Index |
                                                          WGPUBufferUsage_CopyDst));
                         wgpuQueueWriteBuffer(device.queue(), index_buf.handle(), 0,
-                                             r.indices.data(),
-                                             r.indices.size() * sizeof(uint32_t));
+                                             r.indices.data(), r.indices.size() * sizeof(uint32_t));
 
                         uint32_t mesh_index = static_cast<uint32_t>(world.meshes.size());
 

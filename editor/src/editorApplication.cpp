@@ -222,7 +222,7 @@ void EditorApplication::on_ready() {
         device, get_logging_manager().get_logger_shared("frame_graph"));
 
     // Load default scene
-    auto usda = editor_resources::get_resource("scenes/default.usda");
+    auto usda = editor_resources::get_resource("assets/scenes/material_sphere.usda");
     if (usda) {
         auto layer = pxr::SdfLayer::CreateAnonymous(".usda");
         layer->ImportFromString(std::string{*usda});
@@ -231,7 +231,7 @@ void EditorApplication::on_ready() {
         register_stage_listener();
         log(LogLevel::Info, "Loaded default scene ({} objects)", m_world.objects.size());
     } else {
-        log(LogLevel::Warning, "Missing embedded resource: scenes/default.usda");
+        log(LogLevel::Warning, "Missing embedded resource: assets/scenes/material_sphere.usda");
     }
 
     // Set up renderer passes
@@ -239,7 +239,7 @@ void EditorApplication::on_ready() {
 
     // Camera defaults
     m_camera.set_target({0.0f, 0.0f, 0.0f});
-    m_camera.set_distance(3.0f);
+    m_camera.set_distance(10.0f);
     m_camera.set_fov_y(60.0f);
 
     if (m_app_config.quit_on_start) {

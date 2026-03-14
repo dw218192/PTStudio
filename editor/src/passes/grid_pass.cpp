@@ -46,8 +46,8 @@ auto GridPass::is_ready() const noexcept -> bool {
 }
 
 void GridPass::setup(const webgpu::Device& device) {
-    auto shader_src = editor_resources::get_resource("generated/shaders/grid.wgsl");
-    PRECONDITION_MSG(shader_src, "Missing embedded resource: generated/shaders/grid.wgsl");
+    auto shader_src = editor_resources::get_resource("editor/generated/shaders/grid.wgsl");
+    PRECONDITION_MSG(shader_src, "Missing embedded resource: editor/generated/shaders/grid.wgsl");
 
     auto shader = device.create_shader_module_from_source(*shader_src);
 

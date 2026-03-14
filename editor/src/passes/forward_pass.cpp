@@ -75,8 +75,9 @@ auto ForwardPass::is_ready() const noexcept -> bool {
 }
 
 void ForwardPass::setup(const webgpu::Device& device) {
-    auto shader_src = editor_resources::get_resource("generated/shaders/forward.wgsl");
-    PRECONDITION_MSG(shader_src, "Missing embedded resource: generated/shaders/forward.wgsl");
+    auto shader_src = editor_resources::get_resource("editor/generated/shaders/forward.wgsl");
+    PRECONDITION_MSG(shader_src,
+                     "Missing embedded resource: editor/generated/shaders/forward.wgsl");
 
     auto shader = device.create_shader_module_from_source(*shader_src);
 
