@@ -26,6 +26,7 @@ build:
     - usdShade
     - usdLux
     - geomUtil
+    - hd
   prebuild:
     format: {}
     slangc:
@@ -60,7 +61,7 @@ build:
             - "editor/generated/shaders/forward.wgsl"
             - "editor/generated/shaders/grid.wgsl"
             - "editor/icons/*.*"
-            - "assets/scenes/material_sphere.usda"
+            - "assets/scenes/primitives.usda"
           output: "editor/generated/embedded_resources.h"
           namespace: "editor_resources"
         - input:

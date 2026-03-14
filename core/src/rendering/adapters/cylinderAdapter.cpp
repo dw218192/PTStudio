@@ -1,8 +1,13 @@
 #include <core/rendering/adapters/adapterUtils.h>
 #include <core/rendering/adapters/cylinderAdapter.h>
 #include <pxr/imaging/geomUtil/cylinderMeshGenerator.h>
+#include <pxr/imaging/hd/meshTopology.h>
+#include <pxr/imaging/hd/meshUtil.h>
 #include <pxr/imaging/pxOsd/meshTopology.h>
+#include <pxr/imaging/pxOsd/tokens.h>
+#include <pxr/usd/sdf/path.h>
 #include <pxr/usd/usdGeom/cylinder.h>
+#include <pxr/usd/usdGeom/tokens.h>
 
 #include <cmath>
 
@@ -14,15 +19,16 @@ constexpr float k_pi = 3.14159265358979323846f;
 
 // GeomUtil generates along Z. This maps Z-aligned geometry to the requested axis.
 struct AxisMapping {
-    int along;  // index of the cylinder's longitudinal axis
-    int u_ax;   // first radial axis
-    int v_ax;   // second radial axis
+    int along;          // index of the cylinder's longitudinal axis
+    int u_ax;           // first radial axis
+    int v_ax;           // second radial axis
+    bool flip_winding;  // true when the permutation is odd (flips handedness)
 };
 
 inline AxisMapping get_axis_mapping(const pxr::TfToken& axis) {
-    if (axis == pxr::UsdGeomTokens->x) return {0, 1, 2};
-    if (axis == pxr::UsdGeomTokens->z) return {2, 0, 1};
-    return {1, 0, 2};  // Y (default)
+    if (axis == pxr::UsdGeomTokens->x) return {0, 1, 2, false};
+    if (axis == pxr::UsdGeomTokens->z) return {2, 0, 1, false};
+    return {1, 0, 2, true};  // Y — swapping Y↔Z is an odd permutation
 }
 }  // namespace
 
@@ -52,8 +58,6 @@ std::optional<AdapterResult> CylinderAdapter::adapt(const pxr::UsdPrim& prim) co
     auto colors = read_display_color(prim);
 
     auto topo = pxr::GeomUtilCylinderMeshGenerator::GenerateTopology(k_num_radial);
-    const auto& face_counts = topo.GetFaceVertexCounts();
-    const auto& face_indices = topo.GetFaceVertexIndices();
 
     size_t num_pts = pxr::GeomUtilCylinderMeshGenerator::ComputeNumPoints(k_num_radial);
     pxr::VtVec3fArray points(num_pts);
@@ -84,20 +88,25 @@ std::optional<AdapterResult> CylinderAdapter::adapt(const pxr::UsdPrim& prim) co
         apply_display_color(vtx, colors);
     }
 
-    // Triangulate
+    // Triangulate via HdMeshUtil
+    pxr::HdMeshTopology hd_topo(pxr::PxOsdOpenSubdivTokens->none, pxr::UsdGeomTokens->rightHanded,
+                                topo.GetFaceVertexCounts(), topo.GetFaceVertexIndices());
+    pxr::HdMeshUtil mesh_util(&hd_topo, pxr::SdfPath());
+    pxr::VtVec3iArray tri_indices;
+    pxr::VtIntArray prim_params;
+    mesh_util.ComputeTriangleIndices(&tri_indices, &prim_params);
+
     std::vector<uint32_t> indices;
-    int idx_offset = 0;
-    for (size_t f = 0; f < face_counts.size(); ++f) {
-        int fvc = face_counts[f];
-        auto v0 = static_cast<uint32_t>(face_indices[idx_offset]);
-        for (int t = 1; t < fvc - 1; ++t) {
-            auto v1 = static_cast<uint32_t>(face_indices[idx_offset + t]);
-            auto v2 = static_cast<uint32_t>(face_indices[idx_offset + t + 1]);
-            indices.push_back(v0);
-            indices.push_back(v1);
-            indices.push_back(v2);
+    indices.reserve(tri_indices.size() * 3);
+    for (const auto& tri : tri_indices) {
+        indices.push_back(static_cast<uint32_t>(tri[0]));
+        if (mapping.flip_winding) {
+            indices.push_back(static_cast<uint32_t>(tri[2]));
+            indices.push_back(static_cast<uint32_t>(tri[1]));
+        } else {
+            indices.push_back(static_cast<uint32_t>(tri[1]));
+            indices.push_back(static_cast<uint32_t>(tri[2]));
         }
-        idx_offset += fvc;
     }
 
     return MeshResult{std::move(vertices), std::move(indices)};

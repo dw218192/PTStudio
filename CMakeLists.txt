@@ -77,7 +77,7 @@ find_package(openusd CONFIG REQUIRED)
 
 # Optional USD schema modules (beyond the always-linked usd_usd core).
 # Populated from config.yaml via the build tool's -DPTS_USD_MODULES flag.
-set(PTS_USD_MODULES "usdGeom;usdShade;usdLux;geomUtil" CACHE STRING
+set(PTS_USD_MODULES "usdGeom;usdShade;usdLux;geomUtil;hd" CACHE STRING
     "Optional USD schema modules to link")
 
 # On Emscripten, embed OpenUSD plugin resources into the WASM virtual filesystem

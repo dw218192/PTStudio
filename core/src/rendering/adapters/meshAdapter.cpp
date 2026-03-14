@@ -1,7 +1,12 @@
 #include <core/rendering/adapters/adapterUtils.h>
 #include <core/rendering/adapters/meshAdapter.h>
+#include <pxr/imaging/hd/meshTopology.h>
+#include <pxr/imaging/hd/meshUtil.h>
+#include <pxr/imaging/pxOsd/tokens.h>
+#include <pxr/usd/sdf/path.h>
 #include <pxr/usd/usdGeom/mesh.h>
 #include <pxr/usd/usdGeom/primvarsAPI.h>
+#include <pxr/usd/usdGeom/tokens.h>
 
 namespace pts::rendering {
 
@@ -40,19 +45,18 @@ std::optional<AdapterResult> MeshAdapter::adapt(const pxr::UsdPrim& prim) const 
         uv_pv.Get(&uvs);
     }
 
+    // Build per-face-vertex (unrolled) vertices for face-varying data.
+    // Assign sequential indices so HdMeshUtil triangulates directly into
+    // the unrolled vertex buffer.
     std::vector<Vertex> vertices;
-    std::vector<uint32_t> indices;
+    pxr::VtIntArray seq_fv_indices(face_vertex_indices.size());
 
     size_t fv_offset = 0;
     for (size_t face = 0; face < face_vertex_counts.size(); face++) {
         int count = face_vertex_counts[face];
-        if (count < 3) {
-            fv_offset += count;
-            continue;
-        }
 
         pxr::GfVec3f face_normal(0, 0, 0);
-        if (normals.empty()) {
+        if (normals.empty() && count >= 3) {
             int i0 = face_vertex_indices[fv_offset];
             int i1 = face_vertex_indices[fv_offset + 1];
             int i2 = face_vertex_indices[fv_offset + 2];
@@ -63,10 +67,10 @@ std::optional<AdapterResult> MeshAdapter::adapt(const pxr::UsdPrim& prim) const 
             if (len > 0) face_normal /= len;
         }
 
-        uint32_t base = static_cast<uint32_t>(vertices.size());
-
         for (int j = 0; j < count; j++) {
             int pt_idx = face_vertex_indices[fv_offset + j];
+            seq_fv_indices[fv_offset + j] = static_cast<int>(vertices.size());
+
             Vertex v = {};
 
             v.position[0] = points[pt_idx][0];
@@ -130,16 +134,26 @@ std::optional<AdapterResult> MeshAdapter::adapt(const pxr::UsdPrim& prim) const 
             vertices.push_back(v);
         }
 
-        for (int j = 0; j < count - 2; j++) {
-            indices.push_back(base);
-            indices.push_back(base + j + 1);
-            indices.push_back(base + j + 2);
-        }
-
         fv_offset += count;
     }
 
     if (vertices.empty()) return std::nullopt;
+
+    // Triangulate via HdMeshUtil using sequential face-vertex indices
+    pxr::HdMeshTopology hd_topo(pxr::PxOsdOpenSubdivTokens->none, pxr::UsdGeomTokens->rightHanded,
+                                face_vertex_counts, seq_fv_indices);
+    pxr::HdMeshUtil mesh_util(&hd_topo, pxr::SdfPath());
+    pxr::VtVec3iArray tri_indices;
+    pxr::VtIntArray prim_params;
+    mesh_util.ComputeTriangleIndices(&tri_indices, &prim_params);
+
+    std::vector<uint32_t> indices;
+    indices.reserve(tri_indices.size() * 3);
+    for (const auto& tri : tri_indices) {
+        indices.push_back(static_cast<uint32_t>(tri[0]));
+        indices.push_back(static_cast<uint32_t>(tri[1]));
+        indices.push_back(static_cast<uint32_t>(tri[2]));
+    }
 
     return MeshResult{std::move(vertices), std::move(indices)};
 }

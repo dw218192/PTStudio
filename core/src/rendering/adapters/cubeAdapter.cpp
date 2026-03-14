@@ -1,8 +1,13 @@
 #include <core/rendering/adapters/adapterUtils.h>
 #include <core/rendering/adapters/cubeAdapter.h>
 #include <pxr/imaging/geomUtil/cuboidMeshGenerator.h>
+#include <pxr/imaging/hd/meshTopology.h>
+#include <pxr/imaging/hd/meshUtil.h>
 #include <pxr/imaging/pxOsd/meshTopology.h>
+#include <pxr/imaging/pxOsd/tokens.h>
+#include <pxr/usd/sdf/path.h>
 #include <pxr/usd/usdGeom/cube.h>
+#include <pxr/usd/usdGeom/tokens.h>
 
 namespace pts::rendering {
 
@@ -41,18 +46,22 @@ std::optional<AdapterResult> CubeAdapter::adapt(const pxr::UsdPrim& prim) const 
     };
     // clang-format on
 
+    // Build per-face vertices (unrolled) for per-face normals.
+    // Sequential face-vertex indices let HdMeshUtil triangulate directly
+    // into this unrolled vertex buffer.
     std::vector<Vertex> vertices;
-    std::vector<uint32_t> indices;
+    pxr::VtIntArray seq_fv_indices(face_indices.size());
 
     int idx_offset = 0;
     for (size_t f = 0; f < face_counts.size(); ++f) {
         int fvc = face_counts[f];
-        auto base = static_cast<uint32_t>(vertices.size());
         const auto& n = normals[f];
 
         for (int j = 0; j < fvc; ++j) {
             int pi = face_indices[idx_offset + j];
             const auto& p = points[pi];
+
+            seq_fv_indices[idx_offset + j] = static_cast<int>(vertices.size());
 
             Vertex vtx = {};
             vtx.position[0] = p[0];
@@ -67,13 +76,23 @@ std::optional<AdapterResult> CubeAdapter::adapt(const pxr::UsdPrim& prim) const 
             vertices.push_back(vtx);
         }
 
-        for (int t = 1; t < fvc - 1; ++t) {
-            indices.push_back(base);
-            indices.push_back(base + t);
-            indices.push_back(base + t + 1);
-        }
-
         idx_offset += fvc;
+    }
+
+    // Triangulate via HdMeshUtil using sequential face-vertex indices
+    pxr::HdMeshTopology hd_topo(pxr::PxOsdOpenSubdivTokens->none, pxr::UsdGeomTokens->rightHanded,
+                                face_counts, seq_fv_indices);
+    pxr::HdMeshUtil mesh_util(&hd_topo, pxr::SdfPath());
+    pxr::VtVec3iArray tri_indices;
+    pxr::VtIntArray prim_params;
+    mesh_util.ComputeTriangleIndices(&tri_indices, &prim_params);
+
+    std::vector<uint32_t> indices;
+    indices.reserve(tri_indices.size() * 3);
+    for (const auto& tri : tri_indices) {
+        indices.push_back(static_cast<uint32_t>(tri[0]));
+        indices.push_back(static_cast<uint32_t>(tri[1]));
+        indices.push_back(static_cast<uint32_t>(tri[2]));
     }
 
     return MeshResult{std::move(vertices), std::move(indices)};

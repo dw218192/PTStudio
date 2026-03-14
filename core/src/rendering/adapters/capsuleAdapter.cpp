@@ -1,8 +1,13 @@
 #include <core/rendering/adapters/adapterUtils.h>
 #include <core/rendering/adapters/capsuleAdapter.h>
 #include <pxr/imaging/geomUtil/capsuleMeshGenerator.h>
+#include <pxr/imaging/hd/meshTopology.h>
+#include <pxr/imaging/hd/meshUtil.h>
 #include <pxr/imaging/pxOsd/meshTopology.h>
+#include <pxr/imaging/pxOsd/tokens.h>
+#include <pxr/usd/sdf/path.h>
 #include <pxr/usd/usdGeom/capsule.h>
+#include <pxr/usd/usdGeom/tokens.h>
 
 #include <cmath>
 
@@ -17,12 +22,13 @@ struct AxisMapping {
     int along;
     int u_ax;
     int v_ax;
+    bool flip_winding;
 };
 
 inline AxisMapping get_axis_mapping(const pxr::TfToken& axis) {
-    if (axis == pxr::UsdGeomTokens->x) return {0, 1, 2};
-    if (axis == pxr::UsdGeomTokens->z) return {2, 0, 1};
-    return {1, 0, 2};
+    if (axis == pxr::UsdGeomTokens->x) return {0, 1, 2, false};
+    if (axis == pxr::UsdGeomTokens->z) return {2, 0, 1, false};
+    return {1, 0, 2, true};  // Y — odd permutation
 }
 }  // namespace
 
@@ -52,8 +58,6 @@ std::optional<AdapterResult> CapsuleAdapter::adapt(const pxr::UsdPrim& prim) con
     auto colors = read_display_color(prim);
 
     auto topo = pxr::GeomUtilCapsuleMeshGenerator::GenerateTopology(k_num_radial, k_num_cap_axial);
-    const auto& face_counts = topo.GetFaceVertexCounts();
-    const auto& face_indices = topo.GetFaceVertexIndices();
 
     size_t num_pts =
         pxr::GeomUtilCapsuleMeshGenerator::ComputeNumPoints(k_num_radial, k_num_cap_axial);
@@ -85,20 +89,25 @@ std::optional<AdapterResult> CapsuleAdapter::adapt(const pxr::UsdPrim& prim) con
         apply_display_color(vtx, colors);
     }
 
-    // Triangulate
+    // Triangulate via HdMeshUtil
+    pxr::HdMeshTopology hd_topo(pxr::PxOsdOpenSubdivTokens->none, pxr::UsdGeomTokens->rightHanded,
+                                topo.GetFaceVertexCounts(), topo.GetFaceVertexIndices());
+    pxr::HdMeshUtil mesh_util(&hd_topo, pxr::SdfPath());
+    pxr::VtVec3iArray tri_indices;
+    pxr::VtIntArray prim_params;
+    mesh_util.ComputeTriangleIndices(&tri_indices, &prim_params);
+
     std::vector<uint32_t> indices;
-    int idx_offset = 0;
-    for (size_t f = 0; f < face_counts.size(); ++f) {
-        int fvc = face_counts[f];
-        auto v0 = static_cast<uint32_t>(face_indices[idx_offset]);
-        for (int t = 1; t < fvc - 1; ++t) {
-            auto v1 = static_cast<uint32_t>(face_indices[idx_offset + t]);
-            auto v2 = static_cast<uint32_t>(face_indices[idx_offset + t + 1]);
-            indices.push_back(v0);
-            indices.push_back(v1);
-            indices.push_back(v2);
+    indices.reserve(tri_indices.size() * 3);
+    for (const auto& tri : tri_indices) {
+        indices.push_back(static_cast<uint32_t>(tri[0]));
+        if (mapping.flip_winding) {
+            indices.push_back(static_cast<uint32_t>(tri[2]));
+            indices.push_back(static_cast<uint32_t>(tri[1]));
+        } else {
+            indices.push_back(static_cast<uint32_t>(tri[1]));
+            indices.push_back(static_cast<uint32_t>(tri[2]));
         }
-        idx_offset += fvc;
     }
 
     return MeshResult{std::move(vertices), std::move(indices)};

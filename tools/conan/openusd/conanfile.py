@@ -140,9 +140,15 @@ class OpenUSDConan(ConanFile):
         deps.generate()
 
     def build(self) -> None:
-        # Patch imaging CMakeLists to only build pxOsd + geomUtil (skip hdSt, hgi, etc.)
+        # Patch imaging CMakeLists to build pxOsd, geomUtil, hf, cameraUtil, hd
+        # (skip hdSt, hgi, etc.).  Order matters: hd depends on hf, cameraUtil, pxOsd.
         imaging_cmakelists = os.path.join(self.source_folder, "pxr", "imaging", "CMakeLists.txt")
-        save(self, imaging_cmakelists, "add_subdirectory(pxOsd)\nadd_subdirectory(geomUtil)\n")
+        save(self, imaging_cmakelists,
+             "add_subdirectory(hf)\n"
+             "add_subdirectory(cameraUtil)\n"
+             "add_subdirectory(pxOsd)\n"
+             "add_subdirectory(geomUtil)\n"
+             "add_subdirectory(hd)\n")
         cmake = CMake(self)
         cmake.configure()
         cmake.build()
@@ -335,6 +341,29 @@ class OpenUSDConan(ConanFile):
             "usd_tf",
             "usd_vt",
             "usd_pxOsd",
+        ]
+
+        self.cpp_info.components["usd_hf"].libs = ["usd_hf"]
+        self.cpp_info.components["usd_hf"].requires = ["usd_tf", "usd_plug"]
+
+        self.cpp_info.components["usd_cameraUtil"].libs = ["usd_cameraUtil"]
+        self.cpp_info.components["usd_cameraUtil"].requires = ["usd_tf", "usd_gf"]
+
+        self.cpp_info.components["usd_hd"].libs = ["usd_hd"]
+        self.cpp_info.components["usd_hd"].requires = [
+            "usd_arch",
+            "usd_tf",
+            "usd_gf",
+            "usd_vt",
+            "usd_sdf",
+            "usd_sdr",
+            "usd_trace",
+            "usd_work",
+            "usd_plug",
+            "usd_hf",
+            "usd_cameraUtil",
+            "usd_pxOsd",
+            "onetbb::libtbb",
         ]
 
         # USD installs DLLs in lib/ alongside .lib files.  With components

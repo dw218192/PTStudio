@@ -1,8 +1,13 @@
 #include <core/rendering/adapters/adapterUtils.h>
 #include <core/rendering/adapters/sphereAdapter.h>
 #include <pxr/imaging/geomUtil/sphereMeshGenerator.h>
+#include <pxr/imaging/hd/meshTopology.h>
+#include <pxr/imaging/hd/meshUtil.h>
 #include <pxr/imaging/pxOsd/meshTopology.h>
+#include <pxr/imaging/pxOsd/tokens.h>
+#include <pxr/usd/sdf/path.h>
 #include <pxr/usd/usdGeom/sphere.h>
+#include <pxr/usd/usdGeom/tokens.h>
 
 #include <algorithm>
 #include <cmath>
@@ -34,8 +39,6 @@ std::optional<AdapterResult> SphereAdapter::adapt(const pxr::UsdPrim& prim) cons
     auto colors = read_display_color(prim);
 
     auto topo = pxr::GeomUtilSphereMeshGenerator::GenerateTopology(k_num_radial, k_num_axial);
-    const auto& face_counts = topo.GetFaceVertexCounts();
-    const auto& face_indices = topo.GetFaceVertexIndices();
 
     size_t num_pts = pxr::GeomUtilSphereMeshGenerator::ComputeNumPoints(k_num_radial, k_num_axial);
     pxr::VtVec3fArray points(num_pts);
@@ -63,20 +66,20 @@ std::optional<AdapterResult> SphereAdapter::adapt(const pxr::UsdPrim& prim) cons
         apply_display_color(vtx, colors);
     }
 
-    // Triangulate
+    // Triangulate via HdMeshUtil
+    pxr::HdMeshTopology hd_topo(pxr::PxOsdOpenSubdivTokens->none, pxr::UsdGeomTokens->rightHanded,
+                                topo.GetFaceVertexCounts(), topo.GetFaceVertexIndices());
+    pxr::HdMeshUtil mesh_util(&hd_topo, pxr::SdfPath());
+    pxr::VtVec3iArray tri_indices;
+    pxr::VtIntArray prim_params;
+    mesh_util.ComputeTriangleIndices(&tri_indices, &prim_params);
+
     std::vector<uint32_t> indices;
-    int idx_offset = 0;
-    for (size_t f = 0; f < face_counts.size(); ++f) {
-        int fvc = face_counts[f];
-        auto v0 = static_cast<uint32_t>(face_indices[idx_offset]);
-        for (int t = 1; t < fvc - 1; ++t) {
-            auto v1 = static_cast<uint32_t>(face_indices[idx_offset + t]);
-            auto v2 = static_cast<uint32_t>(face_indices[idx_offset + t + 1]);
-            indices.push_back(v0);
-            indices.push_back(v1);
-            indices.push_back(v2);
-        }
-        idx_offset += fvc;
+    indices.reserve(tri_indices.size() * 3);
+    for (const auto& tri : tri_indices) {
+        indices.push_back(static_cast<uint32_t>(tri[0]));
+        indices.push_back(static_cast<uint32_t>(tri[1]));
+        indices.push_back(static_cast<uint32_t>(tri[2]));
     }
 
     return MeshResult{std::move(vertices), std::move(indices)};
