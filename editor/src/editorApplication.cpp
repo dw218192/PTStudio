@@ -599,41 +599,43 @@ auto EditorApplication::on_mouse_enter_scene_viewport() noexcept -> void {
 }
 
 auto EditorApplication::handle_input(InputEvent const& event) noexcept -> void {
+    bool rmb_held = ImGui::IsMouseDown(ImGuiMouseButton_Right);
+
+    // WASD fly camera works globally while RMB is held (cursor may drift over other panels)
+    if (rmb_held && event.input.input_type == InputType::KEYBOARD &&
+        event.input.action_type == ActionType::HOLD) {
+        float fwd = 0.0f, right = 0.0f, up = 0.0f;
+        switch (event.input.key_or_button) {
+            case ImGuiKey_W:
+                fwd += 1.0f;
+                break;
+            case ImGuiKey_S:
+                fwd -= 1.0f;
+                break;
+            case ImGuiKey_D:
+                right += 1.0f;
+                break;
+            case ImGuiKey_A:
+                right -= 1.0f;
+                break;
+            case ImGuiKey_E:
+                up += 1.0f;
+                break;
+            case ImGuiKey_Q:
+                up -= 1.0f;
+                break;
+            default:
+                break;
+        }
+        if (fwd != 0.0f || right != 0.0f || up != 0.0f) {
+            m_camera.move(fwd, right, up, ImGui::GetIO().DeltaTime);
+        }
+        return;
+    }
+
     if (event.initiated_window != k_scene_view_win_name) return;
 
     if (event.input.input_type == InputType::KEYBOARD) {
-        bool rmb_held = ImGui::IsMouseDown(ImGuiMouseButton_Right);
-
-        // WASD/QE movement: only while right-click is held
-        if (rmb_held && event.input.action_type == ActionType::HOLD) {
-            float fwd = 0.0f, right = 0.0f, up = 0.0f;
-            switch (event.input.key_or_button) {
-                case ImGuiKey_W:
-                    fwd += 1.0f;
-                    break;
-                case ImGuiKey_S:
-                    fwd -= 1.0f;
-                    break;
-                case ImGuiKey_D:
-                    right += 1.0f;
-                    break;
-                case ImGuiKey_A:
-                    right -= 1.0f;
-                    break;
-                case ImGuiKey_E:
-                    up += 1.0f;
-                    break;
-                case ImGuiKey_Q:
-                    up -= 1.0f;
-                    break;
-                default:
-                    break;
-            }
-            if (fwd != 0.0f || right != 0.0f || up != 0.0f) {
-                m_camera.move(fwd, right, up, ImGui::GetIO().DeltaTime);
-            }
-        }
-
         // Hotkeys: only on press and when right-click is NOT held
         if (!rmb_held && event.input.action_type == ActionType::PRESS) {
             switch (event.input.key_or_button) {
