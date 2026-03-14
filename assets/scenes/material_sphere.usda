@@ -12,7 +12,7 @@ def Xform "Root"
         rel material:binding = </Root/Materials/BlueMetal>
 
         uniform token subdivisionScheme = "none"
-        double3 xformOp:translate = (0.0, 0.0, 0.0)
+        double3 xformOp:translate = (2.0, 0.0, 0.0)
         uniform token[] xformOpOrder = ["xformOp:translate"]
 
         point3f[] points = [

@@ -70,7 +70,7 @@ void populate_from_stage(RenderWorld& world, const pxr::UsdStageRefPtr& stage,
                 pxr::UsdTimeCode::Default());
             glm::mat4 transform;
             for (int i = 0; i < 4; i++)
-                for (int j = 0; j < 4; j++) transform[j][i] = static_cast<float>(xf[i][j]);
+                for (int j = 0; j < 4; j++) transform[i][j] = static_cast<float>(xf[i][j]);
 
             auto prim_path = prim.GetPath().GetString();
 

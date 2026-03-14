@@ -162,7 +162,7 @@ void EditorApplication::process_dirty_prims() {
             pxr::GfMatrix4d xf =
                 xformable.ComputeLocalToWorldTransform(pxr::UsdTimeCode::Default());
             for (int r = 0; r < 4; ++r)
-                for (int c = 0; c < 4; ++c) obj.transform[c][r] = static_cast<float>(xf[r][c]);
+                for (int c = 0; c < 4; ++c) obj.transform[r][c] = static_cast<float>(xf[r][c]);
             break;
         }
     }
@@ -239,7 +239,7 @@ void EditorApplication::on_ready() {
 
     // Camera defaults
     m_camera.set_target({0.0f, 0.0f, 0.0f});
-    m_camera.set_distance(10.0f);
+    m_camera.set_distance(3.0f);
     m_camera.set_fov_y(60.0f);
 
     if (m_app_config.quit_on_start) {
@@ -542,11 +542,11 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
             pxr::UsdGeomXformable xformable(prim);
             INVARIANT_MSG(xformable, "selected prim must be UsdGeomXformable");
 
-            // Convert glm::mat4 (column-major) -> GfMatrix4d (row-major) via transpose
+            // Convert glm::mat4 -> GfMatrix4d (both index as [i][j])
             pxr::GfMatrix4d gf_mat;
-            for (int r = 0; r < 4; ++r)
-                for (int c = 0; c < 4; ++c)
-                    gf_mat[r][c] = static_cast<double>(gizmo_transform[c][r]);
+            for (int i = 0; i < 4; ++i)
+                for (int j = 0; j < 4; ++j)
+                    gf_mat[i][j] = static_cast<double>(gizmo_transform[i][j]);
 
             // Xform ops are normalized at selection time; a single TypeTransform op
             // must exist by the time the user drags the gizmo.
