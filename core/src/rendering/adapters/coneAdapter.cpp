@@ -118,7 +118,7 @@ std::optional<AdapterResult> ConeAdapter::adapt(const pxr::UsdPrim& prim) const 
         }
     }
 
-    return AdapterResult{std::move(vertices), std::move(indices)};
+    return MeshResult{std::move(vertices), std::move(indices)};
 }
 
 }  // namespace pts::rendering

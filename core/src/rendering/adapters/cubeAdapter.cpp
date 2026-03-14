@@ -78,7 +78,7 @@ std::optional<AdapterResult> CubeAdapter::adapt(const pxr::UsdPrim& prim) const 
         indices.push_back(base + 3);
     }
 
-    return AdapterResult{std::move(vertices), std::move(indices)};
+    return MeshResult{std::move(vertices), std::move(indices)};
 }
 
 }  // namespace pts::rendering

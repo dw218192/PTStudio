@@ -141,7 +141,7 @@ std::optional<AdapterResult> MeshAdapter::adapt(const pxr::UsdPrim& prim) const 
 
     if (vertices.empty()) return std::nullopt;
 
-    return AdapterResult{std::move(vertices), std::move(indices)};
+    return MeshResult{std::move(vertices), std::move(indices)};
 }
 
 }  // namespace pts::rendering

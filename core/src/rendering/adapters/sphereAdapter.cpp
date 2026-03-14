@@ -90,7 +90,7 @@ std::optional<AdapterResult> SphereAdapter::adapt(const pxr::UsdPrim& prim) cons
         }
     }
 
-    return AdapterResult{std::move(vertices), std::move(indices)};
+    return MeshResult{std::move(vertices), std::move(indices)};
 }
 
 }  // namespace pts::rendering

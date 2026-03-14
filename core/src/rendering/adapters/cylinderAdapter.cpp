@@ -133,7 +133,7 @@ std::optional<AdapterResult> CylinderAdapter::adapt(const pxr::UsdPrim& prim) co
         }
     }
 
-    return AdapterResult{std::move(vertices), std::move(indices)};
+    return MeshResult{std::move(vertices), std::move(indices)};
 }
 
 }  // namespace pts::rendering

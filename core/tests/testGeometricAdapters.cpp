@@ -16,6 +16,7 @@
 
 #include <cmath>
 #include <string>
+#include <variant>
 
 #include "testApplication.h"
 
@@ -45,13 +46,21 @@ void check_indices_valid(const std::vector<uint32_t>& indices, size_t vertex_cou
     }
 }
 
-void validate_result(const std::optional<pts::rendering::AdapterResult>& result) {
+const pts::rendering::MeshResult& get_mesh(
+    const std::optional<pts::rendering::AdapterResult>& result) {
     REQUIRE(result.has_value());
-    CHECK(!result->vertices.empty());
-    CHECK(!result->indices.empty());
-    check_triangulated(result->indices);
-    check_indices_valid(result->indices, result->vertices.size());
-    check_normals_normalized(result->vertices);
+    auto* mesh = std::get_if<pts::rendering::MeshResult>(&*result);
+    REQUIRE(mesh);
+    return *mesh;
+}
+
+void validate_result(const std::optional<pts::rendering::AdapterResult>& result) {
+    const auto& mesh = get_mesh(result);
+    CHECK(!mesh.vertices.empty());
+    CHECK(!mesh.indices.empty());
+    check_triangulated(mesh.indices);
+    check_indices_valid(mesh.indices, mesh.vertices.size());
+    check_normals_normalized(mesh.vertices);
 }
 
 }  // namespace
@@ -68,8 +77,8 @@ TEST_CASE("CubeAdapter - basic cube") {
     validate_result(result);
 
     // 24 vertices (4 per face x 6 faces), 36 indices (2 tris per face x 6 faces)
-    CHECK(result->vertices.size() == 24);
-    CHECK(result->indices.size() == 36);
+    CHECK(get_mesh(result).vertices.size() == 24);
+    CHECK(get_mesh(result).indices.size() == 36);
 }
 
 TEST_CASE("CubeAdapter - respects size attribute") {
@@ -82,7 +91,7 @@ TEST_CASE("CubeAdapter - respects size attribute") {
 
     // With size=4, half-extent=2. Check that some vertex reaches 2.0.
     bool found_extent = false;
-    for (const auto& v : result->vertices) {
+    for (const auto& v : get_mesh(result).vertices) {
         if (std::abs(v.position[0]) == doctest::Approx(2.0f) ||
             std::abs(v.position[1]) == doctest::Approx(2.0f) ||
             std::abs(v.position[2]) == doctest::Approx(2.0f)) {
@@ -107,7 +116,7 @@ TEST_CASE("CubeAdapter - displayColor primvar") {
     auto result = pts::rendering::CubeAdapter::instance().adapt(cube.GetPrim());
     REQUIRE(result.has_value());
 
-    for (const auto& v : result->vertices) {
+    for (const auto& v : get_mesh(result).vertices) {
         CHECK(v.color[0] == doctest::Approx(1.0f));
         CHECK(v.color[1] == doctest::Approx(0.0f));
         CHECK(v.color[2] == doctest::Approx(0.0f));
@@ -126,7 +135,7 @@ TEST_CASE("SphereAdapter - basic sphere") {
     validate_result(result);
 
     // UV-sphere with 16 lat x 32 lon: (16+1)*(32+1) = 561 vertices
-    CHECK(result->vertices.size() == 561);
+    CHECK(get_mesh(result).vertices.size() == 561);
 }
 
 TEST_CASE("SphereAdapter - respects radius") {
@@ -138,7 +147,7 @@ TEST_CASE("SphereAdapter - respects radius") {
     REQUIRE(result.has_value());
 
     // Check that all vertices are at distance ~3 from origin
-    for (const auto& v : result->vertices) {
+    for (const auto& v : get_mesh(result).vertices) {
         float dist = std::sqrt(v.position[0] * v.position[0] + v.position[1] * v.position[1] +
                                v.position[2] * v.position[2]);
         CHECK(dist == doctest::Approx(3.0f).epsilon(0.01f));
@@ -156,7 +165,7 @@ TEST_CASE("CylinderAdapter - basic cylinder") {
     validate_result(result);
 
     // Must have at least side + 2 caps worth of triangles
-    CHECK(result->indices.size() > 0);
+    CHECK(get_mesh(result).indices.size() > 0);
 }
 
 TEST_CASE("CylinderAdapter - axis attribute") {
@@ -172,7 +181,7 @@ TEST_CASE("CylinderAdapter - axis attribute") {
 
         // With Z axis and height 4, half_h=2. Cap center should be at z=+/-2.
         bool found_top = false;
-        for (const auto& v : result->vertices) {
+        for (const auto& v : get_mesh(result).vertices) {
             if (v.position[2] == doctest::Approx(2.0f)) {
                 found_top = true;
                 break;
@@ -190,7 +199,7 @@ TEST_CASE("CylinderAdapter - axis attribute") {
         REQUIRE(result.has_value());
 
         bool found_top = false;
-        for (const auto& v : result->vertices) {
+        for (const auto& v : get_mesh(result).vertices) {
             if (v.position[0] == doctest::Approx(2.0f)) {
                 found_top = true;
                 break;
@@ -209,7 +218,7 @@ TEST_CASE("ConeAdapter - basic cone") {
 
     auto result = adapter.adapt(cone.GetPrim());
     validate_result(result);
-    CHECK(result->indices.size() > 0);
+    CHECK(get_mesh(result).indices.size() > 0);
 }
 
 TEST_CASE("ConeAdapter - apex at correct position") {
@@ -227,7 +236,7 @@ TEST_CASE("ConeAdapter - apex at correct position") {
 
     // Default Y axis → apex at y = +half_height
     bool found_apex = false;
-    for (const auto& v : result->vertices) {
+    for (const auto& v : get_mesh(result).vertices) {
         if (v.position[1] == doctest::Approx(expected_apex_y)) {
             found_apex = true;
             break;
@@ -245,7 +254,7 @@ TEST_CASE("CapsuleAdapter - basic capsule") {
 
     auto result = adapter.adapt(cap.GetPrim());
     validate_result(result);
-    CHECK(result->indices.size() > 0);
+    CHECK(get_mesh(result).indices.size() > 0);
 }
 
 TEST_CASE("CapsuleAdapter - hemisphere extends beyond cylinder height") {
@@ -263,7 +272,7 @@ TEST_CASE("CapsuleAdapter - hemisphere extends beyond cylinder height") {
 
     // USD default axis for capsule is Z, so check max along Z
     float max_along = -1e9f;
-    for (const auto& v : result->vertices) {
+    for (const auto& v : get_mesh(result).vertices) {
         for (int a = 0; a < 3; ++a) {
             if (v.position[a] > max_along) max_along = v.position[a];
         }
@@ -305,9 +314,9 @@ TEST_CASE("test_cube.usda Cube prim is adapted by registry") {
         if (!adapter->can_adapt(cube_prim)) continue;
         auto result = adapter->adapt(cube_prim);
         REQUIRE(result.has_value());
-        CHECK(!result->vertices.empty());
-        CHECK(!result->indices.empty());
-        check_normals_normalized(result->vertices);
+        CHECK(!get_mesh(result).vertices.empty());
+        CHECK(!get_mesh(result).indices.empty());
+        check_normals_normalized(get_mesh(result).vertices);
         adapted = true;
         break;
     }

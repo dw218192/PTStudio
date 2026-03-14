@@ -35,10 +35,28 @@ struct RenderObject {
     std::string prim_path;
 };
 
+struct Light {
+    enum class Type { Distant, Sphere, Rect, Disk, Dome };
+    Type type;
+    glm::vec3 color{1.0f, 1.0f, 1.0f};
+    float intensity{1.0f};
+    glm::mat4 transform;
+    std::string prim_path;
+
+    // Distant light
+    glm::vec3 direction{0.0f, -1.0f, 0.0f};
+
+    // Area/point lights
+    float radius{0.0f};
+    float width{1.0f};
+    float height{1.0f};
+};
+
 struct RenderWorld {
     std::vector<Mesh> meshes;
     std::vector<RenderObject> objects;
     std::vector<Material> materials;
+    std::vector<Light> lights;
     void clear();
 };
 
