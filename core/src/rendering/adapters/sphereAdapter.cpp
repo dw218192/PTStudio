@@ -60,7 +60,7 @@ std::optional<AdapterResult> SphereAdapter::adapt(const pxr::UsdPrim& prim) cons
         vtx.normal[2] = -normals[i][1];
 
         float u = std::atan2(points[i][1], points[i][0]) / (2.0f * k_pi) + 0.5f;
-        float v = std::acos(std::clamp(points[i][2] / r, -1.0f, 1.0f)) / k_pi;
+        float v = (r > 0.0f) ? std::acos(std::clamp(points[i][2] / r, -1.0f, 1.0f)) / k_pi : 0.0f;
         vtx.uv[0] = u;
         vtx.uv[1] = v;
         apply_display_color(vtx, colors);

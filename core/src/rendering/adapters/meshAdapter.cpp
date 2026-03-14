@@ -54,6 +54,7 @@ std::optional<AdapterResult> MeshAdapter::adapt(const pxr::UsdPrim& prim) const 
     size_t fv_offset = 0;
     for (size_t face = 0; face < face_vertex_counts.size(); face++) {
         int count = face_vertex_counts[face];
+        if (fv_offset + count > face_vertex_indices.size()) break;
 
         pxr::GfVec3f face_normal(0, 0, 0);
         if (normals.empty() && count >= 3) {

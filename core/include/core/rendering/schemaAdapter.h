@@ -20,7 +20,7 @@ struct MeshResult {
 /// Adapter produced a light source.
 struct LightResult {
     enum class Type { Distant, Sphere, Rect, Disk, Dome };
-    Type type;
+    Type type{Type::Distant};
     glm::vec3 color{1.0f, 1.0f, 1.0f};
     float intensity{1.0f};
 

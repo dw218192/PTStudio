@@ -78,7 +78,7 @@ std::optional<AdapterResult> ConeAdapter::adapt(const pxr::UsdPrim& prim) const 
         vtx.normal[mapping.v_ax] = normals[i][1];
 
         float u = std::atan2(points[i][1], points[i][0]) / (2.0f * k_pi) + 0.5f;
-        float v = (points[i][2] + half_h) / height;
+        float v = (height > 0.0f) ? (points[i][2] + half_h) / height : 0.0f;
         vtx.uv[0] = u;
         vtx.uv[1] = v;
         apply_display_color(vtx, colors);

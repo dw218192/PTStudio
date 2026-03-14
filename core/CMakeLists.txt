@@ -8,10 +8,23 @@ set(lib_name "core")
 # The core imgui library comes from Conan (imgui::imgui), but backends are 
 # provided as source files in res/bindings/ and must be compiled by the consumer
 
-# Get imgui package folder from Conan (set by CMakeDeps generator)
-# The variable imgui_PACKAGE_FOLDER_<CONFIG> is set by Conan
-string(TOUPPER "${CMAKE_BUILD_TYPE}" _build_type_upper)
-set(IMGUI_PKG_ROOT "${imgui_PACKAGE_FOLDER_${_build_type_upper}}")
+# Get imgui package folder from Conan (set by CMakeDeps generator).
+# Multi-config generators (VS, Xcode) leave CMAKE_BUILD_TYPE empty at
+# configure time, so probe all known configs and pick the first defined.
+if(CMAKE_CONFIGURATION_TYPES)
+    foreach(_cfg DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
+        if(DEFINED imgui_PACKAGE_FOLDER_${_cfg})
+            set(IMGUI_PKG_ROOT "${imgui_PACKAGE_FOLDER_${_cfg}}")
+            break()
+        endif()
+    endforeach()
+else()
+    string(TOUPPER "${CMAKE_BUILD_TYPE}" _build_type_upper)
+    set(IMGUI_PKG_ROOT "${imgui_PACKAGE_FOLDER_${_build_type_upper}}")
+endif()
+if(NOT IMGUI_PKG_ROOT)
+    message(FATAL_ERROR "Unable to resolve imgui package folder from Conan CMakeDeps")
+endif()
 set(IMGUI_BINDINGS_DIR "${IMGUI_PKG_ROOT}/res/bindings")
 
 # Collect backend sources based on configuration

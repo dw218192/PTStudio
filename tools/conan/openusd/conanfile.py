@@ -130,8 +130,11 @@ class OpenUSDConan(ConanFile):
         osd_root = osd.package_folder.replace("\\", "/")
         tc.cache_variables["OPENSUBDIV_INCLUDE_DIR"] = f"{osd_root}/include"
         osd_libdir = f"{osd_root}/lib"
+        osd_shared = self.dependencies["opensubdiv"].options.get_safe("shared", False)
         if self.settings.os == "Windows":
             tc.cache_variables["OPENSUBDIV_OSDCPU_LIBRARY"] = f"{osd_libdir}/osdCPU.lib"
+        elif osd_shared:
+            tc.cache_variables["OPENSUBDIV_OSDCPU_LIBRARY"] = f"{osd_libdir}/libosdCPU.so"
         else:
             tc.cache_variables["OPENSUBDIV_OSDCPU_LIBRARY"] = f"{osd_libdir}/libosdCPU.a"
         tc.generate()
