@@ -433,27 +433,29 @@ auto EditorApplication::draw_scene_panel() noexcept -> void {
     ImGui::Separator();
 
     if (ImGui::Button("Open Scene")) {
-        auto path = ImGui::FileDialogue(ImGui::FileDialogueMode::Open,
-                                        {"USD Files", "*.usda *.usdc *.usd", "All Files", "*"});
-        if (!path.empty()) {
-            auto stage = pxr::UsdStage::Open(path);
-            if (stage) {
+        ImGui::FileDialogueAsync(
+            ImGui::FileDialogueMode::Open, ".usda,.usdc,.usd",
+            [this](ImGui::FileDialogueResult result) {
+                auto layer = pxr::SdfLayer::CreateAnonymous(result.name);
+                if (!layer || !layer->ImportFromString(result.contents)) {
+                    log(LogLevel::Error, "Failed to parse scene: {}", result.name);
+                    return;
+                }
+                auto stage = pxr::UsdStage::Open(layer);
+                if (!stage) {
+                    log(LogLevel::Error, "Failed to open stage: {}", result.name);
+                    return;
+                }
                 revoke_stage_listener();
                 m_world.clear();
                 m_selected_object = -1;
                 m_stage = stage;
                 rendering::populate_from_stage(m_world, m_stage, webgpu_context()->device());
                 register_stage_listener();
-                log(LogLevel::Info, "Loaded scene: {} ({} objects)", path, m_world.objects.size());
-            } else {
-                log(LogLevel::Error, "Failed to open scene: {}", path);
-            }
-        }
+                log(LogLevel::Info, "Loaded scene: {} ({} objects)", result.name,
+                    m_world.objects.size());
+            });
     }
-    ImGui::SameLine();
-    ImGui::BeginDisabled();
-    ImGui::Button("Save Scene");
-    ImGui::EndDisabled();
 }
 
 auto EditorApplication::draw_object_panel() noexcept -> void {
