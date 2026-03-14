@@ -1,8 +1,8 @@
 #include <core/rendering/adapters/adapterUtils.h>
 #include <core/rendering/adapters/cubeAdapter.h>
+#include <pxr/imaging/geomUtil/cuboidMeshGenerator.h>
+#include <pxr/imaging/pxOsd/meshTopology.h>
 #include <pxr/usd/usdGeom/cube.h>
-
-#include <cmath>
 
 namespace pts::rendering {
 
@@ -20,62 +20,60 @@ std::optional<AdapterResult> CubeAdapter::adapt(const pxr::UsdPrim& prim) const 
 
     double size = 2.0;
     cube.GetSizeAttr().Get(&size);
-    float h = static_cast<float>(size) * 0.5f;
+    float s = static_cast<float>(size);
 
     auto colors = read_display_color(prim);
 
-    // 24 vertices (4 per face, 6 faces) with per-face normals
-    // Face order: +X, -X, +Y, -Y, +Z, -Z
-    struct FaceDef {
-        float normal[3];
-        float positions[4][3];
-        float uvs[4][2];
-    };
+    auto topo = pxr::GeomUtilCuboidMeshGenerator::GenerateTopology();
+    const auto& face_counts = topo.GetFaceVertexCounts();
+    const auto& face_indices = topo.GetFaceVertexIndices();
+
+    size_t num_pts = pxr::GeomUtilCuboidMeshGenerator::ComputeNumPoints();
+    pxr::VtVec3fArray points(num_pts);
+    pxr::GeomUtilCuboidMeshGenerator::GeneratePoints(points.begin(), s, s, s);
+
+    pxr::VtVec3fArray normals(6);
+    pxr::GeomUtilCuboidMeshGenerator::GenerateNormals(normals.begin());
 
     // clang-format off
-    const FaceDef faces[6] = {
-        // +X
-        {{ 1, 0, 0}, {{ h,-h,-h}, { h,-h, h}, { h, h, h}, { h, h,-h}}, {{0,0},{1,0},{1,1},{0,1}}},
-        // -X
-        {{-1, 0, 0}, {{-h,-h, h}, {-h,-h,-h}, {-h, h,-h}, {-h, h, h}}, {{0,0},{1,0},{1,1},{0,1}}},
-        // +Y
-        {{ 0, 1, 0}, {{-h, h,-h}, {-h, h, h}, { h, h, h}, { h, h,-h}}, {{0,0},{1,0},{1,1},{0,1}}},
-        // -Y
-        {{ 0,-1, 0}, {{-h,-h, h}, {-h,-h,-h}, { h,-h,-h}, { h,-h, h}}, {{0,0},{1,0},{1,1},{0,1}}},
-        // +Z
-        {{ 0, 0, 1}, {{-h,-h, h}, { h,-h, h}, { h, h, h}, {-h, h, h}}, {{0,0},{1,0},{1,1},{0,1}}},
-        // -Z
-        {{ 0, 0,-1}, {{ h,-h,-h}, {-h,-h,-h}, {-h, h,-h}, { h, h,-h}}, {{0,0},{1,0},{1,1},{0,1}}},
+    static constexpr float k_quad_uvs[4][2] = {
+        {0, 0}, {1, 0}, {1, 1}, {0, 1}
     };
     // clang-format on
 
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
-    vertices.reserve(24);
-    indices.reserve(36);
 
-    for (const auto& face : faces) {
+    int idx_offset = 0;
+    for (size_t f = 0; f < face_counts.size(); ++f) {
+        int fvc = face_counts[f];
         auto base = static_cast<uint32_t>(vertices.size());
-        for (int j = 0; j < 4; ++j) {
-            Vertex v = {};
-            v.position[0] = face.positions[j][0];
-            v.position[1] = face.positions[j][1];
-            v.position[2] = face.positions[j][2];
-            v.normal[0] = face.normal[0];
-            v.normal[1] = face.normal[1];
-            v.normal[2] = face.normal[2];
-            v.uv[0] = face.uvs[j][0];
-            v.uv[1] = face.uvs[j][1];
-            apply_display_color(v, colors);
-            vertices.push_back(v);
+        const auto& n = normals[f];
+
+        for (int j = 0; j < fvc; ++j) {
+            int pi = face_indices[idx_offset + j];
+            const auto& p = points[pi];
+
+            Vertex vtx = {};
+            vtx.position[0] = p[0];
+            vtx.position[1] = p[1];
+            vtx.position[2] = p[2];
+            vtx.normal[0] = n[0];
+            vtx.normal[1] = n[1];
+            vtx.normal[2] = n[2];
+            vtx.uv[0] = k_quad_uvs[j % 4][0];
+            vtx.uv[1] = k_quad_uvs[j % 4][1];
+            apply_display_color(vtx, colors);
+            vertices.push_back(vtx);
         }
-        // Two triangles per quad
-        indices.push_back(base);
-        indices.push_back(base + 1);
-        indices.push_back(base + 2);
-        indices.push_back(base);
-        indices.push_back(base + 2);
-        indices.push_back(base + 3);
+
+        for (int t = 1; t < fvc - 1; ++t) {
+            indices.push_back(base);
+            indices.push_back(base + t);
+            indices.push_back(base + t + 1);
+        }
+
+        idx_offset += fvc;
     }
 
     return MeshResult{std::move(vertices), std::move(indices)};

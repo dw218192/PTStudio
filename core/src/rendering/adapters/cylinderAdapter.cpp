@@ -1,5 +1,7 @@
 #include <core/rendering/adapters/adapterUtils.h>
 #include <core/rendering/adapters/cylinderAdapter.h>
+#include <pxr/imaging/geomUtil/cylinderMeshGenerator.h>
+#include <pxr/imaging/pxOsd/meshTopology.h>
 #include <pxr/usd/usdGeom/cylinder.h>
 
 #include <cmath>
@@ -7,11 +9,10 @@
 namespace pts::rendering {
 
 namespace {
-constexpr int k_radial_segments = 32;
+constexpr size_t k_num_radial = 32;
 constexpr float k_pi = 3.14159265358979323846f;
 
-// Maps axis-aligned coordinates to (x,y,z) based on USD axis token.
-// USD cylinders default to Y-axis. Axis maps: X→(y,z,x), Y→(x,z,y), Z→(x,y,z).
+// GeomUtil generates along Z. This maps Z-aligned geometry to the requested axis.
 struct AxisMapping {
     int along;  // index of the cylinder's longitudinal axis
     int u_ax;   // first radial axis
@@ -42,7 +43,7 @@ std::optional<AdapterResult> CylinderAdapter::adapt(const pxr::UsdPrim& prim) co
     cyl.GetRadiusAttr().Get(&radius_d);
     cyl.GetHeightAttr().Get(&height_d);
     float radius = static_cast<float>(radius_d);
-    float half_h = static_cast<float>(height_d) * 0.5f;
+    float height = static_cast<float>(height_d);
 
     pxr::TfToken axis;
     cyl.GetAxisAttr().Get(&axis);
@@ -50,87 +51,53 @@ std::optional<AdapterResult> CylinderAdapter::adapt(const pxr::UsdPrim& prim) co
 
     auto colors = read_display_color(prim);
 
-    std::vector<Vertex> vertices;
-    std::vector<uint32_t> indices;
+    auto topo = pxr::GeomUtilCylinderMeshGenerator::GenerateTopology(k_num_radial);
+    const auto& face_counts = topo.GetFaceVertexCounts();
+    const auto& face_indices = topo.GetFaceVertexIndices();
 
-    auto push_vertex = [&](float along_val, float u_val, float v_val, float n_along, float n_u,
-                           float n_v, float uv_u, float uv_v) {
-        Vertex vtx = {};
-        vtx.position[mapping.along] = along_val;
-        vtx.position[mapping.u_ax] = u_val;
-        vtx.position[mapping.v_ax] = v_val;
-        vtx.normal[mapping.along] = n_along;
-        vtx.normal[mapping.u_ax] = n_u;
-        vtx.normal[mapping.v_ax] = n_v;
-        vtx.uv[0] = uv_u;
-        vtx.uv[1] = uv_v;
+    size_t num_pts = pxr::GeomUtilCylinderMeshGenerator::ComputeNumPoints(k_num_radial);
+    pxr::VtVec3fArray points(num_pts);
+    pxr::GeomUtilCylinderMeshGenerator::GeneratePoints(points.begin(), k_num_radial, radius,
+                                                       height);
+
+    pxr::VtVec3fArray normals(num_pts);
+    pxr::GeomUtilCylinderMeshGenerator::GenerateNormals(normals.begin(), k_num_radial, radius,
+                                                        height);
+
+    float half_h = height * 0.5f;
+
+    // Build vertices: remap from Z-aligned to requested axis
+    std::vector<Vertex> vertices(num_pts);
+    for (size_t i = 0; i < num_pts; ++i) {
+        Vertex& vtx = vertices[i];
+        vtx.position[mapping.along] = points[i][2];
+        vtx.position[mapping.u_ax] = points[i][0];
+        vtx.position[mapping.v_ax] = points[i][1];
+        vtx.normal[mapping.along] = normals[i][2];
+        vtx.normal[mapping.u_ax] = normals[i][0];
+        vtx.normal[mapping.v_ax] = normals[i][1];
+
+        float u = std::atan2(points[i][1], points[i][0]) / (2.0f * k_pi) + 0.5f;
+        float v = (points[i][2] + half_h) / height;
+        vtx.uv[0] = u;
+        vtx.uv[1] = v;
         apply_display_color(vtx, colors);
-        vertices.push_back(vtx);
-    };
-
-    // Side wall: two rings (top and bottom)
-    for (int i = 0; i <= k_radial_segments; ++i) {
-        float angle = static_cast<float>(i) / k_radial_segments * 2.0f * k_pi;
-        float cos_a = std::cos(angle);
-        float sin_a = std::sin(angle);
-        float u_coord = static_cast<float>(i) / k_radial_segments;
-
-        // Bottom ring
-        push_vertex(-half_h, radius * cos_a, radius * sin_a, 0, cos_a, sin_a, u_coord, 0.0f);
-        // Top ring
-        push_vertex(half_h, radius * cos_a, radius * sin_a, 0, cos_a, sin_a, u_coord, 1.0f);
     }
 
-    // Side indices
-    for (int i = 0; i < k_radial_segments; ++i) {
-        uint32_t b = static_cast<uint32_t>(i * 2);
-        uint32_t t = b + 1;
-        uint32_t bn = b + 2;
-        uint32_t tn = b + 3;
-        indices.push_back(b);
-        indices.push_back(bn);
-        indices.push_back(t);
-        indices.push_back(t);
-        indices.push_back(bn);
-        indices.push_back(tn);
-    }
-
-    // Top cap
-    {
-        auto center_idx = static_cast<uint32_t>(vertices.size());
-        push_vertex(half_h, 0, 0, 1, 0, 0, 0.5f, 0.5f);
-        auto ring_start = static_cast<uint32_t>(vertices.size());
-        for (int i = 0; i <= k_radial_segments; ++i) {
-            float angle = static_cast<float>(i) / k_radial_segments * 2.0f * k_pi;
-            float cos_a = std::cos(angle);
-            float sin_a = std::sin(angle);
-            push_vertex(half_h, radius * cos_a, radius * sin_a, 1, 0, 0, 0.5f + 0.5f * cos_a,
-                        0.5f + 0.5f * sin_a);
+    // Triangulate
+    std::vector<uint32_t> indices;
+    int idx_offset = 0;
+    for (size_t f = 0; f < face_counts.size(); ++f) {
+        int fvc = face_counts[f];
+        auto v0 = static_cast<uint32_t>(face_indices[idx_offset]);
+        for (int t = 1; t < fvc - 1; ++t) {
+            auto v1 = static_cast<uint32_t>(face_indices[idx_offset + t]);
+            auto v2 = static_cast<uint32_t>(face_indices[idx_offset + t + 1]);
+            indices.push_back(v0);
+            indices.push_back(v1);
+            indices.push_back(v2);
         }
-        for (int i = 0; i < k_radial_segments; ++i) {
-            indices.push_back(center_idx);
-            indices.push_back(ring_start + i);
-            indices.push_back(ring_start + i + 1);
-        }
-    }
-
-    // Bottom cap
-    {
-        auto center_idx = static_cast<uint32_t>(vertices.size());
-        push_vertex(-half_h, 0, 0, -1, 0, 0, 0.5f, 0.5f);
-        auto ring_start = static_cast<uint32_t>(vertices.size());
-        for (int i = 0; i <= k_radial_segments; ++i) {
-            float angle = static_cast<float>(i) / k_radial_segments * 2.0f * k_pi;
-            float cos_a = std::cos(angle);
-            float sin_a = std::sin(angle);
-            push_vertex(-half_h, radius * cos_a, radius * sin_a, -1, 0, 0, 0.5f + 0.5f * cos_a,
-                        0.5f + 0.5f * sin_a);
-        }
-        for (int i = 0; i < k_radial_segments; ++i) {
-            indices.push_back(center_idx);
-            indices.push_back(ring_start + i + 1);
-            indices.push_back(ring_start + i);
-        }
+        idx_offset += fvc;
     }
 
     return MeshResult{std::move(vertices), std::move(indices)};

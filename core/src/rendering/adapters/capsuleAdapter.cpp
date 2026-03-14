@@ -1,5 +1,7 @@
 #include <core/rendering/adapters/adapterUtils.h>
 #include <core/rendering/adapters/capsuleAdapter.h>
+#include <pxr/imaging/geomUtil/capsuleMeshGenerator.h>
+#include <pxr/imaging/pxOsd/meshTopology.h>
 #include <pxr/usd/usdGeom/capsule.h>
 
 #include <cmath>
@@ -7,8 +9,8 @@
 namespace pts::rendering {
 
 namespace {
-constexpr int k_radial_segments = 32;
-constexpr int k_cap_segments = 8;
+constexpr size_t k_num_radial = 32;
+constexpr size_t k_num_cap_axial = 8;
 constexpr float k_pi = 3.14159265358979323846f;
 
 struct AxisMapping {
@@ -41,7 +43,7 @@ std::optional<AdapterResult> CapsuleAdapter::adapt(const pxr::UsdPrim& prim) con
     capsule.GetRadiusAttr().Get(&radius_d);
     capsule.GetHeightAttr().Get(&height_d);
     float radius = static_cast<float>(radius_d);
-    float half_h = static_cast<float>(height_d) * 0.5f;
+    float height = static_cast<float>(height_d);
 
     pxr::TfToken axis;
     capsule.GetAxisAttr().Get(&axis);
@@ -49,102 +51,54 @@ std::optional<AdapterResult> CapsuleAdapter::adapt(const pxr::UsdPrim& prim) con
 
     auto colors = read_display_color(prim);
 
-    std::vector<Vertex> vertices;
-    std::vector<uint32_t> indices;
+    auto topo = pxr::GeomUtilCapsuleMeshGenerator::GenerateTopology(k_num_radial, k_num_cap_axial);
+    const auto& face_counts = topo.GetFaceVertexCounts();
+    const auto& face_indices = topo.GetFaceVertexIndices();
 
-    int cols = k_radial_segments + 1;
+    size_t num_pts =
+        pxr::GeomUtilCapsuleMeshGenerator::ComputeNumPoints(k_num_radial, k_num_cap_axial);
+    pxr::VtVec3fArray points(num_pts);
+    pxr::GeomUtilCapsuleMeshGenerator::GeneratePoints(points.begin(), k_num_radial, k_num_cap_axial,
+                                                      radius, height);
 
-    auto push_vertex = [&](float along_val, float u_val, float v_val, float n_along, float n_u,
-                           float n_v, float uv_u, float uv_v) {
-        Vertex vtx = {};
-        vtx.position[mapping.along] = along_val;
-        vtx.position[mapping.u_ax] = u_val;
-        vtx.position[mapping.v_ax] = v_val;
-        vtx.normal[mapping.along] = n_along;
-        vtx.normal[mapping.u_ax] = n_u;
-        vtx.normal[mapping.v_ax] = n_v;
-        vtx.uv[0] = uv_u;
-        vtx.uv[1] = uv_v;
+    pxr::VtVec3fArray normals(num_pts);
+    pxr::GeomUtilCapsuleMeshGenerator::GenerateNormals(normals.begin(), k_num_radial,
+                                                       k_num_cap_axial, radius, height);
+
+    float half_h = height * 0.5f;
+    float total_extent = height + 2.0f * radius;
+
+    std::vector<Vertex> vertices(num_pts);
+    for (size_t i = 0; i < num_pts; ++i) {
+        Vertex& vtx = vertices[i];
+        vtx.position[mapping.along] = points[i][2];
+        vtx.position[mapping.u_ax] = points[i][0];
+        vtx.position[mapping.v_ax] = points[i][1];
+        vtx.normal[mapping.along] = normals[i][2];
+        vtx.normal[mapping.u_ax] = normals[i][0];
+        vtx.normal[mapping.v_ax] = normals[i][1];
+
+        float u = std::atan2(points[i][1], points[i][0]) / (2.0f * k_pi) + 0.5f;
+        float v = (points[i][2] + half_h + radius) / total_extent;
+        vtx.uv[0] = u;
+        vtx.uv[1] = v;
         apply_display_color(vtx, colors);
-        vertices.push_back(vtx);
-    };
-
-    // Total v-segments: cap_segments (top hemi) + 1 (cylinder body) + cap_segments (bottom hemi)
-    int total_rows = k_cap_segments + 1 + k_cap_segments;
-    float total_v = static_cast<float>(total_rows);
-
-    // Top hemisphere (from pole at +half_h+radius down to equator at +half_h)
-    for (int lat = 0; lat <= k_cap_segments; ++lat) {
-        float theta = static_cast<float>(lat) / k_cap_segments * (k_pi * 0.5f);
-        float sin_t = std::sin(theta);
-        float cos_t = std::cos(theta);
-        float along_pos = half_h + radius * cos_t;
-        float v_coord = static_cast<float>(lat) / total_v;
-
-        for (int lon = 0; lon <= k_radial_segments; ++lon) {
-            float phi = static_cast<float>(lon) / k_radial_segments * 2.0f * k_pi;
-            float cos_p = std::cos(phi);
-            float sin_p = std::sin(phi);
-
-            push_vertex(along_pos, radius * sin_t * cos_p, radius * sin_t * sin_p, cos_t,
-                        sin_t * cos_p, sin_t * sin_p, static_cast<float>(lon) / k_radial_segments,
-                        v_coord);
-        }
     }
 
-    // Cylinder body: bottom ring (at -half_h)
-    {
-        float v_coord = static_cast<float>(k_cap_segments + 1) / total_v;
-        for (int lon = 0; lon <= k_radial_segments; ++lon) {
-            float phi = static_cast<float>(lon) / k_radial_segments * 2.0f * k_pi;
-            float cos_p = std::cos(phi);
-            float sin_p = std::sin(phi);
-
-            push_vertex(-half_h, radius * cos_p, radius * sin_p, 0, cos_p, sin_p,
-                        static_cast<float>(lon) / k_radial_segments, v_coord);
+    // Triangulate
+    std::vector<uint32_t> indices;
+    int idx_offset = 0;
+    for (size_t f = 0; f < face_counts.size(); ++f) {
+        int fvc = face_counts[f];
+        auto v0 = static_cast<uint32_t>(face_indices[idx_offset]);
+        for (int t = 1; t < fvc - 1; ++t) {
+            auto v1 = static_cast<uint32_t>(face_indices[idx_offset + t]);
+            auto v2 = static_cast<uint32_t>(face_indices[idx_offset + t + 1]);
+            indices.push_back(v0);
+            indices.push_back(v1);
+            indices.push_back(v2);
         }
-    }
-
-    // Bottom hemisphere (from equator at -half_h down to pole at -half_h-radius)
-    for (int lat = 1; lat <= k_cap_segments; ++lat) {
-        float theta = k_pi * 0.5f + static_cast<float>(lat) / k_cap_segments * (k_pi * 0.5f);
-        float sin_t = std::sin(theta);
-        float cos_t = std::cos(theta);
-        float along_pos = -half_h + radius * cos_t;
-        float v_coord = static_cast<float>(k_cap_segments + 1 + lat) / total_v;
-
-        for (int lon = 0; lon <= k_radial_segments; ++lon) {
-            float phi = static_cast<float>(lon) / k_radial_segments * 2.0f * k_pi;
-            float cos_p = std::cos(phi);
-            float sin_p = std::sin(phi);
-
-            push_vertex(along_pos, radius * sin_t * cos_p, radius * sin_t * sin_p, cos_t,
-                        sin_t * cos_p, sin_t * sin_p, static_cast<float>(lon) / k_radial_segments,
-                        v_coord);
-        }
-    }
-
-    // Generate indices for all rows
-    int total_ring_rows = k_cap_segments + 1 + k_cap_segments;
-    for (int row = 0; row < total_ring_rows; ++row) {
-        for (int lon = 0; lon < k_radial_segments; ++lon) {
-            uint32_t a = static_cast<uint32_t>(row * cols + lon);
-            uint32_t b = a + 1;
-            uint32_t c = static_cast<uint32_t>((row + 1) * cols + lon);
-            uint32_t d = c + 1;
-
-            // Skip degenerate triangles at poles
-            if (row != 0) {
-                indices.push_back(a);
-                indices.push_back(c);
-                indices.push_back(b);
-            }
-            if (row != total_ring_rows - 1) {
-                indices.push_back(b);
-                indices.push_back(c);
-                indices.push_back(d);
-            }
-        }
+        idx_offset += fvc;
     }
 
     return MeshResult{std::move(vertices), std::move(indices)};
