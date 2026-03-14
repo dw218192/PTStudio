@@ -181,7 +181,9 @@ void EditorApplication::normalize_xform_ops(const std::string& prim_path) {
     auto ops = xformable.GetOrderedXformOps(&reset_xform_stack);
     if (ops.size() == 1 && ops[0].GetOpType() == pxr::UsdGeomXformOp::TypeTransform) return;
 
-    auto xf = xformable.ComputeLocalToWorldTransform(pxr::UsdTimeCode::Default());
+    pxr::GfMatrix4d xf;
+    bool resetsXformStack;
+    xformable.GetLocalTransformation(&xf, &resetsXformStack, pxr::UsdTimeCode::Default());
     xformable.ClearXformOpOrder();
     xformable.AddTransformOp().Set(xf);
 }
@@ -544,11 +546,22 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
             pxr::UsdGeomXformable xformable(prim);
             INVARIANT_MSG(xformable, "selected prim must be UsdGeomXformable");
 
-            // Convert glm::mat4 -> GfMatrix4d (both index as [i][j])
-            pxr::GfMatrix4d gf_mat;
+            // ImGuizmo outputs a world-space matrix.  Convert to local space
+            // by removing the parent's world transform so we don't double-count
+            // ancestor contributions when USD recomposes.
+            pxr::GfMatrix4d gf_world;
             for (int i = 0; i < 4; ++i)
                 for (int j = 0; j < 4; ++j)
-                    gf_mat[i][j] = static_cast<double>(gizmo_transform[i][j]);
+                    gf_world[i][j] = static_cast<double>(gizmo_transform[i][j]);
+
+            pxr::GfMatrix4d parent_world;
+            if (auto parent = prim.GetParent(); parent && parent != m_stage->GetPseudoRoot()) {
+                parent_world = pxr::UsdGeomXformable(parent).ComputeLocalToWorldTransform(
+                    pxr::UsdTimeCode::Default());
+            } else {
+                parent_world.SetIdentity();
+            }
+            pxr::GfMatrix4d local_mat = gf_world * parent_world.GetInverse();
 
             // Xform ops are normalized at selection time; a single TypeTransform op
             // must exist by the time the user drags the gizmo.
@@ -557,7 +570,7 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
             INVARIANT_MSG(
                 ops.size() == 1 && ops[0].GetOpType() == pxr::UsdGeomXformOp::TypeTransform,
                 "xform ops must be normalized to a single TypeTransform before gizmo use");
-            ops[0].Set(gf_mat);
+            ops[0].Set(local_mat);
         }
     }
 }

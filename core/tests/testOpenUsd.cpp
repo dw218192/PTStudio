@@ -495,18 +495,23 @@ TEST_CASE("Eager xform normalization produces single TypeTransform op") {
     CHECK(ops_before.size() == 2);
 
     // Normalize: mirrors EditorApplication::normalize_xform_ops
-    auto computed = xformable.ComputeLocalToWorldTransform(pxr::UsdTimeCode::Default());
+    // Must use GetLocalTransformation (not ComputeLocalToWorldTransform)
+    // to avoid baking ancestor transforms into the local op.
+    pxr::GfMatrix4d local_xf;
+    bool resetsXformStack;
+    xformable.GetLocalTransformation(&local_xf, &resetsXformStack, pxr::UsdTimeCode::Default());
     xformable.ClearXformOpOrder();
-    xformable.AddTransformOp().Set(computed);
+    xformable.AddTransformOp().Set(local_xf);
 
     auto ops_after = xformable.GetOrderedXformOps(&reset);
     REQUIRE(ops_after.size() == 1);
     CHECK(ops_after[0].GetOpType() == pxr::UsdGeomXformOp::TypeTransform);
 
-    // Verify the computed transform is preserved
-    auto recomputed = xformable.ComputeLocalToWorldTransform(pxr::UsdTimeCode::Default());
+    // Verify the local transform is preserved after normalization
+    pxr::GfMatrix4d recomputed;
+    xformable.GetLocalTransformation(&recomputed, &resetsXformStack, pxr::UsdTimeCode::Default());
     for (int r = 0; r < 4; ++r)
-        for (int c = 0; c < 4; ++c) CHECK(recomputed[r][c] == doctest::Approx(computed[r][c]));
+        for (int c = 0; c < 4; ++c) CHECK(recomputed[r][c] == doctest::Approx(local_xf[r][c]));
 }
 
 TEST_CASE("Already-normalized xform ops are left unchanged") {
