@@ -105,8 +105,8 @@ struct EditorApplication final : WindowedApplication {
     void process_dirty_prims();
     void normalize_xform_ops(const std::string& prim_path);
 
-    std::vector<std::string> m_resync_paths;
-    std::vector<std::string> m_dirty_xform_paths;
+    std::vector<pxr::SdfPath> m_resync_paths;
+    std::vector<pxr::SdfPath> m_dirty_xform_paths;
 
     // Selection & gizmo
     int m_selected_object = -1;

@@ -111,13 +111,11 @@ void EditorApplication::revoke_stage_listener() {
 void EditorApplication::on_objects_changed(const pxr::UsdNotice::ObjectsChanged& notice) {
     for (const auto& path : notice.GetResyncedPaths()) {
         if (path == pxr::SdfPath::AbsoluteRootPath()) continue;
-        auto prim_path = path.IsPropertyPath() ? path.GetPrimPath() : path;
-        m_resync_paths.push_back(prim_path.GetString());
+        m_resync_paths.push_back(path.IsPropertyPath() ? path.GetPrimPath() : path);
     }
     for (const auto& path : notice.GetChangedInfoOnlyPaths()) {
         if (!path.IsPrimPath() && !path.IsPropertyPath()) continue;
-        auto prim_path = path.IsPropertyPath() ? path.GetPrimPath() : path;
-        m_dirty_xform_paths.push_back(prim_path.GetString());
+        m_dirty_xform_paths.push_back(path.IsPropertyPath() ? path.GetPrimPath() : path);
     }
 }
 
@@ -139,18 +137,19 @@ void EditorApplication::process_dirty_prims() {
             selected_prim_path = m_world.objects[m_selected_object].prim_path;
         }
 
-        for (const auto& prim_path : m_resync_paths) {
-            // Handle ancestor resyncs: resync children whose prim_path starts with this path
-            auto prefix = prim_path + "/";
+        for (const auto& resync_path : m_resync_paths) {
+            auto resync_str = resync_path.GetString();
+
+            // Handle ancestor resyncs: resync children under this path
             std::vector<std::string> children_to_resync;
             for (const auto& [path, slot] : m_world.prim_slots) {
-                if (path.compare(0, prefix.size(), prefix) == 0) {
+                if (pxr::SdfPath(path).HasPrefix(resync_path) && path != resync_str) {
                     children_to_resync.push_back(path);
                 }
             }
 
             // Sync the prim itself
-            rendering::sync_prim(m_world, m_stage, device, prim_path);
+            rendering::sync_prim(m_world, m_stage, device, resync_str);
 
             // Sync affected children
             for (const auto& child_path : children_to_resync) {
@@ -170,11 +169,11 @@ void EditorApplication::process_dirty_prims() {
     // Xform-only changes (O(1) lookup instead of O(n) scan)
     if (!m_dirty_xform_paths.empty()) {
         for (const auto& dirty_path : m_dirty_xform_paths) {
-            int idx = m_world.find_object_by_prim(dirty_path);
+            int idx = m_world.find_object_by_prim(dirty_path.GetString());
             if (idx < 0) continue;
             auto& obj = m_world.objects[idx];
 
-            auto prim = m_stage->GetPrimAtPath(pxr::SdfPath(obj.prim_path));
+            auto prim = m_stage->GetPrimAtPath(dirty_path);
             if (!prim.IsValid()) continue;
 
             pxr::UsdGeomXformable xformable(prim);
