@@ -72,7 +72,7 @@ class ProfileTool(RepoTool):
 def _ensure_tracy_viewer(workspace_root: Path) -> Path:
     """Download Tracy profiler viewer if not cached."""
     cache_dir = workspace_root / "_build" / "tools" / "tracy"
-    viewer = cache_dir / "Tracy.exe"
+    viewer = cache_dir / "tracy-profiler.exe"
 
     if viewer.exists():
         return viewer
@@ -84,14 +84,10 @@ def _ensure_tracy_viewer(workspace_root: Path) -> Path:
     with zipfile.ZipFile(BytesIO(resp.read())) as zf:
         zf.extractall(cache_dir)
 
-    candidates = list(cache_dir.rglob("Tracy.exe"))
-    if not candidates:
+    if not viewer.exists():
         raise RuntimeError(
-            f"Tracy.exe not found in downloaded archive from {_TRACY_VIEWER_URL}"
+            f"tracy-profiler.exe not found in downloaded archive from {_TRACY_VIEWER_URL}"
         )
-
-    if candidates[0] != viewer:
-        candidates[0].rename(viewer)
 
     logger.info(f"Tracy viewer cached at {viewer}")
     return viewer
