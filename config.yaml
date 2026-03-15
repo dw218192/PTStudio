@@ -45,6 +45,9 @@ build:
         - input: "editor/shaders/grid.slang"
           output: "editor/generated/shaders/grid.wgsl"
           reflect: true
+        - input: "editor/shaders/wireframe.slang"
+          output: "editor/generated/shaders/wireframe.wgsl"
+          reflect: true
     shader_codegen:
       template: "core/templates/shader_metadata.h.j2"
       shaders:
@@ -60,6 +63,9 @@ build:
         - reflect: "editor/generated/shaders/grid.reflect.json"
           output: "editor/generated/grid_shader_metadata.h"
           namespace: "editor_grid_shader"
+        - reflect: "editor/generated/shaders/wireframe.reflect.json"
+          output: "editor/generated/wireframe_shader_metadata.h"
+          namespace: "editor_wireframe_shader"
     embed:
       template: "core/templates/embedded_resources.h.j2"
       resources:
@@ -67,6 +73,7 @@ build:
             - "editor/generated/shaders/forward.wgsl"
             - "editor/generated/shaders/picking.wgsl"
             - "editor/generated/shaders/grid.wgsl"
+            - "editor/generated/shaders/wireframe.wgsl"
             - "editor/icons/*.*"
             - "assets/scenes/primitives.usda"
           output: "editor/generated/embedded_resources.h"

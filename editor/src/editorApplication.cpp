@@ -31,6 +31,7 @@
 #include "passes/forward_pass.h"
 #include "passes/grid_pass.h"
 #include "passes/picking_pass.h"
+#include "passes/wireframe_pass.h"
 
 using namespace pts;
 using namespace pts::editor;
@@ -46,6 +47,12 @@ static const std::vector<rendering::RendererConfig> kRendererConfigs = {
      {
          [] { return std::make_unique<PickingPass>(); },
          [] { return std::make_unique<ForwardPass>(); },
+         [] { return std::make_unique<GridPass>(); },
+     }},
+    {"Wireframe",
+     {
+         [] { return std::make_unique<PickingPass>(); },
+         [] { return std::make_unique<WireframePass>(); },
          [] { return std::make_unique<GridPass>(); },
      }},
 };
@@ -481,7 +488,21 @@ auto EditorApplication::draw_object_panel() noexcept -> void {
 
 auto EditorApplication::draw_scene_viewport() noexcept -> void {
     if (ImGui::BeginMenuBar()) {
-        ImGui::TextUnformatted("Renderer: editor.renderer");
+        ImGui::Text("Renderer:");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(120);
+        if (ImGui::BeginCombo("##renderer",
+                              kRendererConfigs[m_active_config_index].name.c_str())) {
+            for (size_t i = 0; i < kRendererConfigs.size(); ++i) {
+                bool selected = (i == m_active_config_index);
+                if (ImGui::Selectable(kRendererConfigs[i].name.c_str(), selected)) {
+                    if (i != m_active_config_index) {
+                        set_renderer_config(i);
+                    }
+                }
+            }
+            ImGui::EndCombo();
+        }
         ImGui::EndMenuBar();
     }
 
