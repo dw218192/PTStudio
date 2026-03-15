@@ -9,7 +9,7 @@
 
 namespace pts::rendering {
 
-glm::mat4 compute_world_transform(const pxr::UsdPrim& prim) {
+glm::mat4 compute_world_transform(pxr::UsdPrim prim) {
     pxr::GfMatrix4d xf =
         pxr::UsdGeomXformable(prim).ComputeLocalToWorldTransform(pxr::UsdTimeCode::Default());
     glm::mat4 transform;
@@ -18,7 +18,7 @@ glm::mat4 compute_world_transform(const pxr::UsdPrim& prim) {
     return transform;
 }
 
-uint32_t resolve_material(const pxr::UsdPrim& prim, RenderWorld& world) {
+uint32_t resolve_material(pxr::UsdPrim prim, RenderWorld& world) {
     auto binding = pxr::UsdShadeMaterialBindingAPI(prim).ComputeBoundMaterial();
     if (!binding) {
         return k_no_material;

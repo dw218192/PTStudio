@@ -50,11 +50,16 @@ struct TestFixture {
     pts::rendering::RenderWorld world;
 
     TestFixture(const char* name)
-        : logger(spdlog::stdout_color_mt(name)), device(pts::webgpu::Device::create(logger)) {}
+        : logger(spdlog::stdout_color_mt(name)), device(pts::webgpu::Device::create(logger)) {
+    }
 
-    ~TestFixture() { spdlog::drop(logger->name()); }
+    ~TestFixture() {
+        spdlog::drop(logger->name());
+    }
 
-    const pts::rendering::Mesh& synced_mesh() const { return world.meshes[world.objects[0].mesh_index]; }
+    const pts::rendering::Mesh& synced_mesh() const {
+        return world.meshes[world.objects[0].mesh_index];
+    }
 };
 
 }  // namespace

@@ -22,8 +22,7 @@ bool CubeAdapter::can_adapt(const pxr::UsdPrim& prim) const {
     return prim.IsA<pxr::UsdGeomCube>();
 }
 
-void CubeAdapter::sync(const pxr::UsdPrim& prim, RenderWorld& world,
-                       const webgpu::Device& device) {
+void CubeAdapter::sync(pxr::UsdPrim prim, RenderWorld& world, const webgpu::Device& device) {
     pxr::UsdGeomCube cube(prim);
 
     double size = 2.0;

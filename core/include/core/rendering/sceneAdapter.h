@@ -13,7 +13,7 @@ class ISceneAdapter {
    public:
     virtual ~ISceneAdapter() = default;
     [[nodiscard]] virtual bool can_adapt(const pxr::UsdPrim& prim) const = 0;
-    virtual void sync(const pxr::UsdPrim& prim, RenderWorld& world,
+    virtual void sync(pxr::UsdPrim prim, RenderWorld& world,
                       const webgpu::Device& device) = 0;
 };
 

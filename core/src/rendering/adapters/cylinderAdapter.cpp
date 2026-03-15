@@ -42,7 +42,7 @@ bool CylinderAdapter::can_adapt(const pxr::UsdPrim& prim) const {
     return prim.IsA<pxr::UsdGeomCylinder>();
 }
 
-void CylinderAdapter::sync(const pxr::UsdPrim& prim, RenderWorld& world,
+void CylinderAdapter::sync(pxr::UsdPrim prim, RenderWorld& world,
                            const webgpu::Device& device) {
     pxr::UsdGeomCylinder cyl(prim);
 

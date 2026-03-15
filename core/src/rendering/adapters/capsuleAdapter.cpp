@@ -43,7 +43,7 @@ bool CapsuleAdapter::can_adapt(const pxr::UsdPrim& prim) const {
     return prim.IsA<pxr::UsdGeomCapsule>();
 }
 
-void CapsuleAdapter::sync(const pxr::UsdPrim& prim, RenderWorld& world,
+void CapsuleAdapter::sync(pxr::UsdPrim prim, RenderWorld& world,
                           const webgpu::Device& device) {
     pxr::UsdGeomCapsule capsule(prim);
 
