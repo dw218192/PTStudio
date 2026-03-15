@@ -1,3 +1,4 @@
+#include <core/profiling.h>
 #include <core/rendering/adapters/registry.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/sceneLoader.h>
@@ -35,6 +36,7 @@ void upload_mesh(RenderWorld& world, const webgpu::Device& device, const MeshRes
 
 void populate_from_stage(RenderWorld& world, const pxr::UsdStageRefPtr& stage,
                          const webgpu::Device& device) {
+    PTS_ZONE_SCOPED;
     ++world.mesh_version;
     for (const auto& prim : pxr::UsdPrimRange(stage->GetPseudoRoot())) {
         for (const auto* adapter : k_schema_adapters()) {

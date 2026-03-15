@@ -1,4 +1,5 @@
 #include <core/diagnostics.h>
+#include <core/profiling.h>
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/webgpu/device.h>
 #include <spdlog/spdlog.h>
@@ -191,6 +192,7 @@ void FrameGraph::begin_frame() {
 }
 
 void FrameGraph::compile() {
+    PTS_ZONE_SCOPED;
     // Validate no backward dependencies (passes must be added in topological order)
     for (auto& pass : m_passes) {
         for (auto& att : pass.color_attachments) {
@@ -351,6 +353,7 @@ WGPUTextureView FrameGraph::resolve_view(ResourceHandle h) const {
 }
 
 void FrameGraph::execute(WGPUCommandEncoder encoder) {
+    PTS_ZONE_SCOPED;
     for (auto& pass : m_passes) {
         if (pass.type == PassType::Compute) {
             WGPUComputePassDescriptor desc = WGPU_COMPUTE_PASS_DESCRIPTOR_INIT;

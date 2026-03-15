@@ -1,6 +1,7 @@
 #include "editorApplication.h"
 
 #include <core/commandLine.h>
+#include <core/profiling.h>
 #include <core/components/imguiComponent.h>
 #include <core/components/inputComponent.h>
 #include <core/diagnostics.h>
@@ -278,6 +279,7 @@ void EditorApplication::update(float /*dt*/) {
 }
 
 void EditorApplication::render(FrameContext& ctx) {
+    PTS_ZONE_SCOPED;
     if (!m_imgui) return;
     if (viewport() && viewport()->should_close()) return;
 
@@ -408,6 +410,8 @@ void EditorApplication::render(FrameContext& ctx) {
     }
 
     wrap_mouse_pos();
+
+    PTS_FRAME_MARK;
 }
 
 void EditorApplication::setup_docking_layout() {

@@ -1,6 +1,7 @@
 #include "forward_pass.h"
 
 #include <core/diagnostics.h>
+#include <core/profiling.h>
 #include <core/rendering/camera.h>
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/passContext.h>
@@ -170,6 +171,7 @@ void ForwardPass::ensure_capacity(const webgpu::Device& device, uint32_t object_
 }
 
 void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::PassContext& ctx) {
+    PTS_ZONE_SCOPED;
     PRECONDITION(is_ready());
     auto& ready = std::get<Ready>(m_state);
 
