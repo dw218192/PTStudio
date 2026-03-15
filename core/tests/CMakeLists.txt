@@ -54,6 +54,11 @@ list(APPEND TEST_NAMES testWireframeIndices)
 set(testWireframeIndices_source testWireframeIndices.cpp)
 set(testWireframeIndices_libs core)
 
+# Mesh cache service on IScenePass - works on all platforms (no GPU needed)
+list(APPEND TEST_NAMES testMeshCache)
+set(testMeshCache_source testMeshCache.cpp)
+set(testMeshCache_libs core)
+
 # Geometric adapter tests - works on all platforms (no GPU needed)
 list(APPEND TEST_NAMES testGeometricAdapters)
 set(testGeometricAdapters_source testGeometricAdapters.cpp)

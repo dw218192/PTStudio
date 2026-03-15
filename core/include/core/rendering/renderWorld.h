@@ -27,8 +27,7 @@ struct Mesh {
     webgpu::Buffer vertex_buffer;
     webgpu::Buffer index_buffer;
     uint32_t index_count;
-    webgpu::Buffer wireframe_index_buffer;
-    uint32_t wireframe_index_count;
+    std::vector<uint32_t> cpu_indices;
 };
 
 struct RenderObject {
@@ -61,6 +60,7 @@ struct RenderWorld {
     std::vector<Material> materials;
     std::vector<Light> lights;
     std::unordered_map<std::string, uint32_t> material_cache;
+    uint32_t mesh_version = 0;
     void clear();
 };
 

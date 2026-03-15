@@ -1,7 +1,6 @@
 #include <core/rendering/adapters/registry.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/sceneLoader.h>
-#include <core/rendering/wireframeIndices.h>
 #include <pxr/usd/usd/primRange.h>
 
 namespace pts::rendering {
@@ -22,21 +21,13 @@ void upload_mesh(RenderWorld& world, const webgpu::Device& device, const MeshRes
     wgpuQueueWriteBuffer(device.queue(), index_buf.handle(), 0, mesh.indices.data(),
                          mesh.indices.size() * sizeof(uint32_t));
 
-    auto wireframe_indices = expand_wireframe_indices(mesh.indices.data(), mesh.indices.size());
-    auto wireframe_buf = device.create_buffer(
-        wireframe_indices.size() * sizeof(uint32_t),
-        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Index | WGPUBufferUsage_CopyDst));
-    wgpuQueueWriteBuffer(device.queue(), wireframe_buf.handle(), 0, wireframe_indices.data(),
-                         wireframe_indices.size() * sizeof(uint32_t));
-
     obj.mesh_index = static_cast<uint32_t>(world.meshes.size());
 
     Mesh gpu_mesh;
     gpu_mesh.vertex_buffer = std::move(vertex_buf);
     gpu_mesh.index_buffer = std::move(index_buf);
     gpu_mesh.index_count = static_cast<uint32_t>(mesh.indices.size());
-    gpu_mesh.wireframe_index_buffer = std::move(wireframe_buf);
-    gpu_mesh.wireframe_index_count = static_cast<uint32_t>(wireframe_indices.size());
+    gpu_mesh.cpu_indices.assign(mesh.indices.begin(), mesh.indices.end());
     world.meshes.push_back(std::move(gpu_mesh));
 }
 
@@ -44,6 +35,7 @@ void upload_mesh(RenderWorld& world, const webgpu::Device& device, const MeshRes
 
 void populate_from_stage(RenderWorld& world, const pxr::UsdStageRefPtr& stage,
                          const webgpu::Device& device) {
+    ++world.mesh_version;
     for (const auto& prim : pxr::UsdPrimRange(stage->GetPseudoRoot())) {
         for (const auto* adapter : k_schema_adapters()) {
             if (!adapter->can_adapt(prim)) continue;

@@ -5,8 +5,8 @@
 using namespace pts::rendering;
 
 TEST_CASE("expand_wireframe_indices - single triangle") {
-    uint32_t tri[] = {0, 1, 2};
-    auto lines = expand_wireframe_indices(tri, 3);
+    std::vector<uint32_t> tri = {0, 1, 2};
+    auto lines = expand_wireframe_indices(tri);
     REQUIRE(lines.size() == 6);
     CHECK(lines[0] == 0);
     CHECK(lines[1] == 1);
@@ -17,8 +17,8 @@ TEST_CASE("expand_wireframe_indices - single triangle") {
 }
 
 TEST_CASE("expand_wireframe_indices - two triangles") {
-    uint32_t tri[] = {0, 1, 2, 3, 4, 5};
-    auto lines = expand_wireframe_indices(tri, 6);
+    std::vector<uint32_t> tri = {0, 1, 2, 3, 4, 5};
+    auto lines = expand_wireframe_indices(tri);
     REQUIRE(lines.size() == 12);
     // First triangle edges
     CHECK(lines[0] == 0);
@@ -37,14 +37,15 @@ TEST_CASE("expand_wireframe_indices - two triangles") {
 }
 
 TEST_CASE("expand_wireframe_indices - empty input") {
-    auto lines = expand_wireframe_indices(nullptr, 0);
+    std::vector<uint32_t> tri;
+    auto lines = expand_wireframe_indices(tri);
     CHECK(lines.empty());
 }
 
 TEST_CASE("expand_wireframe_indices - shared vertices produce duplicate edges") {
     // Two triangles sharing an edge (0-1)
-    uint32_t tri[] = {0, 1, 2, 0, 1, 3};
-    auto lines = expand_wireframe_indices(tri, 6);
+    std::vector<uint32_t> tri = {0, 1, 2, 0, 1, 3};
+    auto lines = expand_wireframe_indices(tri);
     REQUIRE(lines.size() == 12);
     // Edge 0-1 appears twice (once per triangle)
     CHECK(lines[0] == 0);
