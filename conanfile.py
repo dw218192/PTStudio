@@ -46,7 +46,7 @@ class PTStudioConan(ConanFile):
             # File dialogs (not applicable in browser)
             self.requires("portable-file-dialogs/0.1.0")
             # Profiler
-            self.requires("tracy/0.11.1")
+            self.requires("tracy/0.13.1")
 
         # GUI libraries (from Conan)
         self.requires("imgui/1.92.5-docking")
