@@ -60,6 +60,7 @@ target_compile_definitions(developer_flags INTERFACE
     "PTS_WINDOWING_${PTS_WINDOWING}=1"
     $<$<CXX_COMPILER_ID:MSVC>:NOMINMAX>
     $<$<AND:$<NOT:$<BOOL:${EMSCRIPTEN}>>,$<CONFIG:Debug>>:TRACY_ENABLE>
+    $<$<AND:$<NOT:$<BOOL:${EMSCRIPTEN}>>,$<CONFIG:Debug>>:TRACY_ON_DEMAND>
 )
 
 target_compile_features(developer_flags INTERFACE cxx_std_17)
