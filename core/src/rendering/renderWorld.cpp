@@ -62,13 +62,13 @@ void RenderWorld::free_light_slot(uint32_t i) {
     m_free_light_slots.push_back(i);
 }
 
-int RenderWorld::find_object_by_prim(const std::string& path) const {
+int RenderWorld::find_object_by_prim(std::string_view path) const {
     auto it = prim_slots.find(path);
     if (it == prim_slots.end() || it->second.kind != PrimSlot::Kind::Object) return -1;
     return static_cast<int>(it->second.index);
 }
 
-int RenderWorld::find_light_by_prim(const std::string& path) const {
+int RenderWorld::find_light_by_prim(std::string_view path) const {
     auto it = prim_slots.find(path);
     if (it == prim_slots.end() || it->second.kind != PrimSlot::Kind::Light) return -1;
     return static_cast<int>(it->second.index);

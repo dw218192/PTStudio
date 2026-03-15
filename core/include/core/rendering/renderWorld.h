@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <glm/glm.hpp>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -75,8 +76,9 @@ struct RenderWorld {
     /// Material path → material index (deduplication cache).
     std::unordered_map<std::string, uint32_t> material_cache;
 
-    /// Prim path → slot (object or light).
-    boost::container::flat_map<std::string, PrimSlot> prim_slots;
+    /// Prim path → slot (object or light). Uses std::less<> for transparent
+    /// lookup so find() accepts string_view without allocating.
+    boost::container::flat_map<std::string, PrimSlot, std::less<>> prim_slots;
 
     uint32_t mesh_version = 0;
 
@@ -86,8 +88,8 @@ struct RenderWorld {
     void free_object_slot(uint32_t i);
     void free_mesh_slot(uint32_t i);
     void free_light_slot(uint32_t i);
-    int find_object_by_prim(const std::string& path) const;
-    int find_light_by_prim(const std::string& path) const;
+    int find_object_by_prim(std::string_view path) const;
+    int find_light_by_prim(std::string_view path) const;
     void clear();
 
    private:
