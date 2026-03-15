@@ -22,6 +22,7 @@
 #include <pxr/usd/usdGeom/xformable.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -104,20 +105,16 @@ void EditorApplication::revoke_stage_listener() {
     m_stage_listener.ctx = nullptr;
     m_stage_listener.cb = nullptr;
     m_dirty_xform_paths.clear();
-    m_needs_full_resync = false;
+    m_resync_paths.clear();
 }
 
 void EditorApplication::on_objects_changed(const pxr::UsdNotice::ObjectsChanged& notice) {
-    // Resynced paths require full re-extraction
     for (const auto& path : notice.GetResyncedPaths()) {
         if (path == pxr::SdfPath::AbsoluteRootPath()) continue;
-        m_needs_full_resync = true;
-        return;
+        auto prim_path = path.IsPropertyPath() ? path.GetPrimPath() : path;
+        m_resync_paths.push_back(prim_path.GetString());
     }
-
-    // Info-only changes: check if they are xform properties
     for (const auto& path : notice.GetChangedInfoOnlyPaths()) {
-        // Property paths have a prim parent; check if the property is xform-related
         if (!path.IsPrimPath() && !path.IsPropertyPath()) continue;
         auto prim_path = path.IsPropertyPath() ? path.GetPrimPath() : path;
         m_dirty_xform_paths.push_back(prim_path.GetString());
@@ -126,45 +123,59 @@ void EditorApplication::on_objects_changed(const pxr::UsdNotice::ObjectsChanged&
 
 void EditorApplication::process_dirty_prims() {
     if (!m_stage) return;
-
     auto const& device = webgpu_context()->device();
 
-    if (m_needs_full_resync) {
+    if (!m_resync_paths.empty()) {
+        // Deduplicate
+        std::sort(m_resync_paths.begin(), m_resync_paths.end());
+        m_resync_paths.erase(std::unique(m_resync_paths.begin(), m_resync_paths.end()),
+                             m_resync_paths.end());
+
+        // Save selection
         std::string selected_prim_path;
         if (m_selected_object >= 0 &&
-            m_selected_object < static_cast<int>(m_world.objects.size())) {
+            m_selected_object < static_cast<int>(m_world.objects.size()) &&
+            m_world.objects[m_selected_object].active) {
             selected_prim_path = m_world.objects[m_selected_object].prim_path;
         }
 
-        m_world.clear();
-        m_selected_object = -1;
-        rendering::populate_from_stage(m_world, m_stage, device);
-
-        if (!selected_prim_path.empty()) {
-            for (int i = 0; i < static_cast<int>(m_world.objects.size()); ++i) {
-                if (m_world.objects[i].prim_path == selected_prim_path) {
-                    m_selected_object = i;
-                    break;
+        for (const auto& prim_path : m_resync_paths) {
+            // Handle ancestor resyncs: resync children whose prim_path starts with this path
+            auto prefix = prim_path + "/";
+            std::vector<std::string> children_to_resync;
+            for (const auto& [path, slot] : m_world.prim_slots) {
+                if (path.compare(0, prefix.size(), prefix) == 0) {
+                    children_to_resync.push_back(path);
                 }
+            }
+
+            // Sync the prim itself
+            rendering::sync_prim(m_world, m_stage, device, prim_path);
+
+            // Sync affected children
+            for (const auto& child_path : children_to_resync) {
+                rendering::sync_prim(m_world, m_stage, device, child_path);
             }
         }
 
-        log(LogLevel::Info, "Full resync: {} objects", m_world.objects.size());
-        m_needs_full_resync = false;
-        m_dirty_xform_paths.clear();
-        return;
+        // Restore selection
+        if (!selected_prim_path.empty()) {
+            m_selected_object = m_world.find_object_by_prim(selected_prim_path);
+        }
+
+        log(LogLevel::Debug, "Resynced {} prim(s)", m_resync_paths.size());
+        m_resync_paths.clear();
     }
 
-    if (m_dirty_xform_paths.empty()) return;
-
-    // Update transforms for dirty prims
-    for (const auto& dirty_path : m_dirty_xform_paths) {
-        for (auto& obj : m_world.objects) {
-            if (obj.prim_path != dirty_path) continue;
+    // Xform-only changes (O(1) lookup instead of O(n) scan)
+    if (!m_dirty_xform_paths.empty()) {
+        for (const auto& dirty_path : m_dirty_xform_paths) {
+            int idx = m_world.find_object_by_prim(dirty_path);
+            if (idx < 0) continue;
+            auto& obj = m_world.objects[idx];
 
             auto prim = m_stage->GetPrimAtPath(pxr::SdfPath(obj.prim_path));
-            INVARIANT_MSG(prim.IsValid(),
-                          "prim_path on RenderObject must reference a valid USD prim");
+            if (!prim.IsValid()) continue;
 
             pxr::UsdGeomXformable xformable(prim);
             if (!xformable) continue;
@@ -173,10 +184,9 @@ void EditorApplication::process_dirty_prims() {
                 xformable.ComputeLocalToWorldTransform(pxr::UsdTimeCode::Default());
             for (int r = 0; r < 4; ++r)
                 for (int c = 0; c < 4; ++c) obj.transform[r][c] = static_cast<float>(xf[r][c]);
-            break;
         }
+        m_dirty_xform_paths.clear();
     }
-    m_dirty_xform_paths.clear();
 }
 
 void EditorApplication::normalize_xform_ops(const std::string& prim_path) {
@@ -376,7 +386,8 @@ void EditorApplication::render(FrameContext& ctx) {
     if (auto picked_id = m_picking_readback.try_read_u32()) {
         if (*picked_id == UINT32_MAX) {
             m_selected_object = -1;
-        } else if (*picked_id < static_cast<uint32_t>(m_world.objects.size())) {
+        } else if (*picked_id < static_cast<uint32_t>(m_world.objects.size()) &&
+                   m_world.objects[*picked_id].active) {
             m_selected_object = static_cast<int>(*picked_id);
             if (m_stage) {
                 normalize_xform_ops(m_world.objects[m_selected_object].prim_path);
@@ -478,6 +489,7 @@ auto EditorApplication::draw_object_panel() noexcept -> void {
     ImGui::Separator();
 
     for (int i = 0; i < static_cast<int>(m_world.objects.size()); ++i) {
+        if (!m_world.objects[i].active) continue;
         auto const& obj = m_world.objects[i];
         auto const& label = obj.prim_path.empty() ? std::to_string(i) : obj.prim_path;
         bool selected = (m_selected_object == i);

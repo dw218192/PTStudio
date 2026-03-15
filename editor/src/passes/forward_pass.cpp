@@ -231,6 +231,7 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
     // Write all per-object uniforms before encoding the render pass.
     // Each object gets its own aligned slice so dynamic offsets work correctly.
     for (uint32_t i = 0; i < object_count; ++i) {
+        if (!world.objects[i].active) continue;
         const auto& obj = world.objects[i];
         ForwardUniforms u{};
         u.mvp = proj_mat * view_mat * obj.transform;
@@ -245,6 +246,7 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
         [=, &world](WGPURenderPassEncoder pass) {
             wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
             for (uint32_t i = 0; i < static_cast<uint32_t>(world.objects.size()); ++i) {
+                if (!world.objects[i].active) continue;
                 uint32_t dyn_offset = i * k_uniform_align;
                 wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 1, &dyn_offset);
                 const auto& mesh = world.meshes[world.objects[i].mesh_index];

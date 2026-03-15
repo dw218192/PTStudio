@@ -175,6 +175,7 @@ void WireframePass::add_to_frame_graph(rendering::FrameGraph& fg,
 
     // Lazily build wireframe index buffers via the per-pass mesh cache.
     for (uint32_t i = 0; i < object_count; ++i) {
+        if (!world.objects[i].active) continue;
         const auto& obj = world.objects[i];
         mesh_cache_get<WireframeMesh>(obj.mesh_index, world.mesh_version, [&]() {
             const auto& mesh = world.meshes[obj.mesh_index];
@@ -189,6 +190,7 @@ void WireframePass::add_to_frame_graph(rendering::FrameGraph& fg,
     }
 
     for (uint32_t i = 0; i < object_count; ++i) {
+        if (!world.objects[i].active) continue;
         const auto& obj = world.objects[i];
         WireframeUniforms u{};
         u.mvp = proj_mat * view_mat * obj.transform;
@@ -202,6 +204,7 @@ void WireframePass::add_to_frame_graph(rendering::FrameGraph& fg,
         .execute([=, &world](WGPURenderPassEncoder pass) {
             wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
             for (uint32_t i = 0; i < static_cast<uint32_t>(world.objects.size()); ++i) {
+                if (!world.objects[i].active) continue;
                 uint32_t dyn_offset = i * k_uniform_align;
                 wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 1, &dyn_offset);
                 const auto& mesh = world.meshes[world.objects[i].mesh_index];
