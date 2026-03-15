@@ -137,24 +137,27 @@ void EditorApplication::process_dirty_prims() {
             selected_prim_path = m_world.objects[m_selected_object].prim_path;
         }
 
-        for (const auto& resync_path : m_resync_paths) {
-            // Handle ancestor resyncs: resync children under this path
-            std::vector<pxr::SdfPath> children_to_resync;
-            for (const auto& [path, slot] : m_world.prim_slots) {
-                auto child = pxr::SdfPath(path);
-                if (child.HasPrefix(resync_path) && child != resync_path) {
-                    children_to_resync.push_back(child);
+        {
+            auto scope = m_world.begin_sync();
+            for (const auto& resync_path : m_resync_paths) {
+                // Handle ancestor resyncs: resync children under this path
+                std::vector<pxr::SdfPath> children_to_resync;
+                for (const auto& [path, slot] : m_world.prim_slots) {
+                    auto child = pxr::SdfPath(path);
+                    if (child.HasPrefix(resync_path) && child != resync_path) {
+                        children_to_resync.push_back(child);
+                    }
+                }
+
+                // Sync the prim itself
+                rendering::sync_prim(m_world, m_stage, device, resync_path);
+
+                // Sync affected children
+                for (const auto& child_path : children_to_resync) {
+                    rendering::sync_prim(m_world, m_stage, device, child_path);
                 }
             }
-
-            // Sync the prim itself
-            rendering::sync_prim(m_world, m_stage, device, resync_path);
-
-            // Sync affected children
-            for (const auto& child_path : children_to_resync) {
-                rendering::sync_prim(m_world, m_stage, device, child_path);
-            }
-        }
+        }  // mesh_version bumped here
 
         // Restore selection
         if (!selected_prim_path.empty()) {

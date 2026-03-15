@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/diagnostics.h>
 #include <core/rendering/vertex.h>
 #include <core/rendering/webgpu/buffer.h>
 
@@ -67,6 +68,22 @@ struct PrimSlot {
     uint32_t index;
 };
 
+struct RenderWorld;
+
+/// RAII scope guard for batched sync operations. Bumps mesh_version
+/// on destruction. All sync_object/remove_prim calls must happen
+/// within a live SyncScope.
+class SyncScope {
+   public:
+    explicit SyncScope(RenderWorld& world);
+    ~SyncScope();
+    SyncScope(const SyncScope&) = delete;
+    SyncScope& operator=(const SyncScope&) = delete;
+
+   private:
+    RenderWorld& m_world;
+};
+
 struct RenderWorld {
     std::vector<Mesh> meshes;
     std::vector<RenderObject> objects;
@@ -82,6 +99,11 @@ struct RenderWorld {
 
     uint32_t mesh_version = 0;
 
+    /// Begin a batched sync operation. mesh_version is bumped when
+    /// the returned scope guard is destroyed. sync_object/remove_prim
+    /// calls without a live SyncScope will PRECONDITION-fail.
+    [[nodiscard]] SyncScope begin_sync();
+
     uint32_t alloc_object_slot();
     uint32_t alloc_mesh_slot();
     uint32_t alloc_light_slot();
@@ -93,6 +115,8 @@ struct RenderWorld {
     void clear();
 
    private:
+    friend class SyncScope;
+    uint32_t m_sync_depth = 0;
     std::vector<uint32_t> m_free_object_slots;
     std::vector<uint32_t> m_free_mesh_slots;
     std::vector<uint32_t> m_free_light_slots;

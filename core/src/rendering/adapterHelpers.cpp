@@ -106,7 +106,6 @@ void sync_object(pxr::UsdPrim prim, RenderWorld& world, const webgpu::Device& de
         obj.prim_path = std::move(prim_path);
         world.prim_slots[obj.prim_path] = PrimSlot{PrimSlot::Kind::Object, obj_slot};
     }
-    ++world.mesh_version;
 }
 
 }  // namespace pts::rendering

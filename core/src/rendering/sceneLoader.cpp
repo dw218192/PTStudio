@@ -22,6 +22,7 @@ void sync_prim_impl(pxr::UsdPrim prim, RenderWorld& world, const webgpu::Device&
 void populate_from_stage(RenderWorld& world, const pxr::UsdStageRefPtr& stage,
                          const webgpu::Device& device) {
     PTS_ZONE_SCOPED;
+    auto scope = world.begin_sync();
     for (const auto& prim : pxr::UsdPrimRange(stage->GetPseudoRoot())) {
         sync_prim_impl(prim, world, device);
     }
@@ -43,13 +44,11 @@ void remove_prim(RenderWorld& world, const pxr::SdfPath& prim_path) {
     if (obj_idx >= 0) {
         world.free_mesh_slot(world.objects[obj_idx].mesh_index);
         world.free_object_slot(static_cast<uint32_t>(obj_idx));
-        ++world.mesh_version;
         return;
     }
     int light_idx = world.find_light_by_prim(path_text);
     if (light_idx >= 0) {
         world.free_light_slot(static_cast<uint32_t>(light_idx));
-        ++world.mesh_version;
     }
 }
 

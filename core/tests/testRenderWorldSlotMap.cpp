@@ -6,6 +6,7 @@ using namespace pts::rendering;
 
 TEST_CASE("alloc returns sequential indices on empty world") {
     RenderWorld world;
+    auto scope = world.begin_sync();
 
     CHECK(world.alloc_object_slot() == 0);
     CHECK(world.alloc_object_slot() == 1);
@@ -23,6 +24,7 @@ TEST_CASE("alloc returns sequential indices on empty world") {
 
 TEST_CASE("free + re-alloc reuses slots") {
     RenderWorld world;
+    auto scope = world.begin_sync();
 
     auto a = world.alloc_object_slot();
     auto b = world.alloc_object_slot();
@@ -49,14 +51,15 @@ TEST_CASE("free + re-alloc reuses slots") {
     CHECK(world.alloc_light_slot() == l0);
     CHECK(world.lights[l0].active == true);
 
-    (void) a;
-    (void) c;
-    (void) m1;
-    (void) l1;
+    (void)a;
+    (void)c;
+    (void)m1;
+    (void)l1;
 }
 
 TEST_CASE("find_object_by_prim returns correct index") {
     RenderWorld world;
+    auto scope = world.begin_sync();
 
     auto idx = world.alloc_object_slot();
     world.objects[idx].prim_path = "/World/Cube";
@@ -73,6 +76,7 @@ TEST_CASE("find returns -1 for unknown path") {
 
 TEST_CASE("find_light_by_prim returns correct index") {
     RenderWorld world;
+    auto scope = world.begin_sync();
 
     auto idx = world.alloc_light_slot();
     world.lights[idx].prim_path = "/World/Light";
@@ -83,6 +87,7 @@ TEST_CASE("find_light_by_prim returns correct index") {
 
 TEST_CASE("free_object_slot removes from prim_slots") {
     RenderWorld world;
+    auto scope = world.begin_sync();
 
     auto idx = world.alloc_object_slot();
     world.objects[idx].prim_path = "/World/Sphere";
@@ -95,6 +100,7 @@ TEST_CASE("free_object_slot removes from prim_slots") {
 
 TEST_CASE("free_light_slot removes from prim_slots") {
     RenderWorld world;
+    auto scope = world.begin_sync();
 
     auto idx = world.alloc_light_slot();
     world.lights[idx].prim_path = "/World/Sun";
@@ -107,19 +113,22 @@ TEST_CASE("free_light_slot removes from prim_slots") {
 
 TEST_CASE("clear resets everything") {
     RenderWorld world;
+    {
+        auto scope = world.begin_sync();
 
-    auto o = world.alloc_object_slot();
-    world.objects[o].prim_path = "/A";
-    world.prim_slots["/A"] = PrimSlot{PrimSlot::Kind::Object, o};
+        auto o = world.alloc_object_slot();
+        world.objects[o].prim_path = "/A";
+        world.prim_slots["/A"] = PrimSlot{PrimSlot::Kind::Object, o};
 
-    auto l = world.alloc_light_slot();
-    world.lights[l].prim_path = "/B";
-    world.prim_slots["/B"] = PrimSlot{PrimSlot::Kind::Light, l};
+        auto l = world.alloc_light_slot();
+        world.lights[l].prim_path = "/B";
+        world.prim_slots["/B"] = PrimSlot{PrimSlot::Kind::Light, l};
 
-    world.alloc_mesh_slot();
+        world.alloc_mesh_slot();
 
-    world.free_object_slot(o);
-    world.free_light_slot(l);
+        world.free_object_slot(o);
+        world.free_light_slot(l);
+    }
 
     world.clear();
 
@@ -132,6 +141,7 @@ TEST_CASE("clear resets everything") {
 
 TEST_CASE("active flag defaults to true on alloc") {
     RenderWorld world;
+    auto scope = world.begin_sync();
 
     auto o = world.alloc_object_slot();
     CHECK(world.objects[o].active == true);
@@ -142,6 +152,7 @@ TEST_CASE("active flag defaults to true on alloc") {
 
 TEST_CASE("active flag is false after free, true after re-alloc") {
     RenderWorld world;
+    auto scope = world.begin_sync();
 
     auto o = world.alloc_object_slot();
     world.free_object_slot(o);
@@ -158,4 +169,16 @@ TEST_CASE("active flag is false after free, true after re-alloc") {
     auto l2 = world.alloc_light_slot();
     CHECK(l2 == l);
     CHECK(world.lights[l2].active == true);
+}
+
+TEST_CASE("SyncScope bumps mesh_version once") {
+    RenderWorld world;
+    auto initial = world.mesh_version;
+    {
+        auto scope = world.begin_sync();
+        world.alloc_object_slot();
+        world.alloc_object_slot();
+        world.alloc_mesh_slot();
+    }
+    CHECK(world.mesh_version == initial + 1);
 }

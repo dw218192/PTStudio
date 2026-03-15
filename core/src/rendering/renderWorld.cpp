@@ -3,9 +3,23 @@
 
 namespace pts::rendering {
 
+// --- SyncScope ---
+
+SyncScope::SyncScope(RenderWorld& world) : m_world(world) { ++m_world.m_sync_depth; }
+
+SyncScope::~SyncScope() {
+    --m_world.m_sync_depth;
+    if (m_world.m_sync_depth == 0) {
+        ++m_world.mesh_version;
+    }
+}
+
+SyncScope RenderWorld::begin_sync() { return SyncScope(*this); }
+
+// --- Slot allocation ---
+
 namespace {
 
-/// Generic slot allocator: pop from free list or append a default-constructed element.
 template <typename T>
 uint32_t alloc_slot(std::vector<T>& vec, std::vector<uint32_t>& free_list) {
     if (!free_list.empty()) {
@@ -21,18 +35,22 @@ uint32_t alloc_slot(std::vector<T>& vec, std::vector<uint32_t>& free_list) {
 }  // namespace
 
 uint32_t RenderWorld::alloc_object_slot() {
+    PRECONDITION_MSG(m_sync_depth > 0, "alloc_object_slot requires a live SyncScope");
     return alloc_slot(objects, m_free_object_slots);
 }
 
 uint32_t RenderWorld::alloc_mesh_slot() {
+    PRECONDITION_MSG(m_sync_depth > 0, "alloc_mesh_slot requires a live SyncScope");
     return alloc_slot(meshes, m_free_mesh_slots);
 }
 
 uint32_t RenderWorld::alloc_light_slot() {
+    PRECONDITION_MSG(m_sync_depth > 0, "alloc_light_slot requires a live SyncScope");
     return alloc_slot(lights, m_free_light_slots);
 }
 
 void RenderWorld::free_object_slot(uint32_t i) {
+    PRECONDITION_MSG(m_sync_depth > 0, "free_object_slot requires a live SyncScope");
     PRECONDITION(i < objects.size());
     PRECONDITION(objects[i].active);
     if (!objects[i].prim_path.empty()) {
@@ -44,6 +62,7 @@ void RenderWorld::free_object_slot(uint32_t i) {
 }
 
 void RenderWorld::free_mesh_slot(uint32_t i) {
+    PRECONDITION_MSG(m_sync_depth > 0, "free_mesh_slot requires a live SyncScope");
     PRECONDITION(i < meshes.size());
     meshes[i].vertex_buffer = {};
     meshes[i].index_buffer = {};
@@ -53,6 +72,7 @@ void RenderWorld::free_mesh_slot(uint32_t i) {
 }
 
 void RenderWorld::free_light_slot(uint32_t i) {
+    PRECONDITION_MSG(m_sync_depth > 0, "free_light_slot requires a live SyncScope");
     PRECONDITION(i < lights.size());
     PRECONDITION(lights[i].active);
     if (!lights[i].prim_path.empty()) {

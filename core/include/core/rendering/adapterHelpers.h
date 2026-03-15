@@ -24,8 +24,8 @@ void upload_mesh(RenderWorld& world, const webgpu::Device& device,
                  uint32_t mesh_slot);
 
 /// Common sync logic for mesh-producing adapters. Handles transform, material,
-/// slot lookup/insert, GPU upload, and version bump. Adapters only need to
-/// tessellate and call this.
+/// slot lookup/insert, and GPU upload. Does NOT bump mesh_version — caller
+/// must do so once after a batch of sync/remove calls.
 void sync_object(pxr::UsdPrim prim, RenderWorld& world, const webgpu::Device& device,
                  std::vector<Vertex>& vertices, std::vector<uint32_t>& indices);
 

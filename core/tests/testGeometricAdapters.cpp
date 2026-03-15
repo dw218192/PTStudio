@@ -73,6 +73,7 @@ TEST_CASE("CubeAdapter - basic cube") {
     CHECK(adapter.can_adapt(cube.GetPrim()));
 
     TestFixture f("test_cube_basic");
+    auto scope = f.world.begin_sync();
     adapter.sync(cube.GetPrim(), f.world, f.device);
 
     REQUIRE(f.world.objects.size() == 1);
@@ -88,6 +89,7 @@ TEST_CASE("CubeAdapter - respects size attribute") {
     cube.GetSizeAttr().Set(4.0);
 
     TestFixture f("test_cube_size");
+    auto scope = f.world.begin_sync();
     pts::rendering::CubeAdapter::instance().sync(cube.GetPrim(), f.world, f.device);
 
     REQUIRE(f.world.objects.size() == 1);
@@ -103,6 +105,7 @@ TEST_CASE("SphereAdapter - basic sphere") {
     CHECK(adapter.can_adapt(sphere.GetPrim()));
 
     TestFixture f("test_sphere_basic");
+    auto scope = f.world.begin_sync();
     adapter.sync(sphere.GetPrim(), f.world, f.device);
 
     REQUIRE(f.world.objects.size() == 1);
@@ -117,6 +120,7 @@ TEST_CASE("CylinderAdapter - basic cylinder") {
     CHECK(adapter.can_adapt(cyl.GetPrim()));
 
     TestFixture f("test_cylinder_basic");
+    auto scope = f.world.begin_sync();
     adapter.sync(cyl.GetPrim(), f.world, f.device);
 
     REQUIRE(f.world.objects.size() == 1);
@@ -131,6 +135,7 @@ TEST_CASE("ConeAdapter - basic cone") {
     CHECK(adapter.can_adapt(cone.GetPrim()));
 
     TestFixture f("test_cone_basic");
+    auto scope = f.world.begin_sync();
     adapter.sync(cone.GetPrim(), f.world, f.device);
 
     REQUIRE(f.world.objects.size() == 1);
@@ -145,6 +150,7 @@ TEST_CASE("CapsuleAdapter - basic capsule") {
     CHECK(adapter.can_adapt(cap.GetPrim()));
 
     TestFixture f("test_capsule_basic");
+    auto scope = f.world.begin_sync();
     adapter.sync(cap.GetPrim(), f.world, f.device);
 
     REQUIRE(f.world.objects.size() == 1);
@@ -166,6 +172,7 @@ TEST_CASE("test_cube.usda Cube prim is adapted by registry") {
     REQUIRE(cube_prim.IsValid());
 
     TestFixture f("test_cube_registry");
+    auto scope = f.world.begin_sync();
 
     bool adapted = false;
     for (auto* adapter : pts::rendering::k_scene_adapters()) {
@@ -191,7 +198,10 @@ TEST_CASE("sync_prim updates existing object") {
     auto initial_version = f.world.mesh_version;
 
     // Re-sync the same prim — should update in place, not add a new object
-    pts::rendering::sync_prim(f.world, stage, f.device, pxr::SdfPath("/Cube"));
+    {
+        auto scope = f.world.begin_sync();
+        pts::rendering::sync_prim(f.world, stage, f.device, pxr::SdfPath("/Cube"));
+    }
 
     CHECK(f.world.objects.size() == 1);
     CHECK(f.world.mesh_version > initial_version);
@@ -209,7 +219,10 @@ TEST_CASE("remove_prim frees object and mesh slots") {
     CHECK(f.world.objects[0].active);
     auto initial_version = f.world.mesh_version;
 
-    pts::rendering::remove_prim(f.world, pxr::SdfPath("/Cube"));
+    {
+        auto scope = f.world.begin_sync();
+        pts::rendering::remove_prim(f.world, pxr::SdfPath("/Cube"));
+    }
 
     CHECK(!f.world.objects[0].active);
     CHECK(f.world.find_object_by_prim("/Cube") == -1);
@@ -228,7 +241,10 @@ TEST_CASE("sync_prim with invalid path calls remove_prim") {
 
     // Remove from stage, then sync — should remove from world
     stage->RemovePrim(pxr::SdfPath("/Cube"));
-    pts::rendering::sync_prim(f.world, stage, f.device, pxr::SdfPath("/Cube"));
+    {
+        auto scope = f.world.begin_sync();
+        pts::rendering::sync_prim(f.world, stage, f.device, pxr::SdfPath("/Cube"));
+    }
 
     CHECK(!f.world.objects[0].active);
     CHECK(f.world.find_object_by_prim("/Cube") == -1);
