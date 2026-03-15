@@ -189,16 +189,16 @@ class SlangcTool(RepoTool):
                     "wgsl",
                 ]
                 cmd.extend(ctx.passthrough_args)
+                shell_cmd = ShellCommand(cmd, env_script=conanbuild)
                 try:
-                    ShellCommand(cmd, env_script=conanbuild).exec(log_file=log_file)
+                    shell_cmd.exec(log_file=log_file)
                 except SystemExit:
                     if log_file.exists():
                         content = log_file.read_text().strip()
                         if content:
                             logger.error(f"slangc failed compiling {input_path}:")
                             logger.error(content)
-                        else:
-                            logger.error(f"slangc failed compiling {input_path} (no output)")
+                    logger.error(f"Command: {' '.join(cmd)}")
                     raise
                 compiled += 1
             else:
