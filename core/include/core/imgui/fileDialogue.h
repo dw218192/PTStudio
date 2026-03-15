@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -7,11 +8,17 @@ namespace ImGui {
 
 enum class FileDialogueMode { Open, Save };
 
-// File filters as pairs: {"Description", "*.ext1 *.ext2", "Other", "*.ext3", ...}
-// Example: {"Image Files", "*.png *.jpg *.gif", "All Files", "*"}
-// Note: Not available on Emscripten/WASM - returns empty string
-auto FileDialogue(FileDialogueMode mode,
-                  const std::vector<std::string>& filters = {"All Files", "*"},
-                  const std::string& default_path = {}) -> std::string;
+/// Result delivered to the callback: filename + file contents.
+struct FileDialogueResult {
+    std::string name;
+    std::string contents;
+};
+
+/// Async file dialog — works on all platforms including Emscripten.
+/// On native: blocks, reads the file, invokes callback before returning.
+/// On Emscripten: triggers browser file picker, callback fires later.
+/// The accept filter is a MIME type or extension string (e.g. ".usda,.usdc,.usd").
+void FileDialogueAsync(FileDialogueMode mode, const std::string& accept,
+                       std::function<void(FileDialogueResult)> on_result);
 
 }  // namespace ImGui

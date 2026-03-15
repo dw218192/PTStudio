@@ -8,16 +8,22 @@ set(lib_name "core")
 # The core imgui library comes from Conan (imgui::imgui), but backends are 
 # provided as source files in res/bindings/ and must be compiled by the consumer
 
-# Get imgui package folder from Conan (set by CMakeDeps generator)
-# The variable imgui_PACKAGE_FOLDER_DEBUG/RELEASE is set by Conan
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(IMGUI_PKG_ROOT "${imgui_PACKAGE_FOLDER_DEBUG}")
+# Get imgui package folder from Conan (set by CMakeDeps generator).
+# Multi-config generators (VS, Xcode) leave CMAKE_BUILD_TYPE empty at
+# configure time, so probe all known configs and pick the first defined.
+if(CMAKE_CONFIGURATION_TYPES)
+    foreach(_cfg DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
+        if(DEFINED imgui_PACKAGE_FOLDER_${_cfg})
+            set(IMGUI_PKG_ROOT "${imgui_PACKAGE_FOLDER_${_cfg}}")
+            break()
+        endif()
+    endforeach()
 else()
-    set(IMGUI_PKG_ROOT "${imgui_PACKAGE_FOLDER_RELEASE}")
+    string(TOUPPER "${CMAKE_BUILD_TYPE}" _build_type_upper)
+    set(IMGUI_PKG_ROOT "${imgui_PACKAGE_FOLDER_${_build_type_upper}}")
 endif()
-# Fallback: try without build type suffix
 if(NOT IMGUI_PKG_ROOT)
-    set(IMGUI_PKG_ROOT "${imgui_PACKAGE_FOLDER}")
+    message(FATAL_ERROR "Unable to resolve imgui package folder from Conan CMakeDeps")
 endif()
 set(IMGUI_BINDINGS_DIR "${IMGUI_PKG_ROOT}/res/bindings")
 
@@ -78,6 +84,11 @@ file(GLOB_RECURSE core_webgpu_sources
 	${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/webgpu/*.*
 )
 list(APPEND core_rendering_sources ${core_webgpu_sources})
+
+file(GLOB_RECURSE core_adapter_sources
+	${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/adapters/*.*
+)
+list(APPEND core_rendering_sources ${core_adapter_sources})
 
 set(src_files ${core_src_files} ${core_rendering_sources})
 list(REMOVE_DUPLICATES src_files)

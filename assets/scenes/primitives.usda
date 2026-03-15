@@ -1,0 +1,140 @@
+#usda 1.0
+(
+    defaultPrim = "Root"
+    upAxis = "Y"
+)
+
+def Xform "Root"
+{
+    def Cube "Cube"
+    {
+        double size = 2
+        double3 xformOp:translate = (-6.0, 0.0, 0.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        color3f[] primvars:displayColor = [(0.8, 0.2, 0.2)]
+    }
+
+    def Sphere "Sphere"
+    {
+        double radius = 1.0
+        double3 xformOp:translate = (-3.0, 0.0, 0.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        color3f[] primvars:displayColor = [(0.2, 0.8, 0.2)]
+    }
+
+    def Cylinder "Cylinder"
+    {
+        double radius = 0.8
+        double height = 2.0
+        token axis = "Y"
+        double3 xformOp:translate = (0.0, 0.0, 0.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        color3f[] primvars:displayColor = [(0.2, 0.2, 0.8)]
+    }
+
+    def Cone "Cone"
+    {
+        double radius = 1.0
+        double height = 2.0
+        token axis = "Y"
+        double3 xformOp:translate = (3.0, 0.0, 0.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        color3f[] primvars:displayColor = [(0.8, 0.8, 0.2)]
+    }
+
+    def Capsule "Capsule"
+    {
+        double radius = 0.5
+        double height = 1.0
+        token axis = "Y"
+        double3 xformOp:translate = (6.0, 0.0, 0.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        color3f[] primvars:displayColor = [(0.8, 0.2, 0.8)]
+    }
+
+    def Xform "AxisVariants"
+    {
+        double3 xformOp:translate = (0.0, 0.0, -5.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+
+        def Cylinder "CylinderX"
+        {
+            double radius = 0.5
+            double height = 2.0
+            token axis = "X"
+            double3 xformOp:translate = (-3.0, 0.0, 0.0)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+            color3f[] primvars:displayColor = [(0.6, 0.3, 0.1)]
+        }
+
+        def Cylinder "CylinderZ"
+        {
+            double radius = 0.5
+            double height = 2.0
+            token axis = "Z"
+            double3 xformOp:translate = (0.0, 0.0, 0.0)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+            color3f[] primvars:displayColor = [(0.1, 0.6, 0.3)]
+        }
+
+        def Cone "ConeZ"
+        {
+            double radius = 0.8
+            double height = 2.0
+            token axis = "Z"
+            double3 xformOp:translate = (3.0, 0.0, 0.0)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+            color3f[] primvars:displayColor = [(0.3, 0.1, 0.6)]
+        }
+
+        def Capsule "CapsuleX"
+        {
+            double radius = 0.4
+            double height = 1.5
+            token axis = "X"
+            double3 xformOp:translate = (6.0, 0.0, 0.0)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+            color3f[] primvars:displayColor = [(0.1, 0.3, 0.6)]
+        }
+    }
+
+    def Xform "Scaled"
+    {
+        double3 xformOp:translate = (0.0, 0.0, 5.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+
+        def Cube "BigCube"
+        {
+            double size = 3
+            double3 xformOp:translate = (-4.0, 0.0, 0.0)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+            color3f[] primvars:displayColor = [(0.9, 0.5, 0.1)]
+        }
+
+        def Sphere "BigSphere"
+        {
+            double radius = 2.0
+            double3 xformOp:translate = (0.0, 0.0, 0.0)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+            color3f[] primvars:displayColor = [(0.1, 0.9, 0.5)]
+        }
+
+        def Capsule "TallCapsule"
+        {
+            double radius = 0.3
+            double height = 3.0
+            token axis = "Y"
+            double3 xformOp:translate = (4.0, 0.0, 0.0)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+            color3f[] primvars:displayColor = [(0.5, 0.1, 0.9)]
+        }
+    }
+
+    def DistantLight "SunLight"
+    {
+        float inputs:intensity = 1.0
+        color3f inputs:color = (1.0, 0.95, 0.9)
+        float3 xformOp:rotateXYZ = (-45.0, 30.0, 0.0)
+        uniform token[] xformOpOrder = ["xformOp:rotateXYZ"]
+    }
+}

@@ -22,11 +22,38 @@ struct ForwardUniforms {
     glm::vec3 sun_dir;
     float time;
     uint32_t object_id;
-    uint32_t _pad[3];
+    uint32_t material_index;
+    uint32_t _pad[2];
 };
 static_assert(sizeof(ForwardUniforms) == 160, "ForwardUniforms must match shader std140 layout");
 static_assert(ForwardPass::k_uniform_align >= sizeof(ForwardUniforms),
               "Alignment must be >= uniform struct size");
+
+static constexpr uint32_t k_min_material_buffer_size = 32;
+
+static WGPUBindGroup create_bind_group(WGPUDevice device, WGPUBindGroupLayout layout,
+                                       WGPUBuffer uniform_buf, WGPUBuffer material_buf,
+                                       std::size_t material_buf_size) {
+    WGPUBindGroupEntry entries[2] = {};
+
+    entries[0] = WGPU_BIND_GROUP_ENTRY_INIT;
+    entries[0].binding = 0;
+    entries[0].buffer = uniform_buf;
+    entries[0].offset = 0;
+    entries[0].size = sizeof(ForwardUniforms);
+
+    entries[1] = WGPU_BIND_GROUP_ENTRY_INIT;
+    entries[1].binding = 1;
+    entries[1].buffer = material_buf;
+    entries[1].offset = 0;
+    entries[1].size = material_buf_size;
+
+    WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
+    bg_desc.layout = layout;
+    bg_desc.entryCount = 2;
+    bg_desc.entries = entries;
+    return wgpuDeviceCreateBindGroup(device, &bg_desc);
+}
 
 ForwardPass::~ForwardPass() {
     if (auto* ready = std::get_if<Ready>(&m_state)) {
@@ -48,8 +75,9 @@ auto ForwardPass::is_ready() const noexcept -> bool {
 }
 
 void ForwardPass::setup(const webgpu::Device& device) {
-    auto shader_src = editor_resources::get_resource("generated/shaders/forward.wgsl");
-    PRECONDITION_MSG(shader_src, "Missing embedded resource: generated/shaders/forward.wgsl");
+    auto shader_src = editor_resources::get_resource("editor/generated/shaders/forward.wgsl");
+    PRECONDITION_MSG(shader_src,
+                     "Missing embedded resource: editor/generated/shaders/forward.wgsl");
 
     auto shader = device.create_shader_module_from_source(*shader_src);
 
@@ -58,32 +86,35 @@ void ForwardPass::setup(const webgpu::Device& device) {
         k_uniform_align * initial_capacity,
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
 
-    // Create bind group layout with hasDynamicOffset for per-object uniforms
-    WGPUBindGroupLayoutEntry entry0 = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    entry0.binding = 0;
-    entry0.visibility =
+    // Material SSBO - minimum 32 bytes for bind group validity even when empty
+    auto material_buffer = device.create_buffer(
+        k_min_material_buffer_size,
+        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
+
+    // Create bind group layout: binding 0 = uniform (dynamic), binding 1 = storage (materials)
+    WGPUBindGroupLayoutEntry entries[2] = {};
+
+    entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    entries[0].binding = 0;
+    entries[0].visibility =
         static_cast<WGPUShaderStage>(WGPUShaderStage_Vertex | WGPUShaderStage_Fragment);
-    entry0.buffer.type = WGPUBufferBindingType_Uniform;
-    entry0.buffer.hasDynamicOffset = true;
-    entry0.buffer.minBindingSize = sizeof(ForwardUniforms);
+    entries[0].buffer.type = WGPUBufferBindingType_Uniform;
+    entries[0].buffer.hasDynamicOffset = true;
+    entries[0].buffer.minBindingSize = sizeof(ForwardUniforms);
+
+    entries[1] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    entries[1].binding = 1;
+    entries[1].visibility = WGPUShaderStage_Fragment;
+    entries[1].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
+    entries[1].buffer.minBindingSize = 0;
 
     WGPUBindGroupLayoutDescriptor bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    bgl_desc.entryCount = 1;
-    bgl_desc.entries = &entry0;
+    bgl_desc.entryCount = 2;
+    bgl_desc.entries = entries;
     auto bind_group_layout = wgpuDeviceCreateBindGroupLayout(device.handle(), &bgl_desc);
 
-    // Bind group: offset=0, size=sizeof(ForwardUniforms); dynamic offset applied per draw
-    WGPUBindGroupEntry bg_entry = WGPU_BIND_GROUP_ENTRY_INIT;
-    bg_entry.binding = 0;
-    bg_entry.buffer = uniform_buffer.handle();
-    bg_entry.offset = 0;
-    bg_entry.size = sizeof(ForwardUniforms);
-
-    WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-    bg_desc.layout = bind_group_layout;
-    bg_desc.entryCount = 1;
-    bg_desc.entries = &bg_entry;
-    auto bind_group = wgpuDeviceCreateBindGroup(device.handle(), &bg_desc);
+    auto bind_group = create_bind_group(device.handle(), bind_group_layout, uniform_buffer.handle(),
+                                        material_buffer.handle(), k_min_material_buffer_size);
 
     WGPUPipelineLayoutDescriptor pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
     pl_desc.bindGroupLayoutCount = 1;
@@ -105,8 +136,14 @@ void ForwardPass::setup(const webgpu::Device& device) {
     wgpuPipelineLayoutRelease(pipeline_layout);
 
     m_state = Ready{
-        std::move(shader), std::move(pipeline), std::move(uniform_buffer),
-        bind_group,        bind_group_layout,   initial_capacity,
+        std::move(shader),
+        std::move(pipeline),
+        std::move(uniform_buffer),
+        std::move(material_buffer),
+        bind_group,
+        bind_group_layout,
+        initial_capacity,
+        0,
     };
 }
 
@@ -123,22 +160,14 @@ void ForwardPass::ensure_capacity(const webgpu::Device& device, uint32_t object_
         k_uniform_align * new_capacity,
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
 
-    // Recreate bind group pointing to new buffer
+    // Recreate bind group pointing to new uniform buffer
     if (ready.bind_group) {
         wgpuBindGroupRelease(ready.bind_group);
     }
 
-    WGPUBindGroupEntry bg_entry = WGPU_BIND_GROUP_ENTRY_INIT;
-    bg_entry.binding = 0;
-    bg_entry.buffer = ready.uniform_buffer.handle();
-    bg_entry.offset = 0;
-    bg_entry.size = sizeof(ForwardUniforms);
-
-    WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-    bg_desc.layout = ready.bind_group_layout;
-    bg_desc.entryCount = 1;
-    bg_desc.entries = &bg_entry;
-    ready.bind_group = wgpuDeviceCreateBindGroup(device.handle(), &bg_desc);
+    ready.bind_group =
+        create_bind_group(device.handle(), ready.bind_group_layout, ready.uniform_buffer.handle(),
+                          ready.material_buffer.handle(), ready.material_buffer.size());
     ready.capacity = new_capacity;
 }
 
@@ -149,6 +178,31 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
     auto object_count = static_cast<uint32_t>(ctx.world.objects.size());
     if (object_count > 0) {
         ensure_capacity(ctx.device, object_count);
+    }
+
+    // Upload materials to SSBO, reallocating if needed
+    auto material_count = static_cast<uint32_t>(ctx.world.materials.size());
+    auto required_material_size = std::max(static_cast<std::size_t>(k_min_material_buffer_size),
+                                           material_count * sizeof(rendering::Material));
+
+    if (required_material_size > ready.material_buffer.size()) {
+        ready.material_buffer = ctx.device.create_buffer(
+            required_material_size,
+            static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
+        ready.material_capacity = material_count;
+
+        if (ready.bind_group) {
+            wgpuBindGroupRelease(ready.bind_group);
+        }
+        ready.bind_group = create_bind_group(
+            ctx.device.handle(), ready.bind_group_layout, ready.uniform_buffer.handle(),
+            ready.material_buffer.handle(), ready.material_buffer.size());
+    }
+
+    if (material_count > 0) {
+        wgpuQueueWriteBuffer(ctx.queue, ready.material_buffer.handle(), 0,
+                             ctx.world.materials.data(),
+                             material_count * sizeof(rendering::Material));
     }
 
     rendering::TextureDesc color_desc;
@@ -193,6 +247,7 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
         u.sun_dir = glm::normalize(glm::vec3(0.3f, 1.0f, 0.5f));
         u.time = elapsed_time;
         u.object_id = i;
+        u.material_index = obj.material_index;
         wgpuQueueWriteBuffer(queue, uniform_buf, i * k_uniform_align, &u, sizeof(u));
     }
 

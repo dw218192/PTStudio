@@ -25,6 +25,8 @@ build:
     - usdGeom
     - usdShade
     - usdLux
+    - geomUtil
+    - hd
   prebuild:
     format: {}
     slangc:
@@ -59,7 +61,7 @@ build:
             - "editor/generated/shaders/forward.wgsl"
             - "editor/generated/shaders/grid.wgsl"
             - "editor/icons/*.*"
-            - "editor/scenes/*.*"
+            - "assets/scenes/primitives.usda"
           output: "editor/generated/embedded_resources.h"
           namespace: "editor_resources"
         - input:
@@ -79,8 +81,8 @@ build:
 agent:
   allowlist_extra: "allowlist_extra.toml"
   required_criteria+:
-    - "Build succeeds (repo_build)"
-    - "All existing tests pass (repo_test)"
+    - "Build succeeds (repo_build) for both the native and emscripten platforms and all build types"
+    - "All existing tests pass (repo_test) for both the native and emscripten platforms and all build types"
     - "If there is a new feature, it must have tests that cover the code path"
     - "Fail loud: use macros in <core/diagnostics.h> instead of silent null checks, fallbacks, or defensive state management."
     - "Follows naming conventions: UpperCamelCase types, snake_case methods/vars, m_ private members, k_snake_case constants, lowerCamelCase files"

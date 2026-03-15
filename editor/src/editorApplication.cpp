@@ -162,7 +162,7 @@ void EditorApplication::process_dirty_prims() {
             pxr::GfMatrix4d xf =
                 xformable.ComputeLocalToWorldTransform(pxr::UsdTimeCode::Default());
             for (int r = 0; r < 4; ++r)
-                for (int c = 0; c < 4; ++c) obj.transform[c][r] = static_cast<float>(xf[r][c]);
+                for (int c = 0; c < 4; ++c) obj.transform[r][c] = static_cast<float>(xf[r][c]);
             break;
         }
     }
@@ -181,7 +181,9 @@ void EditorApplication::normalize_xform_ops(const std::string& prim_path) {
     auto ops = xformable.GetOrderedXformOps(&reset_xform_stack);
     if (ops.size() == 1 && ops[0].GetOpType() == pxr::UsdGeomXformOp::TypeTransform) return;
 
-    auto xf = xformable.ComputeLocalToWorldTransform(pxr::UsdTimeCode::Default());
+    pxr::GfMatrix4d xf;
+    bool resetsXformStack;
+    xformable.GetLocalTransformation(&xf, &resetsXformStack, pxr::UsdTimeCode::Default());
     xformable.ClearXformOpOrder();
     xformable.AddTransformOp().Set(xf);
 }
@@ -222,7 +224,7 @@ void EditorApplication::on_ready() {
         device, get_logging_manager().get_logger_shared("frame_graph"));
 
     // Load default scene
-    auto usda = editor_resources::get_resource("scenes/default.usda");
+    auto usda = editor_resources::get_resource("assets/scenes/primitives.usda");
     if (usda) {
         auto layer = pxr::SdfLayer::CreateAnonymous(".usda");
         layer->ImportFromString(std::string{*usda});
@@ -231,7 +233,7 @@ void EditorApplication::on_ready() {
         register_stage_listener();
         log(LogLevel::Info, "Loaded default scene ({} objects)", m_world.objects.size());
     } else {
-        log(LogLevel::Warning, "Missing embedded resource: scenes/default.usda");
+        log(LogLevel::Warning, "Missing embedded resource: assets/scenes/primitives.usda");
     }
 
     // Set up renderer passes
@@ -433,27 +435,29 @@ auto EditorApplication::draw_scene_panel() noexcept -> void {
     ImGui::Separator();
 
     if (ImGui::Button("Open Scene")) {
-        auto path = ImGui::FileDialogue(ImGui::FileDialogueMode::Open,
-                                        {"USD Files", "*.usda *.usdc *.usd", "All Files", "*"});
-        if (!path.empty()) {
-            auto stage = pxr::UsdStage::Open(path);
-            if (stage) {
+        ImGui::FileDialogueAsync(
+            ImGui::FileDialogueMode::Open, ".usda,.usdc,.usd",
+            [this](ImGui::FileDialogueResult result) {
+                auto layer = pxr::SdfLayer::CreateAnonymous(result.name);
+                if (!layer || !layer->ImportFromString(result.contents)) {
+                    log(LogLevel::Error, "Failed to parse scene: {}", result.name);
+                    return;
+                }
+                auto stage = pxr::UsdStage::Open(layer);
+                if (!stage) {
+                    log(LogLevel::Error, "Failed to open stage: {}", result.name);
+                    return;
+                }
                 revoke_stage_listener();
                 m_world.clear();
                 m_selected_object = -1;
                 m_stage = stage;
                 rendering::populate_from_stage(m_world, m_stage, webgpu_context()->device());
                 register_stage_listener();
-                log(LogLevel::Info, "Loaded scene: {} ({} objects)", path, m_world.objects.size());
-            } else {
-                log(LogLevel::Error, "Failed to open scene: {}", path);
-            }
-        }
+                log(LogLevel::Info, "Loaded scene: {} ({} objects)", result.name,
+                    m_world.objects.size());
+            });
     }
-    ImGui::SameLine();
-    ImGui::BeginDisabled();
-    ImGui::Button("Save Scene");
-    ImGui::EndDisabled();
 }
 
 auto EditorApplication::draw_object_panel() noexcept -> void {
@@ -542,11 +546,22 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
             pxr::UsdGeomXformable xformable(prim);
             INVARIANT_MSG(xformable, "selected prim must be UsdGeomXformable");
 
-            // Convert glm::mat4 (column-major) -> GfMatrix4d (row-major) via transpose
-            pxr::GfMatrix4d gf_mat;
-            for (int r = 0; r < 4; ++r)
-                for (int c = 0; c < 4; ++c)
-                    gf_mat[r][c] = static_cast<double>(gizmo_transform[c][r]);
+            // ImGuizmo outputs a world-space matrix.  Convert to local space
+            // by removing the parent's world transform so we don't double-count
+            // ancestor contributions when USD recomposes.
+            pxr::GfMatrix4d gf_world;
+            for (int i = 0; i < 4; ++i)
+                for (int j = 0; j < 4; ++j)
+                    gf_world[i][j] = static_cast<double>(gizmo_transform[i][j]);
+
+            pxr::GfMatrix4d parent_world;
+            if (auto parent = prim.GetParent(); parent && parent != m_stage->GetPseudoRoot()) {
+                parent_world = pxr::UsdGeomXformable(parent).ComputeLocalToWorldTransform(
+                    pxr::UsdTimeCode::Default());
+            } else {
+                parent_world.SetIdentity();
+            }
+            pxr::GfMatrix4d local_mat = gf_world * parent_world.GetInverse();
 
             // Xform ops are normalized at selection time; a single TypeTransform op
             // must exist by the time the user drags the gizmo.
@@ -555,7 +570,7 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
             INVARIANT_MSG(
                 ops.size() == 1 && ops[0].GetOpType() == pxr::UsdGeomXformOp::TypeTransform,
                 "xform ops must be normalized to a single TypeTransform before gizmo use");
-            ops[0].Set(gf_mat);
+            ops[0].Set(local_mat);
         }
     }
 }
@@ -599,41 +614,43 @@ auto EditorApplication::on_mouse_enter_scene_viewport() noexcept -> void {
 }
 
 auto EditorApplication::handle_input(InputEvent const& event) noexcept -> void {
+    bool rmb_held = ImGui::IsMouseDown(ImGuiMouseButton_Right);
+
+    // WASD fly camera works globally while RMB is held (cursor may drift over other panels)
+    if (rmb_held && event.input.input_type == InputType::KEYBOARD &&
+        event.input.action_type == ActionType::HOLD) {
+        float fwd = 0.0f, right = 0.0f, up = 0.0f;
+        switch (event.input.key_or_button) {
+            case ImGuiKey_W:
+                fwd += 1.0f;
+                break;
+            case ImGuiKey_S:
+                fwd -= 1.0f;
+                break;
+            case ImGuiKey_D:
+                right += 1.0f;
+                break;
+            case ImGuiKey_A:
+                right -= 1.0f;
+                break;
+            case ImGuiKey_E:
+                up += 1.0f;
+                break;
+            case ImGuiKey_Q:
+                up -= 1.0f;
+                break;
+            default:
+                break;
+        }
+        if (fwd != 0.0f || right != 0.0f || up != 0.0f) {
+            m_camera.move(fwd, right, up, ImGui::GetIO().DeltaTime);
+        }
+        return;
+    }
+
     if (event.initiated_window != k_scene_view_win_name) return;
 
     if (event.input.input_type == InputType::KEYBOARD) {
-        bool rmb_held = ImGui::IsMouseDown(ImGuiMouseButton_Right);
-
-        // WASD/QE movement: only while right-click is held
-        if (rmb_held && event.input.action_type == ActionType::HOLD) {
-            float fwd = 0.0f, right = 0.0f, up = 0.0f;
-            switch (event.input.key_or_button) {
-                case ImGuiKey_W:
-                    fwd += 1.0f;
-                    break;
-                case ImGuiKey_S:
-                    fwd -= 1.0f;
-                    break;
-                case ImGuiKey_D:
-                    right += 1.0f;
-                    break;
-                case ImGuiKey_A:
-                    right -= 1.0f;
-                    break;
-                case ImGuiKey_E:
-                    up += 1.0f;
-                    break;
-                case ImGuiKey_Q:
-                    up -= 1.0f;
-                    break;
-                default:
-                    break;
-            }
-            if (fwd != 0.0f || right != 0.0f || up != 0.0f) {
-                m_camera.move(fwd, right, up, ImGui::GetIO().DeltaTime);
-            }
-        }
-
         // Hotkeys: only on press and when right-click is NOT held
         if (!rmb_held && event.input.action_type == ActionType::PRESS) {
             switch (event.input.key_or_button) {

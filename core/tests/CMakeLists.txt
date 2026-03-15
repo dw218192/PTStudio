@@ -33,6 +33,10 @@ if(NOT EMSCRIPTEN)
     list(APPEND TEST_NAMES testBufferReadback)
     set(testBufferReadback_source testBufferReadback.cpp)
     set(testBufferReadback_libs core)
+
+    list(APPEND TEST_NAMES testMaterialBuffer)
+    set(testMaterialBuffer_source testMaterialBuffer.cpp)
+    set(testMaterialBuffer_libs core)
 endif()
 
 # OpenUSD test - works on all platforms
@@ -40,6 +44,12 @@ list(APPEND TEST_NAMES testOpenUsd)
 set(testOpenUsd_source testOpenUsd.cpp)
 set(testOpenUsd_libs core)
 set(testOpenUsd_includes ${CMAKE_CURRENT_SOURCE_DIR}/generated)
+
+# Geometric adapter tests - works on all platforms (no GPU needed)
+list(APPEND TEST_NAMES testGeometricAdapters)
+set(testGeometricAdapters_source testGeometricAdapters.cpp)
+set(testGeometricAdapters_libs core)
+set(testGeometricAdapters_includes ${CMAKE_CURRENT_SOURCE_DIR}/generated)
 
 function(add_core_test target_name)
     message(STATUS "Building test: ${target_name}")
