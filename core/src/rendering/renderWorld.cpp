@@ -5,11 +5,16 @@ namespace pts::rendering {
 
 // --- SyncScope ---
 
-SyncScope::SyncScope(RenderWorld& world) : m_world(world) {}
+SyncScope::SyncScope(RenderWorld& world) : m_world(world) {
+}
 
-SyncScope::~SyncScope() { ++m_world.mesh_version; }
+SyncScope::~SyncScope() {
+    ++m_world.mesh_version;
+}
 
-SyncScope RenderWorld::begin_sync() { return SyncScope(*this); }
+SyncScope RenderWorld::begin_sync() {
+    return SyncScope(*this);
+}
 
 // --- Slot allocation (via SyncScope) ---
 

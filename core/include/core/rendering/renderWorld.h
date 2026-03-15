@@ -5,7 +5,6 @@
 #include <core/rendering/webgpu/buffer.h>
 
 #include <boost/container/flat_map.hpp>
-
 #include <climits>
 #include <cstdint>
 #include <glm/glm.hpp>
@@ -80,8 +79,12 @@ class SyncScope {
     SyncScope(const SyncScope&) = delete;
     SyncScope& operator=(const SyncScope&) = delete;
 
-    RenderWorld& world() { return m_world; }
-    const RenderWorld& world() const { return m_world; }
+    RenderWorld& world() {
+        return m_world;
+    }
+    const RenderWorld& world() const {
+        return m_world;
+    }
 
     uint32_t alloc_object_slot();
     uint32_t alloc_mesh_slot();

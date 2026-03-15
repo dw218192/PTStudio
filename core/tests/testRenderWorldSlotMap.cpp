@@ -51,10 +51,10 @@ TEST_CASE("free + re-alloc reuses slots") {
     CHECK(scope.alloc_light_slot() == l0);
     CHECK(world.lights[l0].active == true);
 
-    (void)a;
-    (void)c;
-    (void)m1;
-    (void)l1;
+    (void) a;
+    (void) c;
+    (void) m1;
+    (void) l1;
 }
 
 TEST_CASE("find_object_by_prim returns correct index") {
