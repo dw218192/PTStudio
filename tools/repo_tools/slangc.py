@@ -161,6 +161,7 @@ class SlangcTool(RepoTool):
 
         shaders, errors = _resolve_slang_shaders(root, config, tokens, args)
         if errors:
+            logger.error(f"Shader resolution failed with {errors} error(s)")
             sys.exit(1)
         if not shaders:
             logger.warning("No Slang shaders configured.")
@@ -190,10 +191,14 @@ class SlangcTool(RepoTool):
                 cmd.extend(ctx.passthrough_args)
                 try:
                     ShellCommand(cmd, env_script=conanbuild).exec(log_file=log_file)
-                except Exception:
+                except SystemExit:
                     if log_file.exists():
-                        logger.error(f"slangc failed compiling {input_path}:")
-                        logger.error(log_file.read_text().strip())
+                        content = log_file.read_text().strip()
+                        if content:
+                            logger.error(f"slangc failed compiling {input_path}:")
+                            logger.error(content)
+                        else:
+                            logger.error(f"slangc failed compiling {input_path} (no output)")
                     raise
                 compiled += 1
             else:
