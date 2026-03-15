@@ -37,6 +37,10 @@ if(NOT EMSCRIPTEN)
     list(APPEND TEST_NAMES testMaterialBuffer)
     set(testMaterialBuffer_source testMaterialBuffer.cpp)
     set(testMaterialBuffer_libs core)
+
+    list(APPEND TEST_NAMES testPipelineBuilder)
+    set(testPipelineBuilder_source testPipelineBuilder.cpp)
+    set(testPipelineBuilder_libs core)
 endif()
 
 # OpenUSD test - works on all platforms

@@ -97,6 +97,14 @@ auto RenderPipelineBuilder::pipeline_layout(WGPUPipelineLayout layout) -> Render
     return *this;
 }
 
+auto RenderPipelineBuilder::no_fragment() -> RenderPipelineBuilder& {
+    m_has_fragment = false;
+    m_color_targets.clear();
+    m_blend_states.clear();
+    m_has_blend.clear();
+    return *this;
+}
+
 void RenderPipelineBuilder::ensure_target_count(uint32_t index) {
     auto required = static_cast<size_t>(index) + 1;
     while (m_color_targets.size() < required) {
@@ -144,17 +152,20 @@ auto RenderPipelineBuilder::build() const -> RenderPipeline {
     // Copy vectors so we can safely set pointer into local blend_states copy.
     auto color_targets = m_color_targets;
     auto blend_states = m_blend_states;
-    for (size_t i = 0; i < color_targets.size(); i++) {
-        color_targets[i].blend = m_has_blend[i] ? &blend_states[i] : nullptr;
-    }
-
-    // Fragment state
     WGPUFragmentState fragment_state = {};
-    fragment_state.module = m_shader_module;
-    fragment_state.entryPoint.data = m_fragment_entry.c_str();
-    fragment_state.entryPoint.length = m_fragment_entry.size();
-    fragment_state.targetCount = static_cast<uint32_t>(color_targets.size());
-    fragment_state.targets = color_targets.data();
+
+    if (m_has_fragment) {
+        for (size_t i = 0; i < color_targets.size(); i++) {
+            color_targets[i].blend = m_has_blend[i] ? &blend_states[i] : nullptr;
+        }
+
+        // Fragment state
+        fragment_state.module = m_shader_module;
+        fragment_state.entryPoint.data = m_fragment_entry.c_str();
+        fragment_state.entryPoint.length = m_fragment_entry.size();
+        fragment_state.targetCount = static_cast<uint32_t>(color_targets.size());
+        fragment_state.targets = color_targets.data();
+    }
 
     // Primitive state with sensible defaults
     WGPUPrimitiveState primitive_state = {};
@@ -185,7 +196,7 @@ auto RenderPipelineBuilder::build() const -> RenderPipeline {
     WGPURenderPipelineDescriptor pipeline_desc = {};
     pipeline_desc.layout = layout_handle;
     pipeline_desc.vertex = vertex_state;
-    pipeline_desc.fragment = &fragment_state;
+    pipeline_desc.fragment = m_has_fragment ? &fragment_state : nullptr;
     pipeline_desc.primitive = primitive_state;
     pipeline_desc.multisample = multisample_state;
     pipeline_desc.depthStencil =
