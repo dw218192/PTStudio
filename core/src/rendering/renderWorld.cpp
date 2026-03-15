@@ -1,6 +1,8 @@
 #include <core/diagnostics.h>
 #include <core/rendering/renderWorld.h>
 
+#include <algorithm>
+
 namespace pts::rendering {
 
 // --- SyncScope ---
@@ -59,6 +61,8 @@ void SyncScope::free_object_slot(uint32_t i) {
 
 void SyncScope::free_mesh_slot(uint32_t i) {
     PRECONDITION(i < m_world.meshes.size());
+    PRECONDITION(std::find(m_world.m_free_mesh_slots.begin(), m_world.m_free_mesh_slots.end(), i) ==
+                 m_world.m_free_mesh_slots.end());
     m_world.meshes[i].vertex_buffer = {};
     m_world.meshes[i].index_buffer = {};
     m_world.meshes[i].index_count = 0;

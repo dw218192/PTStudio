@@ -1,4 +1,4 @@
-#include "grid_pass.h"
+#include "gridPass.h"
 
 #include <core/diagnostics.h>
 #include <core/profiling.h>

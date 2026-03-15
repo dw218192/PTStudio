@@ -1,4 +1,4 @@
-#include "forward_pass.h"
+#include "forwardPass.h"
 
 #include <core/diagnostics.h>
 #include <core/profiling.h>

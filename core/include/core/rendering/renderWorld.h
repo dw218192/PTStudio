@@ -7,6 +7,7 @@
 #include <boost/container/flat_map.hpp>
 #include <climits>
 #include <cstdint>
+#include <functional>
 #include <glm/glm.hpp>
 #include <string>
 #include <string_view>
@@ -78,6 +79,8 @@ class SyncScope {
     ~SyncScope();
     SyncScope(const SyncScope&) = delete;
     SyncScope& operator=(const SyncScope&) = delete;
+    SyncScope(SyncScope&&) = delete;
+    SyncScope& operator=(SyncScope&&) = delete;
 
     RenderWorld& world() {
         return m_world;

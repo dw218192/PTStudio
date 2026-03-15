@@ -12,9 +12,12 @@ void sync_prim_impl(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device& d
     for (auto* adapter : k_scene_adapters()) {
         if (adapter->can_adapt(prim)) {
             adapter->sync(prim, scope, device);
-            break;
+            return;
         }
     }
+    // No adapter handles this prim — remove any stale entry from a prior sync
+    // (e.g. prim type changed from mesh to something unsupported).
+    remove_prim(scope, prim.GetPath());
 }
 
 }  // namespace

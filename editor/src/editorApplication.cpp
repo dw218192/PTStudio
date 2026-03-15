@@ -30,10 +30,10 @@
 #include <stdexcept>
 
 #include "editorResources.h"
-#include "passes/forward_pass.h"
-#include "passes/grid_pass.h"
-#include "passes/picking_pass.h"
-#include "passes/wireframe_pass.h"
+#include "passes/forwardPass.h"
+#include "passes/gridPass.h"
+#include "passes/pickingPass.h"
+#include "passes/wireframePass.h"
 
 using namespace pts;
 using namespace pts::editor;
@@ -44,7 +44,7 @@ static constexpr auto k_scene_view_win_name = "Scene";
 static constexpr auto k_console_win_name = "Console";
 static constexpr auto k_console_log_buffer_size = 1024;
 
-static const std::vector<rendering::RendererConfig> kRendererConfigs = {
+static const std::vector<rendering::RendererConfig> k_renderer_configs = {
     {"Forward",
      {
          [] { return std::make_unique<PickingPass>(); },
@@ -271,10 +271,10 @@ void EditorApplication::on_ready() {
 }
 
 void EditorApplication::set_renderer_config(size_t index) {
-    PRECONDITION(index < kRendererConfigs.size());
+    PRECONDITION(index < k_renderer_configs.size());
     m_passes.clear();
-    m_passes.reserve(kRendererConfigs[index].pass_factories.size());
-    for (auto& factory : kRendererConfigs[index].pass_factories) {
+    m_passes.reserve(k_renderer_configs[index].pass_factories.size());
+    for (auto& factory : k_renderer_configs[index].pass_factories) {
         m_passes.push_back(factory());
     }
     auto& device = webgpu_context()->device();
@@ -508,10 +508,11 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
         ImGui::Text("Renderer:");
         ImGui::SameLine();
         ImGui::SetNextItemWidth(120);
-        if (ImGui::BeginCombo("##renderer", kRendererConfigs[m_active_config_index].name.c_str())) {
-            for (size_t i = 0; i < kRendererConfigs.size(); ++i) {
+        if (ImGui::BeginCombo("##renderer",
+                              k_renderer_configs[m_active_config_index].name.c_str())) {
+            for (size_t i = 0; i < k_renderer_configs.size(); ++i) {
                 bool selected = (i == m_active_config_index);
-                if (ImGui::Selectable(kRendererConfigs[i].name.c_str(), selected)) {
+                if (ImGui::Selectable(k_renderer_configs[i].name.c_str(), selected)) {
                     if (i != m_active_config_index) {
                         set_renderer_config(i);
                     }
