@@ -112,28 +112,7 @@ void CapsuleAdapter::sync(pxr::UsdPrim prim, RenderWorld& world,
         }
     }
 
-    auto prim_path = prim.GetPath().GetString();
-    auto transform = compute_world_transform(prim);
-    auto material_index = resolve_material(prim, world);
-
-    int existing = world.find_object_by_prim(prim_path);
-    if (existing >= 0) {
-        auto& obj = world.objects[existing];
-        obj.transform = transform;
-        obj.material_index = material_index;
-        upload_mesh(world, device, vertices, indices, obj.mesh_index);
-    } else {
-        auto mesh_slot = world.alloc_mesh_slot();
-        auto obj_slot = world.alloc_object_slot();
-        upload_mesh(world, device, vertices, indices, mesh_slot);
-        auto& obj = world.objects[obj_slot];
-        obj.mesh_index = mesh_slot;
-        obj.transform = transform;
-        obj.material_index = material_index;
-        obj.prim_path = prim_path;
-        world.prim_slots[prim_path] = PrimSlot{PrimSlot::Kind::Object, obj_slot};
-    }
-    ++world.mesh_version;
+    sync_object(prim, world, device, vertices, indices);
 }
 
 }  // namespace pts::rendering
