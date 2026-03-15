@@ -1,11 +1,11 @@
 #include "editorApplication.h"
 
 #include <core/commandLine.h>
-#include <core/profiling.h>
 #include <core/components/imguiComponent.h>
 #include <core/components/inputComponent.h>
 #include <core/diagnostics.h>
 #include <core/imgui/fileDialogue.h>
+#include <core/profiling.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/rendererConfig.h>
 #include <core/rendering/sceneLoader.h>

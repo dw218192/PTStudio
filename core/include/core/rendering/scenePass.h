@@ -1,7 +1,6 @@
 #pragma once
 
 #include <boost/container/flat_map.hpp>
-
 #include <climits>
 #include <cstdint>
 #include <memory>
@@ -48,7 +47,9 @@ class IScenePass {
     }
 
     /// Clear all cached mesh data.
-    void mesh_cache_clear() { m_mesh_cache.clear(); }
+    void mesh_cache_clear() {
+        m_mesh_cache.clear();
+    }
 
    private:
     using ErasedPtr = std::unique_ptr<void, void (*)(void*)>;
