@@ -1,5 +1,7 @@
+#include <core/rendering/adapterHelpers.h>
 #include <core/rendering/adapters/adapterUtils.h>
 #include <core/rendering/adapters/meshAdapter.h>
+#include <core/rendering/renderWorld.h>
 #include <pxr/imaging/hd/meshTopology.h>
 #include <pxr/imaging/hd/meshUtil.h>
 #include <pxr/imaging/pxOsd/tokens.h>
@@ -10,8 +12,8 @@
 
 namespace pts::rendering {
 
-const MeshAdapter& MeshAdapter::instance() {
-    static const MeshAdapter s_instance;
+MeshAdapter& MeshAdapter::instance() {
+    static MeshAdapter s_instance;
     return s_instance;
 }
 
@@ -19,12 +21,13 @@ bool MeshAdapter::can_adapt(const pxr::UsdPrim& prim) const {
     return prim.IsA<pxr::UsdGeomMesh>();
 }
 
-std::optional<AdapterResult> MeshAdapter::adapt(const pxr::UsdPrim& prim) const {
+void MeshAdapter::sync(const pxr::UsdPrim& prim, RenderWorld& world,
+                       const webgpu::Device& device) {
     pxr::UsdGeomMesh mesh(prim);
 
     pxr::VtVec3fArray points;
     mesh.GetPointsAttr().Get(&points);
-    if (points.empty()) return std::nullopt;
+    if (points.empty()) return;
 
     pxr::VtVec3fArray normals;
     mesh.GetNormalsAttr().Get(&normals);
@@ -45,9 +48,6 @@ std::optional<AdapterResult> MeshAdapter::adapt(const pxr::UsdPrim& prim) const 
         uv_pv.Get(&uvs);
     }
 
-    // Build per-face-vertex (unrolled) vertices for face-varying data.
-    // Assign sequential indices so HdMeshUtil triangulates directly into
-    // the unrolled vertex buffer.
     std::vector<Vertex> vertices;
     pxr::VtIntArray seq_fv_indices(face_vertex_indices.size());
 
@@ -138,9 +138,8 @@ std::optional<AdapterResult> MeshAdapter::adapt(const pxr::UsdPrim& prim) const 
         fv_offset += count;
     }
 
-    if (vertices.empty()) return std::nullopt;
+    if (vertices.empty()) return;
 
-    // Triangulate via HdMeshUtil using sequential face-vertex indices
     pxr::HdMeshTopology hd_topo(pxr::PxOsdOpenSubdivTokens->none, pxr::UsdGeomTokens->rightHanded,
                                 face_vertex_counts, seq_fv_indices);
     pxr::HdMeshUtil mesh_util(&hd_topo, pxr::SdfPath());
@@ -156,7 +155,28 @@ std::optional<AdapterResult> MeshAdapter::adapt(const pxr::UsdPrim& prim) const 
         indices.push_back(static_cast<uint32_t>(tri[2]));
     }
 
-    return MeshResult{std::move(vertices), std::move(indices)};
+    auto prim_path = prim.GetPath().GetString();
+    auto transform = compute_world_transform(prim);
+    auto material_index = resolve_material(prim, world);
+
+    int existing = world.find_object_by_prim(prim_path);
+    if (existing >= 0) {
+        auto& obj = world.objects[existing];
+        obj.transform = transform;
+        obj.material_index = material_index;
+        upload_mesh(world, device, vertices, indices, obj.mesh_index);
+    } else {
+        auto mesh_slot = world.alloc_mesh_slot();
+        auto obj_slot = world.alloc_object_slot();
+        upload_mesh(world, device, vertices, indices, mesh_slot);
+        auto& obj = world.objects[obj_slot];
+        obj.mesh_index = mesh_slot;
+        obj.transform = transform;
+        obj.material_index = material_index;
+        obj.prim_path = prim_path;
+        world.prim_to_object[prim_path] = obj_slot;
+    }
+    ++world.mesh_version;
 }
 
 }  // namespace pts::rendering

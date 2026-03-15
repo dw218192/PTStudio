@@ -1,15 +1,16 @@
 #pragma once
 
-#include <core/rendering/schemaAdapter.h>
+#include <core/rendering/sceneAdapter.h>
 
 namespace pts::rendering {
 
-class CapsuleAdapter final : public ISchemaAdapter {
+class CapsuleAdapter final : public ISceneAdapter {
    public:
-    static const CapsuleAdapter& instance();
+    static CapsuleAdapter& instance();
 
     bool can_adapt(const pxr::UsdPrim& prim) const override;
-    std::optional<AdapterResult> adapt(const pxr::UsdPrim& prim) const override;
+    void sync(const pxr::UsdPrim& prim, RenderWorld& world,
+              const webgpu::Device& device) override;
 
    private:
     CapsuleAdapter() = default;

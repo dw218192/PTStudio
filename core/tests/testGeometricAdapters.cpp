@@ -4,8 +4,12 @@
 #include <core/rendering/adapters/cylinderAdapter.h>
 #include <core/rendering/adapters/registry.h>
 #include <core/rendering/adapters/sphereAdapter.h>
+#include <core/rendering/renderWorld.h>
+#include <core/rendering/sceneLoader.h>
+#include <core/rendering/webgpu/device.h>
 #include <embedded_test_resources.h>
 #include <pxr/usd/sdf/layer.h>
+#include <pxr/usd/sdf/path.h>
 #include <pxr/usd/usd/stage.h>
 #include <pxr/usd/usdGeom/capsule.h>
 #include <pxr/usd/usdGeom/cone.h>
@@ -13,273 +17,14 @@
 #include <pxr/usd/usdGeom/cylinder.h>
 #include <pxr/usd/usdGeom/primvarsAPI.h>
 #include <pxr/usd/usdGeom/sphere.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
 
 #include <cmath>
 #include <string>
-#include <variant>
 
 #include "testApplication.h"
 
-namespace {
-
-// Verify all normals are unit length (within tolerance).
-void check_normals_normalized(const std::vector<pts::rendering::Vertex>& vertices) {
-    for (size_t i = 0; i < vertices.size(); ++i) {
-        const auto& v = vertices[i];
-        float len = std::sqrt(v.normal[0] * v.normal[0] + v.normal[1] * v.normal[1] +
-                              v.normal[2] * v.normal[2]);
-        CHECK_MESSAGE(len == doctest::Approx(1.0f).epsilon(0.01f), "normal at vertex ", i,
-                      " has length ", len);
-    }
-}
-
-// Verify index count is a multiple of 3 (triangulated).
-void check_triangulated(const std::vector<uint32_t>& indices) {
-    CHECK(indices.size() % 3 == 0);
-}
-
-// Verify all indices are in range.
-void check_indices_valid(const std::vector<uint32_t>& indices, size_t vertex_count) {
-    for (size_t i = 0; i < indices.size(); ++i) {
-        CHECK_MESSAGE(indices[i] < vertex_count, "index ", i, " = ", indices[i], " out of range (",
-                      vertex_count, " vertices)");
-    }
-}
-
-const pts::rendering::MeshResult& get_mesh(
-    const std::optional<pts::rendering::AdapterResult>& result) {
-    REQUIRE(result.has_value());
-    auto* mesh = std::get_if<pts::rendering::MeshResult>(&*result);
-    REQUIRE(mesh);
-    return *mesh;
-}
-
-void validate_result(const std::optional<pts::rendering::AdapterResult>& result) {
-    const auto& mesh = get_mesh(result);
-    CHECK(!mesh.vertices.empty());
-    CHECK(!mesh.indices.empty());
-    check_triangulated(mesh.indices);
-    check_indices_valid(mesh.indices, mesh.vertices.size());
-    check_normals_normalized(mesh.vertices);
-}
-
-}  // namespace
-
-TEST_CASE("CubeAdapter - basic cube") {
-    auto stage = pxr::UsdStage::CreateInMemory();
-    auto cube = pxr::UsdGeomCube::Define(stage, pxr::SdfPath("/Cube"));
-    cube.GetSizeAttr().Set(2.0);
-
-    const auto& adapter = pts::rendering::CubeAdapter::instance();
-    CHECK(adapter.can_adapt(cube.GetPrim()));
-
-    auto result = adapter.adapt(cube.GetPrim());
-    validate_result(result);
-
-    // 24 vertices (4 per face x 6 faces), 36 indices (2 tris per face x 6 faces)
-    CHECK(get_mesh(result).vertices.size() == 24);
-    CHECK(get_mesh(result).indices.size() == 36);
-}
-
-TEST_CASE("CubeAdapter - respects size attribute") {
-    auto stage = pxr::UsdStage::CreateInMemory();
-    auto cube = pxr::UsdGeomCube::Define(stage, pxr::SdfPath("/Cube"));
-    cube.GetSizeAttr().Set(4.0);
-
-    auto result = pts::rendering::CubeAdapter::instance().adapt(cube.GetPrim());
-    REQUIRE(result.has_value());
-
-    // With size=4, half-extent=2. Check that some vertex reaches 2.0.
-    bool found_extent = false;
-    for (const auto& v : get_mesh(result).vertices) {
-        if (std::abs(v.position[0]) == doctest::Approx(2.0f) ||
-            std::abs(v.position[1]) == doctest::Approx(2.0f) ||
-            std::abs(v.position[2]) == doctest::Approx(2.0f)) {
-            found_extent = true;
-            break;
-        }
-    }
-    CHECK(found_extent);
-}
-
-TEST_CASE("CubeAdapter - displayColor primvar") {
-    auto stage = pxr::UsdStage::CreateInMemory();
-    auto cube = pxr::UsdGeomCube::Define(stage, pxr::SdfPath("/Cube"));
-    cube.GetSizeAttr().Set(2.0);
-
-    auto primvars_api = pxr::UsdGeomPrimvarsAPI(cube.GetPrim());
-    auto color_pv = primvars_api.CreatePrimvar(pxr::TfToken("displayColor"),
-                                               pxr::SdfValueTypeNames->Color3fArray);
-    pxr::VtVec3fArray colors = {{1.0f, 0.0f, 0.0f}};
-    color_pv.Set(colors);
-
-    auto result = pts::rendering::CubeAdapter::instance().adapt(cube.GetPrim());
-    REQUIRE(result.has_value());
-
-    for (const auto& v : get_mesh(result).vertices) {
-        CHECK(v.color[0] == doctest::Approx(1.0f));
-        CHECK(v.color[1] == doctest::Approx(0.0f));
-        CHECK(v.color[2] == doctest::Approx(0.0f));
-    }
-}
-
-TEST_CASE("SphereAdapter - basic sphere") {
-    auto stage = pxr::UsdStage::CreateInMemory();
-    auto sphere = pxr::UsdGeomSphere::Define(stage, pxr::SdfPath("/Sphere"));
-    sphere.GetRadiusAttr().Set(1.0);
-
-    const auto& adapter = pts::rendering::SphereAdapter::instance();
-    CHECK(adapter.can_adapt(sphere.GetPrim()));
-
-    auto result = adapter.adapt(sphere.GetPrim());
-    validate_result(result);
-
-    CHECK(get_mesh(result).vertices.size() > 0);
-}
-
-TEST_CASE("SphereAdapter - respects radius") {
-    auto stage = pxr::UsdStage::CreateInMemory();
-    auto sphere = pxr::UsdGeomSphere::Define(stage, pxr::SdfPath("/Sphere"));
-    sphere.GetRadiusAttr().Set(3.0);
-
-    auto result = pts::rendering::SphereAdapter::instance().adapt(sphere.GetPrim());
-    REQUIRE(result.has_value());
-
-    // Check that all vertices are at distance ~3 from origin
-    for (const auto& v : get_mesh(result).vertices) {
-        float dist = std::sqrt(v.position[0] * v.position[0] + v.position[1] * v.position[1] +
-                               v.position[2] * v.position[2]);
-        CHECK(dist == doctest::Approx(3.0f).epsilon(0.01f));
-    }
-}
-
-TEST_CASE("CylinderAdapter - basic cylinder") {
-    auto stage = pxr::UsdStage::CreateInMemory();
-    auto cyl = pxr::UsdGeomCylinder::Define(stage, pxr::SdfPath("/Cylinder"));
-
-    const auto& adapter = pts::rendering::CylinderAdapter::instance();
-    CHECK(adapter.can_adapt(cyl.GetPrim()));
-
-    auto result = adapter.adapt(cyl.GetPrim());
-    validate_result(result);
-
-    // Must have at least side + 2 caps worth of triangles
-    CHECK(get_mesh(result).indices.size() > 0);
-}
-
-TEST_CASE("CylinderAdapter - axis attribute") {
-    auto stage = pxr::UsdStage::CreateInMemory();
-
-    SUBCASE("Z axis") {
-        auto cyl = pxr::UsdGeomCylinder::Define(stage, pxr::SdfPath("/CylZ"));
-        cyl.GetAxisAttr().Set(pxr::UsdGeomTokens->z);
-        cyl.GetHeightAttr().Set(4.0);
-
-        auto result = pts::rendering::CylinderAdapter::instance().adapt(cyl.GetPrim());
-        REQUIRE(result.has_value());
-
-        // With Z axis and height 4, half_h=2. Cap center should be at z=+/-2.
-        bool found_top = false;
-        for (const auto& v : get_mesh(result).vertices) {
-            if (v.position[2] == doctest::Approx(2.0f)) {
-                found_top = true;
-                break;
-            }
-        }
-        CHECK(found_top);
-    }
-
-    SUBCASE("X axis") {
-        auto cyl = pxr::UsdGeomCylinder::Define(stage, pxr::SdfPath("/CylX"));
-        cyl.GetAxisAttr().Set(pxr::UsdGeomTokens->x);
-        cyl.GetHeightAttr().Set(4.0);
-
-        auto result = pts::rendering::CylinderAdapter::instance().adapt(cyl.GetPrim());
-        REQUIRE(result.has_value());
-
-        bool found_top = false;
-        for (const auto& v : get_mesh(result).vertices) {
-            if (v.position[0] == doctest::Approx(2.0f)) {
-                found_top = true;
-                break;
-            }
-        }
-        CHECK(found_top);
-    }
-}
-
-TEST_CASE("ConeAdapter - basic cone") {
-    auto stage = pxr::UsdStage::CreateInMemory();
-    auto cone = pxr::UsdGeomCone::Define(stage, pxr::SdfPath("/Cone"));
-
-    const auto& adapter = pts::rendering::ConeAdapter::instance();
-    CHECK(adapter.can_adapt(cone.GetPrim()));
-
-    auto result = adapter.adapt(cone.GetPrim());
-    validate_result(result);
-    CHECK(get_mesh(result).indices.size() > 0);
-}
-
-TEST_CASE("ConeAdapter - apex at correct position") {
-    auto stage = pxr::UsdStage::CreateInMemory();
-    auto cone = pxr::UsdGeomCone::Define(stage, pxr::SdfPath("/Cone"));
-
-    // Read back the height to verify what USD gives us
-    double height_d = 0;
-    cone.GetHeightAttr().Get(&height_d);
-    float expected_apex_y = static_cast<float>(height_d) * 0.5f;
-    REQUIRE(expected_apex_y > 0.0f);
-
-    auto result = pts::rendering::ConeAdapter::instance().adapt(cone.GetPrim());
-    REQUIRE(result.has_value());
-
-    // Default Y axis → apex at y = +half_height
-    bool found_apex = false;
-    for (const auto& v : get_mesh(result).vertices) {
-        if (v.position[1] == doctest::Approx(expected_apex_y)) {
-            found_apex = true;
-            break;
-        }
-    }
-    CHECK(found_apex);
-}
-
-TEST_CASE("CapsuleAdapter - basic capsule") {
-    auto stage = pxr::UsdStage::CreateInMemory();
-    auto cap = pxr::UsdGeomCapsule::Define(stage, pxr::SdfPath("/Capsule"));
-
-    const auto& adapter = pts::rendering::CapsuleAdapter::instance();
-    CHECK(adapter.can_adapt(cap.GetPrim()));
-
-    auto result = adapter.adapt(cap.GetPrim());
-    validate_result(result);
-    CHECK(get_mesh(result).indices.size() > 0);
-}
-
-TEST_CASE("CapsuleAdapter - hemisphere extends beyond cylinder height") {
-    auto stage = pxr::UsdStage::CreateInMemory();
-    auto cap = pxr::UsdGeomCapsule::Define(stage, pxr::SdfPath("/Capsule"));
-
-    // Read back the actual USD attribute values
-    double radius_d = 0, height_d = 0;
-    cap.GetRadiusAttr().Get(&radius_d);
-    cap.GetHeightAttr().Get(&height_d);
-    float half_h = static_cast<float>(height_d) * 0.5f;
-
-    auto result = pts::rendering::CapsuleAdapter::instance().adapt(cap.GetPrim());
-    REQUIRE(result.has_value());
-
-    // USD default axis for capsule is Z, so check max along Z
-    float max_along = -1e9f;
-    for (const auto& v : get_mesh(result).vertices) {
-        for (int a = 0; a < 3; ++a) {
-            if (v.position[a] > max_along) max_along = v.position[a];
-        }
-    }
-    // Hemisphere pole should be at half_h + radius
-    float expected_max = half_h + static_cast<float>(radius_d);
-    CHECK(max_along == doctest::Approx(expected_max).epsilon(0.01f));
-}
+// can_adapt tests — no GPU needed
 
 TEST_CASE("Adapters do not cross-match prim types") {
     auto stage = pxr::UsdStage::CreateInMemory();
@@ -291,6 +36,114 @@ TEST_CASE("Adapters do not cross-match prim types") {
     CHECK(!pts::rendering::CylinderAdapter::instance().can_adapt(cube.GetPrim()));
     CHECK(!pts::rendering::ConeAdapter::instance().can_adapt(cube.GetPrim()));
     CHECK(!pts::rendering::CapsuleAdapter::instance().can_adapt(cube.GetPrim()));
+}
+
+// GPU-dependent tests — sync() uploads mesh data to the GPU
+
+#ifndef __EMSCRIPTEN__
+
+namespace {
+
+struct TestFixture {
+    std::shared_ptr<spdlog::logger> logger;
+    pts::webgpu::Device device;
+    pts::rendering::RenderWorld world;
+
+    TestFixture(const char* name)
+        : logger(spdlog::stdout_color_mt(name)), device(pts::webgpu::Device::create(logger)) {}
+
+    ~TestFixture() { spdlog::drop(logger->name()); }
+
+    const pts::rendering::Mesh& synced_mesh() const { return world.meshes[world.objects[0].mesh_index]; }
+};
+
+}  // namespace
+
+TEST_CASE("CubeAdapter - basic cube") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    auto cube = pxr::UsdGeomCube::Define(stage, pxr::SdfPath("/Cube"));
+    cube.GetSizeAttr().Set(2.0);
+
+    auto& adapter = pts::rendering::CubeAdapter::instance();
+    CHECK(adapter.can_adapt(cube.GetPrim()));
+
+    TestFixture f("test_cube_basic");
+    adapter.sync(cube.GetPrim(), f.world, f.device);
+
+    REQUIRE(f.world.objects.size() == 1);
+    CHECK(f.world.objects[0].prim_path == "/Cube");
+    // 36 indices (2 tris per face x 6 faces)
+    CHECK(f.synced_mesh().index_count == 36);
+    CHECK(f.synced_mesh().cpu_indices.size() == 36);
+}
+
+TEST_CASE("CubeAdapter - respects size attribute") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    auto cube = pxr::UsdGeomCube::Define(stage, pxr::SdfPath("/Cube"));
+    cube.GetSizeAttr().Set(4.0);
+
+    TestFixture f("test_cube_size");
+    pts::rendering::CubeAdapter::instance().sync(cube.GetPrim(), f.world, f.device);
+
+    REQUIRE(f.world.objects.size() == 1);
+    CHECK(f.synced_mesh().index_count == 36);
+}
+
+TEST_CASE("SphereAdapter - basic sphere") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    auto sphere = pxr::UsdGeomSphere::Define(stage, pxr::SdfPath("/Sphere"));
+    sphere.GetRadiusAttr().Set(1.0);
+
+    auto& adapter = pts::rendering::SphereAdapter::instance();
+    CHECK(adapter.can_adapt(sphere.GetPrim()));
+
+    TestFixture f("test_sphere_basic");
+    adapter.sync(sphere.GetPrim(), f.world, f.device);
+
+    REQUIRE(f.world.objects.size() == 1);
+    CHECK(f.synced_mesh().index_count > 0);
+}
+
+TEST_CASE("CylinderAdapter - basic cylinder") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    auto cyl = pxr::UsdGeomCylinder::Define(stage, pxr::SdfPath("/Cylinder"));
+
+    auto& adapter = pts::rendering::CylinderAdapter::instance();
+    CHECK(adapter.can_adapt(cyl.GetPrim()));
+
+    TestFixture f("test_cylinder_basic");
+    adapter.sync(cyl.GetPrim(), f.world, f.device);
+
+    REQUIRE(f.world.objects.size() == 1);
+    CHECK(f.synced_mesh().index_count > 0);
+}
+
+TEST_CASE("ConeAdapter - basic cone") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    auto cone = pxr::UsdGeomCone::Define(stage, pxr::SdfPath("/Cone"));
+
+    auto& adapter = pts::rendering::ConeAdapter::instance();
+    CHECK(adapter.can_adapt(cone.GetPrim()));
+
+    TestFixture f("test_cone_basic");
+    adapter.sync(cone.GetPrim(), f.world, f.device);
+
+    REQUIRE(f.world.objects.size() == 1);
+    CHECK(f.synced_mesh().index_count > 0);
+}
+
+TEST_CASE("CapsuleAdapter - basic capsule") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    auto cap = pxr::UsdGeomCapsule::Define(stage, pxr::SdfPath("/Capsule"));
+
+    auto& adapter = pts::rendering::CapsuleAdapter::instance();
+    CHECK(adapter.can_adapt(cap.GetPrim()));
+
+    TestFixture f("test_capsule_basic");
+    adapter.sync(cap.GetPrim(), f.world, f.device);
+
+    REQUIRE(f.world.objects.size() == 1);
+    CHECK(f.synced_mesh().index_count > 0);
 }
 
 TEST_CASE("test_cube.usda Cube prim is adapted by registry") {
@@ -307,19 +160,75 @@ TEST_CASE("test_cube.usda Cube prim is adapted by registry") {
     auto cube_prim = stage->GetPrimAtPath(pxr::SdfPath("/Root/Cube"));
     REQUIRE(cube_prim.IsValid());
 
-    // Walk registry — at least one adapter must handle this prim
+    TestFixture f("test_cube_registry");
+
     bool adapted = false;
-    for (const auto* adapter : pts::rendering::k_schema_adapters()) {
+    for (auto* adapter : pts::rendering::k_scene_adapters()) {
         if (!adapter->can_adapt(cube_prim)) continue;
-        auto result = adapter->adapt(cube_prim);
-        REQUIRE(result.has_value());
-        CHECK(!get_mesh(result).vertices.empty());
-        CHECK(!get_mesh(result).indices.empty());
-        check_normals_normalized(get_mesh(result).vertices);
+        adapter->sync(cube_prim, f.world, f.device);
+        REQUIRE(f.world.objects.size() == 1);
+        CHECK(f.synced_mesh().index_count > 0);
         adapted = true;
         break;
     }
     CHECK(adapted);
 }
+
+TEST_CASE("sync_prim updates existing object") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    auto cube = pxr::UsdGeomCube::Define(stage, pxr::SdfPath("/Cube"));
+    cube.GetSizeAttr().Set(2.0);
+
+    TestFixture f("test_sync_update");
+    pts::rendering::populate_from_stage(f.world, stage, f.device);
+
+    REQUIRE(f.world.objects.size() == 1);
+    auto initial_version = f.world.mesh_version;
+
+    // Re-sync the same prim — should update in place, not add a new object
+    pts::rendering::sync_prim(f.world, stage, f.device, "/Cube");
+
+    CHECK(f.world.objects.size() == 1);
+    CHECK(f.world.mesh_version > initial_version);
+}
+
+TEST_CASE("remove_prim frees object and mesh slots") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    auto cube = pxr::UsdGeomCube::Define(stage, pxr::SdfPath("/Cube"));
+    cube.GetSizeAttr().Set(2.0);
+
+    TestFixture f("test_remove_prim");
+    pts::rendering::populate_from_stage(f.world, stage, f.device);
+
+    REQUIRE(f.world.objects.size() == 1);
+    CHECK(f.world.objects[0].active);
+    auto initial_version = f.world.mesh_version;
+
+    pts::rendering::remove_prim(f.world, "/Cube");
+
+    CHECK(!f.world.objects[0].active);
+    CHECK(f.world.find_object_by_prim("/Cube") == -1);
+    CHECK(f.world.mesh_version > initial_version);
+}
+
+TEST_CASE("sync_prim with invalid path calls remove_prim") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    auto cube = pxr::UsdGeomCube::Define(stage, pxr::SdfPath("/Cube"));
+    cube.GetSizeAttr().Set(2.0);
+
+    TestFixture f("test_sync_invalid");
+    pts::rendering::populate_from_stage(f.world, stage, f.device);
+
+    REQUIRE(f.world.objects.size() == 1);
+
+    // Remove from stage, then sync — should remove from world
+    stage->RemovePrim(pxr::SdfPath("/Cube"));
+    pts::rendering::sync_prim(f.world, stage, f.device, "/Cube");
+
+    CHECK(!f.world.objects[0].active);
+    CHECK(f.world.find_object_by_prim("/Cube") == -1);
+}
+
+#endif  // !__EMSCRIPTEN__
 
 PTS_TEST_MAIN()

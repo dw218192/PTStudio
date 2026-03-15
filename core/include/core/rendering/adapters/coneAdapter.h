@@ -1,15 +1,16 @@
 #pragma once
 
-#include <core/rendering/schemaAdapter.h>
+#include <core/rendering/sceneAdapter.h>
 
 namespace pts::rendering {
 
-class ConeAdapter final : public ISchemaAdapter {
+class ConeAdapter final : public ISceneAdapter {
    public:
-    static const ConeAdapter& instance();
+    static ConeAdapter& instance();
 
     bool can_adapt(const pxr::UsdPrim& prim) const override;
-    std::optional<AdapterResult> adapt(const pxr::UsdPrim& prim) const override;
+    void sync(const pxr::UsdPrim& prim, RenderWorld& world,
+              const webgpu::Device& device) override;
 
    private:
     ConeAdapter() = default;

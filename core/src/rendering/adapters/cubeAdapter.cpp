@@ -1,5 +1,7 @@
+#include <core/rendering/adapterHelpers.h>
 #include <core/rendering/adapters/adapterUtils.h>
 #include <core/rendering/adapters/cubeAdapter.h>
+#include <core/rendering/renderWorld.h>
 #include <pxr/imaging/geomUtil/cuboidMeshGenerator.h>
 #include <pxr/imaging/hd/meshTopology.h>
 #include <pxr/imaging/hd/meshUtil.h>
@@ -11,8 +13,8 @@
 
 namespace pts::rendering {
 
-const CubeAdapter& CubeAdapter::instance() {
-    static const CubeAdapter s_instance;
+CubeAdapter& CubeAdapter::instance() {
+    static CubeAdapter s_instance;
     return s_instance;
 }
 
@@ -20,7 +22,8 @@ bool CubeAdapter::can_adapt(const pxr::UsdPrim& prim) const {
     return prim.IsA<pxr::UsdGeomCube>();
 }
 
-std::optional<AdapterResult> CubeAdapter::adapt(const pxr::UsdPrim& prim) const {
+void CubeAdapter::sync(const pxr::UsdPrim& prim, RenderWorld& world,
+                       const webgpu::Device& device) {
     pxr::UsdGeomCube cube(prim);
 
     double size = 2.0;
@@ -46,9 +49,6 @@ std::optional<AdapterResult> CubeAdapter::adapt(const pxr::UsdPrim& prim) const 
     };
     // clang-format on
 
-    // Build per-face vertices (unrolled) for per-face normals.
-    // Sequential face-vertex indices let HdMeshUtil triangulate directly
-    // into this unrolled vertex buffer.
     std::vector<Vertex> vertices;
     pxr::VtIntArray seq_fv_indices(face_indices.size());
 
@@ -79,7 +79,6 @@ std::optional<AdapterResult> CubeAdapter::adapt(const pxr::UsdPrim& prim) const 
         idx_offset += fvc;
     }
 
-    // Triangulate via HdMeshUtil using sequential face-vertex indices
     pxr::HdMeshTopology hd_topo(pxr::PxOsdOpenSubdivTokens->none, pxr::UsdGeomTokens->rightHanded,
                                 face_counts, seq_fv_indices);
     pxr::HdMeshUtil mesh_util(&hd_topo, pxr::SdfPath());
@@ -95,7 +94,28 @@ std::optional<AdapterResult> CubeAdapter::adapt(const pxr::UsdPrim& prim) const 
         indices.push_back(static_cast<uint32_t>(tri[2]));
     }
 
-    return MeshResult{std::move(vertices), std::move(indices)};
+    auto prim_path = prim.GetPath().GetString();
+    auto transform = compute_world_transform(prim);
+    auto material_index = resolve_material(prim, world);
+
+    int existing = world.find_object_by_prim(prim_path);
+    if (existing >= 0) {
+        auto& obj = world.objects[existing];
+        obj.transform = transform;
+        obj.material_index = material_index;
+        upload_mesh(world, device, vertices, indices, obj.mesh_index);
+    } else {
+        auto mesh_slot = world.alloc_mesh_slot();
+        auto obj_slot = world.alloc_object_slot();
+        upload_mesh(world, device, vertices, indices, mesh_slot);
+        auto& obj = world.objects[obj_slot];
+        obj.mesh_index = mesh_slot;
+        obj.transform = transform;
+        obj.material_index = material_index;
+        obj.prim_path = prim_path;
+        world.prim_to_object[prim_path] = obj_slot;
+    }
+    ++world.mesh_version;
 }
 
 }  // namespace pts::rendering

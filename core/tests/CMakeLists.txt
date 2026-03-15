@@ -41,6 +41,12 @@ if(NOT EMSCRIPTEN)
     list(APPEND TEST_NAMES testPipelineBuilder)
     set(testPipelineBuilder_source testPipelineBuilder.cpp)
     set(testPipelineBuilder_libs core)
+
+    # Geometric adapter tests - sync() requires GPU for mesh upload
+    list(APPEND TEST_NAMES testGeometricAdapters)
+    set(testGeometricAdapters_source testGeometricAdapters.cpp)
+    set(testGeometricAdapters_libs core)
+    set(testGeometricAdapters_includes ${CMAKE_CURRENT_SOURCE_DIR}/generated)
 endif()
 
 # OpenUSD test - works on all platforms
@@ -64,11 +70,6 @@ list(APPEND TEST_NAMES testRenderWorldSlotMap)
 set(testRenderWorldSlotMap_source testRenderWorldSlotMap.cpp)
 set(testRenderWorldSlotMap_libs core)
 
-# Geometric adapter tests - works on all platforms (no GPU needed)
-list(APPEND TEST_NAMES testGeometricAdapters)
-set(testGeometricAdapters_source testGeometricAdapters.cpp)
-set(testGeometricAdapters_libs core)
-set(testGeometricAdapters_includes ${CMAKE_CURRENT_SOURCE_DIR}/generated)
 
 function(add_core_test target_name)
     message(STATUS "Building test: ${target_name}")
