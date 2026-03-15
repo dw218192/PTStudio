@@ -39,6 +39,9 @@ build:
         - input: "editor/shaders/forward.slang"
           output: "editor/generated/shaders/forward.wgsl"
           reflect: true
+        - input: "editor/shaders/picking.slang"
+          output: "editor/generated/shaders/picking.wgsl"
+          reflect: true
         - input: "editor/shaders/grid.slang"
           output: "editor/generated/shaders/grid.wgsl"
           reflect: true
@@ -51,6 +54,9 @@ build:
         - reflect: "editor/generated/shaders/forward.reflect.json"
           output: "editor/generated/shader_metadata.h"
           namespace: "editor_shader"
+        - reflect: "editor/generated/shaders/picking.reflect.json"
+          output: "editor/generated/picking_shader_metadata.h"
+          namespace: "editor_picking_shader"
         - reflect: "editor/generated/shaders/grid.reflect.json"
           output: "editor/generated/grid_shader_metadata.h"
           namespace: "editor_grid_shader"
@@ -59,6 +65,7 @@ build:
       resources:
         - input:
             - "editor/generated/shaders/forward.wgsl"
+            - "editor/generated/shaders/picking.wgsl"
             - "editor/generated/shaders/grid.wgsl"
             - "editor/icons/*.*"
             - "assets/scenes/primitives.usda"

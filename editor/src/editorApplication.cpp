@@ -30,6 +30,7 @@
 #include "editorResources.h"
 #include "passes/forward_pass.h"
 #include "passes/grid_pass.h"
+#include "passes/picking_pass.h"
 
 using namespace pts;
 using namespace pts::editor;
@@ -43,6 +44,7 @@ static constexpr auto k_console_log_buffer_size = 1024;
 static const std::vector<rendering::RendererConfig> kRendererConfigs = {
     {"Forward",
      {
+         [] { return std::make_unique<PickingPass>(); },
          [] { return std::make_unique<ForwardPass>(); },
          [] { return std::make_unique<GridPass>(); },
      }},
