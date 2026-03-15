@@ -27,6 +27,8 @@ struct Mesh {
     webgpu::Buffer vertex_buffer;
     webgpu::Buffer index_buffer;
     uint32_t index_count;
+    webgpu::Buffer wireframe_index_buffer;
+    uint32_t wireframe_index_count;
 };
 
 struct RenderObject {

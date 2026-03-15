@@ -10,4 +10,5 @@ struct RenderWorld;
 void populate_from_stage(RenderWorld& world, const pxr::UsdStageRefPtr& stage,
                          const webgpu::Device& device);
 
+
 }  // namespace pts::rendering

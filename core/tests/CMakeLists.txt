@@ -49,6 +49,11 @@ set(testOpenUsd_source testOpenUsd.cpp)
 set(testOpenUsd_libs core)
 set(testOpenUsd_includes ${CMAKE_CURRENT_SOURCE_DIR}/generated)
 
+# Wireframe index expansion - works on all platforms (no GPU needed)
+list(APPEND TEST_NAMES testWireframeIndices)
+set(testWireframeIndices_source testWireframeIndices.cpp)
+set(testWireframeIndices_libs core)
+
 # Geometric adapter tests - works on all platforms (no GPU needed)
 list(APPEND TEST_NAMES testGeometricAdapters)
 set(testGeometricAdapters_source testGeometricAdapters.cpp)
