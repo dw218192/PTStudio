@@ -2,16 +2,23 @@
 
 #include "testApplication.h"
 
+using namespace pts;
 using namespace pts::rendering;
 
 namespace {
 
 /// Concrete pass that exposes mesh_cache_get for testing.
 struct TestPass final : IScenePass {
-    auto name() const noexcept -> std::string_view override { return "test"; }
-    auto is_ready() const noexcept -> bool override { return true; }
-    void setup(const webgpu::Device& /*device*/) override {}
-    void add_to_frame_graph(FrameGraph& /*fg*/, const PassContext& /*ctx*/) override {}
+    auto name() const noexcept -> std::string_view override {
+        return "test";
+    }
+    auto is_ready() const noexcept -> bool override {
+        return true;
+    }
+    void setup(const webgpu::Device& /*device*/) override {
+    }
+    void add_to_frame_graph(FrameGraph& /*fg*/, const PassContext& /*ctx*/) override {
+    }
 
     // Expose protected members for testing.
     using IScenePass::mesh_cache_clear;

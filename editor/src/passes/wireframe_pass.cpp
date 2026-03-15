@@ -16,6 +16,7 @@
 
 using namespace pts;
 using namespace pts::editor;
+using namespace pts::rendering;
 
 struct WireframeMesh {
     webgpu::Buffer index_buffer;
@@ -203,8 +204,8 @@ void WireframePass::add_to_frame_graph(rendering::FrameGraph& fg,
                 wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 1, &dyn_offset);
                 const auto& mesh = world.meshes[world.objects[i].mesh_index];
                 // Cache was pre-populated above; factory will not be called.
-                auto& wf = mesh_cache_get<WireframeMesh>(
-                    world.objects[i].mesh_index, mesh_version, []() { return WireframeMesh{}; });
+                auto& wf = mesh_cache_get<WireframeMesh>(world.objects[i].mesh_index, mesh_version,
+                                                         []() { return WireframeMesh{}; });
                 wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh.vertex_buffer.handle(), 0,
                                                      mesh.vertex_buffer.size());
                 wgpuRenderPassEncoderSetIndexBuffer(pass, wf.index_buffer.handle(),
