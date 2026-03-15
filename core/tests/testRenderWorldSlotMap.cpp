@@ -60,7 +60,7 @@ TEST_CASE("find_object_by_prim returns correct index") {
 
     auto idx = world.alloc_object_slot();
     world.objects[idx].prim_path = "/World/Cube";
-    world.prim_to_object["/World/Cube"] = idx;
+    world.prim_slots["/World/Cube"] = PrimSlot{PrimSlot::Kind::Object, idx};
 
     CHECK(world.find_object_by_prim("/World/Cube") == static_cast<int>(idx));
 }
@@ -76,29 +76,29 @@ TEST_CASE("find_light_by_prim returns correct index") {
 
     auto idx = world.alloc_light_slot();
     world.lights[idx].prim_path = "/World/Light";
-    world.prim_to_light["/World/Light"] = idx;
+    world.prim_slots["/World/Light"] = PrimSlot{PrimSlot::Kind::Light, idx};
 
     CHECK(world.find_light_by_prim("/World/Light") == static_cast<int>(idx));
 }
 
-TEST_CASE("free_object_slot removes from prim_to_object") {
+TEST_CASE("free_object_slot removes from prim_slots") {
     RenderWorld world;
 
     auto idx = world.alloc_object_slot();
     world.objects[idx].prim_path = "/World/Sphere";
-    world.prim_to_object["/World/Sphere"] = idx;
+    world.prim_slots["/World/Sphere"] = PrimSlot{PrimSlot::Kind::Object, idx};
 
     world.free_object_slot(idx);
     CHECK(world.find_object_by_prim("/World/Sphere") == -1);
     CHECK(world.objects[idx].prim_path.empty());
 }
 
-TEST_CASE("free_light_slot removes from prim_to_light") {
+TEST_CASE("free_light_slot removes from prim_slots") {
     RenderWorld world;
 
     auto idx = world.alloc_light_slot();
     world.lights[idx].prim_path = "/World/Sun";
-    world.prim_to_light["/World/Sun"] = idx;
+    world.prim_slots["/World/Sun"] = PrimSlot{PrimSlot::Kind::Light, idx};
 
     world.free_light_slot(idx);
     CHECK(world.find_light_by_prim("/World/Sun") == -1);
@@ -110,11 +110,11 @@ TEST_CASE("clear resets everything") {
 
     auto o = world.alloc_object_slot();
     world.objects[o].prim_path = "/A";
-    world.prim_to_object["/A"] = o;
+    world.prim_slots["/A"] = PrimSlot{PrimSlot::Kind::Object, o};
 
     auto l = world.alloc_light_slot();
     world.lights[l].prim_path = "/B";
-    world.prim_to_light["/B"] = l;
+    world.prim_slots["/B"] = PrimSlot{PrimSlot::Kind::Light, l};
 
     world.alloc_mesh_slot();
 
@@ -127,11 +127,7 @@ TEST_CASE("clear resets everything") {
     CHECK(world.meshes.empty());
     CHECK(world.lights.empty());
     CHECK(world.materials.empty());
-    CHECK(world.prim_to_object.empty());
-    CHECK(world.prim_to_light.empty());
-    CHECK(world.free_object_slots.empty());
-    CHECK(world.free_mesh_slots.empty());
-    CHECK(world.free_light_slots.empty());
+    CHECK(world.prim_slots.empty());
 }
 
 TEST_CASE("active flag defaults to true on alloc") {

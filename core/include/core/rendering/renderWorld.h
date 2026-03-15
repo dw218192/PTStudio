@@ -3,6 +3,8 @@
 #include <core/rendering/vertex.h>
 #include <core/rendering/webgpu/buffer.h>
 
+#include <boost/container/flat_map.hpp>
+
 #include <climits>
 #include <cstdint>
 #include <glm/glm.hpp>
@@ -56,17 +58,26 @@ struct Light {
     bool active{true};
 };
 
+/// Prim path → slot lookup entry. A single map replaces separate
+/// prim_to_object / prim_to_light maps for better cache locality.
+struct PrimSlot {
+    enum class Kind : uint8_t { Object, Light };
+    Kind kind;
+    uint32_t index;
+};
+
 struct RenderWorld {
     std::vector<Mesh> meshes;
     std::vector<RenderObject> objects;
     std::vector<Material> materials;
     std::vector<Light> lights;
+
+    /// Material path → material index (deduplication cache).
     std::unordered_map<std::string, uint32_t> material_cache;
-    std::unordered_map<std::string, uint32_t> prim_to_object;
-    std::unordered_map<std::string, uint32_t> prim_to_light;
-    std::vector<uint32_t> free_object_slots;
-    std::vector<uint32_t> free_mesh_slots;
-    std::vector<uint32_t> free_light_slots;
+
+    /// Prim path → slot (object or light).
+    boost::container::flat_map<std::string, PrimSlot> prim_slots;
+
     uint32_t mesh_version = 0;
 
     uint32_t alloc_object_slot();
@@ -78,6 +89,11 @@ struct RenderWorld {
     int find_object_by_prim(const std::string& path) const;
     int find_light_by_prim(const std::string& path) const;
     void clear();
+
+   private:
+    std::vector<uint32_t> m_free_object_slots;
+    std::vector<uint32_t> m_free_mesh_slots;
+    std::vector<uint32_t> m_free_light_slots;
 };
 
 }  // namespace pts::rendering

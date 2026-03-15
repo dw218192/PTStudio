@@ -128,7 +128,7 @@ void CylinderAdapter::sync(pxr::UsdPrim prim, RenderWorld& world,
         obj.transform = transform;
         obj.material_index = material_index;
         obj.prim_path = prim_path;
-        world.prim_to_object[prim_path] = obj_slot;
+        world.prim_slots[prim_path] = PrimSlot{PrimSlot::Kind::Object, obj_slot};
     }
     ++world.mesh_version;
 }
