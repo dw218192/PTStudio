@@ -42,7 +42,7 @@ bool ConeAdapter::can_adapt(const pxr::UsdPrim& prim) const {
     return prim.IsA<pxr::UsdGeomCone>();
 }
 
-void ConeAdapter::sync(pxr::UsdPrim prim, RenderWorld& world, const webgpu::Device& device) {
+void ConeAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device& device) {
     pxr::UsdGeomCone cone(prim);
 
     double radius_d = 1.0;
@@ -106,7 +106,7 @@ void ConeAdapter::sync(pxr::UsdPrim prim, RenderWorld& world, const webgpu::Devi
         }
     }
 
-    sync_object(prim, world, device, vertices, indices);
+    sync_object(prim, scope, device, vertices, indices);
 }
 
 }  // namespace pts::rendering

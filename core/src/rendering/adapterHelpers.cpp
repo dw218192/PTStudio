@@ -60,7 +60,7 @@ uint32_t resolve_material(pxr::UsdPrim prim, RenderWorld& world) {
     return index;
 }
 
-void upload_mesh(RenderWorld& world, const webgpu::Device& device,
+void upload_mesh(SyncScope& scope, const webgpu::Device& device,
                  const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices,
                  uint32_t mesh_slot) {
     auto vertex_buf = device.create_buffer(
@@ -75,15 +75,16 @@ void upload_mesh(RenderWorld& world, const webgpu::Device& device,
     wgpuQueueWriteBuffer(device.queue(), index_buf.handle(), 0, indices.data(),
                          indices.size() * sizeof(uint32_t));
 
-    Mesh& gpu_mesh = world.meshes[mesh_slot];
+    Mesh& gpu_mesh = scope.world().meshes[mesh_slot];
     gpu_mesh.vertex_buffer = std::move(vertex_buf);
     gpu_mesh.index_buffer = std::move(index_buf);
     gpu_mesh.index_count = static_cast<uint32_t>(indices.size());
     gpu_mesh.cpu_indices.assign(indices.begin(), indices.end());
 }
 
-void sync_object(pxr::UsdPrim prim, RenderWorld& world, const webgpu::Device& device,
+void sync_object(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device& device,
                  std::vector<Vertex>& vertices, std::vector<uint32_t>& indices) {
+    auto& world = scope.world();
     auto sdf_path = prim.GetPath();
     auto transform = compute_world_transform(prim);
     auto material_index = resolve_material(prim, world);
@@ -93,12 +94,12 @@ void sync_object(pxr::UsdPrim prim, RenderWorld& world, const webgpu::Device& de
         auto& obj = world.objects[existing];
         obj.transform = transform;
         obj.material_index = material_index;
-        upload_mesh(world, device, vertices, indices, obj.mesh_index);
+        upload_mesh(scope, device, vertices, indices, obj.mesh_index);
     } else {
         auto prim_path = sdf_path.GetString();
-        auto mesh_slot = world.alloc_mesh_slot();
-        auto obj_slot = world.alloc_object_slot();
-        upload_mesh(world, device, vertices, indices, mesh_slot);
+        auto mesh_slot = scope.alloc_mesh_slot();
+        auto obj_slot = scope.alloc_object_slot();
+        upload_mesh(scope, device, vertices, indices, mesh_slot);
         auto& obj = world.objects[obj_slot];
         obj.mesh_index = mesh_slot;
         obj.transform = transform;

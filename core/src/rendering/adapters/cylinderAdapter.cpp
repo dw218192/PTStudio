@@ -42,7 +42,7 @@ bool CylinderAdapter::can_adapt(const pxr::UsdPrim& prim) const {
     return prim.IsA<pxr::UsdGeomCylinder>();
 }
 
-void CylinderAdapter::sync(pxr::UsdPrim prim, RenderWorld& world,
+void CylinderAdapter::sync(pxr::UsdPrim prim, SyncScope& scope,
                            const webgpu::Device& device) {
     pxr::UsdGeomCylinder cyl(prim);
 
@@ -109,7 +109,7 @@ void CylinderAdapter::sync(pxr::UsdPrim prim, RenderWorld& world,
         }
     }
 
-    sync_object(prim, world, device, vertices, indices);
+    sync_object(prim, scope, device, vertices, indices);
 }
 
 }  // namespace pts::rendering

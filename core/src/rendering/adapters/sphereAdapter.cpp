@@ -31,7 +31,7 @@ bool SphereAdapter::can_adapt(const pxr::UsdPrim& prim) const {
     return prim.IsA<pxr::UsdGeomSphere>();
 }
 
-void SphereAdapter::sync(pxr::UsdPrim prim, RenderWorld& world,
+void SphereAdapter::sync(pxr::UsdPrim prim, SyncScope& scope,
                          const webgpu::Device& device) {
     pxr::UsdGeomSphere sphere(prim);
 
@@ -82,7 +82,7 @@ void SphereAdapter::sync(pxr::UsdPrim prim, RenderWorld& world,
         indices.push_back(static_cast<uint32_t>(tri[2]));
     }
 
-    sync_object(prim, world, device, vertices, indices);
+    sync_object(prim, scope, device, vertices, indices);
 }
 
 }  // namespace pts::rendering

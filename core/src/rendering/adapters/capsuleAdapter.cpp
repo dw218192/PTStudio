@@ -43,7 +43,7 @@ bool CapsuleAdapter::can_adapt(const pxr::UsdPrim& prim) const {
     return prim.IsA<pxr::UsdGeomCapsule>();
 }
 
-void CapsuleAdapter::sync(pxr::UsdPrim prim, RenderWorld& world,
+void CapsuleAdapter::sync(pxr::UsdPrim prim, SyncScope& scope,
                           const webgpu::Device& device) {
     pxr::UsdGeomCapsule capsule(prim);
 
@@ -112,7 +112,7 @@ void CapsuleAdapter::sync(pxr::UsdPrim prim, RenderWorld& world,
         }
     }
 
-    sync_object(prim, world, device, vertices, indices);
+    sync_object(prim, scope, device, vertices, indices);
 }
 
 }  // namespace pts::rendering

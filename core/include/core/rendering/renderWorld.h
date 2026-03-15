@@ -80,6 +80,16 @@ class SyncScope {
     SyncScope(const SyncScope&) = delete;
     SyncScope& operator=(const SyncScope&) = delete;
 
+    RenderWorld& world() { return m_world; }
+    const RenderWorld& world() const { return m_world; }
+
+    uint32_t alloc_object_slot();
+    uint32_t alloc_mesh_slot();
+    uint32_t alloc_light_slot();
+    void free_object_slot(uint32_t i);
+    void free_mesh_slot(uint32_t i);
+    void free_light_slot(uint32_t i);
+
    private:
     RenderWorld& m_world;
 };
@@ -104,19 +114,12 @@ struct RenderWorld {
     /// calls without a live SyncScope will PRECONDITION-fail.
     [[nodiscard]] SyncScope begin_sync();
 
-    uint32_t alloc_object_slot();
-    uint32_t alloc_mesh_slot();
-    uint32_t alloc_light_slot();
-    void free_object_slot(uint32_t i);
-    void free_mesh_slot(uint32_t i);
-    void free_light_slot(uint32_t i);
     int find_object_by_prim(std::string_view path) const;
     int find_light_by_prim(std::string_view path) const;
     void clear();
 
    private:
     friend class SyncScope;
-    uint32_t m_sync_depth = 0;
     std::vector<uint32_t> m_free_object_slots;
     std::vector<uint32_t> m_free_mesh_slots;
     std::vector<uint32_t> m_free_light_slots;

@@ -150,11 +150,11 @@ void EditorApplication::process_dirty_prims() {
                 }
 
                 // Sync the prim itself
-                rendering::sync_prim(m_world, m_stage, device, resync_path);
+                rendering::sync_prim(scope, m_stage, device, resync_path);
 
                 // Sync affected children
                 for (const auto& child_path : children_to_resync) {
-                    rendering::sync_prim(m_world, m_stage, device, child_path);
+                    rendering::sync_prim(scope, m_stage, device, child_path);
                 }
             }
         }  // mesh_version bumped here

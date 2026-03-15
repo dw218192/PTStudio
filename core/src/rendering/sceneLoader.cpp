@@ -8,10 +8,10 @@ namespace pts::rendering {
 
 namespace {
 
-void sync_prim_impl(pxr::UsdPrim prim, RenderWorld& world, const webgpu::Device& device) {
+void sync_prim_impl(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device& device) {
     for (auto* adapter : k_scene_adapters()) {
         if (adapter->can_adapt(prim)) {
-            adapter->sync(prim, world, device);
+            adapter->sync(prim, scope, device);
             break;
         }
     }
@@ -24,31 +24,32 @@ void populate_from_stage(RenderWorld& world, const pxr::UsdStageRefPtr& stage,
     PTS_ZONE_SCOPED;
     auto scope = world.begin_sync();
     for (const auto& prim : pxr::UsdPrimRange(stage->GetPseudoRoot())) {
-        sync_prim_impl(prim, world, device);
+        sync_prim_impl(prim, scope, device);
     }
 }
 
-void sync_prim(RenderWorld& world, const pxr::UsdStageRefPtr& stage, const webgpu::Device& device,
+void sync_prim(SyncScope& scope, const pxr::UsdStageRefPtr& stage, const webgpu::Device& device,
                const pxr::SdfPath& prim_path) {
     auto prim = stage->GetPrimAtPath(prim_path);
     if (!prim.IsValid()) {
-        remove_prim(world, prim_path);
+        remove_prim(scope, prim_path);
         return;
     }
-    sync_prim_impl(prim, world, device);
+    sync_prim_impl(prim, scope, device);
 }
 
-void remove_prim(RenderWorld& world, const pxr::SdfPath& prim_path) {
+void remove_prim(SyncScope& scope, const pxr::SdfPath& prim_path) {
+    auto& world = scope.world();
     auto path_text = prim_path.GetText();
     int obj_idx = world.find_object_by_prim(path_text);
     if (obj_idx >= 0) {
-        world.free_mesh_slot(world.objects[obj_idx].mesh_index);
-        world.free_object_slot(static_cast<uint32_t>(obj_idx));
+        scope.free_mesh_slot(world.objects[obj_idx].mesh_index);
+        scope.free_object_slot(static_cast<uint32_t>(obj_idx));
         return;
     }
     int light_idx = world.find_light_by_prim(path_text);
     if (light_idx >= 0) {
-        world.free_light_slot(static_cast<uint32_t>(light_idx));
+        scope.free_light_slot(static_cast<uint32_t>(light_idx));
     }
 }
 
