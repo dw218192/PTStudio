@@ -59,6 +59,11 @@ list(APPEND TEST_NAMES testMeshCache)
 set(testMeshCache_source testMeshCache.cpp)
 set(testMeshCache_libs core)
 
+# RenderWorld slot map - works on all platforms (no GPU needed)
+list(APPEND TEST_NAMES testRenderWorldSlotMap)
+set(testRenderWorldSlotMap_source testRenderWorldSlotMap.cpp)
+set(testRenderWorldSlotMap_libs core)
+
 # Geometric adapter tests - works on all platforms (no GPU needed)
 list(APPEND TEST_NAMES testGeometricAdapters)
 set(testGeometricAdapters_source testGeometricAdapters.cpp)

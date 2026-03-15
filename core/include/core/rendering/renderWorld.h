@@ -35,6 +35,7 @@ struct RenderObject {
     uint32_t material_index{k_no_material};
     glm::mat4 transform;
     std::string prim_path;
+    bool active{true};
 };
 
 struct Light {
@@ -52,6 +53,7 @@ struct Light {
     float radius{0.0f};
     float width{1.0f};
     float height{1.0f};
+    bool active{true};
 };
 
 struct RenderWorld {
@@ -60,7 +62,21 @@ struct RenderWorld {
     std::vector<Material> materials;
     std::vector<Light> lights;
     std::unordered_map<std::string, uint32_t> material_cache;
+    std::unordered_map<std::string, uint32_t> prim_to_object;
+    std::unordered_map<std::string, uint32_t> prim_to_light;
+    std::vector<uint32_t> free_object_slots;
+    std::vector<uint32_t> free_mesh_slots;
+    std::vector<uint32_t> free_light_slots;
     uint32_t mesh_version = 0;
+
+    uint32_t alloc_object_slot();
+    uint32_t alloc_mesh_slot();
+    uint32_t alloc_light_slot();
+    void free_object_slot(uint32_t i);
+    void free_mesh_slot(uint32_t i);
+    void free_light_slot(uint32_t i);
+    int find_object_by_prim(const std::string& path) const;
+    int find_light_by_prim(const std::string& path) const;
     void clear();
 };
 

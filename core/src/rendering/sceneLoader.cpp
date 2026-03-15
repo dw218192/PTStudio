@@ -67,7 +67,10 @@ void populate_from_stage(RenderWorld& world, const pxr::UsdStageRefPtr& stage,
                     using T = std::decay_t<decltype(r)>;
                     if constexpr (std::is_same_v<T, MeshResult>) {
                         upload_mesh(world, device, r, obj);
+                        auto obj_path = obj.prim_path;
                         world.objects.push_back(std::move(obj));
+                        world.prim_to_object[std::move(obj_path)] =
+                            static_cast<uint32_t>(world.objects.size() - 1);
                     } else if constexpr (std::is_same_v<T, LightResult>) {
                         Light light;
                         light.type = static_cast<Light::Type>(r.type);
@@ -85,7 +88,10 @@ void populate_from_stage(RenderWorld& world, const pxr::UsdStageRefPtr& stage,
                             if (prop->apply(prim, light, world) == AdapterAction::Skip) return;
                         }
 
+                        auto light_path = light.prim_path;
                         world.lights.push_back(std::move(light));
+                        world.prim_to_light[std::move(light_path)] =
+                            static_cast<uint32_t>(world.lights.size() - 1);
                     }
                 },
                 *result);
