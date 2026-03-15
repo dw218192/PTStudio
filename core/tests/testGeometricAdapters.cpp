@@ -191,7 +191,7 @@ TEST_CASE("sync_prim updates existing object") {
     auto initial_version = f.world.mesh_version;
 
     // Re-sync the same prim — should update in place, not add a new object
-    pts::rendering::sync_prim(f.world, stage, f.device, "/Cube");
+    pts::rendering::sync_prim(f.world, stage, f.device, pxr::SdfPath("/Cube"));
 
     CHECK(f.world.objects.size() == 1);
     CHECK(f.world.mesh_version > initial_version);
@@ -209,7 +209,7 @@ TEST_CASE("remove_prim frees object and mesh slots") {
     CHECK(f.world.objects[0].active);
     auto initial_version = f.world.mesh_version;
 
-    pts::rendering::remove_prim(f.world, "/Cube");
+    pts::rendering::remove_prim(f.world, pxr::SdfPath("/Cube"));
 
     CHECK(!f.world.objects[0].active);
     CHECK(f.world.find_object_by_prim("/Cube") == -1);
@@ -228,7 +228,7 @@ TEST_CASE("sync_prim with invalid path calls remove_prim") {
 
     // Remove from stage, then sync — should remove from world
     stage->RemovePrim(pxr::SdfPath("/Cube"));
-    pts::rendering::sync_prim(f.world, stage, f.device, "/Cube");
+    pts::rendering::sync_prim(f.world, stage, f.device, pxr::SdfPath("/Cube"));
 
     CHECK(!f.world.objects[0].active);
     CHECK(f.world.find_object_by_prim("/Cube") == -1);

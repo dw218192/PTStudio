@@ -138,18 +138,17 @@ void EditorApplication::process_dirty_prims() {
         }
 
         for (const auto& resync_path : m_resync_paths) {
-            auto resync_str = resync_path.GetString();
-
             // Handle ancestor resyncs: resync children under this path
-            std::vector<std::string> children_to_resync;
+            std::vector<pxr::SdfPath> children_to_resync;
             for (const auto& [path, slot] : m_world.prim_slots) {
-                if (pxr::SdfPath(path).HasPrefix(resync_path) && path != resync_str) {
-                    children_to_resync.push_back(path);
+                auto child = pxr::SdfPath(path);
+                if (child.HasPrefix(resync_path) && child != resync_path) {
+                    children_to_resync.push_back(child);
                 }
             }
 
             // Sync the prim itself
-            rendering::sync_prim(m_world, m_stage, device, resync_str);
+            rendering::sync_prim(m_world, m_stage, device, resync_path);
 
             // Sync affected children
             for (const auto& child_path : children_to_resync) {

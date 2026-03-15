@@ -2,7 +2,6 @@
 #include <core/rendering/adapters/registry.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/sceneLoader.h>
-#include <pxr/usd/sdf/path.h>
 #include <pxr/usd/usd/primRange.h>
 
 namespace pts::rendering {
@@ -29,8 +28,8 @@ void populate_from_stage(RenderWorld& world, const pxr::UsdStageRefPtr& stage,
 }
 
 void sync_prim(RenderWorld& world, const pxr::UsdStageRefPtr& stage, const webgpu::Device& device,
-               const std::string& prim_path) {
-    auto prim = stage->GetPrimAtPath(pxr::SdfPath(prim_path));
+               const pxr::SdfPath& prim_path) {
+    auto prim = stage->GetPrimAtPath(prim_path);
     if (!prim.IsValid()) {
         remove_prim(world, prim_path);
         return;
@@ -38,15 +37,16 @@ void sync_prim(RenderWorld& world, const pxr::UsdStageRefPtr& stage, const webgp
     sync_prim_impl(prim, world, device);
 }
 
-void remove_prim(RenderWorld& world, const std::string& prim_path) {
-    int obj_idx = world.find_object_by_prim(prim_path);
+void remove_prim(RenderWorld& world, const pxr::SdfPath& prim_path) {
+    auto path_str = prim_path.GetString();
+    int obj_idx = world.find_object_by_prim(path_str);
     if (obj_idx >= 0) {
         world.free_mesh_slot(world.objects[obj_idx].mesh_index);
         world.free_object_slot(static_cast<uint32_t>(obj_idx));
         ++world.mesh_version;
         return;
     }
-    int light_idx = world.find_light_by_prim(prim_path);
+    int light_idx = world.find_light_by_prim(path_str);
     if (light_idx >= 0) {
         world.free_light_slot(static_cast<uint32_t>(light_idx));
         ++world.mesh_version;
