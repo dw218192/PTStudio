@@ -168,7 +168,7 @@ void EditorApplication::process_dirty_prims() {
     // Xform-only changes (O(1) lookup instead of O(n) scan)
     if (!m_dirty_xform_paths.empty()) {
         for (const auto& dirty_path : m_dirty_xform_paths) {
-            int idx = m_world.find_object_by_prim(dirty_path.GetString());
+            int idx = m_world.find_object_by_prim(dirty_path.GetText());
             if (idx < 0) continue;
             auto& obj = m_world.objects[idx];
 
