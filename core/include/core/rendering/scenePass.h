@@ -1,11 +1,11 @@
 #pragma once
 
+#include <boost/container/flat_map.hpp>
+
 #include <climits>
 #include <cstdint>
-#include <functional>
 #include <memory>
 #include <string_view>
-#include <unordered_map>
 
 namespace pts {
 
@@ -34,10 +34,14 @@ class IScenePass {
     /// T may be move-only (e.g. contains webgpu::Buffer).
     template <typename T, typename Factory>
     auto mesh_cache_get(uint32_t mesh_index, uint32_t mesh_version, Factory&& factory) -> T& {
-        auto& entry = m_mesh_cache[mesh_index];
+        auto it = m_mesh_cache.find(mesh_index);
+        if (it == m_mesh_cache.end()) {
+            it = m_mesh_cache.emplace(mesh_index, MeshCacheEntry{}).first;
+        }
+        auto& entry = it->second;
         if (entry.version != mesh_version || !entry.data) {
-            auto* p = new T(std::forward<Factory>(factory)());
-            entry.data = {p, [](void* ptr) { delete static_cast<T*>(ptr); }};
+            entry.data = ErasedPtr(new T(std::forward<Factory>(factory)()),
+                                   [](void* p) { delete static_cast<T*>(p); });
             entry.version = mesh_version;
         }
         return *static_cast<T*>(entry.data.get());
@@ -47,12 +51,12 @@ class IScenePass {
     void mesh_cache_clear() { m_mesh_cache.clear(); }
 
    private:
-    using ErasedPtr = std::unique_ptr<void, std::function<void(void*)>>;
+    using ErasedPtr = std::unique_ptr<void, void (*)(void*)>;
     struct MeshCacheEntry {
-        ErasedPtr data;
+        ErasedPtr data{nullptr, nullptr};
         uint32_t version = UINT32_MAX;
     };
-    std::unordered_map<uint32_t, MeshCacheEntry> m_mesh_cache;
+    boost::container::flat_map<uint32_t, MeshCacheEntry> m_mesh_cache;
 };
 
 }  // namespace rendering
