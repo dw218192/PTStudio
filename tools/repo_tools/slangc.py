@@ -13,7 +13,6 @@ from repo_tools.core import (
     glob_paths,
     logger,
     resolve_path,
-    sanitized_subprocess_env,
 )
 
 
@@ -120,9 +119,7 @@ def _emit_reflection_json(
 
     logs_dir = reflect_path.parent
     log_file = logs_dir / f"slangc_reflect_{input_path.stem}.log"
-    ShellCommand(reflect_cmd, env_script=conanbuild, env=sanitized_subprocess_env()).exec(
-        log_file=log_file
-    )
+    ShellCommand(reflect_cmd, env_script=conanbuild).exec(log_file=log_file)
     logger.info(f"slangc emitted reflection JSON: {reflect_path}")
 
 
@@ -192,7 +189,7 @@ class SlangcTool(RepoTool):
                     "wgsl",
                 ]
                 cmd.extend(ctx.passthrough_args)
-                shell_cmd = ShellCommand(cmd, env_script=conanbuild, env=sanitized_subprocess_env())
+                shell_cmd = ShellCommand(cmd, env_script=conanbuild)
                 try:
                     shell_cmd.exec(log_file=log_file)
                 except SystemExit as e:
