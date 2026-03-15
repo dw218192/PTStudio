@@ -107,12 +107,8 @@ void PickingPass::setup(const webgpu::Device& device) {
     wgpuPipelineLayoutRelease(pipeline_layout);
 
     m_state = Ready{
-        std::move(shader),
-        std::move(pipeline),
-        std::move(uniform_buffer),
-        bind_group,
-        bind_group_layout,
-        initial_capacity,
+        std::move(shader), std::move(pipeline), std::move(uniform_buffer),
+        bind_group,        bind_group_layout,   initial_capacity,
     };
 }
 
@@ -138,8 +134,7 @@ void PickingPass::ensure_capacity(const webgpu::Device& device, uint32_t object_
     ready.capacity = new_capacity;
 }
 
-void PickingPass::add_to_frame_graph(rendering::FrameGraph& fg,
-                                     const rendering::PassContext& ctx) {
+void PickingPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::PassContext& ctx) {
     PRECONDITION(is_ready());
     auto& ready = std::get<Ready>(m_state);
 

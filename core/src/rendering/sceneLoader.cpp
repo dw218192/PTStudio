@@ -22,8 +22,7 @@ void upload_mesh(RenderWorld& world, const webgpu::Device& device, const MeshRes
     wgpuQueueWriteBuffer(device.queue(), index_buf.handle(), 0, mesh.indices.data(),
                          mesh.indices.size() * sizeof(uint32_t));
 
-    auto wireframe_indices =
-        expand_wireframe_indices(mesh.indices.data(), mesh.indices.size());
+    auto wireframe_indices = expand_wireframe_indices(mesh.indices.data(), mesh.indices.size());
     auto wireframe_buf = device.create_buffer(
         wireframe_indices.size() * sizeof(uint32_t),
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Index | WGPUBufferUsage_CopyDst));

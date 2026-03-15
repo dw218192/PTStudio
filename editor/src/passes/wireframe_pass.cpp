@@ -105,12 +105,8 @@ void WireframePass::setup(const webgpu::Device& device) {
     wgpuPipelineLayoutRelease(pipeline_layout);
 
     m_state = Ready{
-        std::move(shader),
-        std::move(pipeline),
-        std::move(uniform_buffer),
-        bind_group,
-        bind_group_layout,
-        initial_capacity,
+        std::move(shader), std::move(pipeline), std::move(uniform_buffer),
+        bind_group,        bind_group_layout,   initial_capacity,
     };
 }
 

@@ -491,8 +491,7 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
         ImGui::Text("Renderer:");
         ImGui::SameLine();
         ImGui::SetNextItemWidth(120);
-        if (ImGui::BeginCombo("##renderer",
-                              kRendererConfigs[m_active_config_index].name.c_str())) {
+        if (ImGui::BeginCombo("##renderer", kRendererConfigs[m_active_config_index].name.c_str())) {
             for (size_t i = 0; i < kRendererConfigs.size(); ++i) {
                 bool selected = (i == m_active_config_index);
                 if (ImGui::Selectable(kRendererConfigs[i].name.c_str(), selected)) {

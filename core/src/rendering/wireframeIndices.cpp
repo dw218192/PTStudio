@@ -1,13 +1,11 @@
-#include <core/rendering/wireframeIndices.h>
-
 #include <core/diagnostics.h>
+#include <core/rendering/wireframeIndices.h>
 
 namespace pts::rendering {
 
 std::vector<uint32_t> expand_wireframe_indices(const uint32_t* tri_indices,
                                                size_t tri_index_count) {
-    PRECONDITION_MSG(tri_index_count % 3 == 0,
-                     "Triangle index count must be a multiple of 3");
+    PRECONDITION_MSG(tri_index_count % 3 == 0, "Triangle index count must be a multiple of 3");
 
     std::vector<uint32_t> lines;
     lines.reserve(tri_index_count * 2);

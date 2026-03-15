@@ -1,7 +1,6 @@
 struct Uniforms {
     float4x4 mvp;
     uint object_id;
-    uint _pad[3];
 };
 
 [[vk::binding(0, 0)]]

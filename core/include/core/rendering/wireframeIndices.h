@@ -10,7 +10,6 @@ namespace pts::rendering {
 /// @param tri_indices Pointer to triangle index data.
 /// @param tri_index_count Number of triangle indices (must be a multiple of 3).
 /// @return Line-list indices with 2x the number of entries (6 per triangle).
-std::vector<uint32_t> expand_wireframe_indices(const uint32_t* tri_indices,
-                                               size_t tri_index_count);
+std::vector<uint32_t> expand_wireframe_indices(const uint32_t* tri_indices, size_t tri_index_count);
 
 }  // namespace pts::rendering

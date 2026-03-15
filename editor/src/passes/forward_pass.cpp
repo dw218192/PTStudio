@@ -239,10 +239,8 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
         wgpuQueueWriteBuffer(queue, uniform_buf, i * k_uniform_align, &u, sizeof(u));
     }
 
-    fg.add_pass("forward")
-        .color(color)
-        .depth(depth)
-        .execute([=, &world](WGPURenderPassEncoder pass) {
+    fg.add_pass("forward").color(color).depth(depth).execute(
+        [=, &world](WGPURenderPassEncoder pass) {
             wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
             for (uint32_t i = 0; i < static_cast<uint32_t>(world.objects.size()); ++i) {
                 uint32_t dyn_offset = i * k_uniform_align;
