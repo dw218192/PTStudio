@@ -188,7 +188,13 @@ class SlangcTool(RepoTool):
                     "wgsl",
                 ]
                 cmd.extend(ctx.passthrough_args)
-                ShellCommand(cmd, env_script=conanbuild).exec(log_file=log_file)
+                try:
+                    ShellCommand(cmd, env_script=conanbuild).exec(log_file=log_file)
+                except Exception:
+                    if log_file.exists():
+                        logger.error(f"slangc failed compiling {input_path}:")
+                        logger.error(log_file.read_text().strip())
+                    raise
                 compiled += 1
             else:
                 logger.info(f"Skipping up-to-date shader: {input_path}")
