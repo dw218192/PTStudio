@@ -42,6 +42,7 @@ ImGuiComponent::ImGuiComponent(rendering::IViewport& viewport,
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
     ImGui::StyleColorsDark();
+    io.FontGlobalScale = 1.25f;
 
     m_imgui_windowing = rendering::create_imgui_windowing(m_viewport, m_logging_manager);
 }

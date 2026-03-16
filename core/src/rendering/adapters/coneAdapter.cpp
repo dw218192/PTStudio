@@ -109,4 +109,15 @@ void ConeAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device
     sync_object(prim, scope, device, vertices, indices);
 }
 
+std::vector<PropertyDescriptor> ConeAdapter::get_properties(const pxr::UsdPrim& prim) const {
+    pxr::UsdGeomCone cone(prim);
+    double radius = 1.0, height = 2.0;
+    cone.GetRadiusAttr().Get(&radius);
+    cone.GetHeightAttr().Get(&height);
+    return {
+        {"radius", "Radius", std::any(radius)},
+        {"height", "Height", std::any(height)},
+    };
+}
+
 }  // namespace pts::rendering

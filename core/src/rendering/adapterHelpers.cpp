@@ -18,7 +18,7 @@ glm::mat4 compute_world_transform(pxr::UsdPrim prim) {
     return transform;
 }
 
-uint32_t resolve_material(pxr::UsdPrim prim, RenderWorld& world) {
+uint32_t resolve_material(pxr::UsdPrim prim, SyncScope& scope) {
     auto binding = pxr::UsdShadeMaterialBindingAPI(prim).ComputeBoundMaterial();
     if (!binding) {
         return k_no_material;
@@ -26,8 +26,9 @@ uint32_t resolve_material(pxr::UsdPrim prim, RenderWorld& world) {
 
     auto mat_path = binding.GetPath().GetString();
 
-    auto it = world.material_cache.find(mat_path);
-    if (it != world.material_cache.end()) {
+    auto& cache = scope.material_cache();
+    auto it = cache.find(mat_path);
+    if (it != cache.end()) {
         return it->second;
     }
 
@@ -54,9 +55,10 @@ uint32_t resolve_material(pxr::UsdPrim prim, RenderWorld& world) {
         }
     }
 
-    auto index = static_cast<uint32_t>(world.materials.size());
-    world.materials.push_back(mat);
-    world.material_cache[mat_path] = index;
+    auto& materials = scope.materials();
+    auto index = static_cast<uint32_t>(materials.size());
+    materials.push_back(mat);
+    cache[mat_path] = index;
     return index;
 }
 
@@ -75,11 +77,12 @@ void upload_mesh(SyncScope& scope, const webgpu::Device& device,
     wgpuQueueWriteBuffer(device.queue(), index_buf.handle(), 0, indices.data(),
                          indices.size() * sizeof(uint32_t));
 
-    Mesh& gpu_mesh = scope.world().meshes[mesh_slot];
+    Mesh& gpu_mesh = scope.mesh(mesh_slot);
     gpu_mesh.vertex_buffer = std::move(vertex_buf);
     gpu_mesh.index_buffer = std::move(index_buf);
     gpu_mesh.index_count = static_cast<uint32_t>(indices.size());
     gpu_mesh.cpu_indices.assign(indices.begin(), indices.end());
+    ++gpu_mesh.version;
 }
 
 void sync_object(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device& device,
@@ -87,11 +90,11 @@ void sync_object(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device& devi
     auto& world = scope.world();
     auto sdf_path = prim.GetPath();
     auto transform = compute_world_transform(prim);
-    auto material_index = resolve_material(prim, world);
+    auto material_index = resolve_material(prim, scope);
 
     int existing = world.find_object_by_prim(sdf_path.GetText());
     if (existing >= 0) {
-        auto& obj = world.objects[existing];
+        auto& obj = scope.object(static_cast<uint32_t>(existing));
         obj.transform = transform;
         obj.material_index = material_index;
         upload_mesh(scope, device, vertices, indices, obj.mesh_index);
@@ -100,12 +103,40 @@ void sync_object(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device& devi
         auto mesh_slot = scope.alloc_mesh_slot();
         auto obj_slot = scope.alloc_object_slot();
         upload_mesh(scope, device, vertices, indices, mesh_slot);
-        auto& obj = world.objects[obj_slot];
+        auto& obj = scope.object(obj_slot);
         obj.mesh_index = mesh_slot;
         obj.transform = transform;
         obj.material_index = material_index;
         obj.prim_path = std::move(prim_path);
-        world.prim_slots[obj.prim_path] = PrimSlot{PrimSlot::Kind::Object, obj_slot};
+        scope.set_prim_slot(obj.prim_path, PrimSlot{PrimSlot::Kind::Object, obj_slot});
+    }
+}
+
+void sync_light(pxr::UsdPrim prim, SyncScope& scope, const Light& light) {
+    auto& world = scope.world();
+    auto sdf_path = prim.GetPath();
+
+    int existing = world.find_light_by_prim(sdf_path.GetText());
+    if (existing >= 0) {
+        auto& dst = scope.light(static_cast<uint32_t>(existing));
+        dst.type = light.type;
+        dst.color = light.color;
+        dst.intensity = light.intensity;
+        dst.transform = light.transform;
+        dst.direction = light.direction;
+        dst.radius = light.radius;
+        dst.width = light.width;
+        dst.height = light.height;
+        ++dst.version;
+        scope.mark_light_dirty(static_cast<uint32_t>(existing));
+        scope.bump_light_version();
+    } else {
+        auto slot = scope.alloc_light_slot();
+        auto prim_path = sdf_path.GetString();
+        auto& dst = scope.light(slot);
+        dst = light;
+        dst.prim_path = std::move(prim_path);
+        scope.set_prim_slot(dst.prim_path, PrimSlot{PrimSlot::Kind::Light, slot});
     }
 }
 

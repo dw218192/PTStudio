@@ -84,4 +84,11 @@ void SphereAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Devi
     sync_object(prim, scope, device, vertices, indices);
 }
 
+std::vector<PropertyDescriptor> SphereAdapter::get_properties(const pxr::UsdPrim& prim) const {
+    pxr::UsdGeomSphere sphere(prim);
+    double radius = 1.0;
+    sphere.GetRadiusAttr().Get(&radius);
+    return {{"radius", "Radius", std::any(radius)}};
+}
+
 }  // namespace pts::rendering

@@ -112,6 +112,12 @@ agent:
       (fixed-width ints, POD structs, opaque handles — no std::string/vector).
       Prefer Rule of Zero, RAII, string_view/span for non-owning views.
       Use #pragma once, include what you use, forward-declare in headers.
+    reviewer: >
+      Watch for regressions: verify that changes don't break existing behavior
+      (run the full test suite, not just new tests). Flag any changes that are
+      unrelated to the ticket — scope creep, drive-by refactors, or formatting
+      changes outside touched functions should be called out and excluded.
+      Diff against the base branch (not just HEAD) to catch accumulated drift.
 
 clean:
   paths+:

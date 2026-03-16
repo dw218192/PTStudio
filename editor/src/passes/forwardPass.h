@@ -31,17 +31,20 @@ class ForwardPass final : public rendering::IScenePass {
     static constexpr uint32_t k_uniform_align = 256;
 
    private:
-    void ensure_capacity(const webgpu::Device& device, uint32_t object_count);
+    bool ensure_capacity(const webgpu::Device& device, uint32_t object_count);
 
     struct Ready {
         webgpu::ShaderModule shader;
         webgpu::RenderPipeline pipeline;
         webgpu::Buffer uniform_buffer;
         webgpu::Buffer material_buffer;
+        webgpu::Buffer light_buffer;
         WGPUBindGroup bind_group = nullptr;
         WGPUBindGroupLayout bind_group_layout = nullptr;
         uint32_t capacity = 0;
         uint32_t material_capacity = 0;
+        uint32_t light_count = 0;
+        uint32_t cached_light_version = UINT32_MAX;
     };
 
     std::variant<std::monostate, Ready> m_state;

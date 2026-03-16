@@ -1,8 +1,11 @@
 #include <core/profiling.h>
+#include <core/rendering/adapterHelpers.h>
 #include <core/rendering/adapters/registry.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/sceneLoader.h>
 #include <pxr/usd/usd/primRange.h>
+
+#include <glm/glm.hpp>
 
 namespace pts::rendering {
 
@@ -46,7 +49,7 @@ void remove_prim(SyncScope& scope, const pxr::SdfPath& prim_path) {
     auto path_text = prim_path.GetText();
     int obj_idx = world.find_object_by_prim(path_text);
     if (obj_idx >= 0) {
-        scope.free_mesh_slot(world.objects[obj_idx].mesh_index);
+        scope.free_mesh_slot(scope.object(static_cast<uint32_t>(obj_idx)).mesh_index);
         scope.free_object_slot(static_cast<uint32_t>(obj_idx));
         return;
     }

@@ -55,7 +55,8 @@ struct EditorApplication final : WindowedApplication {
 
     // imgui rendering
     auto draw_scene_panel() noexcept -> void;
-    auto draw_object_panel() noexcept -> void;
+    auto draw_inspector_panel() noexcept -> void;
+    void draw_prim_tree(const pxr::UsdPrim& prim);
     auto draw_scene_viewport() noexcept -> void;
     auto draw_console_panel() const noexcept -> void;
 
@@ -109,7 +110,7 @@ struct EditorApplication final : WindowedApplication {
     std::vector<pxr::SdfPath> m_dirty_xform_paths;
 
     // Selection & gizmo
-    int m_selected_object = -1;
+    pxr::SdfPath m_selected_prim;
     enum class GizmoOp { Translate, Rotate, Scale };
     GizmoOp m_gizmo_op = GizmoOp::Translate;
 
@@ -119,6 +120,12 @@ struct EditorApplication final : WindowedApplication {
     float m_viewport_x = 0.0f;
     float m_viewport_y = 0.0f;
     rendering::TextureRef m_scene_color_ref;
+
+    // Light gizmo icon
+    void draw_light_gizmos(const glm::mat4& view_mat, const glm::mat4& proj_mat);
+    WGPUTexture m_light_icon_tex = nullptr;
+    WGPUTextureView m_light_icon_view = nullptr;
+    static constexpr float k_light_icon_size = 64.0f;
 
     // GPU picking
     webgpu::BufferReadback m_picking_readback;

@@ -4,16 +4,16 @@
 
 namespace pts::rendering {
 
-class CapsuleAdapter final : public ISceneAdapter {
+class LightAdapter final : public ISceneAdapter {
    public:
-    static CapsuleAdapter& instance();
+    static LightAdapter& instance();
 
     bool can_adapt(const pxr::UsdPrim& prim) const override;
     void sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device& device) override;
     std::vector<PropertyDescriptor> get_properties(const pxr::UsdPrim& prim) const override;
 
    private:
-    CapsuleAdapter() = default;
+    LightAdapter() = default;
 };
 
 }  // namespace pts::rendering

@@ -110,10 +110,10 @@ TEST_CASE("populate_from_stage populates prim_path on RenderObjects") {
     pts::rendering::RenderWorld world;
     pts::rendering::populate_from_stage(world, stage, device);
 
-    REQUIRE(world.objects.size() == 1);
-    CHECK(world.objects[0].prim_path == "/Root/TestMesh");
-    CHECK(world.meshes.size() == 1);
-    CHECK(world.meshes[0].index_count == 3);
+    REQUIRE(world.get_objects().size() == 1);
+    CHECK(world.get_objects()[0].prim_path == "/Root/TestMesh");
+    CHECK(world.get_meshes().size() == 1);
+    CHECK(world.get_meshes()[0].index_count == 3);
 
     spdlog::drop("test_populate");
 }
@@ -193,8 +193,8 @@ TEST_CASE("Xform change updates RenderObject transform via notice pattern") {
     pts::rendering::RenderWorld world;
     pts::rendering::populate_from_stage(world, stage, device);
 
-    REQUIRE(world.objects.size() == 1);
-    CHECK(world.objects[0].transform[0][3] == doctest::Approx(0.0f));
+    REQUIRE(world.get_objects().size() == 1);
+    CHECK(world.get_objects()[0].transform[0][3] == doctest::Approx(0.0f));
 
     // Simulate the full notice-driven update pattern used in EditorApplication:
     // 1. Notice fires with changed paths
@@ -209,7 +209,7 @@ TEST_CASE("Xform change updates RenderObject transform via notice pattern") {
     // For the full resync path: clear + repopulate
     world.clear();
     pts::rendering::populate_from_stage(world, stage, device);
-    REQUIRE(world.objects.size() == 1);
+    REQUIRE(world.get_objects().size() == 1);
 
     // Now test the xform-only fast path: Set() on existing op
     TestListener listener;
@@ -235,24 +235,16 @@ TEST_CASE("Xform change updates RenderObject transform via notice pattern") {
         dirty_paths.push_back(prim_path.GetString());
     }
 
-    // Process dirty paths: update RenderObject transforms from USD
+    // Process dirty paths via RenderWorld::update_transforms
+    std::vector<pxr::SdfPath> sdf_dirty_paths;
     for (const auto& dp : dirty_paths) {
-        for (auto& obj : world.objects) {
-            if (obj.prim_path != dp) continue;
-            auto prim = stage->GetPrimAtPath(pxr::SdfPath(obj.prim_path));
-            REQUIRE(prim.IsValid());
-            pxr::UsdGeomXformable xf(prim);
-            REQUIRE(bool(xf));
-            auto gf = xf.ComputeLocalToWorldTransform(pxr::UsdTimeCode::Default());
-            for (int r = 0; r < 4; ++r)
-                for (int c = 0; c < 4; ++c) obj.transform[c][r] = static_cast<float>(gf[r][c]);
-        }
+        sdf_dirty_paths.push_back(pxr::SdfPath(dp));
     }
+    world.update_transforms(stage, sdf_dirty_paths);
 
     // Verify the transform was updated via the fast path.
-    // GfMatrix4d[3][0] (translation X, row-major) maps to glm[0][3] (col 0, row 3)
-    // via the copy formula: transform[col][row] = xf[row][col]
-    CHECK(world.objects[0].transform[0][3] == doctest::Approx(7.0f));
+    // GfMatrix4d[3][0] maps to glm[3][0] (direct copy, no transpose)
+    CHECK(world.get_objects()[0].transform[3][0] == doctest::Approx(7.0f));
 
     pxr::TfNotice::Revoke(key);
     spdlog::drop("test_xform_change");
@@ -281,18 +273,18 @@ TEST_CASE("Selection preserved across full resync by prim_path") {
     pts::rendering::RenderWorld world;
     pts::rendering::populate_from_stage(world, stage, device);
 
-    REQUIRE(world.objects.size() == 2);
+    REQUIRE(world.get_objects().size() == 2);
 
     // Simulate selecting object at index 1 (MeshB)
     int selected_object = -1;
-    for (int i = 0; i < static_cast<int>(world.objects.size()); ++i) {
-        if (world.objects[i].prim_path == "/Root/MeshB") {
+    for (int i = 0; i < static_cast<int>(world.get_objects().size()); ++i) {
+        if (world.get_objects()[i].prim_path == "/Root/MeshB") {
             selected_object = i;
             break;
         }
     }
     REQUIRE(selected_object >= 0);
-    std::string selected_prim_path = world.objects[selected_object].prim_path;
+    std::string selected_prim_path = world.get_objects()[selected_object].prim_path;
 
     // Simulate full resync (mirrors process_dirty_prims resync path)
     world.clear();
@@ -300,15 +292,15 @@ TEST_CASE("Selection preserved across full resync by prim_path") {
 
     // Restore selection by prim_path
     int restored = -1;
-    for (int i = 0; i < static_cast<int>(world.objects.size()); ++i) {
-        if (world.objects[i].prim_path == selected_prim_path) {
+    for (int i = 0; i < static_cast<int>(world.get_objects().size()); ++i) {
+        if (world.get_objects()[i].prim_path == selected_prim_path) {
             restored = i;
             break;
         }
     }
 
     CHECK(restored >= 0);
-    CHECK(world.objects[restored].prim_path == "/Root/MeshB");
+    CHECK(world.get_objects()[restored].prim_path == "/Root/MeshB");
 
     spdlog::drop("test_selection_resync");
 }
@@ -332,8 +324,8 @@ TEST_CASE("Selection lost when selected prim is removed during resync") {
     pts::rendering::RenderWorld world;
     pts::rendering::populate_from_stage(world, stage, device);
 
-    REQUIRE(world.objects.size() == 1);
-    std::string selected_prim_path = world.objects[0].prim_path;
+    REQUIRE(world.get_objects().size() == 1);
+    std::string selected_prim_path = world.get_objects()[0].prim_path;
 
     // Remove the prim from the stage
     stage->RemovePrim(pxr::SdfPath("/Root/Mesh"));
@@ -344,8 +336,8 @@ TEST_CASE("Selection lost when selected prim is removed during resync") {
 
     // Search for the removed prim
     int restored = -1;
-    for (int i = 0; i < static_cast<int>(world.objects.size()); ++i) {
-        if (world.objects[i].prim_path == selected_prim_path) {
+    for (int i = 0; i < static_cast<int>(world.get_objects().size()); ++i) {
+        if (world.get_objects()[i].prim_path == selected_prim_path) {
             restored = i;
             break;
         }
@@ -389,11 +381,11 @@ TEST_CASE("Material extraction from UsdPreviewSurface") {
     pts::rendering::RenderWorld world;
     pts::rendering::populate_from_stage(world, stage, device);
 
-    REQUIRE(world.objects.size() == 1);
-    REQUIRE(world.materials.size() == 1);
-    CHECK(world.objects[0].material_index == 0);
+    REQUIRE(world.get_objects().size() == 1);
+    REQUIRE(world.get_materials().size() == 1);
+    CHECK(world.get_objects()[0].material_index == 0);
 
-    auto& mat = world.materials[0];
+    auto& mat = world.get_materials()[0];
     CHECK(mat.diffuse_color.x == doctest::Approx(0.8f));
     CHECK(mat.diffuse_color.y == doctest::Approx(0.2f));
     CHECK(mat.diffuse_color.z == doctest::Approx(0.1f));
@@ -420,9 +412,9 @@ TEST_CASE("Prim without material gets k_no_material") {
     pts::rendering::RenderWorld world;
     pts::rendering::populate_from_stage(world, stage, device);
 
-    REQUIRE(world.objects.size() == 1);
-    CHECK(world.objects[0].material_index == pts::rendering::k_no_material);
-    CHECK(world.materials.empty());
+    REQUIRE(world.get_objects().size() == 1);
+    CHECK(world.get_objects()[0].material_index == pts::rendering::k_no_material);
+    CHECK(world.get_materials().empty());
 
     spdlog::drop("test_no_material");
 }
@@ -461,10 +453,10 @@ TEST_CASE("Shared material is deduplicated") {
     pts::rendering::RenderWorld world;
     pts::rendering::populate_from_stage(world, stage, device);
 
-    REQUIRE(world.objects.size() == 2);
-    CHECK(world.materials.size() == 1);
-    CHECK(world.objects[0].material_index == world.objects[1].material_index);
-    CHECK(world.objects[0].material_index == 0);
+    REQUIRE(world.get_objects().size() == 2);
+    CHECK(world.get_materials().size() == 1);
+    CHECK(world.get_objects()[0].material_index == world.get_objects()[1].material_index);
+    CHECK(world.get_objects()[0].material_index == 0);
 
     spdlog::drop("test_dedup_material");
 }

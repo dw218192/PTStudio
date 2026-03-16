@@ -140,7 +140,8 @@ void PickingPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
     PRECONDITION(is_ready());
     auto& ready = std::get<Ready>(m_state);
 
-    auto object_count = static_cast<uint32_t>(ctx.world.objects.size());
+    auto objects = ctx.world.get_objects();
+    auto object_count = static_cast<uint32_t>(objects.size());
     if (object_count > 0) {
         ensure_capacity(ctx.device, object_count);
     }
@@ -170,8 +171,8 @@ void PickingPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
     const auto& world = ctx.world;
 
     for (uint32_t i = 0; i < object_count; ++i) {
-        if (!world.objects[i].active) continue;
-        const auto& obj = world.objects[i];
+        if (!objects[i].active) continue;
+        const auto& obj = objects[i];
         PickingUniforms u{};
         u.mvp = proj_mat * view_mat * obj.transform;
         u.object_id = i;
@@ -182,12 +183,14 @@ void PickingPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
         .color(picking_ids)
         .depth(depth)
         .execute([=, &world](WGPURenderPassEncoder pass) {
+            auto objs = world.get_objects();
+            auto meshes = world.get_meshes();
             wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
-            for (uint32_t i = 0; i < static_cast<uint32_t>(world.objects.size()); ++i) {
-                if (!world.objects[i].active) continue;
+            for (uint32_t i = 0; i < static_cast<uint32_t>(objs.size()); ++i) {
+                if (!objs[i].active) continue;
                 uint32_t dyn_offset = i * k_uniform_align;
                 wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 1, &dyn_offset);
-                const auto& mesh = world.meshes[world.objects[i].mesh_index];
+                const auto& mesh = meshes[objs[i].mesh_index];
                 wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh.vertex_buffer.handle(), 0,
                                                      mesh.vertex_buffer.size());
                 wgpuRenderPassEncoderSetIndexBuffer(pass, mesh.index_buffer.handle(),

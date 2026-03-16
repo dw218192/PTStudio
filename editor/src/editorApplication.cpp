@@ -6,6 +6,7 @@
 #include <core/diagnostics.h>
 #include <core/imgui/fileDialogue.h>
 #include <core/profiling.h>
+#include <core/rendering/adapterHelpers.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/rendererConfig.h>
 #include <core/rendering/sceneLoader.h>
@@ -13,6 +14,8 @@
 #include <core/rendering/webgpuContext.h>
 #include <core/rendering/windowing.h>
 #include <imgui_internal.h>
+
+#include "propertyInspector.h"
 // clang-format off
 #include <ImGuizmo.h>  // must follow imgui.h
 // clang-format on
@@ -21,6 +24,7 @@
 #include <pxr/usd/usd/stage.h>
 #include <pxr/usd/usdGeom/xformable.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
+#include <stb_image.h>
 
 #include <algorithm>
 #include <filesystem>
@@ -75,6 +79,8 @@ EditorApplication::~EditorApplication() {
     m_passes.clear();
     m_world.clear();
     m_stage.Reset();
+    if (m_light_icon_view) wgpuTextureViewRelease(m_light_icon_view);
+    if (m_light_icon_tex) wgpuTextureRelease(m_light_icon_tex);
     m_input.reset();
     m_imgui.reset();
 }
@@ -115,7 +121,13 @@ void EditorApplication::on_objects_changed(const pxr::UsdNotice::ObjectsChanged&
     }
     for (const auto& path : notice.GetChangedInfoOnlyPaths()) {
         if (!path.IsPrimPath() && !path.IsPropertyPath()) continue;
-        m_dirty_xform_paths.push_back(path.IsPropertyPath() ? path.GetPrimPath() : path);
+        auto prim_path = path.IsPropertyPath() ? path.GetPrimPath() : path;
+        if (path.IsPropertyPath() &&
+            pxr::UsdGeomXformable::IsTransformationAffectedByAttrNamed(path.GetNameToken())) {
+            m_dirty_xform_paths.push_back(prim_path);
+        } else {
+            m_resync_paths.push_back(prim_path);
+        }
     }
 }
 
@@ -129,25 +141,19 @@ void EditorApplication::process_dirty_prims() {
         m_resync_paths.erase(std::unique(m_resync_paths.begin(), m_resync_paths.end()),
                              m_resync_paths.end());
 
-        // Save selection
-        std::string selected_prim_path;
-        if (m_selected_object >= 0 &&
-            m_selected_object < static_cast<int>(m_world.objects.size()) &&
-            m_world.objects[m_selected_object].active) {
-            selected_prim_path = m_world.objects[m_selected_object].prim_path;
-        }
+        // Selection is prim-path based — survives resync automatically
 
         {
             auto scope = m_world.begin_sync();
             for (const auto& resync_path : m_resync_paths) {
                 // Handle ancestor resyncs: resync children under this path
                 std::vector<pxr::SdfPath> children_to_resync;
-                for (const auto& [path, slot] : m_world.prim_slots) {
-                    auto child = pxr::SdfPath(path);
+                m_world.for_each_prim([&](std::string_view path, rendering::PrimSlot) {
+                    auto child = pxr::SdfPath(std::string{path});
                     if (child.HasPrefix(resync_path) && child != resync_path) {
                         children_to_resync.push_back(child);
                     }
-                }
+                });
 
                 // Sync the prim itself
                 rendering::sync_prim(scope, m_stage, device, resync_path);
@@ -159,33 +165,23 @@ void EditorApplication::process_dirty_prims() {
             }
         }  // mesh_version bumped here
 
-        // Restore selection
-        if (!selected_prim_path.empty()) {
-            m_selected_object = m_world.find_object_by_prim(selected_prim_path);
+        // Invalidate selection if prim was removed
+        if (!m_selected_prim.IsEmpty() && !m_stage->GetPrimAtPath(m_selected_prim).IsValid()) {
+            m_selected_prim = pxr::SdfPath();
         }
 
         log(LogLevel::Debug, "Resynced {} prim(s)", m_resync_paths.size());
         m_resync_paths.clear();
     }
 
-    // Xform-only changes (O(1) lookup instead of O(n) scan)
+    // Xform-only changes — lightweight transform update (no mesh re-upload)
     if (!m_dirty_xform_paths.empty()) {
-        for (const auto& dirty_path : m_dirty_xform_paths) {
-            int idx = m_world.find_object_by_prim(dirty_path.GetText());
-            if (idx < 0) continue;
-            auto& obj = m_world.objects[idx];
+        std::sort(m_dirty_xform_paths.begin(), m_dirty_xform_paths.end());
+        m_dirty_xform_paths.erase(
+            std::unique(m_dirty_xform_paths.begin(), m_dirty_xform_paths.end()),
+            m_dirty_xform_paths.end());
 
-            auto prim = m_stage->GetPrimAtPath(dirty_path);
-            if (!prim.IsValid()) continue;
-
-            pxr::UsdGeomXformable xformable(prim);
-            if (!xformable) continue;
-
-            pxr::GfMatrix4d xf =
-                xformable.ComputeLocalToWorldTransform(pxr::UsdTimeCode::Default());
-            for (int r = 0; r < 4; ++r)
-                for (int c = 0; c < 4; ++c) obj.transform[r][c] = static_cast<float>(xf[r][c]);
-        }
+        m_world.update_transforms(m_stage, m_dirty_xform_paths);
         m_dirty_xform_paths.clear();
     }
 }
@@ -252,9 +248,44 @@ void EditorApplication::on_ready() {
         m_stage = pxr::UsdStage::Open(layer);
         rendering::populate_from_stage(m_world, m_stage, device);
         register_stage_listener();
-        log(LogLevel::Info, "Loaded default scene ({} objects)", m_world.objects.size());
+        log(LogLevel::Info, "Loaded default scene ({} objects)", m_world.get_objects().size());
     } else {
         log(LogLevel::Warning, "Missing embedded resource: assets/scenes/primitives.usda");
+    }
+
+    // Load light icon texture
+    {
+        auto icon_data = editor_resources::get_resource("editor/icons/light.png");
+        INVARIANT_MSG(icon_data, "Missing embedded resource: editor/icons/light.png");
+        int iw, ih, channels;
+        auto* pixels =
+            stbi_load_from_memory(reinterpret_cast<const unsigned char*>(icon_data->data()),
+                                  static_cast<int>(icon_data->size()), &iw, &ih, &channels, 4);
+        INVARIANT_MSG(pixels, "Failed to decode light.png");
+
+        WGPUTextureDescriptor tex_desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
+        tex_desc.size = {static_cast<uint32_t>(iw), static_cast<uint32_t>(ih), 1};
+        tex_desc.format = WGPUTextureFormat_RGBA8Unorm;
+        tex_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_TextureBinding |
+                                                       WGPUTextureUsage_CopyDst);
+        tex_desc.mipLevelCount = 1;
+        tex_desc.sampleCount = 1;
+        tex_desc.dimension = WGPUTextureDimension_2D;
+        m_light_icon_tex = wgpuDeviceCreateTexture(device.handle(), &tex_desc);
+
+        WGPUTextureViewDescriptor view_desc = WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT;
+        m_light_icon_view = wgpuTextureCreateView(m_light_icon_tex, &view_desc);
+
+        WGPUTexelCopyTextureInfo dst = WGPU_TEXEL_COPY_TEXTURE_INFO_INIT;
+        dst.texture = m_light_icon_tex;
+        WGPUTexelCopyBufferLayout layout = WGPU_TEXEL_COPY_BUFFER_LAYOUT_INIT;
+        layout.bytesPerRow = static_cast<uint32_t>(iw * 4);
+        layout.rowsPerImage = static_cast<uint32_t>(ih);
+        WGPUExtent3D extent = {static_cast<uint32_t>(iw), static_cast<uint32_t>(ih), 1};
+        wgpuQueueWriteTexture(device.queue(), &dst, pixels, static_cast<size_t>(iw * ih * 4),
+                              &layout, &extent);
+
+        stbi_image_free(pixels);
     }
 
     // Set up renderer passes
@@ -318,7 +349,7 @@ void EditorApplication::render(FrameContext& ctx) {
     m_imgui->end_window();
 
     if (m_imgui->begin_window(k_inspector_win_name, ImGuiWindowFlags_NoMove)) {
-        draw_object_panel();
+        draw_inspector_panel();
     }
     m_imgui->end_window();
 
@@ -385,13 +416,15 @@ void EditorApplication::render(FrameContext& ctx) {
     m_picking_readback.tick();
 
     if (auto picked_id = m_picking_readback.try_read_u32()) {
+        auto objects = m_world.get_objects();
         if (*picked_id == UINT32_MAX) {
-            m_selected_object = -1;
-        } else if (*picked_id < static_cast<uint32_t>(m_world.objects.size()) &&
-                   m_world.objects[*picked_id].active) {
-            m_selected_object = static_cast<int>(*picked_id);
+            m_selected_prim = pxr::SdfPath();
+        } else if (*picked_id < static_cast<uint32_t>(objects.size()) &&
+                   objects[*picked_id].active) {
+            auto& path = objects[*picked_id].prim_path;
+            m_selected_prim = pxr::SdfPath(path);
             if (m_stage) {
-                normalize_xform_ops(m_world.objects[m_selected_object].prim_path);
+                normalize_xform_ops(path);
             }
         }
     }
@@ -475,31 +508,70 @@ auto EditorApplication::draw_scene_panel() noexcept -> void {
                 }
                 revoke_stage_listener();
                 m_world.clear();
-                m_selected_object = -1;
+                m_selected_prim = pxr::SdfPath();
                 m_stage = stage;
                 rendering::populate_from_stage(m_world, m_stage, webgpu_context()->device());
                 register_stage_listener();
                 log(LogLevel::Info, "Loaded scene: {} ({} objects)", result.name,
-                    m_world.objects.size());
+                    m_world.get_objects().size());
             });
     }
 }
 
-auto EditorApplication::draw_object_panel() noexcept -> void {
-    ImGui::Text("Objects (%zu)", m_world.objects.size());
-    ImGui::Separator();
+auto EditorApplication::draw_inspector_panel() noexcept -> void {
+    if (!m_stage) {
+        ImGui::TextUnformatted("No stage loaded");
+        return;
+    }
+    auto root = m_stage->GetPseudoRoot();
+    for (auto const& child : root.GetChildren()) {
+        draw_prim_tree(child);
+    }
 
-    for (int i = 0; i < static_cast<int>(m_world.objects.size()); ++i) {
-        if (!m_world.objects[i].active) continue;
-        auto const& obj = m_world.objects[i];
-        auto const& label = obj.prim_path.empty() ? std::to_string(i) : obj.prim_path;
-        bool selected = (m_selected_object == i);
-        if (ImGui::Selectable(label.c_str(), selected)) {
-            m_selected_object = selected ? -1 : i;
-            if (m_selected_object >= 0 && m_stage) {
-                normalize_xform_ops(m_world.objects[m_selected_object].prim_path);
+    ImGui::Separator();
+    if (!m_selected_prim.IsEmpty()) {
+        auto prim = m_stage->GetPrimAtPath(m_selected_prim);
+        if (prim.IsValid()) {
+            draw_prim_properties(prim);
+        }
+    } else {
+        ImGui::TextDisabled("Select a prim to inspect properties");
+    }
+}
+
+void EditorApplication::draw_prim_tree(const pxr::UsdPrim& prim) {
+    auto path = prim.GetPath();
+    auto name = prim.GetName().GetString();
+    auto type_name = prim.GetTypeName().GetString();
+
+    bool is_selected = (m_selected_prim == path);
+    bool has_children = !prim.GetChildren().empty();
+
+    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
+    if (is_selected) flags |= ImGuiTreeNodeFlags_Selected;
+    if (!has_children) flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+
+    // Label: "Name (TypeName)" or just "Name"
+    std::string label = type_name.empty() ? name : name + " (" + type_name + ")";
+
+    bool node_open = ImGui::TreeNodeEx(path.GetText(), flags, "%s", label.c_str());
+
+    if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+        if (is_selected) {
+            m_selected_prim = pxr::SdfPath();
+        } else {
+            m_selected_prim = path;
+            if (pxr::UsdGeomXformable xformable{prim}; xformable) {
+                normalize_xform_ops(path.GetString());
             }
         }
+    }
+
+    if (node_open && has_children) {
+        for (auto const& child : prim.GetChildren()) {
+            draw_prim_tree(child);
+        }
+        ImGui::TreePop();
     }
 }
 
@@ -545,73 +617,119 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
         ImGui::TextUnformatted("Renderer output not available");
     }
 
-    // ── ImGuizmo gizmo ──
-    if (m_selected_object >= 0 && m_selected_object < static_cast<int>(m_world.objects.size()) &&
-        m_viewport_width > 0 && m_viewport_height > 0) {
+    // ── Light gizmos ──
+    if (m_viewport_width > 0 && m_viewport_height > 0) {
         float aspect = static_cast<float>(m_viewport_width) / static_cast<float>(m_viewport_height);
-        auto view_mat = m_camera.view_matrix();
-        auto proj_mat = m_camera.projection_matrix(aspect);
+        draw_light_gizmos(m_camera.view_matrix(), m_camera.projection_matrix(aspect));
+    }
 
-        auto& obj = m_world.objects[m_selected_object];
+    // ── ImGuizmo gizmo ──
+    if (!m_selected_prim.IsEmpty() && m_stage && m_viewport_width > 0 && m_viewport_height > 0) {
+        auto prim = m_stage->GetPrimAtPath(m_selected_prim);
+        pxr::UsdGeomXformable xformable(prim);
+        if (prim.IsValid() && xformable) {
+            float aspect =
+                static_cast<float>(m_viewport_width) / static_cast<float>(m_viewport_height);
+            auto view_mat = m_camera.view_matrix();
+            auto proj_mat = m_camera.projection_matrix(aspect);
 
-        ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList());
-        ImGuizmo::SetRect(m_viewport_x, m_viewport_y, static_cast<float>(m_viewport_width),
-                          static_cast<float>(m_viewport_height));
+            ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList());
+            ImGuizmo::SetRect(m_viewport_x, m_viewport_y, static_cast<float>(m_viewport_width),
+                              static_cast<float>(m_viewport_height));
 
-        ImGuizmo::OPERATION op = ImGuizmo::TRANSLATE;
-        switch (m_gizmo_op) {
-            case GizmoOp::Translate:
-                op = ImGuizmo::TRANSLATE;
-                break;
-            case GizmoOp::Rotate:
-                op = ImGuizmo::ROTATE;
-                break;
-            case GizmoOp::Scale:
-                op = ImGuizmo::SCALE;
-                break;
-        }
-
-        // Use a temporary matrix so ImGuizmo doesn't directly modify RenderWorld.
-        // The notice handler is the single source of truth for RenderWorld transforms.
-        glm::mat4 gizmo_transform = obj.transform;
-        ImGuizmo::Manipulate(glm::value_ptr(view_mat), glm::value_ptr(proj_mat), op,
-                             ImGuizmo::WORLD, glm::value_ptr(gizmo_transform));
-
-        // Write to USD stage only — the ObjectsChanged notice will update RenderWorld
-        if (ImGuizmo::IsUsing() && m_stage) {
-            auto prim = m_stage->GetPrimAtPath(pxr::SdfPath(obj.prim_path));
-            INVARIANT_MSG(prim.IsValid(),
-                          "prim_path on RenderObject must reference a valid USD prim");
-
-            pxr::UsdGeomXformable xformable(prim);
-            INVARIANT_MSG(xformable, "selected prim must be UsdGeomXformable");
-
-            // ImGuizmo outputs a world-space matrix.  Convert to local space
-            // by removing the parent's world transform so we don't double-count
-            // ancestor contributions when USD recomposes.
-            pxr::GfMatrix4d gf_world;
-            for (int i = 0; i < 4; ++i)
-                for (int j = 0; j < 4; ++j)
-                    gf_world[i][j] = static_cast<double>(gizmo_transform[i][j]);
-
-            pxr::GfMatrix4d parent_world;
-            if (auto parent = prim.GetParent(); parent && parent != m_stage->GetPseudoRoot()) {
-                parent_world = pxr::UsdGeomXformable(parent).ComputeLocalToWorldTransform(
-                    pxr::UsdTimeCode::Default());
-            } else {
-                parent_world.SetIdentity();
+            ImGuizmo::OPERATION op = ImGuizmo::TRANSLATE;
+            switch (m_gizmo_op) {
+                case GizmoOp::Translate:
+                    op = ImGuizmo::TRANSLATE;
+                    break;
+                case GizmoOp::Rotate:
+                    op = ImGuizmo::ROTATE;
+                    break;
+                case GizmoOp::Scale:
+                    op = ImGuizmo::SCALE;
+                    break;
             }
-            pxr::GfMatrix4d local_mat = gf_world * parent_world.GetInverse();
 
-            // Xform ops are normalized at selection time; a single TypeTransform op
-            // must exist by the time the user drags the gizmo.
-            bool reset_xform_stack = false;
-            auto ops = xformable.GetOrderedXformOps(&reset_xform_stack);
-            INVARIANT_MSG(
-                ops.size() == 1 && ops[0].GetOpType() == pxr::UsdGeomXformOp::TypeTransform,
-                "xform ops must be normalized to a single TypeTransform before gizmo use");
-            ops[0].Set(local_mat);
+            auto world_xf = rendering::compute_world_transform(prim);
+            glm::mat4 gizmo_transform = world_xf;
+            ImGuizmo::Manipulate(glm::value_ptr(view_mat), glm::value_ptr(proj_mat), op,
+                                 ImGuizmo::WORLD, glm::value_ptr(gizmo_transform));
+
+            if (ImGuizmo::IsUsing()) {
+                pxr::GfMatrix4d gf_world;
+                for (int i = 0; i < 4; ++i)
+                    for (int j = 0; j < 4; ++j)
+                        gf_world[i][j] = static_cast<double>(gizmo_transform[i][j]);
+
+                pxr::GfMatrix4d parent_world;
+                if (auto parent = prim.GetParent(); parent && parent != m_stage->GetPseudoRoot()) {
+                    parent_world = pxr::UsdGeomXformable(parent).ComputeLocalToWorldTransform(
+                        pxr::UsdTimeCode::Default());
+                } else {
+                    parent_world.SetIdentity();
+                }
+                pxr::GfMatrix4d local_mat = gf_world * parent_world.GetInverse();
+
+                bool reset_xform_stack = false;
+                auto ops = xformable.GetOrderedXformOps(&reset_xform_stack);
+                INVARIANT_MSG(
+                    ops.size() == 1 && ops[0].GetOpType() == pxr::UsdGeomXformOp::TypeTransform,
+                    "xform ops must be normalized to a single TypeTransform before gizmo use");
+                ops[0].Set(local_mat);
+            }
         }
+    }
+}
+
+void EditorApplication::draw_light_gizmos(const glm::mat4& view_mat, const glm::mat4& proj_mat) {
+    if (!m_light_icon_view) return;
+
+    auto* draw_list = ImGui::GetWindowDrawList();
+    auto vp = proj_mat * view_mat;
+    float half_icon = k_light_icon_size * 0.5f;
+
+    auto mouse_pos = ImGui::GetMousePos();
+    bool mouse_clicked = ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !ImGuizmo::IsOver();
+
+    auto lights = m_world.get_lights();
+    for (int i = 0; i < static_cast<int>(lights.size()); ++i) {
+        const auto& light = lights[i];
+        if (!light.active) continue;
+
+        if (light.type == rendering::Light::Type::Dome) continue;
+        // All lights get their icon at the transform position
+        glm::vec3 world_pos = glm::vec3(light.transform[3]);
+
+        glm::vec4 clip = vp * glm::vec4(world_pos, 1.0f);
+        if (clip.w <= 0.0f) continue;
+
+        glm::vec3 ndc = glm::vec3(clip) / clip.w;
+        if (ndc.x < -1.0f || ndc.x > 1.0f || ndc.y < -1.0f || ndc.y > 1.0f) continue;
+
+        float screen_x =
+            m_viewport_x + (ndc.x * 0.5f + 0.5f) * static_cast<float>(m_viewport_width);
+        float screen_y =
+            m_viewport_y + (1.0f - (ndc.y * 0.5f + 0.5f)) * static_cast<float>(m_viewport_height);
+
+        ImVec2 p_min(screen_x - half_icon, screen_y - half_icon);
+        ImVec2 p_max(screen_x + half_icon, screen_y + half_icon);
+
+        auto light_path = pxr::SdfPath(light.prim_path);
+        bool is_selected = (m_selected_prim == light_path);
+
+        // Click-to-select
+        if (mouse_clicked && mouse_pos.x >= p_min.x && mouse_pos.x <= p_max.x &&
+            mouse_pos.y >= p_min.y && mouse_pos.y <= p_max.y) {
+            if (is_selected) {
+                m_selected_prim = pxr::SdfPath();
+            } else {
+                m_selected_prim = light_path;
+                if (m_stage && !light.prim_path.empty()) normalize_xform_ops(light.prim_path);
+            }
+            is_selected = (m_selected_prim == light_path);
+            m_pick_requested = false;
+        }
+        draw_list->AddImage(reinterpret_cast<ImTextureID>(m_light_icon_view), p_min, p_max);
     }
 }
 
@@ -704,7 +822,7 @@ auto EditorApplication::handle_input(InputEvent const& event) noexcept -> void {
                     m_gizmo_op = GizmoOp::Scale;
                     break;
                 case ImGuiKey_Escape:
-                    m_selected_object = -1;
+                    m_selected_prim = pxr::SdfPath();
                     break;
                 default:
                     break;

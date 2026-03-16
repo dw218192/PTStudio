@@ -3,8 +3,11 @@
 #include <core/diagnostics.h>
 #include <core/rendering/vertex.h>
 #include <core/rendering/webgpu/buffer.h>
+#include <pxr/usd/sdf/path.h>
+#include <pxr/usd/usd/stage.h>
 
 #include <boost/container/flat_map.hpp>
+#include <boost/core/span.hpp>
 #include <climits>
 #include <cstdint>
 #include <functional>
@@ -32,6 +35,7 @@ struct Mesh {
     webgpu::Buffer index_buffer;
     uint32_t index_count;
     std::vector<uint32_t> cpu_indices;
+    uint32_t version = 0;
 };
 
 struct RenderObject {
@@ -52,12 +56,14 @@ struct Light {
 
     // Distant light
     glm::vec3 direction{0.0f, -1.0f, 0.0f};
+    float angle{0.53f};  // angular extent in degrees
 
     // Area/point lights
     float radius{0.0f};
     float width{1.0f};
     float height{1.0f};
     bool active{true};
+    uint32_t version = 0;
 };
 
 /// Prim path → slot lookup entry. A single map replaces separate
@@ -96,36 +102,77 @@ class SyncScope {
     void free_mesh_slot(uint32_t i);
     void free_light_slot(uint32_t i);
 
+    // Mutable accessors for adapter/sync code (friend-gated).
+    RenderObject& object(uint32_t i);
+    Mesh& mesh(uint32_t i);
+    Light& light(uint32_t i);
+    Material& material(uint32_t i);
+    std::vector<Material>& materials();
+    std::unordered_map<std::string, uint32_t>& material_cache();
+    void set_prim_slot(const std::string& path, PrimSlot slot);
+    void mark_light_dirty(uint32_t i);
+    void bump_light_version();
+
    private:
     RenderWorld& m_world;
 };
 
 struct RenderWorld {
-    std::vector<Mesh> meshes;
-    std::vector<RenderObject> objects;
-    std::vector<Material> materials;
-    std::vector<Light> lights;
+    // Read-only accessors
+    boost::span<const RenderObject> get_objects() const;
+    boost::span<const Mesh> get_meshes() const;
+    boost::span<const Light> get_lights() const;
+    boost::span<const Material> get_materials() const;
+    uint32_t get_mesh_version() const;
+    uint32_t get_light_version() const;
 
-    /// Material path → material index (deduplication cache).
-    std::unordered_map<std::string, uint32_t> material_cache;
+    int find_object_by_prim(std::string_view path) const;
+    int find_light_by_prim(std::string_view path) const;
 
-    /// Prim path → slot (object or light). Uses std::less<> for transparent
-    /// lookup so find() accepts string_view without allocating.
-    boost::container::flat_map<std::string, PrimSlot, std::less<>> prim_slots;
+    /// Iterate prim slots without exposing the container.
+    /// fn(std::string_view path, PrimSlot slot)
+    template <typename F>
+    void for_each_prim(F&& fn) const {
+        for (const auto& [path, slot] : m_prim_slots) {
+            fn(std::string_view{path}, slot);
+        }
+    }
 
-    uint32_t mesh_version = 0;
+    // Per-slot dirty tracking
+    boost::span<const uint8_t> get_dirty_lights() const;
+    void clear_dirty_lights();
+
+    /// Lightweight xform-only update: recomputes world transforms for all
+    /// synced prims at or under the given paths. Does not re-upload meshes.
+    void update_transforms(const pxr::UsdStageRefPtr& stage,
+                           const std::vector<pxr::SdfPath>& dirty_paths);
 
     /// Begin a batched sync operation. mesh_version is bumped when
     /// the returned scope guard is destroyed. sync_object/remove_prim
     /// calls without a live SyncScope will PRECONDITION-fail.
     [[nodiscard]] SyncScope begin_sync();
 
-    int find_object_by_prim(std::string_view path) const;
-    int find_light_by_prim(std::string_view path) const;
     void clear();
 
    private:
     friend class SyncScope;
+
+    std::vector<Mesh> m_meshes;
+    std::vector<RenderObject> m_objects;
+    std::vector<Material> m_materials;
+    std::vector<Light> m_lights;
+    std::vector<uint8_t> m_dirty_lights;
+
+    /// Material path → material index (deduplication cache).
+    std::unordered_map<std::string, uint32_t> m_material_cache;
+
+    /// Prim path → slot (object or light). Uses std::less<> for transparent
+    /// lookup so find() accepts string_view without allocating.
+    boost::container::flat_map<std::string, PrimSlot, std::less<>> m_prim_slots;
+
+    uint32_t m_mesh_version = 0;
+    uint32_t m_light_version = 0;
+
     std::vector<uint32_t> m_free_object_slots;
     std::vector<uint32_t> m_free_mesh_slots;
     std::vector<uint32_t> m_free_light_slots;

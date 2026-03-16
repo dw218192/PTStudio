@@ -111,4 +111,15 @@ void CylinderAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::De
     sync_object(prim, scope, device, vertices, indices);
 }
 
+std::vector<PropertyDescriptor> CylinderAdapter::get_properties(const pxr::UsdPrim& prim) const {
+    pxr::UsdGeomCylinder cyl(prim);
+    double radius = 1.0, height = 2.0;
+    cyl.GetRadiusAttr().Get(&radius);
+    cyl.GetHeightAttr().Get(&height);
+    return {
+        {"radius", "Radius", std::any(radius)},
+        {"height", "Height", std::any(height)},
+    };
+}
+
 }  // namespace pts::rendering

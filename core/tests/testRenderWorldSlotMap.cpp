@@ -11,15 +11,15 @@ TEST_CASE("alloc returns sequential indices on empty world") {
     CHECK(scope.alloc_object_slot() == 0);
     CHECK(scope.alloc_object_slot() == 1);
     CHECK(scope.alloc_object_slot() == 2);
-    CHECK(world.objects.size() == 3);
+    CHECK(world.get_objects().size() == 3);
 
     CHECK(scope.alloc_mesh_slot() == 0);
     CHECK(scope.alloc_mesh_slot() == 1);
-    CHECK(world.meshes.size() == 2);
+    CHECK(world.get_meshes().size() == 2);
 
     CHECK(scope.alloc_light_slot() == 0);
     CHECK(scope.alloc_light_slot() == 1);
-    CHECK(world.lights.size() == 2);
+    CHECK(world.get_lights().size() == 2);
 }
 
 TEST_CASE("free + re-alloc reuses slots") {
@@ -31,12 +31,12 @@ TEST_CASE("free + re-alloc reuses slots") {
     auto c = scope.alloc_object_slot();
 
     scope.free_object_slot(b);
-    CHECK(world.objects[b].active == false);
+    CHECK(world.get_objects()[b].active == false);
 
     auto reused = scope.alloc_object_slot();
     CHECK(reused == b);
-    CHECK(world.objects[reused].active == true);
-    CHECK(world.objects.size() == 3);
+    CHECK(world.get_objects()[reused].active == true);
+    CHECK(world.get_objects().size() == 3);
 
     // mesh slot reuse
     auto m0 = scope.alloc_mesh_slot();
@@ -49,7 +49,7 @@ TEST_CASE("free + re-alloc reuses slots") {
     auto l1 = scope.alloc_light_slot();
     scope.free_light_slot(l0);
     CHECK(scope.alloc_light_slot() == l0);
-    CHECK(world.lights[l0].active == true);
+    CHECK(world.get_lights()[l0].active == true);
 
     (void) a;
     (void) c;
@@ -62,8 +62,9 @@ TEST_CASE("find_object_by_prim returns correct index") {
     auto scope = world.begin_sync();
 
     auto idx = scope.alloc_object_slot();
-    world.objects[idx].prim_path = "/World/Cube";
-    world.prim_slots["/World/Cube"] = PrimSlot{PrimSlot::Kind::Object, idx};
+    // SyncScope is a friend — set up prim path via scope.world()
+    scope.object(idx).prim_path = "/World/Cube";
+    scope.set_prim_slot("/World/Cube", PrimSlot{PrimSlot::Kind::Object, idx});
 
     CHECK(world.find_object_by_prim("/World/Cube") == static_cast<int>(idx));
 }
@@ -79,8 +80,8 @@ TEST_CASE("find_light_by_prim returns correct index") {
     auto scope = world.begin_sync();
 
     auto idx = scope.alloc_light_slot();
-    world.lights[idx].prim_path = "/World/Light";
-    world.prim_slots["/World/Light"] = PrimSlot{PrimSlot::Kind::Light, idx};
+    scope.light(idx).prim_path = "/World/Light";
+    scope.set_prim_slot("/World/Light", PrimSlot{PrimSlot::Kind::Light, idx});
 
     CHECK(world.find_light_by_prim("/World/Light") == static_cast<int>(idx));
 }
@@ -90,12 +91,12 @@ TEST_CASE("free_object_slot removes from prim_slots") {
     auto scope = world.begin_sync();
 
     auto idx = scope.alloc_object_slot();
-    world.objects[idx].prim_path = "/World/Sphere";
-    world.prim_slots["/World/Sphere"] = PrimSlot{PrimSlot::Kind::Object, idx};
+    scope.object(idx).prim_path = "/World/Sphere";
+    scope.set_prim_slot("/World/Sphere", PrimSlot{PrimSlot::Kind::Object, idx});
 
     scope.free_object_slot(idx);
     CHECK(world.find_object_by_prim("/World/Sphere") == -1);
-    CHECK(world.objects[idx].prim_path.empty());
+    CHECK(world.get_objects()[idx].prim_path.empty());
 }
 
 TEST_CASE("free_light_slot removes from prim_slots") {
@@ -103,12 +104,12 @@ TEST_CASE("free_light_slot removes from prim_slots") {
     auto scope = world.begin_sync();
 
     auto idx = scope.alloc_light_slot();
-    world.lights[idx].prim_path = "/World/Sun";
-    world.prim_slots["/World/Sun"] = PrimSlot{PrimSlot::Kind::Light, idx};
+    scope.light(idx).prim_path = "/World/Sun";
+    scope.set_prim_slot("/World/Sun", PrimSlot{PrimSlot::Kind::Light, idx});
 
     scope.free_light_slot(idx);
     CHECK(world.find_light_by_prim("/World/Sun") == -1);
-    CHECK(world.lights[idx].active == false);
+    CHECK(world.get_lights()[idx].active == false);
 }
 
 TEST_CASE("clear resets everything") {
@@ -117,12 +118,12 @@ TEST_CASE("clear resets everything") {
         auto scope = world.begin_sync();
 
         auto o = scope.alloc_object_slot();
-        world.objects[o].prim_path = "/A";
-        world.prim_slots["/A"] = PrimSlot{PrimSlot::Kind::Object, o};
+        scope.object(o).prim_path = "/A";
+        scope.set_prim_slot("/A", PrimSlot{PrimSlot::Kind::Object, o});
 
         auto l = scope.alloc_light_slot();
-        world.lights[l].prim_path = "/B";
-        world.prim_slots["/B"] = PrimSlot{PrimSlot::Kind::Light, l};
+        scope.light(l).prim_path = "/B";
+        scope.set_prim_slot("/B", PrimSlot{PrimSlot::Kind::Light, l});
 
         scope.alloc_mesh_slot();
 
@@ -132,11 +133,10 @@ TEST_CASE("clear resets everything") {
 
     world.clear();
 
-    CHECK(world.objects.empty());
-    CHECK(world.meshes.empty());
-    CHECK(world.lights.empty());
-    CHECK(world.materials.empty());
-    CHECK(world.prim_slots.empty());
+    CHECK(world.get_objects().empty());
+    CHECK(world.get_meshes().empty());
+    CHECK(world.get_lights().empty());
+    CHECK(world.get_materials().empty());
 }
 
 TEST_CASE("active flag defaults to true on alloc") {
@@ -144,10 +144,10 @@ TEST_CASE("active flag defaults to true on alloc") {
     auto scope = world.begin_sync();
 
     auto o = scope.alloc_object_slot();
-    CHECK(world.objects[o].active == true);
+    CHECK(world.get_objects()[o].active == true);
 
     auto l = scope.alloc_light_slot();
-    CHECK(world.lights[l].active == true);
+    CHECK(world.get_lights()[l].active == true);
 }
 
 TEST_CASE("active flag is false after free, true after re-alloc") {
@@ -156,29 +156,76 @@ TEST_CASE("active flag is false after free, true after re-alloc") {
 
     auto o = scope.alloc_object_slot();
     scope.free_object_slot(o);
-    CHECK(world.objects[o].active == false);
+    CHECK(world.get_objects()[o].active == false);
 
     auto o2 = scope.alloc_object_slot();
     CHECK(o2 == o);
-    CHECK(world.objects[o2].active == true);
+    CHECK(world.get_objects()[o2].active == true);
 
     auto l = scope.alloc_light_slot();
     scope.free_light_slot(l);
-    CHECK(world.lights[l].active == false);
+    CHECK(world.get_lights()[l].active == false);
 
     auto l2 = scope.alloc_light_slot();
     CHECK(l2 == l);
-    CHECK(world.lights[l2].active == true);
+    CHECK(world.get_lights()[l2].active == true);
 }
 
 TEST_CASE("SyncScope bumps mesh_version once") {
     RenderWorld world;
-    auto initial = world.mesh_version;
+    auto initial = world.get_mesh_version();
     {
         auto scope = world.begin_sync();
         scope.alloc_object_slot();
         scope.alloc_object_slot();
         scope.alloc_mesh_slot();
     }
-    CHECK(world.mesh_version == initial + 1);
+    CHECK(world.get_mesh_version() == initial + 1);
+}
+
+TEST_CASE("dirty light tracking") {
+    RenderWorld world;
+
+    SUBCASE("alloc marks slot dirty") {
+        auto scope = world.begin_sync();
+        auto l = scope.alloc_light_slot();
+        auto dirty = world.get_dirty_lights();
+        REQUIRE(dirty.size() > l);
+        CHECK(dirty[l] != 0);
+    }
+
+    SUBCASE("clear_dirty_lights resets all bits") {
+        auto scope = world.begin_sync();
+        scope.alloc_light_slot();
+        scope.alloc_light_slot();
+        world.clear_dirty_lights();
+        auto dirty = world.get_dirty_lights();
+        for (std::size_t i = 0; i < dirty.size(); ++i) {
+            CHECK(dirty[i] == 0);
+        }
+    }
+
+    SUBCASE("free marks slot dirty") {
+        auto scope = world.begin_sync();
+        auto l = scope.alloc_light_slot();
+        world.clear_dirty_lights();
+        scope.free_light_slot(l);
+        auto dirty = world.get_dirty_lights();
+        CHECK(dirty[l] != 0);
+    }
+
+    SUBCASE("for_each_prim iterates all slots") {
+        auto scope = world.begin_sync();
+        auto o = scope.alloc_object_slot();
+        scope.object(o).prim_path = "/Obj";
+        scope.set_prim_slot("/Obj", PrimSlot{PrimSlot::Kind::Object, o});
+
+        auto l = scope.alloc_light_slot();
+        scope.light(l).prim_path = "/Light";
+        scope.set_prim_slot("/Light", PrimSlot{PrimSlot::Kind::Light, l});
+
+        int count = 0;
+        world.for_each_prim([&](std::string_view, PrimSlot) { ++count; });
+        CHECK(count == 2);
+    }
 }
