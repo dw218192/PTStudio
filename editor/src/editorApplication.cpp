@@ -561,7 +561,12 @@ auto EditorApplication::draw_object_panel() noexcept -> void {
         auto const& label = light.prim_path.empty() ? std::to_string(i) : light.prim_path;
         bool selected = m_selection.is_light() && m_selection.index == i;
         if (ImGui::Selectable(label.c_str(), selected)) {
-            m_selection = selected ? Selection{} : Selection{rendering::PrimSlot::Kind::Light, i};
+            if (selected) {
+                m_selection.clear();
+            } else {
+                m_selection = {rendering::PrimSlot::Kind::Light, i};
+                if (m_stage && !light.prim_path.empty()) normalize_xform_ops(light.prim_path);
+            }
         }
     }
 }
@@ -614,72 +619,76 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
         draw_light_gizmos(m_camera.view_matrix(), m_camera.projection_matrix(aspect));
     }
 
-    // ── ImGuizmo gizmo (objects only) ──
-    if (m_selection.is_object() && m_selection.index < static_cast<int>(m_world.objects.size()) &&
-        m_viewport_width > 0 && m_viewport_height > 0) {
-        float aspect = static_cast<float>(m_viewport_width) / static_cast<float>(m_viewport_height);
-        auto view_mat = m_camera.view_matrix();
-        auto proj_mat = m_camera.projection_matrix(aspect);
+    // ── ImGuizmo gizmo (objects and lights) ──
+    {
+        glm::mat4* selected_transform = nullptr;
+        std::string* selected_prim_path = nullptr;
 
-        auto& obj = m_world.objects[m_selection.index];
-
-        ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList());
-        ImGuizmo::SetRect(m_viewport_x, m_viewport_y, static_cast<float>(m_viewport_width),
-                          static_cast<float>(m_viewport_height));
-
-        ImGuizmo::OPERATION op = ImGuizmo::TRANSLATE;
-        switch (m_gizmo_op) {
-            case GizmoOp::Translate:
-                op = ImGuizmo::TRANSLATE;
-                break;
-            case GizmoOp::Rotate:
-                op = ImGuizmo::ROTATE;
-                break;
-            case GizmoOp::Scale:
-                op = ImGuizmo::SCALE;
-                break;
+        if (m_selection.is_object() &&
+            m_selection.index < static_cast<int>(m_world.objects.size())) {
+            selected_transform = &m_world.objects[m_selection.index].transform;
+            selected_prim_path = &m_world.objects[m_selection.index].prim_path;
+        } else if (m_selection.is_light() &&
+                   m_selection.index < static_cast<int>(m_world.lights.size())) {
+            selected_transform = &m_world.lights[m_selection.index].transform;
+            selected_prim_path = &m_world.lights[m_selection.index].prim_path;
         }
 
-        // Use a temporary matrix so ImGuizmo doesn't directly modify RenderWorld.
-        // The notice handler is the single source of truth for RenderWorld transforms.
-        glm::mat4 gizmo_transform = obj.transform;
-        ImGuizmo::Manipulate(glm::value_ptr(view_mat), glm::value_ptr(proj_mat), op,
-                             ImGuizmo::WORLD, glm::value_ptr(gizmo_transform));
+        if (selected_transform && m_viewport_width > 0 && m_viewport_height > 0) {
+            float aspect =
+                static_cast<float>(m_viewport_width) / static_cast<float>(m_viewport_height);
+            auto view_mat = m_camera.view_matrix();
+            auto proj_mat = m_camera.projection_matrix(aspect);
 
-        // Write to USD stage only — the ObjectsChanged notice will update RenderWorld
-        if (ImGuizmo::IsUsing() && m_stage) {
-            auto prim = m_stage->GetPrimAtPath(pxr::SdfPath(obj.prim_path));
-            INVARIANT_MSG(prim.IsValid(),
-                          "prim_path on RenderObject must reference a valid USD prim");
+            ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList());
+            ImGuizmo::SetRect(m_viewport_x, m_viewport_y, static_cast<float>(m_viewport_width),
+                              static_cast<float>(m_viewport_height));
 
-            pxr::UsdGeomXformable xformable(prim);
-            INVARIANT_MSG(xformable, "selected prim must be UsdGeomXformable");
-
-            // ImGuizmo outputs a world-space matrix.  Convert to local space
-            // by removing the parent's world transform so we don't double-count
-            // ancestor contributions when USD recomposes.
-            pxr::GfMatrix4d gf_world;
-            for (int i = 0; i < 4; ++i)
-                for (int j = 0; j < 4; ++j)
-                    gf_world[i][j] = static_cast<double>(gizmo_transform[i][j]);
-
-            pxr::GfMatrix4d parent_world;
-            if (auto parent = prim.GetParent(); parent && parent != m_stage->GetPseudoRoot()) {
-                parent_world = pxr::UsdGeomXformable(parent).ComputeLocalToWorldTransform(
-                    pxr::UsdTimeCode::Default());
-            } else {
-                parent_world.SetIdentity();
+            ImGuizmo::OPERATION op = ImGuizmo::TRANSLATE;
+            switch (m_gizmo_op) {
+                case GizmoOp::Translate:
+                    op = ImGuizmo::TRANSLATE;
+                    break;
+                case GizmoOp::Rotate:
+                    op = ImGuizmo::ROTATE;
+                    break;
+                case GizmoOp::Scale:
+                    op = ImGuizmo::SCALE;
+                    break;
             }
-            pxr::GfMatrix4d local_mat = gf_world * parent_world.GetInverse();
 
-            // Xform ops are normalized at selection time; a single TypeTransform op
-            // must exist by the time the user drags the gizmo.
-            bool reset_xform_stack = false;
-            auto ops = xformable.GetOrderedXformOps(&reset_xform_stack);
-            INVARIANT_MSG(
-                ops.size() == 1 && ops[0].GetOpType() == pxr::UsdGeomXformOp::TypeTransform,
-                "xform ops must be normalized to a single TypeTransform before gizmo use");
-            ops[0].Set(local_mat);
+            glm::mat4 gizmo_transform = *selected_transform;
+            ImGuizmo::Manipulate(glm::value_ptr(view_mat), glm::value_ptr(proj_mat), op,
+                                 ImGuizmo::WORLD, glm::value_ptr(gizmo_transform));
+
+            if (ImGuizmo::IsUsing() && m_stage) {
+                auto prim = m_stage->GetPrimAtPath(pxr::SdfPath(*selected_prim_path));
+                INVARIANT_MSG(prim.IsValid(), "selected prim_path must reference a valid USD prim");
+
+                pxr::UsdGeomXformable xformable(prim);
+                INVARIANT_MSG(xformable, "selected prim must be UsdGeomXformable");
+
+                pxr::GfMatrix4d gf_world;
+                for (int i = 0; i < 4; ++i)
+                    for (int j = 0; j < 4; ++j)
+                        gf_world[i][j] = static_cast<double>(gizmo_transform[i][j]);
+
+                pxr::GfMatrix4d parent_world;
+                if (auto parent = prim.GetParent(); parent && parent != m_stage->GetPseudoRoot()) {
+                    parent_world = pxr::UsdGeomXformable(parent).ComputeLocalToWorldTransform(
+                        pxr::UsdTimeCode::Default());
+                } else {
+                    parent_world.SetIdentity();
+                }
+                pxr::GfMatrix4d local_mat = gf_world * parent_world.GetInverse();
+
+                bool reset_xform_stack = false;
+                auto ops = xformable.GetOrderedXformOps(&reset_xform_stack);
+                INVARIANT_MSG(
+                    ops.size() == 1 && ops[0].GetOpType() == pxr::UsdGeomXformOp::TypeTransform,
+                    "xform ops must be normalized to a single TypeTransform before gizmo use");
+                ops[0].Set(local_mat);
+            }
         }
     }
 }
@@ -726,15 +735,13 @@ void EditorApplication::draw_light_gizmos(const glm::mat4& view_mat, const glm::
         // Click-to-select
         if (mouse_clicked && mouse_pos.x >= p_min.x && mouse_pos.x <= p_max.x &&
             mouse_pos.y >= p_min.y && mouse_pos.y <= p_max.y) {
-            m_selection =
-                is_selected ? Selection{} : Selection{rendering::PrimSlot::Kind::Light, i};
+            if (is_selected) {
+                m_selection.clear();
+            } else {
+                m_selection = {rendering::PrimSlot::Kind::Light, i};
+                if (m_stage && !light.prim_path.empty()) normalize_xform_ops(light.prim_path);
+            }
             is_selected = m_selection.is_light() && m_selection.index == i;
-        }
-
-        // Draw icon with selection highlight
-        if (is_selected) {
-            draw_list->AddRect(ImVec2(p_min.x - 2, p_min.y - 2), ImVec2(p_max.x + 2, p_max.y + 2),
-                               IM_COL32(255, 200, 50, 255), 0.0f, 0, 2.0f);
         }
         draw_list->AddImage(reinterpret_cast<ImTextureID>(m_light_icon_view), p_min, p_max);
     }
