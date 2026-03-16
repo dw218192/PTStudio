@@ -156,7 +156,9 @@ class HelloApp : public pts::WindowedApplication {
             .present()
             .execute([&](WGPURenderPassEncoder pass) {
                 wgpuRenderPassEncoderSetPipeline(pass, m_pipeline->handle());
-                for (const auto& obj : m_world.objects) {
+                auto objects = m_world.get_objects();
+                auto meshes = m_world.get_meshes();
+                for (const auto& obj : objects) {
                     Uniforms uniforms;
                     uniforms.mvp = vp * obj.transform;
                     uniforms.time = t * m_time_scale;
@@ -165,7 +167,7 @@ class HelloApp : public pts::WindowedApplication {
                                          sizeof(uniforms));
                     wgpuRenderPassEncoderSetBindGroup(pass, 0, m_bind_group, 0, nullptr);
 
-                    const auto& mesh = m_world.meshes[obj.mesh_index];
+                    const auto& mesh = meshes[obj.mesh_index];
                     wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh.vertex_buffer.handle(), 0,
                                                          mesh.vertex_buffer.size());
                     wgpuRenderPassEncoderSetIndexBuffer(pass, mesh.index_buffer.handle(),

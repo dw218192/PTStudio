@@ -52,6 +52,23 @@ static constexpr uint32_t k_min_material_buffer_size = 32;
 static constexpr uint32_t k_min_light_buffer_size = 48;
 static constexpr uint32_t k_light_cache_key = UINT32_MAX;
 
+static GpuLight to_gpu_light(const rendering::Light& light) {
+    GpuLight gl{};
+    gl.type = static_cast<uint32_t>(light.type);
+    gl.color = light.color;
+    gl.intensity = light.intensity;
+    gl.radius = light.radius;
+    gl.width = light.width;
+    gl.height = light.height;
+
+    if (light.type == rendering::Light::Type::Distant) {
+        gl.direction_or_pos = light.direction;
+    } else {
+        gl.direction_or_pos = glm::vec3(light.transform[3]);
+    }
+    return gl;
+}
+
 static WGPUBindGroup create_bind_group(WGPUDevice device, WGPUBindGroupLayout layout,
                                        WGPUBuffer uniform_buf, WGPUBuffer material_buf,
                                        std::size_t material_buf_size, WGPUBuffer light_buf,
@@ -209,14 +226,16 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
     PRECONDITION(is_ready());
     auto& ready = std::get<Ready>(m_state);
 
-    auto object_count = static_cast<uint32_t>(ctx.world.objects.size());
+    auto objects = ctx.world.get_objects();
+    auto object_count = static_cast<uint32_t>(objects.size());
     bool bind_group_dirty = false;
     if (object_count > 0) {
         bind_group_dirty = ensure_capacity(ctx.device, object_count);
     }
 
     // Upload materials to SSBO, reallocating if needed
-    auto material_count = static_cast<uint32_t>(ctx.world.materials.size());
+    auto materials = ctx.world.get_materials();
+    auto material_count = static_cast<uint32_t>(materials.size());
     auto required_material_size = std::max(static_cast<std::size_t>(k_min_material_buffer_size),
                                            material_count * sizeof(rendering::Material));
 
@@ -229,33 +248,22 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
     }
 
     if (material_count > 0) {
-        wgpuQueueWriteBuffer(ctx.queue, ready.material_buffer.handle(), 0,
-                             ctx.world.materials.data(),
+        wgpuQueueWriteBuffer(ctx.queue, ready.material_buffer.handle(), 0, materials.data(),
                              material_count * sizeof(rendering::Material));
     }
 
     // Build GPU light buffer via version-tracked cache
+    auto lights = ctx.world.get_lights();
+    auto dirty_lights = ctx.world.get_dirty_lights();
+    auto light_version = ctx.world.get_light_version();
+
     auto& cached_lights =
-        cache_get<CachedLights>(k_light_cache_key, ctx.world.light_version, [&]() -> CachedLights {
+        cache_get<CachedLights>(k_light_cache_key, light_version, [&]() -> CachedLights {
             // Collect active lights
             std::vector<GpuLight> gpu_lights;
-            for (const auto& light : ctx.world.lights) {
+            for (const auto& light : lights) {
                 if (!light.active) continue;
-                GpuLight gl{};
-                gl.type = static_cast<uint32_t>(light.type);
-                gl.color = light.color;
-                gl.intensity = light.intensity;
-                gl.radius = light.radius;
-                gl.width = light.width;
-                gl.height = light.height;
-
-                if (light.type == rendering::Light::Type::Distant) {
-                    gl.direction_or_pos = light.direction;
-                } else {
-                    // Position from the translation column of the transform
-                    gl.direction_or_pos = glm::vec3(light.transform[3]);
-                }
-                gpu_lights.push_back(gl);
+                gpu_lights.push_back(to_gpu_light(light));
             }
 
             // Default fallback: single distant light
@@ -278,6 +286,26 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
 
             return CachedLights{std::move(buf), static_cast<uint32_t>(gpu_lights.size())};
         });
+
+    // Partial SSBO update: if buffer exists and size hasn't changed, write only dirty slots
+    if (cached_lights.buffer.handle() && !dirty_lights.empty()) {
+        // Build a mapping from light array index to active-light GPU index
+        // (the SSBO only contains active lights, so indices differ)
+        uint32_t gpu_idx = 0;
+        for (uint32_t i = 0; i < static_cast<uint32_t>(lights.size()); ++i) {
+            if (!lights[i].active) continue;
+            if (i < static_cast<uint32_t>(dirty_lights.size()) && dirty_lights[i]) {
+                auto gl = to_gpu_light(lights[i]);
+                wgpuQueueWriteBuffer(ctx.queue, cached_lights.buffer.handle(),
+                                     gpu_idx * sizeof(GpuLight), &gl, sizeof(GpuLight));
+            }
+            ++gpu_idx;
+        }
+        // const_cast is needed because PassContext holds a const ref, but we
+        // need to clear dirty state after consuming it. This is intentional —
+        // clear_dirty_lights is a logical-const operation on rendering state.
+        const_cast<rendering::RenderWorld&>(ctx.world).clear_dirty_lights();
+    }
 
     // Rebuild bind group if material or light buffers changed
     if (bind_group_dirty || ready.last_light_buf != cached_lights.buffer.handle()) {
@@ -317,8 +345,8 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
     const auto& world = ctx.world;
 
     for (uint32_t i = 0; i < object_count; ++i) {
-        if (!world.objects[i].active) continue;
-        const auto& obj = world.objects[i];
+        if (!objects[i].active) continue;
+        const auto& obj = objects[i];
         ForwardUniforms u{};
         u.mvp = proj_mat * view_mat * obj.transform;
         u.model = obj.transform;
@@ -331,12 +359,14 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
 
     fg.add_pass("forward").color(color).depth(depth).execute(
         [=, &world](WGPURenderPassEncoder pass) {
+            auto objs = world.get_objects();
+            auto meshes = world.get_meshes();
             wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
-            for (uint32_t i = 0; i < static_cast<uint32_t>(world.objects.size()); ++i) {
-                if (!world.objects[i].active) continue;
+            for (uint32_t i = 0; i < static_cast<uint32_t>(objs.size()); ++i) {
+                if (!objs[i].active) continue;
                 uint32_t dyn_offset = i * k_uniform_align;
                 wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 1, &dyn_offset);
-                const auto& mesh = world.meshes[world.objects[i].mesh_index];
+                const auto& mesh = meshes[objs[i].mesh_index];
                 wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh.vertex_buffer.handle(), 0,
                                                      mesh.vertex_buffer.size());
                 wgpuRenderPassEncoderSetIndexBuffer(pass, mesh.index_buffer.handle(),

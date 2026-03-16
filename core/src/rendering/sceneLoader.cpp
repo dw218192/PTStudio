@@ -49,40 +49,13 @@ void remove_prim(SyncScope& scope, const pxr::SdfPath& prim_path) {
     auto path_text = prim_path.GetText();
     int obj_idx = world.find_object_by_prim(path_text);
     if (obj_idx >= 0) {
-        scope.free_mesh_slot(world.objects[obj_idx].mesh_index);
+        scope.free_mesh_slot(scope.object(static_cast<uint32_t>(obj_idx)).mesh_index);
         scope.free_object_slot(static_cast<uint32_t>(obj_idx));
         return;
     }
     int light_idx = world.find_light_by_prim(path_text);
     if (light_idx >= 0) {
         scope.free_light_slot(static_cast<uint32_t>(light_idx));
-    }
-}
-
-void update_transforms(RenderWorld& world, const pxr::UsdStageRefPtr& stage,
-                       const std::vector<pxr::SdfPath>& dirty_paths) {
-    for (const auto& dirty_path : dirty_paths) {
-        for (const auto& [path, slot] : world.prim_slots) {
-            auto slot_path = pxr::SdfPath(path);
-            if (!slot_path.HasPrefix(dirty_path)) continue;
-
-            auto prim = stage->GetPrimAtPath(slot_path);
-            if (!prim.IsValid()) continue;
-
-            auto xf = compute_world_transform(prim);
-
-            if (slot.kind == PrimSlot::Kind::Object) {
-                world.objects[slot.index].transform = xf;
-            } else {
-                auto& light = world.lights[slot.index];
-                light.transform = xf;
-                if (light.type == Light::Type::Distant) {
-                    glm::vec4 local_dir(0.0f, 0.0f, -1.0f, 0.0f);
-                    light.direction = glm::normalize(glm::vec3(xf * local_dir));
-                }
-                ++world.light_version;
-            }
-        }
     }
 }
 

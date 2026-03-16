@@ -140,12 +140,12 @@ void EditorApplication::process_dirty_prims() {
             for (const auto& resync_path : m_resync_paths) {
                 // Handle ancestor resyncs: resync children under this path
                 std::vector<pxr::SdfPath> children_to_resync;
-                for (const auto& [path, slot] : m_world.prim_slots) {
-                    auto child = pxr::SdfPath(path);
+                m_world.for_each_prim([&](std::string_view path, rendering::PrimSlot) {
+                    auto child = pxr::SdfPath(std::string{path});
                     if (child.HasPrefix(resync_path) && child != resync_path) {
                         children_to_resync.push_back(child);
                     }
-                }
+                });
 
                 // Sync the prim itself
                 rendering::sync_prim(scope, m_stage, device, resync_path);
@@ -173,7 +173,7 @@ void EditorApplication::process_dirty_prims() {
             std::unique(m_dirty_xform_paths.begin(), m_dirty_xform_paths.end()),
             m_dirty_xform_paths.end());
 
-        rendering::update_transforms(m_world, m_stage, m_dirty_xform_paths);
+        m_world.update_transforms(m_stage, m_dirty_xform_paths);
         m_dirty_xform_paths.clear();
     }
 }
@@ -240,7 +240,7 @@ void EditorApplication::on_ready() {
         m_stage = pxr::UsdStage::Open(layer);
         rendering::populate_from_stage(m_world, m_stage, device);
         register_stage_listener();
-        log(LogLevel::Info, "Loaded default scene ({} objects)", m_world.objects.size());
+        log(LogLevel::Info, "Loaded default scene ({} objects)", m_world.get_objects().size());
     } else {
         log(LogLevel::Warning, "Missing embedded resource: assets/scenes/primitives.usda");
     }
@@ -408,11 +408,12 @@ void EditorApplication::render(FrameContext& ctx) {
     m_picking_readback.tick();
 
     if (auto picked_id = m_picking_readback.try_read_u32()) {
+        auto objects = m_world.get_objects();
         if (*picked_id == UINT32_MAX) {
             m_selected_prim = pxr::SdfPath();
-        } else if (*picked_id < static_cast<uint32_t>(m_world.objects.size()) &&
-                   m_world.objects[*picked_id].active) {
-            auto& path = m_world.objects[*picked_id].prim_path;
+        } else if (*picked_id < static_cast<uint32_t>(objects.size()) &&
+                   objects[*picked_id].active) {
+            auto& path = objects[*picked_id].prim_path;
             m_selected_prim = pxr::SdfPath(path);
             if (m_stage) {
                 normalize_xform_ops(path);
@@ -504,7 +505,7 @@ auto EditorApplication::draw_scene_panel() noexcept -> void {
                 rendering::populate_from_stage(m_world, m_stage, webgpu_context()->device());
                 register_stage_listener();
                 log(LogLevel::Info, "Loaded scene: {} ({} objects)", result.name,
-                    m_world.objects.size());
+                    m_world.get_objects().size());
             });
     }
 }
@@ -672,8 +673,9 @@ void EditorApplication::draw_light_gizmos(const glm::mat4& view_mat, const glm::
     auto mouse_pos = ImGui::GetMousePos();
     bool mouse_clicked = ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !ImGuizmo::IsOver();
 
-    for (int i = 0; i < static_cast<int>(m_world.lights.size()); ++i) {
-        const auto& light = m_world.lights[i];
+    auto lights = m_world.get_lights();
+    for (int i = 0; i < static_cast<int>(lights.size()); ++i) {
+        const auto& light = lights[i];
         if (!light.active) continue;
 
         if (light.type == rendering::Light::Type::Dome) continue;

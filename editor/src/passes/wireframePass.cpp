@@ -146,7 +146,10 @@ void WireframePass::add_to_frame_graph(rendering::FrameGraph& fg,
     PRECONDITION(is_ready());
     auto& ready = std::get<Ready>(m_state);
 
-    auto object_count = static_cast<uint32_t>(ctx.world.objects.size());
+    auto objects = ctx.world.get_objects();
+    auto meshes = ctx.world.get_meshes();
+    auto mesh_version = ctx.world.get_mesh_version();
+    auto object_count = static_cast<uint32_t>(objects.size());
     if (object_count > 0) {
         ensure_capacity(ctx.device, object_count);
     }
@@ -175,10 +178,10 @@ void WireframePass::add_to_frame_graph(rendering::FrameGraph& fg,
 
     // Lazily build wireframe index buffers via the per-pass mesh cache.
     for (uint32_t i = 0; i < object_count; ++i) {
-        if (!world.objects[i].active) continue;
-        const auto& obj = world.objects[i];
-        cache_get<WireframeMesh>(obj.mesh_index, world.mesh_version, [&]() {
-            const auto& mesh = world.meshes[obj.mesh_index];
+        if (!objects[i].active) continue;
+        const auto& obj = objects[i];
+        cache_get<WireframeMesh>(obj.mesh_index, mesh_version, [&]() {
+            const auto& mesh = meshes[obj.mesh_index];
             auto indices = expand_wireframe_indices(mesh.cpu_indices);
             auto buf = ctx.device.create_buffer(
                 indices.size() * sizeof(uint32_t),
@@ -190,26 +193,26 @@ void WireframePass::add_to_frame_graph(rendering::FrameGraph& fg,
     }
 
     for (uint32_t i = 0; i < object_count; ++i) {
-        if (!world.objects[i].active) continue;
-        const auto& obj = world.objects[i];
+        if (!objects[i].active) continue;
+        const auto& obj = objects[i];
         WireframeUniforms u{};
         u.mvp = proj_mat * view_mat * obj.transform;
         wgpuQueueWriteBuffer(queue, uniform_buf, i * k_uniform_align, &u, sizeof(u));
     }
 
-    auto mesh_version = world.mesh_version;
     fg.add_pass("wireframe")
         .color(color)
         .depth(depth)
         .execute([=, &world](WGPURenderPassEncoder pass) {
+            auto objs = world.get_objects();
+            auto mshs = world.get_meshes();
             wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
-            for (uint32_t i = 0; i < static_cast<uint32_t>(world.objects.size()); ++i) {
-                if (!world.objects[i].active) continue;
+            for (uint32_t i = 0; i < static_cast<uint32_t>(objs.size()); ++i) {
+                if (!objs[i].active) continue;
                 uint32_t dyn_offset = i * k_uniform_align;
                 wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 1, &dyn_offset);
-                const auto& mesh = world.meshes[world.objects[i].mesh_index];
-                auto& wf =
-                    cache_get<WireframeMesh>(world.objects[i].mesh_index, mesh_version, nullptr);
+                const auto& mesh = mshs[objs[i].mesh_index];
+                auto& wf = cache_get<WireframeMesh>(objs[i].mesh_index, mesh_version, nullptr);
                 wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh.vertex_buffer.handle(), 0,
                                                      mesh.vertex_buffer.size());
                 wgpuRenderPassEncoderSetIndexBuffer(pass, wf.index_buffer.handle(),
