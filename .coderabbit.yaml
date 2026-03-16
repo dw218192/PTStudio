@@ -16,6 +16,12 @@ reviews:
         - Namespaces: snake_case (e.g. pts::webgpu)
         - Macros: UPPER_SNAKE_CASE
         Do NOT suggest renaming k_snake_case constants to kCamelCase.
+
+        File naming conventions:
+        - Source/header files: lowerCamelCase (e.g. renderWorld.cpp, pipelineBuilder.h)
+        - Directories: snake_case (e.g. rendering, webgpu)
+        - Test files: testLowerCamelCase (e.g. testMeshCache.cpp, testRenderWorldSlotMap.cpp)
+        Flag any new .cpp or .h files that use snake_case naming (e.g. my_file.cpp should be myFile.cpp).
 knowledge_base:
   code_guidelines:
     filePatterns:

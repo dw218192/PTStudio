@@ -1,5 +1,7 @@
+#include <core/rendering/adapterHelpers.h>
 #include <core/rendering/adapters/adapterUtils.h>
 #include <core/rendering/adapters/coneAdapter.h>
+#include <core/rendering/renderWorld.h>
 #include <pxr/imaging/geomUtil/coneMeshGenerator.h>
 #include <pxr/imaging/hd/meshTopology.h>
 #include <pxr/imaging/hd/meshUtil.h>
@@ -27,12 +29,12 @@ struct AxisMapping {
 inline AxisMapping get_axis_mapping(const pxr::TfToken& axis) {
     if (axis == pxr::UsdGeomTokens->x) return {0, 1, 2, false};
     if (axis == pxr::UsdGeomTokens->z) return {2, 0, 1, false};
-    return {1, 0, 2, true};  // Y — odd permutation
+    return {1, 0, 2, true};
 }
 }  // namespace
 
-const ConeAdapter& ConeAdapter::instance() {
-    static const ConeAdapter s_instance;
+ConeAdapter& ConeAdapter::instance() {
+    static ConeAdapter s_instance;
     return s_instance;
 }
 
@@ -40,7 +42,7 @@ bool ConeAdapter::can_adapt(const pxr::UsdPrim& prim) const {
     return prim.IsA<pxr::UsdGeomCone>();
 }
 
-std::optional<AdapterResult> ConeAdapter::adapt(const pxr::UsdPrim& prim) const {
+void ConeAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device& device) {
     pxr::UsdGeomCone cone(prim);
 
     double radius_d = 1.0;
@@ -84,7 +86,6 @@ std::optional<AdapterResult> ConeAdapter::adapt(const pxr::UsdPrim& prim) const 
         apply_display_color(vtx, colors);
     }
 
-    // Triangulate via HdMeshUtil
     pxr::HdMeshTopology hd_topo(pxr::PxOsdOpenSubdivTokens->none, pxr::UsdGeomTokens->rightHanded,
                                 topo.GetFaceVertexCounts(), topo.GetFaceVertexIndices());
     pxr::HdMeshUtil mesh_util(&hd_topo, pxr::SdfPath());
@@ -105,7 +106,7 @@ std::optional<AdapterResult> ConeAdapter::adapt(const pxr::UsdPrim& prim) const 
         }
     }
 
-    return MeshResult{std::move(vertices), std::move(indices)};
+    sync_object(prim, scope, device, vertices, indices);
 }
 
 }  // namespace pts::rendering

@@ -1,5 +1,7 @@
+#include <core/rendering/adapterHelpers.h>
 #include <core/rendering/adapters/adapterUtils.h>
 #include <core/rendering/adapters/cylinderAdapter.h>
+#include <core/rendering/renderWorld.h>
 #include <pxr/imaging/geomUtil/cylinderMeshGenerator.h>
 #include <pxr/imaging/hd/meshTopology.h>
 #include <pxr/imaging/hd/meshUtil.h>
@@ -17,23 +19,22 @@ namespace {
 constexpr size_t k_num_radial = 32;
 constexpr float k_pi = 3.14159265358979323846f;
 
-// GeomUtil generates along Z. This maps Z-aligned geometry to the requested axis.
 struct AxisMapping {
-    int along;          // index of the cylinder's longitudinal axis
-    int u_ax;           // first radial axis
-    int v_ax;           // second radial axis
-    bool flip_winding;  // true when the permutation is odd (flips handedness)
+    int along;
+    int u_ax;
+    int v_ax;
+    bool flip_winding;
 };
 
 inline AxisMapping get_axis_mapping(const pxr::TfToken& axis) {
     if (axis == pxr::UsdGeomTokens->x) return {0, 1, 2, false};
     if (axis == pxr::UsdGeomTokens->z) return {2, 0, 1, false};
-    return {1, 0, 2, true};  // Y — swapping Y↔Z is an odd permutation
+    return {1, 0, 2, true};
 }
 }  // namespace
 
-const CylinderAdapter& CylinderAdapter::instance() {
-    static const CylinderAdapter s_instance;
+CylinderAdapter& CylinderAdapter::instance() {
+    static CylinderAdapter s_instance;
     return s_instance;
 }
 
@@ -41,7 +42,7 @@ bool CylinderAdapter::can_adapt(const pxr::UsdPrim& prim) const {
     return prim.IsA<pxr::UsdGeomCylinder>();
 }
 
-std::optional<AdapterResult> CylinderAdapter::adapt(const pxr::UsdPrim& prim) const {
+void CylinderAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device& device) {
     pxr::UsdGeomCylinder cyl(prim);
 
     double radius_d = 1.0;
@@ -70,7 +71,6 @@ std::optional<AdapterResult> CylinderAdapter::adapt(const pxr::UsdPrim& prim) co
 
     float half_h = height * 0.5f;
 
-    // Build vertices: remap from Z-aligned to requested axis
     std::vector<Vertex> vertices(num_pts);
     for (size_t i = 0; i < num_pts; ++i) {
         Vertex& vtx = vertices[i];
@@ -88,7 +88,6 @@ std::optional<AdapterResult> CylinderAdapter::adapt(const pxr::UsdPrim& prim) co
         apply_display_color(vtx, colors);
     }
 
-    // Triangulate via HdMeshUtil
     pxr::HdMeshTopology hd_topo(pxr::PxOsdOpenSubdivTokens->none, pxr::UsdGeomTokens->rightHanded,
                                 topo.GetFaceVertexCounts(), topo.GetFaceVertexIndices());
     pxr::HdMeshUtil mesh_util(&hd_topo, pxr::SdfPath());
@@ -109,7 +108,7 @@ std::optional<AdapterResult> CylinderAdapter::adapt(const pxr::UsdPrim& prim) co
         }
     }
 
-    return MeshResult{std::move(vertices), std::move(indices)};
+    sync_object(prim, scope, device, vertices, indices);
 }
 
 }  // namespace pts::rendering

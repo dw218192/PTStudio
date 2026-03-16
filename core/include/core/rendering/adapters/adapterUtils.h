@@ -14,7 +14,7 @@ inline void apply_display_color(Vertex& v, const pxr::UsdGeomPrimvarsAPI& primva
 }
 
 // Reads displayColor primvar once, returns the array.
-inline pxr::VtVec3fArray read_display_color(const pxr::UsdPrim& prim) {
+inline pxr::VtVec3fArray read_display_color(pxr::UsdPrim prim) {
     auto primvars_api = pxr::UsdGeomPrimvarsAPI(prim);
     pxr::VtVec3fArray colors;
     auto color_pv = primvars_api.GetPrimvar(pxr::TfToken("displayColor"));

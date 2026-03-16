@@ -37,6 +37,16 @@ if(NOT EMSCRIPTEN)
     list(APPEND TEST_NAMES testMaterialBuffer)
     set(testMaterialBuffer_source testMaterialBuffer.cpp)
     set(testMaterialBuffer_libs core)
+
+    list(APPEND TEST_NAMES testPipelineBuilder)
+    set(testPipelineBuilder_source testPipelineBuilder.cpp)
+    set(testPipelineBuilder_libs core)
+
+    # Geometric adapter tests - sync() requires GPU for mesh upload
+    list(APPEND TEST_NAMES testGeometricAdapters)
+    set(testGeometricAdapters_source testGeometricAdapters.cpp)
+    set(testGeometricAdapters_libs core)
+    set(testGeometricAdapters_includes ${CMAKE_CURRENT_SOURCE_DIR}/generated)
 endif()
 
 # OpenUSD test - works on all platforms
@@ -45,11 +55,21 @@ set(testOpenUsd_source testOpenUsd.cpp)
 set(testOpenUsd_libs core)
 set(testOpenUsd_includes ${CMAKE_CURRENT_SOURCE_DIR}/generated)
 
-# Geometric adapter tests - works on all platforms (no GPU needed)
-list(APPEND TEST_NAMES testGeometricAdapters)
-set(testGeometricAdapters_source testGeometricAdapters.cpp)
-set(testGeometricAdapters_libs core)
-set(testGeometricAdapters_includes ${CMAKE_CURRENT_SOURCE_DIR}/generated)
+# Wireframe index expansion - works on all platforms (no GPU needed)
+list(APPEND TEST_NAMES testWireframeIndices)
+set(testWireframeIndices_source testWireframeIndices.cpp)
+set(testWireframeIndices_libs core)
+
+# Mesh cache service on IScenePass - works on all platforms (no GPU needed)
+list(APPEND TEST_NAMES testMeshCache)
+set(testMeshCache_source testMeshCache.cpp)
+set(testMeshCache_libs core)
+
+# RenderWorld slot map - works on all platforms (no GPU needed)
+list(APPEND TEST_NAMES testRenderWorldSlotMap)
+set(testRenderWorldSlotMap_source testRenderWorldSlotMap.cpp)
+set(testRenderWorldSlotMap_libs core)
+
 
 function(add_core_test target_name)
     message(STATUS "Building test: ${target_name}")

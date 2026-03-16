@@ -11,10 +11,10 @@ struct Uniforms {
     float4x4 model;
     float3 sun_dir;
     float time;
-    uint object_id;
     uint material_index;
     uint _pad1;
     uint _pad2;
+    uint _pad3;
 };
 
 [[vk::binding(0, 0)]]
@@ -47,13 +47,8 @@ VsOut vs_main(VsIn input) {
     return output;
 }
 
-struct FsOut {
-    float4 color    : SV_Target0;
-    uint   objectId : SV_Target1;
-};
-
 [shader("fragment")]
-FsOut fs_main(float3 world_normal : NORMAL, float3 color : COLOR) {
+float4 fs_main(float3 world_normal : NORMAL, float3 color : COLOR) : SV_Target0 {
     float3 n = normalize(world_normal);
     float ndotl = max(dot(n, u.sun_dir), 0.0);
 
@@ -66,8 +61,5 @@ FsOut fs_main(float3 world_normal : NORMAL, float3 color : COLOR) {
 
     float3 lit = ndotl * base_color + 0.15 * base_color;
 
-    FsOut output;
-    output.color = float4(lit, 1.0);
-    output.objectId = u.object_id;
-    return output;
+    return float4(lit, 1.0);
 }

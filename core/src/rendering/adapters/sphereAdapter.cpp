@@ -1,5 +1,7 @@
+#include <core/rendering/adapterHelpers.h>
 #include <core/rendering/adapters/adapterUtils.h>
 #include <core/rendering/adapters/sphereAdapter.h>
+#include <core/rendering/renderWorld.h>
 #include <pxr/imaging/geomUtil/sphereMeshGenerator.h>
 #include <pxr/imaging/hd/meshTopology.h>
 #include <pxr/imaging/hd/meshUtil.h>
@@ -20,8 +22,8 @@ constexpr size_t k_num_axial = 16;
 constexpr float k_pi = 3.14159265358979323846f;
 }  // namespace
 
-const SphereAdapter& SphereAdapter::instance() {
-    static const SphereAdapter s_instance;
+SphereAdapter& SphereAdapter::instance() {
+    static SphereAdapter s_instance;
     return s_instance;
 }
 
@@ -29,7 +31,7 @@ bool SphereAdapter::can_adapt(const pxr::UsdPrim& prim) const {
     return prim.IsA<pxr::UsdGeomSphere>();
 }
 
-std::optional<AdapterResult> SphereAdapter::adapt(const pxr::UsdPrim& prim) const {
+void SphereAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device& device) {
     pxr::UsdGeomSphere sphere(prim);
 
     double radius = 1.0;
@@ -47,8 +49,6 @@ std::optional<AdapterResult> SphereAdapter::adapt(const pxr::UsdPrim& prim) cons
     pxr::VtVec3fArray normals(num_pts);
     pxr::GeomUtilSphereMeshGenerator::GenerateNormals(normals.begin(), k_num_radial, k_num_axial);
 
-    // GeomUtil sphere: cross-sections in XY, pole along Z.
-    // Remap to Y-up: (x, y, z) -> (x, z, -y)
     std::vector<Vertex> vertices(num_pts);
     for (size_t i = 0; i < num_pts; ++i) {
         Vertex& vtx = vertices[i];
@@ -66,7 +66,6 @@ std::optional<AdapterResult> SphereAdapter::adapt(const pxr::UsdPrim& prim) cons
         apply_display_color(vtx, colors);
     }
 
-    // Triangulate via HdMeshUtil
     pxr::HdMeshTopology hd_topo(pxr::PxOsdOpenSubdivTokens->none, pxr::UsdGeomTokens->rightHanded,
                                 topo.GetFaceVertexCounts(), topo.GetFaceVertexIndices());
     pxr::HdMeshUtil mesh_util(&hd_topo, pxr::SdfPath());
@@ -82,7 +81,7 @@ std::optional<AdapterResult> SphereAdapter::adapt(const pxr::UsdPrim& prim) cons
         indices.push_back(static_cast<uint32_t>(tri[2]));
     }
 
-    return MeshResult{std::move(vertices), std::move(indices)};
+    sync_object(prim, scope, device, vertices, indices);
 }
 
 }  // namespace pts::rendering

@@ -118,7 +118,7 @@ endforeach()
 if (NOT EMSCRIPTEN)
 	target_link_libraries(${lib_name}
 		PRIVATE portable-file-dialogs::portable-file-dialogs
-		PUBLIC dawn::webgpu_dawn Boost::filesystem
+		PUBLIC dawn::webgpu_dawn Boost::filesystem Tracy::TracyClient
 		PRIVATE cxxopts::cxxopts
 		       Boost::stacktrace Boost::stacktrace_from_exception
 	)

@@ -161,6 +161,7 @@ class SlangcTool(RepoTool):
 
         shaders, errors = _resolve_slang_shaders(root, config, tokens, args)
         if errors:
+            logger.error(f"Shader resolution failed with {errors} error(s)")
             sys.exit(1)
         if not shaders:
             logger.warning("No Slang shaders configured.")
@@ -188,7 +189,23 @@ class SlangcTool(RepoTool):
                     "wgsl",
                 ]
                 cmd.extend(ctx.passthrough_args)
-                ShellCommand(cmd, env_script=conanbuild).exec(log_file=log_file)
+                shell_cmd = ShellCommand(cmd, env_script=conanbuild)
+                try:
+                    shell_cmd.exec(log_file=log_file)
+                except SystemExit as e:
+                    log_content = ""
+                    if log_file.exists():
+                        log_content = log_file.read_text().strip()
+                    if log_content:
+                        logger.error(f"slangc failed compiling {input_path} (exit {e.code}):")
+                        logger.error(log_content)
+                    else:
+                        logger.error(
+                            f"slangc failed compiling {input_path} "
+                            f"(exit {e.code}, no output)"
+                        )
+                    logger.error(f"Command: {' '.join(cmd)}")
+                    raise
                 compiled += 1
             else:
                 logger.info(f"Skipping up-to-date shader: {input_path}")

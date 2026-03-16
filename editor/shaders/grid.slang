@@ -84,15 +84,21 @@ FsOut fs_main(float3 near_point : NEAR_POINT, float3 far_point : FAR_POINT) {
     // ── axis highlighting ────────────────────────────────────────────
     float2 deriv = fwidth(coord);
 
-    // X axis (Z = 0) → red
+    // X axis (Z = 0) -> red, darker for negative X
     if (abs(coord.y) < deriv.y * 1.5) {
         color = float3(0.8, 0.15, 0.15);
+        if (coord.x < 0) {
+            color *= 0.2;
+        }
         alpha = max(alpha, fade * 0.7);
     }
 
-    // Z axis (X = 0) → blue
+    // Z axis (X = 0) -> blue, darker for negative Z
     if (abs(coord.x) < deriv.x * 1.5) {
         color = float3(0.15, 0.15, 0.8);
+        if (coord.y < 0) {
+            color *= 0.2;
+        }
         alpha = max(alpha, fade * 0.7);
     }
 

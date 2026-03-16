@@ -1,15 +1,15 @@
 #pragma once
 
-#include <core/rendering/schemaAdapter.h>
+#include <core/rendering/sceneAdapter.h>
 
 namespace pts::rendering {
 
-class SphereAdapter final : public ISchemaAdapter {
+class SphereAdapter final : public ISceneAdapter {
    public:
-    static const SphereAdapter& instance();
+    static SphereAdapter& instance();
 
     bool can_adapt(const pxr::UsdPrim& prim) const override;
-    std::optional<AdapterResult> adapt(const pxr::UsdPrim& prim) const override;
+    void sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device& device) override;
 
    private:
     SphereAdapter() = default;

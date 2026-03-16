@@ -1,5 +1,7 @@
+#include <core/rendering/adapterHelpers.h>
 #include <core/rendering/adapters/adapterUtils.h>
 #include <core/rendering/adapters/capsuleAdapter.h>
+#include <core/rendering/renderWorld.h>
 #include <pxr/imaging/geomUtil/capsuleMeshGenerator.h>
 #include <pxr/imaging/hd/meshTopology.h>
 #include <pxr/imaging/hd/meshUtil.h>
@@ -28,12 +30,12 @@ struct AxisMapping {
 inline AxisMapping get_axis_mapping(const pxr::TfToken& axis) {
     if (axis == pxr::UsdGeomTokens->x) return {0, 1, 2, false};
     if (axis == pxr::UsdGeomTokens->z) return {2, 0, 1, false};
-    return {1, 0, 2, true};  // Y — odd permutation
+    return {1, 0, 2, true};
 }
 }  // namespace
 
-const CapsuleAdapter& CapsuleAdapter::instance() {
-    static const CapsuleAdapter s_instance;
+CapsuleAdapter& CapsuleAdapter::instance() {
+    static CapsuleAdapter s_instance;
     return s_instance;
 }
 
@@ -41,7 +43,7 @@ bool CapsuleAdapter::can_adapt(const pxr::UsdPrim& prim) const {
     return prim.IsA<pxr::UsdGeomCapsule>();
 }
 
-std::optional<AdapterResult> CapsuleAdapter::adapt(const pxr::UsdPrim& prim) const {
+void CapsuleAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device& device) {
     pxr::UsdGeomCapsule capsule(prim);
 
     double radius_d = 0.5;
@@ -89,7 +91,6 @@ std::optional<AdapterResult> CapsuleAdapter::adapt(const pxr::UsdPrim& prim) con
         apply_display_color(vtx, colors);
     }
 
-    // Triangulate via HdMeshUtil
     pxr::HdMeshTopology hd_topo(pxr::PxOsdOpenSubdivTokens->none, pxr::UsdGeomTokens->rightHanded,
                                 topo.GetFaceVertexCounts(), topo.GetFaceVertexIndices());
     pxr::HdMeshUtil mesh_util(&hd_topo, pxr::SdfPath());
@@ -110,7 +111,7 @@ std::optional<AdapterResult> CapsuleAdapter::adapt(const pxr::UsdPrim& prim) con
         }
     }
 
-    return MeshResult{std::move(vertices), std::move(indices)};
+    sync_object(prim, scope, device, vertices, indices);
 }
 
 }  // namespace pts::rendering

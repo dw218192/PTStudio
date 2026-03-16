@@ -37,6 +37,7 @@ class RenderPipelineBuilder {
     auto sample_count(uint32_t count) -> RenderPipelineBuilder&;
     auto vertex_buffer(VertexBufferLayout layout) -> RenderPipelineBuilder&;
     auto pipeline_layout(WGPUPipelineLayout layout) -> RenderPipelineBuilder&;
+    auto no_fragment() -> RenderPipelineBuilder&;
 
     /// Configure vertex buffer layout from shader reflection metadata.
     /// T must have static constexpr stride, step_mode, and attributes members.
@@ -75,6 +76,7 @@ class RenderPipelineBuilder {
     uint32_t m_sample_count = 1;
     std::vector<VertexBufferLayout> m_vertex_buffers;
     WGPUPipelineLayout m_pipeline_layout = nullptr;
+    bool m_has_fragment = true;
 };
 
 class ComputePipelineBuilder {

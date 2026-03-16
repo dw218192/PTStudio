@@ -59,6 +59,8 @@ target_compile_definitions(developer_flags INTERFACE
     PTS_WINDOWING="${PTS_WINDOWING}"
     "PTS_WINDOWING_${PTS_WINDOWING}=1"
     $<$<CXX_COMPILER_ID:MSVC>:NOMINMAX>
+    $<$<AND:$<NOT:$<BOOL:${EMSCRIPTEN}>>,$<CONFIG:Debug>>:TRACY_ENABLE>
+    $<$<AND:$<NOT:$<BOOL:${EMSCRIPTEN}>>,$<CONFIG:Debug>>:TRACY_ON_DEMAND>
 )
 
 target_compile_features(developer_flags INTERFACE cxx_std_17)
@@ -131,6 +133,7 @@ if (NOT EMSCRIPTEN)
 
     find_package(Dawn REQUIRED)
     find_package(portable-file-dialogs REQUIRED)
+    find_package(Tracy REQUIRED)
 endif()
 
 # GUI libraries from Conan

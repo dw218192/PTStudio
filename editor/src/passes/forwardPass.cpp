@@ -1,6 +1,7 @@
-#include "forward_pass.h"
+#include "forwardPass.h"
 
 #include <core/diagnostics.h>
+#include <core/profiling.h>
 #include <core/rendering/camera.h>
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/passContext.h>
@@ -21,9 +22,8 @@ struct ForwardUniforms {
     glm::mat4 model;
     glm::vec3 sun_dir;
     float time;
-    uint32_t object_id;
     uint32_t material_index;
-    uint32_t _pad[2];
+    uint32_t _pad[3];
 };
 static_assert(sizeof(ForwardUniforms) == 160, "ForwardUniforms must match shader std140 layout");
 static_assert(ForwardPass::k_uniform_align >= sizeof(ForwardUniforms),
@@ -124,7 +124,6 @@ void ForwardPass::setup(const webgpu::Device& device) {
     auto pipeline = webgpu::RenderPipelineBuilder(device)
                         .shader(shader)
                         .color_format(WGPUTextureFormat_RGBA8Unorm)
-                        .color_format(WGPUTextureFormat_R32Uint, 1)
                         .depth_format(WGPUTextureFormat_Depth24Plus)
                         .depth_write(true)
                         .depth_compare(WGPUCompareFunction_Less)
@@ -172,6 +171,7 @@ void ForwardPass::ensure_capacity(const webgpu::Device& device, uint32_t object_
 }
 
 void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::PassContext& ctx) {
+    PTS_ZONE_SCOPED;
     PRECONDITION(is_ready());
     auto& ready = std::get<Ready>(m_state);
 
@@ -211,21 +211,12 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
     color_desc.format = WGPUTextureFormat_RGBA8Unorm;
     color_desc.clear_color = {0.15, 0.15, 0.18, 1.0};
 
-    rendering::TextureDesc picking_desc;
-    picking_desc.width = ctx.viewport_width;
-    picking_desc.height = ctx.viewport_height;
-    picking_desc.format = WGPUTextureFormat_R32Uint;
-    picking_desc.usage =
-        static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_CopySrc);
-    picking_desc.clear_color = {static_cast<double>(UINT32_MAX), 0, 0, 0};
-
     rendering::TextureDesc depth_desc;
     depth_desc.width = ctx.viewport_width;
     depth_desc.height = ctx.viewport_height;
     depth_desc.format = WGPUTextureFormat_Depth24Plus;
 
     auto color = fg.find_or_create("scene_color", color_desc);
-    auto picking_ids = fg.find_or_create("picking_ids", picking_desc);
     auto depth = fg.find_or_create("scene_depth", depth_desc);
 
     auto queue = ctx.queue;
@@ -240,24 +231,22 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
     // Write all per-object uniforms before encoding the render pass.
     // Each object gets its own aligned slice so dynamic offsets work correctly.
     for (uint32_t i = 0; i < object_count; ++i) {
+        if (!world.objects[i].active) continue;
         const auto& obj = world.objects[i];
         ForwardUniforms u{};
         u.mvp = proj_mat * view_mat * obj.transform;
         u.model = obj.transform;
         u.sun_dir = glm::normalize(glm::vec3(0.3f, 1.0f, 0.5f));
         u.time = elapsed_time;
-        u.object_id = i;
         u.material_index = obj.material_index;
         wgpuQueueWriteBuffer(queue, uniform_buf, i * k_uniform_align, &u, sizeof(u));
     }
 
-    fg.add_pass("forward")
-        .color(color)
-        .color(picking_ids)
-        .depth(depth)
-        .execute([=, &world](WGPURenderPassEncoder pass) {
+    fg.add_pass("forward").color(color).depth(depth).execute(
+        [=, &world](WGPURenderPassEncoder pass) {
             wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
             for (uint32_t i = 0; i < static_cast<uint32_t>(world.objects.size()); ++i) {
+                if (!world.objects[i].active) continue;
                 uint32_t dyn_offset = i * k_uniform_align;
                 wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 1, &dyn_offset);
                 const auto& mesh = world.meshes[world.objects[i].mesh_index];
