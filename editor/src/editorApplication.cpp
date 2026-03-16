@@ -166,38 +166,14 @@ void EditorApplication::process_dirty_prims() {
         m_resync_paths.clear();
     }
 
-    // Xform-only changes — update the prim itself and any descendants
+    // Xform-only changes — lightweight transform update (no mesh re-upload)
     if (!m_dirty_xform_paths.empty()) {
-        // Deduplicate
         std::sort(m_dirty_xform_paths.begin(), m_dirty_xform_paths.end());
         m_dirty_xform_paths.erase(
             std::unique(m_dirty_xform_paths.begin(), m_dirty_xform_paths.end()),
             m_dirty_xform_paths.end());
 
-        // Collect all prim_slots entries that are at or under any dirty path
-        for (const auto& dirty_path : m_dirty_xform_paths) {
-            for (const auto& [path, slot] : m_world.prim_slots) {
-                auto slot_path = pxr::SdfPath(path);
-                if (!slot_path.HasPrefix(dirty_path)) continue;
-
-                auto prim = m_stage->GetPrimAtPath(slot_path);
-                if (!prim.IsValid()) continue;
-
-                auto xf = rendering::compute_world_transform(prim);
-
-                if (slot.kind == rendering::PrimSlot::Kind::Object) {
-                    m_world.objects[slot.index].transform = xf;
-                } else {
-                    auto& light = m_world.lights[slot.index];
-                    light.transform = xf;
-                    if (light.type == rendering::Light::Type::Distant) {
-                        glm::vec4 local_dir(0.0f, 0.0f, -1.0f, 0.0f);
-                        light.direction = glm::normalize(glm::vec3(xf * local_dir));
-                    }
-                    ++m_world.light_version;
-                }
-            }
-        }
+        rendering::update_transforms(m_world, m_stage, m_dirty_xform_paths);
         m_dirty_xform_paths.clear();
     }
 }
