@@ -109,7 +109,23 @@ struct EditorApplication final : WindowedApplication {
     std::vector<pxr::SdfPath> m_dirty_xform_paths;
 
     // Selection & gizmo
-    int m_selected_object = -1;
+    struct Selection {
+        rendering::PrimSlot::Kind kind = rendering::PrimSlot::Kind::Object;
+        int index = -1;
+        bool has_value() const {
+            return index >= 0;
+        }
+        void clear() {
+            index = -1;
+        }
+        bool is_object() const {
+            return has_value() && kind == rendering::PrimSlot::Kind::Object;
+        }
+        bool is_light() const {
+            return has_value() && kind == rendering::PrimSlot::Kind::Light;
+        }
+    };
+    Selection m_selection;
     enum class GizmoOp { Translate, Rotate, Scale };
     GizmoOp m_gizmo_op = GizmoOp::Translate;
 
@@ -124,7 +140,7 @@ struct EditorApplication final : WindowedApplication {
     void draw_light_gizmos(const glm::mat4& view_mat, const glm::mat4& proj_mat);
     WGPUTexture m_light_icon_tex = nullptr;
     WGPUTextureView m_light_icon_view = nullptr;
-    static constexpr float k_light_icon_size = 32.0f;
+    static constexpr float k_light_icon_size = 64.0f;
 
     // GPU picking
     webgpu::BufferReadback m_picking_readback;

@@ -134,10 +134,15 @@ void EditorApplication::process_dirty_prims() {
 
         // Save selection
         std::string selected_prim_path;
-        if (m_selected_object >= 0 &&
-            m_selected_object < static_cast<int>(m_world.objects.size()) &&
-            m_world.objects[m_selected_object].active) {
-            selected_prim_path = m_world.objects[m_selected_object].prim_path;
+        auto saved_kind = m_selection.kind;
+        if (m_selection.is_object() &&
+            m_selection.index < static_cast<int>(m_world.objects.size()) &&
+            m_world.objects[m_selection.index].active) {
+            selected_prim_path = m_world.objects[m_selection.index].prim_path;
+        } else if (m_selection.is_light() &&
+                   m_selection.index < static_cast<int>(m_world.lights.size()) &&
+                   m_world.lights[m_selection.index].active) {
+            selected_prim_path = m_world.lights[m_selection.index].prim_path;
         }
 
         {
@@ -164,7 +169,11 @@ void EditorApplication::process_dirty_prims() {
 
         // Restore selection
         if (!selected_prim_path.empty()) {
-            m_selected_object = m_world.find_object_by_prim(selected_prim_path);
+            if (saved_kind == rendering::PrimSlot::Kind::Object) {
+                m_selection = {saved_kind, m_world.find_object_by_prim(selected_prim_path)};
+            } else {
+                m_selection = {saved_kind, m_world.find_light_by_prim(selected_prim_path)};
+            }
         }
 
         log(LogLevel::Debug, "Resynced {} prim(s)", m_resync_paths.size());
@@ -424,12 +433,12 @@ void EditorApplication::render(FrameContext& ctx) {
 
     if (auto picked_id = m_picking_readback.try_read_u32()) {
         if (*picked_id == UINT32_MAX) {
-            m_selected_object = -1;
+            m_selection.clear();
         } else if (*picked_id < static_cast<uint32_t>(m_world.objects.size()) &&
                    m_world.objects[*picked_id].active) {
-            m_selected_object = static_cast<int>(*picked_id);
+            m_selection = {rendering::PrimSlot::Kind::Object, static_cast<int>(*picked_id)};
             if (m_stage) {
-                normalize_xform_ops(m_world.objects[m_selected_object].prim_path);
+                normalize_xform_ops(m_world.objects[m_selection.index].prim_path);
             }
         }
     }
@@ -513,7 +522,7 @@ auto EditorApplication::draw_scene_panel() noexcept -> void {
                 }
                 revoke_stage_listener();
                 m_world.clear();
-                m_selected_object = -1;
+                m_selection.clear();
                 m_stage = stage;
                 rendering::populate_from_stage(m_world, m_stage, webgpu_context()->device());
                 register_stage_listener();
@@ -531,12 +540,28 @@ auto EditorApplication::draw_object_panel() noexcept -> void {
         if (!m_world.objects[i].active) continue;
         auto const& obj = m_world.objects[i];
         auto const& label = obj.prim_path.empty() ? std::to_string(i) : obj.prim_path;
-        bool selected = (m_selected_object == i);
+        bool selected = m_selection.is_object() && m_selection.index == i;
         if (ImGui::Selectable(label.c_str(), selected)) {
-            m_selected_object = selected ? -1 : i;
-            if (m_selected_object >= 0 && m_stage) {
-                normalize_xform_ops(m_world.objects[m_selected_object].prim_path);
+            if (selected) {
+                m_selection.clear();
+            } else {
+                m_selection = {rendering::PrimSlot::Kind::Object, i};
+                if (m_stage) normalize_xform_ops(m_world.objects[i].prim_path);
             }
+        }
+    }
+
+    ImGui::Spacing();
+    ImGui::Text("Lights (%zu)", m_world.lights.size());
+    ImGui::Separator();
+
+    for (int i = 0; i < static_cast<int>(m_world.lights.size()); ++i) {
+        if (!m_world.lights[i].active) continue;
+        auto const& light = m_world.lights[i];
+        auto const& label = light.prim_path.empty() ? std::to_string(i) : light.prim_path;
+        bool selected = m_selection.is_light() && m_selection.index == i;
+        if (ImGui::Selectable(label.c_str(), selected)) {
+            m_selection = selected ? Selection{} : Selection{rendering::PrimSlot::Kind::Light, i};
         }
     }
 }
@@ -589,14 +614,14 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
         draw_light_gizmos(m_camera.view_matrix(), m_camera.projection_matrix(aspect));
     }
 
-    // ── ImGuizmo gizmo ──
-    if (m_selected_object >= 0 && m_selected_object < static_cast<int>(m_world.objects.size()) &&
+    // ── ImGuizmo gizmo (objects only) ──
+    if (m_selection.is_object() && m_selection.index < static_cast<int>(m_world.objects.size()) &&
         m_viewport_width > 0 && m_viewport_height > 0) {
         float aspect = static_cast<float>(m_viewport_width) / static_cast<float>(m_viewport_height);
         auto view_mat = m_camera.view_matrix();
         auto proj_mat = m_camera.projection_matrix(aspect);
 
-        auto& obj = m_world.objects[m_selected_object];
+        auto& obj = m_world.objects[m_selection.index];
 
         ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList());
         ImGuizmo::SetRect(m_viewport_x, m_viewport_y, static_cast<float>(m_viewport_width),
@@ -666,12 +691,15 @@ void EditorApplication::draw_light_gizmos(const glm::mat4& view_mat, const glm::
     auto vp = proj_mat * view_mat;
     float half_icon = k_light_icon_size * 0.5f;
 
-    for (const auto& light : m_world.lights) {
+    auto mouse_pos = ImGui::GetMousePos();
+    bool mouse_clicked = ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !ImGuizmo::IsOver();
+
+    for (int i = 0; i < static_cast<int>(m_world.lights.size()); ++i) {
+        const auto& light = m_world.lights[i];
         if (!light.active) continue;
 
         glm::vec3 world_pos;
         if (light.type == rendering::Light::Type::Distant) {
-            // Place distant light icon along its direction from origin
             world_pos = -light.direction * 5.0f;
         } else if (light.type == rendering::Light::Type::Dome) {
             continue;
@@ -679,7 +707,6 @@ void EditorApplication::draw_light_gizmos(const glm::mat4& view_mat, const glm::
             world_pos = glm::vec3(light.transform[3]);
         }
 
-        // Project to clip space
         glm::vec4 clip = vp * glm::vec4(world_pos, 1.0f);
         if (clip.w <= 0.0f) continue;
 
@@ -693,6 +720,22 @@ void EditorApplication::draw_light_gizmos(const glm::mat4& view_mat, const glm::
 
         ImVec2 p_min(screen_x - half_icon, screen_y - half_icon);
         ImVec2 p_max(screen_x + half_icon, screen_y + half_icon);
+
+        bool is_selected = m_selection.is_light() && m_selection.index == i;
+
+        // Click-to-select
+        if (mouse_clicked && mouse_pos.x >= p_min.x && mouse_pos.x <= p_max.x &&
+            mouse_pos.y >= p_min.y && mouse_pos.y <= p_max.y) {
+            m_selection =
+                is_selected ? Selection{} : Selection{rendering::PrimSlot::Kind::Light, i};
+            is_selected = m_selection.is_light() && m_selection.index == i;
+        }
+
+        // Draw icon with selection highlight
+        if (is_selected) {
+            draw_list->AddRect(ImVec2(p_min.x - 2, p_min.y - 2), ImVec2(p_max.x + 2, p_max.y + 2),
+                               IM_COL32(255, 200, 50, 255), 0.0f, 0, 2.0f);
+        }
         draw_list->AddImage(reinterpret_cast<ImTextureID>(m_light_icon_view), p_min, p_max);
     }
 }
@@ -786,7 +829,7 @@ auto EditorApplication::handle_input(InputEvent const& event) noexcept -> void {
                     m_gizmo_op = GizmoOp::Scale;
                     break;
                 case ImGuiKey_Escape:
-                    m_selected_object = -1;
+                    m_selection.clear();
                     break;
                 default:
                     break;
