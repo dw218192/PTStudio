@@ -101,7 +101,6 @@ jobs:
           key: ${{ matrix.platform }}-conan-${{ hashFiles('conanfile.py', matrix.lock_file) }}
           restore-keys: |
             ${{ matrix.platform }}-conan-${{ hashFiles('conanfile.py') }}
-            ${{ matrix.platform }}-conan-
 
       - name: Build project
         run: ${{ matrix.repo }} build --platform ${{ matrix.platform }} --build-type ${{ matrix.build_type }}
