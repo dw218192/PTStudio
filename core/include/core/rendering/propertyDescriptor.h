@@ -1,6 +1,7 @@
 #pragma once
 #include <any>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -22,6 +23,10 @@ inline bool has_tag(PropertyTag tags, PropertyTag flag) {
     return (tags & flag) != PropertyTag::None;
 }
 
+/// Called after the user edits a value. Receives the proposed new value,
+/// may clamp/modify it in place. Return false to reject the edit entirely.
+using ValidateFn = std::function<bool(std::any& value)>;
+
 struct PropertyDescriptor {
     std::string name;
     std::string label;
@@ -30,6 +35,7 @@ struct PropertyDescriptor {
     float drag_speed{0.01f};
     float min_val{0.0f};
     float max_val{0.0f};
+    ValidateFn validate;  // optional
 };
 
 }  // namespace pts::rendering

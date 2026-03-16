@@ -56,6 +56,7 @@ struct Light {
 
     // Distant light
     glm::vec3 direction{0.0f, -1.0f, 0.0f};
+    float angle{0.53f};  // angular extent in degrees
 
     // Area/point lights
     float radius{0.0f};

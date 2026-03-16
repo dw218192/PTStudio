@@ -1,5 +1,6 @@
 #include "propertyInspector.h"
 
+#include <core/diagnostics.h>
 #include <core/rendering/adapters/registry.h>
 #include <imgui.h>
 #include <pxr/base/gf/vec3f.h>
@@ -64,12 +65,18 @@ bool draw_property(rendering::PropertyDescriptor& prop) {
 
     if (read_only) ImGui::EndDisabled();
 
+    if (changed && prop.validate) {
+        if (!prop.validate(prop.value)) {
+            changed = false;
+        }
+    }
+
     return changed;
 }
 
 void write_property(const pxr::UsdPrim& prim, const rendering::PropertyDescriptor& prop) {
     auto attr = prim.GetAttribute(pxr::TfToken(prop.name));
-    if (!attr) return;
+    CHECK_MSG(attr, "adapter returned property name with no matching USD attribute");
 
     auto const& ti = prop.value.type();
     if (ti == typeid(float)) {

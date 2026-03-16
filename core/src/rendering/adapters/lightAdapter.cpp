@@ -42,6 +42,10 @@ void LightAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Devic
         glm::vec4 local_dir(0.0f, 0.0f, -1.0f, 0.0f);
         glm::vec3 world_dir = glm::normalize(glm::vec3(light.transform * local_dir));
         light.direction = world_dir;
+        pxr::UsdLuxDistantLight distant(prim);
+        float angle = 0.53f;
+        distant.GetAngleAttr().Get(&angle);
+        light.angle = angle;
     } else if (prim.IsA<pxr::UsdLuxSphereLight>()) {
         light.type = Light::Type::Sphere;
         pxr::UsdLuxSphereLight sphere_light(prim);
@@ -82,34 +86,34 @@ std::vector<PropertyDescriptor> LightAdapter::get_properties(const pxr::UsdPrim&
 
     float intensity = 1.0f;
     light_api.GetIntensityAttr().Get(&intensity);
-    props.push_back({"inputs:intensity", "Intensity", std::any(intensity)});
+    props.push_back({"inputs:intensity", "Intensity", std::any(intensity), {}, 0.1f, 0.0f});
 
     float exposure = 0.0f;
     light_api.GetExposureAttr().Get(&exposure);
-    props.push_back({"inputs:exposure", "Exposure", std::any(exposure)});
+    props.push_back({"inputs:exposure", "Exposure", std::any(exposure), {}, 0.1f});
 
     if (prim.IsA<pxr::UsdLuxDistantLight>()) {
         pxr::UsdLuxDistantLight distant(prim);
         float angle = 0.53f;
         distant.GetAngleAttr().Get(&angle);
-        props.push_back({"inputs:angle", "Angle", std::any(angle)});
+        props.push_back({"inputs:angle", "Angle", std::any(angle), {}, 0.1f, 0.0f, 180.0f});
     } else if (prim.IsA<pxr::UsdLuxSphereLight>()) {
         pxr::UsdLuxSphereLight sphere(prim);
         float radius = 0.0f;
         sphere.GetRadiusAttr().Get(&radius);
-        props.push_back({"inputs:radius", "Radius", std::any(radius)});
+        props.push_back({"inputs:radius", "Radius", std::any(radius), {}, 0.01f, 0.0f});
     } else if (prim.IsA<pxr::UsdLuxRectLight>()) {
         pxr::UsdLuxRectLight rect(prim);
         float w = 1.0f, h = 1.0f;
         rect.GetWidthAttr().Get(&w);
         rect.GetHeightAttr().Get(&h);
-        props.push_back({"inputs:width", "Width", std::any(w)});
-        props.push_back({"inputs:height", "Height", std::any(h)});
+        props.push_back({"inputs:width", "Width", std::any(w), {}, 0.1f, 0.0f});
+        props.push_back({"inputs:height", "Height", std::any(h), {}, 0.1f, 0.0f});
     } else if (prim.IsA<pxr::UsdLuxDiskLight>()) {
         pxr::UsdLuxDiskLight disk(prim);
         float radius = 0.0f;
         disk.GetRadiusAttr().Get(&radius);
-        props.push_back({"inputs:radius", "Radius", std::any(radius)});
+        props.push_back({"inputs:radius", "Radius", std::any(radius), {}, 0.01f, 0.0f});
     }
 
     return props;
