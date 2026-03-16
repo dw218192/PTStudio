@@ -114,6 +114,7 @@ struct RenderWorld {
     boost::container::flat_map<std::string, PrimSlot, std::less<>> prim_slots;
 
     uint32_t mesh_version = 0;
+    uint32_t light_version = 0;
 
     /// Begin a batched sync operation. mesh_version is bumped when
     /// the returned scope guard is destroyed. sync_object/remove_prim

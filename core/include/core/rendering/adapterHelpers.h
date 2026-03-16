@@ -29,5 +29,11 @@ void upload_mesh(SyncScope& scope, const webgpu::Device& device,
 void sync_object(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device& device,
                  std::vector<Vertex>& vertices, std::vector<uint32_t>& indices);
 
+struct Light;
+
+/// Common sync logic for light-producing adapters. Handles slot
+/// lookup/insert and field population via the SyncScope.
+void sync_light(pxr::UsdPrim prim, SyncScope& scope, const Light& light);
+
 }  // namespace rendering
 }  // namespace pts

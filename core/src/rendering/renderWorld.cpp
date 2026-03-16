@@ -12,6 +12,7 @@ SyncScope::SyncScope(RenderWorld& world) : m_world(world) {
 
 SyncScope::~SyncScope() {
     ++m_world.mesh_version;
+    ++m_world.light_version;
 }
 
 SyncScope RenderWorld::begin_sync() {

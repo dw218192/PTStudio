@@ -109,4 +109,29 @@ void sync_object(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device& devi
     }
 }
 
+void sync_light(pxr::UsdPrim prim, SyncScope& scope, const Light& light) {
+    auto& world = scope.world();
+    auto sdf_path = prim.GetPath();
+
+    int existing = world.find_light_by_prim(sdf_path.GetText());
+    if (existing >= 0) {
+        auto& dst = world.lights[existing];
+        dst.type = light.type;
+        dst.color = light.color;
+        dst.intensity = light.intensity;
+        dst.transform = light.transform;
+        dst.direction = light.direction;
+        dst.radius = light.radius;
+        dst.width = light.width;
+        dst.height = light.height;
+    } else {
+        auto slot = scope.alloc_light_slot();
+        auto prim_path = sdf_path.GetString();
+        auto& dst = world.lights[slot];
+        dst = light;
+        dst.prim_path = std::move(prim_path);
+        world.prim_slots[dst.prim_path] = PrimSlot{PrimSlot::Kind::Light, slot};
+    }
+}
+
 }  // namespace pts::rendering

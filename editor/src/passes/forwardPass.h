@@ -31,7 +31,7 @@ class ForwardPass final : public rendering::IScenePass {
     static constexpr uint32_t k_uniform_align = 256;
 
    private:
-    void ensure_capacity(const webgpu::Device& device, uint32_t object_count);
+    bool ensure_capacity(const webgpu::Device& device, uint32_t object_count);
 
     struct Ready {
         webgpu::ShaderModule shader;
@@ -40,6 +40,7 @@ class ForwardPass final : public rendering::IScenePass {
         webgpu::Buffer material_buffer;
         WGPUBindGroup bind_group = nullptr;
         WGPUBindGroupLayout bind_group_layout = nullptr;
+        WGPUBuffer last_light_buf = nullptr;
         uint32_t capacity = 0;
         uint32_t material_capacity = 0;
     };

@@ -177,7 +177,7 @@ void WireframePass::add_to_frame_graph(rendering::FrameGraph& fg,
     for (uint32_t i = 0; i < object_count; ++i) {
         if (!world.objects[i].active) continue;
         const auto& obj = world.objects[i];
-        mesh_cache_get<WireframeMesh>(obj.mesh_index, world.mesh_version, [&]() {
+        cache_get<WireframeMesh>(obj.mesh_index, world.mesh_version, [&]() {
             const auto& mesh = world.meshes[obj.mesh_index];
             auto indices = expand_wireframe_indices(mesh.cpu_indices);
             auto buf = ctx.device.create_buffer(
@@ -208,11 +208,8 @@ void WireframePass::add_to_frame_graph(rendering::FrameGraph& fg,
                 uint32_t dyn_offset = i * k_uniform_align;
                 wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 1, &dyn_offset);
                 const auto& mesh = world.meshes[world.objects[i].mesh_index];
-                // Cache was pre-populated above; factory must not be called.
-                auto& wf = mesh_cache_get<WireframeMesh>(
-                    world.objects[i].mesh_index, mesh_version, []() -> WireframeMesh {
-                        INVARIANT_MSG(false, "wireframe cache miss during draw");
-                    });
+                auto& wf =
+                    cache_get<WireframeMesh>(world.objects[i].mesh_index, mesh_version, nullptr);
                 wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh.vertex_buffer.handle(), 0,
                                                      mesh.vertex_buffer.size());
                 wgpuRenderPassEncoderSetIndexBuffer(pass, wf.index_buffer.handle(),

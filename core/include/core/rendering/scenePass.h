@@ -1,5 +1,7 @@
 #pragma once
 
+#include <core/diagnostics.h>
+
 #include <boost/container/flat_map.hpp>
 #include <climits>
 #include <cstdint>
@@ -28,36 +30,48 @@ class IScenePass {
     virtual void add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) = 0;
 
    protected:
-    /// Lazily create or return cached per-mesh auxiliary data.
-    /// Re-creates when mesh_version changes from the cached version.
+    /// Lazily create or return cached data keyed by (key, version).
+    /// Re-creates when version changes from the cached version.
     /// T may be move-only (e.g. contains webgpu::Buffer).
+    ///
+    /// If factory is provided, calls it on cache miss to create the entry.
+    /// If factory is omitted (nullptr), INVARIANT-fails on cache miss.
     template <typename T, typename Factory>
-    auto mesh_cache_get(uint32_t mesh_index, uint32_t mesh_version, Factory&& factory) -> T& {
-        auto it = m_mesh_cache.find(mesh_index);
-        if (it == m_mesh_cache.end()) {
-            it = m_mesh_cache.emplace(mesh_index, MeshCacheEntry{}).first;
+    auto cache_get(uint32_t key, uint32_t version, Factory&& factory) -> T& {
+        auto it = m_cache.find(key);
+        if (it == m_cache.end()) {
+            it = m_cache.emplace(key, CacheEntry{}).first;
         }
         auto& entry = it->second;
-        if (entry.version != mesh_version || !entry.data) {
+        if (entry.version != version || !entry.data) {
             entry.data = ErasedPtr(new T(std::forward<Factory>(factory)()),
                                    [](void* p) { delete static_cast<T*>(p); });
-            entry.version = mesh_version;
+            entry.version = version;
         }
         return *static_cast<T*>(entry.data.get());
     }
 
-    /// Clear all cached mesh data.
-    void mesh_cache_clear() {
-        m_mesh_cache.clear();
+    /// cache_get without factory — asserts that the entry already exists.
+    template <typename T>
+    auto cache_get(uint32_t key, uint32_t version, std::nullptr_t) -> T& {
+        auto it = m_cache.find(key);
+        INVARIANT_MSG(it != m_cache.end() && it->second.data && it->second.version == version,
+                      "cache miss with no factory");
+        return *static_cast<T*>(it->second.data.get());
+    }
+
+    /// Clear all cached data.
+    void cache_clear() {
+        m_cache.clear();
     }
 
    private:
     using ErasedPtr = std::unique_ptr<void, void (*)(void*)>;
-    struct MeshCacheEntry {
+    struct CacheEntry {
         ErasedPtr data{nullptr, nullptr};
         uint32_t version = UINT32_MAX;
     };
-    boost::container::flat_map<uint32_t, MeshCacheEntry> m_mesh_cache;
+    boost::container::flat_map<uint32_t, CacheEntry> m_cache;
 };
 
 }  // namespace rendering
