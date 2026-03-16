@@ -10,6 +10,7 @@ class ConeAdapter final : public ISceneAdapter {
 
     bool can_adapt(const pxr::UsdPrim& prim) const override;
     void sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device& device) override;
+    std::vector<PropertyDescriptor> get_properties(const pxr::UsdPrim& prim) const override;
 
    private:
     ConeAdapter() = default;

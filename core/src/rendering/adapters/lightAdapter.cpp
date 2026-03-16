@@ -71,4 +71,48 @@ void LightAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Devic
     sync_light(prim, scope, light);
 }
 
+std::vector<PropertyDescriptor> LightAdapter::get_properties(const pxr::UsdPrim& prim) const {
+    std::vector<PropertyDescriptor> props;
+
+    pxr::UsdLuxLightAPI light_api(prim);
+
+    pxr::GfVec3f color(1.0f);
+    light_api.GetColorAttr().Get(&color);
+    props.push_back({"inputs:color", "Color", std::any(color), PropertyTag::Color});
+
+    float intensity = 1.0f;
+    light_api.GetIntensityAttr().Get(&intensity);
+    props.push_back({"inputs:intensity", "Intensity", std::any(intensity)});
+
+    float exposure = 0.0f;
+    light_api.GetExposureAttr().Get(&exposure);
+    props.push_back({"inputs:exposure", "Exposure", std::any(exposure)});
+
+    if (prim.IsA<pxr::UsdLuxDistantLight>()) {
+        pxr::UsdLuxDistantLight distant(prim);
+        float angle = 0.53f;
+        distant.GetAngleAttr().Get(&angle);
+        props.push_back({"inputs:angle", "Angle", std::any(angle)});
+    } else if (prim.IsA<pxr::UsdLuxSphereLight>()) {
+        pxr::UsdLuxSphereLight sphere(prim);
+        double radius = 0.0;
+        sphere.GetRadiusAttr().Get(&radius);
+        props.push_back({"inputs:radius", "Radius", std::any(radius)});
+    } else if (prim.IsA<pxr::UsdLuxRectLight>()) {
+        pxr::UsdLuxRectLight rect(prim);
+        float w = 1.0f, h = 1.0f;
+        rect.GetWidthAttr().Get(&w);
+        rect.GetHeightAttr().Get(&h);
+        props.push_back({"inputs:width", "Width", std::any(w)});
+        props.push_back({"inputs:height", "Height", std::any(h)});
+    } else if (prim.IsA<pxr::UsdLuxDiskLight>()) {
+        pxr::UsdLuxDiskLight disk(prim);
+        double radius = 0.0;
+        disk.GetRadiusAttr().Get(&radius);
+        props.push_back({"inputs:radius", "Radius", std::any(radius)});
+    }
+
+    return props;
+}
+
 }  // namespace pts::rendering

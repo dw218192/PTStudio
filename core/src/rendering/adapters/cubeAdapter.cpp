@@ -96,4 +96,11 @@ void CubeAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device
     sync_object(prim, scope, device, vertices, indices);
 }
 
+std::vector<PropertyDescriptor> CubeAdapter::get_properties(const pxr::UsdPrim& prim) const {
+    pxr::UsdGeomCube cube(prim);
+    double size = 2.0;
+    cube.GetSizeAttr().Get(&size);
+    return {{"size", "Size", std::any(size)}};
+}
+
 }  // namespace pts::rendering

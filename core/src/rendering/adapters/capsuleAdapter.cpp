@@ -114,4 +114,15 @@ void CapsuleAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Dev
     sync_object(prim, scope, device, vertices, indices);
 }
 
+std::vector<PropertyDescriptor> CapsuleAdapter::get_properties(const pxr::UsdPrim& prim) const {
+    pxr::UsdGeomCapsule capsule(prim);
+    double radius = 0.5, height = 1.0;
+    capsule.GetRadiusAttr().Get(&radius);
+    capsule.GetHeightAttr().Get(&height);
+    return {
+        {"radius", "Radius", std::any(radius)},
+        {"height", "Height", std::any(height)},
+    };
+}
+
 }  // namespace pts::rendering

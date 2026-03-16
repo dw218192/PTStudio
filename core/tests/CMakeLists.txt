@@ -49,6 +49,11 @@ if(NOT EMSCRIPTEN)
     set(testGeometricAdapters_includes ${CMAKE_CURRENT_SOURCE_DIR}/generated)
 endif()
 
+# PropertyDescriptor / get_properties - no GPU needed, just USD stages
+list(APPEND TEST_NAMES testPropertyDescriptor)
+set(testPropertyDescriptor_source testPropertyDescriptor.cpp)
+set(testPropertyDescriptor_libs core)
+
 # OpenUSD test - works on all platforms
 list(APPEND TEST_NAMES testOpenUsd)
 set(testOpenUsd_source testOpenUsd.cpp)
