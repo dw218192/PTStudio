@@ -14,7 +14,7 @@ struct GpuLight {
     float radius;
     float width;
     float height;
-    float _pad;
+    float angle;  // distant light angular extent in degrees
 };
 
 struct Uniforms {
@@ -108,6 +108,15 @@ float4 fs_main(float3 world_normal : NORMAL, float3 world_pos : WORLD_POS,
         float3 H = normalize(L + V);
         float NdotL = max(dot(N, L), 0.0);
         float NdotH = max(dot(N, H), 0.0);
+
+        // Distant light angular extent: soften the terminator.
+        // angle is in degrees; convert half-angle to cosine threshold.
+        if (light.type == LIGHT_DISTANT && light.angle > 0.0) {
+            float half_angle_rad = radians(light.angle * 0.5);
+            float cos_thresh = cos(half_angle_rad);
+            NdotL = smoothstep(cos_thresh, 1.0, NdotL + (1.0 - cos_thresh));
+        }
+
         float spec = pow(NdotH, shininess) * (1.0 - roughness);
 
         result += light.color * light.intensity * attenuation

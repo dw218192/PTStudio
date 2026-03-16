@@ -38,7 +38,7 @@ struct GpuLight {
     float radius;
     float width;
     float height;
-    float _pad;
+    float angle;
 };
 static_assert(sizeof(GpuLight) == 48, "GpuLight must be 48 bytes for GPU alignment");
 
@@ -53,6 +53,7 @@ static GpuLight to_gpu_light(const rendering::Light& light) {
     gl.radius = light.radius;
     gl.width = light.width;
     gl.height = light.height;
+    gl.angle = light.angle;
 
     if (light.type == rendering::Light::Type::Distant) {
         gl.direction_or_pos = light.direction;
