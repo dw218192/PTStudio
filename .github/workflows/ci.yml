@@ -58,11 +58,13 @@ jobs:
             shell: pwsh
             bootstrap: .\tools\framework\bootstrap.ps1
             repo: .\repo.cmd
+            lock_file: conan_glfw.lock
           - platform: emscripten
             os: ubuntu-latest
             shell: bash
             bootstrap: bash tools/framework/bootstrap.sh
             repo: ./repo
+            lock_file: conan_emscripten.lock
 
     defaults:
       run:
@@ -96,9 +98,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.conan2
-          key: ${{ matrix.platform }}-conan-${{ hashFiles('conanfile.py', 'conan_*.lock') }}-${{ matrix.build_type }}
+          key: ${{ matrix.platform }}-conan-${{ hashFiles('conanfile.py', matrix.lock_file) }}
           restore-keys: |
-            ${{ matrix.platform }}-conan-${{ hashFiles('conanfile.py') }}-${{ matrix.build_type }}
+            ${{ matrix.platform }}-conan-${{ hashFiles('conanfile.py') }}
+            ${{ matrix.platform }}-conan-
 
       - name: Build project
         run: ${{ matrix.repo }} build --platform ${{ matrix.platform }} --build-type ${{ matrix.build_type }}
