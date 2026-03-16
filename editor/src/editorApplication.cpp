@@ -14,6 +14,8 @@
 #include <core/rendering/webgpuContext.h>
 #include <core/rendering/windowing.h>
 #include <imgui_internal.h>
+
+#include "propertyInspector.h"
 // clang-format off
 #include <ImGuizmo.h>  // must follow imgui.h
 // clang-format on
@@ -119,7 +121,7 @@ void EditorApplication::on_objects_changed(const pxr::UsdNotice::ObjectsChanged&
     }
     for (const auto& path : notice.GetChangedInfoOnlyPaths()) {
         if (!path.IsPrimPath() && !path.IsPropertyPath()) continue;
-        m_dirty_xform_paths.push_back(path.IsPropertyPath() ? path.GetPrimPath() : path);
+        m_resync_paths.push_back(path.IsPropertyPath() ? path.GetPrimPath() : path);
     }
 }
 
@@ -518,6 +520,16 @@ auto EditorApplication::draw_inspector_panel() noexcept -> void {
     auto root = m_stage->GetPseudoRoot();
     for (auto const& child : root.GetChildren()) {
         draw_prim_tree(child);
+    }
+
+    ImGui::Separator();
+    if (!m_selected_prim.IsEmpty()) {
+        auto prim = m_stage->GetPrimAtPath(m_selected_prim);
+        if (prim.IsValid()) {
+            draw_prim_properties(prim);
+        }
+    } else {
+        ImGui::TextDisabled("Select a prim to inspect properties");
     }
 }
 
