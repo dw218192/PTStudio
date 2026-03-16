@@ -301,10 +301,7 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
             }
             ++gpu_idx;
         }
-        // const_cast is needed because PassContext holds a const ref, but we
-        // need to clear dirty state after consuming it. This is intentional —
-        // clear_dirty_lights is a logical-const operation on rendering state.
-        const_cast<rendering::RenderWorld&>(ctx.world).clear_dirty_lights();
+        ctx.world.clear_dirty_lights();
     }
 
     // Rebuild bind group if material or light buffers changed

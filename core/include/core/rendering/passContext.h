@@ -20,7 +20,7 @@ struct PassContext {
     const webgpu::Device& device;
     WGPUQueue queue;
     const OrbitCamera& camera;
-    const RenderWorld& world;
+    RenderWorld& world;
     uint32_t viewport_width;
     uint32_t viewport_height;
     glm::mat4 view_matrix;
