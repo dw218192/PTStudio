@@ -121,7 +121,13 @@ void EditorApplication::on_objects_changed(const pxr::UsdNotice::ObjectsChanged&
     }
     for (const auto& path : notice.GetChangedInfoOnlyPaths()) {
         if (!path.IsPrimPath() && !path.IsPropertyPath()) continue;
-        m_resync_paths.push_back(path.IsPropertyPath() ? path.GetPrimPath() : path);
+        auto prim_path = path.IsPropertyPath() ? path.GetPrimPath() : path;
+        if (path.IsPropertyPath() &&
+            pxr::UsdGeomXformable::IsTransformationAffectedByAttrNamed(path.GetNameToken())) {
+            m_dirty_xform_paths.push_back(prim_path);
+        } else {
+            m_resync_paths.push_back(prim_path);
+        }
     }
 }
 
