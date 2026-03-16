@@ -35,6 +35,7 @@ struct Mesh {
     webgpu::Buffer index_buffer;
     uint32_t index_count;
     std::vector<uint32_t> cpu_indices;
+    uint32_t version = 0;
 };
 
 struct RenderObject {
@@ -61,6 +62,7 @@ struct Light {
     float width{1.0f};
     float height{1.0f};
     bool active{true};
+    uint32_t version = 0;
 };
 
 /// Prim path → slot lookup entry. A single map replaces separate

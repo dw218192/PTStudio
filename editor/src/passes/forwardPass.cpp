@@ -42,15 +42,8 @@ struct GpuLight {
 };
 static_assert(sizeof(GpuLight) == 48, "GpuLight must be 48 bytes for GPU alignment");
 
-/// Cached GPU light data, stored via cache_get.
-struct CachedLights {
-    webgpu::Buffer buffer;
-    uint32_t count;
-};
-
 static constexpr uint32_t k_min_material_buffer_size = 32;
 static constexpr uint32_t k_min_light_buffer_size = 48;
-static constexpr uint32_t k_light_cache_key = UINT32_MAX;
 
 static GpuLight to_gpu_light(const rendering::Light& light) {
     GpuLight gl{};
@@ -135,8 +128,7 @@ void ForwardPass::setup(const webgpu::Device& device) {
         k_min_material_buffer_size,
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
 
-    // Placeholder light buffer — real one comes from cache_get in add_to_frame_graph
-    auto light_placeholder = device.create_buffer(
+    auto light_buffer = device.create_buffer(
         k_min_light_buffer_size,
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
 
@@ -171,7 +163,7 @@ void ForwardPass::setup(const webgpu::Device& device) {
 
     auto bind_group = create_bind_group(device.handle(), bind_group_layout, uniform_buffer.handle(),
                                         material_buffer.handle(), k_min_material_buffer_size,
-                                        light_placeholder.handle(), k_min_light_buffer_size);
+                                        light_buffer.handle(), k_min_light_buffer_size);
 
     WGPUPipelineLayoutDescriptor pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
     pl_desc.bindGroupLayoutCount = 1;
@@ -192,15 +184,9 @@ void ForwardPass::setup(const webgpu::Device& device) {
     wgpuPipelineLayoutRelease(pipeline_layout);
 
     m_state = Ready{
-        std::move(shader),
-        std::move(pipeline),
-        std::move(uniform_buffer),
-        std::move(material_buffer),
-        bind_group,
-        bind_group_layout,
-        nullptr,
-        initial_capacity,
-        0,
+        std::move(shader),          std::move(pipeline),     std::move(uniform_buffer),
+        std::move(material_buffer), std::move(light_buffer), bind_group,
+        bind_group_layout,          initial_capacity,        0,
     };
 }
 
@@ -252,51 +238,52 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
                              material_count * sizeof(rendering::Material));
     }
 
-    // Build GPU light buffer via version-tracked cache
+    // Build/update GPU light buffer
     auto lights = ctx.world.get_lights();
     auto dirty_lights = ctx.world.get_dirty_lights();
     auto light_version = ctx.world.get_light_version();
 
-    auto& cached_lights =
-        cache_get<CachedLights>(k_light_cache_key, light_version, [&]() -> CachedLights {
-            // Collect active lights
-            std::vector<GpuLight> gpu_lights;
-            for (const auto& light : lights) {
-                if (!light.active) continue;
-                gpu_lights.push_back(to_gpu_light(light));
-            }
+    if (ready.cached_light_version != light_version) {
+        // Count active lights
+        std::vector<GpuLight> gpu_lights;
+        for (const auto& light : lights) {
+            if (!light.active) continue;
+            gpu_lights.push_back(to_gpu_light(light));
+        }
 
-            // Default fallback: single distant light
-            if (gpu_lights.empty()) {
-                GpuLight def{};
-                def.type = 0;  // Distant
-                def.direction_or_pos = glm::normalize(glm::vec3(0.3f, -1.0f, 0.5f));
-                def.color = {1.0f, 0.95f, 0.9f};
-                def.intensity = 1.0f;
-                gpu_lights.push_back(def);
-            }
+        // Default fallback: single distant light
+        if (gpu_lights.empty()) {
+            GpuLight def{};
+            def.type = 0;
+            def.direction_or_pos = glm::normalize(glm::vec3(0.3f, -1.0f, 0.5f));
+            def.color = {1.0f, 0.95f, 0.9f};
+            def.intensity = 1.0f;
+            gpu_lights.push_back(def);
+        }
 
-            auto buf_size = std::max(static_cast<std::size_t>(k_min_light_buffer_size),
-                                     gpu_lights.size() * sizeof(GpuLight));
-            auto buf = ctx.device.create_buffer(
-                buf_size,
-                static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
-            wgpuQueueWriteBuffer(ctx.queue, buf.handle(), 0, gpu_lights.data(),
+        auto buf_size = std::max(static_cast<std::size_t>(k_min_light_buffer_size),
                                  gpu_lights.size() * sizeof(GpuLight));
 
-            return CachedLights{std::move(buf), static_cast<uint32_t>(gpu_lights.size())};
-        });
+        if (!ready.light_buffer.handle() || ready.light_buffer.size() < buf_size) {
+            ready.light_buffer = ctx.device.create_buffer(
+                buf_size,
+                static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
+            bind_group_dirty = true;
+        }
 
-    // Partial SSBO update: if buffer exists and size hasn't changed, write only dirty slots
-    if (cached_lights.buffer.handle() && !dirty_lights.empty()) {
-        // Build a mapping from light array index to active-light GPU index
-        // (the SSBO only contains active lights, so indices differ)
+        wgpuQueueWriteBuffer(ctx.queue, ready.light_buffer.handle(), 0, gpu_lights.data(),
+                             gpu_lights.size() * sizeof(GpuLight));
+        ready.light_count = static_cast<uint32_t>(gpu_lights.size());
+        ready.cached_light_version = light_version;
+        ctx.world.clear_dirty_lights();
+    } else if (!dirty_lights.empty()) {
+        // Partial update: write only dirty slots
         uint32_t gpu_idx = 0;
         for (uint32_t i = 0; i < static_cast<uint32_t>(lights.size()); ++i) {
             if (!lights[i].active) continue;
             if (i < static_cast<uint32_t>(dirty_lights.size()) && dirty_lights[i]) {
                 auto gl = to_gpu_light(lights[i]);
-                wgpuQueueWriteBuffer(ctx.queue, cached_lights.buffer.handle(),
+                wgpuQueueWriteBuffer(ctx.queue, ready.light_buffer.handle(),
                                      gpu_idx * sizeof(GpuLight), &gl, sizeof(GpuLight));
             }
             ++gpu_idx;
@@ -305,15 +292,14 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
     }
 
     // Rebuild bind group if material or light buffers changed
-    if (bind_group_dirty || ready.last_light_buf != cached_lights.buffer.handle()) {
-        ready.last_light_buf = cached_lights.buffer.handle();
+    if (bind_group_dirty) {
         if (ready.bind_group) {
             wgpuBindGroupRelease(ready.bind_group);
         }
         ready.bind_group = create_bind_group(
             ctx.device.handle(), ready.bind_group_layout, ready.uniform_buffer.handle(),
             ready.material_buffer.handle(), ready.material_buffer.size(),
-            cached_lights.buffer.handle(), cached_lights.buffer.size());
+            ready.light_buffer.handle(), ready.light_buffer.size());
     }
 
     rendering::TextureDesc color_desc;
@@ -335,7 +321,7 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
     auto proj_mat = ctx.proj_matrix;
     auto elapsed_time = ctx.time;
     auto camera_pos = ctx.camera.position();
-    auto light_count = cached_lights.count;
+    auto light_count = ready.light_count;
     auto* pipeline_handle = ready.pipeline.handle();
     auto uniform_buf = ready.uniform_buffer.handle();
     auto bind_group = ready.bind_group;

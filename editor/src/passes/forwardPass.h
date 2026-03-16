@@ -38,11 +38,13 @@ class ForwardPass final : public rendering::IScenePass {
         webgpu::RenderPipeline pipeline;
         webgpu::Buffer uniform_buffer;
         webgpu::Buffer material_buffer;
+        webgpu::Buffer light_buffer;
         WGPUBindGroup bind_group = nullptr;
         WGPUBindGroupLayout bind_group_layout = nullptr;
-        WGPUBuffer last_light_buf = nullptr;
         uint32_t capacity = 0;
         uint32_t material_capacity = 0;
+        uint32_t light_count = 0;
+        uint32_t cached_light_version = UINT32_MAX;
     };
 
     std::variant<std::monostate, Ready> m_state;

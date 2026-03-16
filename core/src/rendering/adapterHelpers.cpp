@@ -82,6 +82,7 @@ void upload_mesh(SyncScope& scope, const webgpu::Device& device,
     gpu_mesh.index_buffer = std::move(index_buf);
     gpu_mesh.index_count = static_cast<uint32_t>(indices.size());
     gpu_mesh.cpu_indices.assign(indices.begin(), indices.end());
+    ++gpu_mesh.version;
 }
 
 void sync_object(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device& device,
@@ -126,6 +127,7 @@ void sync_light(pxr::UsdPrim prim, SyncScope& scope, const Light& light) {
         dst.radius = light.radius;
         dst.width = light.width;
         dst.height = light.height;
+        ++dst.version;
         scope.mark_light_dirty(static_cast<uint32_t>(existing));
         scope.bump_light_version();
     } else {
