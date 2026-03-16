@@ -166,23 +166,37 @@ void EditorApplication::process_dirty_prims() {
         m_resync_paths.clear();
     }
 
-    // Xform-only changes (O(1) lookup instead of O(n) scan)
+    // Xform-only changes — update the prim itself and any descendants
     if (!m_dirty_xform_paths.empty()) {
+        // Deduplicate
+        std::sort(m_dirty_xform_paths.begin(), m_dirty_xform_paths.end());
+        m_dirty_xform_paths.erase(
+            std::unique(m_dirty_xform_paths.begin(), m_dirty_xform_paths.end()),
+            m_dirty_xform_paths.end());
+
+        // Collect all prim_slots entries that are at or under any dirty path
         for (const auto& dirty_path : m_dirty_xform_paths) {
-            int idx = m_world.find_object_by_prim(dirty_path.GetText());
-            if (idx < 0) continue;
-            auto& obj = m_world.objects[idx];
+            for (const auto& [path, slot] : m_world.prim_slots) {
+                auto slot_path = pxr::SdfPath(path);
+                if (!slot_path.HasPrefix(dirty_path)) continue;
 
-            auto prim = m_stage->GetPrimAtPath(dirty_path);
-            if (!prim.IsValid()) continue;
+                auto prim = m_stage->GetPrimAtPath(slot_path);
+                if (!prim.IsValid()) continue;
 
-            pxr::UsdGeomXformable xformable(prim);
-            if (!xformable) continue;
+                auto xf = rendering::compute_world_transform(prim);
 
-            pxr::GfMatrix4d xf =
-                xformable.ComputeLocalToWorldTransform(pxr::UsdTimeCode::Default());
-            for (int r = 0; r < 4; ++r)
-                for (int c = 0; c < 4; ++c) obj.transform[r][c] = static_cast<float>(xf[r][c]);
+                if (slot.kind == rendering::PrimSlot::Kind::Object) {
+                    m_world.objects[slot.index].transform = xf;
+                } else {
+                    auto& light = m_world.lights[slot.index];
+                    light.transform = xf;
+                    if (light.type == rendering::Light::Type::Distant) {
+                        glm::vec4 local_dir(0.0f, 0.0f, -1.0f, 0.0f);
+                        light.direction = glm::normalize(glm::vec3(xf * local_dir));
+                    }
+                    ++m_world.light_version;
+                }
+            }
         }
         m_dirty_xform_paths.clear();
     }
@@ -686,14 +700,9 @@ void EditorApplication::draw_light_gizmos(const glm::mat4& view_mat, const glm::
         const auto& light = m_world.lights[i];
         if (!light.active) continue;
 
-        glm::vec3 world_pos;
-        if (light.type == rendering::Light::Type::Distant) {
-            world_pos = -light.direction * 5.0f;
-        } else if (light.type == rendering::Light::Type::Dome) {
-            continue;
-        } else {
-            world_pos = glm::vec3(light.transform[3]);
-        }
+        if (light.type == rendering::Light::Type::Dome) continue;
+        // All lights get their icon at the transform position
+        glm::vec3 world_pos = glm::vec3(light.transform[3]);
 
         glm::vec4 clip = vp * glm::vec4(world_pos, 1.0f);
         if (clip.w <= 0.0f) continue;
