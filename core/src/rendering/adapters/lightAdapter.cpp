@@ -45,9 +45,9 @@ void LightAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Devic
     } else if (prim.IsA<pxr::UsdLuxSphereLight>()) {
         light.type = Light::Type::Sphere;
         pxr::UsdLuxSphereLight sphere_light(prim);
-        double radius = 0.0;
+        float radius = 0.0f;
         sphere_light.GetRadiusAttr().Get(&radius);
-        light.radius = static_cast<float>(radius);
+        light.radius = radius;
     } else if (prim.IsA<pxr::UsdLuxRectLight>()) {
         light.type = Light::Type::Rect;
         pxr::UsdLuxRectLight rect_light(prim);
@@ -59,9 +59,9 @@ void LightAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Devic
     } else if (prim.IsA<pxr::UsdLuxDiskLight>()) {
         light.type = Light::Type::Disk;
         pxr::UsdLuxDiskLight disk_light(prim);
-        double radius = 0.0;
+        float radius = 0.0f;
         disk_light.GetRadiusAttr().Get(&radius);
-        light.radius = static_cast<float>(radius);
+        light.radius = radius;
     } else if (prim.IsA<pxr::UsdLuxDomeLight>()) {
         light.type = Light::Type::Dome;
     } else {
@@ -95,7 +95,7 @@ std::vector<PropertyDescriptor> LightAdapter::get_properties(const pxr::UsdPrim&
         props.push_back({"inputs:angle", "Angle", std::any(angle)});
     } else if (prim.IsA<pxr::UsdLuxSphereLight>()) {
         pxr::UsdLuxSphereLight sphere(prim);
-        double radius = 0.0;
+        float radius = 0.0f;
         sphere.GetRadiusAttr().Get(&radius);
         props.push_back({"inputs:radius", "Radius", std::any(radius)});
     } else if (prim.IsA<pxr::UsdLuxRectLight>()) {
@@ -107,7 +107,7 @@ std::vector<PropertyDescriptor> LightAdapter::get_properties(const pxr::UsdPrim&
         props.push_back({"inputs:height", "Height", std::any(h)});
     } else if (prim.IsA<pxr::UsdLuxDiskLight>()) {
         pxr::UsdLuxDiskLight disk(prim);
-        double radius = 0.0;
+        float radius = 0.0f;
         disk.GetRadiusAttr().Get(&radius);
         props.push_back({"inputs:radius", "Radius", std::any(radius)});
     }

@@ -24,7 +24,8 @@
 namespace {
 
 template <typename T>
-T prop_value(const std::vector<pts::rendering::PropertyDescriptor>& props, const std::string& name) {
+T prop_value(const std::vector<pts::rendering::PropertyDescriptor>& props,
+             const std::string& name) {
     for (const auto& p : props) {
         if (p.name == name) return std::any_cast<T>(p.value);
     }
@@ -32,7 +33,8 @@ T prop_value(const std::vector<pts::rendering::PropertyDescriptor>& props, const
     return T{};
 }
 
-bool has_prop(const std::vector<pts::rendering::PropertyDescriptor>& props, const std::string& name) {
+bool has_prop(const std::vector<pts::rendering::PropertyDescriptor>& props,
+              const std::string& name) {
     for (const auto& p : props) {
         if (p.name == name) return true;
     }
@@ -123,7 +125,7 @@ TEST_CASE("LightAdapter::get_properties - sphere light") {
     light.GetColorAttr().Set(pxr::GfVec3f(1.0f, 0.5f, 0.0f));
     light.GetIntensityAttr().Set(2.5f);
     light.GetExposureAttr().Set(1.0f);
-    light.GetRadiusAttr().Set(0.5);
+    light.GetRadiusAttr().Set(0.5f);
 
     auto props = pts::rendering::LightAdapter::instance().get_properties(light.GetPrim());
     REQUIRE(props.size() >= 4);
@@ -136,7 +138,7 @@ TEST_CASE("LightAdapter::get_properties - sphere light") {
 
     CHECK(prop_value<float>(props, "inputs:intensity") == doctest::Approx(2.5f));
     CHECK(prop_value<float>(props, "inputs:exposure") == doctest::Approx(1.0f));
-    CHECK(prop_value<double>(props, "inputs:radius") == doctest::Approx(0.5));
+    CHECK(prop_value<float>(props, "inputs:radius") == doctest::Approx(0.5f));
 }
 
 TEST_CASE("LightAdapter::get_properties - distant light has angle") {
@@ -163,10 +165,10 @@ TEST_CASE("LightAdapter::get_properties - rect light has width and height") {
 TEST_CASE("LightAdapter::get_properties - disk light has radius") {
     auto stage = pxr::UsdStage::CreateInMemory();
     auto light = pxr::UsdLuxDiskLight::Define(stage, pxr::SdfPath("/DiskLight"));
-    light.GetRadiusAttr().Set(2.0);
+    light.GetRadiusAttr().Set(2.0f);
 
     auto props = pts::rendering::LightAdapter::instance().get_properties(light.GetPrim());
-    CHECK(prop_value<double>(props, "inputs:radius") == doctest::Approx(2.0));
+    CHECK(prop_value<float>(props, "inputs:radius") == doctest::Approx(2.0f));
 }
 
 PTS_TEST_MAIN()
