@@ -108,7 +108,7 @@ float4 fs_main(float3 world_normal : NORMAL, float3 world_pos : WORLD_POS,
         float3 H = normalize(L + V);
         float NdotL = max(dot(N, L), 0.0);
         float NdotH = max(dot(N, H), 0.0);
-        float spec = pow(NdotH, shininess) * (1.0 - roughness);
+        float spec = pow(NdotH, shininess) * (1.0 - roughness) * step(0.001, NdotL);
 
         result += light.color * light.intensity * attenuation
                   * (base_color * NdotL + spec);

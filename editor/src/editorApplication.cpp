@@ -721,6 +721,7 @@ void EditorApplication::draw_light_gizmos(const glm::mat4& view_mat, const glm::
                 if (m_stage && !light.prim_path.empty()) normalize_xform_ops(light.prim_path);
             }
             is_selected = (m_selected_prim == light_path);
+            m_pick_requested = false;
         }
         draw_list->AddImage(reinterpret_cast<ImTextureID>(m_light_icon_view), p_min, p_max);
     }

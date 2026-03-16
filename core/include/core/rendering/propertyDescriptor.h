@@ -13,13 +13,13 @@ enum class PropertyTag : uint8_t {
     ReadOnly = 1 << 1,
 };
 
-inline PropertyTag operator|(PropertyTag a, PropertyTag b) {
+inline constexpr PropertyTag operator|(PropertyTag a, PropertyTag b) {
     return static_cast<PropertyTag>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));
 }
-inline PropertyTag operator&(PropertyTag a, PropertyTag b) {
+inline constexpr PropertyTag operator&(PropertyTag a, PropertyTag b) {
     return static_cast<PropertyTag>(static_cast<uint8_t>(a) & static_cast<uint8_t>(b));
 }
-inline bool has_tag(PropertyTag tags, PropertyTag flag) {
+inline constexpr bool has_tag(PropertyTag tags, PropertyTag flag) {
     return (tags & flag) != PropertyTag::None;
 }
 

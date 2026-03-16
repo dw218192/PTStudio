@@ -41,6 +41,15 @@ bool has_prop(const std::vector<pts::rendering::PropertyDescriptor>& props,
     return false;
 }
 
+pts::rendering::PropertyTag prop_tags(const std::vector<pts::rendering::PropertyDescriptor>& props,
+                                      const std::string& name) {
+    for (const auto& p : props) {
+        if (p.name == name) return p.tags;
+    }
+    FAIL("property '" << name << "' not found");
+    return pts::rendering::PropertyTag::None;
+}
+
 }  // namespace
 
 TEST_CASE("PropertyTag bitwise operators") {
@@ -134,7 +143,8 @@ TEST_CASE("LightAdapter::get_properties - sphere light") {
     CHECK(color[0] == doctest::Approx(1.0f));
     CHECK(color[1] == doctest::Approx(0.5f));
     CHECK(color[2] == doctest::Approx(0.0f));
-    CHECK(pts::rendering::has_tag(props[0].tags, pts::rendering::PropertyTag::Color));
+    CHECK(pts::rendering::has_tag(prop_tags(props, "inputs:color"),
+                                  pts::rendering::PropertyTag::Color));
 
     CHECK(prop_value<float>(props, "inputs:intensity") == doctest::Approx(2.5f));
     CHECK(prop_value<float>(props, "inputs:exposure") == doctest::Approx(1.0f));

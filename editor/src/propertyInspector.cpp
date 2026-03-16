@@ -7,6 +7,7 @@
 #include <pxr/base/tf/token.h>
 #include <pxr/usd/usd/attribute.h>
 
+#include <any>
 #include <string>
 
 namespace pts::editor {
@@ -97,12 +98,12 @@ bool draw_prim_properties(const pxr::UsdPrim& prim) {
     for (auto* adapter : rendering::k_scene_adapters()) {
         if (!adapter->can_adapt(prim)) continue;
 
-        auto props = adapter->get_properties(prim);
-        if (props.empty()) return false;
-
         ImGui::TextUnformatted(prim.GetPath().GetText());
         ImGui::TextDisabled("%s", prim.GetTypeName().GetText());
         ImGui::Spacing();
+
+        auto props = adapter->get_properties(prim);
+        if (props.empty()) return false;
 
         bool any_changed = false;
         for (auto& prop : props) {
