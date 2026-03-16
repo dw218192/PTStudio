@@ -139,6 +139,7 @@ endif()
 # GUI libraries from Conan
 find_package(imgui REQUIRED)
 find_package(imguizmo REQUIRED)
+find_package(stb REQUIRED)
 
 
 # Emscripten configuration - centralized flags for all targets

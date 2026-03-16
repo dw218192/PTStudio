@@ -20,6 +20,7 @@ PRIVATE
 	$<BUILD_INTERFACE:developer_flags>
 	core
 	imguizmo::imguizmo
+	stb::stb
 )
 if (MSVC)
 	target_compile_options(${exec_name} PRIVATE /bigobj)

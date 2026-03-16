@@ -51,6 +51,7 @@ class PTStudioConan(ConanFile):
         # GUI libraries (from Conan)
         self.requires("imgui/1.92.5-docking")
         self.requires("imguizmo/1.92")
+        self.requires("stb/[>=0]")
 
     def build_requirements(self):
         if self.settings.os == "Emscripten":

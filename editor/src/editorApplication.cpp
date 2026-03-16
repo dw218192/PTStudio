@@ -21,6 +21,7 @@
 #include <pxr/usd/usd/stage.h>
 #include <pxr/usd/usdGeom/xformable.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
+#include <stb_image.h>
 
 #include <algorithm>
 #include <filesystem>
@@ -75,6 +76,8 @@ EditorApplication::~EditorApplication() {
     m_passes.clear();
     m_world.clear();
     m_stage.Reset();
+    if (m_light_icon_view) wgpuTextureViewRelease(m_light_icon_view);
+    if (m_light_icon_tex) wgpuTextureRelease(m_light_icon_tex);
     m_input.reset();
     m_imgui.reset();
 }
@@ -255,6 +258,41 @@ void EditorApplication::on_ready() {
         log(LogLevel::Info, "Loaded default scene ({} objects)", m_world.objects.size());
     } else {
         log(LogLevel::Warning, "Missing embedded resource: assets/scenes/primitives.usda");
+    }
+
+    // Load light icon texture
+    {
+        auto icon_data = editor_resources::get_resource("editor/icons/light.png");
+        INVARIANT_MSG(icon_data, "Missing embedded resource: editor/icons/light.png");
+        int iw, ih, channels;
+        auto* pixels =
+            stbi_load_from_memory(reinterpret_cast<const unsigned char*>(icon_data->data()),
+                                  static_cast<int>(icon_data->size()), &iw, &ih, &channels, 4);
+        INVARIANT_MSG(pixels, "Failed to decode light.png");
+
+        WGPUTextureDescriptor tex_desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
+        tex_desc.size = {static_cast<uint32_t>(iw), static_cast<uint32_t>(ih), 1};
+        tex_desc.format = WGPUTextureFormat_RGBA8Unorm;
+        tex_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_TextureBinding |
+                                                       WGPUTextureUsage_CopyDst);
+        tex_desc.mipLevelCount = 1;
+        tex_desc.sampleCount = 1;
+        tex_desc.dimension = WGPUTextureDimension_2D;
+        m_light_icon_tex = wgpuDeviceCreateTexture(device.handle(), &tex_desc);
+
+        WGPUTextureViewDescriptor view_desc = WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT;
+        m_light_icon_view = wgpuTextureCreateView(m_light_icon_tex, &view_desc);
+
+        WGPUTexelCopyTextureInfo dst = WGPU_TEXEL_COPY_TEXTURE_INFO_INIT;
+        dst.texture = m_light_icon_tex;
+        WGPUTexelCopyBufferLayout layout = WGPU_TEXEL_COPY_BUFFER_LAYOUT_INIT;
+        layout.bytesPerRow = static_cast<uint32_t>(iw * 4);
+        layout.rowsPerImage = static_cast<uint32_t>(ih);
+        WGPUExtent3D extent = {static_cast<uint32_t>(iw), static_cast<uint32_t>(ih), 1};
+        wgpuQueueWriteTexture(device.queue(), &dst, pixels, static_cast<size_t>(iw * ih * 4),
+                              &layout, &extent);
+
+        stbi_image_free(pixels);
     }
 
     // Set up renderer passes
@@ -545,6 +583,12 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
         ImGui::TextUnformatted("Renderer output not available");
     }
 
+    // ── Light gizmos ──
+    if (m_viewport_width > 0 && m_viewport_height > 0) {
+        float aspect = static_cast<float>(m_viewport_width) / static_cast<float>(m_viewport_height);
+        draw_light_gizmos(m_camera.view_matrix(), m_camera.projection_matrix(aspect));
+    }
+
     // ── ImGuizmo gizmo ──
     if (m_selected_object >= 0 && m_selected_object < static_cast<int>(m_world.objects.size()) &&
         m_viewport_width > 0 && m_viewport_height > 0) {
@@ -612,6 +656,44 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
                 "xform ops must be normalized to a single TypeTransform before gizmo use");
             ops[0].Set(local_mat);
         }
+    }
+}
+
+void EditorApplication::draw_light_gizmos(const glm::mat4& view_mat, const glm::mat4& proj_mat) {
+    if (!m_light_icon_view) return;
+
+    auto* draw_list = ImGui::GetWindowDrawList();
+    auto vp = proj_mat * view_mat;
+    float half_icon = k_light_icon_size * 0.5f;
+
+    for (const auto& light : m_world.lights) {
+        if (!light.active) continue;
+
+        glm::vec3 world_pos;
+        if (light.type == rendering::Light::Type::Distant) {
+            // Place distant light icon along its direction from origin
+            world_pos = -light.direction * 5.0f;
+        } else if (light.type == rendering::Light::Type::Dome) {
+            continue;
+        } else {
+            world_pos = glm::vec3(light.transform[3]);
+        }
+
+        // Project to clip space
+        glm::vec4 clip = vp * glm::vec4(world_pos, 1.0f);
+        if (clip.w <= 0.0f) continue;
+
+        glm::vec3 ndc = glm::vec3(clip) / clip.w;
+        if (ndc.x < -1.0f || ndc.x > 1.0f || ndc.y < -1.0f || ndc.y > 1.0f) continue;
+
+        float screen_x =
+            m_viewport_x + (ndc.x * 0.5f + 0.5f) * static_cast<float>(m_viewport_width);
+        float screen_y =
+            m_viewport_y + (1.0f - (ndc.y * 0.5f + 0.5f)) * static_cast<float>(m_viewport_height);
+
+        ImVec2 p_min(screen_x - half_icon, screen_y - half_icon);
+        ImVec2 p_max(screen_x + half_icon, screen_y + half_icon);
+        draw_list->AddImage(reinterpret_cast<ImTextureID>(m_light_icon_view), p_min, p_max);
     }
 }
 

@@ -120,6 +120,12 @@ struct EditorApplication final : WindowedApplication {
     float m_viewport_y = 0.0f;
     rendering::TextureRef m_scene_color_ref;
 
+    // Light gizmo icon
+    void draw_light_gizmos(const glm::mat4& view_mat, const glm::mat4& proj_mat);
+    WGPUTexture m_light_icon_tex = nullptr;
+    WGPUTextureView m_light_icon_view = nullptr;
+    static constexpr float k_light_icon_size = 32.0f;
+
     // GPU picking
     webgpu::BufferReadback m_picking_readback;
     bool m_pick_requested = false;
