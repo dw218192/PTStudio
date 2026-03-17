@@ -30,6 +30,8 @@ build:
   prebuild:
     format: {}
     slangc:
+      search_paths:
+        - "core/shaders"
       shaders:
         - input: "assets/shaders/test/*.slang"
           output: "assets/shaders/test/*.wgsl"
