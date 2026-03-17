@@ -183,6 +183,16 @@ TEST_CASE("SyncScope bumps mesh_version once") {
     CHECK(world.get_mesh_version() == initial + 1);
 }
 
+TEST_CASE("SyncScope bumps material_version once") {
+    RenderWorld world;
+    auto initial = world.get_material_version();
+    {
+        auto scope = world.begin_sync();
+        scope.materials().push_back(Material{});
+    }
+    CHECK(world.get_material_version() == initial + 1);
+}
+
 TEST_CASE("dirty light tracking") {
     RenderWorld world;
 

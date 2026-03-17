@@ -390,6 +390,8 @@ void EditorApplication::render(FrameContext& ctx) {
             view_mat, proj_mat, get_time(), 0,
         };
 
+        m_world.prepare_gpu_buffers(device, queue);
+
         for (auto& pass : m_passes) {
             if (pass->is_ready()) {
                 pass->add_to_frame_graph(*m_frame_graph, pass_ctx);

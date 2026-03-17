@@ -160,4 +160,109 @@ TEST_CASE("Empty material buffer has minimum size for bind group validity") {
     wgpuBindGroupLayoutRelease(layout);
 }
 
+TEST_CASE("prepare_gpu_buffers creates material buffer from world materials") {
+    auto logger = create_test_logger();
+    auto device = pts::webgpu::Device::create(logger);
+
+    pts::rendering::RenderWorld world;
+    {
+        auto scope = world.begin_sync();
+        auto& mats = scope.materials();
+        pts::rendering::Material m{};
+        m.diffuse_color = {0.5f, 0.6f, 0.7f};
+        m.roughness = 0.8f;
+        mats.push_back(m);
+    }
+
+    world.prepare_gpu_buffers(device, device.queue());
+
+    CHECK(world.material_buffer().is_valid());
+    CHECK(world.material_buffer().size() >= sizeof(pts::rendering::Material));
+}
+
+TEST_CASE("prepare_gpu_buffers creates light buffer with fallback when no lights") {
+    auto logger = create_test_logger();
+    auto device = pts::webgpu::Device::create(logger);
+
+    pts::rendering::RenderWorld world;
+    // No lights added — should get fallback distant light
+    {
+        auto scope = world.begin_sync();
+        // just bump versions
+    }
+
+    world.prepare_gpu_buffers(device, device.queue());
+
+    CHECK(world.light_buffer().is_valid());
+    CHECK(world.gpu_light_count() == 1);
+}
+
+TEST_CASE("prepare_gpu_buffers uploads active lights") {
+    auto logger = create_test_logger();
+    auto device = pts::webgpu::Device::create(logger);
+
+    pts::rendering::RenderWorld world;
+    {
+        auto scope = world.begin_sync();
+        auto l0 = scope.alloc_light_slot();
+        scope.light(l0).type = pts::rendering::LightSlot::Type::Distant;
+        scope.light(l0).color = {1.0f, 0.0f, 0.0f};
+        scope.light(l0).intensity = 2.0f;
+
+        auto l1 = scope.alloc_light_slot();
+        scope.light(l1).type = pts::rendering::LightSlot::Type::Sphere;
+        scope.light(l1).color = {0.0f, 1.0f, 0.0f};
+        scope.light(l1).intensity = 3.0f;
+    }
+
+    world.prepare_gpu_buffers(device, device.queue());
+
+    CHECK(world.light_buffer().is_valid());
+    CHECK(world.gpu_light_count() == 2);
+    CHECK(world.light_buffer().size() >= 2 * sizeof(pts::rendering::Light));
+}
+
+TEST_CASE("prepare_gpu_buffers skips upload when versions unchanged") {
+    auto logger = create_test_logger();
+    auto device = pts::webgpu::Device::create(logger);
+
+    pts::rendering::RenderWorld world;
+    {
+        auto scope = world.begin_sync();
+        auto& mats = scope.materials();
+        mats.push_back(pts::rendering::Material{});
+    }
+
+    world.prepare_gpu_buffers(device, device.queue());
+    auto mat_buf_handle = world.material_buffer().handle();
+    auto light_buf_handle = world.light_buffer().handle();
+
+    // Call again without changes — buffers should be reused (same handle)
+    world.prepare_gpu_buffers(device, device.queue());
+    CHECK(world.material_buffer().handle() == mat_buf_handle);
+    CHECK(world.light_buffer().handle() == light_buf_handle);
+}
+
+TEST_CASE("clear resets GPU buffer state") {
+    auto logger = create_test_logger();
+    auto device = pts::webgpu::Device::create(logger);
+
+    pts::rendering::RenderWorld world;
+    {
+        auto scope = world.begin_sync();
+        scope.materials().push_back(pts::rendering::Material{});
+        auto l = scope.alloc_light_slot();
+        scope.light(l).type = pts::rendering::LightSlot::Type::Distant;
+    }
+
+    world.prepare_gpu_buffers(device, device.queue());
+    CHECK(world.material_buffer().is_valid());
+    CHECK(world.light_buffer().is_valid());
+
+    world.clear();
+    CHECK_FALSE(world.material_buffer().is_valid());
+    CHECK_FALSE(world.light_buffer().is_valid());
+    CHECK(world.gpu_light_count() == 0);
+}
+
 #endif  // !__EMSCRIPTEN__

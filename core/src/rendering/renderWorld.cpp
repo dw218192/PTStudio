@@ -1,6 +1,7 @@
 #include <core/diagnostics.h>
 #include <core/rendering/adapterHelpers.h>
 #include <core/rendering/renderWorld.h>
+#include <core/rendering/webgpu/device.h>
 #include <pxr/usd/sdf/path.h>
 #include <pxr/usd/usd/stage.h>
 
@@ -37,6 +38,7 @@ SyncScope::SyncScope(RenderWorld& world) : m_world(world) {
 SyncScope::~SyncScope() {
     ++m_world.m_mesh_version;
     ++m_world.m_light_version;
+    ++m_world.m_material_version;
 }
 
 SyncScope RenderWorld::begin_sync() {
@@ -176,6 +178,22 @@ uint32_t RenderWorld::get_light_version() const {
     return m_light_version;
 }
 
+uint32_t RenderWorld::get_material_version() const {
+    return m_material_version;
+}
+
+const webgpu::Buffer& RenderWorld::light_buffer() const {
+    return m_gpu_light_buffer;
+}
+
+const webgpu::Buffer& RenderWorld::material_buffer() const {
+    return m_gpu_material_buffer;
+}
+
+uint32_t RenderWorld::gpu_light_count() const {
+    return m_gpu_light_count;
+}
+
 boost::span<const uint8_t> RenderWorld::get_dirty_lights() const {
     return {m_dirty_lights.data(), m_dirty_lights.size()};
 }
@@ -198,6 +216,82 @@ int RenderWorld::find_light_by_prim(std::string_view path) const {
     return static_cast<int>(it->second.index);
 }
 
+// --- GPU buffer upload ---
+
+namespace {
+constexpr std::size_t k_min_material_buffer_size = sizeof(Material);  // 32 bytes
+constexpr std::size_t k_min_light_buffer_size = sizeof(Light);        // 48 bytes
+}  // namespace
+
+void RenderWorld::prepare_gpu_buffers(const webgpu::Device& device, WGPUQueue queue) {
+    // --- Materials ---
+    if (m_material_version != m_cached_material_version) {
+        auto material_count = static_cast<uint32_t>(m_materials.size());
+        auto required_size = std::max(k_min_material_buffer_size,
+                                      static_cast<std::size_t>(material_count) * sizeof(Material));
+
+        if (required_size > m_gpu_material_buffer.size()) {
+            m_gpu_material_buffer = device.create_buffer(
+                required_size,
+                static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
+        }
+
+        if (material_count > 0) {
+            wgpuQueueWriteBuffer(queue, m_gpu_material_buffer.handle(), 0, m_materials.data(),
+                                 material_count * sizeof(Material));
+        }
+
+        m_cached_material_version = m_material_version;
+    }
+
+    // --- Lights ---
+    if (m_light_version != m_cached_light_version) {
+        // Full rebuild: collect active lights into GPU format
+        std::vector<Light> gpu_lights;
+        for (const auto& slot : m_lights) {
+            if (!slot.active) continue;
+            gpu_lights.push_back(to_light(slot));
+        }
+
+        // Default fallback: single distant light when scene has no lights
+        if (gpu_lights.empty()) {
+            Light def{};
+            def.type = 0;
+            def.direction_or_pos = glm::normalize(glm::vec3(0.3f, -1.0f, 0.5f));
+            def.color = {1.0f, 0.95f, 0.9f};
+            def.intensity = 1.0f;
+            gpu_lights.push_back(def);
+        }
+
+        auto buf_size = std::max(k_min_light_buffer_size, gpu_lights.size() * sizeof(Light));
+
+        if (!m_gpu_light_buffer.is_valid() || m_gpu_light_buffer.size() < buf_size) {
+            m_gpu_light_buffer = device.create_buffer(
+                buf_size,
+                static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
+        }
+
+        wgpuQueueWriteBuffer(queue, m_gpu_light_buffer.handle(), 0, gpu_lights.data(),
+                             gpu_lights.size() * sizeof(Light));
+        m_gpu_light_count = static_cast<uint32_t>(gpu_lights.size());
+        m_cached_light_version = m_light_version;
+        clear_dirty_lights();
+    } else if (!m_dirty_lights.empty()) {
+        // Partial update: write only dirty slots
+        uint32_t gpu_idx = 0;
+        for (uint32_t i = 0; i < static_cast<uint32_t>(m_lights.size()); ++i) {
+            if (!m_lights[i].active) continue;
+            if (i < static_cast<uint32_t>(m_dirty_lights.size()) && m_dirty_lights[i]) {
+                auto gl = to_light(m_lights[i]);
+                wgpuQueueWriteBuffer(queue, m_gpu_light_buffer.handle(), gpu_idx * sizeof(Light),
+                                     &gl, sizeof(Light));
+            }
+            ++gpu_idx;
+        }
+        clear_dirty_lights();
+    }
+}
+
 void RenderWorld::clear() {
     m_meshes.clear();
     m_objects.clear();
@@ -209,6 +303,11 @@ void RenderWorld::clear() {
     m_free_object_slots.clear();
     m_free_mesh_slots.clear();
     m_free_light_slots.clear();
+    m_gpu_light_buffer = {};
+    m_gpu_material_buffer = {};
+    m_gpu_light_count = 0;
+    m_cached_light_version = UINT32_MAX;
+    m_cached_material_version = UINT32_MAX;
 }
 
 // --- update_transforms ---

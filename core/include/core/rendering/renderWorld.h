@@ -17,6 +17,10 @@
 #include <unordered_map>
 #include <vector>
 
+namespace pts::webgpu {
+class Device;
+}
+
 namespace pts::rendering {
 
 static constexpr uint32_t k_no_material = UINT32_MAX;
@@ -137,6 +141,7 @@ struct RenderWorld {
     boost::span<const Material> get_materials() const;
     uint32_t get_mesh_version() const;
     uint32_t get_light_version() const;
+    uint32_t get_material_version() const;
 
     int find_object_by_prim(std::string_view path) const;
     int find_light_by_prim(std::string_view path) const;
@@ -153,6 +158,12 @@ struct RenderWorld {
     // Per-slot dirty tracking
     boost::span<const uint8_t> get_dirty_lights() const;
     void clear_dirty_lights();
+
+    // GPU buffer management
+    void prepare_gpu_buffers(const webgpu::Device& device, WGPUQueue queue);
+    const webgpu::Buffer& light_buffer() const;
+    const webgpu::Buffer& material_buffer() const;
+    uint32_t gpu_light_count() const;
 
     /// Lightweight xform-only update: recomputes world transforms for all
     /// synced prims at or under the given paths. Does not re-upload meshes.
@@ -184,6 +195,14 @@ struct RenderWorld {
 
     uint32_t m_mesh_version = 0;
     uint32_t m_light_version = 0;
+    uint32_t m_material_version = 0;
+
+    // GPU buffer state
+    webgpu::Buffer m_gpu_light_buffer;
+    webgpu::Buffer m_gpu_material_buffer;
+    uint32_t m_gpu_light_count = 0;
+    uint32_t m_cached_light_version = UINT32_MAX;
+    uint32_t m_cached_material_version = UINT32_MAX;
 
     std::vector<uint32_t> m_free_object_slots;
     std::vector<uint32_t> m_free_mesh_slots;

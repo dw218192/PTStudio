@@ -255,7 +255,8 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
             if (i < static_cast<uint32_t>(dirty_lights.size()) && dirty_lights[i]) {
                 auto gl = rendering::to_light(lights[i]);
                 wgpuQueueWriteBuffer(ctx.queue, ready.light_buffer.handle(),
-                                     gpu_idx * sizeof(rendering::Light), &gl, sizeof(rendering::Light));
+                                     gpu_idx * sizeof(rendering::Light), &gl,
+                                     sizeof(rendering::Light));
             }
             ++gpu_idx;
         }
