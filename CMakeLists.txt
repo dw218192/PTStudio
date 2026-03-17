@@ -173,6 +173,7 @@ endif()
 
 # add subprojects
 add_subdirectory(core)
+add_subdirectory(renderers)
 add_subdirectory(hello_triangle)
 add_subdirectory(editor)
 
