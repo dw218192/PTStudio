@@ -19,6 +19,8 @@
 #include <string_view>
 #include <vector>
 
+#include "perfOverlay.h"
+
 namespace pts {
 class ImGuiComponent;
 class InputComponent;
@@ -132,5 +134,8 @@ struct EditorApplication final : WindowedApplication {
     bool m_pick_requested = false;
     uint32_t m_pick_x = 0;
     uint32_t m_pick_y = 0;
+
+    // Performance overlay
+    PerfOverlay m_perf_overlay;
 };
 }  // namespace pts::editor

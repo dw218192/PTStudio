@@ -46,6 +46,7 @@ static constexpr auto k_scene_setting_win_name = "Scene Settings";
 static constexpr auto k_inspector_win_name = "Inspector";
 static constexpr auto k_scene_view_win_name = "Scene";
 static constexpr auto k_console_win_name = "Console";
+static constexpr auto k_perf_win_name = "Performance";
 static constexpr auto k_console_log_buffer_size = 1024;
 
 static const std::vector<rendering::RendererConfig> k_renderer_configs = {
@@ -365,6 +366,10 @@ void EditorApplication::render(FrameContext& ctx) {
     }
     m_imgui->end_window();
 
+    m_perf_overlay.draw(get_delta_time(), m_world, *m_frame_graph, m_passes,
+                        k_renderer_configs[m_active_config_index].name, m_viewport_width,
+                        m_viewport_height);
+
     // ── Frame graph ──
     auto const& device = ctx.device();
     auto queue = device.queue();
@@ -479,6 +484,7 @@ void EditorApplication::setup_docking_layout() {
     ImGui::DockBuilderDockWindow(k_scene_view_win_name, id);
     ImGui::DockBuilderDockWindow(k_inspector_win_name, right);
     ImGui::DockBuilderDockWindow(k_console_win_name, down);
+    ImGui::DockBuilderDockWindow(k_perf_win_name, down);
 }
 
 auto EditorApplication::create_input_actions() noexcept -> void {
