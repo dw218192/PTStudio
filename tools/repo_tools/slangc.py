@@ -95,7 +95,12 @@ def _should_compile_shader(input_path: Path, output_path: Path, force: bool) -> 
         return True
     if not output_path.exists():
         return True
-    return output_path.stat().st_mtime < input_path.stat().st_mtime
+    out_mtime = output_path.stat().st_mtime
+    # Check input file and all .slang siblings (potential imports)
+    for slang_file in input_path.parent.glob("*.slang"):
+        if slang_file.stat().st_mtime > out_mtime:
+            return True
+    return False
 
 
 def _emit_reflection_json(
