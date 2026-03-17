@@ -121,14 +121,23 @@ agent:
       changes outside touched functions should be called out and excluded.
       Diff against the base branch (not just HEAD) to catch accumulated drift.
 
+slangc: "{cfg:build.prebuild.slangc}"
+shader_codegen: "{cfg:build.prebuild.shader_codegen}"
+embed: "{cfg:build.prebuild.embed}"
+
 clean:
-  paths+:
-    - "{workspace_root}/_build"
-    - "{workspace_root}/_logs"
-    - "{workspace_root}/_package"
-    - "{workspace_root}/_deploy"
-    - "{workspace_root}/**/generated"
-    - "{workspace_root}/CMakeUserPresets.json"
+  groups:
+    generated:
+      - "re:^(core|editor|hello_triangle|renderers)/.*generated$"
+    build:
+      - "{workspace_root}/_build"
+    logs:
+      - "{workspace_root}/_logs"
+    deploy:
+      - "{workspace_root}/_package"
+      - "{workspace_root}/_deploy"
+    cmake:
+      - "{workspace_root}/CMakeUserPresets.json"
 
 publish:
   output_dir: "{workspace_root}/_deploy"

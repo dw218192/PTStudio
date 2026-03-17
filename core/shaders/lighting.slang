@@ -36,7 +36,7 @@ interface IBRDF {
 };
 
 // ---------------------------------------------------------------------------
-// Normalized Blinn-Phong BRDF
+// Normalized Blinn-Phong BRDF  (Hoffman & Sloan 2004)
 //   f_r = rho/pi + k_s * (alpha+4)/(8*pi) * (N.H)^alpha
 // ---------------------------------------------------------------------------
 
@@ -102,7 +102,8 @@ LightSample sample_distant_light(GpuLight light, float3 N, float3 V, float rough
         ls.L = center_L * cos_half + ortho * sin(half_angle);
     }
 
-    // Energy normalization
+    // Approximate energy normalization adapted from Karis 2013 representative
+    // point technique, rewritten for Blinn-Phong exponent instead of GGX alpha.
     float alpha = lerp(128.0, 16.0, roughness);
     float sin_half = sin(half_angle);
     ls.spec_norm = pow(saturate(alpha / (alpha + sin_half * 2.0)), 2.0);
@@ -145,7 +146,8 @@ LightSample sample_area_light(GpuLight light, float3 P, float3 N, float3 V, floa
     ls.L = to_rep / max(dist, 0.001);
     ls.attenuation = 1.0 / max(dist * dist, 0.001);
 
-    // Specular energy normalization (Karis 2013)
+    // Approximate energy normalization adapted from Karis 2013 representative
+    // point technique, rewritten for Blinn-Phong exponent instead of GGX alpha.
     float alpha = lerp(128.0, 16.0, roughness);
     float center_dist = max(length(to_center), 0.001);
     ls.spec_norm = pow(saturate(alpha / (alpha + effective_radius / (2.0 * center_dist))), 2.0);

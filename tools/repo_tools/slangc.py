@@ -167,10 +167,7 @@ class SlangcTool(RepoTool):
         config = ctx.config
         tokens = ctx.tokens
 
-        # Explicit compiler path override from args or config
         compiler_path = args.get("compiler_path")
-        if compiler_path is None:
-            compiler_path = config.get("slangc", {}).get("compiler_path")
         if compiler_path:
             compiler = str(resolve_path(root, str(compiler_path), tokens))
         else:
@@ -178,7 +175,7 @@ class SlangcTool(RepoTool):
 
         conanbuild = Path(tokens["build_dir"]) / "conanbuild"
 
-        search_paths_raw = config.get("slangc", {}).get("search_paths", [])
+        search_paths_raw = args.get("search_paths", [])
         search_paths = [resolve_path(root, p, tokens) for p in search_paths_raw]
 
         shaders, errors = _resolve_slang_shaders(root, config, tokens, args)
