@@ -29,9 +29,9 @@ Static-linking OpenUSD via Conan on Emscripten has several non-obvious failure m
 - **"Cannot create a log file"**: A misleading secondary error from USD's crash handler. The real error is whatever triggered the abort; this message means `ArchGetTmpDir()` failed to create a temp file on the WASM virtual filesystem.
 - **Plugin resources**: Embed full `resources/` directories (not just `plugInfo.json`) — `generatedSchema.usda` is required for type registration.
 
-### Prebuild Step Config Gotcha
+### Prebuild Tool Config
 
-Prebuild tools (slangc, shader_codegen, embed) are invoked by the build tool, which passes the YAML config block as `args`. Inside a prebuild tool's `execute()`, read settings from `args`, **not** from `config.get("tool_name", {})` — the latter looks for a top-level config key that doesn't exist (the config is nested under `build.prebuild.<tool>`).
+Tool configs (slangc, shader_codegen, embed) live at the top level of `config.yaml`. The `build.prebuild` section just lists the tools to run (as empty dicts `{}`). When invoked — whether standalone or as a prebuild step — `invoke_tool` reads the top-level config via `config.get(tool_name, {})`.
 
 ### Embed Tool Resource Keys
 

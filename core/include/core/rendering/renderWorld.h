@@ -25,6 +25,7 @@ namespace pts::rendering {
 
 static constexpr uint32_t k_no_material = UINT32_MAX;
 
+/// 32-byte GPU struct
 struct Material {
     glm::vec3 diffuse_color{1.0f, 1.0f, 1.0f};
     float metallic{0.0f};
@@ -34,7 +35,7 @@ struct Material {
 };
 static_assert(sizeof(Material) == 32, "Material must be 32 bytes for GPU alignment");
 
-/// 48-byte GPU struct matching lighting.slang's GpuLight.
+/// 48-byte GPU struct
 struct Light {
     glm::vec3 direction_or_pos;
     uint32_t type;

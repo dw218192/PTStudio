@@ -18,7 +18,7 @@ ConstantBuffer<Uniforms> u;
 StructuredBuffer<Material> materials;
 
 [[vk::binding(2, 0)]]
-StructuredBuffer<GpuLight> lights;
+StructuredBuffer<Light> lights;
 
 struct VsIn {
     float3 position : POSITION;

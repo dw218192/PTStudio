@@ -8,7 +8,7 @@ struct Material {
     float2 _pad;
 };
 
-struct GpuLight {
+struct Light {
     float3 direction_or_pos;
     uint type;
     float3 color;
@@ -109,7 +109,7 @@ struct LightSample {
     bool valid;
 };
 
-LightSample sample_distant_light(GpuLight light, float3 N, float3 V, float roughness) {
+LightSample sample_distant_light(Light light, float3 N, float3 V, float roughness) {
     LightSample ls;
     ls.valid = true;
     ls.attenuation = 1.0;
@@ -153,7 +153,7 @@ LightSample sample_distant_light(GpuLight light, float3 N, float3 V, float rough
     return ls;
 }
 
-LightSample sample_area_light(GpuLight light, float3 P, float3 N, float3 V, float roughness) {
+LightSample sample_area_light(Light light, float3 P, float3 N, float3 V, float roughness) {
     LightSample ls;
     ls.valid = true;
     ls.spec_roughness = roughness;
@@ -201,7 +201,7 @@ LightSample sample_area_light(GpuLight light, float3 P, float3 N, float3 V, floa
     return ls;
 }
 
-LightSample sample_light(GpuLight light, float3 P, float3 N, float3 V, float roughness) {
+LightSample sample_light(Light light, float3 P, float3 N, float3 V, float roughness) {
     if (light.type == LIGHT_DOME) {
         LightSample ls;
         ls.valid = false;
@@ -225,13 +225,13 @@ LightSample sample_light(GpuLight light, float3 P, float3 N, float3 V, float rou
 
 float3 evaluate_lighting<B : IBRDF>(
     B brdf,
-    StructuredBuffer<GpuLight> lights, uint light_count,
+    StructuredBuffer<Light> lights, uint light_count,
     float3 P, float3 N, float3 V,
     float3 base_color, float metallic, float roughness
 ) {
     float3 result = float3(0.0);
     for (uint i = 0; i < light_count; i++) {
-        GpuLight light = lights[i];
+        Light light = lights[i];
 
         if (light.type == LIGHT_DOME) {
             result += light.color * light.intensity * base_color * 0.2;

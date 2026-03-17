@@ -29,67 +29,9 @@ build:
     - hd
   prebuild:
     format: {}
-    slangc:
-      search_paths:
-        - "core/shaders"
-      shaders:
-        - input: "assets/shaders/test/*.slang"
-          output: "assets/shaders/test/*.wgsl"
-        - input: "hello_triangle/shaders/hello_triangle.slang"
-          output: "hello_triangle/generated/shaders/hello_triangle.wgsl"
-          reflect: true
-        - input: "editor/shaders/forward.slang"
-          output: "editor/generated/shaders/forward.wgsl"
-          reflect: true
-        - input: "editor/shaders/picking.slang"
-          output: "editor/generated/shaders/picking.wgsl"
-          reflect: true
-        - input: "editor/shaders/grid.slang"
-          output: "editor/generated/shaders/grid.wgsl"
-          reflect: true
-        - input: "editor/shaders/wireframe.slang"
-          output: "editor/generated/shaders/wireframe.wgsl"
-          reflect: true
-    shader_codegen:
-      template: "core/templates/shader_metadata.h.j2"
-      shaders:
-        - reflect: "hello_triangle/generated/shaders/hello_triangle.reflect.json"
-          output: "hello_triangle/generated/shader_metadata.h"
-          namespace: "hello_triangle_shader"
-        - reflect: "editor/generated/shaders/forward.reflect.json"
-          output: "editor/generated/shader_metadata.h"
-          namespace: "editor_shader"
-        - reflect: "editor/generated/shaders/picking.reflect.json"
-          output: "editor/generated/picking_shader_metadata.h"
-          namespace: "editor_picking_shader"
-        - reflect: "editor/generated/shaders/grid.reflect.json"
-          output: "editor/generated/grid_shader_metadata.h"
-          namespace: "editor_grid_shader"
-        - reflect: "editor/generated/shaders/wireframe.reflect.json"
-          output: "editor/generated/wireframe_shader_metadata.h"
-          namespace: "editor_wireframe_shader"
-    embed:
-      template: "core/templates/embedded_resources.h.j2"
-      resources:
-        - input:
-            - "editor/generated/shaders/forward.wgsl"
-            - "editor/generated/shaders/picking.wgsl"
-            - "editor/generated/shaders/grid.wgsl"
-            - "editor/generated/shaders/wireframe.wgsl"
-            - "editor/icons/*.*"
-            - "assets/scenes/primitives.usda"
-          output: "editor/generated/embedded_resources.h"
-          namespace: "editor_resources"
-        - input:
-            - "assets/shaders/test/simple.wgsl"
-            - "assets/scenes/test_cube.usda"
-          output: "core/tests/generated/embedded_test_resources.h"
-          namespace: "test_resources"
-        - input:
-            - "hello_triangle/generated/shaders/hello_triangle.wgsl"
-            - "hello_triangle/scenes/triangle.usda"
-          output: "hello_triangle/generated/embedded_resources.h"
-          namespace: "hello_triangle_resources"
+    slangc: {}
+    shader_codegen: {}
+    embed: {}
   postbuild: {}
   conan:
     local_recipes: "tools/conan"
@@ -121,9 +63,69 @@ agent:
       changes outside touched functions should be called out and excluded.
       Diff against the base branch (not just HEAD) to catch accumulated drift.
 
-slangc: "{cfg:build.prebuild.slangc}"
-shader_codegen: "{cfg:build.prebuild.shader_codegen}"
-embed: "{cfg:build.prebuild.embed}"
+slangc:
+  search_paths:
+    - "core/shaders"
+  shaders:
+    - input: "assets/shaders/test/*.slang"
+      output: "assets/shaders/test/*.wgsl"
+    - input: "hello_triangle/shaders/hello_triangle.slang"
+      output: "hello_triangle/generated/shaders/hello_triangle.wgsl"
+      reflect: true
+    - input: "editor/shaders/forward.slang"
+      output: "editor/generated/shaders/forward.wgsl"
+      reflect: true
+    - input: "editor/shaders/picking.slang"
+      output: "editor/generated/shaders/picking.wgsl"
+      reflect: true
+    - input: "editor/shaders/grid.slang"
+      output: "editor/generated/shaders/grid.wgsl"
+      reflect: true
+    - input: "editor/shaders/wireframe.slang"
+      output: "editor/generated/shaders/wireframe.wgsl"
+      reflect: true
+
+shader_codegen:
+  template: "core/templates/shader_metadata.h.j2"
+  shaders:
+    - reflect: "hello_triangle/generated/shaders/hello_triangle.reflect.json"
+      output: "hello_triangle/generated/shader_metadata.h"
+      namespace: "hello_triangle_shader"
+    - reflect: "editor/generated/shaders/forward.reflect.json"
+      output: "editor/generated/shader_metadata.h"
+      namespace: "editor_shader"
+    - reflect: "editor/generated/shaders/picking.reflect.json"
+      output: "editor/generated/picking_shader_metadata.h"
+      namespace: "editor_picking_shader"
+    - reflect: "editor/generated/shaders/grid.reflect.json"
+      output: "editor/generated/grid_shader_metadata.h"
+      namespace: "editor_grid_shader"
+    - reflect: "editor/generated/shaders/wireframe.reflect.json"
+      output: "editor/generated/wireframe_shader_metadata.h"
+      namespace: "editor_wireframe_shader"
+
+embed:
+  template: "core/templates/embedded_resources.h.j2"
+  resources:
+    - input:
+        - "editor/generated/shaders/forward.wgsl"
+        - "editor/generated/shaders/picking.wgsl"
+        - "editor/generated/shaders/grid.wgsl"
+        - "editor/generated/shaders/wireframe.wgsl"
+        - "editor/icons/*.*"
+        - "assets/scenes/primitives.usda"
+      output: "editor/generated/embedded_resources.h"
+      namespace: "editor_resources"
+    - input:
+        - "assets/shaders/test/simple.wgsl"
+        - "assets/scenes/test_cube.usda"
+      output: "core/tests/generated/embedded_test_resources.h"
+      namespace: "test_resources"
+    - input:
+        - "hello_triangle/generated/shaders/hello_triangle.wgsl"
+        - "hello_triangle/scenes/triangle.usda"
+      output: "hello_triangle/generated/embedded_resources.h"
+      namespace: "hello_triangle_resources"
 
 clean:
   groups:
