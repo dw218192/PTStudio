@@ -1,25 +1,36 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
-#include <doctest/doctest.h>
-
 #include <core/rendering/rendererRegistry.h>
 #include <core/rendering/scenePass.h>
+#include <doctest/doctest.h>
 
 using namespace pts::rendering;
 
 namespace {
 
 struct FakePass final : IScenePass {
-    auto name() const noexcept -> std::string_view override { return "fake"; }
-    auto is_ready() const noexcept -> bool override { return true; }
-    void setup(const pts::webgpu::Device& /*device*/) override {}
-    void add_to_frame_graph(FrameGraph& /*fg*/, const PassContext& /*ctx*/) override {}
+    auto name() const noexcept -> std::string_view override {
+        return "fake";
+    }
+    auto is_ready() const noexcept -> bool override {
+        return true;
+    }
+    void setup(const pts::webgpu::Device& /*device*/) override {
+    }
+    void add_to_frame_graph(FrameGraph& /*fg*/, const PassContext& /*ctx*/) override {
+    }
 };
 
 struct AnotherFakePass final : IScenePass {
-    auto name() const noexcept -> std::string_view override { return "another"; }
-    auto is_ready() const noexcept -> bool override { return true; }
-    void setup(const pts::webgpu::Device& /*device*/) override {}
-    void add_to_frame_graph(FrameGraph& /*fg*/, const PassContext& /*ctx*/) override {}
+    auto name() const noexcept -> std::string_view override {
+        return "another";
+    }
+    auto is_ready() const noexcept -> bool override {
+        return true;
+    }
+    void setup(const pts::webgpu::Device& /*device*/) override {
+    }
+    void add_to_frame_graph(FrameGraph& /*fg*/, const PassContext& /*ctx*/) override {
+    }
 };
 
 // Exercise the REGISTER_RENDERER macro at file scope.

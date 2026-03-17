@@ -119,14 +119,9 @@ void sync_light(pxr::UsdPrim prim, SyncScope& scope, const Light& light) {
     int existing = world.find_light_by_prim(sdf_path.GetText());
     if (existing >= 0) {
         auto& dst = scope.light(static_cast<uint32_t>(existing));
-        dst.type = light.type;
-        dst.color = light.color;
-        dst.intensity = light.intensity;
-        dst.transform = light.transform;
-        dst.direction = light.direction;
-        dst.radius = light.radius;
-        dst.width = light.width;
-        dst.height = light.height;
+        auto prim_path = std::move(dst.prim_path);
+        dst = light;
+        dst.prim_path = std::move(prim_path);
         ++dst.version;
         scope.mark_light_dirty(static_cast<uint32_t>(existing));
         scope.bump_light_version();

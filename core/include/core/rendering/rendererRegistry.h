@@ -36,8 +36,6 @@ class RendererRegistry {
 
 }  // namespace pts::rendering
 
-#define REGISTER_RENDERER(name, PassClass)                                          \
-    static int s_register_##PassClass = ::pts::rendering::RendererRegistry::add({   \
-        name,                                                                       \
-        [] { return std::make_unique<PassClass>(); }                                \
-    })
+#define REGISTER_RENDERER(name, PassClass)                                       \
+    static int s_register_##PassClass = ::pts::rendering::RendererRegistry::add( \
+        {name, [] { return std::make_unique<PassClass>(); }})

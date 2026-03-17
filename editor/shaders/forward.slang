@@ -53,16 +53,17 @@ float4 fs_main(float3 world_normal : NORMAL, float3 world_pos : WORLD_POS,
     float3 V = normalize(u.camera_pos - world_pos);
 
     float3 base_color;
+    float metallic = 0.0;
     float roughness = 0.5;
     if (u.material_index == 0xFFFFFFFF) {
         base_color = color;
     } else {
         base_color = materials[u.material_index].diffuse_color;
+        metallic = materials[u.material_index].metallic;
         roughness = materials[u.material_index].roughness;
     }
 
-    BlinnPhong brdf;
-    float3 result = evaluate_lighting(brdf, lights, u.light_count, world_pos, N, V, base_color, roughness);
-    result += 0.03 * base_color;
+    CookTorranceGGX brdf;
+    float3 result = evaluate_lighting(brdf, lights, u.light_count, world_pos, N, V, base_color, metallic, roughness);
     return float4(result, 1.0);
 }
