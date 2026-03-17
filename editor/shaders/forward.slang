@@ -61,7 +61,8 @@ float4 fs_main(float3 world_normal : NORMAL, float3 world_pos : WORLD_POS,
         roughness = materials[u.material_index].roughness;
     }
 
-    float3 result = evaluate_lighting(lights, u.light_count, world_pos, N, V, base_color, roughness);
+    BlinnPhong brdf;
+    float3 result = evaluate_lighting(brdf, lights, u.light_count, world_pos, N, V, base_color, roughness);
     result += 0.03 * base_color;
     return float4(result, 1.0);
 }
