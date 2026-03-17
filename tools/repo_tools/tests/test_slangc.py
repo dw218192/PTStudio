@@ -74,3 +74,42 @@ class TestShouldCompileShader:
         other.write_text("not a shader")
         _touch_newer(other, output_file)
         assert not _should_compile_shader(input_file, output_file, force=False)
+
+    def test_search_path_newer_recompiles(self, shader_dir, tmp_path):
+        _, input_file, output_file = shader_dir
+        # Create a search path directory with a newer .slang file
+        sp_dir = tmp_path / "search"
+        sp_dir.mkdir()
+        sp_file = sp_dir / "lighting.slang"
+        sp_file.write_text("// lighting module")
+        _touch_newer(sp_file, output_file)
+        assert _should_compile_shader(
+            input_file, output_file, force=False, search_paths=[sp_dir]
+        )
+
+    def test_search_path_older_skips(self, shader_dir, tmp_path):
+        _, input_file, output_file = shader_dir
+        # Create a search path directory with an older .slang file
+        sp_dir = tmp_path / "search"
+        sp_dir.mkdir()
+        sp_file = sp_dir / "lighting.slang"
+        sp_file.write_text("// lighting module")
+        out_mtime = output_file.stat().st_mtime
+        os.utime(sp_file, (out_mtime - 1, out_mtime - 1))
+        assert not _should_compile_shader(
+            input_file, output_file, force=False, search_paths=[sp_dir]
+        )
+
+    def test_search_path_nonexistent_dir_skips(self, shader_dir, tmp_path):
+        _, input_file, output_file = shader_dir
+        # A non-existent search path should not cause errors
+        missing = tmp_path / "nonexistent"
+        assert not _should_compile_shader(
+            input_file, output_file, force=False, search_paths=[missing]
+        )
+
+    def test_search_path_empty_list_skips(self, shader_dir):
+        _, input_file, output_file = shader_dir
+        assert not _should_compile_shader(
+            input_file, output_file, force=False, search_paths=[]
+        )

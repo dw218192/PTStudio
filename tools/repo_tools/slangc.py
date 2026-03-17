@@ -90,7 +90,12 @@ def _resolve_slang_shaders(
     return resolved, errors
 
 
-def _should_compile_shader(input_path: Path, output_path: Path, force: bool) -> bool:
+def _should_compile_shader(
+    input_path: Path,
+    output_path: Path,
+    force: bool,
+    search_paths: list[Path] | None = None,
+) -> bool:
     if force:
         return True
     if not output_path.exists():
@@ -100,6 +105,12 @@ def _should_compile_shader(input_path: Path, output_path: Path, force: bool) -> 
     for slang_file in input_path.parent.glob("*.slang"):
         if slang_file.stat().st_mtime > out_mtime:
             return True
+    # Check search path directories for imported modules
+    for sp in (search_paths or []):
+        if sp.is_dir():
+            for slang_file in sp.glob("*.slang"):
+                if slang_file.stat().st_mtime > out_mtime:
+                    return True
     return False
 
 
@@ -109,6 +120,7 @@ def _emit_reflection_json(
     output_path: Path,
     conanbuild: Path,
     passthrough_args: list[str],
+    search_paths: list[Path] | None = None,
 ) -> None:
     """Emit reflection JSON via slangc -reflection-json."""
     reflect_path = output_path.with_suffix(".reflect.json")
@@ -120,6 +132,8 @@ def _emit_reflection_json(
         "-target", "wgsl",
         "-reflection-json", str(reflect_path),
     ]
+    for sp in (search_paths or []):
+        reflect_cmd.extend(["-I", str(sp)])
     reflect_cmd.extend(passthrough_args)
 
     logs_dir = reflect_path.parent
@@ -164,6 +178,9 @@ class SlangcTool(RepoTool):
 
         conanbuild = Path(tokens["build_dir"]) / "conanbuild"
 
+        search_paths_raw = config.get("slangc", {}).get("search_paths", [])
+        search_paths = [resolve_path(root, p, tokens) for p in search_paths_raw]
+
         shaders, errors = _resolve_slang_shaders(root, config, tokens, args)
         if errors:
             logger.error(f"Shader resolution failed with {errors} error(s)")
@@ -182,7 +199,7 @@ class SlangcTool(RepoTool):
                 logger.error(f"Shader input not found: {input_path}")
                 sys.exit(1)
 
-            if _should_compile_shader(input_path, output_path, args["force"]):
+            if _should_compile_shader(input_path, output_path, args["force"], search_paths):
                 output_path.parent.mkdir(parents=True, exist_ok=True)
                 log_file = logs_dir / f"slangc_{output_path.stem}.log"
                 cmd = [
@@ -193,6 +210,8 @@ class SlangcTool(RepoTool):
                     "-target",
                     "wgsl",
                 ]
+                for sp in search_paths:
+                    cmd.extend(["-I", str(sp)])
                 cmd.extend(ctx.passthrough_args)
                 shell_cmd = ShellCommand(cmd, env_script=conanbuild)
                 try:
@@ -227,7 +246,7 @@ class SlangcTool(RepoTool):
                 if needs_reflect:
                     _emit_reflection_json(
                         compiler, input_path, output_path,
-                        conanbuild, ctx.passthrough_args,
+                        conanbuild, ctx.passthrough_args, search_paths,
                     )
 
         logger.info(f"slangc compiled {compiled} shader(s)")
