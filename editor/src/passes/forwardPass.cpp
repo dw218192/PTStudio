@@ -30,38 +30,8 @@ static_assert(sizeof(ForwardUniforms) == 160, "ForwardUniforms must match shader
 static_assert(ForwardPass::k_uniform_align >= sizeof(ForwardUniforms),
               "Alignment must be >= uniform struct size");
 
-struct GpuLight {
-    glm::vec3 direction_or_pos;
-    uint32_t type;
-    glm::vec3 color;
-    float intensity;
-    float radius;
-    float width;
-    float height;
-    float angle;
-};
-static_assert(sizeof(GpuLight) == 48, "GpuLight must be 48 bytes for GPU alignment");
-
 static constexpr uint32_t k_min_material_buffer_size = 32;
 static constexpr uint32_t k_min_light_buffer_size = 48;
-
-static GpuLight to_gpu_light(const rendering::Light& light) {
-    GpuLight gl{};
-    gl.type = static_cast<uint32_t>(light.type);
-    gl.color = light.color;
-    gl.intensity = light.intensity;
-    gl.radius = light.radius;
-    gl.width = light.width;
-    gl.height = light.height;
-    gl.angle = light.angle;
-
-    if (light.type == rendering::Light::Type::Distant) {
-        gl.direction_or_pos = light.direction;
-    } else {
-        gl.direction_or_pos = glm::vec3(light.transform[3]);
-    }
-    return gl;
-}
 
 static WGPUBindGroup create_bind_group(WGPUDevice device, WGPUBindGroupLayout layout,
                                        WGPUBuffer uniform_buf, WGPUBuffer material_buf,
@@ -246,15 +216,15 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
 
     if (ready.cached_light_version != light_version) {
         // Count active lights
-        std::vector<GpuLight> gpu_lights;
+        std::vector<rendering::Light> gpu_lights;
         for (const auto& light : lights) {
             if (!light.active) continue;
-            gpu_lights.push_back(to_gpu_light(light));
+            gpu_lights.push_back(rendering::to_light(light));
         }
 
         // Default fallback: single distant light
         if (gpu_lights.empty()) {
-            GpuLight def{};
+            rendering::Light def{};
             def.type = 0;
             def.direction_or_pos = glm::normalize(glm::vec3(0.3f, -1.0f, 0.5f));
             def.color = {1.0f, 0.95f, 0.9f};
@@ -263,7 +233,7 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
         }
 
         auto buf_size = std::max(static_cast<std::size_t>(k_min_light_buffer_size),
-                                 gpu_lights.size() * sizeof(GpuLight));
+                                 gpu_lights.size() * sizeof(rendering::Light));
 
         if (!ready.light_buffer.handle() || ready.light_buffer.size() < buf_size) {
             ready.light_buffer = ctx.device.create_buffer(
@@ -273,7 +243,7 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
         }
 
         wgpuQueueWriteBuffer(ctx.queue, ready.light_buffer.handle(), 0, gpu_lights.data(),
-                             gpu_lights.size() * sizeof(GpuLight));
+                             gpu_lights.size() * sizeof(rendering::Light));
         ready.light_count = static_cast<uint32_t>(gpu_lights.size());
         ready.cached_light_version = light_version;
         ctx.world.clear_dirty_lights();
@@ -283,9 +253,9 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
         for (uint32_t i = 0; i < static_cast<uint32_t>(lights.size()); ++i) {
             if (!lights[i].active) continue;
             if (i < static_cast<uint32_t>(dirty_lights.size()) && dirty_lights[i]) {
-                auto gl = to_gpu_light(lights[i]);
+                auto gl = rendering::to_light(lights[i]);
                 wgpuQueueWriteBuffer(ctx.queue, ready.light_buffer.handle(),
-                                     gpu_idx * sizeof(GpuLight), &gl, sizeof(GpuLight));
+                                     gpu_idx * sizeof(rendering::Light), &gl, sizeof(rendering::Light));
             }
             ++gpu_idx;
         }

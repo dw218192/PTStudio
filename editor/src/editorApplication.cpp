@@ -190,7 +190,7 @@ void EditorApplication::process_dirty_prims() {
 void EditorApplication::normalize_xform_ops(const std::string& prim_path) {
     PRECONDITION(m_stage);
     auto prim = m_stage->GetPrimAtPath(pxr::SdfPath(prim_path));
-    INVARIANT_MSG(prim.IsValid(), "prim_path on RenderObject must reference a valid USD prim");
+    INVARIANT_MSG(prim.IsValid(), "prim_path on ObjectSlot must reference a valid USD prim");
 
     pxr::UsdGeomXformable xformable(prim);
     if (!xformable) return;
@@ -702,7 +702,7 @@ void EditorApplication::draw_light_gizmos(const glm::mat4& view_mat, const glm::
         const auto& light = lights[i];
         if (!light.active) continue;
 
-        if (light.type == rendering::Light::Type::Dome) continue;
+        if (light.type == rendering::LightSlot::Type::Dome) continue;
         // All lights get their icon at the transform position
         glm::vec3 world_pos = glm::vec3(light.transform[3]);
 

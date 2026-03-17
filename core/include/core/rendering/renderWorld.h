@@ -30,6 +30,19 @@ struct Material {
 };
 static_assert(sizeof(Material) == 32, "Material must be 32 bytes for GPU alignment");
 
+/// 48-byte GPU struct matching lighting.slang's GpuLight.
+struct Light {
+    glm::vec3 direction_or_pos;
+    uint32_t type;
+    glm::vec3 color;
+    float intensity;
+    float radius;
+    float width;
+    float height;
+    float angle;
+};
+static_assert(sizeof(Light) == 48, "Light must be 48 bytes for GPU alignment");
+
 struct Mesh {
     webgpu::Buffer vertex_buffer;
     webgpu::Buffer index_buffer;
@@ -38,7 +51,7 @@ struct Mesh {
     uint32_t version = 0;
 };
 
-struct RenderObject {
+struct ObjectSlot {
     uint32_t mesh_index;
     uint32_t material_index{k_no_material};
     glm::mat4 transform;
@@ -46,25 +59,24 @@ struct RenderObject {
     bool active{true};
 };
 
-struct Light {
+struct LightSlot {
     enum class Type { Distant, Sphere, Rect, Disk, Dome };
     Type type;
     glm::vec3 color{1.0f, 1.0f, 1.0f};
     float intensity{1.0f};
     glm::mat4 transform;
-    std::string prim_path;
-
-    // Distant light
     glm::vec3 direction{0.0f, -1.0f, 0.0f};
-    float angle{0.53f};  // angular extent in degrees
-
-    // Area/point lights
+    float angle{0.53f};
     float radius{0.0f};
     float width{1.0f};
     float height{1.0f};
+    std::string prim_path;
     bool active{true};
     uint32_t version = 0;
 };
+
+/// Convert a LightSlot to a GPU-ready Light struct.
+Light to_light(const LightSlot& slot);
 
 /// Prim path → slot lookup entry. A single map replaces separate
 /// prim_to_object / prim_to_light maps for better cache locality.
@@ -103,9 +115,9 @@ class SyncScope {
     void free_light_slot(uint32_t i);
 
     // Mutable accessors for adapter/sync code (friend-gated).
-    RenderObject& object(uint32_t i);
+    ObjectSlot& object(uint32_t i);
     Mesh& mesh(uint32_t i);
-    Light& light(uint32_t i);
+    LightSlot& light(uint32_t i);
     Material& material(uint32_t i);
     std::vector<Material>& materials();
     std::unordered_map<std::string, uint32_t>& material_cache();
@@ -119,9 +131,9 @@ class SyncScope {
 
 struct RenderWorld {
     // Read-only accessors
-    boost::span<const RenderObject> get_objects() const;
+    boost::span<const ObjectSlot> get_objects() const;
     boost::span<const Mesh> get_meshes() const;
-    boost::span<const Light> get_lights() const;
+    boost::span<const LightSlot> get_lights() const;
     boost::span<const Material> get_materials() const;
     uint32_t get_mesh_version() const;
     uint32_t get_light_version() const;
@@ -158,9 +170,9 @@ struct RenderWorld {
     friend class SyncScope;
 
     std::vector<Mesh> m_meshes;
-    std::vector<RenderObject> m_objects;
+    std::vector<ObjectSlot> m_objects;
     std::vector<Material> m_materials;
-    std::vector<Light> m_lights;
+    std::vector<LightSlot> m_lights;
     std::vector<uint8_t> m_dirty_lights;
 
     /// Material path → material index (deduplication cache).

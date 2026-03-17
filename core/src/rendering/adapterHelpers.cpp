@@ -112,7 +112,7 @@ void sync_object(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device& devi
     }
 }
 
-void sync_light(pxr::UsdPrim prim, SyncScope& scope, const Light& light) {
+void sync_light(pxr::UsdPrim prim, SyncScope& scope, const LightSlot& light) {
     auto& world = scope.world();
     auto sdf_path = prim.GetPath();
 

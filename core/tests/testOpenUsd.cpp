@@ -88,7 +88,7 @@ struct TestListener : pxr::TfWeakBase {
 // GPU-dependent tests — Device::create() requires native Dawn (not available in node.js)
 #ifndef __EMSCRIPTEN__
 
-TEST_CASE("populate_from_stage populates prim_path on RenderObjects") {
+TEST_CASE("populate_from_stage populates prim_path on ObjectSlots") {
     // Build a stage with a Mesh prim
     auto stage = pxr::UsdStage::CreateInMemory();
     REQUIRE(stage);
@@ -174,7 +174,7 @@ TEST_CASE("USD ObjectsChanged fires on xform property edit") {
     pxr::TfNotice::Revoke(key);
 }
 
-TEST_CASE("Xform change updates RenderObject transform via notice pattern") {
+TEST_CASE("Xform change updates ObjectSlot transform via notice pattern") {
     auto stage = pxr::UsdStage::CreateInMemory();
     REQUIRE(stage);
 

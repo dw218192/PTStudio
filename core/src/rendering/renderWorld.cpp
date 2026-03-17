@@ -9,6 +9,26 @@
 
 namespace pts::rendering {
 
+// --- to_light ---
+
+Light to_light(const LightSlot& slot) {
+    Light l{};
+    l.type = static_cast<uint32_t>(slot.type);
+    l.color = slot.color;
+    l.intensity = slot.intensity;
+    l.radius = slot.radius;
+    l.width = slot.width;
+    l.height = slot.height;
+    l.angle = slot.angle;
+
+    if (slot.type == LightSlot::Type::Distant) {
+        l.direction_or_pos = slot.direction;
+    } else {
+        l.direction_or_pos = glm::vec3(slot.transform[3]);
+    }
+    return l;
+}
+
 // --- SyncScope ---
 
 SyncScope::SyncScope(RenderWorld& world) : m_world(world) {
@@ -93,7 +113,7 @@ void SyncScope::free_light_slot(uint32_t i) {
 
 // --- SyncScope mutable accessors ---
 
-RenderObject& SyncScope::object(uint32_t i) {
+ObjectSlot& SyncScope::object(uint32_t i) {
     return m_world.m_objects[i];
 }
 
@@ -101,7 +121,7 @@ Mesh& SyncScope::mesh(uint32_t i) {
     return m_world.m_meshes[i];
 }
 
-Light& SyncScope::light(uint32_t i) {
+LightSlot& SyncScope::light(uint32_t i) {
     return m_world.m_lights[i];
 }
 
@@ -132,7 +152,7 @@ void SyncScope::bump_light_version() {
 
 // --- RenderWorld accessors ---
 
-boost::span<const RenderObject> RenderWorld::get_objects() const {
+boost::span<const ObjectSlot> RenderWorld::get_objects() const {
     return {m_objects.data(), m_objects.size()};
 }
 
@@ -140,7 +160,7 @@ boost::span<const Mesh> RenderWorld::get_meshes() const {
     return {m_meshes.data(), m_meshes.size()};
 }
 
-boost::span<const Light> RenderWorld::get_lights() const {
+boost::span<const LightSlot> RenderWorld::get_lights() const {
     return {m_lights.data(), m_lights.size()};
 }
 
@@ -210,7 +230,7 @@ void RenderWorld::update_transforms(const pxr::UsdStageRefPtr& stage,
             } else {
                 auto& light = m_lights[slot.index];
                 light.transform = xf;
-                if (light.type == Light::Type::Distant) {
+                if (light.type == LightSlot::Type::Distant) {
                     glm::vec4 local_dir(0.0f, 0.0f, -1.0f, 0.0f);
                     light.direction = glm::normalize(glm::vec3(xf * local_dir));
                 }
