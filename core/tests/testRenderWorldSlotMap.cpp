@@ -1,5 +1,6 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <core/rendering/renderWorld.h>
+#include <core/rendering/vertex.h>
 #include <doctest/doctest.h>
 
 using namespace pts::rendering;
@@ -238,4 +239,35 @@ TEST_CASE("dirty light tracking") {
         world.for_each_prim([&](std::string_view, PrimSlot) { ++count; });
         CHECK(count == 2);
     }
+}
+
+TEST_CASE("Mesh cpu_vertices can be populated via SyncScope") {
+    RenderWorld world;
+    auto scope = world.begin_sync();
+    auto m = scope.alloc_mesh_slot();
+
+    Vertex v{};
+    v.position[0] = 1.0f;
+    v.position[1] = 2.0f;
+    v.position[2] = 3.0f;
+
+    scope.mesh(m).cpu_vertices = {v};
+    scope.mesh(m).cpu_indices = {0};
+
+    CHECK(world.get_meshes()[m].cpu_vertices.size() == 1);
+    CHECK(world.get_meshes()[m].cpu_vertices[0].position[0] == doctest::Approx(1.0f));
+    CHECK(world.get_meshes()[m].cpu_indices.size() == 1);
+}
+
+TEST_CASE("free_mesh_slot clears cpu_vertices") {
+    RenderWorld world;
+    auto scope = world.begin_sync();
+    auto m = scope.alloc_mesh_slot();
+
+    scope.mesh(m).cpu_vertices = {Vertex{}};
+    scope.mesh(m).cpu_indices = {0};
+
+    scope.free_mesh_slot(m);
+    CHECK(world.get_meshes()[m].cpu_vertices.empty());
+    CHECK(world.get_meshes()[m].cpu_indices.empty());
 }

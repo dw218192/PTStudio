@@ -82,6 +82,7 @@ void upload_mesh(SyncScope& scope, const webgpu::Device& device,
     gpu_mesh.index_buffer = std::move(index_buf);
     gpu_mesh.index_count = static_cast<uint32_t>(indices.size());
     gpu_mesh.cpu_indices.assign(indices.begin(), indices.end());
+    gpu_mesh.cpu_vertices.assign(vertices.begin(), vertices.end());
     ++gpu_mesh.version;
 }
 

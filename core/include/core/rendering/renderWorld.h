@@ -53,6 +53,7 @@ struct Mesh {
     webgpu::Buffer index_buffer;
     uint32_t index_count;
     std::vector<uint32_t> cpu_indices;
+    std::vector<Vertex> cpu_vertices;
     uint32_t version = 0;
 };
 
@@ -175,6 +176,10 @@ struct RenderWorld {
     /// the returned scope guard is destroyed. sync_object/remove_prim
     /// calls without a live SyncScope will PRECONDITION-fail.
     [[nodiscard]] SyncScope begin_sync();
+
+    /// Upload GPU buffers for all meshes that have CPU vertex data.
+    /// Call on the main thread after building the RenderWorld off-thread.
+    void upload_all_meshes(const webgpu::Device& device);
 
     void clear();
 

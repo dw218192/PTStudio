@@ -99,6 +99,7 @@ void SyncScope::free_mesh_slot(uint32_t i) {
     m_world.m_meshes[i].index_buffer = {};
     m_world.m_meshes[i].index_count = 0;
     m_world.m_meshes[i].cpu_indices.clear();
+    m_world.m_meshes[i].cpu_vertices.clear();
     m_world.m_free_mesh_slots.push_back(i);
 }
 
@@ -289,6 +290,33 @@ void RenderWorld::prepare_gpu_buffers(const webgpu::Device& device, WGPUQueue qu
             ++gpu_idx;
         }
         clear_dirty_lights();
+    }
+}
+
+void RenderWorld::upload_all_meshes(const webgpu::Device& device) {
+    for (auto& mesh : m_meshes) {
+        if (mesh.cpu_vertices.empty()) continue;
+
+        PRECONDITION(!mesh.cpu_indices.empty());
+
+        mesh.vertex_buffer = device.create_buffer(
+            mesh.cpu_vertices.size() * sizeof(Vertex),
+            static_cast<WGPUBufferUsage>(WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst));
+        wgpuQueueWriteBuffer(device.queue(), mesh.vertex_buffer.handle(), 0,
+                             mesh.cpu_vertices.data(),
+                             mesh.cpu_vertices.size() * sizeof(Vertex));
+
+        mesh.index_buffer = device.create_buffer(
+            mesh.cpu_indices.size() * sizeof(uint32_t),
+            static_cast<WGPUBufferUsage>(WGPUBufferUsage_Index | WGPUBufferUsage_CopyDst));
+        wgpuQueueWriteBuffer(device.queue(), mesh.index_buffer.handle(), 0,
+                             mesh.cpu_indices.data(),
+                             mesh.cpu_indices.size() * sizeof(uint32_t));
+
+        mesh.index_count = static_cast<uint32_t>(mesh.cpu_indices.size());
+        mesh.cpu_vertices.clear();
+        mesh.cpu_vertices.shrink_to_fit();
+        ++mesh.version;
     }
 }
 
