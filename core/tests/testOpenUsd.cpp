@@ -108,7 +108,7 @@ TEST_CASE("populate_from_stage populates prim_path on ObjectSlots") {
     auto logger = spdlog::stdout_color_mt("test_populate");
     auto device = pts::webgpu::Device::create(logger);
     pts::rendering::RenderWorld world;
-    pts::rendering::populate_from_stage(world, stage, device);
+    pts::rendering::populate_from_stage(world, stage, &device);
 
     REQUIRE(world.get_objects().size() == 1);
     CHECK(world.get_objects()[0].prim_path == "/Root/TestMesh");
@@ -191,7 +191,7 @@ TEST_CASE("Xform change updates ObjectSlot transform via notice pattern") {
     auto logger = spdlog::stdout_color_mt("test_xform_change");
     auto device = pts::webgpu::Device::create(logger);
     pts::rendering::RenderWorld world;
-    pts::rendering::populate_from_stage(world, stage, device);
+    pts::rendering::populate_from_stage(world, stage, &device);
 
     REQUIRE(world.get_objects().size() == 1);
     CHECK(world.get_objects()[0].transform[0][3] == doctest::Approx(0.0f));
@@ -208,7 +208,7 @@ TEST_CASE("Xform change updates ObjectSlot transform via notice pattern") {
 
     // For the full resync path: clear + repopulate
     world.clear();
-    pts::rendering::populate_from_stage(world, stage, device);
+    pts::rendering::populate_from_stage(world, stage, &device);
     REQUIRE(world.get_objects().size() == 1);
 
     // Now test the xform-only fast path: Set() on existing op
@@ -271,7 +271,7 @@ TEST_CASE("Selection preserved across full resync by prim_path") {
     auto logger = spdlog::stdout_color_mt("test_selection_resync");
     auto device = pts::webgpu::Device::create(logger);
     pts::rendering::RenderWorld world;
-    pts::rendering::populate_from_stage(world, stage, device);
+    pts::rendering::populate_from_stage(world, stage, &device);
 
     REQUIRE(world.get_objects().size() == 2);
 
@@ -288,7 +288,7 @@ TEST_CASE("Selection preserved across full resync by prim_path") {
 
     // Simulate full resync (mirrors process_dirty_prims resync path)
     world.clear();
-    pts::rendering::populate_from_stage(world, stage, device);
+    pts::rendering::populate_from_stage(world, stage, &device);
 
     // Restore selection by prim_path
     int restored = -1;
@@ -322,7 +322,7 @@ TEST_CASE("Selection lost when selected prim is removed during resync") {
     auto logger = spdlog::stdout_color_mt("test_selection_removed");
     auto device = pts::webgpu::Device::create(logger);
     pts::rendering::RenderWorld world;
-    pts::rendering::populate_from_stage(world, stage, device);
+    pts::rendering::populate_from_stage(world, stage, &device);
 
     REQUIRE(world.get_objects().size() == 1);
     std::string selected_prim_path = world.get_objects()[0].prim_path;
@@ -332,7 +332,7 @@ TEST_CASE("Selection lost when selected prim is removed during resync") {
 
     // Full resync
     world.clear();
-    pts::rendering::populate_from_stage(world, stage, device);
+    pts::rendering::populate_from_stage(world, stage, &device);
 
     // Search for the removed prim
     int restored = -1;
@@ -379,7 +379,7 @@ TEST_CASE("Material extraction from UsdPreviewSurface") {
     auto logger = spdlog::stdout_color_mt("test_material");
     auto device = pts::webgpu::Device::create(logger);
     pts::rendering::RenderWorld world;
-    pts::rendering::populate_from_stage(world, stage, device);
+    pts::rendering::populate_from_stage(world, stage, &device);
 
     REQUIRE(world.get_objects().size() == 1);
     REQUIRE(world.get_materials().size() == 1);
@@ -410,7 +410,7 @@ TEST_CASE("Prim without material gets k_no_material") {
     auto logger = spdlog::stdout_color_mt("test_no_material");
     auto device = pts::webgpu::Device::create(logger);
     pts::rendering::RenderWorld world;
-    pts::rendering::populate_from_stage(world, stage, device);
+    pts::rendering::populate_from_stage(world, stage, &device);
 
     REQUIRE(world.get_objects().size() == 1);
     CHECK(world.get_objects()[0].material_index == pts::rendering::k_no_material);
@@ -451,7 +451,7 @@ TEST_CASE("Shared material is deduplicated") {
     auto logger = spdlog::stdout_color_mt("test_dedup_material");
     auto device = pts::webgpu::Device::create(logger);
     pts::rendering::RenderWorld world;
-    pts::rendering::populate_from_stage(world, stage, device);
+    pts::rendering::populate_from_stage(world, stage, &device);
 
     REQUIRE(world.get_objects().size() == 2);
     CHECK(world.get_materials().size() == 1);
