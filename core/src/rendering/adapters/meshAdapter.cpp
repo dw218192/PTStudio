@@ -21,7 +21,7 @@ bool MeshAdapter::can_adapt(const pxr::UsdPrim& prim) const {
     return prim.IsA<pxr::UsdGeomMesh>();
 }
 
-void MeshAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device& device) {
+void MeshAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device* device) {
     pxr::UsdGeomMesh mesh(prim);
 
     pxr::VtVec3fArray points;

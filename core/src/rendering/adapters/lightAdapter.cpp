@@ -19,7 +19,7 @@ bool LightAdapter::can_adapt(const pxr::UsdPrim& prim) const {
     return prim.HasAPI<pxr::UsdLuxLightAPI>();
 }
 
-void LightAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device& /*device*/) {
+void LightAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device* /*device*/) {
     LightSlot light;
 
     // Common attributes via LightAPI

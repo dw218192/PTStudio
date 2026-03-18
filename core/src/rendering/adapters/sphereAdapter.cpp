@@ -31,7 +31,7 @@ bool SphereAdapter::can_adapt(const pxr::UsdPrim& prim) const {
     return prim.IsA<pxr::UsdGeomSphere>();
 }
 
-void SphereAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device& device) {
+void SphereAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device* device) {
     pxr::UsdGeomSphere sphere(prim);
 
     double radius = 1.0;

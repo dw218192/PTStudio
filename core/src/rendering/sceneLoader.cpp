@@ -11,7 +11,7 @@ namespace pts::rendering {
 
 namespace {
 
-void sync_prim_impl(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device& device) {
+void sync_prim_impl(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device* device) {
     for (auto* adapter : k_scene_adapters()) {
         if (adapter->can_adapt(prim)) {
             adapter->sync(prim, scope, device);
@@ -26,7 +26,7 @@ void sync_prim_impl(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device& d
 }  // namespace
 
 void populate_from_stage(RenderWorld& world, const pxr::UsdStageRefPtr& stage,
-                         const webgpu::Device& device) {
+                         const webgpu::Device* device) {
     PTS_ZONE_SCOPED;
     auto scope = world.begin_sync();
     for (const auto& prim : pxr::UsdPrimRange(stage->GetPseudoRoot())) {
@@ -34,7 +34,7 @@ void populate_from_stage(RenderWorld& world, const pxr::UsdStageRefPtr& stage,
     }
 }
 
-void sync_prim(SyncScope& scope, const pxr::UsdStageRefPtr& stage, const webgpu::Device& device,
+void sync_prim(SyncScope& scope, const pxr::UsdStageRefPtr& stage, const webgpu::Device* device,
                const pxr::SdfPath& prim_path) {
     auto prim = stage->GetPrimAtPath(prim_path);
     if (!prim.IsValid()) {

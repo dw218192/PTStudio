@@ -62,31 +62,34 @@ uint32_t resolve_material(pxr::UsdPrim prim, SyncScope& scope) {
     return index;
 }
 
-void upload_mesh(SyncScope& scope, const webgpu::Device& device,
+void upload_mesh(SyncScope& scope, const webgpu::Device* device,
                  const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices,
                  uint32_t mesh_slot) {
-    auto vertex_buf = device.create_buffer(
-        vertices.size() * sizeof(Vertex),
-        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst));
-    wgpuQueueWriteBuffer(device.queue(), vertex_buf.handle(), 0, vertices.data(),
-                         vertices.size() * sizeof(Vertex));
-
-    auto index_buf = device.create_buffer(
-        indices.size() * sizeof(uint32_t),
-        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Index | WGPUBufferUsage_CopyDst));
-    wgpuQueueWriteBuffer(device.queue(), index_buf.handle(), 0, indices.data(),
-                         indices.size() * sizeof(uint32_t));
-
     Mesh& gpu_mesh = scope.mesh(mesh_slot);
-    gpu_mesh.vertex_buffer = std::move(vertex_buf);
-    gpu_mesh.index_buffer = std::move(index_buf);
-    gpu_mesh.index_count = static_cast<uint32_t>(indices.size());
-    gpu_mesh.cpu_indices.assign(indices.begin(), indices.end());
     gpu_mesh.cpu_vertices.assign(vertices.begin(), vertices.end());
+    gpu_mesh.cpu_indices.assign(indices.begin(), indices.end());
+    gpu_mesh.index_count = static_cast<uint32_t>(indices.size());
     ++gpu_mesh.version;
+
+    if (device) {
+        auto vertex_buf = device->create_buffer(
+            vertices.size() * sizeof(Vertex),
+            static_cast<WGPUBufferUsage>(WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst));
+        wgpuQueueWriteBuffer(device->queue(), vertex_buf.handle(), 0, vertices.data(),
+                             vertices.size() * sizeof(Vertex));
+
+        auto index_buf = device->create_buffer(
+            indices.size() * sizeof(uint32_t),
+            static_cast<WGPUBufferUsage>(WGPUBufferUsage_Index | WGPUBufferUsage_CopyDst));
+        wgpuQueueWriteBuffer(device->queue(), index_buf.handle(), 0, indices.data(),
+                             indices.size() * sizeof(uint32_t));
+
+        gpu_mesh.vertex_buffer = std::move(vertex_buf);
+        gpu_mesh.index_buffer = std::move(index_buf);
+    }
 }
 
-void sync_object(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device& device,
+void sync_object(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device* device,
                  std::vector<Vertex>& vertices, std::vector<uint32_t>& indices) {
     auto& world = scope.world();
     auto sdf_path = prim.GetPath();

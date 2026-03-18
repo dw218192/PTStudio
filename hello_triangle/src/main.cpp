@@ -75,7 +75,7 @@ class HelloApp : public pts::WindowedApplication {
         auto layer = pxr::SdfLayer::CreateAnonymous(".usda");
         layer->ImportFromString(std::string{*usda});
         auto stage = pxr::UsdStage::Open(layer);
-        pts::rendering::populate_from_stage(m_world, stage, device);
+        pts::rendering::populate_from_stage(m_world, stage, &device);
 
         // Create shader module
         m_shader.emplace(device.create_shader_module_from_source(*shader_src));

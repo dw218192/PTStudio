@@ -161,11 +161,11 @@ void EditorApplication::process_dirty_prims() {
                 });
 
                 // Sync the prim itself
-                rendering::sync_prim(scope, m_stage, device, resync_path);
+                rendering::sync_prim(scope, m_stage, &device, resync_path);
 
                 // Sync affected children
                 for (const auto& child_path : children_to_resync) {
-                    rendering::sync_prim(scope, m_stage, device, child_path);
+                    rendering::sync_prim(scope, m_stage, &device, child_path);
                 }
             }
         }  // mesh_version bumped here
@@ -251,7 +251,7 @@ void EditorApplication::on_ready() {
         auto layer = pxr::SdfLayer::CreateAnonymous(".usda");
         layer->ImportFromString(std::string{*usda});
         m_stage = pxr::UsdStage::Open(layer);
-        rendering::populate_from_stage(m_world, m_stage, device);
+        rendering::populate_from_stage(m_world, m_stage, &device);
         register_stage_listener();
         log(LogLevel::Info, "Loaded default scene ({} objects)", m_world.get_objects().size());
     } else {
@@ -577,7 +577,7 @@ auto EditorApplication::draw_scene_panel() noexcept -> void {
                 m_world.clear();
                 m_selected_prim = pxr::SdfPath();
                 m_stage = stage;
-                rendering::populate_from_stage(m_world, m_stage, webgpu_context()->device());
+                rendering::populate_from_stage(m_world, m_stage, &webgpu_context()->device());
                 register_stage_listener();
                 log(LogLevel::Info, "Loaded scene: {} ({} objects)", result.name,
                     m_world.get_objects().size());
