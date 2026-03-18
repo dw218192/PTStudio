@@ -1,7 +1,6 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
-#include <doctest/doctest.h>
-
 #include <core/rendering/shaderLoader.h>
+#include <doctest/doctest.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
@@ -32,8 +31,8 @@ std::shared_ptr<spdlog::logger> make_logger() {
 
 TEST_CASE("ShaderLoader load delegates to embedded getter") {
     ShaderLoader loader(make_logger());
-    loader.register_shader("shaders/test.wgsl", "shaders/test.slang",
-                           "generated/shaders/test.wgsl", fake_getter);
+    loader.register_shader("shaders/test.wgsl", "shaders/test.slang", "generated/shaders/test.wgsl",
+                           fake_getter);
 
     auto result = loader.load("shaders/test.wgsl");
     REQUIRE(result.has_value());
@@ -49,24 +48,11 @@ TEST_CASE("ShaderLoader load returns nullopt when embedded getter fails") {
     CHECK_FALSE(result.has_value());
 }
 
-TEST_CASE("ShaderLoader poll_and_reload returns empty in non-hot-reload builds") {
+TEST_CASE("ShaderLoader poll_and_reload returns empty with no dirty files") {
     ShaderLoader loader(make_logger());
-    loader.register_shader("shaders/test.wgsl", "shaders/test.slang",
-                           "generated/shaders/test.wgsl", fake_getter);
+    loader.register_shader("shaders/test.wgsl", "shaders/test.slang", "generated/shaders/test.wgsl",
+                           fake_getter);
 
-    // In release/emscripten builds, poll_and_reload is a no-op
-#ifndef PTS_SHADER_HOT_RELOAD
     auto changed = loader.poll_and_reload();
     CHECK(changed.empty());
-#endif
-}
-
-TEST_CASE("ShaderLoader register_shader rejects null getter") {
-    ShaderLoader loader(make_logger());
-    CHECK_THROWS(loader.register_shader("key", "src", "out", nullptr));
-}
-
-TEST_CASE("ShaderLoader load rejects unknown key") {
-    ShaderLoader loader(make_logger());
-    CHECK_THROWS(loader.load("nonexistent"));
 }

@@ -1,5 +1,5 @@
-#include <core/rendering/shaderLoader.h>
 #include <core/diagnostics.h>
+#include <core/rendering/shaderLoader.h>
 #include <spdlog/spdlog.h>
 
 #ifdef PTS_SHADER_HOT_RELOAD
@@ -11,13 +11,11 @@
 
 using namespace pts::rendering;
 
-ShaderLoader::ShaderLoader(std::shared_ptr<spdlog::logger> logger)
-    : m_logger(std::move(logger)) {}
+ShaderLoader::ShaderLoader(std::shared_ptr<spdlog::logger> logger) : m_logger(std::move(logger)) {
+}
 
-void ShaderLoader::register_shader(std::string_view resource_key,
-                                    std::string_view slang_source,
-                                    std::string_view wgsl_output,
-                                    EmbeddedGetter embedded_getter) {
+void ShaderLoader::register_shader(std::string_view resource_key, std::string_view slang_source,
+                                   std::string_view wgsl_output, EmbeddedGetter embedded_getter) {
     PRECONDITION_MSG(embedded_getter, "embedded_getter must not be null");
     auto key = std::string(resource_key);
     ShaderEntry entry;
