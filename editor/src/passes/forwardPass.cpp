@@ -6,6 +6,7 @@
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
+#include <core/rendering/shaderLoader.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
 #include <shader_metadata.h>
 
@@ -142,6 +143,41 @@ void ForwardPass::setup(const webgpu::Device& device) {
         std::move(shader), std::move(pipeline), std::move(uniform_buffer),
         nullptr,           bind_group_layout,   initial_capacity,
     };
+}
+
+void ForwardPass::on_shaders_reloaded(const webgpu::Device& device,
+                                      const rendering::ShaderLoader& loader) {
+    if (!is_ready()) return;
+
+    auto new_src = loader.load("editor/generated/shaders/forward.wgsl");
+    if (!new_src) return;  // load failed, keep last-good shader
+
+    auto new_shader = device.create_shader_module_from_source(*new_src);
+
+    auto& ready = std::get<Ready>(m_state);
+
+    // Rebuild pipeline with new shader, reusing existing bind group layout
+    WGPUPipelineLayoutDescriptor pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
+    pl_desc.bindGroupLayoutCount = 1;
+    pl_desc.bindGroupLayouts = &ready.bind_group_layout;
+    WGPUPipelineLayout pipeline_layout = wgpuDeviceCreatePipelineLayout(device.handle(), &pl_desc);
+
+    auto new_pipeline = webgpu::RenderPipelineBuilder(device)
+                            .shader(new_shader)
+                            .color_format(WGPUTextureFormat_RGBA8Unorm)
+                            .depth_format(WGPUTextureFormat_Depth24Plus)
+                            .depth_write(true)
+                            .depth_compare(WGPUCompareFunction_Less)
+                            .cull_mode(WGPUCullMode_Back)
+                            .pipeline_layout(pipeline_layout)
+                            .vertex_layout<editor_shader::VertexLayout>()
+                            .build();
+
+    wgpuPipelineLayoutRelease(pipeline_layout);
+
+    // Move-assign new shader and pipeline (old ones released by RAII)
+    ready.shader = std::move(new_shader);
+    ready.pipeline = std::move(new_pipeline);
 }
 
 bool ForwardPass::ensure_capacity(const webgpu::Device& device, uint32_t object_count) {

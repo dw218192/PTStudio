@@ -18,6 +18,7 @@ class Device;
 namespace rendering {
 
 class FrameGraph;
+class ShaderLoader;
 struct PassContext;
 
 /// Entity type for pass data keying. Determines which entity's
@@ -35,7 +36,7 @@ class IScenePass {
     virtual void add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) = 0;
 
     /// Called when shaders have been hot-reloaded. Override to rebuild pipelines.
-    virtual void on_shaders_reloaded(const webgpu::Device& device) {
+    virtual void on_shaders_reloaded(const webgpu::Device& device, const ShaderLoader& loader) {
     }
 
    protected:
