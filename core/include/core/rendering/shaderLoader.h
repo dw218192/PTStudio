@@ -77,7 +77,9 @@ class ShaderLoader {
 
     std::unordered_map<std::string, ShaderEntry> m_entries;
     std::shared_ptr<spdlog::logger> m_logger;
+#ifdef PTS_SHADER_HOT_RELOAD
     std::unique_ptr<pts::BackgroundTask<int>> m_reload_task;
+#endif
 };
 
 }  // namespace pts::rendering
