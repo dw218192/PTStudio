@@ -85,6 +85,11 @@ list(APPEND TEST_NAMES testShaderLoader)
 set(testShaderLoader_source testShaderLoader.cpp)
 set(testShaderLoader_libs core)
 
+# BackgroundTask - works on all platforms (no GPU needed)
+list(APPEND TEST_NAMES testBackgroundTask)
+set(testBackgroundTask_source testBackgroundTask.cpp)
+set(testBackgroundTask_libs core)
+
 
 function(add_core_test target_name)
     message(STATUS "Building test: ${target_name}")
