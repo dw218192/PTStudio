@@ -48,6 +48,29 @@ TEST_CASE("ShaderLoader load returns nullopt when embedded getter fails") {
     CHECK_FALSE(result.has_value());
 }
 
+TEST_CASE("ShaderLoader supports multiple independent shader registrations") {
+    ShaderLoader loader(make_logger());
+
+    auto getter_a = [](std::string_view key) -> std::optional<std::string_view> {
+        if (key == "shaders/a.wgsl") return "// shader A";
+        return std::nullopt;
+    };
+    auto getter_b = [](std::string_view key) -> std::optional<std::string_view> {
+        if (key == "shaders/b.wgsl") return "// shader B";
+        return std::nullopt;
+    };
+
+    loader.register_shader("shaders/a.wgsl", "shaders/a.slang", "generated/a.wgsl", getter_a);
+    loader.register_shader("shaders/b.wgsl", "shaders/b.slang", "generated/b.wgsl", getter_b);
+
+    auto result_a = loader.load("shaders/a.wgsl");
+    auto result_b = loader.load("shaders/b.wgsl");
+    REQUIRE(result_a.has_value());
+    REQUIRE(result_b.has_value());
+    CHECK(*result_a == "// shader A");
+    CHECK(*result_b == "// shader B");
+}
+
 TEST_CASE("ShaderLoader poll_and_reload returns empty with no dirty files") {
     ShaderLoader loader(make_logger());
     loader.register_shader("shaders/test.wgsl", "shaders/test.slang", "generated/shaders/test.wgsl",

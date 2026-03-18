@@ -67,7 +67,8 @@ static const std::vector<rendering::RendererConfig> k_renderer_configs = {
 };
 
 EditorApplication::EditorApplication(std::string_view name, pts::LoggingManager& logging_manager)
-    : WindowedApplication{name, logging_manager} {
+    : WindowedApplication{name, logging_manager},
+      m_shader_loader(logging_manager.get_logger_shared("shader_loader")) {
     create_input_actions();
 
     m_console_log_sink =
@@ -293,6 +294,20 @@ void EditorApplication::on_ready() {
         stbi_image_free(pixels);
     }
 
+    // Register shaders for hot-reload
+    m_shader_loader.register_shader(
+        "editor/generated/shaders/forward.wgsl", "editor/shaders/forward.slang",
+        "editor/generated/shaders/forward.wgsl", editor_resources::get_resource);
+    m_shader_loader.register_shader(
+        "editor/generated/shaders/grid.wgsl", "editor/shaders/grid.slang",
+        "editor/generated/shaders/grid.wgsl", editor_resources::get_resource);
+    m_shader_loader.register_shader(
+        "editor/generated/shaders/picking.wgsl", "editor/shaders/picking.slang",
+        "editor/generated/shaders/picking.wgsl", editor_resources::get_resource);
+    m_shader_loader.register_shader(
+        "editor/generated/shaders/wireframe.wgsl", "editor/shaders/wireframe.slang",
+        "editor/generated/shaders/wireframe.wgsl", editor_resources::get_resource);
+
     // Set up renderer passes
     set_renderer_config(0);
 
@@ -337,6 +352,18 @@ void EditorApplication::render(FrameContext& ctx) {
 
     // Process deferred USD change notifications before rendering
     process_dirty_prims();
+
+#ifdef PTS_SHADER_HOT_RELOAD
+    {
+        auto changed = m_shader_loader.poll_and_reload();
+        if (!changed.empty()) {
+            auto const& device = webgpu_context()->device();
+            for (auto& pass : m_passes) {
+                pass->on_shaders_reloaded(device, m_shader_loader);
+            }
+        }
+    }
+#endif
 
     auto scope = m_imgui->frame_scope();
     ImGuizmo::BeginFrame();

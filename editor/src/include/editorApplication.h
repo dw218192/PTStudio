@@ -4,6 +4,7 @@
 #include <core/rendering/camera.h>
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/renderWorld.h>
+#include <core/rendering/shaderLoader.h>
 #include <core/rendering/webgpu/bufferReadback.h>
 #include <core/rendering/webgpu/webgpu.h>
 #include <core/windowedApplication.h>
@@ -92,6 +93,7 @@ struct EditorApplication final : WindowedApplication {
     rendering::RenderWorld m_world;
     std::vector<std::unique_ptr<rendering::IScenePass>> m_passes;
     size_t m_active_config_index = 0;
+    rendering::ShaderLoader m_shader_loader;
 
     // USD stage + change tracking
     pxr::UsdStageRefPtr m_stage;
