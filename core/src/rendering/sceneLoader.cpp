@@ -1,3 +1,4 @@
+#include <core/backgroundTask.h>
 #include <core/profiling.h>
 #include <core/rendering/adapterHelpers.h>
 #include <core/rendering/adapters/registry.h>
@@ -57,6 +58,28 @@ void remove_prim(SyncScope& scope, const pxr::SdfPath& prim_path) {
     if (light_idx >= 0) {
         scope.free_light_slot(static_cast<uint32_t>(light_idx));
     }
+}
+
+RenderWorld populate_from_stage_cpu(const pxr::UsdStageRefPtr& stage, TaskProgress& progress) {
+    PTS_ZONE_SCOPED;
+
+    size_t total = 0;
+    for (const auto& prim : pxr::UsdPrimRange(stage->GetPseudoRoot())) {
+        (void) prim;
+        ++total;
+    }
+
+    RenderWorld world;
+    auto scope = world.begin_sync();
+    size_t current = 0;
+    for (const auto& prim : pxr::UsdPrimRange(stage->GetPseudoRoot())) {
+        sync_prim_impl(prim, scope, nullptr);
+        ++current;
+        progress.set_progress(static_cast<float>(current) / static_cast<float>(total));
+        progress.set_status(prim.GetPath().GetText());
+    }
+
+    return world;
 }
 
 }  // namespace pts::rendering

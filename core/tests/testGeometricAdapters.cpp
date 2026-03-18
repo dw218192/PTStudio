@@ -1,3 +1,4 @@
+#include <core/backgroundTask.h>
 #include <core/rendering/adapters/capsuleAdapter.h>
 #include <core/rendering/adapters/coneAdapter.h>
 #include <core/rendering/adapters/cubeAdapter.h>
@@ -36,6 +37,39 @@ TEST_CASE("Adapters do not cross-match prim types") {
     CHECK(!pts::rendering::CylinderAdapter::instance().can_adapt(cube.GetPrim()));
     CHECK(!pts::rendering::ConeAdapter::instance().can_adapt(cube.GetPrim()));
     CHECK(!pts::rendering::CapsuleAdapter::instance().can_adapt(cube.GetPrim()));
+}
+
+TEST_CASE("populate_from_stage_cpu builds RenderWorld with progress reporting") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    pxr::UsdGeomCube::Define(stage, pxr::SdfPath("/CubeA"));
+    pxr::UsdGeomSphere::Define(stage, pxr::SdfPath("/SphereB"));
+
+    pts::TaskProgress progress;
+    auto world = pts::rendering::populate_from_stage_cpu(stage, progress);
+
+    // Progress should reach 1.0
+    CHECK(progress.progress() == doctest::Approx(1.0f));
+    // Status should be the last prim path processed
+    CHECK(!progress.status().empty());
+
+    // Both prims should be synced (pseudoroot is not adapted, but the two shapes are)
+    auto objects = world.get_objects();
+    size_t active_count = 0;
+    for (const auto& obj : objects) {
+        if (obj.active) ++active_count;
+    }
+    CHECK(active_count == 2);
+
+    // CPU data present, no GPU buffers
+    auto meshes = world.get_meshes();
+    for (const auto& obj : objects) {
+        if (!obj.active) continue;
+        const auto& mesh = meshes[obj.mesh_index];
+        CHECK(mesh.cpu_vertices.size() > 0);
+        CHECK(mesh.cpu_indices.size() > 0);
+        CHECK(mesh.vertex_buffer.handle() == nullptr);
+        CHECK(mesh.index_buffer.handle() == nullptr);
+    }
 }
 
 // GPU-dependent tests — sync() uploads mesh data to the GPU
