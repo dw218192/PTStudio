@@ -150,9 +150,7 @@ void ForwardPass::on_shaders_reloaded(const webgpu::Device& device,
     if (!is_ready()) return;
 
     auto new_src = loader.load("editor/generated/shaders/forward.wgsl");
-    if (!new_src) return;  // load failed, keep last-good shader
-
-    auto new_shader = device.create_shader_module_from_source(*new_src);
+    auto new_shader = device.create_shader_module_from_source(new_src);
 
     auto& ready = std::get<Ready>(m_state);
 

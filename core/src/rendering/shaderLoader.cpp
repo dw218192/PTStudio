@@ -18,30 +18,21 @@ void ShaderLoader::register_shader(std::string_view resource_key, std::string_vi
                                    std::string_view wgsl_output, EmbeddedGetter embedded_getter) {
     PRECONDITION_MSG(embedded_getter, "embedded_getter must not be null");
     auto key = std::string(resource_key);
+    auto embedded = embedded_getter(resource_key);
+    PRECONDITION_MSG(embedded.has_value(), "embedded resource must exist at registration time");
     ShaderEntry entry;
     entry.resource_key = key;
     entry.slang_source = std::string(slang_source);
     entry.wgsl_output = std::string(wgsl_output);
     entry.embedded_getter = embedded_getter;
+    entry.cached_wgsl = std::string(*embedded);
     m_entries.emplace(std::move(key), std::move(entry));
 }
 
-auto ShaderLoader::load(std::string_view resource_key) const -> std::optional<std::string> {
+auto ShaderLoader::load(std::string_view resource_key) const -> std::string {
     auto it = m_entries.find(std::string(resource_key));
     PRECONDITION_MSG(it != m_entries.end(), "Unknown shader resource_key");
-    auto& entry = it->second;
-
-#ifdef PTS_SHADER_HOT_RELOAD
-    if (!entry.cached_wgsl.empty()) {
-        return entry.cached_wgsl;
-    }
-    // Fall through to embedded if no cached version yet
-#endif
-    auto result = entry.embedded_getter(resource_key);
-    if (result.has_value()) {
-        return std::optional<std::string>(std::string(*result));
-    }
-    return std::nullopt;
+    return it->second.cached_wgsl;
 }
 
 auto ShaderLoader::poll_and_reload() -> std::vector<std::string> {
@@ -74,7 +65,14 @@ auto ShaderLoader::poll_and_reload() -> std::vector<std::string> {
 
     int ret = std::system(repo_cmd.c_str());
     if (ret != 0) {
-        m_logger->error("Shader recompilation failed (exit code {})", ret);
+        m_logger->error("Shader recompilation failed (exit code {}), keeping last-good shaders",
+                        ret);
+        // Update mtimes so we don't retry every frame
+        for (auto& [key, entry] : m_entries) {
+            auto slang_path = workspace_root / entry.slang_source;
+            std::error_code ec2;
+            entry.last_mtime = fs::last_write_time(slang_path, ec2);
+        }
         return {};
     }
 

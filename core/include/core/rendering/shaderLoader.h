@@ -34,10 +34,10 @@ class ShaderLoader {
                          std::string_view wgsl_output, EmbeddedGetter embedded_getter);
 
     /// Load shader WGSL source by resource_key.
-    /// Hot-reload builds: reads from disk (cached after poll_and_reload).
-    /// Non-hot-reload builds: delegates to embedded_getter.
-    /// Returns nullopt on failure (caller should keep last-good shader).
-    [[nodiscard]] auto load(std::string_view resource_key) const -> std::optional<std::string>;
+    /// Always returns the last successfully loaded source (seeded from embedded on register).
+    /// After a successful poll_and_reload, returns the reloaded version.
+    /// After a failed recompilation, keeps returning the last-good version.
+    [[nodiscard]] auto load(std::string_view resource_key) const -> std::string;
 
     /// Poll .slang source mtimes. If any changed, recompile via slangc subprocess
     /// and re-read .wgsl outputs from disk.
