@@ -80,6 +80,11 @@ list(APPEND TEST_NAMES testRendererRegistry)
 set(testRendererRegistry_source testRendererRegistry.cpp)
 set(testRendererRegistry_libs core)
 
+# ShaderLoader - works on all platforms (no GPU needed)
+list(APPEND TEST_NAMES testShaderLoader)
+set(testShaderLoader_source testShaderLoader.cpp)
+set(testShaderLoader_libs core)
+
 
 function(add_core_test target_name)
     message(STATUS "Building test: ${target_name}")

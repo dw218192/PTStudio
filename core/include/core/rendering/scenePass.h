@@ -34,6 +34,10 @@ class IScenePass {
     virtual void setup(const webgpu::Device& device) = 0;
     virtual void add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) = 0;
 
+    /// Called when shaders have been hot-reloaded. Override to rebuild pipelines.
+    virtual void on_shaders_reloaded(const webgpu::Device& device) {
+    }
+
    protected:
     /// Lazily create or return per-entity pass data.
     /// Version is read automatically from the entity (Mesh::version or Light::version).
