@@ -90,6 +90,11 @@ list(APPEND TEST_NAMES testBackgroundTask)
 set(testBackgroundTask_source testBackgroundTask.cpp)
 set(testBackgroundTask_libs core)
 
+# LoadingOverlay - no GPU needed, tests non-draw logic
+list(APPEND TEST_NAMES testLoadingOverlay)
+set(testLoadingOverlay_source testLoadingOverlay.cpp)
+set(testLoadingOverlay_libs core)
+
 
 function(add_core_test target_name)
     message(STATUS "Building test: ${target_name}")
