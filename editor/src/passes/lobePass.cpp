@@ -4,15 +4,13 @@
 #include <core/profiling.h>
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/passContext.h>
+#include <core/rendering/shaderLoader.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
 #include <imgui.h>
-#include <lobe_shader_metadata.h>
 
 #include <cmath>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-
-#include "editorResources.h"
 
 using namespace pts;
 using namespace pts::editor;
@@ -25,8 +23,12 @@ struct LobeUniforms {
     float scale;
     uint32_t grid_cols;
     uint32_t grid_rows;
+    uint32_t mode;
+    uint32_t _pad[3];
 };
-static_assert(sizeof(LobeUniforms) == 96, "LobeUniforms must match shader std140 layout");
+static_assert(sizeof(LobeUniforms) == 112, "LobeUniforms must match shader std140 layout");
+static_assert(LobePass::k_uniform_align >= sizeof(LobeUniforms),
+              "Alignment must be >= uniform struct size");
 
 LobePass::~LobePass() {
     if (auto* ready = std::get_if<Ready>(&m_state)) {
@@ -48,16 +50,35 @@ auto LobePass::is_ready() const noexcept -> bool {
 }
 
 void LobePass::setup(const webgpu::Device& device) {
-    auto shader_src = editor_resources::get_resource("editor/generated/shaders/lobe.wgsl");
-    PRECONDITION_MSG(shader_src, "Missing embedded resource: editor/generated/shaders/lobe.wgsl");
+    PRECONDITION_MSG(m_shader_loader, "shader loader not set");
 
-    auto shader = device.create_shader_module_from_source(*shader_src);
+    // Release existing state for re-entry (hot-reload)
+    if (auto* ready = std::get_if<Ready>(&m_state)) {
+        if (ready->bind_group) wgpuBindGroupRelease(ready->bind_group);
+        if (ready->bind_group_layout) wgpuBindGroupLayoutRelease(ready->bind_group_layout);
+    }
 
+    auto shader_src = m_shader_loader->load("editor/generated/shaders/lobe.wgsl");
+    auto shader = device.create_shader_module_from_source(shader_src);
+
+    // Uniform buffer holds 2 aligned copies (specular + diffuse)
     auto uniform_buffer = device.create_buffer(
-        sizeof(LobeUniforms),
+        k_uniform_align * 2,
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
 
-    auto bind_group_layout = editor_lobe_shader::create_bind_group_layout_0(device.handle());
+    // Create bind group layout with dynamic offset for dual draw
+    WGPUBindGroupLayoutEntry bgl_entry = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    bgl_entry.binding = 0;
+    bgl_entry.visibility =
+        static_cast<WGPUShaderStage>(WGPUShaderStage_Vertex | WGPUShaderStage_Fragment);
+    bgl_entry.buffer.type = WGPUBufferBindingType_Uniform;
+    bgl_entry.buffer.hasDynamicOffset = true;
+    bgl_entry.buffer.minBindingSize = sizeof(LobeUniforms);
+
+    WGPUBindGroupLayoutDescriptor bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
+    bgl_desc.entryCount = 1;
+    bgl_desc.entries = &bgl_entry;
+    auto bind_group_layout = wgpuDeviceCreateBindGroupLayout(device.handle(), &bgl_desc);
 
     WGPUBindGroupEntry bg_entry = WGPU_BIND_GROUP_ENTRY_INIT;
     bg_entry.binding = 0;
@@ -112,6 +133,7 @@ void LobePass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::Pa
 
     auto color = fg.find_or_create("lobe_color", color_desc);
     auto depth = fg.find_or_create("lobe_depth", depth_desc);
+    m_lobe_color_handle = color;
 
     // Fixed camera looking at origin
     auto eye = glm::vec3(0.0f, -2.5f, 1.5f);
@@ -134,30 +156,65 @@ void LobePass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::Pa
     auto roughness = m_roughness;
     auto metallic = m_metallic;
     auto scale = m_scale;
+    auto show_specular = m_show_specular;
+    auto show_diffuse = m_show_diffuse;
+
+    // Upload both uniform slots before the render pass
+    LobeUniforms lu_spec{};
+    lu_spec.mvp = mvp;
+    lu_spec.light_dir = light_dir;
+    lu_spec.roughness = roughness;
+    lu_spec.metallic = metallic;
+    lu_spec.scale = scale;
+    lu_spec.grid_cols = k_grid_cols;
+    lu_spec.grid_rows = k_grid_rows;
+    lu_spec.mode = 0;
+
+    LobeUniforms lu_diff = lu_spec;
+    lu_diff.mode = 1;
+
+    wgpuQueueWriteBuffer(queue, uniform_buf, 0, &lu_spec, sizeof(lu_spec));
+    wgpuQueueWriteBuffer(queue, uniform_buf, k_uniform_align, &lu_diff, sizeof(lu_diff));
 
     fg.add_pass("lobe").color(color).depth(depth).execute([=](WGPURenderPassEncoder pass) {
-        LobeUniforms lu;
-        lu.mvp = mvp;
-        lu.light_dir = light_dir;
-        lu.roughness = roughness;
-        lu.metallic = metallic;
-        lu.scale = scale;
-        lu.grid_cols = k_grid_cols;
-        lu.grid_rows = k_grid_rows;
-        wgpuQueueWriteBuffer(queue, uniform_buf, 0, &lu, sizeof(lu));
-
-        wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
-        wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 0, nullptr);
-
         uint32_t vertex_count = (k_grid_cols - 1) * (k_grid_rows - 1) * 6;
-        wgpuRenderPassEncoderDraw(pass, vertex_count, 1, 0, 0);
+        wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
+
+        if (show_specular) {
+            uint32_t offset_spec = 0;
+            wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 1, &offset_spec);
+            wgpuRenderPassEncoderDraw(pass, vertex_count, 1, 0, 0);
+        }
+
+        if (show_diffuse) {
+            uint32_t offset_diff = k_uniform_align;
+            wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 1, &offset_diff);
+            wgpuRenderPassEncoderDraw(pass, vertex_count, 1, 0, 0);
+        }
     });
 }
 
-void LobePass::draw_imgui_controls() {
-    ImGui::SliderFloat("Roughness", &m_roughness, 0.01f, 1.0f);
-    ImGui::SliderFloat("Metallic", &m_metallic, 0.0f, 1.0f);
-    ImGui::SliderFloat("Scale", &m_scale, 0.1f, 5.0f);
-    ImGui::SliderFloat("Light Azimuth", &m_light_azimuth_deg, -180.0f, 180.0f);
-    ImGui::SliderFloat("Light Elevation", &m_light_elevation_deg, 0.0f, 90.0f);
+void LobePass::update_texture_refs(rendering::FrameGraph& fg) {
+    if (m_lobe_color_handle.is_valid()) {
+        m_lobe_color_ref = fg.get_texture_ref(m_lobe_color_handle);
+    }
+}
+
+void LobePass::draw_imgui() {
+    if (ImGui::Begin("BRDF Lobe")) {
+        ImGui::SliderFloat("Roughness", &m_roughness, 0.01f, 1.0f);
+        ImGui::SliderFloat("Metallic", &m_metallic, 0.0f, 1.0f);
+        ImGui::SliderFloat("Scale", &m_scale, 0.1f, 5.0f);
+        ImGui::SliderFloat("Light Azimuth", &m_light_azimuth_deg, -180.0f, 180.0f);
+        ImGui::SliderFloat("Light Elevation", &m_light_elevation_deg, 0.0f, 90.0f);
+        ImGui::Checkbox("Show Specular", &m_show_specular);
+        ImGui::Checkbox("Show Diffuse", &m_show_diffuse);
+        ImGui::Separator();
+        if (m_lobe_color_ref) {
+            ImGui::Image(
+                reinterpret_cast<ImTextureID>(m_lobe_color_ref.view()),
+                ImVec2(static_cast<float>(k_texture_size), static_cast<float>(k_texture_size)));
+        }
+    }
+    ImGui::End();
 }

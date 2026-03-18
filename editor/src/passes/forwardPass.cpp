@@ -12,8 +12,6 @@
 
 #include <glm/glm.hpp>
 
-#include "editorResources.h"
-
 using namespace pts;
 using namespace pts::editor;
 
@@ -81,11 +79,16 @@ auto ForwardPass::is_ready() const noexcept -> bool {
 }
 
 void ForwardPass::setup(const webgpu::Device& device) {
-    auto shader_src = editor_resources::get_resource("editor/generated/shaders/forward.wgsl");
-    PRECONDITION_MSG(shader_src,
-                     "Missing embedded resource: editor/generated/shaders/forward.wgsl");
+    PRECONDITION_MSG(m_shader_loader, "shader loader not set");
 
-    auto shader = device.create_shader_module_from_source(*shader_src);
+    // Release existing state for re-entry (hot-reload)
+    if (auto* ready = std::get_if<Ready>(&m_state)) {
+        if (ready->bind_group) wgpuBindGroupRelease(ready->bind_group);
+        if (ready->bind_group_layout) wgpuBindGroupLayoutRelease(ready->bind_group_layout);
+    }
+
+    auto shader_src = m_shader_loader->load("editor/generated/shaders/forward.wgsl");
+    auto shader = device.create_shader_module_from_source(shader_src);
 
     uint32_t initial_capacity = 64;
     auto uniform_buffer = device.create_buffer(
@@ -143,39 +146,6 @@ void ForwardPass::setup(const webgpu::Device& device) {
         std::move(shader), std::move(pipeline), std::move(uniform_buffer),
         nullptr,           bind_group_layout,   initial_capacity,
     };
-}
-
-void ForwardPass::on_shaders_reloaded(const webgpu::Device& device,
-                                      const rendering::ShaderLoader& loader) {
-    if (!is_ready()) return;
-
-    auto new_src = loader.load("editor/generated/shaders/forward.wgsl");
-    auto new_shader = device.create_shader_module_from_source(new_src);
-
-    auto& ready = std::get<Ready>(m_state);
-
-    // Rebuild pipeline with new shader, reusing existing bind group layout
-    WGPUPipelineLayoutDescriptor pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
-    pl_desc.bindGroupLayoutCount = 1;
-    pl_desc.bindGroupLayouts = &ready.bind_group_layout;
-    WGPUPipelineLayout pipeline_layout = wgpuDeviceCreatePipelineLayout(device.handle(), &pl_desc);
-
-    auto new_pipeline = webgpu::RenderPipelineBuilder(device)
-                            .shader(new_shader)
-                            .color_format(WGPUTextureFormat_RGBA8Unorm)
-                            .depth_format(WGPUTextureFormat_Depth24Plus)
-                            .depth_write(true)
-                            .depth_compare(WGPUCompareFunction_Less)
-                            .cull_mode(WGPUCullMode_Back)
-                            .pipeline_layout(pipeline_layout)
-                            .vertex_layout<editor_shader::VertexLayout>()
-                            .build();
-
-    wgpuPipelineLayoutRelease(pipeline_layout);
-
-    // Move-assign new shader and pipeline (old ones released by RAII)
-    ready.shader = std::move(new_shader);
-    ready.pipeline = std::move(new_pipeline);
 }
 
 bool ForwardPass::ensure_capacity(const webgpu::Device& device, uint32_t object_count) {

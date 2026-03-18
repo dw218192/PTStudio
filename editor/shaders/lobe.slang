@@ -8,6 +8,8 @@ struct Uniforms {
     float scale;
     uint grid_cols;
     uint grid_rows;
+    uint mode;       // 0 = specular, 1 = diffuse
+    uint _pad;
 };
 
 [[vk::binding(0, 0)]]
@@ -16,6 +18,7 @@ ConstantBuffer<Uniforms> u;
 struct VsOut {
     float4 position : SV_Position;
     float magnitude : MAGNITUDE;
+    uint mode : MODE;
 };
 
 // Generate hemisphere grid vertex from vertex_id
@@ -55,37 +58,29 @@ VsOut vs_main(uint vertex_id : SV_VertexID) {
     float3 N = float3(0, 0, 1);
     float3 V = direction; // outgoing direction (omega_o)
     float3 L = normalize(u.light_dir); // incoming light
-
-    // Evaluate Cook-Torrance specular BRDF
-    float3 H = normalize(L + V);
-    float NdotH = max(dot(N, H), 0.0);
-    float NdotV = max(dot(N, V), 0.001);
-    float NdotL = max(dot(N, L), 0.0);
-    float VdotH = max(dot(V, H), 0.0);
-
-    float alpha = max(u.roughness * u.roughness, 0.001);
-    float a2 = alpha * alpha;
-
     float3 base_color = float3(1.0);
-    float3 F0 = lerp(float3(0.04), base_color, u.metallic);
 
-    float D = D_GGX(NdotH, a2);
-    float G = G_SmithSchlick(NdotV, NdotL, a2);
-    float3 F = F_Schlick(VdotH, F0);
-
-    float spec = D * G * dot(F, float3(1.0/3.0)) / (4.0 * NdotV * NdotL + 0.001);
-    float mag = max(spec * NdotL, 0.0);
+    CookTorranceGGX brdf;
+    float mag;
+    if (u.mode == 0) {
+        float3 spec = brdf.evaluate_specular(N, L, V, base_color, u.metallic, u.roughness);
+        mag = length(spec);
+    } else {
+        float3 diff = brdf.evaluate_diffuse(N, L, V, base_color, u.metallic);
+        mag = length(diff);
+    }
 
     // Displace vertex along direction
     float3 pos = direction * (0.1 + mag * u.scale);
     output.position = mul(u.mvp, float4(pos, 1.0));
     output.magnitude = mag;
+    output.mode = u.mode;
 
     return output;
 }
 
-// Heat map: blue -> cyan -> green -> yellow -> red
-float3 heat_map(float t) {
+// Warm heat map: blue -> cyan -> green -> yellow -> red (specular)
+float3 warm_heat_map(float t) {
     t = clamp(t, 0.0, 1.0);
     float3 c;
     if (t < 0.25) {
@@ -100,10 +95,26 @@ float3 heat_map(float t) {
     return c;
 }
 
+// Cool color map: purple -> blue -> cyan (diffuse)
+float3 cool_color_map(float t) {
+    t = clamp(t, 0.0, 1.0);
+    float3 c;
+    if (t < 0.5) {
+        c = lerp(float3(0.4, 0.0, 0.8), float3(0.0, 0.2, 1.0), t * 2.0);
+    } else {
+        c = lerp(float3(0.0, 0.2, 1.0), float3(0.0, 0.8, 1.0), (t - 0.5) * 2.0);
+    }
+    return c;
+}
+
 [shader("fragment")]
-float4 fs_main(float magnitude : MAGNITUDE) : SV_Target0 {
-    // Normalize magnitude for heat map — scale so typical range maps to 0..1
+float4 fs_main(float magnitude : MAGNITUDE, uint mode : MODE) : SV_Target0 {
     float t = clamp(magnitude * 2.0, 0.0, 1.0);
-    float3 color = heat_map(t);
+    float3 color;
+    if (mode == 0) {
+        color = warm_heat_map(t);
+    } else {
+        color = cool_color_map(t);
+    }
     return float4(color, 1.0);
 }

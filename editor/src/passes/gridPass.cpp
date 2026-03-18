@@ -6,13 +6,12 @@
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
+#include <core/rendering/shaderLoader.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
 #include <grid_shader_metadata.h>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-
-#include "editorResources.h"
 
 using namespace pts;
 using namespace pts::editor;
@@ -47,10 +46,16 @@ auto GridPass::is_ready() const noexcept -> bool {
 }
 
 void GridPass::setup(const webgpu::Device& device) {
-    auto shader_src = editor_resources::get_resource("editor/generated/shaders/grid.wgsl");
-    PRECONDITION_MSG(shader_src, "Missing embedded resource: editor/generated/shaders/grid.wgsl");
+    PRECONDITION_MSG(m_shader_loader, "shader loader not set");
 
-    auto shader = device.create_shader_module_from_source(*shader_src);
+    // Release existing state for re-entry (hot-reload)
+    if (auto* ready = std::get_if<Ready>(&m_state)) {
+        if (ready->bind_group) wgpuBindGroupRelease(ready->bind_group);
+        if (ready->bind_group_layout) wgpuBindGroupLayoutRelease(ready->bind_group_layout);
+    }
+
+    auto shader_src = m_shader_loader->load("editor/generated/shaders/grid.wgsl");
+    auto shader = device.create_shader_module_from_source(shader_src);
 
     auto uniform_buffer = device.create_buffer(
         sizeof(GridUniforms),

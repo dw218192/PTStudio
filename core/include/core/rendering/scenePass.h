@@ -36,18 +36,26 @@ class IScenePass {
     virtual void add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) = 0;
 
     /// Called when shaders have been hot-reloaded. Default re-runs setup().
-    virtual void on_shaders_reloaded(const webgpu::Device& device) { setup(device); }
+    virtual void on_shaders_reloaded(const webgpu::Device& device) {
+        setup(device);
+    }
 
     /// Draw pass-specific ImGui windows/controls. Called during the UI phase.
-    virtual void draw_imgui() {}
+    virtual void draw_imgui() {
+    }
 
     /// Cache texture refs after frame graph execute, for ImGui display next frame.
-    virtual void update_texture_refs(FrameGraph& fg) {}
+    virtual void update_texture_refs(FrameGraph& fg) {
+    }
 
     /// Whether this pass requires the scene viewport to render.
-    [[nodiscard]] virtual auto requires_viewport() const noexcept -> bool { return true; }
+    [[nodiscard]] virtual auto requires_viewport() const noexcept -> bool {
+        return true;
+    }
 
-    void set_shader_loader(const ShaderLoader& loader) { m_shader_loader = &loader; }
+    void set_shader_loader(const ShaderLoader& loader) {
+        m_shader_loader = &loader;
+    }
 
    protected:
     const ShaderLoader* m_shader_loader = nullptr;

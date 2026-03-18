@@ -48,7 +48,6 @@ static constexpr auto k_inspector_win_name = "Inspector";
 static constexpr auto k_scene_view_win_name = "Scene";
 static constexpr auto k_console_win_name = "Console";
 static constexpr auto k_perf_win_name = "Performance";
-static constexpr auto k_brdf_win_name = "BRDF Lobe";
 static constexpr auto k_console_log_buffer_size = 1024;
 
 static const std::vector<rendering::RendererConfig> k_renderer_configs = {
@@ -57,12 +56,14 @@ static const std::vector<rendering::RendererConfig> k_renderer_configs = {
          [] { return std::make_unique<PickingPass>(); },
          [] { return std::make_unique<ForwardPass>(); },
          [] { return std::make_unique<GridPass>(); },
+         [] { return std::make_unique<LobePass>(); },
      }},
     {"Wireframe",
      {
          [] { return std::make_unique<PickingPass>(); },
          [] { return std::make_unique<WireframePass>(); },
          [] { return std::make_unique<GridPass>(); },
+         [] { return std::make_unique<LobePass>(); },
      }},
 };
 
@@ -80,8 +81,6 @@ EditorApplication::EditorApplication(std::string_view name, pts::LoggingManager&
 
 EditorApplication::~EditorApplication() {
     revoke_stage_listener();
-    m_lobe_pass = nullptr;
-    m_lobe_pass_storage.reset();
     m_passes.clear();
     m_world.clear();
     m_stage.Reset();
@@ -307,14 +306,12 @@ void EditorApplication::on_ready() {
     m_shader_loader.register_shader(
         "editor/generated/shaders/wireframe.wgsl", "editor/shaders/wireframe.slang",
         "editor/generated/shaders/wireframe.wgsl", editor_resources::get_resource);
+    m_shader_loader.register_shader(
+        "editor/generated/shaders/lobe.wgsl", "editor/shaders/lobe.slang",
+        "editor/generated/shaders/lobe.wgsl", editor_resources::get_resource);
 
     // Set up renderer passes
     set_renderer_config(0);
-
-    // BRDF lobe pass (independent of renderer config)
-    m_lobe_pass_storage = std::make_unique<LobePass>();
-    m_lobe_pass = static_cast<LobePass*>(m_lobe_pass_storage.get());
-    m_lobe_pass_storage->setup(device);
 
     // Camera defaults
     m_camera.set_target({0.0f, 0.0f, 0.0f});
@@ -335,6 +332,7 @@ void EditorApplication::set_renderer_config(size_t index) {
     }
     auto& device = webgpu_context()->device();
     for (auto& pass : m_passes) {
+        pass->set_shader_loader(m_shader_loader);
         pass->setup(device);
     }
     m_active_config_index = index;
@@ -359,7 +357,7 @@ void EditorApplication::render(FrameContext& ctx) {
         if (!changed.empty()) {
             auto const& device = webgpu_context()->device();
             for (auto& pass : m_passes) {
-                pass->on_shaders_reloaded(device, m_shader_loader);
+                pass->on_shaders_reloaded(device);
             }
         }
     }
@@ -402,10 +400,10 @@ void EditorApplication::render(FrameContext& ctx) {
     }
     m_imgui->end_window();
 
-    if (m_imgui->begin_window(k_brdf_win_name)) {
-        draw_brdf_panel();
+    // Pass-owned ImGui windows
+    for (auto& pass : m_passes) {
+        pass->draw_imgui();
     }
-    m_imgui->end_window();
 
     m_perf_overlay.draw(get_delta_time(), m_world, *m_frame_graph, m_passes,
                         k_renderer_configs[m_active_config_index].name, m_viewport_width,
@@ -421,24 +419,27 @@ void EditorApplication::render(FrameContext& ctx) {
 
     rendering::ResourceHandle scene_color_handle;
 
+    // Build a minimal PassContext with device/queue for non-viewport passes
+    rendering::PassContext pass_ctx{
+        device,         queue,          m_camera,   m_world, m_viewport_width, m_viewport_height,
+        glm::mat4(1.f), glm::mat4(1.f), get_time(), 0,
+    };
+
     if (has_viewport) {
         float aspect = static_cast<float>(m_viewport_width) / static_cast<float>(m_viewport_height);
-        auto view_mat = m_camera.view_matrix();
-        auto proj_mat = m_camera.projection_matrix(aspect);
-
-        rendering::PassContext pass_ctx{
-            device,   queue,    m_camera,   m_world, m_viewport_width, m_viewport_height,
-            view_mat, proj_mat, get_time(), 0,
-        };
+        pass_ctx.view_matrix = m_camera.view_matrix();
+        pass_ctx.proj_matrix = m_camera.projection_matrix(aspect);
 
         m_world.prepare_gpu_buffers(device, queue);
+    }
 
-        for (auto& pass : m_passes) {
-            if (pass->is_ready()) {
-                pass->add_to_frame_graph(*m_frame_graph, pass_ctx);
-            }
-        }
+    for (auto& pass : m_passes) {
+        if (!pass->is_ready()) continue;
+        if (pass->requires_viewport() && !has_viewport) continue;
+        pass->add_to_frame_graph(*m_frame_graph, pass_ctx);
+    }
 
+    if (has_viewport) {
         // Look up scene_color resource that passes created
         rendering::TextureDesc color_desc;
         color_desc.width = m_viewport_width;
@@ -448,40 +449,23 @@ void EditorApplication::render(FrameContext& ctx) {
         scene_color_handle = m_frame_graph->find_or_create("scene_color", color_desc);
     }
 
-    // Lobe pass renders into its own texture, independent of scene viewport
-    rendering::ResourceHandle lobe_color_handle;
-    if (m_lobe_pass_storage && m_lobe_pass_storage->is_ready()) {
-        rendering::PassContext lobe_ctx{
-            device,
-            queue,
-            m_camera,
-            m_world,
-            LobePass::k_texture_size,
-            LobePass::k_texture_size,
-            glm::mat4(1.0f),
-            glm::mat4(1.0f),
-            get_time(),
-            0,
-        };
-        m_lobe_pass_storage->add_to_frame_graph(*m_frame_graph, lobe_ctx);
-
-        rendering::TextureDesc lobe_desc;
-        lobe_desc.width = LobePass::k_texture_size;
-        lobe_desc.height = LobePass::k_texture_size;
-        lobe_desc.format = WGPUTextureFormat_RGBA8Unorm;
-        lobe_desc.clear_color = {0.1, 0.1, 0.1, 1.0};
-        lobe_color_handle = m_frame_graph->find_or_create("lobe_color", lobe_desc);
-    }
-
-    // ImGui overlay pass
+    // ImGui overlay pass — declare reads on any texture that ImGui::Image references
     auto imgui_builder = m_frame_graph->add_pass("imgui")
                              .color(ctx.surface_view(), WGPUColor{0.08, 0.08, 0.12, 1.0})
                              .present();
     if (has_viewport && scene_color_handle.is_valid()) {
         imgui_builder.read(scene_color_handle);
     }
-    if (lobe_color_handle.is_valid()) {
-        imgui_builder.read(lobe_color_handle);
+    {
+        rendering::TextureDesc lobe_desc;
+        lobe_desc.width = LobePass::k_texture_size;
+        lobe_desc.height = LobePass::k_texture_size;
+        lobe_desc.format = WGPUTextureFormat_RGBA8Unorm;
+        lobe_desc.clear_color = {0.1, 0.1, 0.1, 1.0};
+        auto lobe_color_handle = m_frame_graph->find_or_create("lobe_color", lobe_desc);
+        if (lobe_color_handle.is_valid()) {
+            imgui_builder.read(lobe_color_handle);
+        }
     }
     imgui_builder.execute([&](WGPURenderPassEncoder pass) { scope.render_into(pass); });
 
@@ -529,8 +513,10 @@ void EditorApplication::render(FrameContext& ctx) {
     if (has_viewport && scene_color_handle.is_valid()) {
         m_scene_color_ref = m_frame_graph->get_texture_ref(scene_color_handle);
     }
-    if (lobe_color_handle.is_valid()) {
-        m_lobe_color_ref = m_frame_graph->get_texture_ref(lobe_color_handle);
+
+    // Let passes cache their texture refs for ImGui display
+    for (auto& pass : m_passes) {
+        pass->update_texture_refs(*m_frame_graph);
     }
 
     wrap_mouse_pos();
@@ -559,7 +545,7 @@ void EditorApplication::setup_docking_layout() {
     ImGui::DockBuilderDockWindow(k_inspector_win_name, right);
     ImGui::DockBuilderDockWindow(k_console_win_name, down);
     ImGui::DockBuilderDockWindow(k_perf_win_name, down);
-    ImGui::DockBuilderDockWindow(k_brdf_win_name, down);
+    ImGui::DockBuilderDockWindow("BRDF Lobe", down);
 }
 
 auto EditorApplication::create_input_actions() noexcept -> void {
@@ -844,17 +830,6 @@ auto EditorApplication::draw_console_panel() const noexcept -> void {
         }
     }
     ImGui::EndChild();
-}
-
-auto EditorApplication::draw_brdf_panel() noexcept -> void {
-    PRECONDITION(m_lobe_pass);
-    m_lobe_pass->draw_imgui_controls();
-    ImGui::Separator();
-    if (m_lobe_color_ref) {
-        ImGui::Image(reinterpret_cast<ImTextureID>(m_lobe_color_ref.view()),
-                     ImVec2(static_cast<float>(LobePass::k_texture_size),
-                            static_cast<float>(LobePass::k_texture_size)));
-    }
 }
 
 auto EditorApplication::on_mouse_leave_scene_viewport() noexcept -> void {

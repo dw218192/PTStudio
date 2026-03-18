@@ -6,14 +6,13 @@
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
+#include <core/rendering/shaderLoader.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
 #include <core/rendering/wireframeIndices.h>
 #include <wireframe_shader_metadata.h>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-
-#include "editorResources.h"
 
 using namespace pts;
 using namespace pts::editor;
@@ -66,11 +65,17 @@ auto WireframePass::is_ready() const noexcept -> bool {
 }
 
 void WireframePass::setup(const webgpu::Device& device) {
-    auto shader_src = editor_resources::get_resource("editor/generated/shaders/wireframe.wgsl");
-    PRECONDITION_MSG(shader_src,
-                     "Missing embedded resource: editor/generated/shaders/wireframe.wgsl");
+    PRECONDITION_MSG(m_shader_loader, "shader loader not set");
 
-    auto shader = device.create_shader_module_from_source(*shader_src);
+    // Release existing state for re-entry (hot-reload)
+    if (auto* ready = std::get_if<Ready>(&m_state)) {
+        if (ready->bind_group) wgpuBindGroupRelease(ready->bind_group);
+        if (ready->bind_group_layout) wgpuBindGroupLayoutRelease(ready->bind_group_layout);
+    }
+    clear_pass_data();
+
+    auto shader_src = m_shader_loader->load("editor/generated/shaders/wireframe.wgsl");
+    auto shader = device.create_shader_module_from_source(shader_src);
 
     uint32_t initial_capacity = 64;
     auto uniform_buffer = device.create_buffer(

@@ -32,10 +32,6 @@ class IScenePass;
 }
 
 namespace pts::editor {
-class LobePass;
-}
-
-namespace pts::editor {
 struct AppConfig {
     bool quit_on_start{false};
 };
@@ -66,8 +62,6 @@ struct EditorApplication final : WindowedApplication {
     void draw_prim_tree(const pxr::UsdPrim& prim);
     auto draw_scene_viewport() noexcept -> void;
     auto draw_console_panel() const noexcept -> void;
-    auto draw_brdf_panel() noexcept -> void;
-
     // events
     auto on_mouse_leave_scene_viewport() noexcept -> void;
     auto on_mouse_enter_scene_viewport() noexcept -> void;
@@ -129,11 +123,6 @@ struct EditorApplication final : WindowedApplication {
     float m_viewport_x = 0.0f;
     float m_viewport_y = 0.0f;
     rendering::TextureRef m_scene_color_ref;
-
-    // BRDF lobe pass (independent of renderer config)
-    std::unique_ptr<rendering::IScenePass> m_lobe_pass_storage;
-    LobePass* m_lobe_pass = nullptr;
-    rendering::TextureRef m_lobe_color_ref;
 
     // Light gizmo icon
     void draw_light_gizmos(const glm::mat4& view_mat, const glm::mat4& proj_mat);
