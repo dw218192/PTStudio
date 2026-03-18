@@ -303,14 +303,12 @@ void RenderWorld::upload_all_meshes(const webgpu::Device& device) {
             mesh.cpu_vertices.size() * sizeof(Vertex),
             static_cast<WGPUBufferUsage>(WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst));
         wgpuQueueWriteBuffer(device.queue(), mesh.vertex_buffer.handle(), 0,
-                             mesh.cpu_vertices.data(),
-                             mesh.cpu_vertices.size() * sizeof(Vertex));
+                             mesh.cpu_vertices.data(), mesh.cpu_vertices.size() * sizeof(Vertex));
 
         mesh.index_buffer = device.create_buffer(
             mesh.cpu_indices.size() * sizeof(uint32_t),
             static_cast<WGPUBufferUsage>(WGPUBufferUsage_Index | WGPUBufferUsage_CopyDst));
-        wgpuQueueWriteBuffer(device.queue(), mesh.index_buffer.handle(), 0,
-                             mesh.cpu_indices.data(),
+        wgpuQueueWriteBuffer(device.queue(), mesh.index_buffer.handle(), 0, mesh.cpu_indices.data(),
                              mesh.cpu_indices.size() * sizeof(uint32_t));
 
         mesh.index_count = static_cast<uint32_t>(mesh.cpu_indices.size());
