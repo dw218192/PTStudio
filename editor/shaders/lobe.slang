@@ -18,7 +18,6 @@ ConstantBuffer<Uniforms> u;
 struct VsOut {
     float4 position : SV_Position;
     float magnitude : MAGNITUDE;
-    uint mode : MODE;
 };
 
 // Generate hemisphere grid vertex from vertex_id
@@ -74,7 +73,6 @@ VsOut vs_main(uint vertex_id : SV_VertexID) {
     float3 pos = direction * (0.1 + mag * u.scale);
     output.position = mul(u.mvp, float4(pos, 1.0));
     output.magnitude = mag;
-    output.mode = u.mode;
 
     return output;
 }
@@ -108,10 +106,10 @@ float3 cool_color_map(float t) {
 }
 
 [shader("fragment")]
-float4 fs_main(float magnitude : MAGNITUDE, uint mode : MODE) : SV_Target0 {
+float4 fs_main(float magnitude : MAGNITUDE) : SV_Target0 {
     float t = clamp(magnitude * 2.0, 0.0, 1.0);
     float3 color;
-    if (mode == 0) {
+    if (u.mode == 0) {
         color = warm_heat_map(t);
     } else {
         color = cool_color_map(t);
