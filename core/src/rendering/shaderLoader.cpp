@@ -3,16 +3,21 @@
 #include <spdlog/spdlog.h>
 
 #ifdef PTS_SHADER_HOT_RELOAD
+#include <core/backgroundTask.h>
+
 #include <array>
 #include <cstdio>
 #include <fstream>
 #include <sstream>
+#include <thread>
 #endif
 
 using namespace pts::rendering;
 
 ShaderLoader::ShaderLoader(std::shared_ptr<spdlog::logger> logger) : m_logger(std::move(logger)) {
 }
+
+ShaderLoader::~ShaderLoader() = default;
 
 void ShaderLoader::register_shader(std::string_view resource_key, std::string_view slang_source,
                                    std::string_view wgsl_output, EmbeddedGetter embedded_getter) {
@@ -42,11 +47,12 @@ auto ShaderLoader::load(std::string_view resource_key) const -> std::string {
     return it->second.cached_wgsl;
 }
 
-auto ShaderLoader::poll_and_reload() -> std::vector<std::string> {
+bool ShaderLoader::poll_and_start_reload() {
 #ifdef PTS_SHADER_HOT_RELOAD
-    namespace fs = std::filesystem;
+    // Already reloading — nothing to do.
+    if (m_reload_task && !m_reload_task->is_done()) return false;
 
-    // 1. Check mtimes - is anything dirty?
+    namespace fs = std::filesystem;
     fs::path workspace_root(PTS_WORKSPACE_ROOT);
     bool any_dirty = false;
 
@@ -64,34 +70,61 @@ auto ShaderLoader::poll_and_reload() -> std::vector<std::string> {
         }
     }
 
-    if (!any_dirty) return {};
+    if (!any_dirty) return false;
 
-    // 2. Recompile all shaders via repo slangc
     auto repo_cmd = (workspace_root / "repo").string() + " slangc --force";
     m_logger->info("Shader change detected, recompiling: {}", repo_cmd);
 
-    int ret = std::system(repo_cmd.c_str());
+    m_reload_task = std::make_unique<pts::BackgroundTask<int>>(
+        "Compiling Shaders", [cmd = repo_cmd](pts::TaskProgress& progress) -> int {
+            progress.set_status("Compiling shaders...");
+            progress.set_progress(0.5f);
+            int ret = std::system(cmd.c_str());
+            progress.set_progress(1.0f);
+            return ret;
+        });
+
+    return true;
+#else
+    return false;
+#endif
+}
+
+bool ShaderLoader::is_reloading() const {
+#ifdef PTS_SHADER_HOT_RELOAD
+    return m_reload_task && !m_reload_task->is_done();
+#else
+    return false;
+#endif
+}
+
+auto ShaderLoader::try_finish_reload() -> std::vector<std::string> {
+#ifdef PTS_SHADER_HOT_RELOAD
+    if (!m_reload_task || !m_reload_task->is_done()) return {};
+
+    int ret = m_reload_task->take_result();
+    m_reload_task.reset();
+
+    namespace fs = std::filesystem;
+    fs::path workspace_root(PTS_WORKSPACE_ROOT);
+
     if (ret != 0) {
         m_logger->error("Shader recompilation failed (exit code {}), keeping last-good shaders",
                         ret);
-        // Update mtimes so we don't retry every frame
         for (auto& [key, entry] : m_entries) {
             auto slang_path = workspace_root / entry.slang_source;
-            std::error_code ec2;
-            entry.last_mtime = fs::last_write_time(slang_path, ec2);
+            std::error_code ec;
+            entry.last_mtime = fs::last_write_time(slang_path, ec);
         }
         return {};
     }
 
-    // 3. Re-read .wgsl files and detect changes
     std::vector<std::string> changed;
     for (auto& [key, entry] : m_entries) {
-        // Update mtime
         auto slang_path = workspace_root / entry.slang_source;
         std::error_code ec;
         entry.last_mtime = fs::last_write_time(slang_path, ec);
 
-        // Read new wgsl
         auto wgsl_path = workspace_root / entry.wgsl_output;
         std::ifstream file(wgsl_path, std::ios::binary);
         if (!file) {
@@ -112,6 +145,21 @@ auto ShaderLoader::poll_and_reload() -> std::vector<std::string> {
         m_logger->info("Reloaded {} shader(s)", changed.size());
     }
     return changed;
+#else
+    return {};
+#endif
+}
+
+auto ShaderLoader::poll_and_reload() -> std::vector<std::string> {
+#ifdef PTS_SHADER_HOT_RELOAD
+    poll_and_start_reload();
+    if (m_reload_task) {
+        while (!m_reload_task->is_done()) {
+            std::this_thread::yield();
+        }
+        return try_finish_reload();
+    }
+    return {};
 #else
     return {};
 #endif

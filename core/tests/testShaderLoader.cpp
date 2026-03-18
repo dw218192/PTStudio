@@ -61,3 +61,29 @@ TEST_CASE("ShaderLoader poll_and_reload returns empty with no dirty files") {
     auto changed = loader.poll_and_reload();
     CHECK(changed.empty());
 }
+
+TEST_CASE("ShaderLoader poll_and_start_reload returns false with no dirty files") {
+    ShaderLoader loader(make_logger());
+    loader.register_shader("shaders/test.wgsl", "shaders/test.slang", "generated/shaders/test.wgsl",
+                           fake_getter);
+
+    CHECK_FALSE(loader.poll_and_start_reload());
+    CHECK_FALSE(loader.is_reloading());
+}
+
+TEST_CASE("ShaderLoader try_finish_reload returns empty when no task started") {
+    ShaderLoader loader(make_logger());
+    loader.register_shader("shaders/test.wgsl", "shaders/test.slang", "generated/shaders/test.wgsl",
+                           fake_getter);
+
+    auto changed = loader.try_finish_reload();
+    CHECK(changed.empty());
+}
+
+TEST_CASE("ShaderLoader is_reloading returns false when no task started") {
+    ShaderLoader loader(make_logger());
+    loader.register_shader("shaders/test.wgsl", "shaders/test.slang", "generated/shaders/test.wgsl",
+                           fake_getter);
+
+    CHECK_FALSE(loader.is_reloading());
+}
