@@ -61,6 +61,8 @@ target_compile_definitions(developer_flags INTERFACE
     $<$<CXX_COMPILER_ID:MSVC>:NOMINMAX>
     $<$<AND:$<NOT:$<BOOL:${EMSCRIPTEN}>>,$<CONFIG:Debug>>:TRACY_ENABLE>
     $<$<AND:$<NOT:$<BOOL:${EMSCRIPTEN}>>,$<CONFIG:Debug>>:TRACY_ON_DEMAND>
+    $<$<AND:$<NOT:$<BOOL:${EMSCRIPTEN}>>,$<CONFIG:Debug>>:PTS_SHADER_HOT_RELOAD>
+    $<$<AND:$<NOT:$<BOOL:${EMSCRIPTEN}>>,$<CONFIG:Debug>>:PTS_WORKSPACE_ROOT="${CMAKE_SOURCE_DIR}">
 )
 
 target_compile_features(developer_flags INTERFACE cxx_std_17)
