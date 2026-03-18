@@ -1,5 +1,7 @@
 #pragma once
 
+#include <core/backgroundTask.h>
+#include <core/imgui/loadingOverlay.h>
 #include <core/inputAction.h>
 #include <core/rendering/camera.h>
 #include <core/rendering/frameGraph.h>
@@ -138,5 +140,12 @@ struct EditorApplication final : WindowedApplication {
 
     // Performance overlay
     PerfOverlay m_perf_overlay;
+
+    // Async scene loading
+    std::unique_ptr<pts::BackgroundTask<rendering::RenderWorld>> m_scene_load_task;
+    pxr::UsdStageRefPtr m_pending_stage;
+
+    // Loading overlay
+    pts::LoadingOverlay m_loading_overlay;
 };
 }  // namespace pts::editor

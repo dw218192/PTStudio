@@ -80,6 +80,8 @@ EditorApplication::EditorApplication(std::string_view name, pts::LoggingManager&
 }
 
 EditorApplication::~EditorApplication() {
+    m_scene_load_task.reset();  // join background thread before tearing down
+    m_pending_stage.Reset();
     revoke_stage_listener();
     m_passes.clear();
     m_world.clear();
@@ -348,12 +350,35 @@ void EditorApplication::render(FrameContext& ctx) {
     if (!m_imgui) return;
     if (viewport() && viewport()->should_close()) return;
 
+    // Finalize background scene load
+    if (m_scene_load_task && m_scene_load_task->is_done()) {
+        auto world = m_scene_load_task->take_result();
+        m_scene_load_task.reset();
+
+        // GPU upload on main thread
+        world.upload_all_meshes(webgpu_context()->device());
+
+        // Swap into editor state
+        revoke_stage_listener();
+        m_world = std::move(world);
+        m_selected_prim = pxr::SdfPath();
+        m_stage = std::move(m_pending_stage);
+        m_pending_stage.Reset();
+        register_stage_listener();
+
+        // Re-setup passes (they cache world references)
+        set_renderer_config(m_active_config_index);
+
+        log(LogLevel::Info, "Loaded scene ({} objects)", m_world.get_objects().size());
+    }
+
     // Process deferred USD change notifications before rendering
     process_dirty_prims();
 
 #ifdef PTS_SHADER_HOT_RELOAD
     {
-        auto changed = m_shader_loader.poll_and_reload();
+        m_shader_loader.poll_and_start_reload();
+        auto changed = m_shader_loader.try_finish_reload();
         if (!changed.empty()) {
             auto const& device = webgpu_context()->device();
             for (auto& pass : m_passes) {
@@ -408,6 +433,8 @@ void EditorApplication::render(FrameContext& ctx) {
     m_perf_overlay.draw(get_delta_time(), m_world, *m_frame_graph, m_passes,
                         k_renderer_configs[m_active_config_index].name, m_viewport_width,
                         m_viewport_height);
+
+    m_loading_overlay.draw();
 
     // ── Frame graph ──
     auto const& device = ctx.device();
@@ -573,14 +600,31 @@ auto EditorApplication::draw_scene_panel() noexcept -> void {
                     log(LogLevel::Error, "Failed to open stage: {}", result.name);
                     return;
                 }
-                revoke_stage_listener();
-                m_world.clear();
-                m_selected_prim = pxr::SdfPath();
-                m_stage = stage;
-                rendering::populate_from_stage(m_world, m_stage, &webgpu_context()->device());
-                register_stage_listener();
-                log(LogLevel::Info, "Loaded scene: {} ({} objects)", result.name,
-                    m_world.get_objects().size());
+
+                // Cancel any in-flight load
+                m_scene_load_task.reset();
+                m_pending_stage.Reset();
+
+                // Store stage for later (background thread will read it)
+                m_pending_stage = stage;
+
+                // Kick off background CPU extraction
+                m_scene_load_task = std::make_unique<BackgroundTask<rendering::RenderWorld>>(
+                    "Loading Scene", [stage](TaskProgress& progress) -> rendering::RenderWorld {
+                        return rendering::populate_from_stage_cpu(stage, progress);
+                    });
+
+                // Track in overlay
+                m_loading_overlay.track({
+                    "Loading Scene",
+                    [this] { return !m_scene_load_task || m_scene_load_task->is_done(); },
+                    [this] { return m_scene_load_task ? m_scene_load_task->progress() : 1.0f; },
+                    [this] {
+                        return m_scene_load_task ? m_scene_load_task->status() : std::string{};
+                    },
+                });
+
+                log(LogLevel::Info, "Loading scene: {} (background)", result.name);
             });
     }
 }
