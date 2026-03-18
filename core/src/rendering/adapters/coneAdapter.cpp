@@ -42,7 +42,7 @@ bool ConeAdapter::can_adapt(const pxr::UsdPrim& prim) const {
     return prim.IsA<pxr::UsdGeomCone>();
 }
 
-void ConeAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device& device) {
+void ConeAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device* device) {
     pxr::UsdGeomCone cone(prim);
 
     double radius_d = 1.0;
