@@ -26,6 +26,13 @@ void ShaderLoader::register_shader(std::string_view resource_key, std::string_vi
     entry.wgsl_output = std::string(wgsl_output);
     entry.embedded_getter = embedded_getter;
     entry.cached_wgsl = std::string(*embedded);
+#ifdef PTS_SHADER_HOT_RELOAD
+    // Seed mtime so the first poll_and_reload() doesn't see every shader as dirty.
+    namespace fs = std::filesystem;
+    fs::path workspace_root(PTS_WORKSPACE_ROOT);
+    std::error_code ec;
+    entry.last_mtime = fs::last_write_time(workspace_root / entry.slang_source, ec);
+#endif
     m_entries.emplace(std::move(key), std::move(entry));
 }
 
