@@ -9,6 +9,11 @@
 #include <unordered_map>
 #include <vector>
 
+namespace pts {
+template <typename T>
+class BackgroundTask;
+}
+
 namespace spdlog {
 class logger;
 }
@@ -21,6 +26,7 @@ using EmbeddedGetter = std::optional<std::string_view> (*)(std::string_view);
 class ShaderLoader {
    public:
     explicit ShaderLoader(std::shared_ptr<spdlog::logger> logger);
+    ~ShaderLoader();
 
     /// Register a shader for loading.
     /// @param resource_key The embedded resource lookup key (e.g.
@@ -45,6 +51,18 @@ class ShaderLoader {
     /// No-op in non-hot-reload builds (returns empty).
     [[nodiscard]] auto poll_and_reload() -> std::vector<std::string>;
 
+    /// Start background recompilation if any .slang sources are dirty.
+    /// No-op if already reloading or nothing changed.
+    /// Returns true if a compilation was started.
+    bool poll_and_start_reload();
+
+    /// True if a background compilation is in progress.
+    bool is_reloading() const;
+
+    /// If background compilation finished, read .wgsl files and update cache.
+    /// Returns list of changed resource keys, or empty if not done yet / nothing changed.
+    std::vector<std::string> try_finish_reload();
+
    private:
     struct ShaderEntry {
         std::string resource_key;
@@ -59,6 +77,7 @@ class ShaderLoader {
 
     std::unordered_map<std::string, ShaderEntry> m_entries;
     std::shared_ptr<spdlog::logger> m_logger;
+    std::unique_ptr<pts::BackgroundTask<int>> m_reload_task;
 };
 
 }  // namespace pts::rendering
