@@ -65,20 +65,6 @@ TEST_CASE("BackgroundTask - reports progress mid-work") {
     CHECK(task.take_result() == "result");
 }
 
-TEST_CASE("BackgroundTask - move constructor") {
-    auto task =
-        std::make_unique<pts::BackgroundTask<int>>("movable", [](pts::TaskProgress&) { return 7; });
-
-    while (!task->is_done()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-
-    pts::BackgroundTask<int> moved(std::move(*task));
-    CHECK(moved.name() == "movable");
-    CHECK(moved.is_done());
-    CHECK(moved.take_result() == 7);
-}
-
 TEST_CASE("BackgroundTask - destructor joins thread") {
     // Should not hang or crash
     {

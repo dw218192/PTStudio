@@ -43,7 +43,7 @@ class BackgroundTask {
    public:
     using WorkFn = std::function<T(TaskProgress&)>;
 
-    NO_COPY(BackgroundTask);
+    NO_COPY_MOVE(BackgroundTask);
 
     BackgroundTask(std::string name, WorkFn work) : m_name(std::move(name)) {
         PRECONDITION(work);
@@ -55,28 +55,6 @@ class BackgroundTask {
             }
             m_done.store(true, std::memory_order_release);
         });
-    }
-
-    BackgroundTask(BackgroundTask&& other) noexcept
-        : m_name(std::move(other.m_name)),
-          m_thread(std::move(other.m_thread)),
-          m_done(other.m_done.load(std::memory_order_acquire)),
-          m_result(std::move(other.m_result)) {
-        other.m_done.store(false, std::memory_order_relaxed);
-    }
-
-    BackgroundTask& operator=(BackgroundTask&& other) noexcept {
-        PRECONDITION_MSG(!m_thread.joinable(),
-                         "Cannot move-assign over a BackgroundTask with a running thread");
-        m_name = std::move(other.m_name);
-        m_thread = std::move(other.m_thread);
-        m_done.store(other.m_done.load(std::memory_order_acquire), std::memory_order_release);
-        other.m_done.store(false, std::memory_order_relaxed);
-        {
-            std::lock_guard lock(other.m_result_mutex);
-            m_result = std::move(other.m_result);
-        }
-        return *this;
     }
 
     ~BackgroundTask() {

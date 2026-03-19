@@ -409,8 +409,10 @@ void EditorApplication::render(FrameContext& ctx) {
         // GPU upload on main thread
         world.upload_all_meshes(webgpu_context()->device());
 
-        // Swap into editor state
+        // Swap into editor state — invalidate stale picking from old world
         revoke_stage_listener();
+        m_picking_readback = webgpu::BufferReadback{};
+        m_pick_requested = false;
         m_world = std::move(world);
         m_selected_prim = pxr::SdfPath();
         m_stage = std::move(m_pending_stage);

@@ -62,10 +62,14 @@ auto PickingPass::is_ready() const noexcept -> bool {
 void PickingPass::setup(const webgpu::Device& device) {
     PRECONDITION_MSG(m_shader_loader, "shader loader not set");
 
-    // Release existing state for re-entry (hot-reload)
+    // Capture old state for deferred release (after new state is built)
+    WGPUBindGroup old_bind_group = nullptr;
+    WGPUBindGroupLayout old_layout = nullptr;
     if (auto* ready = std::get_if<Ready>(&m_state)) {
-        if (ready->bind_group) wgpuBindGroupRelease(ready->bind_group);
-        if (ready->bind_group_layout) wgpuBindGroupLayoutRelease(ready->bind_group_layout);
+        old_bind_group = ready->bind_group;
+        old_layout = ready->bind_group_layout;
+        ready->bind_group = nullptr;
+        ready->bind_group_layout = nullptr;
     }
 
     auto shader_src = m_shader_loader->load("editor/generated/shaders/picking.wgsl");
@@ -115,6 +119,9 @@ void PickingPass::setup(const webgpu::Device& device) {
         std::move(shader), std::move(pipeline), std::move(uniform_buffer),
         bind_group,        bind_group_layout,   initial_capacity,
     };
+
+    if (old_bind_group) wgpuBindGroupRelease(old_bind_group);
+    if (old_layout) wgpuBindGroupLayoutRelease(old_layout);
 }
 
 void PickingPass::ensure_capacity(const webgpu::Device& device, uint32_t object_count) {
