@@ -378,8 +378,8 @@ void EditorApplication::render(FrameContext& ctx) {
 
 #ifdef PTS_SHADER_HOT_RELOAD
     {
-        m_shader_loader.poll_and_start_reload();
         auto changed = m_shader_loader.try_finish_reload();
+        m_shader_loader.poll_and_start_reload();
         if (!changed.empty()) {
             auto const& device = webgpu_context()->device();
             for (auto& pass : m_passes) {

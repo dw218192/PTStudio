@@ -49,8 +49,8 @@ auto ShaderLoader::load(std::string_view resource_key) const -> std::string {
 
 bool ShaderLoader::poll_and_start_reload() {
 #ifdef PTS_SHADER_HOT_RELOAD
-    // Already reloading — nothing to do.
-    if (m_reload_task && !m_reload_task->is_done()) return false;
+    // Task exists (running or done-but-unconsumed) — wait for try_finish_reload().
+    if (m_reload_task) return false;
 
     namespace fs = std::filesystem;
     fs::path workspace_root(PTS_WORKSPACE_ROOT);
