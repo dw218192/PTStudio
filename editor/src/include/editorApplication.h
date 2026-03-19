@@ -1,6 +1,5 @@
 #pragma once
 
-#include <core/backgroundTask.h>
 #include <core/imgui/loadingOverlay.h>
 #include <core/inputAction.h>
 #include <core/rendering/camera.h>
@@ -27,6 +26,8 @@
 namespace pts {
 class ImGuiComponent;
 class InputComponent;
+template <typename T>
+class BackgroundTask;
 }  // namespace pts
 
 namespace pts::rendering {

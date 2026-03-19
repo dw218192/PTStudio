@@ -1,5 +1,6 @@
 #include "editorApplication.h"
 
+#include <core/backgroundTask.h>
 #include <core/commandLine.h>
 #include <core/components/imguiComponent.h>
 #include <core/components/inputComponent.h>

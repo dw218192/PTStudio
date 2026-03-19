@@ -37,6 +37,10 @@ Tool configs (slangc, shader_codegen, embed) live at the top level of `config.ya
 
 The `embed` prebuild step generates C++ headers with `get_resource(key)` lookup. Resource keys are derived from input file paths by stripping the longest common prefix across all inputs in a group. Adding a new file to an embed group can change the common prefix and break existing lookups. When adding files to an embed resource group, always check that existing `get_resource()` callers still use the correct key.
 
+### Tracy Profiler (debug builds only)
+
+Tracy 0.13.1's static `s_profiler` deadlocks at process exit on Windows if `<thread>` is included in widely-used headers — the changed static init ordering causes Tracy's destructor to run after WinSock cleanup, and its profiler thread hangs in `accept()`. **Never include `<thread>` (or headers that transitively include it, like `backgroundTask.h`) in `.h` files that are widely included.** Forward-declare and include in `.cpp` only. The proper fix is rebuilding Tracy with `TRACY_DELAYED_INIT=ON` + `TRACY_MANUAL_LIFETIME=ON`.
+
 ## Code Conventions
 
 - C++17, `webgpu.h` API for rendering (same header for Dawn and emdawnwebgpu)
