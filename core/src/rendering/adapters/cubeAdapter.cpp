@@ -22,7 +22,7 @@ bool CubeAdapter::can_adapt(const pxr::UsdPrim& prim) const {
     return prim.IsA<pxr::UsdGeomCube>();
 }
 
-void CubeAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device* device) {
+void CubeAdapter::sync(pxr::UsdPrim prim, SyncScope& scope) {
     pxr::UsdGeomCube cube(prim);
 
     double size = 2.0;
@@ -93,7 +93,7 @@ void CubeAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device
         indices.push_back(static_cast<uint32_t>(tri[2]));
     }
 
-    sync_object(prim, scope, device, vertices, indices);
+    sync_object(prim, scope, vertices, indices);
 }
 
 std::vector<PropertyDescriptor> CubeAdapter::get_properties(const pxr::UsdPrim& prim) const {

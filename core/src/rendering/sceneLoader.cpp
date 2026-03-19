@@ -12,10 +12,10 @@ namespace pts::rendering {
 
 namespace {
 
-void sync_prim_impl(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device* device) {
+void sync_prim_impl(pxr::UsdPrim prim, SyncScope& scope) {
     for (auto* adapter : k_scene_adapters()) {
         if (adapter->can_adapt(prim)) {
-            adapter->sync(prim, scope, device);
+            adapter->sync(prim, scope);
             return;
         }
     }
@@ -26,23 +26,21 @@ void sync_prim_impl(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device* d
 
 }  // namespace
 
-void populate_from_stage(RenderWorld& world, const pxr::UsdStageRefPtr& stage,
-                         const webgpu::Device* device) {
+void populate_from_stage(RenderWorld& world, const pxr::UsdStageRefPtr& stage) {
     PTS_ZONE_SCOPED;
     auto scope = world.begin_sync();
     for (const auto& prim : pxr::UsdPrimRange(stage->GetPseudoRoot())) {
-        sync_prim_impl(prim, scope, device);
+        sync_prim_impl(prim, scope);
     }
 }
 
-void sync_prim(SyncScope& scope, const pxr::UsdStageRefPtr& stage, const webgpu::Device* device,
-               const pxr::SdfPath& prim_path) {
+void sync_prim(SyncScope& scope, const pxr::UsdStageRefPtr& stage, const pxr::SdfPath& prim_path) {
     auto prim = stage->GetPrimAtPath(prim_path);
     if (!prim.IsValid()) {
         remove_prim(scope, prim_path);
         return;
     }
-    sync_prim_impl(prim, scope, device);
+    sync_prim_impl(prim, scope);
 }
 
 void remove_prim(SyncScope& scope, const pxr::SdfPath& prim_path) {
@@ -60,7 +58,7 @@ void remove_prim(SyncScope& scope, const pxr::SdfPath& prim_path) {
     }
 }
 
-RenderWorld populate_from_stage_cpu(const pxr::UsdStageRefPtr& stage, TaskProgress& progress) {
+RenderWorld populate_from_stage(const pxr::UsdStageRefPtr& stage, TaskProgress& progress) {
     PTS_ZONE_SCOPED;
 
     size_t total = 0;
@@ -73,7 +71,7 @@ RenderWorld populate_from_stage_cpu(const pxr::UsdStageRefPtr& stage, TaskProgre
     auto scope = world.begin_sync();
     size_t current = 0;
     for (const auto& prim : pxr::UsdPrimRange(stage->GetPseudoRoot())) {
-        sync_prim_impl(prim, scope, nullptr);
+        sync_prim_impl(prim, scope);
         ++current;
         progress.set_progress(static_cast<float>(current) / static_cast<float>(total));
         progress.set_status(prim.GetPath().GetText());

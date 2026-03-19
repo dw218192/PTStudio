@@ -141,7 +141,6 @@ void EditorApplication::on_objects_changed(const pxr::UsdNotice::ObjectsChanged&
 
 void EditorApplication::process_dirty_prims() {
     if (!m_stage) return;
-    auto const& device = webgpu_context()->device();
 
     if (!m_resync_paths.empty()) {
         // Deduplicate
@@ -164,14 +163,16 @@ void EditorApplication::process_dirty_prims() {
                 });
 
                 // Sync the prim itself
-                rendering::sync_prim(scope, m_stage, &device, resync_path);
+                rendering::sync_prim(scope, m_stage, resync_path);
 
                 // Sync affected children
                 for (const auto& child_path : children_to_resync) {
-                    rendering::sync_prim(scope, m_stage, &device, child_path);
+                    rendering::sync_prim(scope, m_stage, child_path);
                 }
             }
         }  // mesh_version bumped here
+
+        m_world.upload_all_meshes(webgpu_context()->device());
 
         // Invalidate selection if prim was removed
         if (!m_selected_prim.IsEmpty() && !m_stage->GetPrimAtPath(m_selected_prim).IsValid()) {
@@ -254,7 +255,8 @@ void EditorApplication::on_ready() {
         auto layer = pxr::SdfLayer::CreateAnonymous(".usda");
         layer->ImportFromString(std::string{*usda});
         m_stage = pxr::UsdStage::Open(layer);
-        rendering::populate_from_stage(m_world, m_stage, &device);
+        rendering::populate_from_stage(m_world, m_stage);
+        m_world.upload_all_meshes(device);
         register_stage_listener();
         log(LogLevel::Info, "Loaded default scene ({} objects)", m_world.get_objects().size());
     } else {
@@ -612,7 +614,7 @@ auto EditorApplication::draw_scene_panel() noexcept -> void {
                 // Kick off background CPU extraction
                 m_scene_load_task = std::make_unique<BackgroundTask<rendering::RenderWorld>>(
                     "Loading Scene", [stage](TaskProgress& progress) -> rendering::RenderWorld {
-                        return rendering::populate_from_stage_cpu(stage, progress);
+                        return rendering::populate_from_stage(stage, progress);
                     });
 
                 // Track in overlay

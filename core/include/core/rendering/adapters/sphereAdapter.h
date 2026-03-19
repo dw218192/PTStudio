@@ -9,7 +9,7 @@ class SphereAdapter final : public ISceneAdapter {
     static SphereAdapter& instance();
 
     bool can_adapt(const pxr::UsdPrim& prim) const override;
-    void sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device* device) override;
+    void sync(pxr::UsdPrim prim, SyncScope& scope) override;
     std::vector<PropertyDescriptor> get_properties(const pxr::UsdPrim& prim) const override;
 
    private:

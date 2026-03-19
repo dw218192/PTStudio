@@ -42,7 +42,7 @@ bool CylinderAdapter::can_adapt(const pxr::UsdPrim& prim) const {
     return prim.IsA<pxr::UsdGeomCylinder>();
 }
 
-void CylinderAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device* device) {
+void CylinderAdapter::sync(pxr::UsdPrim prim, SyncScope& scope) {
     pxr::UsdGeomCylinder cyl(prim);
 
     double radius_d = 1.0;
@@ -108,7 +108,7 @@ void CylinderAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::De
         }
     }
 
-    sync_object(prim, scope, device, vertices, indices);
+    sync_object(prim, scope, vertices, indices);
 }
 
 std::vector<PropertyDescriptor> CylinderAdapter::get_properties(const pxr::UsdPrim& prim) const {

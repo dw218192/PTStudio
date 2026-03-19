@@ -1,6 +1,5 @@
 #include <core/rendering/adapterHelpers.h>
 #include <core/rendering/renderWorld.h>
-#include <core/rendering/webgpu/device.h>
 #include <pxr/usd/usd/prim.h>
 #include <pxr/usd/usdGeom/xformable.h>
 #include <pxr/usd/usdShade/material.h>
@@ -62,35 +61,17 @@ uint32_t resolve_material(pxr::UsdPrim prim, SyncScope& scope) {
     return index;
 }
 
-void upload_mesh(SyncScope& scope, const webgpu::Device* device,
-                 const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices,
-                 uint32_t mesh_slot) {
-    Mesh& gpu_mesh = scope.mesh(mesh_slot);
-    gpu_mesh.cpu_vertices.assign(vertices.begin(), vertices.end());
-    gpu_mesh.cpu_indices.assign(indices.begin(), indices.end());
-    gpu_mesh.index_count = static_cast<uint32_t>(indices.size());
-    ++gpu_mesh.version;
-
-    if (device) {
-        auto vertex_buf = device->create_buffer(
-            vertices.size() * sizeof(Vertex),
-            static_cast<WGPUBufferUsage>(WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst));
-        wgpuQueueWriteBuffer(device->queue(), vertex_buf.handle(), 0, vertices.data(),
-                             vertices.size() * sizeof(Vertex));
-
-        auto index_buf = device->create_buffer(
-            indices.size() * sizeof(uint32_t),
-            static_cast<WGPUBufferUsage>(WGPUBufferUsage_Index | WGPUBufferUsage_CopyDst));
-        wgpuQueueWriteBuffer(device->queue(), index_buf.handle(), 0, indices.data(),
-                             indices.size() * sizeof(uint32_t));
-
-        gpu_mesh.vertex_buffer = std::move(vertex_buf);
-        gpu_mesh.index_buffer = std::move(index_buf);
-    }
+void store_mesh(SyncScope& scope, const std::vector<Vertex>& vertices,
+                const std::vector<uint32_t>& indices, uint32_t mesh_slot) {
+    Mesh& mesh = scope.mesh(mesh_slot);
+    mesh.cpu_vertices.assign(vertices.begin(), vertices.end());
+    mesh.cpu_indices.assign(indices.begin(), indices.end());
+    mesh.index_count = static_cast<uint32_t>(indices.size());
+    ++mesh.version;
 }
 
-void sync_object(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device* device,
-                 std::vector<Vertex>& vertices, std::vector<uint32_t>& indices) {
+void sync_object(pxr::UsdPrim prim, SyncScope& scope, std::vector<Vertex>& vertices,
+                 std::vector<uint32_t>& indices) {
     auto& world = scope.world();
     auto sdf_path = prim.GetPath();
     auto transform = compute_world_transform(prim);
@@ -101,12 +82,12 @@ void sync_object(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device* devi
         auto& obj = scope.object(static_cast<uint32_t>(existing));
         obj.transform = transform;
         obj.material_index = material_index;
-        upload_mesh(scope, device, vertices, indices, obj.mesh_index);
+        store_mesh(scope, vertices, indices, obj.mesh_index);
     } else {
         auto prim_path = sdf_path.GetString();
         auto mesh_slot = scope.alloc_mesh_slot();
         auto obj_slot = scope.alloc_object_slot();
-        upload_mesh(scope, device, vertices, indices, mesh_slot);
+        store_mesh(scope, vertices, indices, mesh_slot);
         auto& obj = scope.object(obj_slot);
         obj.mesh_index = mesh_slot;
         obj.transform = transform;
