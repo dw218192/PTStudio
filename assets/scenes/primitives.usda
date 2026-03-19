@@ -130,11 +130,9 @@ def Xform "Root"
         }
     }
 
-    def DistantLight "SunLight"
+    def DomeLight "DomeLight"
     {
         float inputs:intensity = 1.0
-        color3f inputs:color = (1.0, 0.95, 0.9)
-        float3 xformOp:rotateXYZ = (-45.0, 30.0, 0.0)
-        uniform token[] xformOpOrder = ["xformOp:rotateXYZ"]
+        color3f inputs:color = (1.0, 1.0, 1.0)
     }
 }

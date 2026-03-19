@@ -26,6 +26,7 @@
 #include <pxr/usd/usd/stage.h>
 #include <pxr/usd/usdGeom/xform.h>
 #include <pxr/usd/usdGeom/xformable.h>
+#include <pxr/usd/usdLux/domeLight.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 #include <stb_image.h>
 
@@ -241,6 +242,21 @@ pxr::SdfPath EditorApplication::find_unique_prim_path(std::string_view base_name
     }
 }
 
+void EditorApplication::ensure_default_light() {
+    if (!m_stage) return;
+
+    // Check if the stage already has any lights
+    bool has_light = false;
+    m_world.for_each_prim([&](std::string_view, rendering::PrimSlot slot) {
+        if (slot.kind == rendering::PrimSlot::Kind::Light) has_light = true;
+    });
+    if (has_light) return;
+
+    auto path = find_unique_prim_path("DomeLight");
+    auto light = pxr::UsdLuxDomeLight::Define(m_stage, path);
+    light.GetIntensityAttr().Set(2.0f);
+}
+
 void EditorApplication::register_args(CommandLine& cli) {
     WindowedApplication::register_args(cli);
     cli.add_flag("quit-on-start", "Quit the application after starting, useful for testing");
@@ -284,6 +300,7 @@ void EditorApplication::on_ready() {
         m_stage = pxr::UsdStage::Open(layer);
         rendering::populate_from_stage(m_world, m_stage);
         m_world.upload_all_meshes(device);
+        ensure_default_light();
         register_stage_listener();
         log(LogLevel::Info, "Loaded default scene ({} objects)", m_world.get_objects().size());
     } else {
@@ -394,6 +411,7 @@ void EditorApplication::render(FrameContext& ctx) {
         m_selected_prim = pxr::SdfPath();
         m_stage = std::move(m_pending_stage);
         m_pending_stage.Reset();
+        ensure_default_light();
         register_stage_listener();
 
         // Re-setup passes (they cache world references)
