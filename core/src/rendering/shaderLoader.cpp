@@ -1,10 +1,9 @@
+#include <core/backgroundTask.h>
 #include <core/diagnostics.h>
 #include <core/rendering/shaderLoader.h>
 #include <spdlog/spdlog.h>
 
 #ifdef PTS_SHADER_HOT_RELOAD
-#include <core/backgroundTask.h>
-
 #include <array>
 #include <cstdio>
 #include <fstream>
