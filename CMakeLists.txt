@@ -59,8 +59,8 @@ target_compile_definitions(developer_flags INTERFACE
     PTS_WINDOWING="${PTS_WINDOWING}"
     "PTS_WINDOWING_${PTS_WINDOWING}=1"
     $<$<CXX_COMPILER_ID:MSVC>:NOMINMAX>
-    $<$<AND:$<NOT:$<BOOL:${EMSCRIPTEN}>>,$<CONFIG:Debug>>:TRACY_ENABLE>
-    $<$<AND:$<NOT:$<BOOL:${EMSCRIPTEN}>>,$<CONFIG:Debug>>:TRACY_ON_DEMAND>
+    $<$<AND:$<NOT:$<BOOL:${EMSCRIPTEN}>>,$<CONFIG:Debug>>:PTS_SHADER_HOT_RELOAD>
+    $<$<AND:$<NOT:$<BOOL:${EMSCRIPTEN}>>,$<CONFIG:Debug>>:PTS_WORKSPACE_ROOT="${CMAKE_SOURCE_DIR}">
 )
 
 target_compile_features(developer_flags INTERFACE cxx_std_17)
@@ -173,6 +173,7 @@ endif()
 
 # add subprojects
 add_subdirectory(core)
+add_subdirectory(renderers)
 add_subdirectory(hello_triangle)
 add_subdirectory(editor)
 

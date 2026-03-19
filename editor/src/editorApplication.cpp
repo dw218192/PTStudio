@@ -1,5 +1,6 @@
 #include "editorApplication.h"
 
+#include <core/backgroundTask.h>
 #include <core/commandLine.h>
 #include <core/components/imguiComponent.h>
 #include <core/components/inputComponent.h>
@@ -7,6 +8,7 @@
 #include <core/imgui/fileDialogue.h>
 #include <core/profiling.h>
 #include <core/rendering/adapterHelpers.h>
+#include <core/rendering/adapters/registry.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/rendererConfig.h>
 #include <core/rendering/sceneLoader.h>
@@ -22,7 +24,9 @@
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/sdf/path.h>
 #include <pxr/usd/usd/stage.h>
+#include <pxr/usd/usdGeom/xform.h>
 #include <pxr/usd/usdGeom/xformable.h>
+#include <pxr/usd/usdLux/domeLight.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 #include <stb_image.h>
 
@@ -31,11 +35,13 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <map>
 #include <stdexcept>
 
 #include "editorResources.h"
 #include "passes/forwardPass.h"
 #include "passes/gridPass.h"
+#include "passes/lobePass.h"
 #include "passes/pickingPass.h"
 #include "passes/wireframePass.h"
 
@@ -46,6 +52,7 @@ static constexpr auto k_scene_setting_win_name = "Scene Settings";
 static constexpr auto k_inspector_win_name = "Inspector";
 static constexpr auto k_scene_view_win_name = "Scene";
 static constexpr auto k_console_win_name = "Console";
+static constexpr auto k_perf_win_name = "Performance";
 static constexpr auto k_console_log_buffer_size = 1024;
 
 static const std::vector<rendering::RendererConfig> k_renderer_configs = {
@@ -54,17 +61,20 @@ static const std::vector<rendering::RendererConfig> k_renderer_configs = {
          [] { return std::make_unique<PickingPass>(); },
          [] { return std::make_unique<ForwardPass>(); },
          [] { return std::make_unique<GridPass>(); },
+         [] { return std::make_unique<LobePass>(); },
      }},
     {"Wireframe",
      {
          [] { return std::make_unique<PickingPass>(); },
          [] { return std::make_unique<WireframePass>(); },
          [] { return std::make_unique<GridPass>(); },
+         [] { return std::make_unique<LobePass>(); },
      }},
 };
 
 EditorApplication::EditorApplication(std::string_view name, pts::LoggingManager& logging_manager)
-    : WindowedApplication{name, logging_manager} {
+    : WindowedApplication{name, logging_manager},
+      m_shader_loader(logging_manager.get_logger_shared("shader_loader")) {
     create_input_actions();
 
     m_console_log_sink =
@@ -75,6 +85,8 @@ EditorApplication::EditorApplication(std::string_view name, pts::LoggingManager&
 }
 
 EditorApplication::~EditorApplication() {
+    m_scene_load_task.reset();  // join background thread before tearing down
+    m_pending_stage.Reset();
     revoke_stage_listener();
     m_passes.clear();
     m_world.clear();
@@ -133,7 +145,6 @@ void EditorApplication::on_objects_changed(const pxr::UsdNotice::ObjectsChanged&
 
 void EditorApplication::process_dirty_prims() {
     if (!m_stage) return;
-    auto const& device = webgpu_context()->device();
 
     if (!m_resync_paths.empty()) {
         // Deduplicate
@@ -156,14 +167,16 @@ void EditorApplication::process_dirty_prims() {
                 });
 
                 // Sync the prim itself
-                rendering::sync_prim(scope, m_stage, device, resync_path);
+                rendering::sync_prim(scope, m_stage, resync_path);
 
                 // Sync affected children
                 for (const auto& child_path : children_to_resync) {
-                    rendering::sync_prim(scope, m_stage, device, child_path);
+                    rendering::sync_prim(scope, m_stage, child_path);
                 }
             }
         }  // mesh_version bumped here
+
+        m_world.upload_all_meshes(webgpu_context()->device());
 
         // Invalidate selection if prim was removed
         if (!m_selected_prim.IsEmpty() && !m_stage->GetPrimAtPath(m_selected_prim).IsValid()) {
@@ -189,7 +202,7 @@ void EditorApplication::process_dirty_prims() {
 void EditorApplication::normalize_xform_ops(const std::string& prim_path) {
     PRECONDITION(m_stage);
     auto prim = m_stage->GetPrimAtPath(pxr::SdfPath(prim_path));
-    INVARIANT_MSG(prim.IsValid(), "prim_path on RenderObject must reference a valid USD prim");
+    INVARIANT_MSG(prim.IsValid(), "prim_path on ObjectSlot must reference a valid USD prim");
 
     pxr::UsdGeomXformable xformable(prim);
     if (!xformable) return;
@@ -203,6 +216,49 @@ void EditorApplication::normalize_xform_ops(const std::string& prim_path) {
     xformable.GetLocalTransformation(&xf, &resetsXformStack, pxr::UsdTimeCode::Default());
     xformable.ClearXformOpOrder();
     xformable.AddTransformOp().Set(xf);
+}
+
+pxr::SdfPath EditorApplication::find_unique_prim_path(std::string_view base_name) {
+    PRECONDITION(m_stage);
+    PRECONDITION(!base_name.empty());
+
+    static const auto k_root = pxr::SdfPath("/Root");
+
+    if (!m_stage->GetPrimAtPath(k_root).IsValid()) {
+        pxr::UsdGeomXform::Define(m_stage, k_root);
+    }
+
+    auto candidate = k_root.AppendChild(pxr::TfToken(std::string(base_name)));
+    if (!m_stage->GetPrimAtPath(candidate).IsValid()) {
+        return candidate;
+    }
+
+    for (int i = 1;; ++i) {
+        candidate =
+            k_root.AppendChild(pxr::TfToken(std::string(base_name) + "_" + std::to_string(i)));
+        if (!m_stage->GetPrimAtPath(candidate).IsValid()) {
+            return candidate;
+        }
+    }
+}
+
+void EditorApplication::ensure_default_light() {
+    if (!m_stage) return;
+
+    // Check if the stage already has any lights
+    bool has_light = false;
+    m_world.for_each_prim([&](std::string_view, rendering::PrimSlot slot) {
+        if (slot.kind == rendering::PrimSlot::Kind::Light) has_light = true;
+    });
+    if (has_light) return;
+
+    auto path = find_unique_prim_path("DomeLight");
+    auto light = pxr::UsdLuxDomeLight::Define(m_stage, path);
+    light.GetIntensityAttr().Set(2.0f);
+
+    // Sync the new light into the world (listener isn't registered yet)
+    auto scope = m_world.begin_sync();
+    rendering::sync_prim(scope, m_stage, path);
 }
 
 void EditorApplication::register_args(CommandLine& cli) {
@@ -246,7 +302,9 @@ void EditorApplication::on_ready() {
         auto layer = pxr::SdfLayer::CreateAnonymous(".usda");
         layer->ImportFromString(std::string{*usda});
         m_stage = pxr::UsdStage::Open(layer);
-        rendering::populate_from_stage(m_world, m_stage, device);
+        rendering::populate_from_stage(m_world, m_stage);
+        m_world.upload_all_meshes(device);
+        ensure_default_light();
         register_stage_listener();
         log(LogLevel::Info, "Loaded default scene ({} objects)", m_world.get_objects().size());
     } else {
@@ -288,6 +346,23 @@ void EditorApplication::on_ready() {
         stbi_image_free(pixels);
     }
 
+    // Register shaders for hot-reload
+    m_shader_loader.register_shader(
+        "editor/generated/shaders/forward.wgsl", "editor/shaders/forward.slang",
+        "editor/generated/shaders/forward.wgsl", editor_resources::get_resource);
+    m_shader_loader.register_shader(
+        "editor/generated/shaders/grid.wgsl", "editor/shaders/grid.slang",
+        "editor/generated/shaders/grid.wgsl", editor_resources::get_resource);
+    m_shader_loader.register_shader(
+        "editor/generated/shaders/picking.wgsl", "editor/shaders/picking.slang",
+        "editor/generated/shaders/picking.wgsl", editor_resources::get_resource);
+    m_shader_loader.register_shader(
+        "editor/generated/shaders/wireframe.wgsl", "editor/shaders/wireframe.slang",
+        "editor/generated/shaders/wireframe.wgsl", editor_resources::get_resource);
+    m_shader_loader.register_shader(
+        "editor/generated/shaders/lobe.wgsl", "editor/shaders/lobe.slang",
+        "editor/generated/shaders/lobe.wgsl", editor_resources::get_resource);
+
     // Set up renderer passes
     set_renderer_config(0);
 
@@ -310,6 +385,7 @@ void EditorApplication::set_renderer_config(size_t index) {
     }
     auto& device = webgpu_context()->device();
     for (auto& pass : m_passes) {
+        pass->set_shader_loader(m_shader_loader);
         pass->setup(device);
     }
     m_active_config_index = index;
@@ -325,8 +401,46 @@ void EditorApplication::render(FrameContext& ctx) {
     if (!m_imgui) return;
     if (viewport() && viewport()->should_close()) return;
 
+    // Finalize background scene load
+    if (m_scene_load_task && m_scene_load_task->is_done()) {
+        auto world = m_scene_load_task->take_result();
+        m_scene_load_task.reset();
+
+        // GPU upload on main thread
+        world.upload_all_meshes(webgpu_context()->device());
+
+        // Swap into editor state — invalidate stale picking from old world
+        revoke_stage_listener();
+        m_picking_readback = webgpu::BufferReadback{};
+        m_pick_requested = false;
+        m_world = std::move(world);
+        m_selected_prim = pxr::SdfPath();
+        m_stage = std::move(m_pending_stage);
+        m_pending_stage.Reset();
+        ensure_default_light();
+        register_stage_listener();
+
+        // Re-setup passes (they cache world references)
+        set_renderer_config(m_active_config_index);
+
+        log(LogLevel::Info, "Loaded scene ({} objects)", m_world.get_objects().size());
+    }
+
     // Process deferred USD change notifications before rendering
     process_dirty_prims();
+
+#ifdef PTS_SHADER_HOT_RELOAD
+    {
+        auto changed = m_shader_loader.try_finish_reload();
+        m_shader_loader.poll_and_start_reload();
+        if (!changed.empty()) {
+            auto const& device = webgpu_context()->device();
+            for (auto& pass : m_passes) {
+                pass->on_shaders_reloaded(device);
+            }
+        }
+    }
+#endif
 
     auto scope = m_imgui->frame_scope();
     ImGuizmo::BeginFrame();
@@ -365,6 +479,17 @@ void EditorApplication::render(FrameContext& ctx) {
     }
     m_imgui->end_window();
 
+    // Pass-owned ImGui windows
+    for (auto& pass : m_passes) {
+        pass->draw_imgui();
+    }
+
+    m_perf_overlay.draw(get_delta_time(), m_world, *m_frame_graph, m_passes,
+                        k_renderer_configs[m_active_config_index].name, m_viewport_width,
+                        m_viewport_height);
+
+    m_loading_overlay.draw();
+
     // ── Frame graph ──
     auto const& device = ctx.device();
     auto queue = device.queue();
@@ -375,22 +500,27 @@ void EditorApplication::render(FrameContext& ctx) {
 
     rendering::ResourceHandle scene_color_handle;
 
+    // Build a minimal PassContext with device/queue for non-viewport passes
+    rendering::PassContext pass_ctx{
+        device,         queue,          m_camera,   m_world, m_viewport_width, m_viewport_height,
+        glm::mat4(1.f), glm::mat4(1.f), get_time(), 0,
+    };
+
     if (has_viewport) {
         float aspect = static_cast<float>(m_viewport_width) / static_cast<float>(m_viewport_height);
-        auto view_mat = m_camera.view_matrix();
-        auto proj_mat = m_camera.projection_matrix(aspect);
+        pass_ctx.view_matrix = m_camera.view_matrix();
+        pass_ctx.proj_matrix = m_camera.projection_matrix(aspect);
 
-        rendering::PassContext pass_ctx{
-            device,   queue,    m_camera,   m_world, m_viewport_width, m_viewport_height,
-            view_mat, proj_mat, get_time(), 0,
-        };
+        m_world.prepare_gpu_buffers(device, queue);
+    }
 
-        for (auto& pass : m_passes) {
-            if (pass->is_ready()) {
-                pass->add_to_frame_graph(*m_frame_graph, pass_ctx);
-            }
-        }
+    for (auto& pass : m_passes) {
+        if (!pass->is_ready()) continue;
+        if (pass->requires_viewport() && !has_viewport) continue;
+        pass->add_to_frame_graph(*m_frame_graph, pass_ctx);
+    }
 
+    if (has_viewport) {
         // Look up scene_color resource that passes created
         rendering::TextureDesc color_desc;
         color_desc.width = m_viewport_width;
@@ -400,12 +530,23 @@ void EditorApplication::render(FrameContext& ctx) {
         scene_color_handle = m_frame_graph->find_or_create("scene_color", color_desc);
     }
 
-    // ImGui overlay pass
+    // ImGui overlay pass — declare reads on any texture that ImGui::Image references
     auto imgui_builder = m_frame_graph->add_pass("imgui")
                              .color(ctx.surface_view(), WGPUColor{0.08, 0.08, 0.12, 1.0})
                              .present();
     if (has_viewport && scene_color_handle.is_valid()) {
         imgui_builder.read(scene_color_handle);
+    }
+    {
+        rendering::TextureDesc lobe_desc;
+        lobe_desc.width = LobePass::k_texture_size;
+        lobe_desc.height = LobePass::k_texture_size;
+        lobe_desc.format = WGPUTextureFormat_RGBA8Unorm;
+        lobe_desc.clear_color = {0.1, 0.1, 0.1, 1.0};
+        auto lobe_color_handle = m_frame_graph->find_or_create("lobe_color", lobe_desc);
+        if (lobe_color_handle.is_valid()) {
+            imgui_builder.read(lobe_color_handle);
+        }
     }
     imgui_builder.execute([&](WGPURenderPassEncoder pass) { scope.render_into(pass); });
 
@@ -454,6 +595,11 @@ void EditorApplication::render(FrameContext& ctx) {
         m_scene_color_ref = m_frame_graph->get_texture_ref(scene_color_handle);
     }
 
+    // Let passes cache their texture refs for ImGui display
+    for (auto& pass : m_passes) {
+        pass->update_texture_refs(*m_frame_graph);
+    }
+
     wrap_mouse_pos();
 
     PTS_FRAME_MARK;
@@ -479,6 +625,8 @@ void EditorApplication::setup_docking_layout() {
     ImGui::DockBuilderDockWindow(k_scene_view_win_name, id);
     ImGui::DockBuilderDockWindow(k_inspector_win_name, right);
     ImGui::DockBuilderDockWindow(k_console_win_name, down);
+    ImGui::DockBuilderDockWindow(k_perf_win_name, down);
+    ImGui::DockBuilderDockWindow("BRDF Lobe", down);
 }
 
 auto EditorApplication::create_input_actions() noexcept -> void {
@@ -506,15 +654,70 @@ auto EditorApplication::draw_scene_panel() noexcept -> void {
                     log(LogLevel::Error, "Failed to open stage: {}", result.name);
                     return;
                 }
-                revoke_stage_listener();
-                m_world.clear();
-                m_selected_prim = pxr::SdfPath();
-                m_stage = stage;
-                rendering::populate_from_stage(m_world, m_stage, webgpu_context()->device());
-                register_stage_listener();
-                log(LogLevel::Info, "Loaded scene: {} ({} objects)", result.name,
-                    m_world.get_objects().size());
+
+                // Cancel any in-flight load
+                m_scene_load_task.reset();
+                m_pending_stage.Reset();
+
+                // Store stage for later (background thread will read it)
+                m_pending_stage = stage;
+
+                // Kick off background CPU extraction
+                m_scene_load_task = std::make_unique<BackgroundTask<rendering::RenderWorld>>(
+                    "Loading Scene", [stage](TaskProgress& progress) -> rendering::RenderWorld {
+                        return rendering::populate_from_stage(stage, progress);
+                    });
+
+                // Track in overlay
+                m_loading_overlay.track({
+                    "Loading Scene",
+                    [this] { return !m_scene_load_task || m_scene_load_task->is_done(); },
+                    [this] { return m_scene_load_task ? m_scene_load_task->progress() : 1.0f; },
+                    [this] {
+                        return m_scene_load_task ? m_scene_load_task->status() : std::string{};
+                    },
+                });
+
+                log(LogLevel::Info, "Loading scene: {} (background)", result.name);
             });
+    }
+
+    ImGui::SameLine();
+    if (m_stage && ImGui::Button("Add")) {
+        ImGui::OpenPopup("AddPrimPopup");
+    }
+    if (ImGui::BeginPopup("AddPrimPopup")) {
+        std::map<std::string, std::vector<const rendering::PrimFactory*>> grouped;
+        for (auto* adapter : rendering::k_scene_adapters()) {
+            auto factories = adapter->get_factories();
+            for (auto& f : factories) {
+                grouped[f.category].push_back(nullptr);
+            }
+        }
+        // Re-collect with stable pointers via a local vector
+        std::vector<rendering::PrimFactory> all_factories;
+        for (auto* adapter : rendering::k_scene_adapters()) {
+            auto factories = adapter->get_factories();
+            all_factories.insert(all_factories.end(), factories.begin(), factories.end());
+        }
+        grouped.clear();
+        for (const auto& f : all_factories) {
+            grouped[f.category].push_back(&f);
+        }
+        for (const auto& [category, factories] : grouped) {
+            if (ImGui::BeginMenu(category.c_str())) {
+                for (const auto* factory : factories) {
+                    if (ImGui::MenuItem(factory->display_name.c_str())) {
+                        auto path = find_unique_prim_path(factory->base_name);
+                        factory->define(m_stage, path);
+                        normalize_xform_ops(path.GetString());
+                        m_selected_prim = path;
+                    }
+                }
+                ImGui::EndMenu();
+            }
+        }
+        ImGui::EndPopup();
     }
 }
 
@@ -696,7 +899,7 @@ void EditorApplication::draw_light_gizmos(const glm::mat4& view_mat, const glm::
         const auto& light = lights[i];
         if (!light.active) continue;
 
-        if (light.type == rendering::Light::Type::Dome) continue;
+        if (light.type == rendering::LightSlot::Type::Dome) continue;
         // All lights get their icon at the transform position
         glm::vec3 world_pos = glm::vec3(light.transform[3]);
 

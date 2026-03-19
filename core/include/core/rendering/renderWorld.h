@@ -17,10 +17,15 @@
 #include <unordered_map>
 #include <vector>
 
+namespace pts::webgpu {
+class Device;
+}
+
 namespace pts::rendering {
 
 static constexpr uint32_t k_no_material = UINT32_MAX;
 
+/// 32-byte GPU struct
 struct Material {
     glm::vec3 diffuse_color{1.0f, 1.0f, 1.0f};
     float metallic{0.0f};
@@ -30,15 +35,29 @@ struct Material {
 };
 static_assert(sizeof(Material) == 32, "Material must be 32 bytes for GPU alignment");
 
+/// 48-byte GPU struct
+struct Light {
+    glm::vec3 direction_or_pos;
+    uint32_t type;
+    glm::vec3 color;
+    float intensity;
+    float radius;
+    float width;
+    float height;
+    float angle;
+};
+static_assert(sizeof(Light) == 48, "Light must be 48 bytes for GPU alignment");
+
 struct Mesh {
     webgpu::Buffer vertex_buffer;
     webgpu::Buffer index_buffer;
     uint32_t index_count;
     std::vector<uint32_t> cpu_indices;
+    std::vector<Vertex> cpu_vertices;
     uint32_t version = 0;
 };
 
-struct RenderObject {
+struct ObjectSlot {
     uint32_t mesh_index;
     uint32_t material_index{k_no_material};
     glm::mat4 transform;
@@ -46,25 +65,24 @@ struct RenderObject {
     bool active{true};
 };
 
-struct Light {
+struct LightSlot {
     enum class Type { Distant, Sphere, Rect, Disk, Dome };
     Type type;
     glm::vec3 color{1.0f, 1.0f, 1.0f};
     float intensity{1.0f};
     glm::mat4 transform;
-    std::string prim_path;
-
-    // Distant light
     glm::vec3 direction{0.0f, -1.0f, 0.0f};
-    float angle{0.53f};  // angular extent in degrees
-
-    // Area/point lights
+    float angle{0.53f};
     float radius{0.0f};
     float width{1.0f};
     float height{1.0f};
+    std::string prim_path;
     bool active{true};
     uint32_t version = 0;
 };
+
+/// Convert a LightSlot to a GPU-ready Light struct.
+Light to_light(const LightSlot& slot);
 
 /// Prim path → slot lookup entry. A single map replaces separate
 /// prim_to_object / prim_to_light maps for better cache locality.
@@ -103,9 +121,9 @@ class SyncScope {
     void free_light_slot(uint32_t i);
 
     // Mutable accessors for adapter/sync code (friend-gated).
-    RenderObject& object(uint32_t i);
+    ObjectSlot& object(uint32_t i);
     Mesh& mesh(uint32_t i);
-    Light& light(uint32_t i);
+    LightSlot& light(uint32_t i);
     Material& material(uint32_t i);
     std::vector<Material>& materials();
     std::unordered_map<std::string, uint32_t>& material_cache();
@@ -119,12 +137,13 @@ class SyncScope {
 
 struct RenderWorld {
     // Read-only accessors
-    boost::span<const RenderObject> get_objects() const;
+    boost::span<const ObjectSlot> get_objects() const;
     boost::span<const Mesh> get_meshes() const;
-    boost::span<const Light> get_lights() const;
+    boost::span<const LightSlot> get_lights() const;
     boost::span<const Material> get_materials() const;
     uint32_t get_mesh_version() const;
     uint32_t get_light_version() const;
+    uint32_t get_material_version() const;
 
     int find_object_by_prim(std::string_view path) const;
     int find_light_by_prim(std::string_view path) const;
@@ -142,6 +161,12 @@ struct RenderWorld {
     boost::span<const uint8_t> get_dirty_lights() const;
     void clear_dirty_lights();
 
+    // GPU buffer management
+    void prepare_gpu_buffers(const webgpu::Device& device, WGPUQueue queue);
+    const webgpu::Buffer& light_buffer() const;
+    const webgpu::Buffer& material_buffer() const;
+    uint32_t gpu_light_count() const;
+
     /// Lightweight xform-only update: recomputes world transforms for all
     /// synced prims at or under the given paths. Does not re-upload meshes.
     void update_transforms(const pxr::UsdStageRefPtr& stage,
@@ -152,15 +177,19 @@ struct RenderWorld {
     /// calls without a live SyncScope will PRECONDITION-fail.
     [[nodiscard]] SyncScope begin_sync();
 
+    /// Upload GPU buffers for all meshes that have CPU vertex data.
+    /// Call on the main thread after building the RenderWorld off-thread.
+    void upload_all_meshes(const webgpu::Device& device);
+
     void clear();
 
    private:
     friend class SyncScope;
 
     std::vector<Mesh> m_meshes;
-    std::vector<RenderObject> m_objects;
+    std::vector<ObjectSlot> m_objects;
     std::vector<Material> m_materials;
-    std::vector<Light> m_lights;
+    std::vector<LightSlot> m_lights;
     std::vector<uint8_t> m_dirty_lights;
 
     /// Material path → material index (deduplication cache).
@@ -172,6 +201,14 @@ struct RenderWorld {
 
     uint32_t m_mesh_version = 0;
     uint32_t m_light_version = 0;
+    uint32_t m_material_version = 0;
+
+    // GPU buffer state
+    webgpu::Buffer m_gpu_light_buffer;
+    webgpu::Buffer m_gpu_material_buffer;
+    uint32_t m_gpu_light_count = 0;
+    uint32_t m_cached_light_version = UINT32_MAX;
+    uint32_t m_cached_material_version = UINT32_MAX;
 
     std::vector<uint32_t> m_free_object_slots;
     std::vector<uint32_t> m_free_mesh_slots;

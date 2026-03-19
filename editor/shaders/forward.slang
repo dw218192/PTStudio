@@ -1,21 +1,4 @@
-struct Material {
-    float3 diffuse_color;
-    float metallic;
-    float roughness;
-    float opacity;
-    float2 _pad;
-};
-
-struct GpuLight {
-    float3 direction_or_pos;
-    uint type;
-    float3 color;
-    float intensity;
-    float radius;
-    float width;
-    float height;
-    float angle;  // distant light angular extent in degrees
-};
+import lighting;
 
 struct Uniforms {
     float4x4 mvp;
@@ -35,7 +18,7 @@ ConstantBuffer<Uniforms> u;
 StructuredBuffer<Material> materials;
 
 [[vk::binding(2, 0)]]
-StructuredBuffer<GpuLight> lights;
+StructuredBuffer<Light> lights;
 
 struct VsIn {
     float3 position : POSITION;
@@ -63,12 +46,6 @@ VsOut vs_main(VsIn input) {
     return output;
 }
 
-static const uint LIGHT_DISTANT = 0;
-static const uint LIGHT_SPHERE  = 1;
-static const uint LIGHT_RECT    = 2;
-static const uint LIGHT_DISK    = 3;
-static const uint LIGHT_DOME    = 4;
-
 [shader("fragment")]
 float4 fs_main(float3 world_normal : NORMAL, float3 world_pos : WORLD_POS,
                float3 color : COLOR) : SV_Target0 {
@@ -76,45 +53,17 @@ float4 fs_main(float3 world_normal : NORMAL, float3 world_pos : WORLD_POS,
     float3 V = normalize(u.camera_pos - world_pos);
 
     float3 base_color;
+    float metallic = 0.0;
     float roughness = 0.5;
     if (u.material_index == 0xFFFFFFFF) {
         base_color = color;
     } else {
         base_color = materials[u.material_index].diffuse_color;
+        metallic = materials[u.material_index].metallic;
         roughness = materials[u.material_index].roughness;
     }
 
-    float shininess = lerp(128.0, 16.0, roughness);
-    float3 result = float3(0.0);
-
-    for (uint i = 0; i < u.light_count; i++) {
-        GpuLight light = lights[i];
-
-        float3 L;
-        float attenuation = 1.0;
-
-        if (light.type == LIGHT_DOME) {
-            result += light.color * light.intensity * base_color * 0.2;
-            continue;
-        } else if (light.type == LIGHT_DISTANT) {
-            L = -light.direction_or_pos;
-        } else {
-            float3 to_light = light.direction_or_pos - world_pos;
-            float dist2 = dot(to_light, to_light);
-            L = normalize(to_light);
-            attenuation = 1.0 / max(dist2, 0.001);
-        }
-
-        float3 H = normalize(L + V);
-        float NdotL = max(dot(N, L), 0.0);
-        float NdotH = max(dot(N, H), 0.0);
-        float spec = pow(NdotH, shininess) * (1.0 - roughness) * step(0.001, NdotL);
-
-        result += light.color * light.intensity * attenuation
-                  * (base_color * NdotL + spec);
-    }
-
-    result += 0.03 * base_color;
-
+    CookTorranceGGX brdf;
+    float3 result = evaluate_lighting(brdf, lights, u.light_count, world_pos, N, V, base_color, metallic, roughness);
     return float4(result, 1.0);
 }

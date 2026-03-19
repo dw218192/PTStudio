@@ -6,13 +6,12 @@
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
+#include <core/rendering/shaderLoader.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
 #include <picking_shader_metadata.h>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-
-#include "editorResources.h"
 
 using namespace pts;
 using namespace pts::editor;
@@ -61,11 +60,20 @@ auto PickingPass::is_ready() const noexcept -> bool {
 }
 
 void PickingPass::setup(const webgpu::Device& device) {
-    auto shader_src = editor_resources::get_resource("editor/generated/shaders/picking.wgsl");
-    PRECONDITION_MSG(shader_src,
-                     "Missing embedded resource: editor/generated/shaders/picking.wgsl");
+    PRECONDITION_MSG(m_shader_loader, "shader loader not set");
 
-    auto shader = device.create_shader_module_from_source(*shader_src);
+    // Capture old state for deferred release (after new state is built)
+    WGPUBindGroup old_bind_group = nullptr;
+    WGPUBindGroupLayout old_layout = nullptr;
+    if (auto* ready = std::get_if<Ready>(&m_state)) {
+        old_bind_group = ready->bind_group;
+        old_layout = ready->bind_group_layout;
+        ready->bind_group = nullptr;
+        ready->bind_group_layout = nullptr;
+    }
+
+    auto shader_src = m_shader_loader->load("editor/generated/shaders/picking.wgsl");
+    auto shader = device.create_shader_module_from_source(shader_src);
 
     uint32_t initial_capacity = 64;
     auto uniform_buffer = device.create_buffer(
@@ -111,6 +119,9 @@ void PickingPass::setup(const webgpu::Device& device) {
         std::move(shader), std::move(pipeline), std::move(uniform_buffer),
         bind_group,        bind_group_layout,   initial_capacity,
     };
+
+    if (old_bind_group) wgpuBindGroupRelease(old_bind_group);
+    if (old_layout) wgpuBindGroupLayoutRelease(old_layout);
 }
 
 void PickingPass::ensure_capacity(const webgpu::Device& device, uint32_t object_count) {

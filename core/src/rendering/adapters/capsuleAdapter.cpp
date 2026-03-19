@@ -43,7 +43,7 @@ bool CapsuleAdapter::can_adapt(const pxr::UsdPrim& prim) const {
     return prim.IsA<pxr::UsdGeomCapsule>();
 }
 
-void CapsuleAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device& device) {
+void CapsuleAdapter::sync(pxr::UsdPrim prim, SyncScope& scope) {
     pxr::UsdGeomCapsule capsule(prim);
 
     double radius_d = 0.5;
@@ -111,7 +111,7 @@ void CapsuleAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Dev
         }
     }
 
-    sync_object(prim, scope, device, vertices, indices);
+    sync_object(prim, scope, vertices, indices);
 }
 
 std::vector<PropertyDescriptor> CapsuleAdapter::get_properties(const pxr::UsdPrim& prim) const {
@@ -123,6 +123,14 @@ std::vector<PropertyDescriptor> CapsuleAdapter::get_properties(const pxr::UsdPri
         {"radius", "Radius", std::any(radius)},
         {"height", "Height", std::any(height)},
     };
+}
+
+static pxr::UsdPrim define_capsule(const pxr::UsdStageRefPtr& stage, const pxr::SdfPath& path) {
+    return pxr::UsdGeomCapsule::Define(stage, path).GetPrim();
+}
+
+std::vector<PrimFactory> CapsuleAdapter::get_factories() const {
+    return {{"Geometry", "Capsule", "Capsule", define_capsule}};
 }
 
 }  // namespace pts::rendering

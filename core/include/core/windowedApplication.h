@@ -130,9 +130,7 @@ struct WindowedApplication : Application {
     [[nodiscard]] auto depth_view() const noexcept -> WGPUTextureView;
 
    private:
-    void loop(float) final {
-    }
-    void run_one_frame() override;
+    void loop(float dt) final;
     void init_windowing();
     [[nodiscard]] bool ensure_webgpu_ready();
 

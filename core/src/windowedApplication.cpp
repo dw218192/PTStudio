@@ -114,7 +114,7 @@ void WindowedApplication::ensure_depth_buffer(uint32_t w, uint32_t h) {
     m_depth_height = h;
 }
 
-void WindowedApplication::run_one_frame() {
+void WindowedApplication::loop(float dt) {
     m_windowing->pump_events(pts::rendering::PumpEventMode::Poll);
 
     if (!ensure_webgpu_ready()) {
@@ -133,7 +133,7 @@ void WindowedApplication::run_one_frame() {
         m_framebuffer_resized = false;
     }
 
-    update(get_delta_time());
+    update(dt);
 
     auto& surface = m_webgpu_context->surface();
     WGPUTextureView surface_view = surface.acquire_texture_view();

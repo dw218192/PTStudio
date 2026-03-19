@@ -1,9 +1,11 @@
 #pragma once
 
+#include <core/imgui/loadingOverlay.h>
 #include <core/inputAction.h>
 #include <core/rendering/camera.h>
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/renderWorld.h>
+#include <core/rendering/shaderLoader.h>
 #include <core/rendering/webgpu/bufferReadback.h>
 #include <core/rendering/webgpu/webgpu.h>
 #include <core/windowedApplication.h>
@@ -19,9 +21,13 @@
 #include <string_view>
 #include <vector>
 
+#include "perfOverlay.h"
+
 namespace pts {
 class ImGuiComponent;
 class InputComponent;
+template <typename T>
+class BackgroundTask;
 }  // namespace pts
 
 namespace pts::rendering {
@@ -59,7 +65,6 @@ struct EditorApplication final : WindowedApplication {
     void draw_prim_tree(const pxr::UsdPrim& prim);
     auto draw_scene_viewport() noexcept -> void;
     auto draw_console_panel() const noexcept -> void;
-
     // events
     auto on_mouse_leave_scene_viewport() noexcept -> void;
     auto on_mouse_enter_scene_viewport() noexcept -> void;
@@ -85,6 +90,7 @@ struct EditorApplication final : WindowedApplication {
     rendering::RenderWorld m_world;
     std::vector<std::unique_ptr<rendering::IScenePass>> m_passes;
     size_t m_active_config_index = 0;
+    rendering::ShaderLoader m_shader_loader;
 
     // USD stage + change tracking
     pxr::UsdStageRefPtr m_stage;
@@ -105,6 +111,8 @@ struct EditorApplication final : WindowedApplication {
     void on_objects_changed(const pxr::UsdNotice::ObjectsChanged& notice);
     void process_dirty_prims();
     void normalize_xform_ops(const std::string& prim_path);
+    pxr::SdfPath find_unique_prim_path(std::string_view base_name);
+    void ensure_default_light();
 
     std::vector<pxr::SdfPath> m_resync_paths;
     std::vector<pxr::SdfPath> m_dirty_xform_paths;
@@ -132,5 +140,15 @@ struct EditorApplication final : WindowedApplication {
     bool m_pick_requested = false;
     uint32_t m_pick_x = 0;
     uint32_t m_pick_y = 0;
+
+    // Performance overlay
+    PerfOverlay m_perf_overlay;
+
+    // Async scene loading
+    std::unique_ptr<pts::BackgroundTask<rendering::RenderWorld>> m_scene_load_task;
+    pxr::UsdStageRefPtr m_pending_stage;
+
+    // Loading overlay
+    pts::LoadingOverlay m_loading_overlay;
 };
 }  // namespace pts::editor

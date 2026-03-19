@@ -19,8 +19,8 @@ bool LightAdapter::can_adapt(const pxr::UsdPrim& prim) const {
     return prim.HasAPI<pxr::UsdLuxLightAPI>();
 }
 
-void LightAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device& /*device*/) {
-    Light light;
+void LightAdapter::sync(pxr::UsdPrim prim, SyncScope& scope) {
+    LightSlot light;
 
     // Common attributes via LightAPI
     pxr::UsdLuxLightAPI light_api(prim);
@@ -37,7 +37,7 @@ void LightAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Devic
 
     // Type-specific attributes
     if (prim.IsA<pxr::UsdLuxDistantLight>()) {
-        light.type = Light::Type::Distant;
+        light.type = LightSlot::Type::Distant;
         // Direction = negative Z axis in light's local space, transformed to world.
         glm::vec4 local_dir(0.0f, 0.0f, -1.0f, 0.0f);
         glm::vec3 world_dir = glm::normalize(glm::vec3(light.transform * local_dir));
@@ -47,13 +47,13 @@ void LightAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Devic
         distant.GetAngleAttr().Get(&angle);
         light.angle = angle;
     } else if (prim.IsA<pxr::UsdLuxSphereLight>()) {
-        light.type = Light::Type::Sphere;
+        light.type = LightSlot::Type::Sphere;
         pxr::UsdLuxSphereLight sphere_light(prim);
         float radius = 0.0f;
         sphere_light.GetRadiusAttr().Get(&radius);
         light.radius = radius;
     } else if (prim.IsA<pxr::UsdLuxRectLight>()) {
-        light.type = Light::Type::Rect;
+        light.type = LightSlot::Type::Rect;
         pxr::UsdLuxRectLight rect_light(prim);
         float w = 1.0f, h = 1.0f;
         rect_light.GetWidthAttr().Get(&w);
@@ -61,13 +61,13 @@ void LightAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Devic
         light.width = w;
         light.height = h;
     } else if (prim.IsA<pxr::UsdLuxDiskLight>()) {
-        light.type = Light::Type::Disk;
+        light.type = LightSlot::Type::Disk;
         pxr::UsdLuxDiskLight disk_light(prim);
         float radius = 0.0f;
         disk_light.GetRadiusAttr().Get(&radius);
         light.radius = radius;
     } else if (prim.IsA<pxr::UsdLuxDomeLight>()) {
-        light.type = Light::Type::Dome;
+        light.type = LightSlot::Type::Dome;
     } else {
         return;
     }
@@ -117,6 +117,37 @@ std::vector<PropertyDescriptor> LightAdapter::get_properties(const pxr::UsdPrim&
     }
 
     return props;
+}
+
+static pxr::UsdPrim define_distant(const pxr::UsdStageRefPtr& stage, const pxr::SdfPath& path) {
+    return pxr::UsdLuxDistantLight::Define(stage, path).GetPrim();
+}
+
+static pxr::UsdPrim define_sphere_light(const pxr::UsdStageRefPtr& stage,
+                                        const pxr::SdfPath& path) {
+    return pxr::UsdLuxSphereLight::Define(stage, path).GetPrim();
+}
+
+static pxr::UsdPrim define_rect(const pxr::UsdStageRefPtr& stage, const pxr::SdfPath& path) {
+    return pxr::UsdLuxRectLight::Define(stage, path).GetPrim();
+}
+
+static pxr::UsdPrim define_disk(const pxr::UsdStageRefPtr& stage, const pxr::SdfPath& path) {
+    return pxr::UsdLuxDiskLight::Define(stage, path).GetPrim();
+}
+
+static pxr::UsdPrim define_dome(const pxr::UsdStageRefPtr& stage, const pxr::SdfPath& path) {
+    return pxr::UsdLuxDomeLight::Define(stage, path).GetPrim();
+}
+
+std::vector<PrimFactory> LightAdapter::get_factories() const {
+    return {
+        {"Lights", "Distant Light", "DistantLight", define_distant},
+        {"Lights", "Sphere Light", "SphereLight", define_sphere_light},
+        {"Lights", "Rect Light", "RectLight", define_rect},
+        {"Lights", "Disk Light", "DiskLight", define_disk},
+        {"Lights", "Dome Light", "DomeLight", define_dome},
+    };
 }
 
 }  // namespace pts::rendering

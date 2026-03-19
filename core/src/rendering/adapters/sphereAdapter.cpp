@@ -31,7 +31,7 @@ bool SphereAdapter::can_adapt(const pxr::UsdPrim& prim) const {
     return prim.IsA<pxr::UsdGeomSphere>();
 }
 
-void SphereAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Device& device) {
+void SphereAdapter::sync(pxr::UsdPrim prim, SyncScope& scope) {
     pxr::UsdGeomSphere sphere(prim);
 
     double radius = 1.0;
@@ -81,7 +81,7 @@ void SphereAdapter::sync(pxr::UsdPrim prim, SyncScope& scope, const webgpu::Devi
         indices.push_back(static_cast<uint32_t>(tri[2]));
     }
 
-    sync_object(prim, scope, device, vertices, indices);
+    sync_object(prim, scope, vertices, indices);
 }
 
 std::vector<PropertyDescriptor> SphereAdapter::get_properties(const pxr::UsdPrim& prim) const {
@@ -89,6 +89,14 @@ std::vector<PropertyDescriptor> SphereAdapter::get_properties(const pxr::UsdPrim
     double radius = 1.0;
     sphere.GetRadiusAttr().Get(&radius);
     return {{"radius", "Radius", std::any(radius)}};
+}
+
+static pxr::UsdPrim define_sphere(const pxr::UsdStageRefPtr& stage, const pxr::SdfPath& path) {
+    return pxr::UsdGeomSphere::Define(stage, path).GetPrim();
+}
+
+std::vector<PrimFactory> SphereAdapter::get_factories() const {
+    return {{"Geometry", "Sphere", "Sphere", define_sphere}};
 }
 
 }  // namespace pts::rendering
