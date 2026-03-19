@@ -19,6 +19,11 @@ class PTStudioConan(ConanFile):
         "windowing": "glfw",
         # Boost configuration - need filesystem for path operations
         "boost/*:without_filesystem": False,
+        # Tracy: manual lifetime prevents static destructor deadlock at exit.
+        # on_demand: profiler thread uses select() with timeout, not blocking accept().
+        "tracy/*:on_demand": True,
+        "tracy/*:delayed_init": True,
+        "tracy/*:manual_lifetime": True,
     }
 
     def requirements(self):
