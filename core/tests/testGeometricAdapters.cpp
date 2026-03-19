@@ -3,6 +3,7 @@
 #include <core/rendering/adapters/coneAdapter.h>
 #include <core/rendering/adapters/cubeAdapter.h>
 #include <core/rendering/adapters/cylinderAdapter.h>
+#include <core/rendering/adapters/lightAdapter.h>
 #include <core/rendering/adapters/registry.h>
 #include <core/rendering/adapters/sphereAdapter.h>
 #include <core/rendering/renderWorld.h>
@@ -70,6 +71,75 @@ TEST_CASE("populate_from_stage with progress builds RenderWorld") {
         CHECK(mesh.vertex_buffer.handle() == nullptr);
         CHECK(mesh.index_buffer.handle() == nullptr);
     }
+}
+
+// PrimFactory tests — no GPU needed
+
+TEST_CASE("Geometry adapters each return exactly one factory") {
+    CHECK(pts::rendering::CubeAdapter::instance().get_factories().size() == 1);
+    CHECK(pts::rendering::SphereAdapter::instance().get_factories().size() == 1);
+    CHECK(pts::rendering::CylinderAdapter::instance().get_factories().size() == 1);
+    CHECK(pts::rendering::ConeAdapter::instance().get_factories().size() == 1);
+    CHECK(pts::rendering::CapsuleAdapter::instance().get_factories().size() == 1);
+}
+
+TEST_CASE("LightAdapter returns 5 factories") {
+    auto factories = pts::rendering::LightAdapter::instance().get_factories();
+    REQUIRE(factories.size() == 5);
+    CHECK(factories[0].category == "Lights");
+    CHECK(factories[0].display_name == "Distant Light");
+    CHECK(factories[1].display_name == "Sphere Light");
+    CHECK(factories[2].display_name == "Rect Light");
+    CHECK(factories[3].display_name == "Disk Light");
+    CHECK(factories[4].display_name == "Dome Light");
+}
+
+TEST_CASE("Geometry factory categories and base names are correct") {
+    auto cube_fac = pts::rendering::CubeAdapter::instance().get_factories()[0];
+    CHECK(cube_fac.category == "Geometry");
+    CHECK(cube_fac.display_name == "Cube");
+    CHECK(cube_fac.base_name == "Cube");
+
+    auto sphere_fac = pts::rendering::SphereAdapter::instance().get_factories()[0];
+    CHECK(sphere_fac.category == "Geometry");
+    CHECK(sphere_fac.base_name == "Sphere");
+}
+
+TEST_CASE("Factory define function creates valid prims") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+
+    auto cube_fac = pts::rendering::CubeAdapter::instance().get_factories()[0];
+    auto prim = cube_fac.define(stage, pxr::SdfPath("/TestCube"));
+    REQUIRE(prim.IsValid());
+    CHECK(prim.IsA<pxr::UsdGeomCube>());
+    CHECK(pts::rendering::CubeAdapter::instance().can_adapt(prim));
+
+    auto sphere_fac = pts::rendering::SphereAdapter::instance().get_factories()[0];
+    auto sphere_prim = sphere_fac.define(stage, pxr::SdfPath("/TestSphere"));
+    REQUIRE(sphere_prim.IsValid());
+    CHECK(sphere_prim.IsA<pxr::UsdGeomSphere>());
+}
+
+TEST_CASE("Light factory define functions create valid light prims") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    auto factories = pts::rendering::LightAdapter::instance().get_factories();
+
+    for (const auto& factory : factories) {
+        auto path = pxr::SdfPath("/" + factory.base_name);
+        auto prim = factory.define(stage, path);
+        REQUIRE(prim.IsValid());
+        CHECK(pts::rendering::LightAdapter::instance().can_adapt(prim));
+    }
+}
+
+TEST_CASE("Registry collects all factories from adapters") {
+    std::vector<pts::rendering::PrimFactory> all;
+    for (auto* adapter : pts::rendering::k_scene_adapters()) {
+        auto factories = adapter->get_factories();
+        all.insert(all.end(), factories.begin(), factories.end());
+    }
+    // 5 geometry + 5 lights = 10
+    CHECK(all.size() == 10);
 }
 
 // GPU-dependent tests — sync() uploads mesh data to the GPU

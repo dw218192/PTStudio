@@ -122,4 +122,12 @@ std::vector<PropertyDescriptor> CylinderAdapter::get_properties(const pxr::UsdPr
     };
 }
 
+static pxr::UsdPrim define_cylinder(const pxr::UsdStageRefPtr& stage, const pxr::SdfPath& path) {
+    return pxr::UsdGeomCylinder::Define(stage, path).GetPrim();
+}
+
+std::vector<PrimFactory> CylinderAdapter::get_factories() const {
+    return {{"Geometry", "Cylinder", "Cylinder", define_cylinder}};
+}
+
 }  // namespace pts::rendering

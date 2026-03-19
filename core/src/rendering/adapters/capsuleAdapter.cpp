@@ -125,4 +125,12 @@ std::vector<PropertyDescriptor> CapsuleAdapter::get_properties(const pxr::UsdPri
     };
 }
 
+static pxr::UsdPrim define_capsule(const pxr::UsdStageRefPtr& stage, const pxr::SdfPath& path) {
+    return pxr::UsdGeomCapsule::Define(stage, path).GetPrim();
+}
+
+std::vector<PrimFactory> CapsuleAdapter::get_factories() const {
+    return {{"Geometry", "Capsule", "Capsule", define_capsule}};
+}
+
 }  // namespace pts::rendering

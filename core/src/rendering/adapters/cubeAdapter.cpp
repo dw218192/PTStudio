@@ -103,4 +103,12 @@ std::vector<PropertyDescriptor> CubeAdapter::get_properties(const pxr::UsdPrim& 
     return {{"size", "Size", std::any(size)}};
 }
 
+static pxr::UsdPrim define_cube(const pxr::UsdStageRefPtr& stage, const pxr::SdfPath& path) {
+    return pxr::UsdGeomCube::Define(stage, path).GetPrim();
+}
+
+std::vector<PrimFactory> CubeAdapter::get_factories() const {
+    return {{"Geometry", "Cube", "Cube", define_cube}};
+}
+
 }  // namespace pts::rendering

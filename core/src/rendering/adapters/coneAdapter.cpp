@@ -120,4 +120,12 @@ std::vector<PropertyDescriptor> ConeAdapter::get_properties(const pxr::UsdPrim& 
     };
 }
 
+static pxr::UsdPrim define_cone(const pxr::UsdStageRefPtr& stage, const pxr::SdfPath& path) {
+    return pxr::UsdGeomCone::Define(stage, path).GetPrim();
+}
+
+std::vector<PrimFactory> ConeAdapter::get_factories() const {
+    return {{"Geometry", "Cone", "Cone", define_cone}};
+}
+
 }  // namespace pts::rendering

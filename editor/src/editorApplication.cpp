@@ -8,6 +8,7 @@
 #include <core/imgui/fileDialogue.h>
 #include <core/profiling.h>
 #include <core/rendering/adapterHelpers.h>
+#include <core/rendering/adapters/registry.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/rendererConfig.h>
 #include <core/rendering/sceneLoader.h>
@@ -23,6 +24,7 @@
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/sdf/path.h>
 #include <pxr/usd/usd/stage.h>
+#include <pxr/usd/usdGeom/xform.h>
 #include <pxr/usd/usdGeom/xformable.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 #include <stb_image.h>
@@ -32,6 +34,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <map>
 #include <stdexcept>
 
 #include "editorResources.h"
@@ -212,6 +215,30 @@ void EditorApplication::normalize_xform_ops(const std::string& prim_path) {
     xformable.GetLocalTransformation(&xf, &resetsXformStack, pxr::UsdTimeCode::Default());
     xformable.ClearXformOpOrder();
     xformable.AddTransformOp().Set(xf);
+}
+
+pxr::SdfPath EditorApplication::find_unique_prim_path(std::string_view base_name) {
+    PRECONDITION(m_stage);
+    PRECONDITION(!base_name.empty());
+
+    static const auto k_root = pxr::SdfPath("/Root");
+
+    if (!m_stage->GetPrimAtPath(k_root).IsValid()) {
+        pxr::UsdGeomXform::Define(m_stage, k_root);
+    }
+
+    auto candidate = k_root.AppendChild(pxr::TfToken(std::string(base_name)));
+    if (!m_stage->GetPrimAtPath(candidate).IsValid()) {
+        return candidate;
+    }
+
+    for (int i = 1;; ++i) {
+        candidate =
+            k_root.AppendChild(pxr::TfToken(std::string(base_name) + "_" + std::to_string(i)));
+        if (!m_stage->GetPrimAtPath(candidate).IsValid()) {
+            return candidate;
+        }
+    }
 }
 
 void EditorApplication::register_args(CommandLine& cli) {
@@ -629,6 +656,44 @@ auto EditorApplication::draw_scene_panel() noexcept -> void {
 
                 log(LogLevel::Info, "Loading scene: {} (background)", result.name);
             });
+    }
+
+    ImGui::SameLine();
+    if (m_stage && ImGui::Button("Add")) {
+        ImGui::OpenPopup("AddPrimPopup");
+    }
+    if (ImGui::BeginPopup("AddPrimPopup")) {
+        std::map<std::string, std::vector<const rendering::PrimFactory*>> grouped;
+        for (auto* adapter : rendering::k_scene_adapters()) {
+            auto factories = adapter->get_factories();
+            for (auto& f : factories) {
+                grouped[f.category].push_back(nullptr);
+            }
+        }
+        // Re-collect with stable pointers via a local vector
+        std::vector<rendering::PrimFactory> all_factories;
+        for (auto* adapter : rendering::k_scene_adapters()) {
+            auto factories = adapter->get_factories();
+            all_factories.insert(all_factories.end(), factories.begin(), factories.end());
+        }
+        grouped.clear();
+        for (const auto& f : all_factories) {
+            grouped[f.category].push_back(&f);
+        }
+        for (const auto& [category, factories] : grouped) {
+            if (ImGui::BeginMenu(category.c_str())) {
+                for (const auto* factory : factories) {
+                    if (ImGui::MenuItem(factory->display_name.c_str())) {
+                        auto path = find_unique_prim_path(factory->base_name);
+                        factory->define(m_stage, path);
+                        normalize_xform_ops(path.GetString());
+                        m_selected_prim = path;
+                    }
+                }
+                ImGui::EndMenu();
+            }
+        }
+        ImGui::EndPopup();
     }
 }
 

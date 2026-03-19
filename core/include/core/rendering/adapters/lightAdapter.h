@@ -11,6 +11,7 @@ class LightAdapter final : public ISceneAdapter {
     bool can_adapt(const pxr::UsdPrim& prim) const override;
     void sync(pxr::UsdPrim prim, SyncScope& scope) override;
     std::vector<PropertyDescriptor> get_properties(const pxr::UsdPrim& prim) const override;
+    std::vector<PrimFactory> get_factories() const override;
 
    private:
     LightAdapter() = default;

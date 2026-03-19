@@ -91,4 +91,12 @@ std::vector<PropertyDescriptor> SphereAdapter::get_properties(const pxr::UsdPrim
     return {{"radius", "Radius", std::any(radius)}};
 }
 
+static pxr::UsdPrim define_sphere(const pxr::UsdStageRefPtr& stage, const pxr::SdfPath& path) {
+    return pxr::UsdGeomSphere::Define(stage, path).GetPrim();
+}
+
+std::vector<PrimFactory> SphereAdapter::get_factories() const {
+    return {{"Geometry", "Sphere", "Sphere", define_sphere}};
+}
+
 }  // namespace pts::rendering

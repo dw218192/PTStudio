@@ -119,4 +119,35 @@ std::vector<PropertyDescriptor> LightAdapter::get_properties(const pxr::UsdPrim&
     return props;
 }
 
+static pxr::UsdPrim define_distant(const pxr::UsdStageRefPtr& stage, const pxr::SdfPath& path) {
+    return pxr::UsdLuxDistantLight::Define(stage, path).GetPrim();
+}
+
+static pxr::UsdPrim define_sphere_light(const pxr::UsdStageRefPtr& stage,
+                                        const pxr::SdfPath& path) {
+    return pxr::UsdLuxSphereLight::Define(stage, path).GetPrim();
+}
+
+static pxr::UsdPrim define_rect(const pxr::UsdStageRefPtr& stage, const pxr::SdfPath& path) {
+    return pxr::UsdLuxRectLight::Define(stage, path).GetPrim();
+}
+
+static pxr::UsdPrim define_disk(const pxr::UsdStageRefPtr& stage, const pxr::SdfPath& path) {
+    return pxr::UsdLuxDiskLight::Define(stage, path).GetPrim();
+}
+
+static pxr::UsdPrim define_dome(const pxr::UsdStageRefPtr& stage, const pxr::SdfPath& path) {
+    return pxr::UsdLuxDomeLight::Define(stage, path).GetPrim();
+}
+
+std::vector<PrimFactory> LightAdapter::get_factories() const {
+    return {
+        {"Lights", "Distant Light", "DistantLight", define_distant},
+        {"Lights", "Sphere Light", "SphereLight", define_sphere_light},
+        {"Lights", "Rect Light", "RectLight", define_rect},
+        {"Lights", "Disk Light", "DiskLight", define_disk},
+        {"Lights", "Dome Light", "DomeLight", define_dome},
+    };
+}
+
 }  // namespace pts::rendering
