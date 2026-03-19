@@ -27,8 +27,8 @@ struct VsOut {
 VsOut vs_main(uint vertex_id : SV_VertexID) {
     VsOut output;
 
-    uint cells_per_row = u.grid_cols - 1;
-    uint cells_per_col = u.grid_rows - 1;
+    uint cells_per_row = max(u.grid_cols, 2u) - 1;
+    uint cells_per_col = max(u.grid_rows, 2u) - 1;
     uint cell_id = vertex_id / 6;
     uint vert_in_cell = vertex_id % 6;
 

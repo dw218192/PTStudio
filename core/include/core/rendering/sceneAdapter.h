@@ -17,7 +17,7 @@ struct PrimFactory {
     std::string display_name;
     std::string base_name;
     using DefineFn = pxr::UsdPrim (*)(const pxr::UsdStageRefPtr&, const pxr::SdfPath&);
-    DefineFn define;
+    DefineFn define = nullptr;
 };
 
 class ISceneAdapter {

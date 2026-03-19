@@ -121,16 +121,17 @@ auto ShaderLoader::try_finish_reload() -> std::vector<std::string> {
 
     std::vector<std::string> changed;
     for (auto& [key, entry] : m_entries) {
-        auto slang_path = workspace_root / entry.slang_source;
-        std::error_code ec;
-        entry.last_mtime = fs::last_write_time(slang_path, ec);
-
         auto wgsl_path = workspace_root / entry.wgsl_output;
         std::ifstream file(wgsl_path, std::ios::binary);
         if (!file) {
             m_logger->error("Failed to read recompiled shader: {}", wgsl_path.string());
             continue;
         }
+
+        // Update mtime only after successful read — failed reads retry next poll
+        auto slang_path = workspace_root / entry.slang_source;
+        std::error_code ec;
+        entry.last_mtime = fs::last_write_time(slang_path, ec);
         std::ostringstream ss;
         ss << file.rdbuf();
         auto new_wgsl = ss.str();

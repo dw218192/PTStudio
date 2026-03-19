@@ -255,6 +255,10 @@ void EditorApplication::ensure_default_light() {
     auto path = find_unique_prim_path("DomeLight");
     auto light = pxr::UsdLuxDomeLight::Define(m_stage, path);
     light.GetIntensityAttr().Set(2.0f);
+
+    // Sync the new light into the world (listener isn't registered yet)
+    auto scope = m_world.begin_sync();
+    rendering::sync_prim(scope, m_stage, path);
 }
 
 void EditorApplication::register_args(CommandLine& cli) {

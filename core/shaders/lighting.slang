@@ -138,7 +138,8 @@ LightSample sample_distant_light(Light light, float3 N, float3 V, float roughnes
         if (ortho_len > 0.0001) {
             ortho /= ortho_len;
         } else {
-            ortho = normalize(cross(center_L, float3(0, 1, 0)));
+            float3 up = abs(center_L.y) < 0.999 ? float3(0, 1, 0) : float3(1, 0, 0);
+            ortho = normalize(cross(center_L, up));
         }
         ls.spec_L = center_L * cos_half + ortho * sin(half_angle);
     }
