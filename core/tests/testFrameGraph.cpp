@@ -1,12 +1,12 @@
-#define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/webgpu/device.h>
-#include <doctest/doctest.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
 #include <cstdint>
 #include <thread>
+
+#include "testApplication.h"
 
 namespace {
 
@@ -595,3 +595,5 @@ TEST_CASE("FrameGraph - usage auto-inference from read()") {
     f.graph.execute(encoder);
     f.submit(encoder);
 }
+
+PTS_TEST_MAIN()

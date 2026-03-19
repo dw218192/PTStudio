@@ -1,6 +1,7 @@
 #include <core/application.h>
 #include <core/commandLine.h>
 #include <core/diagnostics.h>
+#include <core/profiling.h>
 #include <core/timeUtils.h>
 
 #include <chrono>
@@ -14,6 +15,7 @@ namespace pts {
 
 Application::Application(std::string_view name, pts::LoggingManager& logging_manager)
     : m_name{name.begin(), name.end()}, m_logging_manager{&logging_manager} {
+    PTS_STARTUP_PROFILER();
     m_logger = m_logging_manager->get_logger_shared(get_name().data());
     INVARIANT_MSG(m_logger != nullptr, "get_logger_shared must return valid logger");
     m_start_time = std::chrono::steady_clock::now();

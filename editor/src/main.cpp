@@ -3,14 +3,12 @@
 #include <core/enumUtils.h>
 #include <core/error.h>
 #include <core/loggingManager.h>
-#include <core/profiling.h>
 
 #include <iostream>
 
 #include "editorApplication.h"
 
 int main(int argc, char* argv[]) {
-    PTS_STARTUP_PROFILER();
     try {
         // Pre-parse for log-level (needed before LoggingManager construction).
         pts::CommandLine pre_cli;
@@ -48,6 +46,5 @@ int main(int argc, char* argv[]) {
         return static_cast<int>(pts::ErrorCode::InternalError);
     }
 
-    PTS_SHUTDOWN_PROFILER();
     return static_cast<int>(pts::ErrorCode::Ok);
 }
