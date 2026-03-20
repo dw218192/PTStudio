@@ -7,6 +7,7 @@ from typing import Any
 import click
 
 from repo_tools.core import (
+    McpLogRecord,
     RepoTool,
     ShellCommand,
     ToolContext,
@@ -160,6 +161,18 @@ class SlangcTool(RepoTool):
         return {
             "force": False,
         }
+
+    def format_mcp_output(
+        self, records: list[McpLogRecord], returncode: int
+    ) -> str | None:
+        """Show only summary and errors, skip WGSL output."""
+        lines: list[str] = []
+        for r in records:
+            if r.level in ("error", "critical", "warning"):
+                lines.append(r.message)
+            elif any(k in r.message for k in ("compiled", "skipped", "emitted")):
+                lines.append(r.message)
+        return "\n".join(lines) if lines else None
 
     def execute(self, ctx: ToolContext, args: dict[str, Any]) -> None:
         """Compile Slang shaders configured in config.yaml."""

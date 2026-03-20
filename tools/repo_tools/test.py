@@ -9,6 +9,7 @@ from typing import Any
 import click
 
 from repo_tools.core import (
+    McpLogRecord,
     RepoTool,
     ToolContext,
     logger,
@@ -44,6 +45,23 @@ class TestTool(RepoTool):
             "config": None,
             "verbose": False,
         }
+
+    def format_mcp_output(
+        self, records: list[McpLogRecord], returncode: int
+    ) -> str | None:
+        """Show only test summary and failures, not per-test GPU logs."""
+        lines: list[str] = []
+        for r in records:
+            msg = r.message
+            # Keep: PASSED/FAILED lines, summary, and errors
+            if any(
+                k in msg
+                for k in ("PASSED:", "FAILED:", "Test summary", "Total:", "Passed:", "Failed:", "All tests passed")
+            ):
+                lines.append(msg)
+            elif r.level in ("error", "critical", "warning"):
+                lines.append(msg)
+        return "\n".join(lines) if lines else "Tests completed (no output captured)"
 
     def execute(self, ctx: ToolContext, args: dict[str, Any]) -> None:
         config_val = args.get("config")
