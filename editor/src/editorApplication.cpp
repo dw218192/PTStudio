@@ -28,7 +28,6 @@
 #include <pxr/usd/usdGeom/xformable.h>
 #include <pxr/usd/usdLux/domeLight.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
-#include <stb_image.h>
 
 #include <algorithm>
 #include <filesystem>
@@ -39,10 +38,10 @@
 #include <stdexcept>
 
 #include "editorResources.h"
+#include "passes/editorPass.h"
 #include "passes/forwardPass.h"
 #include "passes/gridPass.h"
 #include "passes/lobePass.h"
-#include "passes/pickingPass.h"
 #include "passes/wireframePass.h"
 
 using namespace pts;
@@ -58,14 +57,14 @@ static constexpr auto k_console_log_buffer_size = 1024;
 static const std::vector<rendering::RendererConfig> k_renderer_configs = {
     {"Forward",
      {
-         [](const auto& sl) { return std::make_unique<PickingPass>(sl); },
+         [](const auto& sl) { return std::make_unique<EditorPass>(sl); },
          [](const auto& sl) { return std::make_unique<ForwardPass>(sl); },
          [](const auto& sl) { return std::make_unique<GridPass>(sl); },
          [](const auto& sl) { return std::make_unique<LobePass>(sl); },
      }},
     {"Wireframe",
      {
-         [](const auto& sl) { return std::make_unique<PickingPass>(sl); },
+         [](const auto& sl) { return std::make_unique<EditorPass>(sl); },
          [](const auto& sl) { return std::make_unique<WireframePass>(sl); },
          [](const auto& sl) { return std::make_unique<GridPass>(sl); },
          [](const auto& sl) { return std::make_unique<LobePass>(sl); },
@@ -91,8 +90,6 @@ EditorApplication::~EditorApplication() {
     m_passes.clear();
     m_world.clear();
     m_stage.Reset();
-    if (m_light_icon_view) wgpuTextureViewRelease(m_light_icon_view);
-    if (m_light_icon_tex) wgpuTextureRelease(m_light_icon_tex);
     m_input.reset();
     m_imgui.reset();
 }
@@ -311,41 +308,6 @@ void EditorApplication::on_ready() {
         log(LogLevel::Warning, "Missing embedded resource: assets/scenes/primitives.usda");
     }
 
-    // Load light icon texture
-    {
-        auto icon_data = editor_resources::get_resource("editor/icons/light.png");
-        INVARIANT_MSG(icon_data, "Missing embedded resource: editor/icons/light.png");
-        int iw, ih, channels;
-        auto* pixels =
-            stbi_load_from_memory(reinterpret_cast<const unsigned char*>(icon_data->data()),
-                                  static_cast<int>(icon_data->size()), &iw, &ih, &channels, 4);
-        INVARIANT_MSG(pixels, "Failed to decode light.png");
-
-        WGPUTextureDescriptor tex_desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
-        tex_desc.size = {static_cast<uint32_t>(iw), static_cast<uint32_t>(ih), 1};
-        tex_desc.format = WGPUTextureFormat_RGBA8Unorm;
-        tex_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_TextureBinding |
-                                                       WGPUTextureUsage_CopyDst);
-        tex_desc.mipLevelCount = 1;
-        tex_desc.sampleCount = 1;
-        tex_desc.dimension = WGPUTextureDimension_2D;
-        m_light_icon_tex = wgpuDeviceCreateTexture(device.handle(), &tex_desc);
-
-        WGPUTextureViewDescriptor view_desc = WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT;
-        m_light_icon_view = wgpuTextureCreateView(m_light_icon_tex, &view_desc);
-
-        WGPUTexelCopyTextureInfo dst = WGPU_TEXEL_COPY_TEXTURE_INFO_INIT;
-        dst.texture = m_light_icon_tex;
-        WGPUTexelCopyBufferLayout layout = WGPU_TEXEL_COPY_BUFFER_LAYOUT_INIT;
-        layout.bytesPerRow = static_cast<uint32_t>(iw * 4);
-        layout.rowsPerImage = static_cast<uint32_t>(ih);
-        WGPUExtent3D extent = {static_cast<uint32_t>(iw), static_cast<uint32_t>(ih), 1};
-        wgpuQueueWriteTexture(device.queue(), &dst, pixels, static_cast<size_t>(iw * ih * 4),
-                              &layout, &extent);
-
-        stbi_image_free(pixels);
-    }
-
     // Register shaders for hot-reload
     m_shader_loader.register_shader(
         "editor/generated/shaders/forward.wgsl", "editor/shaders/forward.slang",
@@ -359,6 +321,9 @@ void EditorApplication::on_ready() {
     m_shader_loader.register_shader(
         "editor/generated/shaders/wireframe.wgsl", "editor/shaders/wireframe.slang",
         "editor/generated/shaders/wireframe.wgsl", editor_resources::get_resource);
+    m_shader_loader.register_shader(
+        "editor/generated/shaders/gizmo.wgsl", "editor/shaders/gizmo.slang",
+        "editor/generated/shaders/gizmo.wgsl", editor_resources::get_resource);
     m_shader_loader.register_shader(
         "editor/generated/shaders/lobe.wgsl", "editor/shaders/lobe.slang",
         "editor/generated/shaders/lobe.wgsl", editor_resources::get_resource);
@@ -502,9 +467,33 @@ void EditorApplication::render(FrameContext& ctx) {
     rendering::ResourceHandle scene_color_handle;
 
     // Build a minimal PassContext with device/queue for non-viewport passes
+    // Compute selected picking ID from selected prim path
+    uint32_t selected_picking_id = UINT32_MAX;
+    if (!m_selected_prim.IsEmpty()) {
+        auto objs = m_world.get_objects();
+        for (uint32_t i = 0; i < static_cast<uint32_t>(objs.size()); ++i) {
+            if (objs[i].active && objs[i].prim_path == m_selected_prim.GetString()) {
+                selected_picking_id = i;
+                break;
+            }
+        }
+        if (selected_picking_id == UINT32_MAX) {
+            auto lts = m_world.get_lights();
+            uint32_t gizmo_slot = 0;
+            for (uint32_t i = 0; i < static_cast<uint32_t>(lts.size()); ++i) {
+                if (!lts[i].active || lts[i].type == rendering::LightSlot::Type::Dome) continue;
+                if (lts[i].prim_path == m_selected_prim.GetString()) {
+                    selected_picking_id = static_cast<uint32_t>(objs.size()) + gizmo_slot;
+                    break;
+                }
+                ++gizmo_slot;
+            }
+        }
+    }
+
     rendering::PassContext pass_ctx{
-        device,         queue,          m_camera,   m_world, m_viewport_width, m_viewport_height,
-        glm::mat4(1.f), glm::mat4(1.f), get_time(), 0,
+        device,         queue,          m_camera,   m_world, m_viewport_width,    m_viewport_height,
+        glm::mat4(1.f), glm::mat4(1.f), get_time(), 0,       selected_picking_id,
     };
 
     if (has_viewport) {
@@ -582,14 +571,30 @@ void EditorApplication::render(FrameContext& ctx) {
 
     if (auto picked_id = m_picking_readback.try_read_u32()) {
         auto objects = m_world.get_objects();
+        auto obj_count = static_cast<uint32_t>(objects.size());
         if (*picked_id == UINT32_MAX) {
             m_selected_prim = pxr::SdfPath();
-        } else if (*picked_id < static_cast<uint32_t>(objects.size()) &&
-                   objects[*picked_id].active) {
+        } else if (*picked_id < obj_count && objects[*picked_id].active) {
             auto& path = objects[*picked_id].prim_path;
             m_selected_prim = pxr::SdfPath(path);
             if (m_stage) {
                 normalize_xform_ops(path);
+            }
+        } else if (*picked_id >= obj_count) {
+            // Light gizmo picked — resolve gizmo slot to light index
+            auto lts = m_world.get_lights();
+            uint32_t gizmo_slot = *picked_id - obj_count;
+            uint32_t slot = 0;
+            for (uint32_t i = 0; i < static_cast<uint32_t>(lts.size()); ++i) {
+                if (!lts[i].active || lts[i].type == rendering::LightSlot::Type::Dome) continue;
+                if (slot == gizmo_slot) {
+                    m_selected_prim = pxr::SdfPath(lts[i].prim_path);
+                    if (m_stage && !lts[i].prim_path.empty()) {
+                        normalize_xform_ops(lts[i].prim_path);
+                    }
+                    break;
+                }
+                ++slot;
             }
         }
     }
@@ -886,12 +891,6 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
         }
     }
 
-    // ── Light gizmos ──
-    if (m_viewport_width > 0 && m_viewport_height > 0) {
-        float aspect = static_cast<float>(m_viewport_width) / static_cast<float>(m_viewport_height);
-        draw_light_gizmos(m_camera.view_matrix(), m_camera.projection_matrix(aspect));
-    }
-
     // ── ImGuizmo gizmo ──
     if (!m_selected_prim.IsEmpty() && m_stage && m_viewport_width > 0 && m_viewport_height > 0) {
         auto prim = m_stage->GetPrimAtPath(m_selected_prim);
@@ -947,58 +946,6 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
                 ops[0].Set(local_mat);
             }
         }
-    }
-}
-
-void EditorApplication::draw_light_gizmos(const glm::mat4& view_mat, const glm::mat4& proj_mat) {
-    if (!m_light_icon_view) return;
-
-    auto* draw_list = ImGui::GetWindowDrawList();
-    auto vp = proj_mat * view_mat;
-    float half_icon = k_light_icon_size * 0.5f;
-
-    auto mouse_pos = ImGui::GetMousePos();
-    bool mouse_clicked = ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !ImGuizmo::IsOver();
-
-    auto lights = m_world.get_lights();
-    for (int i = 0; i < static_cast<int>(lights.size()); ++i) {
-        const auto& light = lights[i];
-        if (!light.active) continue;
-
-        if (light.type == rendering::LightSlot::Type::Dome) continue;
-        // All lights get their icon at the transform position
-        glm::vec3 world_pos = glm::vec3(light.transform[3]);
-
-        glm::vec4 clip = vp * glm::vec4(world_pos, 1.0f);
-        if (clip.w <= 0.0f) continue;
-
-        glm::vec3 ndc = glm::vec3(clip) / clip.w;
-        if (ndc.x < -1.0f || ndc.x > 1.0f || ndc.y < -1.0f || ndc.y > 1.0f) continue;
-
-        float screen_x =
-            m_viewport_x + (ndc.x * 0.5f + 0.5f) * static_cast<float>(m_viewport_width);
-        float screen_y =
-            m_viewport_y + (1.0f - (ndc.y * 0.5f + 0.5f)) * static_cast<float>(m_viewport_height);
-
-        ImVec2 p_min(screen_x - half_icon, screen_y - half_icon);
-        ImVec2 p_max(screen_x + half_icon, screen_y + half_icon);
-
-        auto light_path = pxr::SdfPath(light.prim_path);
-        bool is_selected = (m_selected_prim == light_path);
-
-        // Click-to-select
-        if (mouse_clicked && mouse_pos.x >= p_min.x && mouse_pos.x <= p_max.x &&
-            mouse_pos.y >= p_min.y && mouse_pos.y <= p_max.y) {
-            if (is_selected) {
-                m_selected_prim = pxr::SdfPath();
-            } else {
-                m_selected_prim = light_path;
-                if (m_stage && !light.prim_path.empty()) normalize_xform_ops(light.prim_path);
-            }
-            is_selected = (m_selected_prim == light_path);
-            m_pick_requested = false;
-        }
-        draw_list->AddImage(reinterpret_cast<ImTextureID>(m_light_icon_view), p_min, p_max);
     }
 }
 

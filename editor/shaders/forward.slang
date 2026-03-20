@@ -50,8 +50,8 @@ struct FsOut {
     float4 color      : SV_Target0;
     float4 normals    : SV_Target1;
     float4 base_color : SV_Target2;
-    float4 roughness  : SV_Target3;
-    float4 metallic   : SV_Target4;
+    float4 direct_diffuse  : SV_Target3;
+    float4 direct_specular   : SV_Target4;
 };
 
 [shader("fragment")]
@@ -72,13 +72,21 @@ FsOut fs_main(float3 world_normal : NORMAL, float3 world_pos : WORLD_POS,
     }
 
     CookTorranceGGX brdf;
-    float3 lit = evaluate_lighting(brdf, lights, u.light_count, world_pos, N, V, albedo, mat_metallic, mat_roughness);
+
+    float3 direct_diffuse, direct_specular;
+    float3 lit = evaluate_lighting(
+        brdf,
+        lights,
+        u.light_count,
+        world_pos, N, V, albedo, mat_metallic, mat_roughness, 
+        direct_diffuse, direct_specular
+    );
 
     FsOut o;
     o.color      = float4(lit, 1.0);
     o.normals    = float4(N * 0.5 + 0.5, 1.0);
     o.base_color = float4(albedo, 1.0);
-    o.roughness  = float4(mat_roughness, mat_roughness, mat_roughness, 1.0);
-    o.metallic   = float4(mat_metallic, mat_metallic, mat_metallic, 1.0);
+    o.direct_diffuse  = float4(direct_diffuse, 1.0);
+    o.direct_specular = float4(direct_specular, 1.0);
     return o;
 }

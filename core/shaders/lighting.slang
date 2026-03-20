@@ -228,8 +228,12 @@ float3 evaluate_lighting<B : IBRDF>(
     B brdf,
     StructuredBuffer<Light> lights, uint light_count,
     float3 P, float3 N, float3 V,
-    float3 base_color, float metallic, float roughness
+    float3 base_color, float metallic, float roughness,
+    out float3 direct_diffuse, out float3 direct_specular
 ) {
+    direct_diffuse = float3(0.0);
+    direct_specular = float3(0.0);
+    
     float3 result = float3(0.0);
     for (uint i = 0; i < light_count; i++) {
         Light light = lights[i];
@@ -245,6 +249,9 @@ float3 evaluate_lighting<B : IBRDF>(
         float3 diffuse  = brdf.evaluate_diffuse(N, ls.diffuse_L, V, base_color, metallic);
         float3 specular = brdf.evaluate_specular(N, ls.spec_L, V, base_color, metallic, ls.spec_roughness);
         result += light.color * light.intensity * ls.attenuation * (diffuse + specular);
+
+        direct_diffuse += light.color * light.intensity * ls.attenuation * diffuse;
+        direct_specular += light.color * light.intensity * ls.attenuation * specular;
     }
     return result;
 }
