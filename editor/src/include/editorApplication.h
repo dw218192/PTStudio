@@ -39,7 +39,16 @@ class EditorPass;
 
 namespace pts::editor {
 struct AppConfig {
-    bool quit_on_start{false};
+    std::string capture_output;     // empty = no capture mode
+    std::string usd_path;           // empty = embedded default
+    std::string usd_override_path;  // empty = no override layer
+    int capture_frames = 1;         // frames to render before capture
+    std::string renderer_name;      // empty = default (first)
+    std::string debug_output_name;  // empty = scene_color
+
+    [[nodiscard]] bool is_capture_mode() const {
+        return !capture_output.empty();
+    }
 };
 
 struct EditorApplication final : WindowedApplication {
@@ -154,6 +163,12 @@ struct EditorApplication final : WindowedApplication {
 
     // Performance overlay
     PerfOverlay m_perf_overlay;
+
+    // Capture mode state
+    int m_frame_count = 0;
+    WGPUBuffer m_capture_buffer = nullptr;
+    bool m_capture_pending = false;
+    uint32_t m_capture_bytes_per_row = 0;
 
     // Async scene loading
     std::unique_ptr<pts::BackgroundTask<rendering::RenderWorld>> m_scene_load_task;

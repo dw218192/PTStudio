@@ -28,8 +28,12 @@
 #include <pxr/usd/usdGeom/xformable.h>
 #include <pxr/usd/usdLux/domeLight.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
+#include <stb_image_write.h>
 
 #include <algorithm>
+#include <chrono>
+#include <cstring>
+#include <ctime>
 #include <filesystem>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -81,6 +85,10 @@ EditorApplication::~EditorApplication() {
     m_stage.Reset();
     m_input.reset();
     m_imgui.reset();
+    if (m_capture_buffer) {
+        wgpuBufferRelease(m_capture_buffer);
+        m_capture_buffer = nullptr;
+    }
 }
 
 void EditorApplication::StageListener::handle(const pxr::UsdNotice::ObjectsChanged& notice,
@@ -249,14 +257,46 @@ void EditorApplication::ensure_default_light() {
 
 void EditorApplication::register_args(CommandLine& cli) {
     WindowedApplication::register_args(cli);
-    cli.add_flag("quit-on-start", "Quit the application after starting, useful for testing");
+    cli.add_string("capture-and-quit", "Render, capture viewport to PNG, then quit", std::nullopt);
+    cli.add_string("usd", "Load USD file instead of embedded default scene", std::nullopt);
+    cli.add_string("usd-override", "Apply override layer on top of loaded scene", std::nullopt);
+    cli.add_int("frames", "Frames to render before capture", 1);
+    cli.add_string("renderer", "Select renderer by name (e.g. Forward, Wireframe)", std::nullopt);
+    cli.add_string("debug-output", "Capture debug target instead of scene_color", std::nullopt);
 }
 
 void EditorApplication::process_args(const CommandLine& cli) {
     WindowedApplication::process_args(cli);
-    m_app_config.quit_on_start = cli.get_flag("quit-on-start");
-    if (m_app_config.quit_on_start && viewport()) {
-        viewport()->request_close();
+
+    if (cli.has("capture-and-quit")) {
+        auto path = cli.get_string("capture-and-quit");
+        if (path.empty()) {
+            // Generate default path: _captures/<timestamp>.png
+            auto now = std::chrono::system_clock::now();
+            auto time_t = std::chrono::system_clock::to_time_t(now);
+            char buf[64];
+            std::strftime(buf, sizeof(buf), "%Y%m%d_%H%M%S", std::localtime(&time_t));
+            std::filesystem::create_directories("_captures");
+            path = "_captures/" + std::string(buf) + ".png";
+        }
+        m_app_config.capture_output = std::move(path);
+    }
+
+    if (cli.has("usd")) {
+        m_app_config.usd_path = cli.get_string("usd");
+    }
+    if (cli.has("usd-override")) {
+        m_app_config.usd_override_path = cli.get_string("usd-override");
+    }
+    if (cli.has("frames")) {
+        m_app_config.capture_frames = cli.get_int("frames", 1);
+        PRECONDITION_MSG(m_app_config.capture_frames >= 1, "frames must be >= 1");
+    }
+    if (cli.has("renderer")) {
+        m_app_config.renderer_name = cli.get_string("renderer");
+    }
+    if (cli.has("debug-output")) {
+        m_app_config.debug_output_name = cli.get_string("debug-output");
     }
 }
 
@@ -282,19 +322,47 @@ void EditorApplication::on_ready() {
     m_frame_graph = std::make_unique<rendering::FrameGraph>(
         device, get_logging_manager().get_logger_shared("frame_graph"));
 
-    // Load default scene
-    auto usda = editor_resources::get_resource("assets/scenes/primitives.usda");
-    if (usda) {
-        auto layer = pxr::SdfLayer::CreateAnonymous(".usda");
-        layer->ImportFromString(std::string{*usda});
-        m_stage = pxr::UsdStage::Open(layer);
+    // Load scene
+    if (!m_app_config.usd_path.empty()) {
+        // Load USD file from disk
+        m_stage = pxr::UsdStage::Open(m_app_config.usd_path);
+        INVARIANT_MSG(m_stage, "Failed to open USD stage from path");
         rendering::populate_from_stage(m_world, m_stage);
         m_world.upload_all_meshes(device);
         ensure_default_light();
         register_stage_listener();
-        log(LogLevel::Info, "Loaded default scene ({} objects)", m_world.get_objects().size());
+        log(LogLevel::Info, "Loaded scene from {} ({} objects)", m_app_config.usd_path,
+            m_world.get_objects().size());
     } else {
-        log(LogLevel::Warning, "Missing embedded resource: assets/scenes/primitives.usda");
+        // Load embedded default scene
+        auto usda = editor_resources::get_resource("assets/scenes/primitives.usda");
+        if (usda) {
+            auto layer = pxr::SdfLayer::CreateAnonymous(".usda");
+            layer->ImportFromString(std::string{*usda});
+            m_stage = pxr::UsdStage::Open(layer);
+            rendering::populate_from_stage(m_world, m_stage);
+            m_world.upload_all_meshes(device);
+            ensure_default_light();
+            register_stage_listener();
+            log(LogLevel::Info, "Loaded default scene ({} objects)", m_world.get_objects().size());
+        } else {
+            log(LogLevel::Warning, "Missing embedded resource: assets/scenes/primitives.usda");
+        }
+    }
+
+    // Apply USD override layer
+    if (!m_app_config.usd_override_path.empty()) {
+        INVARIANT_MSG(m_stage, "Cannot apply USD override without a loaded stage");
+        auto session = m_stage->GetSessionLayer();
+        session->InsertSubLayerPath(m_app_config.usd_override_path);
+        // Re-sync world from stage with override applied
+        revoke_stage_listener();
+        m_world.clear();
+        rendering::populate_from_stage(m_world, m_stage);
+        m_world.upload_all_meshes(device);
+        ensure_default_light();
+        register_stage_listener();
+        log(LogLevel::Info, "Applied USD override: {}", m_app_config.usd_override_path);
     }
 
     // Register shaders for hot-reload
@@ -333,16 +401,48 @@ void EditorApplication::on_ready() {
         }
     }
 
-    // Set up renderer pass
-    set_renderer_config(0);
+    // Set up renderer pass — optionally select by name
+    if (!m_app_config.renderer_name.empty()) {
+        bool found = false;
+        for (size_t i = 0; i < k_renderer_configs.size(); ++i) {
+            if (k_renderer_configs[i].name == m_app_config.renderer_name) {
+                set_renderer_config(i);
+                found = true;
+                break;
+            }
+        }
+        INVARIANT_MSG(found, "Unknown renderer name");
+    } else {
+        set_renderer_config(0);
+    }
+
+    // Resolve --debug-output to m_debug_target_selection
+    if (!m_app_config.debug_output_name.empty()) {
+        int global_index = 1;  // 1-based (0 = "Off")
+        bool found = false;
+        for_each_pass([&](auto& pass) {
+            auto [names, count] = pass.debug_target_names();
+            for (uint32_t i = 0; i < count; ++i) {
+                if (names[i] == m_app_config.debug_output_name) {
+                    m_debug_target_selection = global_index;
+                    found = true;
+                    return;
+                }
+                ++global_index;
+            }
+        });
+        INVARIANT_MSG(found, "Unknown debug output name");
+    }
 
     // Camera defaults
     m_camera.set_target({0.0f, 0.0f, 0.0f});
     m_camera.set_distance(3.0f);
     m_camera.set_fov_y(60.0f);
 
-    if (m_app_config.quit_on_start) {
-        viewport()->request_close();
+    // In capture mode, set fixed viewport size (no ImGui layout)
+    if (m_app_config.is_capture_mode()) {
+        m_viewport_width = 1280;
+        m_viewport_height = 720;
     }
 }
 
@@ -365,6 +465,53 @@ void EditorApplication::render(FrameContext& ctx) {
     PTS_ZONE_SCOPED;
     if (!m_imgui) return;
     if (viewport() && viewport()->should_close()) return;
+
+    bool const capture_mode = m_app_config.is_capture_mode();
+    ++m_frame_count;
+
+    // ── Capture readback: if buffer was copied last frame, map and write PNG ──
+    if (capture_mode && m_capture_pending) {
+        // Process events to complete the mapAsync
+        wgpuInstanceProcessEvents(ctx.device().instance());
+
+        auto map_state = wgpuBufferGetMapState(m_capture_buffer);
+        if (map_state == WGPUBufferMapState_Mapped) {
+            uint32_t const buf_size = m_capture_bytes_per_row * m_viewport_height;
+            auto const* mapped = static_cast<const uint8_t*>(
+                wgpuBufferGetConstMappedRange(m_capture_buffer, 0, buf_size));
+            INVARIANT(mapped);
+
+            // Copy row-by-row, stripping padding
+            std::vector<uint8_t> pixels(m_viewport_width * m_viewport_height * 4);
+            for (uint32_t y = 0; y < m_viewport_height; ++y) {
+                std::memcpy(&pixels[y * m_viewport_width * 4], mapped + y * m_capture_bytes_per_row,
+                            m_viewport_width * 4);
+            }
+
+            wgpuBufferUnmap(m_capture_buffer);
+            wgpuBufferRelease(m_capture_buffer);
+            m_capture_buffer = nullptr;
+            m_capture_pending = false;
+
+            // Ensure output directory exists
+            auto parent = std::filesystem::path(m_app_config.capture_output).parent_path();
+            if (!parent.empty()) {
+                std::filesystem::create_directories(parent);
+            }
+
+            int const ok = stbi_write_png(m_app_config.capture_output.c_str(),
+                                          static_cast<int>(m_viewport_width),
+                                          static_cast<int>(m_viewport_height), 4, pixels.data(),
+                                          static_cast<int>(m_viewport_width * 4));
+            INVARIANT_MSG(ok, "stbi_write_png failed");
+
+            log(LogLevel::Info, "Captured {}x{} to {}", m_viewport_width, m_viewport_height,
+                m_app_config.capture_output);
+            viewport()->request_close();
+            return;
+        }
+        // Not mapped yet — continue rendering to pump events
+    }
 
     // Finalize background scene load
     if (m_scene_load_task && m_scene_load_task->is_done()) {
@@ -410,51 +557,53 @@ void EditorApplication::render(FrameContext& ctx) {
     auto scope = m_imgui->frame_scope();
     ImGuizmo::BeginFrame();
 
-    // Poll input — prev_hovered_widget makes this order-independent from UI drawing
-    m_input->poll(get_time(), window_width(), window_height(), m_imgui->prev_hovered_widget());
+    if (!capture_mode) {
+        // Poll input — prev_hovered_widget makes this order-independent from UI drawing
+        m_input->poll(get_time(), window_width(), window_height(), m_imgui->prev_hovered_widget());
 
-    if (m_first_frame) {
-        setup_docking_layout();
-        m_first_frame = false;
+        if (m_first_frame) {
+            setup_docking_layout();
+            m_first_frame = false;
+        }
+
+        // Draw UI
+        ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(),
+                                     ImGuiDockNodeFlags_PassthruCentralNode);
+
+        if (m_imgui->begin_window(k_scene_setting_win_name, ImGuiWindowFlags_NoMove)) {
+            draw_scene_panel();
+        }
+        m_imgui->end_window();
+
+        if (m_imgui->begin_window(k_inspector_win_name, ImGuiWindowFlags_NoMove)) {
+            draw_inspector_panel();
+        }
+        m_imgui->end_window();
+
+        if (m_imgui->begin_window(k_console_win_name, ImGuiWindowFlags_NoMove)) {
+            draw_console_panel();
+        }
+        m_imgui->end_window();
+
+        if (m_imgui->begin_window(k_scene_view_win_name, ImGuiWindowFlags_NoScrollWithMouse |
+                                                             ImGuiWindowFlags_NoMove |
+                                                             ImGuiWindowFlags_MenuBar)) {
+            draw_scene_viewport();
+        }
+        m_imgui->end_window();
+
+        // Pass-owned ImGui windows
+        for_each_pass([](auto& pass) { pass.draw_imgui(); });
+
+        // Collect all passes for perf overlay
+        std::vector<rendering::IScenePass*> all_passes;
+        for_each_pass([&](auto& pass) { all_passes.push_back(&pass); });
+        m_perf_overlay.draw(get_delta_time(), m_world, *m_frame_graph, all_passes,
+                            k_renderer_configs[m_active_config_index].name, m_viewport_width,
+                            m_viewport_height);
+
+        m_loading_overlay.draw();
     }
-
-    // Draw UI
-    ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(),
-                                 ImGuiDockNodeFlags_PassthruCentralNode);
-
-    if (m_imgui->begin_window(k_scene_setting_win_name, ImGuiWindowFlags_NoMove)) {
-        draw_scene_panel();
-    }
-    m_imgui->end_window();
-
-    if (m_imgui->begin_window(k_inspector_win_name, ImGuiWindowFlags_NoMove)) {
-        draw_inspector_panel();
-    }
-    m_imgui->end_window();
-
-    if (m_imgui->begin_window(k_console_win_name, ImGuiWindowFlags_NoMove)) {
-        draw_console_panel();
-    }
-    m_imgui->end_window();
-
-    if (m_imgui->begin_window(k_scene_view_win_name, ImGuiWindowFlags_NoScrollWithMouse |
-                                                         ImGuiWindowFlags_NoMove |
-                                                         ImGuiWindowFlags_MenuBar)) {
-        draw_scene_viewport();
-    }
-    m_imgui->end_window();
-
-    // Pass-owned ImGui windows
-    for_each_pass([](auto& pass) { pass.draw_imgui(); });
-
-    // Collect all passes for perf overlay
-    std::vector<rendering::IScenePass*> all_passes;
-    for_each_pass([&](auto& pass) { all_passes.push_back(&pass); });
-    m_perf_overlay.draw(get_delta_time(), m_world, *m_frame_graph, all_passes,
-                        k_renderer_configs[m_active_config_index].name, m_viewport_width,
-                        m_viewport_height);
-
-    m_loading_overlay.draw();
 
     // ── Frame graph ──
     auto const& device = ctx.device();
@@ -468,7 +617,7 @@ void EditorApplication::render(FrameContext& ctx) {
 
     // Resolve selected prim to picking ID via EditorPass table
     uint32_t selected_picking_id = UINT32_MAX;
-    if (!m_selected_prim.IsEmpty() && m_editor_pass) {
+    if (!capture_mode && !m_selected_prim.IsEmpty() && m_editor_pass) {
         selected_picking_id = m_editor_pass->find_picking_id(m_selected_prim.GetString());
     }
 
@@ -485,11 +634,19 @@ void EditorApplication::render(FrameContext& ctx) {
         m_world.prepare_gpu_buffers(device, queue);
     }
 
-    for_each_pass([&](auto& pass) {
-        if (!pass.is_ready()) return;
-        if (pass.requires_viewport() && !has_viewport) return;
-        pass.add_to_frame_graph(*m_frame_graph, pass_ctx);
-    });
+    // In capture mode, only add the renderer pass (skip editor passes)
+    if (capture_mode) {
+        if (m_renderer_pass && m_renderer_pass->is_ready() &&
+            !(m_renderer_pass->requires_viewport() && !has_viewport)) {
+            m_renderer_pass->add_to_frame_graph(*m_frame_graph, pass_ctx);
+        }
+    } else {
+        for_each_pass([&](auto& pass) {
+            if (!pass.is_ready()) return;
+            if (pass.requires_viewport() && !has_viewport) return;
+            pass.add_to_frame_graph(*m_frame_graph, pass_ctx);
+        });
+    }
 
     if (has_viewport) {
         // Look up scene_color resource that passes created
@@ -498,15 +655,11 @@ void EditorApplication::render(FrameContext& ctx) {
         color_desc.height = m_viewport_height;
         color_desc.format = WGPUTextureFormat_RGBA8Unorm;
         color_desc.clear_color = {0.15, 0.15, 0.18, 1.0};
+        if (capture_mode) {
+            color_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment |
+                                                             WGPUTextureUsage_CopySrc);
+        }
         scene_color_handle = m_frame_graph->find_or_create("scene_color", color_desc);
-    }
-
-    // ImGui overlay pass — declare reads on any texture that ImGui::Image references
-    auto imgui_builder = m_frame_graph->add_pass("imgui")
-                             .color(ctx.surface_view(), WGPUColor{0.08, 0.08, 0.12, 1.0})
-                             .present();
-    if (has_viewport && scene_color_handle.is_valid()) {
-        imgui_builder.read(scene_color_handle);
     }
 
     // Declare reads on all debug target textures so frame graph tracks them
@@ -517,49 +670,127 @@ void EditorApplication::render(FrameContext& ctx) {
         debug_desc.height = m_viewport_height;
         debug_desc.format = WGPUTextureFormat_RGBA8Unorm;
         debug_desc.clear_color = {0, 0, 0, 1};
+        if (capture_mode) {
+            debug_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment |
+                                                             WGPUTextureUsage_CopySrc);
+        }
 
-        for_each_pass([&](auto& pass) {
+        // In capture mode, only collect debug targets from the renderer pass
+        auto collect_debug_targets = [&](auto& pass) {
             auto [names, count] = pass.debug_target_names();
             for (uint32_t i = 0; i < count; ++i) {
                 auto h =
                     m_frame_graph->find_or_create(std::string("debug_") + names[i], debug_desc);
                 if (h.is_valid()) {
-                    imgui_builder.read(h);
                     debug_target_handles.push_back(h);
                 }
             }
-        });
-    }
-
-    // Declare read on gizmo overlay so ImGui can composite it
-    rendering::ResourceHandle gizmo_overlay_handle;
-    if (has_viewport) {
-        rendering::TextureDesc gizmo_desc;
-        gizmo_desc.width = m_viewport_width;
-        gizmo_desc.height = m_viewport_height;
-        gizmo_desc.format = WGPUTextureFormat_RGBA8Unorm;
-        gizmo_desc.clear_color = {0, 0, 0, 0};
-        gizmo_overlay_handle = m_frame_graph->find_or_create("editor_gizmo_overlay", gizmo_desc);
-        if (gizmo_overlay_handle.is_valid()) {
-            imgui_builder.read(gizmo_overlay_handle);
+        };
+        if (capture_mode) {
+            if (m_renderer_pass) collect_debug_targets(*m_renderer_pass);
+        } else {
+            for_each_pass(collect_debug_targets);
         }
     }
 
-    {
-        rendering::TextureDesc lobe_desc;
-        lobe_desc.width = LobePass::k_texture_size;
-        lobe_desc.height = LobePass::k_texture_size;
-        lobe_desc.format = WGPUTextureFormat_RGBA8Unorm;
-        lobe_desc.clear_color = {0.1, 0.1, 0.1, 1.0};
-        auto lobe_color_handle = m_frame_graph->find_or_create("lobe_color", lobe_desc);
-        if (lobe_color_handle.is_valid()) {
-            imgui_builder.read(lobe_color_handle);
+    if (!capture_mode) {
+        // ImGui overlay pass — declare reads on any texture that ImGui::Image references
+        auto imgui_builder = m_frame_graph->add_pass("imgui")
+                                 .color(ctx.surface_view(), WGPUColor{0.08, 0.08, 0.12, 1.0})
+                                 .present();
+        if (has_viewport && scene_color_handle.is_valid()) {
+            imgui_builder.read(scene_color_handle);
+        }
+
+        for (auto h : debug_target_handles) {
+            imgui_builder.read(h);
+        }
+
+        // Declare read on gizmo overlay so ImGui can composite it
+        rendering::ResourceHandle gizmo_overlay_handle;
+        if (has_viewport) {
+            rendering::TextureDesc gizmo_desc;
+            gizmo_desc.width = m_viewport_width;
+            gizmo_desc.height = m_viewport_height;
+            gizmo_desc.format = WGPUTextureFormat_RGBA8Unorm;
+            gizmo_desc.clear_color = {0, 0, 0, 0};
+            gizmo_overlay_handle =
+                m_frame_graph->find_or_create("editor_gizmo_overlay", gizmo_desc);
+            if (gizmo_overlay_handle.is_valid()) {
+                imgui_builder.read(gizmo_overlay_handle);
+            }
+        }
+
+        {
+            rendering::TextureDesc lobe_desc;
+            lobe_desc.width = LobePass::k_texture_size;
+            lobe_desc.height = LobePass::k_texture_size;
+            lobe_desc.format = WGPUTextureFormat_RGBA8Unorm;
+            lobe_desc.clear_color = {0.1, 0.1, 0.1, 1.0};
+            auto lobe_color_handle = m_frame_graph->find_or_create("lobe_color", lobe_desc);
+            if (lobe_color_handle.is_valid()) {
+                imgui_builder.read(lobe_color_handle);
+            }
+        }
+        imgui_builder.execute([&](WGPURenderPassEncoder pass) { scope.render_into(pass); });
+
+        // Cache gizmo overlay ref
+        if (has_viewport && gizmo_overlay_handle.is_valid()) {
+            m_gizmo_overlay_ref = m_frame_graph->get_texture_ref(gizmo_overlay_handle);
+        } else {
+            m_gizmo_overlay_ref = {};
         }
     }
-    imgui_builder.execute([&](WGPURenderPassEncoder pass) { scope.render_into(pass); });
 
     m_frame_graph->compile();
     m_frame_graph->execute(ctx.encoder());
+
+    // ── Capture: copy texture to staging buffer after target frame ──
+    if (capture_mode && !m_capture_pending && m_frame_count >= m_app_config.capture_frames) {
+        // Determine which texture to capture
+        rendering::TextureRef capture_ref;
+        if (m_debug_target_selection > 0 &&
+            static_cast<size_t>(m_debug_target_selection - 1) < debug_target_handles.size()) {
+            capture_ref =
+                m_frame_graph->get_texture_ref(debug_target_handles[m_debug_target_selection - 1]);
+        } else {
+            capture_ref = m_frame_graph->get_texture_ref(scene_color_handle);
+        }
+        INVARIANT_MSG(capture_ref, "Capture target texture not available");
+
+        // 256-byte row alignment required by WebGPU
+        m_capture_bytes_per_row = ((m_viewport_width * 4 + 255) / 256) * 256;
+        uint32_t buf_size = m_capture_bytes_per_row * m_viewport_height;
+
+        WGPUBufferDescriptor buf_desc = WGPU_BUFFER_DESCRIPTOR_INIT;
+        buf_desc.size = buf_size;
+        buf_desc.usage = WGPUBufferUsage_CopyDst | WGPUBufferUsage_MapRead;
+        m_capture_buffer = wgpuDeviceCreateBuffer(device.handle(), &buf_desc);
+        INVARIANT(m_capture_buffer);
+
+        WGPUTexelCopyTextureInfo src = WGPU_TEXEL_COPY_TEXTURE_INFO_INIT;
+        src.texture = capture_ref.texture();
+        src.mipLevel = 0;
+        src.origin = {0, 0, 0};
+
+        WGPUTexelCopyBufferInfo dst = WGPU_TEXEL_COPY_BUFFER_INFO_INIT;
+        dst.buffer = m_capture_buffer;
+        dst.layout.offset = 0;
+        dst.layout.bytesPerRow = m_capture_bytes_per_row;
+        dst.layout.rowsPerImage = m_viewport_height;
+
+        WGPUExtent3D extent = {m_viewport_width, m_viewport_height, 1};
+        wgpuCommandEncoderCopyTextureToBuffer(ctx.encoder(), &src, &dst, &extent);
+
+        // Issue mapAsync — will be checked next frame
+        WGPUBufferMapCallbackInfo map_cb = WGPU_BUFFER_MAP_CALLBACK_INFO_INIT;
+        map_cb.mode = WGPUCallbackMode_AllowProcessEvents;
+        map_cb.callback = [](WGPUMapAsyncStatus status, WGPUStringView, void*, void*) {
+            INVARIANT_MSG(status == WGPUMapAsyncStatus_Success, "Capture buffer mapAsync failed");
+        };
+        wgpuBufferMapAsync(m_capture_buffer, WGPUMapMode_Read, 0, buf_size, map_cb);
+        m_capture_pending = true;
+    }
 
     // ── GPU picking readback ──
     m_picking_readback.tick();
@@ -598,31 +829,26 @@ void EditorApplication::render(FrameContext& ctx) {
         }
     }
 
-    // Store scene color ref for next frame's ImGui::Image
-    if (has_viewport && scene_color_handle.is_valid()) {
-        m_scene_color_ref = m_frame_graph->get_texture_ref(scene_color_handle);
+    if (!capture_mode) {
+        // Store scene color ref for next frame's ImGui::Image
+        if (has_viewport && scene_color_handle.is_valid()) {
+            m_scene_color_ref = m_frame_graph->get_texture_ref(scene_color_handle);
+        }
+
+        // Cache the active debug target ref (selection 1 maps to debug_target_handles[0])
+        if (m_debug_target_selection > 0 &&
+            static_cast<size_t>(m_debug_target_selection - 1) < debug_target_handles.size()) {
+            m_active_debug_ref =
+                m_frame_graph->get_texture_ref(debug_target_handles[m_debug_target_selection - 1]);
+        } else {
+            m_active_debug_ref = {};
+        }
+
+        // Let passes cache their texture refs for ImGui display
+        for_each_pass([&](auto& pass) { pass.update_texture_refs(*m_frame_graph); });
+
+        wrap_mouse_pos();
     }
-
-    // Cache gizmo overlay ref
-    if (has_viewport && gizmo_overlay_handle.is_valid()) {
-        m_gizmo_overlay_ref = m_frame_graph->get_texture_ref(gizmo_overlay_handle);
-    } else {
-        m_gizmo_overlay_ref = {};
-    }
-
-    // Cache the active debug target ref (selection 1 maps to debug_target_handles[0])
-    if (m_debug_target_selection > 0 &&
-        static_cast<size_t>(m_debug_target_selection - 1) < debug_target_handles.size()) {
-        m_active_debug_ref =
-            m_frame_graph->get_texture_ref(debug_target_handles[m_debug_target_selection - 1]);
-    } else {
-        m_active_debug_ref = {};
-    }
-
-    // Let passes cache their texture refs for ImGui display
-    for_each_pass([&](auto& pass) { pass.update_texture_refs(*m_frame_graph); });
-
-    wrap_mouse_pos();
 
     PTS_FRAME_MARK;
 }

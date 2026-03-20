@@ -37,3 +37,7 @@ PRIVATE
 install(TARGETS ${exec_name}
 	RUNTIME DESTINATION ${PROJECT_BINARY_DIR}
 )
+
+if(CORE_BUILD_TESTS)
+	add_subdirectory(tests)
+endif()
