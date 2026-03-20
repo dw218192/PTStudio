@@ -15,7 +15,7 @@ namespace pts::editor {
 
 class LobePass final : public rendering::IScenePass {
    public:
-    LobePass() = default;
+    using IScenePass::IScenePass;
     ~LobePass() override;
 
     LobePass(const LobePass&) = delete;
@@ -29,7 +29,7 @@ class LobePass final : public rendering::IScenePass {
         return false;
     }
 
-    void setup(const webgpu::Device& device) override;
+    void do_setup(const webgpu::Device& device) override;
     void add_to_frame_graph(rendering::FrameGraph& fg, const rendering::PassContext& ctx) override;
     void draw_imgui() override;
     void update_texture_refs(rendering::FrameGraph& fg) override;

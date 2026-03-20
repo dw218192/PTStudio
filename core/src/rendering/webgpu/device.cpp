@@ -188,8 +188,14 @@ void Device::start_device_request() {
     PRECONDITION(init_state != nullptr);
     PRECONDITION(init_state->adapter != nullptr);
 
+    // Query adapter limits so we can request higher maxColorAttachmentBytesPerSample
+    // (needed for MRT debug targets)
+    WGPULimits required_limits = WGPU_LIMITS_INIT;
+    wgpuAdapterGetLimits(init_state->adapter, &required_limits);
+
     // Setup device descriptor with error callbacks
     WGPUDeviceDescriptor device_descriptor = WGPU_DEVICE_DESCRIPTOR_INIT;
+    device_descriptor.requiredLimits = &required_limits;
 
     // Configure device lost callback
     WGPUDeviceLostCallbackInfo device_lost_callback = WGPU_DEVICE_LOST_CALLBACK_INFO_INIT;

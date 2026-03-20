@@ -46,24 +46,39 @@ VsOut vs_main(VsIn input) {
     return output;
 }
 
+struct FsOut {
+    float4 color      : SV_Target0;
+    float4 normals    : SV_Target1;
+    float4 base_color : SV_Target2;
+    float4 roughness  : SV_Target3;
+    float4 metallic   : SV_Target4;
+};
+
 [shader("fragment")]
-float4 fs_main(float3 world_normal : NORMAL, float3 world_pos : WORLD_POS,
-               float3 color : COLOR) : SV_Target0 {
+FsOut fs_main(float3 world_normal : NORMAL, float3 world_pos : WORLD_POS,
+              float3 color : COLOR) {
     float3 N = normalize(world_normal);
     float3 V = normalize(u.camera_pos - world_pos);
 
-    float3 base_color;
-    float metallic = 0.0;
-    float roughness = 0.5;
+    float3 albedo;
+    float mat_metallic = 0.0;
+    float mat_roughness = 0.5;
     if (u.material_index == 0xFFFFFFFF) {
-        base_color = color;
+        albedo = color;
     } else {
-        base_color = materials[u.material_index].diffuse_color;
-        metallic = materials[u.material_index].metallic;
-        roughness = materials[u.material_index].roughness;
+        albedo = materials[u.material_index].diffuse_color;
+        mat_metallic = materials[u.material_index].metallic;
+        mat_roughness = materials[u.material_index].roughness;
     }
 
     CookTorranceGGX brdf;
-    float3 result = evaluate_lighting(brdf, lights, u.light_count, world_pos, N, V, base_color, metallic, roughness);
-    return float4(result, 1.0);
+    float3 lit = evaluate_lighting(brdf, lights, u.light_count, world_pos, N, V, albedo, mat_metallic, mat_roughness);
+
+    FsOut o;
+    o.color      = float4(lit, 1.0);
+    o.normals    = float4(N * 0.5 + 0.5, 1.0);
+    o.base_color = float4(albedo, 1.0);
+    o.roughness  = float4(mat_roughness, mat_roughness, mat_roughness, 1.0);
+    o.metallic   = float4(mat_metallic, mat_metallic, mat_metallic, 1.0);
+    return o;
 }

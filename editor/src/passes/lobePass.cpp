@@ -49,16 +49,14 @@ auto LobePass::is_ready() const noexcept -> bool {
     return std::holds_alternative<Ready>(m_state);
 }
 
-void LobePass::setup(const webgpu::Device& device) {
-    PRECONDITION_MSG(m_shader_loader, "shader loader not set");
-
+void LobePass::do_setup(const webgpu::Device& device) {
     // Release existing state for re-entry (hot-reload)
     if (auto* ready = std::get_if<Ready>(&m_state)) {
         if (ready->bind_group) wgpuBindGroupRelease(ready->bind_group);
         if (ready->bind_group_layout) wgpuBindGroupLayoutRelease(ready->bind_group_layout);
     }
 
-    auto shader_src = m_shader_loader->load("editor/generated/shaders/lobe.wgsl");
+    auto shader_src = get_shader_loader().load("editor/generated/shaders/lobe.wgsl");
     auto shader = device.create_shader_module_from_source(shader_src);
 
     // Uniform buffer holds 2 aligned copies (specular + diffuse)

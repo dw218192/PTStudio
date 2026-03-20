@@ -14,7 +14,7 @@ namespace pts::editor {
 
 class PickingPass final : public rendering::IScenePass {
    public:
-    PickingPass() = default;
+    using IScenePass::IScenePass;
     ~PickingPass() override;
 
     PickingPass(const PickingPass&) = delete;
@@ -25,7 +25,7 @@ class PickingPass final : public rendering::IScenePass {
     [[nodiscard]] auto name() const noexcept -> std::string_view override;
     [[nodiscard]] auto is_ready() const noexcept -> bool override;
 
-    void setup(const webgpu::Device& device) override;
+    void do_setup(const webgpu::Device& device) override;
     void add_to_frame_graph(rendering::FrameGraph& fg, const rendering::PassContext& ctx) override;
 
     static constexpr uint32_t k_uniform_align = 256;

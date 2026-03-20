@@ -64,9 +64,7 @@ auto WireframePass::is_ready() const noexcept -> bool {
     return std::holds_alternative<Ready>(m_state);
 }
 
-void WireframePass::setup(const webgpu::Device& device) {
-    PRECONDITION_MSG(m_shader_loader, "shader loader not set");
-
+void WireframePass::do_setup(const webgpu::Device& device) {
     // Capture old state for deferred release (after new state is built)
     WGPUBindGroup old_bind_group = nullptr;
     WGPUBindGroupLayout old_layout = nullptr;
@@ -78,7 +76,7 @@ void WireframePass::setup(const webgpu::Device& device) {
     }
     clear_pass_data();
 
-    auto shader_src = m_shader_loader->load("editor/generated/shaders/wireframe.wgsl");
+    auto shader_src = get_shader_loader().load("editor/generated/shaders/wireframe.wgsl");
     auto shader = device.create_shader_module_from_source(shader_src);
 
     uint32_t initial_capacity = 64;

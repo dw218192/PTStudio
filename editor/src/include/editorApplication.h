@@ -129,6 +129,10 @@ struct EditorApplication final : WindowedApplication {
     float m_viewport_y = 0.0f;
     rendering::TextureRef m_scene_color_ref;
 
+    // Debug visualization
+    int m_debug_target_selection = 0;
+    rendering::TextureRef m_active_debug_ref;
+
     // Light gizmo icon
     void draw_light_gizmos(const glm::mat4& view_mat, const glm::mat4& proj_mat);
     WGPUTexture m_light_icon_tex = nullptr;

@@ -45,9 +45,7 @@ auto GridPass::is_ready() const noexcept -> bool {
     return std::holds_alternative<Ready>(m_state);
 }
 
-void GridPass::setup(const webgpu::Device& device) {
-    PRECONDITION_MSG(m_shader_loader, "shader loader not set");
-
+void GridPass::do_setup(const webgpu::Device& device) {
     // Capture old state for deferred release (after new state is built)
     WGPUBindGroup old_bind_group = nullptr;
     WGPUBindGroupLayout old_layout = nullptr;
@@ -58,7 +56,7 @@ void GridPass::setup(const webgpu::Device& device) {
         ready->bind_group_layout = nullptr;
     }
 
-    auto shader_src = m_shader_loader->load("editor/generated/shaders/grid.wgsl");
+    auto shader_src = get_shader_loader().load("editor/generated/shaders/grid.wgsl");
     auto shader = device.create_shader_module_from_source(shader_src);
 
     auto uniform_buffer = device.create_buffer(

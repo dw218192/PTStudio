@@ -58,17 +58,17 @@ static constexpr auto k_console_log_buffer_size = 1024;
 static const std::vector<rendering::RendererConfig> k_renderer_configs = {
     {"Forward",
      {
-         [] { return std::make_unique<PickingPass>(); },
-         [] { return std::make_unique<ForwardPass>(); },
-         [] { return std::make_unique<GridPass>(); },
-         [] { return std::make_unique<LobePass>(); },
+         [](const auto& sl) { return std::make_unique<PickingPass>(sl); },
+         [](const auto& sl) { return std::make_unique<ForwardPass>(sl); },
+         [](const auto& sl) { return std::make_unique<GridPass>(sl); },
+         [](const auto& sl) { return std::make_unique<LobePass>(sl); },
      }},
     {"Wireframe",
      {
-         [] { return std::make_unique<PickingPass>(); },
-         [] { return std::make_unique<WireframePass>(); },
-         [] { return std::make_unique<GridPass>(); },
-         [] { return std::make_unique<LobePass>(); },
+         [](const auto& sl) { return std::make_unique<PickingPass>(sl); },
+         [](const auto& sl) { return std::make_unique<WireframePass>(sl); },
+         [](const auto& sl) { return std::make_unique<GridPass>(sl); },
+         [](const auto& sl) { return std::make_unique<LobePass>(sl); },
      }},
 };
 
@@ -381,14 +381,15 @@ void EditorApplication::set_renderer_config(size_t index) {
     m_passes.clear();
     m_passes.reserve(k_renderer_configs[index].pass_factories.size());
     for (auto& factory : k_renderer_configs[index].pass_factories) {
-        m_passes.push_back(factory());
+        m_passes.push_back(factory(m_shader_loader));
     }
     auto& device = webgpu_context()->device();
     for (auto& pass : m_passes) {
-        pass->set_shader_loader(m_shader_loader);
         pass->setup(device);
     }
     m_active_config_index = index;
+    m_debug_target_selection = 0;
+    m_active_debug_ref = {};
 }
 
 void EditorApplication::update(float /*dt*/) {
@@ -537,6 +538,29 @@ void EditorApplication::render(FrameContext& ctx) {
     if (has_viewport && scene_color_handle.is_valid()) {
         imgui_builder.read(scene_color_handle);
     }
+
+    // Declare reads on all debug target textures so frame graph tracks them
+    std::vector<rendering::ResourceHandle> debug_target_handles;
+    if (has_viewport) {
+        rendering::TextureDesc debug_desc;
+        debug_desc.width = m_viewport_width;
+        debug_desc.height = m_viewport_height;
+        debug_desc.format = WGPUTextureFormat_RGBA8Unorm;
+        debug_desc.clear_color = {0, 0, 0, 1};
+
+        for (auto& pass : m_passes) {
+            auto [names, count] = pass->debug_target_names();
+            for (uint32_t i = 0; i < count; ++i) {
+                auto h =
+                    m_frame_graph->find_or_create(std::string("debug_") + names[i], debug_desc);
+                if (h.is_valid()) {
+                    imgui_builder.read(h);
+                    debug_target_handles.push_back(h);
+                }
+            }
+        }
+    }
+
     {
         rendering::TextureDesc lobe_desc;
         lobe_desc.width = LobePass::k_texture_size;
@@ -593,6 +617,15 @@ void EditorApplication::render(FrameContext& ctx) {
     // Store scene color ref for next frame's ImGui::Image
     if (has_viewport && scene_color_handle.is_valid()) {
         m_scene_color_ref = m_frame_graph->get_texture_ref(scene_color_handle);
+    }
+
+    // Cache the active debug target ref (selection 1 maps to debug_target_handles[0])
+    if (m_debug_target_selection > 0 &&
+        static_cast<size_t>(m_debug_target_selection - 1) < debug_target_handles.size()) {
+        m_active_debug_ref =
+            m_frame_graph->get_texture_ref(debug_target_handles[m_debug_target_selection - 1]);
+    } else {
+        m_active_debug_ref = {};
     }
 
     // Let passes cache their texture refs for ImGui display
@@ -795,6 +828,34 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
             }
             ImGui::EndCombo();
         }
+        // Debug target dropdown
+        ImGui::SameLine();
+        ImGui::Text("Debug:");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(140);
+        {
+            // Build flat list of debug target labels from all passes
+            std::vector<std::string> debug_labels;
+            debug_labels.emplace_back("Off");
+            for (auto& pass : m_passes) {
+                auto [names, count] = pass->debug_target_names();
+                for (uint32_t i = 0; i < count; ++i) {
+                    debug_labels.emplace_back(std::string(pass->name()) + ": " + names[i]);
+                }
+            }
+            if (m_debug_target_selection >= static_cast<int>(debug_labels.size())) {
+                m_debug_target_selection = 0;
+            }
+            if (ImGui::BeginCombo("##debug", debug_labels[m_debug_target_selection].c_str())) {
+                for (int i = 0; i < static_cast<int>(debug_labels.size()); ++i) {
+                    bool selected = (i == m_debug_target_selection);
+                    if (ImGui::Selectable(debug_labels[i].c_str(), selected)) {
+                        m_debug_target_selection = i;
+                    }
+                }
+                ImGui::EndCombo();
+            }
+        }
         ImGui::EndMenuBar();
     }
 
@@ -812,12 +873,17 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
     m_viewport_x = cursor_pos.x;
     m_viewport_y = cursor_pos.y;
 
-    if (m_scene_color_ref && m_viewport_width > 0 && m_viewport_height > 0) {
-        ImGui::Image(
-            reinterpret_cast<ImTextureID>(m_scene_color_ref.view()),
-            ImVec2(static_cast<float>(m_viewport_width), static_cast<float>(m_viewport_height)));
-    } else {
-        ImGui::TextUnformatted("Renderer output not available");
+    {
+        auto& display_ref = (m_debug_target_selection > 0 && m_active_debug_ref)
+                                ? m_active_debug_ref
+                                : m_scene_color_ref;
+        if (display_ref && m_viewport_width > 0 && m_viewport_height > 0) {
+            ImGui::Image(reinterpret_cast<ImTextureID>(display_ref.view()),
+                         ImVec2(static_cast<float>(m_viewport_width),
+                                static_cast<float>(m_viewport_height)));
+        } else {
+            ImGui::TextUnformatted("Renderer output not available");
+        }
     }
 
     // ── Light gizmos ──
