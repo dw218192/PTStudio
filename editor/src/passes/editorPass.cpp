@@ -232,9 +232,6 @@ void EditorPass::do_setup(const webgpu::Device& device) {
                                     .shader(gizmo_shader)
                                     .color_format(WGPUTextureFormat_RGBA8Unorm)
                                     .blend_state(blend)
-                                    .depth_format(WGPUTextureFormat_Depth24Plus)
-                                    .depth_write(false)
-                                    .depth_compare(WGPUCompareFunction_LessEqual)
                                     .cull_mode(WGPUCullMode_None)
                                     .topology(WGPUPrimitiveTopology_LineList)
                                     .pipeline_layout(gizmo_pl)
@@ -446,7 +443,7 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
             }
         });
 
-    // ── Pass 2: Gizmo color overlay on scene_color ─────────────────────
+    // ── Pass 2: Gizmo color overlay on scene_color (no depth — always visible) ──
     rendering::TextureDesc color_desc;
     color_desc.width = ctx.viewport_width;
     color_desc.height = ctx.viewport_height;
@@ -454,14 +451,12 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
     color_desc.clear_color = {0.15, 0.15, 0.18, 1.0};
 
     auto scene_color = fg.find_or_create("scene_color", color_desc);
-    auto scene_depth = fg.find_or_create("scene_depth", depth_desc);
 
     auto gizmo_color_pl = ready.gizmo_color_pipeline.handle();
     auto gizmo_bg = ready.gizmo_bind_group;
 
     fg.add_pass("editor_gizmos")
         .color(scene_color)
-        .depth_readonly(scene_depth)
         .execute([=, gizmo_draws = gizmo_draws](WGPURenderPassEncoder pass) {
             wgpuRenderPassEncoderSetPipeline(pass, gizmo_color_pl);
             for (uint32_t slot = 0; slot < static_cast<uint32_t>(gizmo_draws.size()); ++slot) {
