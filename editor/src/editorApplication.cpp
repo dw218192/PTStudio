@@ -57,16 +57,16 @@ static constexpr auto k_console_log_buffer_size = 1024;
 static const std::vector<rendering::RendererConfig> k_renderer_configs = {
     {"Forward",
      {
-         [](const auto& sl) { return std::make_unique<EditorPass>(sl); },
          [](const auto& sl) { return std::make_unique<ForwardPass>(sl); },
          [](const auto& sl) { return std::make_unique<GridPass>(sl); },
+         [](const auto& sl) { return std::make_unique<EditorPass>(sl); },
          [](const auto& sl) { return std::make_unique<LobePass>(sl); },
      }},
     {"Wireframe",
      {
-         [](const auto& sl) { return std::make_unique<EditorPass>(sl); },
          [](const auto& sl) { return std::make_unique<WireframePass>(sl); },
          [](const auto& sl) { return std::make_unique<GridPass>(sl); },
+         [](const auto& sl) { return std::make_unique<EditorPass>(sl); },
          [](const auto& sl) { return std::make_unique<LobePass>(sl); },
      }},
 };
