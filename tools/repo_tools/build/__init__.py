@@ -92,7 +92,7 @@ class BuildTool(RepoTool):
                 lines.append(msg)
         if not lines:
             lines.append("Build completed successfully")
-        lines.append("\nFull output: re-run with ./repo build for unfiltered log")
+        lines.append("\nFull log: _build/logs/mcp/build.log")
         return "\n".join(lines)
 
     def execute(self, ctx: ToolContext, args: dict[str, Any]) -> None:

@@ -174,7 +174,7 @@ class SlangcTool(RepoTool):
                 lines.append(r.message)
         if not lines:
             return None
-        lines.append("\nFull output: re-run with ./repo slangc for unfiltered log")
+        lines.append("\nFull log: _build/logs/mcp/slangc.log")
         return "\n".join(lines)
 
     def execute(self, ctx: ToolContext, args: dict[str, Any]) -> None:

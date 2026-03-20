@@ -60,7 +60,7 @@ class TestTool(RepoTool):
                 lines.append(msg)
             elif r.level in ("error", "critical", "warning"):
                 lines.append(msg)
-        lines.append("\nFull per-test logs: _build/<platform>/logs/test_*.log")
+        lines.append("\nFull log: _build/logs/mcp/test.log")
         return "\n".join(lines)
 
     def execute(self, ctx: ToolContext, args: dict[str, Any]) -> None:
