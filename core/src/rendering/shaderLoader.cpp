@@ -64,9 +64,10 @@ SlangCompiler::CompileResult SlangCompiler::compile(const std::filesystem::path&
     session_desc.targetCount = 1;
 
     auto search_str = m_search_path.string();
-    const char* search_paths[] = {search_str.c_str()};
+    auto source_dir_str = slang_source.parent_path().string();
+    const char* search_paths[] = {source_dir_str.c_str(), search_str.c_str()};
     session_desc.searchPaths = search_paths;
-    session_desc.searchPathCount = 1;
+    session_desc.searchPathCount = 2;
 
     Slang::ComPtr<slang::ISession> session;
     auto hr = m_global_session->createSession(session_desc, session.writeRef());

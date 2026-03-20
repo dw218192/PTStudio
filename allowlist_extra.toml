@@ -4,3 +4,12 @@
 [[allow]]
 name = "diagnostics"
 commands = ["handle64", "handle"]
+
+[[allow]]
+name = "safe_git_rewrite"
+patterns = [
+    'git\s+commit\s.*--amend',          # amend last commit (local only)
+    'git\s+reset\s+--soft\b',           # soft reset (keeps working tree)
+    'git\s+rebase\s+--(continue|abort|skip)', # rebase recovery
+    'git\s+stash\b',                    # stash / stash pop
+]
