@@ -3,29 +3,30 @@
 #include <core/rendering/shaderLoader.h>
 #include <spdlog/spdlog.h>
 
+#include <filesystem>
+#include <string>
+#include <unordered_map>
+
 #ifdef PTS_SHADER_HOT_RELOAD
 #include <slang-com-ptr.h>
 #include <slang.h>
 
-#include <array>
 #include <thread>
 #endif
 
+using namespace pts::rendering;
+
+// ---------------------------------------------------------------------------
+// SlangCompiler (hot-reload only)
+// ---------------------------------------------------------------------------
+
 #ifdef PTS_SHADER_HOT_RELOAD
-
-// ---------------------------------------------------------------------------
-// SlangCompiler — defined in .cpp only (PIMPL: slang.h never leaks into the header)
-// ---------------------------------------------------------------------------
-
-namespace pts::rendering {
 
 class SlangCompiler {
    public:
     struct CompileResult {
         bool success = false;
-        /// WGSL code (single module with all entry points from getTargetCode)
         std::vector<std::string> wgsl;
-        /// All file paths involved (entry point + imports)
         std::vector<std::filesystem::path> dependencies;
         std::string diagnostics_text;
     };
@@ -33,7 +34,6 @@ class SlangCompiler {
     SlangCompiler(std::filesystem::path search_path, std::shared_ptr<spdlog::logger> logger);
     ~SlangCompiler();
 
-    /// Compile a .slang file, returning WGSL for each entry point and the dependency list.
     CompileResult compile(const std::filesystem::path& slang_source,
                           const std::vector<std::string>& entry_points);
 
@@ -42,10 +42,6 @@ class SlangCompiler {
     std::filesystem::path m_search_path;
     std::shared_ptr<spdlog::logger> m_logger;
 };
-
-}  // namespace pts::rendering
-
-using namespace pts::rendering;
 
 SlangCompiler::SlangCompiler(std::filesystem::path search_path,
                              std::shared_ptr<spdlog::logger> logger)
@@ -61,7 +57,6 @@ SlangCompiler::CompileResult SlangCompiler::compile(const std::filesystem::path&
                                                     const std::vector<std::string>& entry_points) {
     CompileResult result;
 
-    // Per-compilation session
     slang::SessionDesc session_desc = {};
     slang::TargetDesc target_desc = {};
     target_desc.format = SLANG_WGSL;
@@ -80,7 +75,6 @@ SlangCompiler::CompileResult SlangCompiler::compile(const std::filesystem::path&
         return result;
     }
 
-    // Load module — module name is the stem (e.g. "forward" from "forward.slang")
     auto module_name = slang_source.stem().string();
     Slang::ComPtr<slang::IBlob> diagnostics;
     auto* module = session->loadModule(module_name.c_str(), diagnostics.writeRef());
@@ -91,7 +85,6 @@ SlangCompiler::CompileResult SlangCompiler::compile(const std::filesystem::path&
         return result;
     }
 
-    // Collect dependency files
     auto dep_count = module->getDependencyFileCount();
     for (SlangInt32 i = 0; i < dep_count; ++i) {
         auto* dep_path = module->getDependencyFilePath(i);
@@ -100,7 +93,6 @@ SlangCompiler::CompileResult SlangCompiler::compile(const std::filesystem::path&
         }
     }
 
-    // Find entry points
     std::vector<Slang::ComPtr<slang::IEntryPoint>> ep_objects;
     for (const auto& ep_name : entry_points) {
         SlangStage stage = SLANG_STAGE_NONE;
@@ -126,7 +118,6 @@ SlangCompiler::CompileResult SlangCompiler::compile(const std::filesystem::path&
         ep_objects.push_back(std::move(ep));
     }
 
-    // Create composite component (module + all entry points)
     std::vector<slang::IComponentType*> components;
     components.push_back(module);
     for (auto& ep : ep_objects) {
@@ -143,7 +134,6 @@ SlangCompiler::CompileResult SlangCompiler::compile(const std::filesystem::path&
         return result;
     }
 
-    // Link
     Slang::ComPtr<slang::IComponentType> linked;
     hr = program->link(linked.writeRef(), diagnostics.writeRef());
     if (diagnostics) {
@@ -153,7 +143,6 @@ SlangCompiler::CompileResult SlangCompiler::compile(const std::filesystem::path&
         return result;
     }
 
-    // Extract single WGSL module with all entry points (matches CLI slangc output)
     Slang::ComPtr<slang::IBlob> code;
     hr = linked->getTargetCode(0, code.writeRef(), diagnostics.writeRef());
     if (diagnostics) {
@@ -172,15 +161,53 @@ SlangCompiler::CompileResult SlangCompiler::compile(const std::filesystem::path&
 #endif  // PTS_SHADER_HOT_RELOAD
 
 // ---------------------------------------------------------------------------
+// ShaderLoader::Impl
+// ---------------------------------------------------------------------------
+
+struct ShaderLoader::Impl {
+    struct ShaderEntry {
+        std::string resource_key;
+        std::string slang_source;
+        std::string wgsl_output;
+        EmbeddedGetter embedded_getter;
+        std::string cached_wgsl;
+#ifdef PTS_SHADER_HOT_RELOAD
+        std::vector<std::string> entry_points;
+        std::vector<std::pair<std::filesystem::path, std::filesystem::file_time_type>> dependencies;
+#endif
+    };
+
+#ifdef PTS_SHADER_HOT_RELOAD
+    struct ReloadResult {
+        struct ShaderResult {
+            std::string resource_key;
+            std::vector<std::string> wgsl;
+            std::vector<std::filesystem::path> dependencies;
+            bool success = false;
+            std::string diagnostics;
+        };
+        std::vector<ShaderResult> results;
+    };
+    std::unique_ptr<pts::BackgroundTask<ReloadResult>> reload_task;
+    std::unique_ptr<SlangCompiler> compiler;
+#endif
+
+    std::unordered_map<std::string, ShaderEntry> entries;
+    std::shared_ptr<spdlog::logger> logger;
+};
+
+// ---------------------------------------------------------------------------
 // ShaderLoader
 // ---------------------------------------------------------------------------
 
-using namespace pts::rendering;
-
-ShaderLoader::ShaderLoader(std::shared_ptr<spdlog::logger> logger) : m_logger(std::move(logger)) {
+ShaderLoader::ShaderLoader(std::shared_ptr<spdlog::logger> logger)
+    : m_impl(std::make_unique<Impl>()) {
+    m_impl->logger = std::move(logger);
 }
 
 ShaderLoader::~ShaderLoader() = default;
+ShaderLoader::ShaderLoader(ShaderLoader&&) noexcept = default;
+ShaderLoader& ShaderLoader::operator=(ShaderLoader&&) noexcept = default;
 
 void ShaderLoader::register_shader(std::string_view resource_key, std::string_view slang_source,
                                    std::string_view wgsl_output, EmbeddedGetter embedded_getter,
@@ -189,7 +216,7 @@ void ShaderLoader::register_shader(std::string_view resource_key, std::string_vi
     auto key = std::string(resource_key);
     auto embedded = embedded_getter(resource_key);
     PRECONDITION_MSG(embedded.has_value(), "embedded resource must exist at registration time");
-    ShaderEntry entry;
+    Impl::ShaderEntry entry;
     entry.resource_key = key;
     entry.slang_source = std::string(slang_source);
     entry.wgsl_output = std::string(wgsl_output);
@@ -202,16 +229,13 @@ void ShaderLoader::register_shader(std::string_view resource_key, std::string_vi
     fs::path workspace_root(PTS_WORKSPACE_ROOT);
     auto slang_path = workspace_root / entry.slang_source;
 
-    // Only attempt libslang compilation when the source file exists
     if (fs::is_regular_file(slang_path)) {
-        // Lazily create the compiler on first use
-        if (!m_compiler) {
-            m_compiler =
-                std::make_unique<SlangCompiler>(workspace_root / "core" / "shaders", m_logger);
+        if (!m_impl->compiler) {
+            m_impl->compiler = std::make_unique<SlangCompiler>(workspace_root / "core" / "shaders",
+                                                               m_impl->logger);
         }
 
-        // Initial compile to discover dependencies
-        auto compile_result = m_compiler->compile(slang_path, entry.entry_points);
+        auto compile_result = m_impl->compiler->compile(slang_path, entry.entry_points);
         if (compile_result.success) {
             for (const auto& dep : compile_result.dependencies) {
                 std::error_code ec;
@@ -223,33 +247,31 @@ void ShaderLoader::register_shader(std::string_view resource_key, std::string_vi
             auto mtime = fs::last_write_time(slang_path, ec);
             entry.dependencies.emplace_back(slang_path, ec ? fs::file_time_type{} : mtime);
             if (!compile_result.diagnostics_text.empty()) {
-                m_logger->warn("Initial slang compile for {}: {}", slang_source,
-                               compile_result.diagnostics_text);
+                m_impl->logger->warn("Initial slang compile for {}: {}", slang_source,
+                                     compile_result.diagnostics_text);
             }
         }
     } else {
-        // Source doesn't exist yet — track just the entry point path for mtime polling
         entry.dependencies.emplace_back(slang_path, fs::file_time_type{});
     }
 #endif
-    m_entries.emplace(std::move(key), std::move(entry));
+    m_impl->entries.emplace(std::move(key), std::move(entry));
 }
 
 auto ShaderLoader::load(std::string_view resource_key) const -> std::string {
-    auto it = m_entries.find(std::string(resource_key));
-    PRECONDITION_MSG(it != m_entries.end(), "Unknown shader resource_key");
+    auto it = m_impl->entries.find(std::string(resource_key));
+    PRECONDITION_MSG(it != m_impl->entries.end(), "Unknown shader resource_key");
     return it->second.cached_wgsl;
 }
 
 bool ShaderLoader::poll_and_start_reload() {
 #ifdef PTS_SHADER_HOT_RELOAD
-    if (m_reload_task) return false;
+    if (m_impl->reload_task) return false;
 
     namespace fs = std::filesystem;
 
-    // Collect dirty shaders by checking ALL dependency mtimes
     std::vector<std::string> dirty_keys;
-    for (auto& [key, entry] : m_entries) {
+    for (auto& [key, entry] : m_impl->entries) {
         for (auto& [dep_path, last_mtime] : entry.dependencies) {
             std::error_code ec;
             auto mtime = fs::last_write_time(dep_path, ec);
@@ -263,10 +285,9 @@ bool ShaderLoader::poll_and_start_reload() {
 
     if (dirty_keys.empty()) return false;
 
-    m_logger->info("Shader change detected, recompiling {} shader(s) via libslang",
-                   dirty_keys.size());
+    m_impl->logger->info("Shader change detected, recompiling {} shader(s) via libslang",
+                         dirty_keys.size());
 
-    // Capture what the background thread needs (no references to m_entries)
     struct CompileJob {
         std::string resource_key;
         fs::path slang_source;
@@ -275,22 +296,21 @@ bool ShaderLoader::poll_and_start_reload() {
     std::vector<CompileJob> jobs;
     fs::path workspace_root(PTS_WORKSPACE_ROOT);
     for (const auto& key : dirty_keys) {
-        auto& entry = m_entries.at(key);
+        auto& entry = m_impl->entries.at(key);
         jobs.push_back({key, workspace_root / entry.slang_source, entry.entry_points});
     }
 
-    // Capture compiler as raw ptr (it outlives the task)
-    auto* compiler = m_compiler.get();
-    m_reload_task = std::make_unique<pts::BackgroundTask<ReloadResult>>(
+    auto* compiler = m_impl->compiler.get();
+    m_impl->reload_task = std::make_unique<pts::BackgroundTask<Impl::ReloadResult>>(
         "Compiling Shaders",
-        [compiler, jobs = std::move(jobs)](pts::TaskProgress& progress) -> ReloadResult {
-            ReloadResult result;
+        [compiler, jobs = std::move(jobs)](pts::TaskProgress& progress) -> Impl::ReloadResult {
+            Impl::ReloadResult result;
             for (size_t i = 0; i < jobs.size(); ++i) {
                 progress.set_progress(static_cast<float>(i) / static_cast<float>(jobs.size()));
                 progress.set_status("Compiling " + jobs[i].resource_key);
 
                 auto cr = compiler->compile(jobs[i].slang_source, jobs[i].entry_points);
-                ReloadResult::ShaderResult sr;
+                Impl::ReloadResult::ShaderResult sr;
                 sr.resource_key = jobs[i].resource_key;
                 sr.success = cr.success;
                 sr.wgsl = std::move(cr.wgsl);
@@ -310,7 +330,7 @@ bool ShaderLoader::poll_and_start_reload() {
 
 bool ShaderLoader::is_reloading() const {
 #ifdef PTS_SHADER_HOT_RELOAD
-    return m_reload_task && !m_reload_task->is_done();
+    return m_impl->reload_task && !m_impl->reload_task->is_done();
 #else
     return false;
 #endif
@@ -318,23 +338,22 @@ bool ShaderLoader::is_reloading() const {
 
 auto ShaderLoader::try_finish_reload() -> std::vector<std::string> {
 #ifdef PTS_SHADER_HOT_RELOAD
-    if (!m_reload_task || !m_reload_task->is_done()) return {};
+    if (!m_impl->reload_task || !m_impl->reload_task->is_done()) return {};
 
-    auto reload_result = m_reload_task->take_result();
-    m_reload_task.reset();
+    auto reload_result = m_impl->reload_task->take_result();
+    m_impl->reload_task.reset();
 
     namespace fs = std::filesystem;
     std::vector<std::string> changed;
 
     for (auto& sr : reload_result.results) {
-        auto it = m_entries.find(sr.resource_key);
-        INVARIANT_MSG(it != m_entries.end(), "Reload result for unknown shader key");
+        auto it = m_impl->entries.find(sr.resource_key);
+        INVARIANT_MSG(it != m_impl->entries.end(), "Reload result for unknown shader key");
         auto& entry = it->second;
 
         if (!sr.success) {
-            m_logger->error("Shader recompilation failed for {}: {}", sr.resource_key,
-                            sr.diagnostics);
-            // Update mtimes so we don't re-trigger on every poll
+            m_impl->logger->error("Shader recompilation failed for {}: {}", sr.resource_key,
+                                  sr.diagnostics);
             for (auto& [dep_path, last_mtime] : entry.dependencies) {
                 std::error_code ec;
                 last_mtime = fs::last_write_time(dep_path, ec);
@@ -342,7 +361,6 @@ auto ShaderLoader::try_finish_reload() -> std::vector<std::string> {
             continue;
         }
 
-        // getTargetCode produces a single WGSL module with all entry points
         INVARIANT_MSG(!sr.wgsl.empty(), "Successful compile must produce WGSL output");
         auto& new_wgsl = sr.wgsl[0];
 
@@ -351,7 +369,6 @@ auto ShaderLoader::try_finish_reload() -> std::vector<std::string> {
             changed.push_back(sr.resource_key);
         }
 
-        // Re-discover dependencies (import list may change between compiles)
         entry.dependencies.clear();
         for (const auto& dep : sr.dependencies) {
             std::error_code ec;
@@ -360,12 +377,12 @@ auto ShaderLoader::try_finish_reload() -> std::vector<std::string> {
         }
 
         if (!sr.diagnostics.empty()) {
-            m_logger->warn("Shader {} diagnostics: {}", sr.resource_key, sr.diagnostics);
+            m_impl->logger->warn("Shader {} diagnostics: {}", sr.resource_key, sr.diagnostics);
         }
     }
 
     if (!changed.empty()) {
-        m_logger->info("Reloaded {} shader(s) via libslang", changed.size());
+        m_impl->logger->info("Reloaded {} shader(s) via libslang", changed.size());
     }
     return changed;
 #else
@@ -376,8 +393,8 @@ auto ShaderLoader::try_finish_reload() -> std::vector<std::string> {
 auto ShaderLoader::poll_and_reload() -> std::vector<std::string> {
 #ifdef PTS_SHADER_HOT_RELOAD
     poll_and_start_reload();
-    if (m_reload_task) {
-        while (!m_reload_task->is_done()) {
+    if (m_impl->reload_task) {
+        while (!m_impl->reload_task->is_done()) {
             std::this_thread::yield();
         }
         return try_finish_reload();

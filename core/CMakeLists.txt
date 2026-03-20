@@ -98,7 +98,7 @@ add_library(${lib_name} STATIC ${src_files})
 
 #Libs linked to the executable
 target_link_libraries(${lib_name}
-PUBLIC
+PRIVATE
 	$<BUILD_INTERFACE:developer_flags>
 PUBLIC
 	openusd::usd_usd

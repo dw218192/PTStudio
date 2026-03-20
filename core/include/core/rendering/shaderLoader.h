@@ -1,28 +1,14 @@
 #pragma once
 
-#include <filesystem>
-#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <vector>
-
-namespace pts {
-template <typename T>
-class BackgroundTask;
-}
 
 namespace spdlog {
 class logger;
 }
-
-#ifdef PTS_SHADER_HOT_RELOAD
-namespace pts::rendering {
-class SlangCompiler;
-}
-#endif
 
 namespace pts::rendering {
 
@@ -33,6 +19,9 @@ class ShaderLoader {
    public:
     explicit ShaderLoader(std::shared_ptr<spdlog::logger> logger);
     ~ShaderLoader();
+
+    ShaderLoader(ShaderLoader&&) noexcept;
+    ShaderLoader& operator=(ShaderLoader&&) noexcept;
 
     /// Register a shader for loading.
     /// @param resource_key The embedded resource lookup key (e.g.
@@ -72,38 +61,8 @@ class ShaderLoader {
     std::vector<std::string> try_finish_reload();
 
    private:
-    struct ShaderEntry {
-        std::string resource_key;
-        std::string slang_source;  // relative to workspace root
-        std::string wgsl_output;   // relative to workspace root
-        EmbeddedGetter embedded_getter;
-        std::string cached_wgsl;
-#ifdef PTS_SHADER_HOT_RELOAD
-        /// Entry point function names (e.g. "vs_main", "fs_main")
-        std::vector<std::string> entry_points;
-        /// All files involved in compilation (entry point + imports), with last-known mtimes
-        std::vector<std::pair<std::filesystem::path, std::filesystem::file_time_type>> dependencies;
-#endif
-    };
-
-    std::unordered_map<std::string, ShaderEntry> m_entries;
-    std::shared_ptr<spdlog::logger> m_logger;
-#ifdef PTS_SHADER_HOT_RELOAD
-    struct ReloadResult {
-        struct ShaderResult {
-            std::string resource_key;
-            std::vector<std::string> wgsl;
-            std::vector<std::filesystem::path> dependencies;
-            bool success = false;
-            std::string diagnostics;
-        };
-        std::vector<ShaderResult> results;
-    };
-    std::unique_ptr<pts::BackgroundTask<ReloadResult>> m_reload_task;
-    std::unique_ptr<SlangCompiler> m_compiler;
-#else
-    std::unique_ptr<pts::BackgroundTask<int>> m_reload_task;
-#endif
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
 };
 
 }  // namespace pts::rendering

@@ -98,7 +98,6 @@ TEST_CASE("ShaderLoader register_shader accepts custom entry_points") {
     CHECK(result == "// embedded wgsl");
 }
 
-#ifdef PTS_SHADER_HOT_RELOAD
 TEST_CASE("ShaderLoader discovers dependencies from real slang file") {
     ShaderLoader loader(make_logger());
 
@@ -114,4 +113,3 @@ TEST_CASE("ShaderLoader discovers dependencies from real slang file") {
     // No dirty files after initial registration
     CHECK_FALSE(loader.poll_and_start_reload());
 }
-#endif
