@@ -95,6 +95,7 @@ static std::vector<glm::vec3> generate_light_verts(const rendering::LightSlot& l
         case rendering::LightSlot::Type::Distant:
         case rendering::LightSlot::Type::Dome:
             break;
+        }
     }
     return verts;
 }
