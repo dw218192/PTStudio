@@ -470,9 +470,21 @@ void EditorApplication::render(FrameContext& ctx) {
     bool const capture_mode = m_app_config.is_capture_mode();
     ++m_frame_count;
 
-    // ── Capture readback: if buffer was copied last frame, map and write PNG ──
+    // ── Capture readback: copy was issued a previous frame, now map and read ──
     if (capture_mode && m_capture_pending) {
-        // Process events to complete the mapAsync
+        if (m_capture_needs_map) {
+            // Copy was submitted last frame — now safe to issue mapAsync
+            uint32_t const buf_size = m_capture_bytes_per_row * m_viewport_height;
+            WGPUBufferMapCallbackInfo map_cb = WGPU_BUFFER_MAP_CALLBACK_INFO_INIT;
+            map_cb.mode = WGPUCallbackMode_AllowProcessEvents;
+            map_cb.callback = [](WGPUMapAsyncStatus status, WGPUStringView, void*, void*) {
+                INVARIANT_MSG(status == WGPUMapAsyncStatus_Success,
+                              "Capture buffer mapAsync failed");
+            };
+            wgpuBufferMapAsync(m_capture_buffer, WGPUMapMode_Read, 0, buf_size, map_cb);
+            m_capture_needs_map = false;
+        }
+
         wgpuInstanceProcessEvents(ctx.device().instance());
 
         auto map_state = wgpuBufferGetMapState(m_capture_buffer);
@@ -783,13 +795,8 @@ void EditorApplication::render(FrameContext& ctx) {
         WGPUExtent3D extent = {m_viewport_width, m_viewport_height, 1};
         wgpuCommandEncoderCopyTextureToBuffer(ctx.encoder(), &src, &dst, &extent);
 
-        // Issue mapAsync — will be checked next frame
-        WGPUBufferMapCallbackInfo map_cb = WGPU_BUFFER_MAP_CALLBACK_INFO_INIT;
-        map_cb.mode = WGPUCallbackMode_AllowProcessEvents;
-        map_cb.callback = [](WGPUMapAsyncStatus status, WGPUStringView, void*, void*) {
-            INVARIANT_MSG(status == WGPUMapAsyncStatus_Success, "Capture buffer mapAsync failed");
-        };
-        wgpuBufferMapAsync(m_capture_buffer, WGPUMapMode_Read, 0, buf_size, map_cb);
+        // Defer mapAsync to next frame — encoder must be submitted first
+        m_capture_needs_map = true;
         m_capture_pending = true;
     }
 

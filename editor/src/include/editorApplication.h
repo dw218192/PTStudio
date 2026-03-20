@@ -168,6 +168,7 @@ struct EditorApplication final : WindowedApplication {
     int m_frame_count = 0;
     WGPUBuffer m_capture_buffer = nullptr;
     bool m_capture_pending = false;
+    bool m_capture_needs_map = false;
     uint32_t m_capture_bytes_per_row = 0;
 
     // Async scene loading
