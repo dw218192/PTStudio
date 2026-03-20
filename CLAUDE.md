@@ -46,7 +46,7 @@ Tracy 0.13.1's static `s_profiler` deadlocks at process exit on Windows if `<thr
 Use `--capture-and-quit` to verify rendering changes without manual inspection:
 
 ```
-./repo launch editor --capture-and-quit [output.png] [--usd scene.usda] [--frames 5] \
+./repo launch editor --capture-and-quit[=output.png] [--usd scene.usda] [--frames 5] \
                      [--renderer Forward] [--debug-output "Direct Diffuse"] \
                      [--usd-override override.usda]
 ```

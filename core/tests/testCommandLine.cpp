@@ -135,6 +135,35 @@ TEST_CASE("CommandLine - Multiple options") {
     CHECK(cli.has("plugins-dir") == true);
 }
 
+TEST_CASE("CommandLine - add_string with implicit_value") {
+    pts::CommandLine cli;
+    cli.add_string("output", "output path", std::nullopt, std::string(""));
+
+    SUBCASE("present without value uses implicit_value") {
+        const char* args[] = {"app", "--output"};
+        auto argv = make_argv(args);
+        REQUIRE(cli.parse(2, argv.data()) == true);
+        CHECK(cli.has("output") == true);
+        CHECK(cli.get_string("output") == "");
+    }
+
+    SUBCASE("present with value uses provided value") {
+        const char* args[] = {"app", "--output=foo.png"};
+        auto argv = make_argv(args);
+        REQUIRE(cli.parse(2, argv.data()) == true);
+        CHECK(cli.has("output") == true);
+        CHECK(cli.get_string("output") == "foo.png");
+    }
+
+    SUBCASE("absent returns call-site default") {
+        const char* args[] = {"app"};
+        auto argv = make_argv(args);
+        REQUIRE(cli.parse(1, argv.data()) == true);
+        CHECK(cli.has("output") == false);
+        CHECK(cli.get_string("output", "fallback") == "fallback");
+    }
+}
+
 TEST_CASE("CommandLine - get_string fallback default_value") {
     pts::CommandLine cli;
     cli.add_string("level", "log level");

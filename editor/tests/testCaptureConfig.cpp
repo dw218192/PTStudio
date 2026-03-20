@@ -55,7 +55,8 @@ TEST_CASE("AppConfig - default values") {
 
 TEST_CASE("Capture CLI flags registration and parsing") {
     pts::CommandLine cli;
-    cli.add_string("capture-and-quit", "Render, capture viewport to PNG, then quit", std::nullopt);
+    cli.add_string("capture-and-quit", "Render, capture viewport to PNG, then quit", std::nullopt,
+                   std::string(""));
     cli.add_string("usd", "Load USD file instead of embedded default scene", std::nullopt);
     cli.add_string("usd-override", "Apply override layer on top of loaded scene", std::nullopt);
     cli.add_int("frames", "Frames to render before capture", 1);
@@ -69,21 +70,31 @@ TEST_CASE("Capture CLI flags registration and parsing") {
         CHECK_FALSE(cli.has("capture-and-quit"));
     }
 
-    SUBCASE("--capture-and-quit with path") {
-        const char* args[] = {"editor", "--capture-and-quit", "out.png"};
+    SUBCASE("--capture-and-quit without path generates default") {
+        const char* args[] = {"editor", "--capture-and-quit"};
         auto argv = make_argv(args);
-        REQUIRE(cli.parse(3, argv.data()));
+        REQUIRE(cli.parse(2, argv.data()));
+        CHECK(cli.has("capture-and-quit"));
+        CHECK(cli.get_string("capture-and-quit") == "");
+    }
+
+    SUBCASE("--capture-and-quit with path (= syntax)") {
+        const char* args[] = {"editor", "--capture-and-quit=out.png"};
+        auto argv = make_argv(args);
+        REQUIRE(cli.parse(2, argv.data()));
         CHECK(cli.has("capture-and-quit"));
         CHECK(cli.get_string("capture-and-quit") == "out.png");
     }
 
     SUBCASE("all flags together") {
-        const char* args[] = {"editor",     "--capture-and-quit", "capture.png",   "--usd",
-                              "scene.usda", "--usd-override",     "override.usda", "--frames",
-                              "5",          "--renderer",         "Wireframe",     "--debug-output",
-                              "Normals"};
+        const char* args[] = {"editor",         "--capture-and-quit=capture.png",
+                              "--usd",          "scene.usda",
+                              "--usd-override", "override.usda",
+                              "--frames",       "5",
+                              "--renderer",     "Wireframe",
+                              "--debug-output", "Normals"};
         auto argv = make_argv(args);
-        REQUIRE(cli.parse(13, argv.data()));
+        REQUIRE(cli.parse(12, argv.data()));
         CHECK(cli.get_string("capture-and-quit") == "capture.png");
         CHECK(cli.get_string("usd") == "scene.usda");
         CHECK(cli.get_string("usd-override") == "override.usda");

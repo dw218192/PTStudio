@@ -257,7 +257,8 @@ void EditorApplication::ensure_default_light() {
 
 void EditorApplication::register_args(CommandLine& cli) {
     WindowedApplication::register_args(cli);
-    cli.add_string("capture-and-quit", "Render, capture viewport to PNG, then quit", std::nullopt);
+    cli.add_string("capture-and-quit", "Render, capture viewport to PNG, then quit", std::nullopt,
+                   std::string(""));
     cli.add_string("usd", "Load USD file instead of embedded default scene", std::nullopt);
     cli.add_string("usd-override", "Apply override layer on top of loaded scene", std::nullopt);
     cli.add_int("frames", "Frames to render before capture", 1);
