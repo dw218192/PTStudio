@@ -134,6 +134,7 @@ if (NOT EMSCRIPTEN)
     find_package(Dawn REQUIRED)
     find_package(portable-file-dialogs REQUIRED)
     find_package(Tracy REQUIRED)
+    find_package(slang REQUIRED)
 endif()
 
 # GUI libraries from Conan

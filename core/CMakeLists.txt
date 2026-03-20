@@ -98,7 +98,7 @@ add_library(${lib_name} STATIC ${src_files})
 
 #Libs linked to the executable
 target_link_libraries(${lib_name}
-PRIVATE
+PUBLIC
 	$<BUILD_INTERFACE:developer_flags>
 PUBLIC
 	openusd::usd_usd
@@ -121,6 +121,7 @@ if (NOT EMSCRIPTEN)
 		PUBLIC dawn::webgpu_dawn Boost::filesystem Tracy::TracyClient
 		PRIVATE cxxopts::cxxopts
 		       Boost::stacktrace Boost::stacktrace_from_exception
+		       slang::slang
 	)
 else()
 	target_link_libraries(${lib_name} PUBLIC wasm_flags Boost::boost PRIVATE cxxopts::cxxopts)
