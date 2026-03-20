@@ -53,7 +53,6 @@ class TestTool(RepoTool):
         lines: list[str] = []
         for r in records:
             msg = r.message
-            # Keep: PASSED/FAILED lines, summary, and errors
             if any(
                 k in msg
                 for k in ("PASSED:", "FAILED:", "Test summary", "Total:", "Passed:", "Failed:", "All tests passed")
@@ -61,7 +60,8 @@ class TestTool(RepoTool):
                 lines.append(msg)
             elif r.level in ("error", "critical", "warning"):
                 lines.append(msg)
-        return "\n".join(lines) if lines else "Tests completed (no output captured)"
+        lines.append("\nFull per-test logs: _build/<platform>/logs/test_*.log")
+        return "\n".join(lines)
 
     def execute(self, ctx: ToolContext, args: dict[str, Any]) -> None:
         config_val = args.get("config")

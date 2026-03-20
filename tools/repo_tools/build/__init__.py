@@ -90,7 +90,10 @@ class BuildTool(RepoTool):
                 "error" in msg.lower() or "warning" in msg.lower()
             ):
                 lines.append(msg)
-        return "\n".join(lines) if lines else "Build completed successfully"
+        if not lines:
+            lines.append("Build completed successfully")
+        lines.append("\nFull output: re-run with ./repo build for unfiltered log")
+        return "\n".join(lines)
 
     def execute(self, ctx: ToolContext, args: dict[str, Any]) -> None:
         build_command(ctx, args, self.name)

@@ -172,7 +172,10 @@ class SlangcTool(RepoTool):
                 lines.append(r.message)
             elif any(k in r.message for k in ("compiled", "skipped", "emitted")):
                 lines.append(r.message)
-        return "\n".join(lines) if lines else None
+        if not lines:
+            return None
+        lines.append("\nFull output: re-run with ./repo slangc for unfiltered log")
+        return "\n".join(lines)
 
     def execute(self, ctx: ToolContext, args: dict[str, Any]) -> None:
         """Compile Slang shaders configured in config.yaml."""
