@@ -348,6 +348,12 @@ void EditorApplication::set_renderer_config(size_t index) {
     for (auto& factory : k_renderer_configs[index].pass_factories) {
         m_passes.push_back(factory(m_shader_loader));
     }
+    m_editor_pass = nullptr;
+    for (auto& pass : m_passes) {
+        if (auto* ep = dynamic_cast<EditorPass*>(pass.get())) {
+            m_editor_pass = ep;
+        }
+    }
     auto& device = webgpu_context()->device();
     for (auto& pass : m_passes) {
         pass->setup(device);
@@ -466,29 +472,10 @@ void EditorApplication::render(FrameContext& ctx) {
 
     rendering::ResourceHandle scene_color_handle;
 
-    // Build a minimal PassContext with device/queue for non-viewport passes
-    // Compute selected picking ID from selected prim path
+    // Resolve selected prim to picking ID via EditorPass table
     uint32_t selected_picking_id = UINT32_MAX;
-    if (!m_selected_prim.IsEmpty()) {
-        auto objs = m_world.get_objects();
-        for (uint32_t i = 0; i < static_cast<uint32_t>(objs.size()); ++i) {
-            if (objs[i].active && objs[i].prim_path == m_selected_prim.GetString()) {
-                selected_picking_id = i;
-                break;
-            }
-        }
-        if (selected_picking_id == UINT32_MAX) {
-            auto lts = m_world.get_lights();
-            uint32_t gizmo_slot = 0;
-            for (uint32_t i = 0; i < static_cast<uint32_t>(lts.size()); ++i) {
-                if (!lts[i].active || lts[i].type == rendering::LightSlot::Type::Dome) continue;
-                if (lts[i].prim_path == m_selected_prim.GetString()) {
-                    selected_picking_id = static_cast<uint32_t>(objs.size()) + gizmo_slot;
-                    break;
-                }
-                ++gizmo_slot;
-            }
-        }
+    if (!m_selected_prim.IsEmpty() && m_editor_pass) {
+        selected_picking_id = m_editor_pass->find_picking_id(m_selected_prim.GetString());
     }
 
     rendering::PassContext pass_ctx{
@@ -570,31 +557,15 @@ void EditorApplication::render(FrameContext& ctx) {
     m_picking_readback.tick();
 
     if (auto picked_id = m_picking_readback.try_read_u32()) {
-        auto objects = m_world.get_objects();
-        auto obj_count = static_cast<uint32_t>(objects.size());
         if (*picked_id == UINT32_MAX) {
             m_selected_prim = pxr::SdfPath();
-        } else if (*picked_id < obj_count && objects[*picked_id].active) {
-            auto& path = objects[*picked_id].prim_path;
-            m_selected_prim = pxr::SdfPath(path);
-            if (m_stage) {
-                normalize_xform_ops(path);
-            }
-        } else if (*picked_id >= obj_count) {
-            // Light gizmo picked — resolve gizmo slot to light index
-            auto lts = m_world.get_lights();
-            uint32_t gizmo_slot = *picked_id - obj_count;
-            uint32_t slot = 0;
-            for (uint32_t i = 0; i < static_cast<uint32_t>(lts.size()); ++i) {
-                if (!lts[i].active || lts[i].type == rendering::LightSlot::Type::Dome) continue;
-                if (slot == gizmo_slot) {
-                    m_selected_prim = pxr::SdfPath(lts[i].prim_path);
-                    if (m_stage && !lts[i].prim_path.empty()) {
-                        normalize_xform_ops(lts[i].prim_path);
-                    }
-                    break;
+        } else if (m_editor_pass) {
+            auto path = m_editor_pass->resolve_picking_id(*picked_id);
+            if (!path.empty()) {
+                m_selected_prim = pxr::SdfPath(std::string(path));
+                if (m_stage) {
+                    normalize_xform_ops(std::string(path));
                 }
-                ++slot;
             }
         }
     }

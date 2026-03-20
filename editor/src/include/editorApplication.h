@@ -33,6 +33,9 @@ class BackgroundTask;
 namespace pts::rendering {
 class IScenePass;
 }
+namespace pts::editor {
+class EditorPass;
+}
 
 namespace pts::editor {
 struct AppConfig {
@@ -89,6 +92,7 @@ struct EditorApplication final : WindowedApplication {
     rendering::OrbitCamera m_camera;
     rendering::RenderWorld m_world;
     std::vector<std::unique_ptr<rendering::IScenePass>> m_passes;
+    EditorPass* m_editor_pass = nullptr;  // non-owning, points into m_passes
     size_t m_active_config_index = 0;
     rendering::ShaderLoader m_shader_loader;
 

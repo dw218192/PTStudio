@@ -7,8 +7,10 @@
 #include <core/rendering/webgpu/webgpu.h>
 
 #include <cstdint>
+#include <string>
 #include <string_view>
 #include <variant>
+#include <vector>
 
 namespace pts::editor {
 
@@ -31,6 +33,13 @@ class EditorPass final : public rendering::IScenePass {
 
     void do_setup(const webgpu::Device& device) override;
     void add_to_frame_graph(rendering::FrameGraph& fg, const rendering::PassContext& ctx) override;
+
+    /// Resolve a picking ID to its prim path. Returns empty if invalid.
+    /// Valid after add_to_frame_graph has run for the current frame.
+    [[nodiscard]] auto resolve_picking_id(uint32_t id) const noexcept -> std::string_view;
+
+    /// Find the picking ID for a prim path. Returns UINT32_MAX if not found.
+    [[nodiscard]] auto find_picking_id(std::string_view prim_path) const noexcept -> uint32_t;
 
     static constexpr uint32_t k_uniform_align = 256;
 
@@ -63,6 +72,9 @@ class EditorPass final : public rendering::IScenePass {
     };
 
     std::variant<std::monostate, Ready> m_state;
+
+    /// Flat table: picking_id → prim_path. Built each frame in add_to_frame_graph.
+    std::vector<std::string> m_picking_table;
 };
 
 }  // namespace pts::editor
