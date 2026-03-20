@@ -65,7 +65,7 @@ VsOut vs_main(uint vertex_id : SV_VertexID) {
         float3 spec = brdf.evaluate_specular(N, L, V, base_color, u.metallic, u.roughness);
         mag = length(spec);
     } else {
-        float3 diff = brdf.evaluate_diffuse(N, L, V, base_color, u.metallic);
+        float3 diff = brdf.evaluate_diffuse(base_color, u.metallic);
         mag = length(diff);
     }
 

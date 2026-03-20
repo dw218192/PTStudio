@@ -30,8 +30,7 @@ static const uint LIGHT_DOME    = 4;
 // ---------------------------------------------------------------------------
 
 interface IBRDF {
-    float3 evaluate_diffuse(float3 N, float3 L, float3 V,
-                            float3 base_color, float metallic);
+    float3 evaluate_diffuse(float3 base_color, float metallic);
     float3 evaluate_specular(float3 N, float3 L, float3 V,
                              float3 base_color, float metallic, float roughness);
 };
@@ -61,17 +60,8 @@ float3 F_Schlick(float VdotH, float3 F0) {
 // ---------------------------------------------------------------------------
 
 struct CookTorranceGGX : IBRDF {
-    float3 evaluate_diffuse(float3 N, float3 L, float3 V,
-                            float3 base_color, float metallic) {
-        float NdotL = max(dot(N, L), 0.0);
-        if (NdotL <= 0.0) return float3(0.0);
-
-        float3 H = normalize(L + V);
-        float VdotH = max(dot(V, H), 0.0);
-        float3 F0 = lerp(float3(0.04), base_color, metallic);
-        float3 F = F_Schlick(VdotH, F0);
-
-        return (1.0 - F) * (1.0 - metallic) * base_color / PI * NdotL;
+    float3 evaluate_diffuse(float3 base_color, float metallic) {
+        return (1.0 - metallic) * base_color / PI;
     }
 
     float3 evaluate_specular(float3 N, float3 L, float3 V,
@@ -93,7 +83,7 @@ struct CookTorranceGGX : IBRDF {
         float  G = G_SmithSchlick(NdotV, NdotL, a2);
         float3 F = F_Schlick(VdotH, F0);
 
-        return D * G * F / (4.0 * NdotV * NdotL + 0.001) * NdotL;
+        return D * G * F / (4.0 * NdotV * NdotL + 0.001);
     }
 };
 
@@ -246,12 +236,16 @@ float3 evaluate_lighting<B : IBRDF>(
         LightSample ls = sample_light(light, P, N, V, roughness);
         if (!ls.valid) continue;
 
-        float3 diffuse  = brdf.evaluate_diffuse(N, ls.diffuse_L, V, base_color, metallic);
-        float3 specular = brdf.evaluate_specular(N, ls.spec_L, V, base_color, metallic, ls.spec_roughness);
-        result += light.color * light.intensity * ls.attenuation * (diffuse + specular);
+        float3 diffuse = brdf.evaluate_diffuse(base_color, metallic) * max(dot(N, ls.diffuse_L), 0.0);
+        float3 specular = brdf.evaluate_specular(N, ls.spec_L, V, base_color, metallic, ls.spec_roughness) * max(dot(N, ls.spec_L), 0.0); ;
 
-        direct_diffuse += light.color * light.intensity * ls.attenuation * diffuse;
-        direct_specular += light.color * light.intensity * ls.attenuation * specular;
+        diffuse *= light.color * light.intensity * ls.attenuation;
+        specular *= light.color * light.intensity * ls.attenuation;
+        
+        result += (diffuse + specular);
+
+        direct_diffuse += diffuse;
+        direct_specular += specular;
     }
     return result;
 }
