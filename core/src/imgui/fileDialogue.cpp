@@ -1,3 +1,4 @@
+#include <core/diagnostics.h>
 #include <core/imgui/fileDialogue.h>
 
 #if defined(__EMSCRIPTEN__)
@@ -31,7 +32,7 @@ void pts_file_dialog_callback(const char* name, const char* data, int size) {
 
 void ImGui::FileDialogueAsync(FileDialogueMode mode, const std::string& accept,
                               std::function<void(FileDialogueResult)> on_result) {
-    (void) mode;
+    PTS_UNUSED(mode);
     s_pending_callback = std::move(on_result);
 
     // clang-format off
@@ -80,7 +81,7 @@ auto open_file_dialog(ImGui::FileDialogueMode mode) -> std::string {
 
 void ImGui::FileDialogueAsync(FileDialogueMode mode, const std::string& accept,
                               std::function<void(FileDialogueResult)> on_result) {
-    (void) accept;
+    PTS_UNUSED(accept);
     auto path = open_file_dialog(mode);
     if (path.empty()) return;
 

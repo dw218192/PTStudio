@@ -1,4 +1,5 @@
 #include <core/backgroundTask.h>
+#include <core/diagnostics.h>
 #include <core/profiling.h>
 #include <core/rendering/adapterHelpers.h>
 #include <core/rendering/adapters/registry.h>
@@ -63,7 +64,7 @@ RenderWorld populate_from_stage(const pxr::UsdStageRefPtr& stage, TaskProgress& 
 
     size_t total = 0;
     for (const auto& prim : pxr::UsdPrimRange(stage->GetPseudoRoot())) {
-        (void) prim;
+        PTS_UNUSED(prim);
         ++total;
     }
 

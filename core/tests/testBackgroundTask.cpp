@@ -1,5 +1,6 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <core/backgroundTask.h>
+#include <core/diagnostics.h>
 #include <doctest/doctest.h>
 
 #include <chrono>
@@ -57,8 +58,8 @@ TEST_CASE("BackgroundTask - reports progress mid-work") {
         // Reading progress/status while running should not crash
         auto prog = task.progress();
         auto stat = task.status();
-        (void) prog;
-        (void) stat;
+        PTS_UNUSED(prog);
+        PTS_UNUSED(stat);
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 

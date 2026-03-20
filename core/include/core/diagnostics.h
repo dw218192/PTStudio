@@ -88,6 +88,9 @@ inline void print_stacktrace() noexcept {
         if (!(x)) ::pts::diagnostics::fail_fast("CHECK", #x, __FILE__, __LINE__, (m)); \
     } while (0)
 
+// Suppress unused-variable warnings with clear intent.
+#define PTS_UNUSED(x) (void) (x)
+
 // Semantic checks (always-on) - use these for clearer intent
 //
 // PRECONDITION: caller provided valid inputs (function entry)
