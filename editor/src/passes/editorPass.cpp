@@ -94,11 +94,19 @@ static std::vector<glm::vec3> generate_light_verts(const rendering::LightSlot& l
         }
         case rendering::LightSlot::Type::Distant: {
             glm::vec3 d = glm::normalize(light.direction);
-            verts = {{0, 0, 0}, d * 2.0f};
+            // Line + small cross at origin for pickability
+            float s = 0.15f;
+            verts = {{0, 0, 0},  d * 2.0f,  {-s, 0, 0}, {s, 0, 0},
+                     {0, -s, 0}, {0, s, 0}, {0, 0, -s}, {0, 0, s}};
             break;
         }
-        case rendering::LightSlot::Type::Dome:
+        case rendering::LightSlot::Type::Dome: {
+            // Small diamond at origin for pickability
+            float s = 0.2f;
+            verts = {{-s, 0, 0}, {0, s, 0},  {0, s, 0},  {s, 0, 0},  {s, 0, 0},
+                     {0, -s, 0}, {0, -s, 0}, {-s, 0, 0}, {0, 0, -s}, {0, 0, s}};
             break;
+        }
     }
     return verts;
 }
@@ -310,13 +318,23 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
     auto object_count = static_cast<uint32_t>(objects.size());
     auto light_count = static_cast<uint32_t>(lights.size());
 
-    // Collect active gizmo light indices
+    // Collect active light indices (all types get gizmos now)
     std::vector<uint32_t> gizmo_light_indices;
     for (uint32_t i = 0; i < light_count; ++i) {
-        if (!lights[i].active || lights[i].type == rendering::LightSlot::Type::Dome) continue;
+        if (!lights[i].active) continue;
         gizmo_light_indices.push_back(i);
     }
     auto gizmo_count = static_cast<uint32_t>(gizmo_light_indices.size());
+
+    // Build picking table: flat mapping from picking_id → prim_path
+    m_picking_table.clear();
+    m_picking_table.reserve(object_count + gizmo_count);
+    for (uint32_t i = 0; i < object_count; ++i) {
+        m_picking_table.push_back(objects[i].prim_path);
+    }
+    for (uint32_t slot = 0; slot < gizmo_count; ++slot) {
+        m_picking_table.push_back(lights[gizmo_light_indices[slot]].prim_path);
+    }
 
     uint32_t total_picking_slots = object_count + gizmo_count;
     if (total_picking_slots > 0) ensure_picking_capacity(ctx.device, total_picking_slots);
@@ -465,4 +483,18 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
                 wgpuRenderPassEncoderDraw(pass, draw.vertex_count, 1, 0, 0);
             }
         });
+}
+
+auto EditorPass::resolve_picking_id(uint32_t id) const noexcept -> std::string_view {
+    if (id < static_cast<uint32_t>(m_picking_table.size())) {
+        return m_picking_table[id];
+    }
+    return {};
+}
+
+auto EditorPass::find_picking_id(std::string_view prim_path) const noexcept -> uint32_t {
+    for (uint32_t i = 0; i < static_cast<uint32_t>(m_picking_table.size()); ++i) {
+        if (m_picking_table[i] == prim_path) return i;
+    }
+    return UINT32_MAX;
 }
