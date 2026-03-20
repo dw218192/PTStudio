@@ -94,7 +94,8 @@ struct CookTorranceGGX : IBRDF {
 struct LightSample {
     float3 diffuse_L;           // center direction for diffuse
     float3 spec_L;              // representative direction for specular
-    float attenuation;
+    float diffuse_attenuation;  // 1/d^2 from light center
+    float spec_attenuation;     // 1/d^2 from representative point
     float spec_roughness;       // roughness widened by light angular extent
     bool valid;
 };
@@ -102,7 +103,8 @@ struct LightSample {
 LightSample sample_distant_light(Light light, float3 N, float3 V, float roughness) {
     LightSample ls;
     ls.valid = true;
-    ls.attenuation = 1.0;
+    ls.diffuse_attenuation = 1.0;
+    ls.spec_attenuation = 1.0;
     ls.spec_roughness = roughness;
 
     float3 center_L = -light.direction_or_pos;
@@ -178,10 +180,12 @@ LightSample sample_area_light(Light light, float3 P, float3 N, float3 V, float r
         representative_point = closest_on_ray;
     }
 
+    ls.diffuse_attenuation = 1.0 / max(center_dist * center_dist, 0.001);
+
     float3 to_rep = representative_point - P;
     float dist = length(to_rep);
     ls.spec_L = to_rep / max(dist, 0.001);
-    ls.attenuation = 1.0 / max(dist * dist, 0.001);
+    ls.spec_attenuation = 1.0 / max(dist * dist, 0.001);
 
     // Convolve GGX NDF with the light's apparent angular size
     float alpha = roughness * roughness;
@@ -198,7 +202,8 @@ LightSample sample_light(Light light, float3 P, float3 N, float3 V, float roughn
         ls.valid = false;
         ls.diffuse_L = float3(0.0);
         ls.spec_L = float3(0.0);
-        ls.attenuation = 0.0;
+        ls.diffuse_attenuation = 0.0;
+        ls.spec_attenuation = 0.0;
         ls.spec_roughness = roughness;
         return ls;
     }
@@ -236,16 +241,19 @@ float3 evaluate_lighting<B : IBRDF>(
         LightSample ls = sample_light(light, P, N, V, roughness);
         if (!ls.valid) continue;
 
-        float3 diffuse = brdf.evaluate_diffuse(base_color, metallic) * max(dot(N, ls.diffuse_L), 0.0);
-        float3 specular = brdf.evaluate_specular(N, ls.spec_L, V, base_color, metallic, ls.spec_roughness) * max(dot(N, ls.spec_L), 0.0); ;
+        float3 brdf_diffuse = brdf.evaluate_diffuse(base_color, metallic);
+        float3 brdf_specular = brdf.evaluate_specular(N, ls.spec_L, V, base_color, metallic, ls.spec_roughness);
 
-        diffuse *= light.color * light.intensity * ls.attenuation;
-        specular *= light.color * light.intensity * ls.attenuation;
-        
-        result += (diffuse + specular);
+        float3 radiance_diffuse = light.color * light.intensity * ls.diffuse_attenuation;
+        float3 radiance_specular = light.color * light.intensity * ls.spec_attenuation;
 
+        float3 diffuse = brdf_diffuse * max(dot(N, ls.diffuse_L), 0.0) * radiance_diffuse;
+        float3 specular = brdf_specular * max(dot(N, ls.spec_L), 0.0) * radiance_specular;
+
+        result += diffuse + specular;
         direct_diffuse += diffuse;
         direct_specular += specular;
+
     }
     return result;
 }
