@@ -17,8 +17,8 @@ struct PerfOverlay {
     static constexpr float k_ema_alpha = 0.05f;
 
     void draw(float dt, const rendering::RenderWorld& world, const rendering::FrameGraph& fg,
-              const std::vector<std::unique_ptr<rendering::IScenePass>>& passes,
-              std::string_view renderer_name, uint32_t viewport_w, uint32_t viewport_h) {
+              const std::vector<rendering::IScenePass*>& passes, std::string_view renderer_name,
+              uint32_t viewport_w, uint32_t viewport_h) {
         update_timing(dt);
 
         ImGui::SetNextWindowSize(ImVec2(280, 0), ImGuiCond_FirstUseEver);
@@ -101,7 +101,7 @@ struct PerfOverlay {
     }
 
     void draw_renderer_section(const rendering::FrameGraph& fg,
-                               const std::vector<std::unique_ptr<rendering::IScenePass>>& passes,
+                               const std::vector<rendering::IScenePass*>& passes,
                                std::string_view renderer_name, uint32_t viewport_w,
                                uint32_t viewport_h) const {
         if (!ImGui::CollapsingHeader("Renderer", ImGuiTreeNodeFlags_DefaultOpen)) return;

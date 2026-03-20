@@ -55,20 +55,8 @@ static constexpr auto k_perf_win_name = "Performance";
 static constexpr auto k_console_log_buffer_size = 1024;
 
 static const std::vector<rendering::RendererConfig> k_renderer_configs = {
-    {"Forward",
-     {
-         [](const auto& sl) { return std::make_unique<ForwardPass>(sl); },
-         [](const auto& sl) { return std::make_unique<GridPass>(sl); },
-         [](const auto& sl) { return std::make_unique<EditorPass>(sl); },
-         [](const auto& sl) { return std::make_unique<LobePass>(sl); },
-     }},
-    {"Wireframe",
-     {
-         [](const auto& sl) { return std::make_unique<WireframePass>(sl); },
-         [](const auto& sl) { return std::make_unique<GridPass>(sl); },
-         [](const auto& sl) { return std::make_unique<EditorPass>(sl); },
-         [](const auto& sl) { return std::make_unique<LobePass>(sl); },
-     }},
+    {"Forward", [](const auto& sl) { return std::make_unique<ForwardPass>(sl); }},
+    {"Wireframe", [](const auto& sl) { return std::make_unique<WireframePass>(sl); }},
 };
 
 EditorApplication::EditorApplication(std::string_view name, pts::LoggingManager& logging_manager)
@@ -87,7 +75,8 @@ EditorApplication::~EditorApplication() {
     m_scene_load_task.reset();  // join background thread before tearing down
     m_pending_stage.Reset();
     revoke_stage_listener();
-    m_passes.clear();
+    m_renderer_pass.reset();
+    m_editor_passes.clear();
     m_world.clear();
     m_stage.Reset();
     m_input.reset();
@@ -328,7 +317,23 @@ void EditorApplication::on_ready() {
         "editor/generated/shaders/lobe.wgsl", "editor/shaders/lobe.slang",
         "editor/generated/shaders/lobe.wgsl", editor_resources::get_resource);
 
-    // Set up renderer passes
+    // Create editor passes (always-on, independent of renderer choice)
+    {
+        auto& dev = webgpu_context()->device();
+        m_editor_passes.push_back(std::make_unique<GridPass>(m_shader_loader));
+        m_editor_passes.push_back(std::make_unique<EditorPass>(m_shader_loader));
+        m_editor_passes.push_back(std::make_unique<LobePass>(m_shader_loader));
+        for (auto& p : m_editor_passes) {
+            p->setup(dev);
+        }
+        for (auto& p : m_editor_passes) {
+            if (auto* ep = dynamic_cast<EditorPass*>(p.get())) {
+                m_editor_pass = ep;
+            }
+        }
+    }
+
+    // Set up renderer pass
     set_renderer_config(0);
 
     // Camera defaults
@@ -343,21 +348,9 @@ void EditorApplication::on_ready() {
 
 void EditorApplication::set_renderer_config(size_t index) {
     PRECONDITION(index < k_renderer_configs.size());
-    m_passes.clear();
-    m_passes.reserve(k_renderer_configs[index].pass_factories.size());
-    for (auto& factory : k_renderer_configs[index].pass_factories) {
-        m_passes.push_back(factory(m_shader_loader));
-    }
-    m_editor_pass = nullptr;
-    for (auto& pass : m_passes) {
-        if (auto* ep = dynamic_cast<EditorPass*>(pass.get())) {
-            m_editor_pass = ep;
-        }
-    }
+    m_renderer_pass = k_renderer_configs[index].factory(m_shader_loader);
     auto& device = webgpu_context()->device();
-    for (auto& pass : m_passes) {
-        pass->setup(device);
-    }
+    m_renderer_pass->setup(device);
     m_active_config_index = index;
     m_debug_target_selection = 0;
     m_active_debug_ref = {};
@@ -394,6 +387,8 @@ void EditorApplication::render(FrameContext& ctx) {
 
         // Re-setup passes (they cache world references)
         set_renderer_config(m_active_config_index);
+        auto& dev = webgpu_context()->device();
+        for (auto& p : m_editor_passes) p->setup(dev);
 
         log(LogLevel::Info, "Loaded scene ({} objects)", m_world.get_objects().size());
     }
@@ -407,9 +402,7 @@ void EditorApplication::render(FrameContext& ctx) {
         m_shader_loader.poll_and_start_reload();
         if (!changed.empty()) {
             auto const& device = webgpu_context()->device();
-            for (auto& pass : m_passes) {
-                pass->on_shaders_reloaded(device);
-            }
+            for_each_pass([&](auto& pass) { pass.on_shaders_reloaded(device); });
         }
     }
 #endif
@@ -452,11 +445,12 @@ void EditorApplication::render(FrameContext& ctx) {
     m_imgui->end_window();
 
     // Pass-owned ImGui windows
-    for (auto& pass : m_passes) {
-        pass->draw_imgui();
-    }
+    for_each_pass([](auto& pass) { pass.draw_imgui(); });
 
-    m_perf_overlay.draw(get_delta_time(), m_world, *m_frame_graph, m_passes,
+    // Collect all passes for perf overlay
+    std::vector<rendering::IScenePass*> all_passes;
+    for_each_pass([&](auto& pass) { all_passes.push_back(&pass); });
+    m_perf_overlay.draw(get_delta_time(), m_world, *m_frame_graph, all_passes,
                         k_renderer_configs[m_active_config_index].name, m_viewport_width,
                         m_viewport_height);
 
@@ -491,11 +485,11 @@ void EditorApplication::render(FrameContext& ctx) {
         m_world.prepare_gpu_buffers(device, queue);
     }
 
-    for (auto& pass : m_passes) {
-        if (!pass->is_ready()) continue;
-        if (pass->requires_viewport() && !has_viewport) continue;
-        pass->add_to_frame_graph(*m_frame_graph, pass_ctx);
-    }
+    for_each_pass([&](auto& pass) {
+        if (!pass.is_ready()) return;
+        if (pass.requires_viewport() && !has_viewport) return;
+        pass.add_to_frame_graph(*m_frame_graph, pass_ctx);
+    });
 
     if (has_viewport) {
         // Look up scene_color resource that passes created
@@ -524,8 +518,8 @@ void EditorApplication::render(FrameContext& ctx) {
         debug_desc.format = WGPUTextureFormat_RGBA8Unorm;
         debug_desc.clear_color = {0, 0, 0, 1};
 
-        for (auto& pass : m_passes) {
-            auto [names, count] = pass->debug_target_names();
+        for_each_pass([&](auto& pass) {
+            auto [names, count] = pass.debug_target_names();
             for (uint32_t i = 0; i < count; ++i) {
                 auto h =
                     m_frame_graph->find_or_create(std::string("debug_") + names[i], debug_desc);
@@ -534,7 +528,7 @@ void EditorApplication::render(FrameContext& ctx) {
                     debug_target_handles.push_back(h);
                 }
             }
-        }
+        });
     }
 
     // Declare read on gizmo overlay so ImGui can composite it
@@ -626,9 +620,7 @@ void EditorApplication::render(FrameContext& ctx) {
     }
 
     // Let passes cache their texture refs for ImGui display
-    for (auto& pass : m_passes) {
-        pass->update_texture_refs(*m_frame_graph);
-    }
+    for_each_pass([&](auto& pass) { pass.update_texture_refs(*m_frame_graph); });
 
     wrap_mouse_pos();
 
@@ -844,12 +836,12 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
             // Build flat list of debug target labels from all passes
             std::vector<std::string> debug_labels;
             debug_labels.emplace_back("Off");
-            for (auto& pass : m_passes) {
-                auto [names, count] = pass->debug_target_names();
+            for_each_pass([&](auto& pass) {
+                auto [names, count] = pass.debug_target_names();
                 for (uint32_t i = 0; i < count; ++i) {
-                    debug_labels.emplace_back(std::string(pass->name()) + ": " + names[i]);
+                    debug_labels.emplace_back(std::string(pass.name()) + ": " + names[i]);
                 }
-            }
+            });
             if (m_debug_target_selection >= static_cast<int>(debug_labels.size())) {
                 m_debug_target_selection = 0;
             }

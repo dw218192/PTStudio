@@ -91,10 +91,18 @@ struct EditorApplication final : WindowedApplication {
     std::unique_ptr<rendering::FrameGraph> m_frame_graph;
     rendering::OrbitCamera m_camera;
     rendering::RenderWorld m_world;
-    std::vector<std::unique_ptr<rendering::IScenePass>> m_passes;
-    EditorPass* m_editor_pass = nullptr;  // non-owning, points into m_passes
+    std::unique_ptr<rendering::IScenePass> m_renderer_pass;
+    std::vector<std::unique_ptr<rendering::IScenePass>> m_editor_passes;
+    EditorPass* m_editor_pass = nullptr;  // non-owning, points into m_editor_passes
     size_t m_active_config_index = 0;
     rendering::ShaderLoader m_shader_loader;
+
+    /// Iterate all active passes (renderer + editor) in execution order.
+    template <typename Fn>
+    void for_each_pass(Fn&& fn) {
+        if (m_renderer_pass) fn(*m_renderer_pass);
+        for (auto& p : m_editor_passes) fn(*p);
+    }
 
     // USD stage + change tracking
     pxr::UsdStageRefPtr m_stage;
