@@ -38,7 +38,6 @@ class SlangCompiler {
                           const std::vector<std::string>& entry_points);
 
    private:
-    Slang::ComPtr<slang::IGlobalSession> m_global_session;
     std::filesystem::path m_search_path;
     std::shared_ptr<spdlog::logger> m_logger;
 };
@@ -46,9 +45,6 @@ class SlangCompiler {
 SlangCompiler::SlangCompiler(std::filesystem::path search_path,
                              std::shared_ptr<spdlog::logger> logger)
     : m_search_path(std::move(search_path)), m_logger(std::move(logger)) {
-    auto hr = slang::createGlobalSession(m_global_session.writeRef());
-    POSTCONDITION_MSG(SLANG_SUCCEEDED(hr) && m_global_session,
-                      "Failed to create Slang global session");
 }
 
 SlangCompiler::~SlangCompiler() = default;
@@ -56,6 +52,15 @@ SlangCompiler::~SlangCompiler() = default;
 SlangCompiler::CompileResult SlangCompiler::compile(const std::filesystem::path& slang_source,
                                                     const std::vector<std::string>& entry_points) {
     CompileResult result;
+
+    // Fresh global session each call — IGlobalSession caches loaded modules
+    // by name, so reusing it returns stale code after source files change.
+    Slang::ComPtr<slang::IGlobalSession> global_session;
+    auto hr = slang::createGlobalSession(global_session.writeRef());
+    if (SLANG_FAILED(hr) || !global_session) {
+        result.diagnostics_text = "Failed to create Slang global session";
+        return result;
+    }
 
     slang::SessionDesc session_desc = {};
     slang::TargetDesc target_desc = {};
@@ -72,7 +77,7 @@ SlangCompiler::CompileResult SlangCompiler::compile(const std::filesystem::path&
     session_desc.searchPathCount = 2;
 
     Slang::ComPtr<slang::ISession> session;
-    auto hr = m_global_session->createSession(session_desc, session.writeRef());
+    hr = global_session->createSession(session_desc, session.writeRef());
     if (SLANG_FAILED(hr) || !session) {
         result.diagnostics_text = "Failed to create Slang session";
         return result;

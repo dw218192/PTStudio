@@ -43,7 +43,7 @@ Tracy 0.13.1's static `s_profiler` deadlocks at process exit on Windows if `<thr
 
 ## Verification
 
-Never declare a feature "working" based on build/test passing alone. For runtime behavior (rendering, hot-reload, UI), always launch the application (`./repo launch editor`) and verify visually or via log output before concluding. Add diagnostic logging when needed to confirm correctness — guessing at root causes from code alone leads to wasted cycles.
+Never declare a feature "working" based on build/test passing alone. For runtime behavior (rendering, hot-reload, UI), always launch the application (`./repo launch editor`) and verify visually or via log output before concluding and committing. Add diagnostic logging when needed to confirm correctness — guessing at root causes from code alone leads to wasted cycles. `./repo launch editor` returns the editor's log output directly — use it.
 
 ## Code Conventions
 
