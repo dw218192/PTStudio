@@ -85,10 +85,6 @@ EditorApplication::~EditorApplication() {
     m_stage.Reset();
     m_input.reset();
     m_imgui.reset();
-    if (m_capture_buffer) {
-        wgpuBufferRelease(m_capture_buffer);
-        m_capture_buffer = nullptr;
-    }
 }
 
 void EditorApplication::StageListener::handle(const pxr::UsdNotice::ObjectsChanged& notice,
@@ -470,60 +466,25 @@ void EditorApplication::render(FrameContext& ctx) {
     bool const capture_mode = m_app_config.is_capture_mode();
     ++m_frame_count;
 
-    // ── Capture readback: copy was issued a previous frame, now map and read ──
-    if (capture_mode && m_capture_pending) {
-        if (m_capture_needs_map) {
-            // Copy was submitted last frame — now safe to issue mapAsync
-            uint32_t const buf_size = m_capture_bytes_per_row * m_viewport_height;
-            WGPUBufferMapCallbackInfo map_cb = WGPU_BUFFER_MAP_CALLBACK_INFO_INIT;
-            map_cb.mode = WGPUCallbackMode_AllowProcessEvents;
-            map_cb.callback = [](WGPUMapAsyncStatus status, WGPUStringView, void*, void*) {
-                INVARIANT_MSG(status == WGPUMapAsyncStatus_Success,
-                              "Capture buffer mapAsync failed");
-            };
-            wgpuBufferMapAsync(m_capture_buffer, WGPUMapMode_Read, 0, buf_size, map_cb);
-            m_capture_needs_map = false;
-        }
-
-        wgpuInstanceProcessEvents(ctx.device().instance());
-
-        auto map_state = wgpuBufferGetMapState(m_capture_buffer);
-        if (map_state == WGPUBufferMapState_Mapped) {
-            uint32_t const buf_size = m_capture_bytes_per_row * m_viewport_height;
-            auto const* mapped = static_cast<const uint8_t*>(
-                wgpuBufferGetConstMappedRange(m_capture_buffer, 0, buf_size));
-            INVARIANT(mapped);
-
-            // Copy row-by-row, stripping padding
-            std::vector<uint8_t> pixels(m_viewport_width * m_viewport_height * 4);
-            for (uint32_t y = 0; y < m_viewport_height; ++y) {
-                std::memcpy(&pixels[y * m_viewport_width * 4], mapped + y * m_capture_bytes_per_row,
-                            m_viewport_width * 4);
-            }
-
-            wgpuBufferUnmap(m_capture_buffer);
-            wgpuBufferRelease(m_capture_buffer);
-            m_capture_buffer = nullptr;
-            m_capture_pending = false;
-
-            // Ensure output directory exists
+    // ── Capture readback: tick the async state machine and write PNG when ready ──
+    if (capture_mode && m_capture_readback.is_pending()) {
+        m_capture_readback.tick();
+        auto pixels = m_capture_readback.try_read();
+        if (!pixels.empty()) {
             auto parent = std::filesystem::path(m_app_config.capture_output).parent_path();
             if (!parent.empty()) {
                 std::filesystem::create_directories(parent);
             }
-
             int const ok = stbi_write_png(m_app_config.capture_output.c_str(),
                                           static_cast<int>(m_viewport_width),
                                           static_cast<int>(m_viewport_height), 4, pixels.data(),
                                           static_cast<int>(m_viewport_width * 4));
             INVARIANT_MSG(ok, "stbi_write_png failed");
-
             log(LogLevel::Info, "Captured {}x{} to {}", m_viewport_width, m_viewport_height,
                 m_app_config.capture_output);
             viewport()->request_close();
             return;
         }
-        // Not mapped yet — continue rendering to pump events
     }
 
     // Finalize background scene load
@@ -758,9 +719,9 @@ void EditorApplication::render(FrameContext& ctx) {
     m_frame_graph->compile();
     m_frame_graph->execute(ctx.encoder());
 
-    // ── Capture: copy texture to staging buffer after target frame ──
-    if (capture_mode && !m_capture_pending && m_frame_count >= m_app_config.capture_frames) {
-        // Determine which texture to capture
+    // ── Capture: issue readback after target frame ──
+    if (capture_mode && !m_capture_readback.is_pending() &&
+        m_frame_count >= m_app_config.capture_frames) {
         rendering::TextureRef capture_ref;
         if (m_debug_target_selection > 0 &&
             static_cast<size_t>(m_debug_target_selection - 1) < debug_target_handles.size()) {
@@ -771,33 +732,8 @@ void EditorApplication::render(FrameContext& ctx) {
         }
         INVARIANT_MSG(capture_ref, "Capture target texture not available");
 
-        // 256-byte row alignment required by WebGPU
-        m_capture_bytes_per_row = ((m_viewport_width * 4 + 255) / 256) * 256;
-        uint32_t buf_size = m_capture_bytes_per_row * m_viewport_height;
-
-        WGPUBufferDescriptor buf_desc = WGPU_BUFFER_DESCRIPTOR_INIT;
-        buf_desc.size = buf_size;
-        buf_desc.usage = WGPUBufferUsage_CopyDst | WGPUBufferUsage_MapRead;
-        m_capture_buffer = wgpuDeviceCreateBuffer(device.handle(), &buf_desc);
-        INVARIANT(m_capture_buffer);
-
-        WGPUTexelCopyTextureInfo src = WGPU_TEXEL_COPY_TEXTURE_INFO_INIT;
-        src.texture = capture_ref.texture();
-        src.mipLevel = 0;
-        src.origin = {0, 0, 0};
-
-        WGPUTexelCopyBufferInfo dst = WGPU_TEXEL_COPY_BUFFER_INFO_INIT;
-        dst.buffer = m_capture_buffer;
-        dst.layout.offset = 0;
-        dst.layout.bytesPerRow = m_capture_bytes_per_row;
-        dst.layout.rowsPerImage = m_viewport_height;
-
-        WGPUExtent3D extent = {m_viewport_width, m_viewport_height, 1};
-        wgpuCommandEncoderCopyTextureToBuffer(ctx.encoder(), &src, &dst, &extent);
-
-        // Defer mapAsync to next frame — encoder must be submitted first
-        m_capture_needs_map = true;
-        m_capture_pending = true;
+        m_capture_readback.request(ctx.encoder(), capture_ref.texture(), m_viewport_width,
+                                   m_viewport_height, device.handle(), device.instance());
     }
 
     // ── GPU picking readback ──

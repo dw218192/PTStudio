@@ -7,6 +7,7 @@
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/shaderLoader.h>
 #include <core/rendering/webgpu/bufferReadback.h>
+#include <core/rendering/webgpu/textureReadback.h>
 #include <core/rendering/webgpu/webgpu.h>
 #include <core/windowedApplication.h>
 #include <pxr/base/tf/notice.h>
@@ -166,10 +167,7 @@ struct EditorApplication final : WindowedApplication {
 
     // Capture mode state
     int m_frame_count = 0;
-    WGPUBuffer m_capture_buffer = nullptr;
-    bool m_capture_pending = false;
-    bool m_capture_needs_map = false;
-    uint32_t m_capture_bytes_per_row = 0;
+    webgpu::TextureReadback m_capture_readback;
 
     // Async scene loading
     std::unique_ptr<pts::BackgroundTask<rendering::RenderWorld>> m_scene_load_task;
