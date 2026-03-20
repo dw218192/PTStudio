@@ -20,6 +20,14 @@ void OrbitCamera::set_fov_y(float fov_degrees) {
     m_fov_y = fov_degrees;
 }
 
+void OrbitCamera::set_yaw(float radians) {
+    m_yaw = radians;
+}
+
+void OrbitCamera::set_pitch(float radians) {
+    m_pitch = radians;
+}
+
 void OrbitCamera::set_clip_planes(float near, float far) {
     m_near = near;
     m_far = far;

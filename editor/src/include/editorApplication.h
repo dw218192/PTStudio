@@ -46,6 +46,11 @@ struct AppConfig {
     int capture_frames = 1;         // frames to render before capture
     std::string renderer_name;      // empty = default (first)
     std::string debug_output_name;  // empty = scene_color
+    std::string camera_target;      // "x,y,z" — empty = default
+    std::string camera_distance;    // empty = default (3.0)
+    std::string camera_yaw;         // degrees, empty = default (0)
+    std::string camera_pitch;       // degrees, empty = default (~17)
+    std::string camera_fov;         // degrees, empty = default (60)
 
     [[nodiscard]] bool is_capture_mode() const {
         return !capture_output.empty();

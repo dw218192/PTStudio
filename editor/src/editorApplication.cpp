@@ -32,6 +32,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <cstring>
 #include <ctime>
 #include <filesystem>
@@ -260,6 +261,11 @@ void EditorApplication::register_args(CommandLine& cli) {
     cli.add_int("frames", "Frames to render before capture", 1);
     cli.add_string("renderer", "Select renderer by name (e.g. Forward, Wireframe)", std::nullopt);
     cli.add_string("debug-output", "Capture debug target instead of scene_color", std::nullopt);
+    cli.add_string("camera-target", "Camera target position as x,y,z", std::nullopt);
+    cli.add_string("camera-distance", "Camera orbit distance", std::nullopt);
+    cli.add_string("camera-yaw", "Camera yaw in degrees", std::nullopt);
+    cli.add_string("camera-pitch", "Camera pitch in degrees", std::nullopt);
+    cli.add_string("camera-fov", "Camera vertical FOV in degrees", std::nullopt);
 }
 
 void EditorApplication::process_args(const CommandLine& cli) {
@@ -294,6 +300,21 @@ void EditorApplication::process_args(const CommandLine& cli) {
     }
     if (cli.has("debug-output")) {
         m_app_config.debug_output_name = cli.get_string("debug-output");
+    }
+    if (cli.has("camera-target")) {
+        m_app_config.camera_target = cli.get_string("camera-target");
+    }
+    if (cli.has("camera-distance")) {
+        m_app_config.camera_distance = cli.get_string("camera-distance");
+    }
+    if (cli.has("camera-yaw")) {
+        m_app_config.camera_yaw = cli.get_string("camera-yaw");
+    }
+    if (cli.has("camera-pitch")) {
+        m_app_config.camera_pitch = cli.get_string("camera-pitch");
+    }
+    if (cli.has("camera-fov")) {
+        m_app_config.camera_fov = cli.get_string("camera-fov");
     }
 }
 
@@ -431,10 +452,29 @@ void EditorApplication::on_ready() {
         INVARIANT_MSG(found, "Unknown debug output name");
     }
 
-    // Camera defaults
+    // Camera defaults, overridable via CLI
     m_camera.set_target({0.0f, 0.0f, 0.0f});
     m_camera.set_distance(3.0f);
     m_camera.set_fov_y(60.0f);
+
+    if (!m_app_config.camera_target.empty()) {
+        float x, y, z;
+        INVARIANT_MSG(std::sscanf(m_app_config.camera_target.c_str(), "%f,%f,%f", &x, &y, &z) == 3,
+                      "--camera-target must be x,y,z");
+        m_camera.set_target({x, y, z});
+    }
+    if (!m_app_config.camera_distance.empty()) {
+        m_camera.set_distance(std::stof(m_app_config.camera_distance));
+    }
+    if (!m_app_config.camera_yaw.empty()) {
+        m_camera.set_yaw(glm::radians(std::stof(m_app_config.camera_yaw)));
+    }
+    if (!m_app_config.camera_pitch.empty()) {
+        m_camera.set_pitch(glm::radians(std::stof(m_app_config.camera_pitch)));
+    }
+    if (!m_app_config.camera_fov.empty()) {
+        m_camera.set_fov_y(std::stof(m_app_config.camera_fov));
+    }
 
     // In capture mode, set fixed viewport size (no ImGui layout)
     if (m_app_config.is_capture_mode()) {
