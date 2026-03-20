@@ -62,6 +62,8 @@ SlangCompiler::CompileResult SlangCompiler::compile(const std::filesystem::path&
     target_desc.format = SLANG_WGSL;
     session_desc.targets = &target_desc;
     session_desc.targetCount = 1;
+    // Match CLI slangc default: column-major matrix layout
+    session_desc.defaultMatrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR;
 
     auto search_str = m_search_path.string();
     auto source_dir_str = slang_source.parent_path().string();

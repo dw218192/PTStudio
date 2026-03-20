@@ -41,6 +41,10 @@ The `embed` prebuild step generates C++ headers with `get_resource(key)` lookup.
 
 Tracy 0.13.1's static `s_profiler` deadlocks at process exit on Windows if `<thread>` is included in widely-used headers — the changed static init ordering causes Tracy's destructor to run after WinSock cleanup, and its profiler thread hangs in `accept()`. **Never include `<thread>` (or headers that transitively include it, like `backgroundTask.h`) in `.h` files that are widely included.** Forward-declare and include in `.cpp` only. The proper fix is rebuilding Tracy with `TRACY_DELAYED_INIT=ON` + `TRACY_MANUAL_LIFETIME=ON`.
 
+## Verification
+
+Never declare a feature "working" based on build/test passing alone. For runtime behavior (rendering, hot-reload, UI), always launch the application (`./repo launch editor`) and verify visually or via log output before concluding. Add diagnostic logging when needed to confirm correctness — guessing at root causes from code alone leads to wasted cycles.
+
 ## Code Conventions
 
 - C++17, `webgpu.h` API for rendering (same header for Dawn and emdawnwebgpu)
