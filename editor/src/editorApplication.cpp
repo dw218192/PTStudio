@@ -537,6 +537,20 @@ void EditorApplication::render(FrameContext& ctx) {
         }
     }
 
+    // Declare read on gizmo overlay so ImGui can composite it
+    rendering::ResourceHandle gizmo_overlay_handle;
+    if (has_viewport) {
+        rendering::TextureDesc gizmo_desc;
+        gizmo_desc.width = m_viewport_width;
+        gizmo_desc.height = m_viewport_height;
+        gizmo_desc.format = WGPUTextureFormat_RGBA8Unorm;
+        gizmo_desc.clear_color = {0, 0, 0, 0};
+        gizmo_overlay_handle = m_frame_graph->find_or_create("editor_gizmo_overlay", gizmo_desc);
+        if (gizmo_overlay_handle.is_valid()) {
+            imgui_builder.read(gizmo_overlay_handle);
+        }
+    }
+
     {
         rendering::TextureDesc lobe_desc;
         lobe_desc.width = LobePass::k_texture_size;
@@ -593,6 +607,13 @@ void EditorApplication::render(FrameContext& ctx) {
     // Store scene color ref for next frame's ImGui::Image
     if (has_viewport && scene_color_handle.is_valid()) {
         m_scene_color_ref = m_frame_graph->get_texture_ref(scene_color_handle);
+    }
+
+    // Cache gizmo overlay ref
+    if (has_viewport && gizmo_overlay_handle.is_valid()) {
+        m_gizmo_overlay_ref = m_frame_graph->get_texture_ref(gizmo_overlay_handle);
+    } else {
+        m_gizmo_overlay_ref = {};
     }
 
     // Cache the active debug target ref (selection 1 maps to debug_target_handles[0])
@@ -766,7 +787,17 @@ void EditorApplication::draw_prim_tree(const pxr::UsdPrim& prim) {
     // Label: "Name (TypeName)" or just "Name"
     std::string label = type_name.empty() ? name : name + " (" + type_name + ")";
 
+    // Auto-open parent nodes when a child is selected (e.g. via picking)
+    if (!is_selected && !m_selected_prim.IsEmpty() && m_selected_prim.HasPrefix(path)) {
+        ImGui::SetNextItemOpen(true);
+    }
+
     bool node_open = ImGui::TreeNodeEx(path.GetText(), flags, "%s", label.c_str());
+
+    // Auto-scroll to the selected prim in the tree
+    if (is_selected) {
+        ImGui::ScrollToItem();
+    }
 
     if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
         if (is_selected) {
@@ -857,6 +888,15 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
             ImGui::Image(reinterpret_cast<ImTextureID>(display_ref.view()),
                          ImVec2(static_cast<float>(m_viewport_width),
                                 static_cast<float>(m_viewport_height)));
+            // Overlay gizmo wireframes on top (visible in all views including debug)
+            if (m_gizmo_overlay_ref) {
+                auto* draw_list = ImGui::GetWindowDrawList();
+                ImVec2 p_min(m_viewport_x, m_viewport_y);
+                ImVec2 p_max(m_viewport_x + static_cast<float>(m_viewport_width),
+                             m_viewport_y + static_cast<float>(m_viewport_height));
+                draw_list->AddImage(reinterpret_cast<ImTextureID>(m_gizmo_overlay_ref.view()),
+                                    p_min, p_max);
+            }
         } else {
             ImGui::TextUnformatted("Renderer output not available");
         }

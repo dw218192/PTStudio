@@ -95,7 +95,6 @@ static std::vector<glm::vec3> generate_light_verts(const rendering::LightSlot& l
         case rendering::LightSlot::Type::Distant:
         case rendering::LightSlot::Type::Dome:
             break;
-        }
     }
     return verts;
 }
@@ -444,20 +443,20 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
             }
         });
 
-    // ── Pass 2: Gizmo color overlay on scene_color (no depth — always visible) ──
-    rendering::TextureDesc color_desc;
-    color_desc.width = ctx.viewport_width;
-    color_desc.height = ctx.viewport_height;
-    color_desc.format = WGPUTextureFormat_RGBA8Unorm;
-    color_desc.clear_color = {0.15, 0.15, 0.18, 1.0};
+    // ── Pass 2: Gizmo color overlay (own transparent texture, composited by editor) ──
+    rendering::TextureDesc gizmo_desc;
+    gizmo_desc.width = ctx.viewport_width;
+    gizmo_desc.height = ctx.viewport_height;
+    gizmo_desc.format = WGPUTextureFormat_RGBA8Unorm;
+    gizmo_desc.clear_color = {0, 0, 0, 0};
 
-    auto scene_color = fg.find_or_create("scene_color", color_desc);
+    auto gizmo_overlay = fg.find_or_create("editor_gizmo_overlay", gizmo_desc);
 
     auto gizmo_color_pl = ready.gizmo_color_pipeline.handle();
     auto gizmo_bg = ready.gizmo_bind_group;
 
     fg.add_pass("editor_gizmos")
-        .color(scene_color)
+        .color(gizmo_overlay)
         .execute([=, gizmo_draws = gizmo_draws](WGPURenderPassEncoder pass) {
             wgpuRenderPassEncoderSetPipeline(pass, gizmo_color_pl);
             for (uint32_t slot = 0; slot < static_cast<uint32_t>(gizmo_draws.size()); ++slot) {

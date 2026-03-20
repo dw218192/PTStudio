@@ -136,6 +136,7 @@ struct EditorApplication final : WindowedApplication {
     // Debug visualization
     int m_debug_target_selection = 0;
     rendering::TextureRef m_active_debug_ref;
+    rendering::TextureRef m_gizmo_overlay_ref;
 
     // GPU picking
     webgpu::BufferReadback m_picking_readback;
