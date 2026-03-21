@@ -11,9 +11,11 @@
 #include <gizmo_shader_metadata.h>
 #include <picking_shader_metadata.h>
 
+#include <algorithm>
 #include <cmath>
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <vector>
 
 using namespace pts;
@@ -383,18 +385,31 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
     }
 
     auto gizmo_buf = ready.gizmo_uniform_buffer.handle();
+    auto camera_pos = ctx.camera.position();
+    constexpr float k_min_screen_radius = 0.05f;  // ~5% of viewport height
+
     for (uint32_t slot = 0; slot < gizmo_count; ++slot) {
         uint32_t li = gizmo_light_indices[slot];
         uint32_t picking_slot = object_count + slot;
 
+        // Scale gizmo to maintain minimum screen-space size
+        glm::vec3 light_pos = glm::vec3(lights[li].transform[3]);
+        float dist = glm::length(light_pos - camera_pos);
+        float light_radius = (lights[li].type == rendering::LightSlot::Type::Rect)
+                                 ? std::max(lights[li].width, lights[li].height) * 0.5f
+                                 : lights[li].radius;
+        float scale = gizmo_distance_scale(dist, light_radius, k_min_screen_radius);
+        auto scaled_transform =
+            lights[li].transform * glm::scale(glm::mat4(1.0f), glm::vec3(scale));
+
         PickingUniforms pu{};
-        pu.mvp = vp * lights[li].transform;
+        pu.mvp = vp * scaled_transform;
         pu.object_id = picking_slot;
         wgpuQueueWriteBuffer(queue, picking_buf, picking_slot * k_uniform_align, &pu, sizeof(pu));
 
         bool is_selected = (ctx.selected_picking_id == picking_slot);
         GizmoUniforms gu{};
-        gu.mvp = vp * lights[li].transform;
+        gu.mvp = vp * scaled_transform;
         gu.color =
             is_selected ? glm::vec4(1.0f, 0.8f, 0.2f, 1.0f) : glm::vec4(1.0f, 1.0f, 1.0f, 0.6f);
         wgpuQueueWriteBuffer(queue, gizmo_buf, slot * k_uniform_align, &gu, sizeof(gu));

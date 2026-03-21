@@ -6,6 +6,7 @@
 #include <core/rendering/webgpu/shader.h>
 #include <core/rendering/webgpu/webgpu.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -13,6 +14,15 @@
 #include <vector>
 
 namespace pts::editor {
+
+/// Compute a uniform scale factor so a gizmo with the given world-space
+/// radius maintains a minimum screen-space size at the given camera distance.
+/// The factor is clamped to >= 1 (never shrinks the gizmo).
+inline float gizmo_distance_scale(float camera_distance, float world_radius,
+                                  float min_screen_radius = 0.05f) {
+    float r = std::max(world_radius, 0.1f);
+    return std::max(1.0f, min_screen_radius * camera_distance / r);
+}
 
 /// Combined picking + wireframe light gizmo pass.
 /// Submits two frame graph passes:

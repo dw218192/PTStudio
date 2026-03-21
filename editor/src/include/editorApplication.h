@@ -36,7 +36,9 @@ class IScenePass;
 }
 namespace pts::editor {
 class EditorPass;
-}
+class LobePass;
+class ToneMappingPass;
+}  // namespace pts::editor
 
 namespace pts::editor {
 struct AppConfig {
@@ -82,7 +84,7 @@ struct EditorApplication final : WindowedApplication {
     auto draw_inspector_panel() noexcept -> void;
     void draw_prim_tree(const pxr::UsdPrim& prim);
     auto draw_scene_viewport() noexcept -> void;
-    auto draw_console_panel() const noexcept -> void;
+    auto draw_console_panel() noexcept -> void;
     // events
     auto on_mouse_leave_scene_viewport() noexcept -> void;
     auto on_mouse_enter_scene_viewport() noexcept -> void;
@@ -108,7 +110,9 @@ struct EditorApplication final : WindowedApplication {
     rendering::RenderWorld m_world;
     std::unique_ptr<rendering::IScenePass> m_renderer_pass;
     std::vector<std::unique_ptr<rendering::IScenePass>> m_editor_passes;
-    EditorPass* m_editor_pass = nullptr;  // non-owning, points into m_editor_passes
+    EditorPass* m_editor_pass = nullptr;            // non-owning, points into m_editor_passes
+    LobePass* m_lobe_pass = nullptr;                // non-owning, points into m_editor_passes
+    ToneMappingPass* m_tonemapping_pass = nullptr;  // non-owning, points into m_editor_passes
     size_t m_active_config_index = 0;
     rendering::ShaderLoader m_shader_loader;
 
@@ -138,7 +142,10 @@ struct EditorApplication final : WindowedApplication {
     void on_objects_changed(const pxr::UsdNotice::ObjectsChanged& notice);
     void process_dirty_prims();
     void normalize_xform_ops(const std::string& prim_path);
-    pxr::SdfPath find_unique_prim_path(std::string_view base_name);
+    pxr::SdfPath find_unique_prim_path(std::string_view base_name,
+                                       const pxr::SdfPath* parent = nullptr);
+    auto draw_add_prim_menu(const pxr::SdfPath* parent = nullptr,
+                            const glm::vec3* spawn_pos = nullptr) noexcept -> void;
     void ensure_default_light();
 
     std::vector<pxr::SdfPath> m_resync_paths;
@@ -146,6 +153,7 @@ struct EditorApplication final : WindowedApplication {
 
     // Selection & gizmo
     pxr::SdfPath m_selected_prim;
+    pxr::SdfPath m_lobe_bound_prim;  // tracks which prim's material is loaded in lobe viewer
     enum class GizmoOp { Translate, Rotate, Scale };
     GizmoOp m_gizmo_op = GizmoOp::Translate;
 
@@ -157,9 +165,20 @@ struct EditorApplication final : WindowedApplication {
     rendering::TextureRef m_scene_color_ref;
 
     // Debug visualization
+    bool m_viewport_combo_open =
+        false;  // suppresses picking while combo dropdown overlaps viewport
     int m_debug_target_selection = 0;
     rendering::TextureRef m_active_debug_ref;
     rendering::TextureRef m_gizmo_overlay_ref;
+
+    // Console auto-scroll
+    size_t m_last_console_msg_count = 0;
+
+    // Viewport context menu
+    bool m_rmb_dragged = false;            // true if right-click has moved beyond threshold
+    bool m_open_viewport_context = false;  // deferred popup open (set in input, read in draw)
+    glm::vec2 m_rmb_press_pos{0, 0};       // screen pos at right-click press
+    glm::vec3 m_context_menu_world_pos{0, 0, 0};  // 3D spawn point for context menu
 
     // GPU picking
     webgpu::BufferReadback m_picking_readback;

@@ -5,8 +5,10 @@ message(STATUS "Building Editor Tests")
 find_package(doctest REQUIRED)
 
 # testCaptureConfig — tests AppConfig and CLI flag registration (no GPU needed)
-set(TEST_NAMES testCaptureConfig)
+# testGizmoScale — tests gizmo distance-based scaling (no GPU needed)
+set(TEST_NAMES testCaptureConfig testGizmoScale)
 set(testCaptureConfig_source testCaptureConfig.cpp)
+set(testGizmoScale_source testGizmoScale.cpp)
 
 foreach(TEST_NAME IN LISTS TEST_NAMES)
     message(STATUS "Building test: ${TEST_NAME}")

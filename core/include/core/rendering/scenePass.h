@@ -51,6 +51,10 @@ class IScenePass {
     virtual void draw_imgui() {
     }
 
+    /// Draw inline controls in the viewport menu bar. Called between BeginMenuBar/EndMenuBar.
+    virtual void draw_viewport_controls() {
+    }
+
     /// Cache texture refs after frame graph execute, for ImGui display next frame.
     virtual void update_texture_refs(FrameGraph& fg) {
     }

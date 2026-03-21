@@ -24,9 +24,16 @@
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/sdf/path.h>
 #include <pxr/usd/usd/stage.h>
+#if defined(__EMSCRIPTEN__)
+#include <emscripten.h>
+#endif
+#include <pathTracerPass.h>
 #include <pxr/usd/usdGeom/xform.h>
 #include <pxr/usd/usdGeom/xformable.h>
 #include <pxr/usd/usdLux/domeLight.h>
+#include <pxr/usd/usdShade/material.h>
+#include <pxr/usd/usdShade/materialBindingAPI.h>
+#include <pxr/usd/usdShade/shader.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 #include <stb_image_write.h>
 
@@ -47,6 +54,7 @@
 #include "passes/forwardPass.h"
 #include "passes/gridPass.h"
 #include "passes/lobePass.h"
+#include "passes/toneMappingPass.h"
 #include "passes/wireframePass.h"
 
 using namespace pts;
@@ -62,6 +70,7 @@ static constexpr auto k_console_log_buffer_size = 1024;
 static const std::vector<rendering::RendererConfig> k_renderer_configs = {
     {"Forward", [](const auto& sl) { return std::make_unique<ForwardPass>(sl); }},
     {"Wireframe", [](const auto& sl) { return std::make_unique<WireframePass>(sl); }},
+    {"Path Trace", [](const auto& sl) { return std::make_unique<PathTracerPass>(sl); }},
 };
 
 EditorApplication::EditorApplication(std::string_view name, pts::LoggingManager& logging_manager)
@@ -209,24 +218,27 @@ void EditorApplication::normalize_xform_ops(const std::string& prim_path) {
     xformable.AddTransformOp().Set(xf);
 }
 
-pxr::SdfPath EditorApplication::find_unique_prim_path(std::string_view base_name) {
+pxr::SdfPath EditorApplication::find_unique_prim_path(std::string_view base_name,
+                                                      const pxr::SdfPath* parent) {
     PRECONDITION(m_stage);
     PRECONDITION(!base_name.empty());
 
     static const auto k_root = pxr::SdfPath("/Root");
 
-    if (!m_stage->GetPrimAtPath(k_root).IsValid()) {
-        pxr::UsdGeomXform::Define(m_stage, k_root);
+    auto parent_path = parent ? *parent : k_root;
+
+    if (!m_stage->GetPrimAtPath(parent_path).IsValid()) {
+        pxr::UsdGeomXform::Define(m_stage, parent_path);
     }
 
-    auto candidate = k_root.AppendChild(pxr::TfToken(std::string(base_name)));
+    auto candidate = parent_path.AppendChild(pxr::TfToken(std::string(base_name)));
     if (!m_stage->GetPrimAtPath(candidate).IsValid()) {
         return candidate;
     }
 
     for (int i = 1;; ++i) {
         candidate =
-            k_root.AppendChild(pxr::TfToken(std::string(base_name) + "_" + std::to_string(i)));
+            parent_path.AppendChild(pxr::TfToken(std::string(base_name) + "_" + std::to_string(i)));
         if (!m_stage->GetPrimAtPath(candidate).IsValid()) {
             return candidate;
         }
@@ -402,6 +414,15 @@ void EditorApplication::on_ready() {
     m_shader_loader.register_shader(
         "editor/generated/shaders/lobe.wgsl", "editor/shaders/lobe.slang",
         "editor/generated/shaders/lobe.wgsl", editor_resources::get_resource);
+    m_shader_loader.register_shader(
+        "editor/generated/shaders/tonemapping.wgsl", "editor/shaders/tonemapping.slang",
+        "editor/generated/shaders/tonemapping.wgsl", editor_resources::get_resource);
+    m_shader_loader.register_shader(
+        "editor/generated/shaders/pathtracer.wgsl", "editor/shaders/pathtracer.slang",
+        "editor/generated/shaders/pathtracer.wgsl", editor_resources::get_resource, {"cs_main"});
+    m_shader_loader.register_shader(
+        "editor/generated/shaders/pt_blit.wgsl", "editor/shaders/pt_blit.slang",
+        "editor/generated/shaders/pt_blit.wgsl", editor_resources::get_resource);
 
     // Create editor passes (always-on, independent of renderer choice)
     {
@@ -409,6 +430,9 @@ void EditorApplication::on_ready() {
         m_editor_passes.push_back(std::make_unique<GridPass>(m_shader_loader));
         m_editor_passes.push_back(std::make_unique<EditorPass>(m_shader_loader));
         m_editor_passes.push_back(std::make_unique<LobePass>(m_shader_loader));
+        m_lobe_pass = static_cast<LobePass*>(m_editor_passes.back().get());
+        m_editor_passes.push_back(std::make_unique<ToneMappingPass>(m_shader_loader));
+        m_tonemapping_pass = static_cast<ToneMappingPass*>(m_editor_passes.back().get());
         for (auto& p : m_editor_passes) {
             p->setup(dev);
         }
@@ -628,6 +652,8 @@ void EditorApplication::render(FrameContext& ctx) {
     bool has_viewport = m_viewport_width > 0 && m_viewport_height > 0;
 
     rendering::ResourceHandle scene_color_handle;
+    rendering::ResourceHandle display_color_handle;  // tone-mapped output for ImGui display
+    rendering::ResourceHandle gizmo_overlay_handle;
 
     // Resolve selected prim to picking ID via EditorPass table
     uint32_t selected_picking_id = UINT32_MAX;
@@ -663,17 +689,28 @@ void EditorApplication::render(FrameContext& ctx) {
     }
 
     if (has_viewport) {
-        // Look up scene_color resource that passes created
-        rendering::TextureDesc color_desc;
-        color_desc.width = m_viewport_width;
-        color_desc.height = m_viewport_height;
-        color_desc.format = WGPUTextureFormat_RGBA8Unorm;
-        color_desc.clear_color = {0.15, 0.15, 0.18, 1.0};
+        // Look up scene_color (HDR) and tone_mapped_color (LDR) resources
+        rendering::TextureDesc hdr_desc;
+        hdr_desc.width = m_viewport_width;
+        hdr_desc.height = m_viewport_height;
+        hdr_desc.format = WGPUTextureFormat_RGBA16Float;
+        hdr_desc.clear_color = {0.15, 0.15, 0.18, 1.0};
         if (capture_mode) {
-            color_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment |
-                                                             WGPUTextureUsage_CopySrc);
+            hdr_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment |
+                                                           WGPUTextureUsage_CopySrc);
         }
-        scene_color_handle = m_frame_graph->find_or_create("scene_color", color_desc);
+        scene_color_handle = m_frame_graph->find_or_create("scene_color", hdr_desc);
+
+        rendering::TextureDesc ldr_desc;
+        ldr_desc.width = m_viewport_width;
+        ldr_desc.height = m_viewport_height;
+        ldr_desc.format = WGPUTextureFormat_RGBA8Unorm;
+        ldr_desc.clear_color = {0, 0, 0, 1};
+        if (capture_mode) {
+            ldr_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment |
+                                                           WGPUTextureUsage_CopySrc);
+        }
+        display_color_handle = m_frame_graph->find_or_create("tone_mapped_color", ldr_desc);
     }
 
     // Declare reads on all debug target textures so frame graph tracks them
@@ -682,7 +719,7 @@ void EditorApplication::render(FrameContext& ctx) {
         rendering::TextureDesc debug_desc;
         debug_desc.width = m_viewport_width;
         debug_desc.height = m_viewport_height;
-        debug_desc.format = WGPUTextureFormat_RGBA8Unorm;
+        debug_desc.format = WGPUTextureFormat_RGBA16Float;
         debug_desc.clear_color = {0, 0, 0, 1};
         if (capture_mode) {
             debug_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment |
@@ -712,8 +749,8 @@ void EditorApplication::render(FrameContext& ctx) {
         auto imgui_builder = m_frame_graph->add_pass("imgui")
                                  .color(ctx.surface_view(), WGPUColor{0.08, 0.08, 0.12, 1.0})
                                  .present();
-        if (has_viewport && scene_color_handle.is_valid()) {
-            imgui_builder.read(scene_color_handle);
+        if (has_viewport && display_color_handle.is_valid()) {
+            imgui_builder.read(display_color_handle);
         }
 
         for (auto h : debug_target_handles) {
@@ -721,7 +758,6 @@ void EditorApplication::render(FrameContext& ctx) {
         }
 
         // Declare read on gizmo overlay so ImGui can composite it
-        rendering::ResourceHandle gizmo_overlay_handle;
         if (has_viewport) {
             rendering::TextureDesc gizmo_desc;
             gizmo_desc.width = m_viewport_width;
@@ -747,13 +783,6 @@ void EditorApplication::render(FrameContext& ctx) {
             }
         }
         imgui_builder.execute([&](WGPURenderPassEncoder pass) { scope.render_into(pass); });
-
-        // Cache gizmo overlay ref
-        if (has_viewport && gizmo_overlay_handle.is_valid()) {
-            m_gizmo_overlay_ref = m_frame_graph->get_texture_ref(gizmo_overlay_handle);
-        } else {
-            m_gizmo_overlay_ref = {};
-        }
     }
 
     m_frame_graph->compile();
@@ -768,7 +797,7 @@ void EditorApplication::render(FrameContext& ctx) {
             capture_ref =
                 m_frame_graph->get_texture_ref(debug_target_handles[m_debug_target_selection - 1]);
         } else {
-            capture_ref = m_frame_graph->get_texture_ref(scene_color_handle);
+            capture_ref = m_frame_graph->get_texture_ref(display_color_handle);
         }
         INVARIANT_MSG(capture_ref, "Capture target texture not available");
 
@@ -816,7 +845,14 @@ void EditorApplication::render(FrameContext& ctx) {
     if (!capture_mode) {
         // Store scene color ref for next frame's ImGui::Image
         if (has_viewport && scene_color_handle.is_valid()) {
-            m_scene_color_ref = m_frame_graph->get_texture_ref(scene_color_handle);
+            m_scene_color_ref = m_frame_graph->get_texture_ref(display_color_handle);
+        }
+
+        // Cache gizmo overlay ref (must be after compile/execute)
+        if (has_viewport && gizmo_overlay_handle.is_valid()) {
+            m_gizmo_overlay_ref = m_frame_graph->get_texture_ref(gizmo_overlay_handle);
+        } else {
+            m_gizmo_overlay_ref = {};
         }
 
         // Cache the active debug target ref (selection 1 maps to debug_target_handles[0])
@@ -868,6 +904,51 @@ auto EditorApplication::create_input_actions() noexcept -> void {
 auto EditorApplication::wrap_mouse_pos() noexcept -> void {
 }
 
+auto EditorApplication::draw_add_prim_menu(const pxr::SdfPath* parent,
+                                           const glm::vec3* spawn_pos) noexcept -> void {
+    PRECONDITION(m_stage);
+
+    std::vector<rendering::PrimFactory> all_factories;
+    for (auto* adapter : rendering::k_scene_adapters()) {
+        auto factories = adapter->get_factories();
+        all_factories.insert(all_factories.end(), factories.begin(), factories.end());
+    }
+
+    std::map<std::string, std::vector<const rendering::PrimFactory*>> grouped;
+    for (const auto& f : all_factories) {
+        grouped[f.category].push_back(&f);
+    }
+
+    for (const auto& [category, factories] : grouped) {
+        if (ImGui::BeginMenu(category.c_str())) {
+            for (const auto* factory : factories) {
+                if (ImGui::MenuItem(factory->display_name.c_str())) {
+                    auto path = find_unique_prim_path(factory->base_name, parent);
+                    factory->define(m_stage, path);
+                    normalize_xform_ops(path.GetString());
+                    if (spawn_pos) {
+                        auto prim = m_stage->GetPrimAtPath(path);
+                        if (pxr::UsdGeomXformable xformable{prim}; xformable) {
+                            bool reset = false;
+                            auto ops = xformable.GetOrderedXformOps(&reset);
+                            if (!ops.empty() &&
+                                ops[0].GetOpType() == pxr::UsdGeomXformOp::TypeTransform) {
+                                pxr::GfMatrix4d mat;
+                                mat.SetIdentity();
+                                mat.SetTranslateOnly(
+                                    pxr::GfVec3d(spawn_pos->x, spawn_pos->y, spawn_pos->z));
+                                ops[0].Set(mat);
+                            }
+                        }
+                    }
+                    m_selected_prim = path;
+                }
+            }
+            ImGui::EndMenu();
+        }
+    }
+}
+
 auto EditorApplication::draw_scene_panel() noexcept -> void {
     ImGui::TextUnformatted(k_editor_tutorial_text);
     ImGui::Separator();
@@ -914,42 +995,37 @@ auto EditorApplication::draw_scene_panel() noexcept -> void {
             });
     }
 
-    ImGui::SameLine();
-    if (m_stage && ImGui::Button("Add")) {
-        ImGui::OpenPopup("AddPrimPopup");
-    }
-    if (ImGui::BeginPopup("AddPrimPopup")) {
-        std::map<std::string, std::vector<const rendering::PrimFactory*>> grouped;
-        for (auto* adapter : rendering::k_scene_adapters()) {
-            auto factories = adapter->get_factories();
-            for (auto& f : factories) {
-                grouped[f.category].push_back(nullptr);
-            }
+    if (m_stage) {
+        ImGui::SameLine();
+        if (ImGui::Button("Save Scene")) {
+#if defined(__EMSCRIPTEN__)
+            std::string usda;
+            m_stage->GetRootLayer()->ExportToString(&usda);
+            // clang-format off
+            EM_ASM({
+                var data = UTF8ToString($0);
+                var blob = new Blob([data], {type: 'text/plain'});
+                var a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = 'scene.usda';
+                a.click();
+                URL.revokeObjectURL(a.href);
+            }, usda.c_str());
+            // clang-format on
+            log(LogLevel::Info, "Scene download triggered");
+#else
+            ImGui::FileDialogueAsync(ImGui::FileDialogueMode::Save, ".usda,.usdc,.usd",
+                                     [this](ImGui::FileDialogueResult result) {
+                                         if (result.name.empty()) return;
+                                         bool ok = m_stage->GetRootLayer()->Export(result.name);
+                                         if (ok)
+                                             log(LogLevel::Info, "Saved scene to {}", result.name);
+                                         else
+                                             log(LogLevel::Error, "Failed to save scene to {}",
+                                                 result.name);
+                                     });
+#endif
         }
-        // Re-collect with stable pointers via a local vector
-        std::vector<rendering::PrimFactory> all_factories;
-        for (auto* adapter : rendering::k_scene_adapters()) {
-            auto factories = adapter->get_factories();
-            all_factories.insert(all_factories.end(), factories.begin(), factories.end());
-        }
-        grouped.clear();
-        for (const auto& f : all_factories) {
-            grouped[f.category].push_back(&f);
-        }
-        for (const auto& [category, factories] : grouped) {
-            if (ImGui::BeginMenu(category.c_str())) {
-                for (const auto* factory : factories) {
-                    if (ImGui::MenuItem(factory->display_name.c_str())) {
-                        auto path = find_unique_prim_path(factory->base_name);
-                        factory->define(m_stage, path);
-                        normalize_xform_ops(path.GetString());
-                        m_selected_prim = path;
-                    }
-                }
-                ImGui::EndMenu();
-            }
-        }
-        ImGui::EndPopup();
     }
 }
 
@@ -963,13 +1039,57 @@ auto EditorApplication::draw_inspector_panel() noexcept -> void {
         draw_prim_tree(child);
     }
 
+    if (m_stage &&
+        ImGui::BeginPopupContextWindow("SceneContextMenu", ImGuiPopupFlags_NoOpenOverItems |
+                                                               ImGuiPopupFlags_MouseButtonRight)) {
+        draw_add_prim_menu();
+        ImGui::EndPopup();
+    }
+
     ImGui::Separator();
     if (!m_selected_prim.IsEmpty()) {
         auto prim = m_stage->GetPrimAtPath(m_selected_prim);
         if (prim.IsValid()) {
             draw_prim_properties(prim);
+
+            // Show BRDF lobe viewer if prim has a bound material
+            auto bound_mat = pxr::UsdShadeMaterialBindingAPI(prim).ComputeBoundMaterial();
+            if (bound_mat && m_lobe_pass) {
+                auto surface = bound_mat.GetSurfaceOutput();
+                pxr::UsdShadeConnectableAPI source;
+                pxr::TfToken source_name;
+                pxr::UsdShadeAttributeType source_type;
+                if (surface.GetConnectedSource(&source, &source_name, &source_type)) {
+                    auto shader = pxr::UsdShadeShader(source.GetPrim());
+
+                    // Sync from USD → lobe sliders only when selection changes
+                    if (m_selected_prim != m_lobe_bound_prim) {
+                        m_lobe_bound_prim = m_selected_prim;
+                        float roughness = 0.5f;
+                        float metallic = 0.0f;
+                        float val;
+                        if (auto r = shader.GetInput(pxr::TfToken("roughness")); r && r.Get(&val))
+                            roughness = val;
+                        if (auto m = shader.GetInput(pxr::TfToken("metallic")); m && m.Get(&val))
+                            metallic = val;
+                        m_lobe_pass->set_material(roughness, metallic);
+                    }
+
+                    ImGui::Separator();
+                    if (ImGui::CollapsingHeader("BRDF Lobe", ImGuiTreeNodeFlags_DefaultOpen)) {
+                        if (m_lobe_pass->draw_lobe_widget()) {
+                            // Write changed values back to USD
+                            if (auto r = shader.GetInput(pxr::TfToken("roughness")); r)
+                                r.Set(m_lobe_pass->roughness());
+                            if (auto m = shader.GetInput(pxr::TfToken("metallic")); m)
+                                m.Set(m_lobe_pass->metallic());
+                        }
+                    }
+                }
+            }
         }
     } else {
+        m_lobe_bound_prim = pxr::SdfPath();
         ImGui::TextDisabled("Select a prim to inspect properties");
     }
 }
@@ -1012,6 +1132,20 @@ void EditorApplication::draw_prim_tree(const pxr::UsdPrim& prim) {
         }
     }
 
+    if (ImGui::BeginPopupContextItem()) {
+        if (ImGui::BeginMenu("Add Child")) {
+            draw_add_prim_menu(&path);
+            ImGui::EndMenu();
+        }
+        if (ImGui::MenuItem("Delete")) {
+            m_stage->RemovePrim(path);
+            if (m_selected_prim == path || m_selected_prim.HasPrefix(path)) {
+                m_selected_prim = pxr::SdfPath();
+            }
+        }
+        ImGui::EndPopup();
+    }
+
     if (node_open && has_children) {
         for (auto const& child : prim.GetChildren()) {
             draw_prim_tree(child);
@@ -1021,12 +1155,14 @@ void EditorApplication::draw_prim_tree(const pxr::UsdPrim& prim) {
 }
 
 auto EditorApplication::draw_scene_viewport() noexcept -> void {
+    m_viewport_combo_open = false;
     if (ImGui::BeginMenuBar()) {
         ImGui::Text("Renderer:");
         ImGui::SameLine();
         ImGui::SetNextItemWidth(120);
         if (ImGui::BeginCombo("##renderer",
                               k_renderer_configs[m_active_config_index].name.c_str())) {
+            m_viewport_combo_open = true;
             for (size_t i = 0; i < k_renderer_configs.size(); ++i) {
                 bool selected = (i == m_active_config_index);
                 if (ImGui::Selectable(k_renderer_configs[i].name.c_str(), selected)) {
@@ -1056,6 +1192,7 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
                 m_debug_target_selection = 0;
             }
             if (ImGui::BeginCombo("##debug", debug_labels[m_debug_target_selection].c_str())) {
+                m_viewport_combo_open = true;
                 for (int i = 0; i < static_cast<int>(debug_labels.size()); ++i) {
                     bool selected = (i == m_debug_target_selection);
                     if (ImGui::Selectable(debug_labels[i].c_str(), selected)) {
@@ -1064,6 +1201,19 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
                 }
                 ImGui::EndCombo();
             }
+        }
+        // Exposure control
+        if (m_tonemapping_pass) {
+            ImGui::SameLine();
+            ImGui::Text("EV:");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(80);
+            ImGui::DragFloat("##exposure", &m_tonemapping_pass->m_exposure, 0.05f, -5.0f, 5.0f,
+                             "%.1f");
+        }
+        // Renderer-specific controls
+        if (m_renderer_pass) {
+            m_renderer_pass->draw_viewport_controls();
         }
         ImGui::EndMenuBar();
     }
@@ -1087,9 +1237,11 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
                                 ? m_active_debug_ref
                                 : m_scene_color_ref;
         if (display_ref && m_viewport_width > 0 && m_viewport_height > 0) {
+            ImGui::PushID("viewport_image");
             ImGui::Image(reinterpret_cast<ImTextureID>(display_ref.view()),
                          ImVec2(static_cast<float>(m_viewport_width),
                                 static_cast<float>(m_viewport_height)));
+            ImGui::PopID();
             // Overlay gizmo wireframes on top (visible in all views including debug)
             if (m_gizmo_overlay_ref) {
                 auto* draw_list = ImGui::GetWindowDrawList();
@@ -1160,9 +1312,19 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
             }
         }
     }
+
+    // ── Viewport right-click context menu ──
+    if (m_open_viewport_context) {
+        m_open_viewport_context = false;
+        ImGui::OpenPopup("ViewportContextMenu");
+    }
+    if (m_stage && ImGui::BeginPopup("ViewportContextMenu")) {
+        draw_add_prim_menu(nullptr, &m_context_menu_world_pos);
+        ImGui::EndPopup();
+    }
 }
 
-auto EditorApplication::draw_console_panel() const noexcept -> void {
+auto EditorApplication::draw_console_panel() noexcept -> void {
     auto color = [](spdlog::level::level_enum lvl) -> ImVec4 {
         switch (lvl) {
             case spdlog::level::err:
@@ -1189,6 +1351,10 @@ auto EditorApplication::draw_console_panel() const noexcept -> void {
             ImGui::PushStyleColor(ImGuiCol_Text, color(m.level));
             ImGui::TextUnformatted(m.payload.data(), m.payload.data() + m.payload.size());
             ImGui::PopStyleColor();
+        }
+        if (msgs.size() != m_last_console_msg_count) {
+            ImGui::SetScrollHereY(1.0f);
+            m_last_console_msg_count = msgs.size();
         }
     }
     ImGui::EndChild();
@@ -1261,8 +1427,11 @@ auto EditorApplication::handle_input(InputEvent const& event) noexcept -> void {
 
     if (event.input.input_type == InputType::MOUSE) {
         // Left-click: pick object under cursor
+        // Skip when a viewport combo dropdown is open — its popup overlaps the viewport
+        // content area, and clicks on dropdown items would trigger spurious picks.
         if (event.input.key_or_button == ImGuiMouseButton_Left &&
-            event.input.action_type == ActionType::PRESS && !ImGuizmo::IsOver()) {
+            event.input.action_type == ActionType::PRESS && !ImGuizmo::IsOver() &&
+            !m_viewport_combo_open) {
             auto local_x = event.mouse_pos.x - m_viewport_x;
             auto local_y = event.mouse_pos.y - m_viewport_y;
             if (local_x >= 0 && local_y >= 0 && local_x < static_cast<float>(m_viewport_width) &&
@@ -1273,10 +1442,35 @@ auto EditorApplication::handle_input(InputEvent const& event) noexcept -> void {
             }
         }
 
-        // Right-click drag: orbit camera
-        if (event.input.key_or_button == ImGuiMouseButton_Right &&
-            event.input.action_type == ActionType::HOLD) {
-            m_camera.orbit(event.normalized_mouse_delta.x, event.normalized_mouse_delta.y);
+        // Right-click: orbit camera on drag, context menu on click
+        if (event.input.key_or_button == ImGuiMouseButton_Right) {
+            if (event.input.action_type == ActionType::PRESS) {
+                m_rmb_dragged = false;
+                m_rmb_press_pos = event.mouse_pos;
+            } else if (event.input.action_type == ActionType::HOLD) {
+                constexpr float k_drag_threshold = 3.0f;
+                if (glm::length(event.mouse_pos - m_rmb_press_pos) > k_drag_threshold) {
+                    m_rmb_dragged = true;
+                }
+                if (m_rmb_dragged) {
+                    m_camera.orbit(event.normalized_mouse_delta.x, event.normalized_mouse_delta.y);
+                }
+            } else if (event.input.action_type == ActionType::RELEASE && !m_rmb_dragged) {
+                // Right-click without drag: open viewport context menu
+                // Unproject click to 3D at a reasonable depth (camera target distance)
+                float aspect = static_cast<float>(m_viewport_width) /
+                               std::max(1.0f, static_cast<float>(m_viewport_height));
+                auto local_x = m_rmb_press_pos.x - m_viewport_x;
+                auto local_y = m_rmb_press_pos.y - m_viewport_y;
+                float ndc_x = (local_x / static_cast<float>(m_viewport_width)) * 2.0f - 1.0f;
+                float ndc_y = 1.0f - (local_y / static_cast<float>(m_viewport_height)) * 2.0f;
+                float ndc_z = 0.95f;  // near the far end but not at it
+                auto inv_vp =
+                    glm::inverse(m_camera.projection_matrix(aspect) * m_camera.view_matrix());
+                glm::vec4 world_h = inv_vp * glm::vec4(ndc_x, ndc_y, ndc_z, 1.0f);
+                m_context_menu_world_pos = glm::vec3(world_h) / world_h.w;
+                m_open_viewport_context = true;
+            }
         }
 
         // Middle-click drag: pan camera
