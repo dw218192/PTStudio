@@ -87,7 +87,10 @@ def _process_resource(input_file: Path, base_path: Path) -> ResourceData:
     identifier = _sanitize_identifier(input_file.stem + "_" + input_file.suffix[1:])
     data = input_file.read_bytes()
 
-    if _is_text_content(data):
+    # MSVC limits raw string literals to 16380 bytes.  Embed large text
+    # resources as byte arrays to avoid hitting that limit.
+    k_raw_string_limit = 15000
+    if _is_text_content(data) and len(data) <= k_raw_string_limit:
         text = input_file.read_text(encoding="utf-8").rstrip("\n")
         return ResourceData(
             path=path_str,
