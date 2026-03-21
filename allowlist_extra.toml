@@ -7,6 +7,7 @@ commands = ["handle64", "handle"]
 
 [[allow]]
 name = "safe_git_rewrite"
+override_deny = true
 patterns = [
     'git\s+commit\s.*--amend',          # amend last commit (local only)
     'git\s+reset\s+--soft\b',           # soft reset (keeps working tree)
