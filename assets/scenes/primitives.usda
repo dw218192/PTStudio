@@ -6,133 +6,261 @@
 
 def Xform "Root"
 {
-    def Cube "Cube"
+    # ── Materials ──────────────────────────────────────────────────
+
+    def Scope "Materials"
+    {
+        def Material "RoughPlastic"
+        {
+            token outputs:surface.connect = </Root/Materials/RoughPlastic/Shader.outputs:surface>
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.2, 0.2)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.8
+                float inputs:ior = 1.5
+                token outputs:surface
+            }
+        }
+
+        def Material "SmoothPlastic"
+        {
+            token outputs:surface.connect = </Root/Materials/SmoothPlastic/Shader.outputs:surface>
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.2, 0.8, 0.2)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.15
+                float inputs:ior = 1.5
+                token outputs:surface
+            }
+        }
+
+        def Material "BrushedMetal"
+        {
+            token outputs:surface.connect = </Root/Materials/BrushedMetal/Shader.outputs:surface>
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.7, 0.7, 0.75)
+                float inputs:metallic = 1
+                float inputs:roughness = 0.4
+                float inputs:ior = 2.0
+                token outputs:surface
+            }
+        }
+
+        def Material "PolishedGold"
+        {
+            token outputs:surface.connect = </Root/Materials/PolishedGold/Shader.outputs:surface>
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (1.0, 0.84, 0.0)
+                float inputs:metallic = 1
+                float inputs:roughness = 0.05
+                float inputs:ior = 1.5
+                token outputs:surface
+            }
+        }
+
+        def Material "MatteClay"
+        {
+            token outputs:surface.connect = </Root/Materials/MatteClay/Shader.outputs:surface>
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.6, 0.4)
+                float inputs:metallic = 0
+                float inputs:roughness = 1.0
+                float inputs:ior = 1.3
+                token outputs:surface
+            }
+        }
+
+        def Material "SemiGlossy"
+        {
+            token outputs:surface.connect = </Root/Materials/SemiGlossy/Shader.outputs:surface>
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.2, 0.2, 0.8)
+                float inputs:metallic = 0.3
+                float inputs:roughness = 0.3
+                float inputs:ior = 1.5
+                token outputs:surface
+            }
+        }
+    }
+
+    # ── Front row: material showcase ──────────────────────────────
+
+    def Cube "Cube" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
     {
         double size = 2
-        double3 xformOp:translate = (-6.0, 0.0, 0.0)
+        double3 xformOp:translate = (-6, 0, 0)
         uniform token[] xformOpOrder = ["xformOp:translate"]
-        color3f[] primvars:displayColor = [(0.8, 0.2, 0.2)]
+        rel material:binding = </Root/Materials/RoughPlastic>
     }
 
-    def Sphere "Sphere"
+    def Sphere "Sphere" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
     {
-        double radius = 1.0
-        double3 xformOp:translate = (-3.0, 0.0, 0.0)
+        double radius = 1
+        double3 xformOp:translate = (-3, 0, 0)
         uniform token[] xformOpOrder = ["xformOp:translate"]
-        color3f[] primvars:displayColor = [(0.2, 0.8, 0.2)]
+        rel material:binding = </Root/Materials/SmoothPlastic>
     }
 
-    def Cylinder "Cylinder"
+    def Cylinder "Cylinder" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
     {
+        token axis = "Y"
+        double height = 2
         double radius = 0.8
-        double height = 2.0
-        token axis = "Y"
-        double3 xformOp:translate = (0.0, 0.0, 0.0)
-        uniform token[] xformOpOrder = ["xformOp:translate"]
-        color3f[] primvars:displayColor = [(0.2, 0.2, 0.8)]
+        matrix4d xformOp:transform = ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1) )
+        uniform token[] xformOpOrder = ["xformOp:transform"]
+        rel material:binding = </Root/Materials/BrushedMetal>
     }
 
-    def Cone "Cone"
+    def Cone "Cone" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
     {
-        double radius = 1.0
-        double height = 2.0
         token axis = "Y"
-        double3 xformOp:translate = (3.0, 0.0, 0.0)
+        double height = 2
+        double radius = 1
+        double3 xformOp:translate = (3, 0, 0)
         uniform token[] xformOpOrder = ["xformOp:translate"]
-        color3f[] primvars:displayColor = [(0.8, 0.8, 0.2)]
+        rel material:binding = </Root/Materials/PolishedGold>
     }
 
-    def Capsule "Capsule"
+    def Capsule "Capsule" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
     {
+        token axis = "Y"
+        double height = 1
         double radius = 0.5
-        double height = 1.0
-        token axis = "Y"
-        double3 xformOp:translate = (6.0, 0.0, 0.0)
+        double3 xformOp:translate = (6, 0, 0)
         uniform token[] xformOpOrder = ["xformOp:translate"]
-        color3f[] primvars:displayColor = [(0.8, 0.2, 0.8)]
+        rel material:binding = </Root/Materials/MatteClay>
     }
+
+    # ── Back row: axis variants ───────────────────────────────────
 
     def Xform "AxisVariants"
     {
-        double3 xformOp:translate = (0.0, 0.0, -5.0)
+        double3 xformOp:translate = (0, 0, -5)
         uniform token[] xformOpOrder = ["xformOp:translate"]
 
-        def Cylinder "CylinderX"
+        def Cylinder "CylinderX" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
         {
-            double radius = 0.5
-            double height = 2.0
             token axis = "X"
-            double3 xformOp:translate = (-3.0, 0.0, 0.0)
-            uniform token[] xformOpOrder = ["xformOp:translate"]
-            color3f[] primvars:displayColor = [(0.6, 0.3, 0.1)]
-        }
-
-        def Cylinder "CylinderZ"
-        {
+            double height = 2
             double radius = 0.5
-            double height = 2.0
-            token axis = "Z"
-            double3 xformOp:translate = (0.0, 0.0, 0.0)
+            double3 xformOp:translate = (-3, 0, 0)
             uniform token[] xformOpOrder = ["xformOp:translate"]
-            color3f[] primvars:displayColor = [(0.1, 0.6, 0.3)]
+            rel material:binding = </Root/Materials/SemiGlossy>
         }
 
-        def Cone "ConeZ"
+        def Cylinder "CylinderZ" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
         {
+            token axis = "Z"
+            double height = 2
+            double radius = 0.5
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+            rel material:binding = </Root/Materials/BrushedMetal>
+        }
+
+        def Cone "ConeZ" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            token axis = "Z"
+            double height = 2
             double radius = 0.8
-            double height = 2.0
-            token axis = "Z"
-            double3 xformOp:translate = (3.0, 0.0, 0.0)
+            double3 xformOp:translate = (3, 0, 0)
             uniform token[] xformOpOrder = ["xformOp:translate"]
-            color3f[] primvars:displayColor = [(0.3, 0.1, 0.6)]
+            rel material:binding = </Root/Materials/PolishedGold>
         }
 
-        def Capsule "CapsuleX"
+        def Capsule "CapsuleX" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
         {
-            double radius = 0.4
-            double height = 1.5
             token axis = "X"
-            double3 xformOp:translate = (6.0, 0.0, 0.0)
+            double height = 1.5
+            double radius = 0.4
+            double3 xformOp:translate = (6, 0, 0)
             uniform token[] xformOpOrder = ["xformOp:translate"]
-            color3f[] primvars:displayColor = [(0.1, 0.3, 0.6)]
+            rel material:binding = </Root/Materials/SmoothPlastic>
         }
     }
+
+    # ── Third row: scaled variants ────────────────────────────────
 
     def Xform "Scaled"
     {
-        double3 xformOp:translate = (0.0, 0.0, 5.0)
+        double3 xformOp:translate = (0, 0, 5)
         uniform token[] xformOpOrder = ["xformOp:translate"]
 
-        def Cube "BigCube"
+        def Cube "BigCube" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
         {
             double size = 3
-            double3 xformOp:translate = (-4.0, 0.0, 0.0)
+            double3 xformOp:translate = (-4, 0, 0)
             uniform token[] xformOpOrder = ["xformOp:translate"]
-            color3f[] primvars:displayColor = [(0.9, 0.5, 0.1)]
+            rel material:binding = </Root/Materials/MatteClay>
         }
 
-        def Sphere "BigSphere"
+        def Sphere "BigSphere" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
         {
-            double radius = 2.0
-            double3 xformOp:translate = (0.0, 0.0, 0.0)
+            double radius = 2
+            double3 xformOp:translate = (0, 0, 0)
             uniform token[] xformOpOrder = ["xformOp:translate"]
-            color3f[] primvars:displayColor = [(0.1, 0.9, 0.5)]
+            rel material:binding = </Root/Materials/RoughPlastic>
         }
 
-        def Capsule "TallCapsule"
+        def Capsule "TallCapsule" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
         {
-            double radius = 0.3
-            double height = 3.0
             token axis = "Y"
-            double3 xformOp:translate = (4.0, 0.0, 0.0)
+            double height = 3
+            double radius = 0.3
+            double3 xformOp:translate = (4, 0, 0)
             uniform token[] xformOpOrder = ["xformOp:translate"]
-            color3f[] primvars:displayColor = [(0.5, 0.1, 0.9)]
+            rel material:binding = </Root/Materials/SemiGlossy>
         }
     }
 
+    # ── Lights ────────────────────────────────────────────────────
+
     def DomeLight "DomeLight"
     {
-        float inputs:intensity = 1.0
-        color3f inputs:color = (1.0, 1.0, 1.0)
+        color3f inputs:color = (1, 1, 1)
+        float inputs:intensity = 1
+    }
+
+    def SphereLight "SphereLight"
+    {
+        float inputs:intensity = 1.2
+        matrix4d xformOp:transform = ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (1.4411892890930176, 0.41050606966018677, 1.8601042032241821, 1) )
+        uniform token[] xformOpOrder = ["xformOp:transform"]
     }
 }
