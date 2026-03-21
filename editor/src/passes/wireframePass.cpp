@@ -107,7 +107,7 @@ void WireframePass::do_setup(const webgpu::Device& device) {
 
     auto pipeline = webgpu::RenderPipelineBuilder(device)
                         .shader(shader)
-                        .color_format(WGPUTextureFormat_RGBA8Unorm)
+                        .color_format(WGPUTextureFormat_RGBA16Float)
                         .depth_format(WGPUTextureFormat_Depth24Plus)
                         .depth_write(true)
                         .depth_compare(WGPUCompareFunction_Less)
@@ -166,7 +166,7 @@ void WireframePass::add_to_frame_graph(rendering::FrameGraph& fg,
     rendering::TextureDesc color_desc;
     color_desc.width = ctx.viewport_width;
     color_desc.height = ctx.viewport_height;
-    color_desc.format = WGPUTextureFormat_RGBA8Unorm;
+    color_desc.format = WGPUTextureFormat_RGBA16Float;
     color_desc.clear_color = {0.15, 0.15, 0.18, 1.0};
 
     rendering::TextureDesc depth_desc;

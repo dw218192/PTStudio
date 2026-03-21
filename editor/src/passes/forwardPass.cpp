@@ -142,7 +142,7 @@ void ForwardPass::do_setup(const webgpu::Device& device) {
 
     auto builder = webgpu::RenderPipelineBuilder(device)
                        .shader(shader)
-                       .color_format(WGPUTextureFormat_RGBA8Unorm, 0)
+                       .color_format(WGPUTextureFormat_RGBA16Float, 0)
                        .depth_format(WGPUTextureFormat_Depth24Plus)
                        .depth_write(true)
                        .depth_compare(WGPUCompareFunction_Less)
@@ -150,7 +150,7 @@ void ForwardPass::do_setup(const webgpu::Device& device) {
                        .pipeline_layout(pipeline_layout)
                        .vertex_layout<editor_shader::VertexLayout>();
     for (uint32_t i = 0; i < k_debug_target_count; ++i) {
-        builder.color_format(WGPUTextureFormat_RGBA8Unorm, i + 1);
+        builder.color_format(WGPUTextureFormat_RGBA16Float, i + 1);
     }
     auto pipeline = builder.build();
 
@@ -212,7 +212,7 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
     rendering::TextureDesc color_desc;
     color_desc.width = ctx.viewport_width;
     color_desc.height = ctx.viewport_height;
-    color_desc.format = WGPUTextureFormat_RGBA8Unorm;
+    color_desc.format = WGPUTextureFormat_RGBA16Float;
     color_desc.clear_color = {0.15, 0.15, 0.18, 1.0};
 
     rendering::TextureDesc depth_desc;
@@ -226,7 +226,7 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
     rendering::TextureDesc debug_desc;
     debug_desc.width = ctx.viewport_width;
     debug_desc.height = ctx.viewport_height;
-    debug_desc.format = WGPUTextureFormat_RGBA8Unorm;
+    debug_desc.format = WGPUTextureFormat_RGBA16Float;
     debug_desc.clear_color = {0, 0, 0, 1};
 
     rendering::ResourceHandle debug_handles[k_debug_target_count];

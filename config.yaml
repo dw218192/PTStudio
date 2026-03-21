@@ -90,6 +90,13 @@ slangc:
     - input: "editor/shaders/lobe.slang"
       output: "editor/generated/shaders/lobe.wgsl"
       reflect: true
+    - input: "editor/shaders/tonemapping.slang"
+      output: "editor/generated/shaders/tonemapping.wgsl"
+      reflect: true
+    - input: "renderers/pathtracer/pathtracer.slang"
+      output: "editor/generated/shaders/pathtracer.wgsl"
+    - input: "renderers/pathtracer/pt_blit.slang"
+      output: "editor/generated/shaders/pt_blit.wgsl"
 
 shader_codegen:
   template: "core/templates/shader_metadata.h.j2"
@@ -115,6 +122,9 @@ shader_codegen:
     - reflect: "editor/generated/shaders/lobe.reflect.json"
       output: "editor/generated/lobe_shader_metadata.h"
       namespace: "editor_lobe_shader"
+    - reflect: "editor/generated/shaders/tonemapping.reflect.json"
+      output: "editor/generated/tonemapping_shader_metadata.h"
+      namespace: "editor_tonemapping_shader"
 
 embed:
   template: "core/templates/embedded_resources.h.j2"
@@ -126,6 +136,9 @@ embed:
         - "editor/generated/shaders/wireframe.wgsl"
         - "editor/generated/shaders/gizmo.wgsl"
         - "editor/generated/shaders/lobe.wgsl"
+        - "editor/generated/shaders/tonemapping.wgsl"
+        - "editor/generated/shaders/pathtracer.wgsl"
+        - "editor/generated/shaders/pt_blit.wgsl"
         - "editor/icons/*.*"
         - "assets/scenes/primitives.usda"
       output: "editor/generated/embedded_resources.h"
