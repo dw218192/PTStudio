@@ -26,9 +26,10 @@ auto choose_present_mode(const WGPUSurfaceCapabilities& capabilities) -> WGPUPre
     if (capabilities.presentModeCount == 0 || capabilities.presentModes == nullptr) {
         return WGPUPresentMode_Fifo;
     }
+    // Prefer Mailbox (uncapped FPS, no tearing), fall back to Fifo (VSync)
     for (size_t i = 0; i < capabilities.presentModeCount; ++i) {
-        if (capabilities.presentModes[i] == WGPUPresentMode_Fifo) {
-            return capabilities.presentModes[i];
+        if (capabilities.presentModes[i] == WGPUPresentMode_Mailbox) {
+            return WGPUPresentMode_Mailbox;
         }
     }
     return capabilities.presentModes[0];

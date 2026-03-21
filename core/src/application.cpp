@@ -35,7 +35,7 @@ void Application::register_args(CommandLine& cli) {
     cli.add_int("num-frames", "Quit after N frames (0 = unlimited)", 0);
     cli.add_int("width", "Window width", 1280);
     cli.add_int("height", "Window height", 720);
-    cli.add_int("max-fps", "Maximum frames per second (0 = unlimited)", 60);
+    cli.add_int("max-fps", "Maximum frames per second (0 = unlimited)", 0);
     // --log-level is handled in main() before Application construction
     // (LoggingManager must exist first). Registered here so --help shows it.
     cli.add_string("log-level", "Log level (trace, debug, info, warn, error, critical)");
