@@ -55,18 +55,17 @@ VsOut vs_main(uint vertex_id : SV_VertexID) {
 
     // Fixed surface normal pointing up
     float3 N = float3(0, 0, 1);
-    float3 V = direction; // outgoing direction (omega_o)
-    float3 L = normalize(u.light_dir); // incoming light
+    float3 L = direction;              // incoming direction (swept over hemisphere)
+    float3 V = normalize(u.light_dir); // outgoing/view direction (fixed)
     float3 base_color = float3(1.0);
 
+    ShadingGeometry g = ShadingGeometry::from_world(N, L, V, u.roughness);
     CookTorranceGGX brdf;
     float mag;
     if (u.mode == 0) {
-        float3 spec = brdf.evaluate_specular(N, L, V, base_color, u.metallic, u.roughness);
-        mag = length(spec);
+        mag = length(brdf.eval_specular(g, base_color, u.metallic));
     } else {
-        float3 diff = brdf.evaluate_diffuse(base_color, u.metallic);
-        mag = length(diff);
+        mag = length(brdf.eval_diffuse(g, base_color, u.metallic));
     }
 
     // Displace vertex along direction
