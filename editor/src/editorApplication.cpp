@@ -1215,6 +1215,8 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
         if (m_renderer_pass) {
             m_renderer_pass->draw_viewport_controls();
         }
+        ImGui::SameLine();
+        ImGui::Checkbox("Grid", &m_editor_passes_enabled);
         ImGui::EndMenuBar();
     }
 
@@ -1243,7 +1245,7 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
                                 static_cast<float>(m_viewport_height)));
             ImGui::PopID();
             // Overlay gizmo wireframes on top (visible in all views including debug)
-            if (m_gizmo_overlay_ref) {
+            if (m_gizmo_overlay_ref && m_editor_passes_enabled) {
                 auto* draw_list = ImGui::GetWindowDrawList();
                 ImVec2 p_min(m_viewport_x, m_viewport_y);
                 ImVec2 p_max(m_viewport_x + static_cast<float>(m_viewport_width),
@@ -1257,7 +1259,7 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
     }
 
     // ── ImGuizmo gizmo ──
-    if (!m_selected_prim.IsEmpty() && m_stage && m_viewport_width > 0 && m_viewport_height > 0) {
+    if (m_editor_passes_enabled && !m_selected_prim.IsEmpty() && m_stage && m_viewport_width > 0 && m_viewport_height > 0) {
         auto prim = m_stage->GetPrimAtPath(m_selected_prim);
         pxr::UsdGeomXformable xformable(prim);
         if (prim.IsValid() && xformable) {

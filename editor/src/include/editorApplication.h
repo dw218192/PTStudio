@@ -114,13 +114,19 @@ struct EditorApplication final : WindowedApplication {
     LobePass* m_lobe_pass = nullptr;                // non-owning, points into m_editor_passes
     ToneMappingPass* m_tonemapping_pass = nullptr;  // non-owning, points into m_editor_passes
     size_t m_active_config_index = 0;
+    bool m_editor_passes_enabled = true;
     rendering::ShaderLoader m_shader_loader;
 
     /// Iterate all active passes (renderer + editor) in execution order.
     template <typename Fn>
     void for_each_pass(Fn&& fn) {
         if (m_renderer_pass) fn(*m_renderer_pass);
-        for (auto& p : m_editor_passes) fn(*p);
+        for (auto& p : m_editor_passes) {
+            // ToneMappingPass always runs; others respect the toggle
+            if (!m_editor_passes_enabled && p.get() != static_cast<rendering::IScenePass*>(m_tonemapping_pass))
+                continue;
+            fn(*p);
+        }
     }
 
     // USD stage + change tracking
