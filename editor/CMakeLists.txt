@@ -19,6 +19,7 @@ target_link_libraries(${exec_name}
 PRIVATE
 	$<BUILD_INTERFACE:developer_flags>
 	core
+	renderer_pathtracer
 	imguizmo::imguizmo
 	stb::stb
 )

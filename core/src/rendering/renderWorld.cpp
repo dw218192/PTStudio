@@ -312,8 +312,6 @@ void RenderWorld::upload_all_meshes(const webgpu::Device& device) {
                              mesh.cpu_indices.size() * sizeof(uint32_t));
 
         mesh.index_count = static_cast<uint32_t>(mesh.cpu_indices.size());
-        mesh.cpu_vertices.clear();
-        mesh.cpu_vertices.shrink_to_fit();
         ++mesh.version;
     }
 }

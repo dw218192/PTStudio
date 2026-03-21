@@ -4,6 +4,8 @@
 #include <core/rendering/vertex.h>
 #include <doctest/doctest.h>
 
+#include <glm/gtc/matrix_transform.hpp>
+
 using namespace pts::rendering;
 
 TEST_CASE("alloc returns sequential indices on empty world") {

@@ -6,8 +6,7 @@ macro(add_renderer TARGET_NAME)
     cmake_parse_arguments(REND "" "" "SOURCES" ${ARGN})
     add_library(${TARGET_NAME} OBJECT ${REND_SOURCES})
     target_include_directories(${TARGET_NAME}
-        PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/src
-        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/generated
+        PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}
         PRIVATE ${CMAKE_SOURCE_DIR}
     )
     target_link_libraries(${TARGET_NAME}
@@ -19,5 +18,4 @@ macro(add_renderer TARGET_NAME)
     endif()
 endmacro()
 
-# Future renderer subdirectories go here:
-# add_subdirectory(deferred)
+add_subdirectory(pathtracer)
