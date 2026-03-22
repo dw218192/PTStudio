@@ -85,11 +85,12 @@ FsOut fs_main(float3 world_normal : NORMAL, float3 world_pos : WORLD_POS,
     CookTorranceGGX brdf;
 
     float3 direct_diffuse, direct_specular;
-    float3 lit = evaluate_lighting(
+    float3 lit = evaluate_lighting_ltc(
         brdf,
         lights,
         u.light_count,
-        world_pos, N, V, albedo, mat_metallic, mat_roughness, 
+        ltc_mat, ltc_amp, ltc_sampler,
+        world_pos, N, V, albedo, mat_metallic, mat_roughness,
         direct_diffuse, direct_specular
     );
 
