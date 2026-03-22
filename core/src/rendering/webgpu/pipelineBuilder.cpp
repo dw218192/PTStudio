@@ -82,6 +82,13 @@ auto RenderPipelineBuilder::depth_compare(WGPUCompareFunction func) -> RenderPip
     return *this;
 }
 
+auto RenderPipelineBuilder::depth_bias(int32_t constant, float slope_scale)
+    -> RenderPipelineBuilder& {
+    m_depth_bias = constant;
+    m_depth_bias_slope_scale = slope_scale;
+    return *this;
+}
+
 auto RenderPipelineBuilder::sample_count(uint32_t count) -> RenderPipelineBuilder& {
     m_sample_count = count;
     return *this;
@@ -191,6 +198,8 @@ auto RenderPipelineBuilder::build() const -> RenderPipeline {
     depth_stencil_state.stencilFront.depthFailOp = WGPUStencilOperation_Keep;
     depth_stencil_state.stencilFront.passOp = WGPUStencilOperation_Keep;
     depth_stencil_state.stencilBack = depth_stencil_state.stencilFront;
+    depth_stencil_state.depthBias = m_depth_bias;
+    depth_stencil_state.depthBiasSlopeScale = m_depth_bias_slope_scale;
 
     // Pipeline descriptor
     WGPURenderPipelineDescriptor pipeline_desc = {};

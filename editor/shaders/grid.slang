@@ -106,6 +106,7 @@ FsOut fs_main(float3 near_point : NEAR_POINT, float3 far_point : FAR_POINT) {
 
     // Premultiplied alpha output
     o.color = float4(color * alpha, alpha);
-    o.depth = depth;
+    // Push grid slightly behind coplanar scene geometry to avoid z-fighting
+    o.depth = depth + 0.0001;
     return o;
 }
