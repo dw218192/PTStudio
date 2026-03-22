@@ -84,6 +84,7 @@ set(testRendererRegistry_libs core)
 list(APPEND TEST_NAMES testShaderLoader)
 set(testShaderLoader_source testShaderLoader.cpp)
 set(testShaderLoader_libs core)
+set(testShaderLoader_includes ${CMAKE_CURRENT_SOURCE_DIR}/generated)
 
 # BackgroundTask - works on all platforms (no GPU needed)
 list(APPEND TEST_NAMES testBackgroundTask)

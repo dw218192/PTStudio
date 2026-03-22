@@ -12,6 +12,8 @@ class OrbitCamera {
     void set_target(glm::vec3 target);
     void set_distance(float distance);
     void set_fov_y(float fov_degrees);
+    void set_yaw(float radians);
+    void set_pitch(float radians);
     void set_clip_planes(float near, float far);
 
     // ── Interaction ──

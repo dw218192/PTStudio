@@ -34,17 +34,20 @@ void CommandLine::add_flag(std::string_view name, std::string_view description) 
 }
 
 void CommandLine::add_string(std::string_view name, std::string_view description,
-                             std::optional<std::string> default_value) {
+                             std::optional<std::string> default_value,
+                             std::optional<std::string> implicit_value) {
     std::string n(name);
     std::string d(description);
     m_impl->registered.insert(n);
+    auto val = cxxopts::value<std::string>();
     if (default_value) {
         m_impl->has_default.insert(n);
-        m_impl->options.add_options()(n, d,
-                                      cxxopts::value<std::string>()->default_value(*default_value));
-    } else {
-        m_impl->options.add_options()(n, d, cxxopts::value<std::string>());
+        val->default_value(*default_value);
     }
+    if (implicit_value) {
+        val->implicit_value(*implicit_value);
+    }
+    m_impl->options.add_options()(n, d, std::move(val));
 }
 
 void CommandLine::add_int(std::string_view name, std::string_view description,

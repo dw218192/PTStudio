@@ -15,7 +15,7 @@ namespace pts::editor {
 
 class LobePass final : public rendering::IScenePass {
    public:
-    LobePass() = default;
+    using IScenePass::IScenePass;
     ~LobePass() override;
 
     LobePass(const LobePass&) = delete;
@@ -29,10 +29,24 @@ class LobePass final : public rendering::IScenePass {
         return false;
     }
 
-    void setup(const webgpu::Device& device) override;
+    void do_setup(const webgpu::Device& device) override;
     void add_to_frame_graph(rendering::FrameGraph& fg, const rendering::PassContext& ctx) override;
     void draw_imgui() override;
     void update_texture_refs(rendering::FrameGraph& fg) override;
+
+    /// Set material parameters from the selected prim's bound material.
+    void set_material(float roughness, float metallic);
+
+    /// Draw the lobe visualization widget inline (no ImGui::Begin/End window).
+    /// Returns true if roughness or metallic was changed by the user.
+    bool draw_lobe_widget();
+
+    [[nodiscard]] float roughness() const {
+        return m_roughness;
+    }
+    [[nodiscard]] float metallic() const {
+        return m_metallic;
+    }
 
     static constexpr uint32_t k_texture_size = 256;
     static constexpr uint32_t k_grid_cols = 128;

@@ -168,6 +168,8 @@ ResourceHandle FrameGraph::find_or_create(std::string name, TextureDesc desc) {
                           "find_or_create: width mismatch for existing resource");
             INVARIANT_MSG(existing.desc.height == desc.height,
                           "find_or_create: height mismatch for existing resource");
+            // Merge usage flags — later consumers may need additional access (e.g. CopySrc)
+            existing.desc.usage = static_cast<WGPUTextureUsage>(existing.desc.usage | desc.usage);
             return ResourceHandle{i};
         }
     }

@@ -27,6 +27,7 @@ struct PassContext {
     glm::mat4 proj_matrix;
     float time = 0.0f;
     uint32_t frame_index = 0;
+    uint32_t selected_picking_id = UINT32_MAX;
 };
 
 }  // namespace rendering

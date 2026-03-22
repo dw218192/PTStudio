@@ -1,18 +1,10 @@
 #pragma once
 
-#include <filesystem>
-#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <vector>
-
-namespace pts {
-template <typename T>
-class BackgroundTask;
-}
 
 namespace spdlog {
 class logger;
@@ -28,6 +20,9 @@ class ShaderLoader {
     explicit ShaderLoader(std::shared_ptr<spdlog::logger> logger);
     ~ShaderLoader();
 
+    ShaderLoader(ShaderLoader&&) noexcept;
+    ShaderLoader& operator=(ShaderLoader&&) noexcept;
+
     /// Register a shader for loading.
     /// @param resource_key The embedded resource lookup key (e.g.
     /// "editor/generated/shaders/forward.wgsl")
@@ -36,8 +31,10 @@ class ShaderLoader {
     /// @param wgsl_output Path to the compiled .wgsl file, relative to workspace root (e.g.
     /// "editor/generated/shaders/forward.wgsl")
     /// @param embedded_getter Function pointer to the namespace::get_resource function
+    /// @param entry_points Entry point function names for slang compilation
     void register_shader(std::string_view resource_key, std::string_view slang_source,
-                         std::string_view wgsl_output, EmbeddedGetter embedded_getter);
+                         std::string_view wgsl_output, EmbeddedGetter embedded_getter,
+                         std::vector<std::string> entry_points = {"vs_main", "fs_main"});
 
     /// Load shader WGSL source by resource_key.
     /// Always returns the last successfully loaded source (seeded from embedded on register).
@@ -45,8 +42,8 @@ class ShaderLoader {
     /// After a failed recompilation, keeps returning the last-good version.
     [[nodiscard]] auto load(std::string_view resource_key) const -> std::string;
 
-    /// Poll .slang source mtimes. If any changed, recompile via slangc subprocess
-    /// and re-read .wgsl outputs from disk.
+    /// Poll .slang source mtimes. If any changed, recompile via libslang
+    /// and update in-memory WGSL cache.
     /// Returns list of resource_keys whose content changed (empty if nothing changed).
     /// No-op in non-hot-reload builds (returns empty).
     [[nodiscard]] auto poll_and_reload() -> std::vector<std::string>;
@@ -59,25 +56,13 @@ class ShaderLoader {
     /// True if a background compilation is in progress.
     bool is_reloading() const;
 
-    /// If background compilation finished, read .wgsl files and update cache.
+    /// If background compilation finished, update in-memory WGSL cache from results.
     /// Returns list of changed resource keys, or empty if not done yet / nothing changed.
     std::vector<std::string> try_finish_reload();
 
    private:
-    struct ShaderEntry {
-        std::string resource_key;
-        std::string slang_source;  // relative to workspace root
-        std::string wgsl_output;   // relative to workspace root
-        EmbeddedGetter embedded_getter;
-        std::string cached_wgsl;  // last loaded WGSL content (hot-reload only)
-#ifdef PTS_SHADER_HOT_RELOAD
-        std::filesystem::file_time_type last_mtime{};
-#endif
-    };
-
-    std::unordered_map<std::string, ShaderEntry> m_entries;
-    std::shared_ptr<spdlog::logger> m_logger;
-    std::unique_ptr<pts::BackgroundTask<int>> m_reload_task;
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
 };
 
 }  // namespace pts::rendering

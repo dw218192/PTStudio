@@ -1,3 +1,4 @@
+#include <core/diagnostics.h>
 #include <core/imgui/fileDialogue.h>
 
 #if defined(__EMSCRIPTEN__)
@@ -31,7 +32,15 @@ void pts_file_dialog_callback(const char* name, const char* data, int size) {
 
 void ImGui::FileDialogueAsync(FileDialogueMode mode, const std::string& accept,
                               std::function<void(FileDialogueResult)> on_result) {
-    (void) mode;
+    if (mode == FileDialogueMode::Save) {
+        // Save mode: immediately invoke callback with empty result.
+        // The caller is responsible for triggering the browser download
+        // (e.g. via EM_ASM) since it already has the data to write.
+        FileDialogueResult result;
+        on_result(std::move(result));
+        return;
+    }
+
     s_pending_callback = std::move(on_result);
 
     // clang-format off
@@ -80,19 +89,21 @@ auto open_file_dialog(ImGui::FileDialogueMode mode) -> std::string {
 
 void ImGui::FileDialogueAsync(FileDialogueMode mode, const std::string& accept,
                               std::function<void(FileDialogueResult)> on_result) {
-    (void) accept;
+    PTS_UNUSED(accept);
     auto path = open_file_dialog(mode);
     if (path.empty()) return;
 
-    std::ifstream file(path, std::ios::binary);
-    if (!file) return;
-
-    std::ostringstream ss;
-    ss << file.rdbuf();
-
     FileDialogueResult result;
     result.name = path;
-    result.contents = ss.str();
+
+    if (mode == FileDialogueMode::Open) {
+        std::ifstream file(path, std::ios::binary);
+        if (!file) return;
+        std::ostringstream ss;
+        ss << file.rdbuf();
+        result.contents = ss.str();
+    }
+
     on_result(std::move(result));
 }
 

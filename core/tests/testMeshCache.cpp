@@ -1,4 +1,6 @@
 #include <core/rendering/scenePass.h>
+#include <core/rendering/shaderLoader.h>
+#include <spdlog/spdlog.h>
 
 #include "testApplication.h"
 
@@ -7,15 +9,21 @@ using namespace pts::rendering;
 
 namespace {
 
+static ShaderLoader make_test_shader_loader() {
+    return ShaderLoader(spdlog::default_logger());
+}
+static auto s_test_sl = make_test_shader_loader();
+
 /// Concrete pass that exposes get_or_create_pass_data for testing.
 struct TestPass final : IScenePass {
+    using IScenePass::IScenePass;
     auto name() const noexcept -> std::string_view override {
         return "test";
     }
     auto is_ready() const noexcept -> bool override {
         return true;
     }
-    void setup(const webgpu::Device& /*device*/) override {
+    void do_setup(const webgpu::Device& /*device*/) override {
     }
     void add_to_frame_graph(FrameGraph& /*fg*/, const PassContext& /*ctx*/) override {
     }
@@ -38,7 +46,7 @@ RenderWorld make_world_with_mesh(uint32_t version) {
 }  // namespace
 
 TEST_CASE("get_or_create_pass_data creates entry on first call") {
-    TestPass pass;
+    TestPass pass{s_test_sl};
     auto world = make_world_with_mesh(1);
     int factory_calls = 0;
     auto& val = pass.get_or_create_pass_data<int>(PassDataKind::Mesh, 0, world, [&]() {
@@ -50,7 +58,7 @@ TEST_CASE("get_or_create_pass_data creates entry on first call") {
 }
 
 TEST_CASE("get_or_create_pass_data returns cached value on same version") {
-    TestPass pass;
+    TestPass pass{s_test_sl};
     auto world = make_world_with_mesh(1);
     int factory_calls = 0;
     auto factory = [&]() {
@@ -64,7 +72,7 @@ TEST_CASE("get_or_create_pass_data returns cached value on same version") {
 }
 
 TEST_CASE("get_or_create_pass_data re-creates on version change") {
-    TestPass pass;
+    TestPass pass{s_test_sl};
     auto world = make_world_with_mesh(1);
 
     int factory_calls = 0;
@@ -88,7 +96,7 @@ TEST_CASE("get_or_create_pass_data re-creates on version change") {
 }
 
 TEST_CASE("get_or_create_pass_data supports different keys") {
-    TestPass pass;
+    TestPass pass{s_test_sl};
     RenderWorld world;
     {
         auto scope = world.begin_sync();
@@ -104,7 +112,7 @@ TEST_CASE("get_or_create_pass_data supports different keys") {
 }
 
 TEST_CASE("clear_pass_data removes all entries") {
-    TestPass pass;
+    TestPass pass{s_test_sl};
     auto world = make_world_with_mesh(1);
     pass.get_or_create_pass_data<int>(PassDataKind::Mesh, 0, world, []() { return 1; });
     pass.clear_pass_data();
@@ -118,7 +126,7 @@ TEST_CASE("clear_pass_data removes all entries") {
 }
 
 TEST_CASE("get_or_create_pass_data with nullptr factory succeeds on hit") {
-    TestPass pass;
+    TestPass pass{s_test_sl};
     auto world = make_world_with_mesh(1);
     pass.get_or_create_pass_data<int>(PassDataKind::Mesh, 0, world, []() { return 42; });
     auto& val = pass.get_or_create_pass_data<int>(PassDataKind::Mesh, 0, world, nullptr);

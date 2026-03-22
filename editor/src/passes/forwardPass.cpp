@@ -70,6 +70,15 @@ ForwardPass::~ForwardPass() {
     }
 }
 
+static constexpr const char* k_debug_target_names[] = {
+    "Normals",
+    "Base Color",
+    "Direct Diffuse",
+    "Direct Specular",
+};
+static constexpr uint32_t k_debug_target_count =
+    static_cast<uint32_t>(sizeof(k_debug_target_names) / sizeof(k_debug_target_names[0]));
+
 auto ForwardPass::name() const noexcept -> std::string_view {
     return "forward";
 }
@@ -78,16 +87,18 @@ auto ForwardPass::is_ready() const noexcept -> bool {
     return std::holds_alternative<Ready>(m_state);
 }
 
-void ForwardPass::setup(const webgpu::Device& device) {
-    PRECONDITION_MSG(m_shader_loader, "shader loader not set");
+auto ForwardPass::debug_target_names() const noexcept -> std::pair<const char* const*, uint32_t> {
+    return {k_debug_target_names, k_debug_target_count};
+}
 
+void ForwardPass::do_setup(const webgpu::Device& device) {
     // Release existing state for re-entry (hot-reload)
     if (auto* ready = std::get_if<Ready>(&m_state)) {
         if (ready->bind_group) wgpuBindGroupRelease(ready->bind_group);
         if (ready->bind_group_layout) wgpuBindGroupLayoutRelease(ready->bind_group_layout);
     }
 
-    auto shader_src = m_shader_loader->load("editor/generated/shaders/forward.wgsl");
+    auto shader_src = get_shader_loader().load("editor/generated/shaders/forward.wgsl");
     auto shader = device.create_shader_module_from_source(shader_src);
 
     uint32_t initial_capacity = 64;
@@ -129,16 +140,19 @@ void ForwardPass::setup(const webgpu::Device& device) {
     pl_desc.bindGroupLayouts = &bind_group_layout;
     WGPUPipelineLayout pipeline_layout = wgpuDeviceCreatePipelineLayout(device.handle(), &pl_desc);
 
-    auto pipeline = webgpu::RenderPipelineBuilder(device)
-                        .shader(shader)
-                        .color_format(WGPUTextureFormat_RGBA8Unorm)
-                        .depth_format(WGPUTextureFormat_Depth24Plus)
-                        .depth_write(true)
-                        .depth_compare(WGPUCompareFunction_Less)
-                        .cull_mode(WGPUCullMode_Back)
-                        .pipeline_layout(pipeline_layout)
-                        .vertex_layout<editor_shader::VertexLayout>()
-                        .build();
+    auto builder = webgpu::RenderPipelineBuilder(device)
+                       .shader(shader)
+                       .color_format(WGPUTextureFormat_RGBA16Float, 0)
+                       .depth_format(WGPUTextureFormat_Depth24Plus)
+                       .depth_write(true)
+                       .depth_compare(WGPUCompareFunction_Less)
+                       .cull_mode(WGPUCullMode_Back)
+                       .pipeline_layout(pipeline_layout)
+                       .vertex_layout<editor_shader::VertexLayout>();
+    for (uint32_t i = 0; i < k_debug_target_count; ++i) {
+        builder.color_format(WGPUTextureFormat_RGBA16Float, i + 1);
+    }
+    auto pipeline = builder.build();
 
     wgpuPipelineLayoutRelease(pipeline_layout);
 
@@ -198,7 +212,7 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
     rendering::TextureDesc color_desc;
     color_desc.width = ctx.viewport_width;
     color_desc.height = ctx.viewport_height;
-    color_desc.format = WGPUTextureFormat_RGBA8Unorm;
+    color_desc.format = WGPUTextureFormat_RGBA16Float;
     color_desc.clear_color = {0.15, 0.15, 0.18, 1.0};
 
     rendering::TextureDesc depth_desc;
@@ -208,6 +222,18 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
 
     auto color = fg.find_or_create("scene_color", color_desc);
     auto depth = fg.find_or_create("scene_depth", depth_desc);
+
+    rendering::TextureDesc debug_desc;
+    debug_desc.width = ctx.viewport_width;
+    debug_desc.height = ctx.viewport_height;
+    debug_desc.format = WGPUTextureFormat_RGBA16Float;
+    debug_desc.clear_color = {0, 0, 0, 1};
+
+    rendering::ResourceHandle debug_handles[k_debug_target_count];
+    for (uint32_t i = 0; i < k_debug_target_count; ++i) {
+        debug_handles[i] =
+            fg.find_or_create(std::string("debug_") + k_debug_target_names[i], debug_desc);
+    }
 
     auto queue = ctx.queue;
     auto view_mat = ctx.view_matrix;
@@ -232,22 +258,25 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
         wgpuQueueWriteBuffer(queue, uniform_buf, i * k_uniform_align, &u, sizeof(u));
     }
 
-    fg.add_pass("forward").color(color).depth(depth).execute(
-        [=, &world](WGPURenderPassEncoder pass) {
-            auto objs = world.get_objects();
-            auto meshes = world.get_meshes();
-            wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
-            for (uint32_t i = 0; i < static_cast<uint32_t>(objs.size()); ++i) {
-                if (!objs[i].active) continue;
-                uint32_t dyn_offset = i * k_uniform_align;
-                wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 1, &dyn_offset);
-                const auto& mesh = meshes[objs[i].mesh_index];
-                wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh.vertex_buffer.handle(), 0,
-                                                     mesh.vertex_buffer.size());
-                wgpuRenderPassEncoderSetIndexBuffer(pass, mesh.index_buffer.handle(),
-                                                    WGPUIndexFormat_Uint32, 0,
-                                                    mesh.index_buffer.size());
-                wgpuRenderPassEncoderDrawIndexed(pass, mesh.index_count, 1, 0, 0, 0);
-            }
-        });
+    auto pass_builder = fg.add_pass("forward").color(color);
+    for (uint32_t i = 0; i < k_debug_target_count; ++i) {
+        pass_builder.color(debug_handles[i]);
+    }
+    pass_builder.depth(depth).execute([=, &world](WGPURenderPassEncoder pass) {
+        auto objs = world.get_objects();
+        auto meshes = world.get_meshes();
+        wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
+        for (uint32_t i = 0; i < static_cast<uint32_t>(objs.size()); ++i) {
+            if (!objs[i].active) continue;
+            uint32_t dyn_offset = i * k_uniform_align;
+            wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 1, &dyn_offset);
+            const auto& mesh = meshes[objs[i].mesh_index];
+            wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh.vertex_buffer.handle(), 0,
+                                                 mesh.vertex_buffer.size());
+            wgpuRenderPassEncoderSetIndexBuffer(pass, mesh.index_buffer.handle(),
+                                                WGPUIndexFormat_Uint32, 0,
+                                                mesh.index_buffer.size());
+            wgpuRenderPassEncoderDrawIndexed(pass, mesh.index_count, 1, 0, 0, 0);
+        }
+    });
 }

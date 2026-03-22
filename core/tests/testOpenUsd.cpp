@@ -473,6 +473,54 @@ TEST_CASE("Shared material is deduplicated") {
 
 #endif  // !__EMSCRIPTEN__
 
+TEST_CASE("Stage export-to-string round-trip preserves prims and transforms") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    REQUIRE(stage);
+
+    pxr::UsdGeomXform::Define(stage, pxr::SdfPath("/Root"));
+    auto cube = pxr::UsdGeomCube::Define(stage, pxr::SdfPath("/Root/MyCube"));
+    cube.GetSizeAttr().Set(3.0);
+
+    // Set a transform on the cube
+    pxr::UsdGeomXformable xformable(cube.GetPrim());
+    pxr::GfMatrix4d mat(1.0);
+    mat[3][0] = 10.0;  // translate X
+    mat[3][1] = 20.0;  // translate Y
+    mat[3][2] = 30.0;  // translate Z
+    xformable.AddTransformOp().Set(mat);
+
+    // Export to USDA string (same path as Save Scene on Emscripten)
+    std::string usda;
+    bool exported = stage->GetRootLayer()->ExportToString(&usda);
+    REQUIRE(exported);
+    REQUIRE(!usda.empty());
+
+    // Re-import from the exported string
+    auto layer2 = pxr::SdfLayer::CreateAnonymous(".usda");
+    REQUIRE(layer2);
+    REQUIRE(layer2->ImportFromString(usda));
+
+    auto stage2 = pxr::UsdStage::Open(layer2);
+    REQUIRE(stage2);
+
+    // Verify prim exists with correct type
+    auto cube2 = pxr::UsdGeomCube::Get(stage2, pxr::SdfPath("/Root/MyCube"));
+    REQUIRE(bool(cube2));
+
+    double size = 0;
+    cube2.GetSizeAttr().Get(&size);
+    CHECK(size == doctest::Approx(3.0));
+
+    // Verify transform preserved
+    pxr::UsdGeomXformable xformable2(cube2.GetPrim());
+    pxr::GfMatrix4d reloaded;
+    bool resetsXformStack = false;
+    xformable2.GetLocalTransformation(&reloaded, &resetsXformStack, pxr::UsdTimeCode::Default());
+    CHECK(reloaded[3][0] == doctest::Approx(10.0));
+    CHECK(reloaded[3][1] == doctest::Approx(20.0));
+    CHECK(reloaded[3][2] == doctest::Approx(30.0));
+}
+
 TEST_CASE("Eager xform normalization produces single TypeTransform op") {
     auto stage = pxr::UsdStage::CreateInMemory();
     REQUIRE(stage);

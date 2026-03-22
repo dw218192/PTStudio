@@ -52,6 +52,8 @@ class PTStudioConan(ConanFile):
             self.requires("portable-file-dialogs/0.1.0")
             # Profiler
             self.requires("tracy/0.13.1")
+            # Slang compiler library for in-process shader compilation
+            self.requires("slang/2026.1")
 
         # GUI libraries (from Conan)
         self.requires("imgui/1.92.5-docking")

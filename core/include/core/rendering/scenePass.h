@@ -27,12 +27,19 @@ enum class PassDataKind : uint8_t { Mesh, Light };
 
 class IScenePass {
    public:
+    explicit IScenePass(const ShaderLoader& shader_loader) : m_shader_loader(&shader_loader) {
+    }
     virtual ~IScenePass() = default;
 
     [[nodiscard]] virtual auto name() const noexcept -> std::string_view = 0;
     [[nodiscard]] virtual auto is_ready() const noexcept -> bool = 0;
 
-    virtual void setup(const webgpu::Device& device) = 0;
+    /// Initialize the pass. Validates debug target limits, then calls do_setup().
+    void setup(const webgpu::Device& device) {
+        validate_debug_limits(device);
+        do_setup(device);
+    }
+
     virtual void add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) = 0;
 
     /// Called when shaders have been hot-reloaded. Default re-runs setup().
@@ -44,6 +51,10 @@ class IScenePass {
     virtual void draw_imgui() {
     }
 
+    /// Draw inline controls in the viewport menu bar. Called between BeginMenuBar/EndMenuBar.
+    virtual void draw_viewport_controls() {
+    }
+
     /// Cache texture refs after frame graph execute, for ImGui display next frame.
     virtual void update_texture_refs(FrameGraph& fg) {
     }
@@ -53,12 +64,20 @@ class IScenePass {
         return true;
     }
 
-    void set_shader_loader(const ShaderLoader& loader) {
-        m_shader_loader = &loader;
+    /// Debug target names declared by this pass. Each name corresponds to an
+    /// MRT color attachment (SV_Target1..N) that the shader writes every frame.
+    /// Returns {pointer to static array, count}. Default: no debug targets.
+    [[nodiscard]] virtual auto debug_target_names() const noexcept
+        -> std::pair<const char* const*, uint32_t> {
+        return {nullptr, 0};
+    }
+
+    [[nodiscard]] auto get_shader_loader() const noexcept -> const ShaderLoader& {
+        return *m_shader_loader;
     }
 
    protected:
-    const ShaderLoader* m_shader_loader = nullptr;
+    virtual void do_setup(const webgpu::Device& device) = 0;
     /// Lazily create or return per-entity pass data.
     /// Version is read automatically from the entity (Mesh::version or Light::version).
     /// Re-creates when the entity's version changes from the cached version.
@@ -100,6 +119,10 @@ class IScenePass {
     }
 
    private:
+    const ShaderLoader* m_shader_loader;
+
+    void validate_debug_limits(const webgpu::Device& device);
+
     static uint32_t entity_version(PassDataKind kind, uint32_t index, const RenderWorld& world) {
         switch (kind) {
             case PassDataKind::Mesh:

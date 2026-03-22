@@ -21,8 +21,10 @@ class CommandLine {
     void add_flag(std::string_view name, std::string_view description);
 
     /// Add a string option with an optional default value.
+    /// implicit_value: value used when the flag is present but no argument follows it.
     void add_string(std::string_view name, std::string_view description,
-                    std::optional<std::string> default_value = std::nullopt);
+                    std::optional<std::string> default_value = std::nullopt,
+                    std::optional<std::string> implicit_value = std::nullopt);
 
     /// Add an integer option with an optional default value.
     void add_int(std::string_view name, std::string_view description,

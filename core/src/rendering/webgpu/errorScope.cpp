@@ -1,3 +1,4 @@
+#include <core/diagnostics.h>
 #include <core/loggingManager.h>
 #include <core/rendering/webgpu/device.h>
 #include <core/rendering/webgpu/errorScope.h>
@@ -27,7 +28,7 @@ ErrorScope::ErrorScope(const Device& device, std::initializer_list<WGPUErrorFilt
     // the uncaptured error callback still catches errors.
     m_scope_count = 0;
     m_popped = true;
-    (void) filters;
+    PTS_UNUSED(filters);
 #else
     m_scope_count = filters.size();
     m_results.reserve(m_scope_count);

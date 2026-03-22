@@ -45,9 +45,7 @@ auto GridPass::is_ready() const noexcept -> bool {
     return std::holds_alternative<Ready>(m_state);
 }
 
-void GridPass::setup(const webgpu::Device& device) {
-    PRECONDITION_MSG(m_shader_loader, "shader loader not set");
-
+void GridPass::do_setup(const webgpu::Device& device) {
     // Capture old state for deferred release (after new state is built)
     WGPUBindGroup old_bind_group = nullptr;
     WGPUBindGroupLayout old_layout = nullptr;
@@ -58,7 +56,7 @@ void GridPass::setup(const webgpu::Device& device) {
         ready->bind_group_layout = nullptr;
     }
 
-    auto shader_src = m_shader_loader->load("editor/generated/shaders/grid.wgsl");
+    auto shader_src = get_shader_loader().load("editor/generated/shaders/grid.wgsl");
     auto shader = device.create_shader_module_from_source(shader_src);
 
     auto uniform_buffer = device.create_buffer(
@@ -95,7 +93,7 @@ void GridPass::setup(const webgpu::Device& device) {
 
     auto pipeline = webgpu::RenderPipelineBuilder(device)
                         .shader(shader)
-                        .color_format(WGPUTextureFormat_RGBA8Unorm)
+                        .color_format(WGPUTextureFormat_RGBA16Float)
                         .depth_format(WGPUTextureFormat_Depth24Plus)
                         .depth_write(false)
                         .depth_compare(WGPUCompareFunction_Less)
@@ -124,7 +122,7 @@ void GridPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::Pa
     rendering::TextureDesc color_desc;
     color_desc.width = ctx.viewport_width;
     color_desc.height = ctx.viewport_height;
-    color_desc.format = WGPUTextureFormat_RGBA8Unorm;
+    color_desc.format = WGPUTextureFormat_RGBA16Float;
     color_desc.clear_color = {0.15, 0.15, 0.18, 1.0};
 
     rendering::TextureDesc depth_desc;

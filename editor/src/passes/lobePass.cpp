@@ -49,16 +49,14 @@ auto LobePass::is_ready() const noexcept -> bool {
     return std::holds_alternative<Ready>(m_state);
 }
 
-void LobePass::setup(const webgpu::Device& device) {
-    PRECONDITION_MSG(m_shader_loader, "shader loader not set");
-
+void LobePass::do_setup(const webgpu::Device& device) {
     // Release existing state for re-entry (hot-reload)
     if (auto* ready = std::get_if<Ready>(&m_state)) {
         if (ready->bind_group) wgpuBindGroupRelease(ready->bind_group);
         if (ready->bind_group_layout) wgpuBindGroupLayoutRelease(ready->bind_group_layout);
     }
 
-    auto shader_src = m_shader_loader->load("editor/generated/shaders/lobe.wgsl");
+    auto shader_src = get_shader_loader().load("editor/generated/shaders/lobe.wgsl");
     auto shader = device.create_shader_module_from_source(shader_src);
 
     // Uniform buffer holds 2 aligned copies (specular + diffuse)
@@ -212,61 +210,70 @@ static std::optional<ImVec2> project_to_image(const glm::vec3& world_pos, const 
     return ImVec2(sx, sy);
 }
 
+void LobePass::set_material(float roughness, float metallic) {
+    m_roughness = roughness;
+    m_metallic = metallic;
+}
+
 void LobePass::draw_imgui() {
-    if (ImGui::Begin("BRDF Lobe")) {
-        ImGui::SliderFloat("Roughness", &m_roughness, 0.01f, 1.0f);
-        ImGui::SliderFloat("Metallic", &m_metallic, 0.0f, 1.0f);
-        ImGui::SliderFloat("Scale", &m_scale, 0.1f, 5.0f);
-        ImGui::SliderFloat("Light Azimuth", &m_light_azimuth_deg, -180.0f, 180.0f);
-        ImGui::SliderFloat("Light Elevation", &m_light_elevation_deg, 0.0f, 90.0f);
-        ImGui::Checkbox("Show Specular", &m_show_specular);
-        ImGui::Checkbox("Show Diffuse", &m_show_diffuse);
-        ImGui::Separator();
-        if (m_lobe_color_ref) {
-            auto img_pos = ImGui::GetCursorScreenPos();
-            float img_size = static_cast<float>(k_texture_size);
-            ImGui::Image(reinterpret_cast<ImTextureID>(m_lobe_color_ref.view()),
-                         ImVec2(img_size, img_size));
+    // No standalone window — lobe is drawn inline via draw_lobe_widget()
+}
 
-            // Draw light direction arrow overlaid on the image
-            auto eye = glm::vec3(0.0f, -2.5f, 1.5f);
-            auto view_mat = glm::lookAt(eye, glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-            auto proj_mat = glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, 100.0f);
-            auto mvp = proj_mat * view_mat;
+bool LobePass::draw_lobe_widget() {
+    bool changed = false;
+    changed |= ImGui::SliderFloat("Roughness", &m_roughness, 0.01f, 1.0f);
+    changed |= ImGui::SliderFloat("Metallic", &m_metallic, 0.0f, 1.0f);
+    ImGui::SliderFloat("Scale", &m_scale, 0.1f, 5.0f);
+    ImGui::SliderFloat("Light Azimuth", &m_light_azimuth_deg, -180.0f, 180.0f);
+    ImGui::SliderFloat("Light Elevation", &m_light_elevation_deg, 0.0f, 90.0f);
+    ImGui::Checkbox("Show Specular", &m_show_specular);
+    ImGui::SameLine();
+    ImGui::Checkbox("Show Diffuse", &m_show_diffuse);
 
-            float az = glm::radians(m_light_azimuth_deg);
-            float el = glm::radians(m_light_elevation_deg);
-            auto light_dir =
-                glm::vec3(std::cos(el) * std::cos(az), std::cos(el) * std::sin(az), std::sin(el));
+    if (!m_lobe_color_ref) return changed;
 
-            float arrow_len = 1.2f;
-            auto tip = light_dir * arrow_len;
-            auto base = light_dir * 0.3f;
+    auto img_pos = ImGui::GetCursorScreenPos();
+    float avail = ImGui::GetContentRegionAvail().x;
+    float img_size = std::min(avail, static_cast<float>(k_texture_size));
+    ImGui::Image(reinterpret_cast<ImTextureID>(m_lobe_color_ref.view()),
+                 ImVec2(img_size, img_size));
 
-            auto p_tip = project_to_image(tip, mvp, img_pos, img_size);
-            auto p_base = project_to_image(base, mvp, img_pos, img_size);
+    // Draw light direction arrow overlaid on the image
+    auto eye = glm::vec3(0.0f, -2.5f, 1.5f);
+    auto view_mat = glm::lookAt(eye, glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    auto proj_mat = glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, 100.0f);
+    auto mvp = proj_mat * view_mat;
 
-            if (p_tip && p_base) {
-                auto* draw_list = ImGui::GetWindowDrawList();
-                auto yellow = IM_COL32(255, 220, 50, 255);
-                draw_list->AddLine(*p_base, *p_tip, yellow, 2.0f);
+    float az = glm::radians(m_light_azimuth_deg);
+    float el = glm::radians(m_light_elevation_deg);
+    auto light_dir =
+        glm::vec3(std::cos(el) * std::cos(az), std::cos(el) * std::sin(az), std::sin(el));
 
-                // Arrowhead
-                auto dir = ImVec2(p_tip->x - p_base->x, p_tip->y - p_base->y);
-                float len = std::sqrt(dir.x * dir.x + dir.y * dir.y);
-                if (len > 1.0f) {
-                    dir.x /= len;
-                    dir.y /= len;
-                    float head_size = 8.0f;
-                    ImVec2 perp(-dir.y, dir.x);
-                    ImVec2 a(p_tip->x - dir.x * head_size + perp.x * head_size * 0.4f,
-                             p_tip->y - dir.y * head_size + perp.y * head_size * 0.4f);
-                    ImVec2 b(p_tip->x - dir.x * head_size - perp.x * head_size * 0.4f,
-                             p_tip->y - dir.y * head_size - perp.y * head_size * 0.4f);
-                    draw_list->AddTriangleFilled(*p_tip, a, b, yellow);
-                }
-            }
+    float arrow_len = 1.2f;
+    auto tip = light_dir * arrow_len;
+    auto base = light_dir * 0.3f;
+
+    auto p_tip = project_to_image(tip, mvp, img_pos, img_size);
+    auto p_base = project_to_image(base, mvp, img_pos, img_size);
+
+    if (p_tip && p_base) {
+        auto* draw_list = ImGui::GetWindowDrawList();
+        auto yellow = IM_COL32(255, 220, 50, 255);
+        draw_list->AddLine(*p_base, *p_tip, yellow, 2.0f);
+
+        auto dir = ImVec2(p_tip->x - p_base->x, p_tip->y - p_base->y);
+        float len = std::sqrt(dir.x * dir.x + dir.y * dir.y);
+        if (len > 1.0f) {
+            dir.x /= len;
+            dir.y /= len;
+            float head_size = 8.0f;
+            ImVec2 perp(-dir.y, dir.x);
+            ImVec2 a(p_tip->x - dir.x * head_size + perp.x * head_size * 0.4f,
+                     p_tip->y - dir.y * head_size + perp.y * head_size * 0.4f);
+            ImVec2 b(p_tip->x - dir.x * head_size - perp.x * head_size * 0.4f,
+                     p_tip->y - dir.y * head_size - perp.y * head_size * 0.4f);
+            draw_list->AddTriangleFilled(*p_tip, a, b, yellow);
         }
     }
-    ImGui::End();
+    return changed;
 }

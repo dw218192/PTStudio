@@ -121,6 +121,7 @@ if (NOT EMSCRIPTEN)
 		PUBLIC dawn::webgpu_dawn Boost::filesystem Tracy::TracyClient
 		PRIVATE cxxopts::cxxopts
 		       Boost::stacktrace Boost::stacktrace_from_exception
+		       slang::slang
 	)
 else()
 	target_link_libraries(${lib_name} PUBLIC wasm_flags Boost::boost PRIVATE cxxopts::cxxopts)

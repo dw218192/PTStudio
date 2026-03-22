@@ -14,7 +14,7 @@ namespace pts::editor {
 
 class ForwardPass final : public rendering::IScenePass {
    public:
-    ForwardPass() = default;
+    using IScenePass::IScenePass;
     ~ForwardPass() override;
 
     ForwardPass(const ForwardPass&) = delete;
@@ -24,8 +24,10 @@ class ForwardPass final : public rendering::IScenePass {
 
     [[nodiscard]] auto name() const noexcept -> std::string_view override;
     [[nodiscard]] auto is_ready() const noexcept -> bool override;
+    [[nodiscard]] auto debug_target_names() const noexcept
+        -> std::pair<const char* const*, uint32_t> override;
 
-    void setup(const webgpu::Device& device) override;
+    void do_setup(const webgpu::Device& device) override;
     void add_to_frame_graph(rendering::FrameGraph& fg, const rendering::PassContext& ctx) override;
 
     static constexpr uint32_t k_uniform_align = 256;

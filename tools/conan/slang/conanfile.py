@@ -7,7 +7,7 @@ import os
 class SlangConan(ConanFile):
     name = "slang"
     version = "2026.1"
-    package_type = "application"
+    package_type = "shared-library"
     settings = "os", "arch"
     license = "Apache-2.0"
     description = "Slang shading language compiler and tools"
@@ -71,3 +71,4 @@ class SlangConan(ConanFile):
         self.cpp_info.bindirs = ["bin"]
         self.cpp_info.libdirs = ["lib"]
         self.cpp_info.includedirs = ["include"]
+        self.cpp_info.libs = ["slang"]

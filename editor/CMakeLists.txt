@@ -19,6 +19,7 @@ target_link_libraries(${exec_name}
 PRIVATE
 	$<BUILD_INTERFACE:developer_flags>
 	core
+	renderer_pathtracer
 	imguizmo::imguizmo
 	stb::stb
 )
@@ -37,3 +38,7 @@ PRIVATE
 install(TARGETS ${exec_name}
 	RUNTIME DESTINATION ${PROJECT_BINARY_DIR}
 )
+
+if(CORE_BUILD_TESTS)
+	add_subdirectory(tests)
+endif()

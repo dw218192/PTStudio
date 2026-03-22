@@ -7,6 +7,7 @@
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/shaderLoader.h>
 #include <core/rendering/webgpu/bufferReadback.h>
+#include <core/rendering/webgpu/textureReadback.h>
 #include <core/rendering/webgpu/webgpu.h>
 #include <core/windowedApplication.h>
 #include <pxr/base/tf/notice.h>
@@ -33,10 +34,29 @@ class BackgroundTask;
 namespace pts::rendering {
 class IScenePass;
 }
+namespace pts::editor {
+class EditorPass;
+class LobePass;
+class ToneMappingPass;
+}  // namespace pts::editor
 
 namespace pts::editor {
 struct AppConfig {
-    bool quit_on_start{false};
+    std::string capture_output;     // empty = no capture mode
+    std::string usd_path;           // empty = embedded default
+    std::string usd_override_path;  // empty = no override layer
+    int capture_frames = 1;         // frames to render before capture
+    std::string renderer_name;      // empty = default (first)
+    std::string debug_output_name;  // empty = scene_color
+    std::string camera_target;      // "x,y,z" — empty = default
+    std::string camera_distance;    // empty = default (3.0)
+    std::string camera_yaw;         // degrees, empty = default (0)
+    std::string camera_pitch;       // degrees, empty = default (~17)
+    std::string camera_fov;         // degrees, empty = default (60)
+
+    [[nodiscard]] bool is_capture_mode() const {
+        return !capture_output.empty();
+    }
 };
 
 struct EditorApplication final : WindowedApplication {
@@ -64,7 +84,7 @@ struct EditorApplication final : WindowedApplication {
     auto draw_inspector_panel() noexcept -> void;
     void draw_prim_tree(const pxr::UsdPrim& prim);
     auto draw_scene_viewport() noexcept -> void;
-    auto draw_console_panel() const noexcept -> void;
+    auto draw_console_panel() noexcept -> void;
     // events
     auto on_mouse_leave_scene_viewport() noexcept -> void;
     auto on_mouse_enter_scene_viewport() noexcept -> void;
@@ -88,9 +108,25 @@ struct EditorApplication final : WindowedApplication {
     std::unique_ptr<rendering::FrameGraph> m_frame_graph;
     rendering::OrbitCamera m_camera;
     rendering::RenderWorld m_world;
-    std::vector<std::unique_ptr<rendering::IScenePass>> m_passes;
+    std::unique_ptr<rendering::IScenePass> m_renderer_pass;
+    std::vector<std::unique_ptr<rendering::IScenePass>> m_editor_passes;
+    EditorPass* m_editor_pass = nullptr;                  // non-owning, points into m_editor_passes
+    LobePass* m_lobe_pass = nullptr;                      // non-owning, points into m_editor_passes
+    rendering::IScenePass* m_tonemapping_pass = nullptr;  // non-owning, points into m_editor_passes
     size_t m_active_config_index = 0;
+    bool m_editor_passes_enabled = true;
     rendering::ShaderLoader m_shader_loader;
+
+    /// Iterate all active passes (renderer + editor) in execution order.
+    template <typename Fn>
+    void for_each_pass(Fn&& fn) {
+        if (m_renderer_pass) fn(*m_renderer_pass);
+        for (auto& p : m_editor_passes) {
+            // ToneMappingPass always runs; others respect the toggle
+            if (!m_editor_passes_enabled && p.get() != m_tonemapping_pass) continue;
+            fn(*p);
+        }
+    }
 
     // USD stage + change tracking
     pxr::UsdStageRefPtr m_stage;
@@ -111,7 +147,10 @@ struct EditorApplication final : WindowedApplication {
     void on_objects_changed(const pxr::UsdNotice::ObjectsChanged& notice);
     void process_dirty_prims();
     void normalize_xform_ops(const std::string& prim_path);
-    pxr::SdfPath find_unique_prim_path(std::string_view base_name);
+    pxr::SdfPath find_unique_prim_path(std::string_view base_name,
+                                       const pxr::SdfPath* parent = nullptr);
+    auto draw_add_prim_menu(const pxr::SdfPath* parent = nullptr,
+                            const glm::vec3* spawn_pos = nullptr) noexcept -> void;
     void ensure_default_light();
 
     std::vector<pxr::SdfPath> m_resync_paths;
@@ -119,6 +158,7 @@ struct EditorApplication final : WindowedApplication {
 
     // Selection & gizmo
     pxr::SdfPath m_selected_prim;
+    pxr::SdfPath m_lobe_bound_prim;  // tracks which prim's material is loaded in lobe viewer
     enum class GizmoOp { Translate, Rotate, Scale };
     GizmoOp m_gizmo_op = GizmoOp::Translate;
 
@@ -129,11 +169,21 @@ struct EditorApplication final : WindowedApplication {
     float m_viewport_y = 0.0f;
     rendering::TextureRef m_scene_color_ref;
 
-    // Light gizmo icon
-    void draw_light_gizmos(const glm::mat4& view_mat, const glm::mat4& proj_mat);
-    WGPUTexture m_light_icon_tex = nullptr;
-    WGPUTextureView m_light_icon_view = nullptr;
-    static constexpr float k_light_icon_size = 64.0f;
+    // Debug visualization
+    bool m_viewport_combo_open =
+        false;  // suppresses picking while combo dropdown overlaps viewport
+    int m_debug_target_selection = 0;
+    rendering::TextureRef m_active_debug_ref;
+    rendering::TextureRef m_gizmo_overlay_ref;
+
+    // Console auto-scroll
+    size_t m_last_console_msg_count = 0;
+
+    // Viewport context menu
+    bool m_rmb_dragged = false;            // true if right-click has moved beyond threshold
+    bool m_open_viewport_context = false;  // deferred popup open (set in input, read in draw)
+    glm::vec2 m_rmb_press_pos{0, 0};       // screen pos at right-click press
+    glm::vec3 m_context_menu_world_pos{0, 0, 0};  // 3D spawn point for context menu
 
     // GPU picking
     webgpu::BufferReadback m_picking_readback;
@@ -143,6 +193,10 @@ struct EditorApplication final : WindowedApplication {
 
     // Performance overlay
     PerfOverlay m_perf_overlay;
+
+    // Capture mode state
+    int m_frame_count = 0;
+    webgpu::TextureReadback m_capture_readback;
 
     // Async scene loading
     std::unique_ptr<pts::BackgroundTask<rendering::RenderWorld>> m_scene_load_task;

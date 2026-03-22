@@ -6,7 +6,7 @@ from typing import Any
 
 import click
 
-from repo_tools.core import RepoTool, ToolContext
+from repo_tools.core import McpLogRecord, RepoTool, ToolContext
 
 from .command import build_command
 
@@ -74,6 +74,26 @@ class BuildTool(RepoTool):
             "postbuild": {},
             "conan": {},
         }
+
+    def format_mcp_output(
+        self, records: list[McpLogRecord], returncode: int
+    ) -> str | None:
+        """Show prebuild results + build outcome, skip Conan/CMake noise."""
+        lines: list[str] = []
+        for r in records:
+            msg = r.message
+            if r.level in ("error", "critical", "warning"):
+                lines.append(msg)
+            elif any(k in msg for k in ("✓", "✗", "CMake build", "FAILED")):
+                lines.append(msg)
+            elif r.level == "output" and (
+                "error" in msg.lower() or "warning" in msg.lower()
+            ):
+                lines.append(msg)
+        if not lines:
+            lines.append("Build completed successfully")
+        lines.append("\nFull log: _build/logs/mcp/build.log")
+        return "\n".join(lines)
 
     def execute(self, ctx: ToolContext, args: dict[str, Any]) -> None:
         build_command(ctx, args, self.name)

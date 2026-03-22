@@ -24,13 +24,24 @@
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/sdf/path.h>
 #include <pxr/usd/usd/stage.h>
+#if defined(__EMSCRIPTEN__)
+#include <emscripten.h>
+#endif
+#include <pathTracerPass.h>
 #include <pxr/usd/usdGeom/xform.h>
 #include <pxr/usd/usdGeom/xformable.h>
 #include <pxr/usd/usdLux/domeLight.h>
+#include <pxr/usd/usdShade/material.h>
+#include <pxr/usd/usdShade/materialBindingAPI.h>
+#include <pxr/usd/usdShade/shader.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
-#include <stb_image.h>
+#include <stb_image_write.h>
 
 #include <algorithm>
+#include <chrono>
+#include <cstdio>
+#include <cstring>
+#include <ctime>
 #include <filesystem>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -39,10 +50,11 @@
 #include <stdexcept>
 
 #include "editorResources.h"
+#include "passes/editorPass.h"
 #include "passes/forwardPass.h"
 #include "passes/gridPass.h"
 #include "passes/lobePass.h"
-#include "passes/pickingPass.h"
+#include "passes/toneMappingPass.h"
 #include "passes/wireframePass.h"
 
 using namespace pts;
@@ -56,20 +68,9 @@ static constexpr auto k_perf_win_name = "Performance";
 static constexpr auto k_console_log_buffer_size = 1024;
 
 static const std::vector<rendering::RendererConfig> k_renderer_configs = {
-    {"Forward",
-     {
-         [] { return std::make_unique<PickingPass>(); },
-         [] { return std::make_unique<ForwardPass>(); },
-         [] { return std::make_unique<GridPass>(); },
-         [] { return std::make_unique<LobePass>(); },
-     }},
-    {"Wireframe",
-     {
-         [] { return std::make_unique<PickingPass>(); },
-         [] { return std::make_unique<WireframePass>(); },
-         [] { return std::make_unique<GridPass>(); },
-         [] { return std::make_unique<LobePass>(); },
-     }},
+    {"Forward", [](const auto& sl) { return std::make_unique<ForwardPass>(sl); }},
+    {"Wireframe", [](const auto& sl) { return std::make_unique<WireframePass>(sl); }},
+    {"Path Trace", [](const auto& sl) { return std::make_unique<PathTracerPass>(sl); }},
 };
 
 EditorApplication::EditorApplication(std::string_view name, pts::LoggingManager& logging_manager)
@@ -88,11 +89,10 @@ EditorApplication::~EditorApplication() {
     m_scene_load_task.reset();  // join background thread before tearing down
     m_pending_stage.Reset();
     revoke_stage_listener();
-    m_passes.clear();
+    m_renderer_pass.reset();
+    m_editor_passes.clear();
     m_world.clear();
     m_stage.Reset();
-    if (m_light_icon_view) wgpuTextureViewRelease(m_light_icon_view);
-    if (m_light_icon_tex) wgpuTextureRelease(m_light_icon_tex);
     m_input.reset();
     m_imgui.reset();
 }
@@ -218,24 +218,27 @@ void EditorApplication::normalize_xform_ops(const std::string& prim_path) {
     xformable.AddTransformOp().Set(xf);
 }
 
-pxr::SdfPath EditorApplication::find_unique_prim_path(std::string_view base_name) {
+pxr::SdfPath EditorApplication::find_unique_prim_path(std::string_view base_name,
+                                                      const pxr::SdfPath* parent) {
     PRECONDITION(m_stage);
     PRECONDITION(!base_name.empty());
 
     static const auto k_root = pxr::SdfPath("/Root");
 
-    if (!m_stage->GetPrimAtPath(k_root).IsValid()) {
-        pxr::UsdGeomXform::Define(m_stage, k_root);
+    auto parent_path = parent ? *parent : k_root;
+
+    if (!m_stage->GetPrimAtPath(parent_path).IsValid()) {
+        pxr::UsdGeomXform::Define(m_stage, parent_path);
     }
 
-    auto candidate = k_root.AppendChild(pxr::TfToken(std::string(base_name)));
+    auto candidate = parent_path.AppendChild(pxr::TfToken(std::string(base_name)));
     if (!m_stage->GetPrimAtPath(candidate).IsValid()) {
         return candidate;
     }
 
     for (int i = 1;; ++i) {
         candidate =
-            k_root.AppendChild(pxr::TfToken(std::string(base_name) + "_" + std::to_string(i)));
+            parent_path.AppendChild(pxr::TfToken(std::string(base_name) + "_" + std::to_string(i)));
         if (!m_stage->GetPrimAtPath(candidate).IsValid()) {
             return candidate;
         }
@@ -263,14 +266,67 @@ void EditorApplication::ensure_default_light() {
 
 void EditorApplication::register_args(CommandLine& cli) {
     WindowedApplication::register_args(cli);
-    cli.add_flag("quit-on-start", "Quit the application after starting, useful for testing");
+    cli.add_string("capture-and-quit", "Render, capture viewport to PNG, then quit", std::nullopt,
+                   std::string(""));
+    cli.add_string("usd", "Load USD file instead of embedded default scene", std::nullopt);
+    cli.add_string("usd-override", "Apply override layer on top of loaded scene", std::nullopt);
+    cli.add_int("frames", "Frames to render before capture", 1);
+    cli.add_string("renderer", "Select renderer by name (e.g. Forward, Wireframe)", std::nullopt);
+    cli.add_string("debug-output", "Capture debug target instead of scene_color", std::nullopt);
+    cli.add_string("camera-target", "Camera target position as x,y,z", std::nullopt);
+    cli.add_string("camera-distance", "Camera orbit distance", std::nullopt);
+    cli.add_string("camera-yaw", "Camera yaw in degrees", std::nullopt);
+    cli.add_string("camera-pitch", "Camera pitch in degrees", std::nullopt);
+    cli.add_string("camera-fov", "Camera vertical FOV in degrees", std::nullopt);
 }
 
 void EditorApplication::process_args(const CommandLine& cli) {
     WindowedApplication::process_args(cli);
-    m_app_config.quit_on_start = cli.get_flag("quit-on-start");
-    if (m_app_config.quit_on_start && viewport()) {
-        viewport()->request_close();
+
+    if (cli.has("capture-and-quit")) {
+        auto path = cli.get_string("capture-and-quit");
+        if (path.empty()) {
+            // Generate default path: _captures/<timestamp>.png
+            auto now = std::chrono::system_clock::now();
+            auto time_t = std::chrono::system_clock::to_time_t(now);
+            char buf[64];
+            std::strftime(buf, sizeof(buf), "%Y%m%d_%H%M%S", std::localtime(&time_t));
+            std::filesystem::create_directories("_captures");
+            path = "_captures/" + std::string(buf) + ".png";
+        }
+        m_app_config.capture_output = std::move(path);
+    }
+
+    if (cli.has("usd")) {
+        m_app_config.usd_path = cli.get_string("usd");
+    }
+    if (cli.has("usd-override")) {
+        m_app_config.usd_override_path = cli.get_string("usd-override");
+    }
+    if (cli.has("frames")) {
+        m_app_config.capture_frames = cli.get_int("frames", 1);
+        PRECONDITION_MSG(m_app_config.capture_frames >= 1, "frames must be >= 1");
+    }
+    if (cli.has("renderer")) {
+        m_app_config.renderer_name = cli.get_string("renderer");
+    }
+    if (cli.has("debug-output")) {
+        m_app_config.debug_output_name = cli.get_string("debug-output");
+    }
+    if (cli.has("camera-target")) {
+        m_app_config.camera_target = cli.get_string("camera-target");
+    }
+    if (cli.has("camera-distance")) {
+        m_app_config.camera_distance = cli.get_string("camera-distance");
+    }
+    if (cli.has("camera-yaw")) {
+        m_app_config.camera_yaw = cli.get_string("camera-yaw");
+    }
+    if (cli.has("camera-pitch")) {
+        m_app_config.camera_pitch = cli.get_string("camera-pitch");
+    }
+    if (cli.has("camera-fov")) {
+        m_app_config.camera_fov = cli.get_string("camera-fov");
     }
 }
 
@@ -296,54 +352,47 @@ void EditorApplication::on_ready() {
     m_frame_graph = std::make_unique<rendering::FrameGraph>(
         device, get_logging_manager().get_logger_shared("frame_graph"));
 
-    // Load default scene
-    auto usda = editor_resources::get_resource("assets/scenes/primitives.usda");
-    if (usda) {
-        auto layer = pxr::SdfLayer::CreateAnonymous(".usda");
-        layer->ImportFromString(std::string{*usda});
-        m_stage = pxr::UsdStage::Open(layer);
+    // Load scene
+    if (!m_app_config.usd_path.empty()) {
+        // Load USD file from disk
+        m_stage = pxr::UsdStage::Open(m_app_config.usd_path);
+        INVARIANT_MSG(m_stage, "Failed to open USD stage from path");
         rendering::populate_from_stage(m_world, m_stage);
         m_world.upload_all_meshes(device);
         ensure_default_light();
         register_stage_listener();
-        log(LogLevel::Info, "Loaded default scene ({} objects)", m_world.get_objects().size());
+        log(LogLevel::Info, "Loaded scene from {} ({} objects)", m_app_config.usd_path,
+            m_world.get_objects().size());
     } else {
-        log(LogLevel::Warning, "Missing embedded resource: assets/scenes/primitives.usda");
+        // Load embedded default scene
+        auto usda = editor_resources::get_resource("assets/scenes/primitives.usda");
+        if (usda) {
+            auto layer = pxr::SdfLayer::CreateAnonymous(".usda");
+            layer->ImportFromString(std::string{*usda});
+            m_stage = pxr::UsdStage::Open(layer);
+            rendering::populate_from_stage(m_world, m_stage);
+            m_world.upload_all_meshes(device);
+            ensure_default_light();
+            register_stage_listener();
+            log(LogLevel::Info, "Loaded default scene ({} objects)", m_world.get_objects().size());
+        } else {
+            log(LogLevel::Warning, "Missing embedded resource: assets/scenes/primitives.usda");
+        }
     }
 
-    // Load light icon texture
-    {
-        auto icon_data = editor_resources::get_resource("editor/icons/light.png");
-        INVARIANT_MSG(icon_data, "Missing embedded resource: editor/icons/light.png");
-        int iw, ih, channels;
-        auto* pixels =
-            stbi_load_from_memory(reinterpret_cast<const unsigned char*>(icon_data->data()),
-                                  static_cast<int>(icon_data->size()), &iw, &ih, &channels, 4);
-        INVARIANT_MSG(pixels, "Failed to decode light.png");
-
-        WGPUTextureDescriptor tex_desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
-        tex_desc.size = {static_cast<uint32_t>(iw), static_cast<uint32_t>(ih), 1};
-        tex_desc.format = WGPUTextureFormat_RGBA8Unorm;
-        tex_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_TextureBinding |
-                                                       WGPUTextureUsage_CopyDst);
-        tex_desc.mipLevelCount = 1;
-        tex_desc.sampleCount = 1;
-        tex_desc.dimension = WGPUTextureDimension_2D;
-        m_light_icon_tex = wgpuDeviceCreateTexture(device.handle(), &tex_desc);
-
-        WGPUTextureViewDescriptor view_desc = WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT;
-        m_light_icon_view = wgpuTextureCreateView(m_light_icon_tex, &view_desc);
-
-        WGPUTexelCopyTextureInfo dst = WGPU_TEXEL_COPY_TEXTURE_INFO_INIT;
-        dst.texture = m_light_icon_tex;
-        WGPUTexelCopyBufferLayout layout = WGPU_TEXEL_COPY_BUFFER_LAYOUT_INIT;
-        layout.bytesPerRow = static_cast<uint32_t>(iw * 4);
-        layout.rowsPerImage = static_cast<uint32_t>(ih);
-        WGPUExtent3D extent = {static_cast<uint32_t>(iw), static_cast<uint32_t>(ih), 1};
-        wgpuQueueWriteTexture(device.queue(), &dst, pixels, static_cast<size_t>(iw * ih * 4),
-                              &layout, &extent);
-
-        stbi_image_free(pixels);
+    // Apply USD override layer
+    if (!m_app_config.usd_override_path.empty()) {
+        INVARIANT_MSG(m_stage, "Cannot apply USD override without a loaded stage");
+        auto session = m_stage->GetSessionLayer();
+        session->InsertSubLayerPath(m_app_config.usd_override_path);
+        // Re-sync world from stage with override applied
+        revoke_stage_listener();
+        m_world.clear();
+        rendering::populate_from_stage(m_world, m_stage);
+        m_world.upload_all_meshes(device);
+        ensure_default_light();
+        register_stage_listener();
+        log(LogLevel::Info, "Applied USD override: {}", m_app_config.usd_override_path);
     }
 
     // Register shaders for hot-reload
@@ -360,35 +409,112 @@ void EditorApplication::on_ready() {
         "editor/generated/shaders/wireframe.wgsl", "editor/shaders/wireframe.slang",
         "editor/generated/shaders/wireframe.wgsl", editor_resources::get_resource);
     m_shader_loader.register_shader(
+        "editor/generated/shaders/gizmo.wgsl", "editor/shaders/gizmo.slang",
+        "editor/generated/shaders/gizmo.wgsl", editor_resources::get_resource);
+    m_shader_loader.register_shader(
         "editor/generated/shaders/lobe.wgsl", "editor/shaders/lobe.slang",
         "editor/generated/shaders/lobe.wgsl", editor_resources::get_resource);
+    m_shader_loader.register_shader(
+        "editor/generated/shaders/tonemapping.wgsl", "editor/shaders/tonemapping.slang",
+        "editor/generated/shaders/tonemapping.wgsl", editor_resources::get_resource);
+    m_shader_loader.register_shader(
+        "editor/generated/shaders/pathtracer.wgsl", "editor/shaders/pathtracer.slang",
+        "editor/generated/shaders/pathtracer.wgsl", editor_resources::get_resource, {"cs_main"});
+    m_shader_loader.register_shader(
+        "editor/generated/shaders/pt_blit.wgsl", "editor/shaders/pt_blit.slang",
+        "editor/generated/shaders/pt_blit.wgsl", editor_resources::get_resource);
 
-    // Set up renderer passes
-    set_renderer_config(0);
+    // Create editor passes (always-on, independent of renderer choice)
+    {
+        auto& dev = webgpu_context()->device();
+        m_editor_passes.push_back(std::make_unique<GridPass>(m_shader_loader));
+        m_editor_passes.push_back(std::make_unique<EditorPass>(m_shader_loader));
+        m_editor_passes.push_back(std::make_unique<LobePass>(m_shader_loader));
+        m_lobe_pass = static_cast<LobePass*>(m_editor_passes.back().get());
+        m_editor_passes.push_back(std::make_unique<ToneMappingPass>(m_shader_loader));
+        m_tonemapping_pass = m_editor_passes.back().get();
+        for (auto& p : m_editor_passes) {
+            p->setup(dev);
+        }
+        for (auto& p : m_editor_passes) {
+            if (auto* ep = dynamic_cast<EditorPass*>(p.get())) {
+                m_editor_pass = ep;
+            }
+        }
+    }
 
-    // Camera defaults
+    // Set up renderer pass — optionally select by name
+    if (!m_app_config.renderer_name.empty()) {
+        bool found = false;
+        for (size_t i = 0; i < k_renderer_configs.size(); ++i) {
+            if (k_renderer_configs[i].name == m_app_config.renderer_name) {
+                set_renderer_config(i);
+                found = true;
+                break;
+            }
+        }
+        INVARIANT_MSG(found, "Unknown renderer name");
+    } else {
+        set_renderer_config(0);
+    }
+
+    // Resolve --debug-output to m_debug_target_selection
+    if (!m_app_config.debug_output_name.empty()) {
+        int global_index = 1;  // 1-based (0 = "Off")
+        bool found = false;
+        for_each_pass([&](auto& pass) {
+            auto [names, count] = pass.debug_target_names();
+            for (uint32_t i = 0; i < count; ++i) {
+                if (names[i] == m_app_config.debug_output_name) {
+                    m_debug_target_selection = global_index;
+                    found = true;
+                    return;
+                }
+                ++global_index;
+            }
+        });
+        INVARIANT_MSG(found, "Unknown debug output name");
+    }
+
+    // Camera defaults, overridable via CLI
     m_camera.set_target({0.0f, 0.0f, 0.0f});
     m_camera.set_distance(3.0f);
     m_camera.set_fov_y(60.0f);
 
-    if (m_app_config.quit_on_start) {
-        viewport()->request_close();
+    if (!m_app_config.camera_target.empty()) {
+        float x, y, z;
+        INVARIANT_MSG(std::sscanf(m_app_config.camera_target.c_str(), "%f,%f,%f", &x, &y, &z) == 3,
+                      "--camera-target must be x,y,z");
+        m_camera.set_target({x, y, z});
+    }
+    if (!m_app_config.camera_distance.empty()) {
+        m_camera.set_distance(std::stof(m_app_config.camera_distance));
+    }
+    if (!m_app_config.camera_yaw.empty()) {
+        m_camera.set_yaw(glm::radians(std::stof(m_app_config.camera_yaw)));
+    }
+    if (!m_app_config.camera_pitch.empty()) {
+        m_camera.set_pitch(glm::radians(std::stof(m_app_config.camera_pitch)));
+    }
+    if (!m_app_config.camera_fov.empty()) {
+        m_camera.set_fov_y(std::stof(m_app_config.camera_fov));
+    }
+
+    // In capture mode, set fixed viewport size (no ImGui layout)
+    if (m_app_config.is_capture_mode()) {
+        m_viewport_width = 1280;
+        m_viewport_height = 720;
     }
 }
 
 void EditorApplication::set_renderer_config(size_t index) {
     PRECONDITION(index < k_renderer_configs.size());
-    m_passes.clear();
-    m_passes.reserve(k_renderer_configs[index].pass_factories.size());
-    for (auto& factory : k_renderer_configs[index].pass_factories) {
-        m_passes.push_back(factory());
-    }
+    m_renderer_pass = k_renderer_configs[index].factory(m_shader_loader);
     auto& device = webgpu_context()->device();
-    for (auto& pass : m_passes) {
-        pass->set_shader_loader(m_shader_loader);
-        pass->setup(device);
-    }
+    m_renderer_pass->setup(device);
     m_active_config_index = index;
+    m_debug_target_selection = 0;
+    m_active_debug_ref = {};
 }
 
 void EditorApplication::update(float /*dt*/) {
@@ -400,6 +526,30 @@ void EditorApplication::render(FrameContext& ctx) {
     PTS_ZONE_SCOPED;
     if (!m_imgui) return;
     if (viewport() && viewport()->should_close()) return;
+
+    bool const capture_mode = m_app_config.is_capture_mode();
+    ++m_frame_count;
+
+    // ── Capture readback: tick the async state machine and write PNG when ready ──
+    if (capture_mode && m_capture_readback.is_pending()) {
+        m_capture_readback.tick();
+        auto pixels = m_capture_readback.try_read();
+        if (!pixels.empty()) {
+            auto parent = std::filesystem::path(m_app_config.capture_output).parent_path();
+            if (!parent.empty()) {
+                std::filesystem::create_directories(parent);
+            }
+            int const ok = stbi_write_png(m_app_config.capture_output.c_str(),
+                                          static_cast<int>(m_viewport_width),
+                                          static_cast<int>(m_viewport_height), 4, pixels.data(),
+                                          static_cast<int>(m_viewport_width * 4));
+            INVARIANT_MSG(ok, "stbi_write_png failed");
+            log(LogLevel::Info, "Captured {}x{} to {}", m_viewport_width, m_viewport_height,
+                m_app_config.capture_output);
+            viewport()->request_close();
+            return;
+        }
+    }
 
     // Finalize background scene load
     if (m_scene_load_task && m_scene_load_task->is_done()) {
@@ -422,6 +572,8 @@ void EditorApplication::render(FrameContext& ctx) {
 
         // Re-setup passes (they cache world references)
         set_renderer_config(m_active_config_index);
+        auto& dev = webgpu_context()->device();
+        for (auto& p : m_editor_passes) p->setup(dev);
 
         log(LogLevel::Info, "Loaded scene ({} objects)", m_world.get_objects().size());
     }
@@ -435,9 +587,7 @@ void EditorApplication::render(FrameContext& ctx) {
         m_shader_loader.poll_and_start_reload();
         if (!changed.empty()) {
             auto const& device = webgpu_context()->device();
-            for (auto& pass : m_passes) {
-                pass->on_shaders_reloaded(device);
-            }
+            for_each_pass([&](auto& pass) { pass.on_shaders_reloaded(device); });
         }
     }
 #endif
@@ -445,50 +595,53 @@ void EditorApplication::render(FrameContext& ctx) {
     auto scope = m_imgui->frame_scope();
     ImGuizmo::BeginFrame();
 
-    // Poll input — prev_hovered_widget makes this order-independent from UI drawing
-    m_input->poll(get_time(), window_width(), window_height(), m_imgui->prev_hovered_widget());
+    if (!capture_mode) {
+        // Poll input — prev_hovered_widget makes this order-independent from UI drawing
+        m_input->poll(get_time(), window_width(), window_height(), m_imgui->prev_hovered_widget());
 
-    if (m_first_frame) {
-        setup_docking_layout();
-        m_first_frame = false;
+        if (m_first_frame) {
+            setup_docking_layout();
+            m_first_frame = false;
+        }
+
+        // Draw UI
+        ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(),
+                                     ImGuiDockNodeFlags_PassthruCentralNode);
+
+        if (m_imgui->begin_window(k_scene_setting_win_name, ImGuiWindowFlags_NoMove)) {
+            draw_scene_panel();
+        }
+        m_imgui->end_window();
+
+        if (m_imgui->begin_window(k_inspector_win_name, ImGuiWindowFlags_NoMove)) {
+            draw_inspector_panel();
+        }
+        m_imgui->end_window();
+
+        if (m_imgui->begin_window(k_console_win_name, ImGuiWindowFlags_NoMove)) {
+            draw_console_panel();
+        }
+        m_imgui->end_window();
+
+        if (m_imgui->begin_window(k_scene_view_win_name, ImGuiWindowFlags_NoScrollWithMouse |
+                                                             ImGuiWindowFlags_NoMove |
+                                                             ImGuiWindowFlags_MenuBar)) {
+            draw_scene_viewport();
+        }
+        m_imgui->end_window();
+
+        // Pass-owned ImGui windows
+        for_each_pass([](auto& pass) { pass.draw_imgui(); });
+
+        // Collect all passes for perf overlay
+        std::vector<rendering::IScenePass*> all_passes;
+        for_each_pass([&](auto& pass) { all_passes.push_back(&pass); });
+        m_perf_overlay.draw(get_delta_time(), m_world, *m_frame_graph, all_passes,
+                            k_renderer_configs[m_active_config_index].name, m_viewport_width,
+                            m_viewport_height);
+
+        m_loading_overlay.draw();
     }
-
-    // Draw UI
-    ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(),
-                                 ImGuiDockNodeFlags_PassthruCentralNode);
-
-    if (m_imgui->begin_window(k_scene_setting_win_name, ImGuiWindowFlags_NoMove)) {
-        draw_scene_panel();
-    }
-    m_imgui->end_window();
-
-    if (m_imgui->begin_window(k_inspector_win_name, ImGuiWindowFlags_NoMove)) {
-        draw_inspector_panel();
-    }
-    m_imgui->end_window();
-
-    if (m_imgui->begin_window(k_console_win_name, ImGuiWindowFlags_NoMove)) {
-        draw_console_panel();
-    }
-    m_imgui->end_window();
-
-    if (m_imgui->begin_window(k_scene_view_win_name, ImGuiWindowFlags_NoScrollWithMouse |
-                                                         ImGuiWindowFlags_NoMove |
-                                                         ImGuiWindowFlags_MenuBar)) {
-        draw_scene_viewport();
-    }
-    m_imgui->end_window();
-
-    // Pass-owned ImGui windows
-    for (auto& pass : m_passes) {
-        pass->draw_imgui();
-    }
-
-    m_perf_overlay.draw(get_delta_time(), m_world, *m_frame_graph, m_passes,
-                        k_renderer_configs[m_active_config_index].name, m_viewport_width,
-                        m_viewport_height);
-
-    m_loading_overlay.draw();
 
     // ── Frame graph ──
     auto const& device = ctx.device();
@@ -499,11 +652,18 @@ void EditorApplication::render(FrameContext& ctx) {
     bool has_viewport = m_viewport_width > 0 && m_viewport_height > 0;
 
     rendering::ResourceHandle scene_color_handle;
+    rendering::ResourceHandle display_color_handle;  // tone-mapped output for ImGui display
+    rendering::ResourceHandle gizmo_overlay_handle;
 
-    // Build a minimal PassContext with device/queue for non-viewport passes
+    // Resolve selected prim to picking ID via EditorPass table
+    uint32_t selected_picking_id = UINT32_MAX;
+    if (!capture_mode && !m_selected_prim.IsEmpty() && m_editor_pass) {
+        selected_picking_id = m_editor_pass->find_picking_id(m_selected_prim.GetString());
+    }
+
     rendering::PassContext pass_ctx{
-        device,         queue,          m_camera,   m_world, m_viewport_width, m_viewport_height,
-        glm::mat4(1.f), glm::mat4(1.f), get_time(), 0,
+        device,         queue,          m_camera,   m_world, m_viewport_width,    m_viewport_height,
+        glm::mat4(1.f), glm::mat4(1.f), get_time(), 0,       selected_picking_id,
     };
 
     if (has_viewport) {
@@ -514,58 +674,150 @@ void EditorApplication::render(FrameContext& ctx) {
         m_world.prepare_gpu_buffers(device, queue);
     }
 
-    for (auto& pass : m_passes) {
-        if (!pass->is_ready()) continue;
-        if (pass->requires_viewport() && !has_viewport) continue;
-        pass->add_to_frame_graph(*m_frame_graph, pass_ctx);
+    // In capture mode, only add the renderer pass (skip editor passes)
+    if (capture_mode) {
+        if (m_renderer_pass && m_renderer_pass->is_ready() &&
+            !(m_renderer_pass->requires_viewport() && !has_viewport)) {
+            m_renderer_pass->add_to_frame_graph(*m_frame_graph, pass_ctx);
+        }
+    } else {
+        for_each_pass([&](auto& pass) {
+            if (!pass.is_ready()) return;
+            if (pass.requires_viewport() && !has_viewport) return;
+            pass.add_to_frame_graph(*m_frame_graph, pass_ctx);
+        });
     }
 
     if (has_viewport) {
-        // Look up scene_color resource that passes created
-        rendering::TextureDesc color_desc;
-        color_desc.width = m_viewport_width;
-        color_desc.height = m_viewport_height;
-        color_desc.format = WGPUTextureFormat_RGBA8Unorm;
-        color_desc.clear_color = {0.15, 0.15, 0.18, 1.0};
-        scene_color_handle = m_frame_graph->find_or_create("scene_color", color_desc);
+        // Look up scene_color (HDR) and tone_mapped_color (LDR) resources
+        rendering::TextureDesc hdr_desc;
+        hdr_desc.width = m_viewport_width;
+        hdr_desc.height = m_viewport_height;
+        hdr_desc.format = WGPUTextureFormat_RGBA16Float;
+        hdr_desc.clear_color = {0.15, 0.15, 0.18, 1.0};
+        if (capture_mode) {
+            hdr_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment |
+                                                           WGPUTextureUsage_CopySrc);
+        }
+        scene_color_handle = m_frame_graph->find_or_create("scene_color", hdr_desc);
+
+        rendering::TextureDesc ldr_desc;
+        ldr_desc.width = m_viewport_width;
+        ldr_desc.height = m_viewport_height;
+        ldr_desc.format = WGPUTextureFormat_RGBA8Unorm;
+        ldr_desc.clear_color = {0, 0, 0, 1};
+        if (capture_mode) {
+            ldr_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment |
+                                                           WGPUTextureUsage_CopySrc);
+        }
+        display_color_handle = m_frame_graph->find_or_create("tone_mapped_color", ldr_desc);
     }
 
-    // ImGui overlay pass — declare reads on any texture that ImGui::Image references
-    auto imgui_builder = m_frame_graph->add_pass("imgui")
-                             .color(ctx.surface_view(), WGPUColor{0.08, 0.08, 0.12, 1.0})
-                             .present();
-    if (has_viewport && scene_color_handle.is_valid()) {
-        imgui_builder.read(scene_color_handle);
-    }
-    {
-        rendering::TextureDesc lobe_desc;
-        lobe_desc.width = LobePass::k_texture_size;
-        lobe_desc.height = LobePass::k_texture_size;
-        lobe_desc.format = WGPUTextureFormat_RGBA8Unorm;
-        lobe_desc.clear_color = {0.1, 0.1, 0.1, 1.0};
-        auto lobe_color_handle = m_frame_graph->find_or_create("lobe_color", lobe_desc);
-        if (lobe_color_handle.is_valid()) {
-            imgui_builder.read(lobe_color_handle);
+    // Declare reads on all debug target textures so frame graph tracks them
+    std::vector<rendering::ResourceHandle> debug_target_handles;
+    if (has_viewport) {
+        rendering::TextureDesc debug_desc;
+        debug_desc.width = m_viewport_width;
+        debug_desc.height = m_viewport_height;
+        debug_desc.format = WGPUTextureFormat_RGBA16Float;
+        debug_desc.clear_color = {0, 0, 0, 1};
+        if (capture_mode) {
+            debug_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment |
+                                                             WGPUTextureUsage_CopySrc);
+        }
+
+        // In capture mode, only collect debug targets from the renderer pass
+        auto collect_debug_targets = [&](auto& pass) {
+            auto [names, count] = pass.debug_target_names();
+            for (uint32_t i = 0; i < count; ++i) {
+                auto h =
+                    m_frame_graph->find_or_create(std::string("debug_") + names[i], debug_desc);
+                if (h.is_valid()) {
+                    debug_target_handles.push_back(h);
+                }
+            }
+        };
+        if (capture_mode) {
+            if (m_renderer_pass) collect_debug_targets(*m_renderer_pass);
+        } else {
+            for_each_pass(collect_debug_targets);
         }
     }
-    imgui_builder.execute([&](WGPURenderPassEncoder pass) { scope.render_into(pass); });
+
+    if (!capture_mode) {
+        // ImGui overlay pass — declare reads on any texture that ImGui::Image references
+        auto imgui_builder = m_frame_graph->add_pass("imgui")
+                                 .color(ctx.surface_view(), WGPUColor{0.08, 0.08, 0.12, 1.0})
+                                 .present();
+        if (has_viewport && display_color_handle.is_valid()) {
+            imgui_builder.read(display_color_handle);
+        }
+
+        for (auto h : debug_target_handles) {
+            imgui_builder.read(h);
+        }
+
+        // Declare read on gizmo overlay so ImGui can composite it
+        if (has_viewport) {
+            rendering::TextureDesc gizmo_desc;
+            gizmo_desc.width = m_viewport_width;
+            gizmo_desc.height = m_viewport_height;
+            gizmo_desc.format = WGPUTextureFormat_RGBA8Unorm;
+            gizmo_desc.clear_color = {0, 0, 0, 0};
+            gizmo_overlay_handle =
+                m_frame_graph->find_or_create("editor_gizmo_overlay", gizmo_desc);
+            if (gizmo_overlay_handle.is_valid()) {
+                imgui_builder.read(gizmo_overlay_handle);
+            }
+        }
+
+        {
+            rendering::TextureDesc lobe_desc;
+            lobe_desc.width = LobePass::k_texture_size;
+            lobe_desc.height = LobePass::k_texture_size;
+            lobe_desc.format = WGPUTextureFormat_RGBA8Unorm;
+            lobe_desc.clear_color = {0.1, 0.1, 0.1, 1.0};
+            auto lobe_color_handle = m_frame_graph->find_or_create("lobe_color", lobe_desc);
+            if (lobe_color_handle.is_valid()) {
+                imgui_builder.read(lobe_color_handle);
+            }
+        }
+        imgui_builder.execute([&](WGPURenderPassEncoder pass) { scope.render_into(pass); });
+    }
 
     m_frame_graph->compile();
     m_frame_graph->execute(ctx.encoder());
+
+    // ── Capture: issue readback after target frame ──
+    if (capture_mode && !m_capture_readback.is_pending() &&
+        m_frame_count >= m_app_config.capture_frames) {
+        rendering::TextureRef capture_ref;
+        if (m_debug_target_selection > 0 &&
+            static_cast<size_t>(m_debug_target_selection - 1) < debug_target_handles.size()) {
+            capture_ref =
+                m_frame_graph->get_texture_ref(debug_target_handles[m_debug_target_selection - 1]);
+        } else {
+            capture_ref = m_frame_graph->get_texture_ref(display_color_handle);
+        }
+        INVARIANT_MSG(capture_ref, "Capture target texture not available");
+
+        m_capture_readback.request(ctx.encoder(), capture_ref.texture(), m_viewport_width,
+                                   m_viewport_height, device.handle(), device.instance());
+    }
 
     // ── GPU picking readback ──
     m_picking_readback.tick();
 
     if (auto picked_id = m_picking_readback.try_read_u32()) {
-        auto objects = m_world.get_objects();
         if (*picked_id == UINT32_MAX) {
             m_selected_prim = pxr::SdfPath();
-        } else if (*picked_id < static_cast<uint32_t>(objects.size()) &&
-                   objects[*picked_id].active) {
-            auto& path = objects[*picked_id].prim_path;
-            m_selected_prim = pxr::SdfPath(path);
-            if (m_stage) {
-                normalize_xform_ops(path);
+        } else if (m_editor_pass) {
+            auto path = m_editor_pass->resolve_picking_id(*picked_id);
+            if (!path.empty()) {
+                m_selected_prim = pxr::SdfPath(std::string(path));
+                if (m_stage) {
+                    normalize_xform_ops(std::string(path));
+                }
             }
         }
     }
@@ -590,17 +842,33 @@ void EditorApplication::render(FrameContext& ctx) {
         }
     }
 
-    // Store scene color ref for next frame's ImGui::Image
-    if (has_viewport && scene_color_handle.is_valid()) {
-        m_scene_color_ref = m_frame_graph->get_texture_ref(scene_color_handle);
-    }
+    if (!capture_mode) {
+        // Store scene color ref for next frame's ImGui::Image
+        if (has_viewport && scene_color_handle.is_valid()) {
+            m_scene_color_ref = m_frame_graph->get_texture_ref(display_color_handle);
+        }
 
-    // Let passes cache their texture refs for ImGui display
-    for (auto& pass : m_passes) {
-        pass->update_texture_refs(*m_frame_graph);
-    }
+        // Cache gizmo overlay ref (must be after compile/execute)
+        if (has_viewport && gizmo_overlay_handle.is_valid()) {
+            m_gizmo_overlay_ref = m_frame_graph->get_texture_ref(gizmo_overlay_handle);
+        } else {
+            m_gizmo_overlay_ref = {};
+        }
 
-    wrap_mouse_pos();
+        // Cache the active debug target ref (selection 1 maps to debug_target_handles[0])
+        if (m_debug_target_selection > 0 &&
+            static_cast<size_t>(m_debug_target_selection - 1) < debug_target_handles.size()) {
+            m_active_debug_ref =
+                m_frame_graph->get_texture_ref(debug_target_handles[m_debug_target_selection - 1]);
+        } else {
+            m_active_debug_ref = {};
+        }
+
+        // Let passes cache their texture refs for ImGui display
+        for_each_pass([&](auto& pass) { pass.update_texture_refs(*m_frame_graph); });
+
+        wrap_mouse_pos();
+    }
 
     PTS_FRAME_MARK;
 }
@@ -634,6 +902,51 @@ auto EditorApplication::create_input_actions() noexcept -> void {
 }
 
 auto EditorApplication::wrap_mouse_pos() noexcept -> void {
+}
+
+auto EditorApplication::draw_add_prim_menu(const pxr::SdfPath* parent,
+                                           const glm::vec3* spawn_pos) noexcept -> void {
+    PRECONDITION(m_stage);
+
+    std::vector<rendering::PrimFactory> all_factories;
+    for (auto* adapter : rendering::k_scene_adapters()) {
+        auto factories = adapter->get_factories();
+        all_factories.insert(all_factories.end(), factories.begin(), factories.end());
+    }
+
+    std::map<std::string, std::vector<const rendering::PrimFactory*>> grouped;
+    for (const auto& f : all_factories) {
+        grouped[f.category].push_back(&f);
+    }
+
+    for (const auto& [category, factories] : grouped) {
+        if (ImGui::BeginMenu(category.c_str())) {
+            for (const auto* factory : factories) {
+                if (ImGui::MenuItem(factory->display_name.c_str())) {
+                    auto path = find_unique_prim_path(factory->base_name, parent);
+                    factory->define(m_stage, path);
+                    normalize_xform_ops(path.GetString());
+                    if (spawn_pos) {
+                        auto prim = m_stage->GetPrimAtPath(path);
+                        if (pxr::UsdGeomXformable xformable{prim}; xformable) {
+                            bool reset = false;
+                            auto ops = xformable.GetOrderedXformOps(&reset);
+                            if (!ops.empty() &&
+                                ops[0].GetOpType() == pxr::UsdGeomXformOp::TypeTransform) {
+                                pxr::GfMatrix4d mat;
+                                mat.SetIdentity();
+                                mat.SetTranslateOnly(
+                                    pxr::GfVec3d(spawn_pos->x, spawn_pos->y, spawn_pos->z));
+                                ops[0].Set(mat);
+                            }
+                        }
+                    }
+                    m_selected_prim = path;
+                }
+            }
+            ImGui::EndMenu();
+        }
+    }
 }
 
 auto EditorApplication::draw_scene_panel() noexcept -> void {
@@ -682,42 +995,37 @@ auto EditorApplication::draw_scene_panel() noexcept -> void {
             });
     }
 
-    ImGui::SameLine();
-    if (m_stage && ImGui::Button("Add")) {
-        ImGui::OpenPopup("AddPrimPopup");
-    }
-    if (ImGui::BeginPopup("AddPrimPopup")) {
-        std::map<std::string, std::vector<const rendering::PrimFactory*>> grouped;
-        for (auto* adapter : rendering::k_scene_adapters()) {
-            auto factories = adapter->get_factories();
-            for (auto& f : factories) {
-                grouped[f.category].push_back(nullptr);
-            }
+    if (m_stage) {
+        ImGui::SameLine();
+        if (ImGui::Button("Save Scene")) {
+#if defined(__EMSCRIPTEN__)
+            std::string usda;
+            m_stage->GetRootLayer()->ExportToString(&usda);
+            // clang-format off
+            EM_ASM({
+                var data = UTF8ToString($0);
+                var blob = new Blob([data], {type: 'text/plain'});
+                var a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = 'scene.usda';
+                a.click();
+                URL.revokeObjectURL(a.href);
+            }, usda.c_str());
+            // clang-format on
+            log(LogLevel::Info, "Scene download triggered");
+#else
+            ImGui::FileDialogueAsync(ImGui::FileDialogueMode::Save, ".usda,.usdc,.usd",
+                                     [this](ImGui::FileDialogueResult result) {
+                                         if (result.name.empty()) return;
+                                         bool ok = m_stage->GetRootLayer()->Export(result.name);
+                                         if (ok)
+                                             log(LogLevel::Info, "Saved scene to {}", result.name);
+                                         else
+                                             log(LogLevel::Error, "Failed to save scene to {}",
+                                                 result.name);
+                                     });
+#endif
         }
-        // Re-collect with stable pointers via a local vector
-        std::vector<rendering::PrimFactory> all_factories;
-        for (auto* adapter : rendering::k_scene_adapters()) {
-            auto factories = adapter->get_factories();
-            all_factories.insert(all_factories.end(), factories.begin(), factories.end());
-        }
-        grouped.clear();
-        for (const auto& f : all_factories) {
-            grouped[f.category].push_back(&f);
-        }
-        for (const auto& [category, factories] : grouped) {
-            if (ImGui::BeginMenu(category.c_str())) {
-                for (const auto* factory : factories) {
-                    if (ImGui::MenuItem(factory->display_name.c_str())) {
-                        auto path = find_unique_prim_path(factory->base_name);
-                        factory->define(m_stage, path);
-                        normalize_xform_ops(path.GetString());
-                        m_selected_prim = path;
-                    }
-                }
-                ImGui::EndMenu();
-            }
-        }
-        ImGui::EndPopup();
     }
 }
 
@@ -731,13 +1039,57 @@ auto EditorApplication::draw_inspector_panel() noexcept -> void {
         draw_prim_tree(child);
     }
 
+    if (m_stage &&
+        ImGui::BeginPopupContextWindow("SceneContextMenu", ImGuiPopupFlags_NoOpenOverItems |
+                                                               ImGuiPopupFlags_MouseButtonRight)) {
+        draw_add_prim_menu();
+        ImGui::EndPopup();
+    }
+
     ImGui::Separator();
     if (!m_selected_prim.IsEmpty()) {
         auto prim = m_stage->GetPrimAtPath(m_selected_prim);
         if (prim.IsValid()) {
             draw_prim_properties(prim);
+
+            // Show BRDF lobe viewer if prim has a bound material
+            auto bound_mat = pxr::UsdShadeMaterialBindingAPI(prim).ComputeBoundMaterial();
+            if (bound_mat && m_lobe_pass) {
+                auto surface = bound_mat.GetSurfaceOutput();
+                pxr::UsdShadeConnectableAPI source;
+                pxr::TfToken source_name;
+                pxr::UsdShadeAttributeType source_type;
+                if (surface.GetConnectedSource(&source, &source_name, &source_type)) {
+                    auto shader = pxr::UsdShadeShader(source.GetPrim());
+
+                    // Sync from USD → lobe sliders only when selection changes
+                    if (m_selected_prim != m_lobe_bound_prim) {
+                        m_lobe_bound_prim = m_selected_prim;
+                        float roughness = 0.5f;
+                        float metallic = 0.0f;
+                        float val;
+                        if (auto r = shader.GetInput(pxr::TfToken("roughness")); r && r.Get(&val))
+                            roughness = val;
+                        if (auto m = shader.GetInput(pxr::TfToken("metallic")); m && m.Get(&val))
+                            metallic = val;
+                        m_lobe_pass->set_material(roughness, metallic);
+                    }
+
+                    ImGui::Separator();
+                    if (ImGui::CollapsingHeader("BRDF Lobe", ImGuiTreeNodeFlags_DefaultOpen)) {
+                        if (m_lobe_pass->draw_lobe_widget()) {
+                            // Write changed values back to USD
+                            if (auto r = shader.GetInput(pxr::TfToken("roughness")); r)
+                                r.Set(m_lobe_pass->roughness());
+                            if (auto m = shader.GetInput(pxr::TfToken("metallic")); m)
+                                m.Set(m_lobe_pass->metallic());
+                        }
+                    }
+                }
+            }
         }
     } else {
+        m_lobe_bound_prim = pxr::SdfPath();
         ImGui::TextDisabled("Select a prim to inspect properties");
     }
 }
@@ -757,7 +1109,17 @@ void EditorApplication::draw_prim_tree(const pxr::UsdPrim& prim) {
     // Label: "Name (TypeName)" or just "Name"
     std::string label = type_name.empty() ? name : name + " (" + type_name + ")";
 
+    // Auto-open parent nodes when a child is selected (e.g. via picking)
+    if (!is_selected && !m_selected_prim.IsEmpty() && m_selected_prim.HasPrefix(path)) {
+        ImGui::SetNextItemOpen(true);
+    }
+
     bool node_open = ImGui::TreeNodeEx(path.GetText(), flags, "%s", label.c_str());
+
+    // Auto-scroll to the selected prim in the tree
+    if (is_selected) {
+        ImGui::ScrollToItem();
+    }
 
     if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
         if (is_selected) {
@@ -770,6 +1132,20 @@ void EditorApplication::draw_prim_tree(const pxr::UsdPrim& prim) {
         }
     }
 
+    if (ImGui::BeginPopupContextItem()) {
+        if (ImGui::BeginMenu("Add Child")) {
+            draw_add_prim_menu(&path);
+            ImGui::EndMenu();
+        }
+        if (ImGui::MenuItem("Delete")) {
+            m_stage->RemovePrim(path);
+            if (m_selected_prim == path || m_selected_prim.HasPrefix(path)) {
+                m_selected_prim = pxr::SdfPath();
+            }
+        }
+        ImGui::EndPopup();
+    }
+
     if (node_open && has_children) {
         for (auto const& child : prim.GetChildren()) {
             draw_prim_tree(child);
@@ -779,12 +1155,14 @@ void EditorApplication::draw_prim_tree(const pxr::UsdPrim& prim) {
 }
 
 auto EditorApplication::draw_scene_viewport() noexcept -> void {
+    m_viewport_combo_open = false;
     if (ImGui::BeginMenuBar()) {
         ImGui::Text("Renderer:");
         ImGui::SameLine();
         ImGui::SetNextItemWidth(120);
         if (ImGui::BeginCombo("##renderer",
                               k_renderer_configs[m_active_config_index].name.c_str())) {
+            m_viewport_combo_open = true;
             for (size_t i = 0; i < k_renderer_configs.size(); ++i) {
                 bool selected = (i == m_active_config_index);
                 if (ImGui::Selectable(k_renderer_configs[i].name.c_str(), selected)) {
@@ -795,6 +1173,50 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
             }
             ImGui::EndCombo();
         }
+        // Debug target dropdown
+        ImGui::SameLine();
+        ImGui::Text("Debug:");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(140);
+        {
+            // Build flat list of debug target labels from all passes
+            std::vector<std::string> debug_labels;
+            debug_labels.emplace_back("Off");
+            for_each_pass([&](auto& pass) {
+                auto [names, count] = pass.debug_target_names();
+                for (uint32_t i = 0; i < count; ++i) {
+                    debug_labels.emplace_back(std::string(pass.name()) + ": " + names[i]);
+                }
+            });
+            if (m_debug_target_selection >= static_cast<int>(debug_labels.size())) {
+                m_debug_target_selection = 0;
+            }
+            if (ImGui::BeginCombo("##debug", debug_labels[m_debug_target_selection].c_str())) {
+                m_viewport_combo_open = true;
+                for (int i = 0; i < static_cast<int>(debug_labels.size()); ++i) {
+                    bool selected = (i == m_debug_target_selection);
+                    if (ImGui::Selectable(debug_labels[i].c_str(), selected)) {
+                        m_debug_target_selection = i;
+                    }
+                }
+                ImGui::EndCombo();
+            }
+        }
+        // Exposure control
+        if (m_tonemapping_pass) {
+            auto* tm = static_cast<ToneMappingPass*>(m_tonemapping_pass);
+            ImGui::SameLine();
+            ImGui::Text("EV:");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(80);
+            ImGui::DragFloat("##exposure", &tm->m_exposure, 0.05f, -5.0f, 5.0f, "%.1f");
+        }
+        // Renderer-specific controls
+        if (m_renderer_pass) {
+            m_renderer_pass->draw_viewport_controls();
+        }
+        ImGui::SameLine();
+        ImGui::Checkbox("Grid", &m_editor_passes_enabled);
         ImGui::EndMenuBar();
     }
 
@@ -812,22 +1234,33 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
     m_viewport_x = cursor_pos.x;
     m_viewport_y = cursor_pos.y;
 
-    if (m_scene_color_ref && m_viewport_width > 0 && m_viewport_height > 0) {
-        ImGui::Image(
-            reinterpret_cast<ImTextureID>(m_scene_color_ref.view()),
-            ImVec2(static_cast<float>(m_viewport_width), static_cast<float>(m_viewport_height)));
-    } else {
-        ImGui::TextUnformatted("Renderer output not available");
-    }
-
-    // ── Light gizmos ──
-    if (m_viewport_width > 0 && m_viewport_height > 0) {
-        float aspect = static_cast<float>(m_viewport_width) / static_cast<float>(m_viewport_height);
-        draw_light_gizmos(m_camera.view_matrix(), m_camera.projection_matrix(aspect));
+    {
+        auto& display_ref = (m_debug_target_selection > 0 && m_active_debug_ref)
+                                ? m_active_debug_ref
+                                : m_scene_color_ref;
+        if (display_ref && m_viewport_width > 0 && m_viewport_height > 0) {
+            ImGui::PushID("viewport_image");
+            ImGui::Image(reinterpret_cast<ImTextureID>(display_ref.view()),
+                         ImVec2(static_cast<float>(m_viewport_width),
+                                static_cast<float>(m_viewport_height)));
+            ImGui::PopID();
+            // Overlay gizmo wireframes on top (visible in all views including debug)
+            if (m_gizmo_overlay_ref && m_editor_passes_enabled) {
+                auto* draw_list = ImGui::GetWindowDrawList();
+                ImVec2 p_min(m_viewport_x, m_viewport_y);
+                ImVec2 p_max(m_viewport_x + static_cast<float>(m_viewport_width),
+                             m_viewport_y + static_cast<float>(m_viewport_height));
+                draw_list->AddImage(reinterpret_cast<ImTextureID>(m_gizmo_overlay_ref.view()),
+                                    p_min, p_max);
+            }
+        } else {
+            ImGui::TextUnformatted("Renderer output not available");
+        }
     }
 
     // ── ImGuizmo gizmo ──
-    if (!m_selected_prim.IsEmpty() && m_stage && m_viewport_width > 0 && m_viewport_height > 0) {
+    if (m_editor_passes_enabled && !m_selected_prim.IsEmpty() && m_stage && m_viewport_width > 0 &&
+        m_viewport_height > 0) {
         auto prim = m_stage->GetPrimAtPath(m_selected_prim);
         pxr::UsdGeomXformable xformable(prim);
         if (prim.IsValid() && xformable) {
@@ -882,61 +1315,19 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
             }
         }
     }
-}
 
-void EditorApplication::draw_light_gizmos(const glm::mat4& view_mat, const glm::mat4& proj_mat) {
-    if (!m_light_icon_view) return;
-
-    auto* draw_list = ImGui::GetWindowDrawList();
-    auto vp = proj_mat * view_mat;
-    float half_icon = k_light_icon_size * 0.5f;
-
-    auto mouse_pos = ImGui::GetMousePos();
-    bool mouse_clicked = ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !ImGuizmo::IsOver();
-
-    auto lights = m_world.get_lights();
-    for (int i = 0; i < static_cast<int>(lights.size()); ++i) {
-        const auto& light = lights[i];
-        if (!light.active) continue;
-
-        if (light.type == rendering::LightSlot::Type::Dome) continue;
-        // All lights get their icon at the transform position
-        glm::vec3 world_pos = glm::vec3(light.transform[3]);
-
-        glm::vec4 clip = vp * glm::vec4(world_pos, 1.0f);
-        if (clip.w <= 0.0f) continue;
-
-        glm::vec3 ndc = glm::vec3(clip) / clip.w;
-        if (ndc.x < -1.0f || ndc.x > 1.0f || ndc.y < -1.0f || ndc.y > 1.0f) continue;
-
-        float screen_x =
-            m_viewport_x + (ndc.x * 0.5f + 0.5f) * static_cast<float>(m_viewport_width);
-        float screen_y =
-            m_viewport_y + (1.0f - (ndc.y * 0.5f + 0.5f)) * static_cast<float>(m_viewport_height);
-
-        ImVec2 p_min(screen_x - half_icon, screen_y - half_icon);
-        ImVec2 p_max(screen_x + half_icon, screen_y + half_icon);
-
-        auto light_path = pxr::SdfPath(light.prim_path);
-        bool is_selected = (m_selected_prim == light_path);
-
-        // Click-to-select
-        if (mouse_clicked && mouse_pos.x >= p_min.x && mouse_pos.x <= p_max.x &&
-            mouse_pos.y >= p_min.y && mouse_pos.y <= p_max.y) {
-            if (is_selected) {
-                m_selected_prim = pxr::SdfPath();
-            } else {
-                m_selected_prim = light_path;
-                if (m_stage && !light.prim_path.empty()) normalize_xform_ops(light.prim_path);
-            }
-            is_selected = (m_selected_prim == light_path);
-            m_pick_requested = false;
-        }
-        draw_list->AddImage(reinterpret_cast<ImTextureID>(m_light_icon_view), p_min, p_max);
+    // ── Viewport right-click context menu ──
+    if (m_open_viewport_context) {
+        m_open_viewport_context = false;
+        ImGui::OpenPopup("ViewportContextMenu");
+    }
+    if (m_stage && ImGui::BeginPopup("ViewportContextMenu")) {
+        draw_add_prim_menu(nullptr, &m_context_menu_world_pos);
+        ImGui::EndPopup();
     }
 }
 
-auto EditorApplication::draw_console_panel() const noexcept -> void {
+auto EditorApplication::draw_console_panel() noexcept -> void {
     auto color = [](spdlog::level::level_enum lvl) -> ImVec4 {
         switch (lvl) {
             case spdlog::level::err:
@@ -963,6 +1354,10 @@ auto EditorApplication::draw_console_panel() const noexcept -> void {
             ImGui::PushStyleColor(ImGuiCol_Text, color(m.level));
             ImGui::TextUnformatted(m.payload.data(), m.payload.data() + m.payload.size());
             ImGui::PopStyleColor();
+        }
+        if (msgs.size() != m_last_console_msg_count) {
+            ImGui::SetScrollHereY(1.0f);
+            m_last_console_msg_count = msgs.size();
         }
     }
     ImGui::EndChild();
@@ -1035,8 +1430,11 @@ auto EditorApplication::handle_input(InputEvent const& event) noexcept -> void {
 
     if (event.input.input_type == InputType::MOUSE) {
         // Left-click: pick object under cursor
+        // Skip when a viewport combo dropdown is open — its popup overlaps the viewport
+        // content area, and clicks on dropdown items would trigger spurious picks.
         if (event.input.key_or_button == ImGuiMouseButton_Left &&
-            event.input.action_type == ActionType::PRESS && !ImGuizmo::IsOver()) {
+            event.input.action_type == ActionType::PRESS && !ImGuizmo::IsOver() &&
+            !m_viewport_combo_open) {
             auto local_x = event.mouse_pos.x - m_viewport_x;
             auto local_y = event.mouse_pos.y - m_viewport_y;
             if (local_x >= 0 && local_y >= 0 && local_x < static_cast<float>(m_viewport_width) &&
@@ -1047,10 +1445,35 @@ auto EditorApplication::handle_input(InputEvent const& event) noexcept -> void {
             }
         }
 
-        // Right-click drag: orbit camera
-        if (event.input.key_or_button == ImGuiMouseButton_Right &&
-            event.input.action_type == ActionType::HOLD) {
-            m_camera.orbit(event.normalized_mouse_delta.x, event.normalized_mouse_delta.y);
+        // Right-click: orbit camera on drag, context menu on click
+        if (event.input.key_or_button == ImGuiMouseButton_Right) {
+            if (event.input.action_type == ActionType::PRESS) {
+                m_rmb_dragged = false;
+                m_rmb_press_pos = event.mouse_pos;
+            } else if (event.input.action_type == ActionType::HOLD) {
+                constexpr float k_drag_threshold = 3.0f;
+                if (glm::length(event.mouse_pos - m_rmb_press_pos) > k_drag_threshold) {
+                    m_rmb_dragged = true;
+                }
+                if (m_rmb_dragged) {
+                    m_camera.orbit(event.normalized_mouse_delta.x, event.normalized_mouse_delta.y);
+                }
+            } else if (event.input.action_type == ActionType::RELEASE && !m_rmb_dragged) {
+                // Right-click without drag: open viewport context menu
+                // Unproject click to 3D at a reasonable depth (camera target distance)
+                float aspect = static_cast<float>(m_viewport_width) /
+                               std::max(1.0f, static_cast<float>(m_viewport_height));
+                auto local_x = m_rmb_press_pos.x - m_viewport_x;
+                auto local_y = m_rmb_press_pos.y - m_viewport_y;
+                float ndc_x = (local_x / static_cast<float>(m_viewport_width)) * 2.0f - 1.0f;
+                float ndc_y = 1.0f - (local_y / static_cast<float>(m_viewport_height)) * 2.0f;
+                float ndc_z = 0.95f;  // near the far end but not at it
+                auto inv_vp =
+                    glm::inverse(m_camera.projection_matrix(aspect) * m_camera.view_matrix());
+                glm::vec4 world_h = inv_vp * glm::vec4(ndc_x, ndc_y, ndc_z, 1.0f);
+                m_context_menu_world_pos = glm::vec3(world_h) / world_h.w;
+                m_open_viewport_context = true;
+            }
         }
 
         // Middle-click drag: pan camera

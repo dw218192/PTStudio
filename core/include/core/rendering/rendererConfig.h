@@ -8,12 +8,13 @@
 namespace pts::rendering {
 
 class IScenePass;
+class ShaderLoader;
 
-using PassFactory = std::function<std::unique_ptr<IScenePass>()>;
+using PassFactory = std::function<std::unique_ptr<IScenePass>(const ShaderLoader&)>;
 
 struct RendererConfig {
     std::string name;
-    std::vector<PassFactory> pass_factories;
+    PassFactory factory;
 };
 
 }  // namespace pts::rendering

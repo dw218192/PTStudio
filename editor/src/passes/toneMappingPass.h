@@ -12,34 +12,38 @@
 
 namespace pts::editor {
 
-class PickingPass final : public rendering::IScenePass {
+class ToneMappingPass final : public rendering::IScenePass {
    public:
-    PickingPass() = default;
-    ~PickingPass() override;
+    using IScenePass::IScenePass;
+    ~ToneMappingPass() override;
 
-    PickingPass(const PickingPass&) = delete;
-    PickingPass& operator=(const PickingPass&) = delete;
-    PickingPass(PickingPass&&) = delete;
-    PickingPass& operator=(PickingPass&&) = delete;
+    ToneMappingPass(const ToneMappingPass&) = delete;
+    ToneMappingPass& operator=(const ToneMappingPass&) = delete;
+    ToneMappingPass(ToneMappingPass&&) = delete;
+    ToneMappingPass& operator=(ToneMappingPass&&) = delete;
 
     [[nodiscard]] auto name() const noexcept -> std::string_view override;
     [[nodiscard]] auto is_ready() const noexcept -> bool override;
+    [[nodiscard]] auto requires_viewport() const noexcept -> bool override {
+        return true;
+    }
 
-    void setup(const webgpu::Device& device) override;
+    void do_setup(const webgpu::Device& device) override;
     void add_to_frame_graph(rendering::FrameGraph& fg, const rendering::PassContext& ctx) override;
 
     static constexpr uint32_t k_uniform_align = 256;
 
-   private:
-    void ensure_capacity(const webgpu::Device& device, uint32_t object_count);
+    // Parameters (controlled from editor UI)
+    float m_exposure = 0.0f;  // EV
+    uint32_t m_mode = 0;      // 0 = ACES, 1 = Reinhard
 
+   private:
     struct Ready {
         webgpu::ShaderModule shader;
         webgpu::RenderPipeline pipeline;
         webgpu::Buffer uniform_buffer;
-        WGPUBindGroup bind_group = nullptr;
         WGPUBindGroupLayout bind_group_layout = nullptr;
-        uint32_t capacity = 0;
+        WGPUSampler sampler = nullptr;
     };
 
     std::variant<std::monostate, Ready> m_state;

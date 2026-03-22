@@ -41,6 +41,26 @@ The `embed` prebuild step generates C++ headers with `get_resource(key)` lookup.
 
 Tracy 0.13.1's static `s_profiler` deadlocks at process exit on Windows if `<thread>` is included in widely-used headers — the changed static init ordering causes Tracy's destructor to run after WinSock cleanup, and its profiler thread hangs in `accept()`. **Never include `<thread>` (or headers that transitively include it, like `backgroundTask.h`) in `.h` files that are widely included.** Forward-declare and include in `.cpp` only. The proper fix is rebuilding Tracy with `TRACY_DELAYED_INIT=ON` + `TRACY_MANUAL_LIFETIME=ON`.
 
+## Visual Verification
+
+Use `--capture-and-quit` to verify rendering changes without manual inspection:
+
+```
+./repo launch editor --capture-and-quit[=output.png] [--usd scene.usda] [--frames 5] \
+                     [--renderer Forward] [--debug-output "Direct Diffuse"] \
+                     [--usd-override override.usda]
+```
+
+- Captures default to `_captures/<timestamp>.png` when no path is given
+- `--frames N` lets async loads settle before capture (default: 1)
+- `--debug-output` captures a named debug target instead of scene_color
+- Editor passes (grid, gizmo, overlay) are excluded from capture output
+- Output is always 1280x720 RGBA8
+
+## Verification
+
+Never declare a feature "working" based on build/test passing alone. For runtime behavior (rendering, hot-reload, UI), always launch the application (`./repo launch editor`) and verify visually or via log output before concluding and committing. Add diagnostic logging when needed to confirm correctness — guessing at root causes from code alone leads to wasted cycles. `./repo launch editor` returns the editor's log output directly — use it.
+
 ## Code Conventions
 
 - C++17, `webgpu.h` API for rendering (same header for Dawn and emdawnwebgpu)
