@@ -116,6 +116,9 @@ void sync_light(pxr::UsdPrim prim, SyncScope& scope, const LightSlot& light) {
         auto& dst = scope.light(slot);
         dst = light;
         dst.prim_path = std::move(prim_path);
+        ++dst.version;
+        scope.mark_light_dirty(slot);
+        scope.bump_light_version();
         scope.set_prim_slot(dst.prim_path, PrimSlot{PrimSlot::Kind::Light, slot});
     }
 }
