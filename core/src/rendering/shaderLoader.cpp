@@ -36,7 +36,7 @@ class SlangCompiler {
 
     CompileResult compile(const std::filesystem::path& slang_source,
                           const std::vector<std::string>& entry_points,
-                          const std::vector<std::string>& defines = {});
+                          boost::span<const std::string_view> defines = {});
 
    private:
     std::filesystem::path m_search_path;
@@ -52,7 +52,7 @@ SlangCompiler::~SlangCompiler() = default;
 
 SlangCompiler::CompileResult SlangCompiler::compile(const std::filesystem::path& slang_source,
                                                     const std::vector<std::string>& entry_points,
-                                                    const std::vector<std::string>& defines) {
+                                                    boost::span<const std::string_view> defines) {
     CompileResult result;
 
     // Fresh global session each call — IGlobalSession caches loaded modules
@@ -78,9 +78,10 @@ SlangCompiler::CompileResult SlangCompiler::compile(const std::filesystem::path&
     session_desc.searchPaths = search_paths;
     session_desc.searchPathCount = 2;
 
+    std::vector<std::string> define_storage(defines.begin(), defines.end());
     std::vector<slang::PreprocessorMacroDesc> macros;
     macros.reserve(defines.size());
-    for (const auto& d : defines) {
+    for (const auto& d : define_storage) {
         macros.push_back({d.c_str(), "1"});
     }
     session_desc.preprocessorMacros = macros.data();
@@ -283,7 +284,7 @@ auto ShaderLoader::load(std::string_view resource_key) const -> std::string {
 }
 
 auto ShaderLoader::load_variant(std::string_view resource_key,
-                                const std::vector<std::string>& defines,
+                                boost::span<const std::string_view> defines,
                                 std::string_view variant_resource_key) const -> std::string {
     auto it = m_impl->entries.find(std::string(resource_key));
     PRECONDITION_MSG(it != m_impl->entries.end(), "Unknown shader resource_key");

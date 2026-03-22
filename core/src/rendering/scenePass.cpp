@@ -142,7 +142,8 @@ auto IScenePass::load_pass_shader(std::string_view resource_key) const -> std::s
     auto dot = key.rfind('.');
     INVARIANT_MSG(dot != std::string::npos, "resource_key must have an extension");
     auto variant_key = key.substr(0, dot) + "_no_debug" + key.substr(dot);
-    return m_shader_loader->load_variant(resource_key, {k_no_debug_define}, variant_key);
+    std::string_view defines[] = {k_no_debug_define};
+    return m_shader_loader->load_variant(resource_key, defines, variant_key);
 }
 
 }  // namespace pts::rendering

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/core/span.hpp>
 #include <memory>
 #include <optional>
 #include <string>
@@ -48,7 +49,7 @@ class ShaderLoader {
     /// failure), falls back to the pre-compiled embedded resource at
     /// variant_resource_key.
     [[nodiscard]] auto load_variant(std::string_view resource_key,
-                                    const std::vector<std::string>& defines,
+                                    boost::span<const std::string_view> defines,
                                     std::string_view variant_resource_key) const -> std::string;
 
     /// Poll .slang source mtimes. If any changed, recompile via libslang
