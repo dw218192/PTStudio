@@ -4,6 +4,7 @@
 #include <core/rendering/vertex.h>
 #include <doctest/doctest.h>
 
+#include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
 using namespace pts::rendering;
@@ -273,4 +274,98 @@ TEST_CASE("free_mesh_slot clears cpu_vertices") {
     scope.free_mesh_slot(m);
     CHECK(world.get_meshes()[m].cpu_vertices.empty());
     CHECK(world.get_meshes()[m].cpu_indices.empty());
+}
+
+// --- to_light() orientation vector tests ---
+
+TEST_CASE("to_light distant light has zero right/up") {
+    LightSlot slot{};
+    slot.type = LightSlot::Type::Distant;
+    slot.direction = glm::vec3(0.0f, -1.0f, 0.0f);
+    slot.color = glm::vec3(1.0f);
+    slot.intensity = 2.0f;
+
+    auto l = to_light(slot);
+    CHECK(l.right == glm::vec3(0.0f));
+    CHECK(l.up == glm::vec3(0.0f));
+    CHECK(l.direction_or_pos == slot.direction);
+}
+
+TEST_CASE("to_light rect light encodes half-size orientation vectors") {
+    LightSlot slot{};
+    slot.type = LightSlot::Type::Rect;
+    slot.width = 4.0f;
+    slot.height = 2.0f;
+    slot.transform = glm::mat4(1.0f);  // identity
+
+    auto l = to_light(slot);
+    // right = normalize(transform[0]) * width/2 = (1,0,0) * 2
+    CHECK(l.right.x == doctest::Approx(2.0f));
+    CHECK(l.right.y == doctest::Approx(0.0f));
+    CHECK(l.right.z == doctest::Approx(0.0f));
+    // up = normalize(transform[1]) * height/2 = (0,1,0) * 1
+    CHECK(l.up.x == doctest::Approx(0.0f));
+    CHECK(l.up.y == doctest::Approx(1.0f));
+    CHECK(l.up.z == doctest::Approx(0.0f));
+    // position from transform column 3
+    CHECK(l.direction_or_pos == glm::vec3(0.0f));
+}
+
+TEST_CASE("to_light rect light with rotated transform") {
+    LightSlot slot{};
+    slot.type = LightSlot::Type::Rect;
+    slot.width = 6.0f;
+    slot.height = 4.0f;
+    // 90-degree rotation around Z: X->(0,1,0), Y->(-1,0,0)
+    slot.transform = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0, 0, 1));
+    slot.transform[3] = glm::vec4(5.0f, 3.0f, 1.0f, 1.0f);
+
+    auto l = to_light(slot);
+    // right = (0,1,0) * 3.0
+    CHECK(l.right.x == doctest::Approx(0.0f).epsilon(1e-5));
+    CHECK(l.right.y == doctest::Approx(3.0f).epsilon(1e-5));
+    CHECK(l.right.z == doctest::Approx(0.0f).epsilon(1e-5));
+    // up = (-1,0,0) * 2.0
+    CHECK(l.up.x == doctest::Approx(-2.0f).epsilon(1e-5));
+    CHECK(l.up.y == doctest::Approx(0.0f).epsilon(1e-5));
+    CHECK(l.up.z == doctest::Approx(0.0f).epsilon(1e-5));
+    // position
+    CHECK(l.direction_or_pos.x == doctest::Approx(5.0f));
+    CHECK(l.direction_or_pos.y == doctest::Approx(3.0f));
+    CHECK(l.direction_or_pos.z == doctest::Approx(1.0f));
+}
+
+TEST_CASE("to_light disk light encodes radius-scaled orientation vectors") {
+    LightSlot slot{};
+    slot.type = LightSlot::Type::Disk;
+    slot.radius = 3.0f;
+    slot.transform = glm::mat4(1.0f);
+
+    auto l = to_light(slot);
+    // right = normalize(transform[0]) * radius = (1,0,0) * 3
+    CHECK(l.right.x == doctest::Approx(3.0f));
+    CHECK(l.right.y == doctest::Approx(0.0f));
+    CHECK(l.right.z == doctest::Approx(0.0f));
+    // up = normalize(transform[1]) * radius = (0,1,0) * 3
+    CHECK(l.up.x == doctest::Approx(0.0f));
+    CHECK(l.up.y == doctest::Approx(3.0f));
+    CHECK(l.up.z == doctest::Approx(0.0f));
+}
+
+TEST_CASE("to_light sphere light has zero right/up") {
+    LightSlot slot{};
+    slot.type = LightSlot::Type::Sphere;
+    slot.radius = 1.5f;
+    slot.transform = glm::mat4(1.0f);
+    slot.transform[3] = glm::vec4(1.0f, 2.0f, 3.0f, 1.0f);
+
+    auto l = to_light(slot);
+    CHECK(l.right == glm::vec3(0.0f));
+    CHECK(l.up == glm::vec3(0.0f));
+    CHECK(l.radius == doctest::Approx(1.5f));
+    CHECK(l.direction_or_pos == glm::vec3(1.0f, 2.0f, 3.0f));
+}
+
+TEST_CASE("Light struct is 64 bytes") {
+    CHECK(sizeof(Light) == 64);
 }

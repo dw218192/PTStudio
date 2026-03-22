@@ -35,18 +35,18 @@ struct Material {
 };
 static_assert(sizeof(Material) == 32, "Material must be 32 bytes for GPU alignment");
 
-/// 48-byte GPU struct
+/// 64-byte GPU struct
 struct Light {
     glm::vec3 direction_or_pos;
     uint32_t type;
     glm::vec3 color;
     float intensity;
+    glm::vec3 right;
     float radius;
-    float width;
-    float height;
+    glm::vec3 up;
     float angle;
 };
-static_assert(sizeof(Light) == 48, "Light must be 48 bytes for GPU alignment");
+static_assert(sizeof(Light) == 64, "Light must be 64 bytes for GPU alignment");
 
 struct Mesh {
     webgpu::Buffer vertex_buffer;

@@ -18,14 +18,24 @@ Light to_light(const LightSlot& slot) {
     l.color = slot.color;
     l.intensity = slot.intensity;
     l.radius = slot.radius;
-    l.width = slot.width;
-    l.height = slot.height;
     l.angle = slot.angle;
 
     if (slot.type == LightSlot::Type::Distant) {
         l.direction_or_pos = slot.direction;
+        l.right = glm::vec3(0.0f);
+        l.up = glm::vec3(0.0f);
     } else {
         l.direction_or_pos = glm::vec3(slot.transform[3]);
+        if (slot.type == LightSlot::Type::Rect) {
+            l.right = glm::normalize(glm::vec3(slot.transform[0])) * (slot.width / 2.0f);
+            l.up = glm::normalize(glm::vec3(slot.transform[1])) * (slot.height / 2.0f);
+        } else if (slot.type == LightSlot::Type::Disk) {
+            l.right = glm::normalize(glm::vec3(slot.transform[0])) * slot.radius;
+            l.up = glm::normalize(glm::vec3(slot.transform[1])) * slot.radius;
+        } else {
+            l.right = glm::vec3(0.0f);
+            l.up = glm::vec3(0.0f);
+        }
     }
     return l;
 }

@@ -32,9 +32,9 @@ struct Light {
     uint type;
     float3 color;
     float intensity;
+    float3 right;
     float radius;
-    float width;
-    float height;
+    float3 up;
     float angle;  // distant light angular extent in degrees
 
     LightSample sample_distant(float3 N, float3 V, float roughness) {
@@ -93,7 +93,7 @@ struct Light {
         if (type == LIGHT_SPHERE) {
             effective_radius = radius;
         } else if (type == LIGHT_RECT) {
-            effective_radius = sqrt(width * height) / 2.0;
+            effective_radius = sqrt(length(right) * length(up));
         } else {
             effective_radius = radius;
         }
