@@ -147,6 +147,7 @@ void WindowedApplication::loop(float dt) {
     auto const& device = m_webgpu_context->device();
 
     WGPUCommandEncoderDescriptor enc_desc = WGPU_COMMAND_ENCODER_DESCRIPTOR_INIT;
+    enc_desc.label = {"frame_encoder", WGPU_STRLEN};
     WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device.handle(), &enc_desc);
 
     FrameContext ctx{device,       encoder,  surface_view, m_webgpu_context->surface_format(),

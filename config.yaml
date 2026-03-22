@@ -75,6 +75,9 @@ slangc:
     - input: "renderers/forward/forward.slang"
       output: "renderers/forward/generated/shaders/forward.wgsl"
       reflect: true
+    - input: "renderers/forward/forward.slang"
+      output: "renderers/forward/generated/shaders/forward_no_debug.wgsl"
+      defines: ["NO_DEBUG_TARGETS"]
     - input: "editor/shaders/picking.slang"
       output: "editor/generated/shaders/picking.wgsl"
       reflect: true
@@ -131,6 +134,7 @@ embed:
   resources:
     - input:
         - "renderers/forward/generated/shaders/forward.wgsl"
+        - "renderers/forward/generated/shaders/forward_no_debug.wgsl"
         - "editor/generated/shaders/picking.wgsl"
         - "editor/generated/shaders/grid.wgsl"
         - "editor/generated/shaders/wireframe.wgsl"

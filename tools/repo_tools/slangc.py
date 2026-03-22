@@ -35,7 +35,7 @@ def _resolve_slang_shaders(
         logger.warning("Slang shader configuration must be a list.")
         return [], 0
 
-    resolved: list[tuple[Path, Path, bool]] = []
+    resolved: list[tuple[Path, Path, bool, list[str]]] = []
     errors = 0
     seen_outputs: set[Path] = set()
 
@@ -86,7 +86,8 @@ def _resolve_slang_shaders(
                 errors += 1
                 continue
             seen_outputs.add(output_path)
-            resolved.append((input_path, output_path, reflect))
+            defines = shader.get("defines", [])
+            resolved.append((input_path, output_path, reflect, defines))
 
     return resolved, errors
 
@@ -207,7 +208,7 @@ class SlangcTool(RepoTool):
 
         compiled = 0
         skipped = 0
-        for input_path, output_path, reflect in shaders:
+        for input_path, output_path, reflect, defines in shaders:
             if not input_path.exists():
                 logger.error(f"Shader input not found: {input_path}")
                 sys.exit(1)
@@ -223,6 +224,8 @@ class SlangcTool(RepoTool):
                     "-target",
                     "wgsl",
                 ]
+                for d in defines:
+                    cmd.extend(["-D", d])
                 for sp in search_paths:
                     cmd.extend(["-I", str(sp)])
                 cmd.extend(ctx.passthrough_args)

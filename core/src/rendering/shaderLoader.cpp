@@ -35,7 +35,8 @@ class SlangCompiler {
     ~SlangCompiler();
 
     CompileResult compile(const std::filesystem::path& slang_source,
-                          const std::vector<std::string>& entry_points);
+                          const std::vector<std::string>& entry_points,
+                          const std::vector<std::string>& defines = {});
 
    private:
     std::filesystem::path m_search_path;
@@ -50,7 +51,8 @@ SlangCompiler::SlangCompiler(std::filesystem::path search_path,
 SlangCompiler::~SlangCompiler() = default;
 
 SlangCompiler::CompileResult SlangCompiler::compile(const std::filesystem::path& slang_source,
-                                                    const std::vector<std::string>& entry_points) {
+                                                    const std::vector<std::string>& entry_points,
+                                                    const std::vector<std::string>& defines) {
     CompileResult result;
 
     // Fresh global session each call — IGlobalSession caches loaded modules
@@ -75,6 +77,14 @@ SlangCompiler::CompileResult SlangCompiler::compile(const std::filesystem::path&
     const char* search_paths[] = {source_dir_str.c_str(), search_str.c_str()};
     session_desc.searchPaths = search_paths;
     session_desc.searchPathCount = 2;
+
+    std::vector<slang::PreprocessorMacroDesc> macros;
+    macros.reserve(defines.size());
+    for (const auto& d : defines) {
+        macros.push_back({d.c_str(), "1"});
+    }
+    session_desc.preprocessorMacros = macros.data();
+    session_desc.preprocessorMacroCount = static_cast<SlangInt>(macros.size());
 
     Slang::ComPtr<slang::ISession> session;
     hr = global_session->createSession(session_desc, session.writeRef());
@@ -270,6 +280,32 @@ auto ShaderLoader::load(std::string_view resource_key) const -> std::string {
     auto it = m_impl->entries.find(std::string(resource_key));
     PRECONDITION_MSG(it != m_impl->entries.end(), "Unknown shader resource_key");
     return it->second.cached_wgsl;
+}
+
+auto ShaderLoader::load_variant(std::string_view resource_key,
+                                const std::vector<std::string>& defines,
+                                std::string_view variant_resource_key) const -> std::string {
+    auto it = m_impl->entries.find(std::string(resource_key));
+    PRECONDITION_MSG(it != m_impl->entries.end(), "Unknown shader resource_key");
+    auto& entry = it->second;
+
+#ifdef PTS_SHADER_HOT_RELOAD
+    if (m_impl->compiler) {
+        namespace fs = std::filesystem;
+        fs::path workspace_root(PTS_WORKSPACE_ROOT);
+        auto slang_path = workspace_root / entry.slang_source;
+        auto result = m_impl->compiler->compile(slang_path, entry.entry_points, defines);
+        if (result.success && !result.wgsl.empty()) {
+            return result.wgsl.front();
+        }
+        m_impl->logger->warn("Variant compile failed for '{}', falling back to embedded: {}",
+                             resource_key, result.diagnostics_text);
+    }
+#endif
+
+    auto embedded = entry.embedded_getter(variant_resource_key);
+    PRECONDITION_MSG(embedded.has_value(), "Variant embedded resource not found");
+    return std::string(*embedded);
 }
 
 bool ShaderLoader::poll_and_start_reload() {

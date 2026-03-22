@@ -457,7 +457,7 @@ void EditorApplication::on_ready() {
         int global_index = 1;  // 1-based (0 = "Off")
         bool found = false;
         for_each_pass([&](auto& pass) {
-            auto [names, count] = pass.debug_target_names();
+            auto [names, count] = pass.effective_debug_target_names();
             for (uint32_t i = 0; i < count; ++i) {
                 if (names[i] == m_app_config.debug_output_name) {
                     m_debug_target_selection = global_index;
@@ -723,7 +723,7 @@ void EditorApplication::render(FrameContext& ctx) {
 
         // In capture mode, only collect debug targets from the renderer pass
         auto collect_debug_targets = [&](auto& pass) {
-            auto [names, count] = pass.debug_target_names();
+            auto [names, count] = pass.effective_debug_target_names();
             for (uint32_t i = 0; i < count; ++i) {
                 auto h =
                     m_frame_graph->find_or_create(std::string("debug_") + names[i], debug_desc);
@@ -1178,7 +1178,7 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
             std::vector<std::string> debug_labels;
             debug_labels.emplace_back("Off");
             for_each_pass([&](auto& pass) {
-                auto [names, count] = pass.debug_target_names();
+                auto [names, count] = pass.effective_debug_target_names();
                 for (uint32_t i = 0; i < count; ++i) {
                     debug_labels.emplace_back(std::string(pass.name()) + ": " + names[i]);
                 }

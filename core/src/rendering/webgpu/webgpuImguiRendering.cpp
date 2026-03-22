@@ -56,6 +56,7 @@ void WebGpuImguiRendering::render(bool framebuffer_resized) {
     }
 
     WGPUCommandEncoderDescriptor encoder_desc = WGPU_COMMAND_ENCODER_DESCRIPTOR_INIT;
+    encoder_desc.label = {"imgui_encoder", WGPU_STRLEN};
     WGPUCommandEncoder encoder =
         wgpuDeviceCreateCommandEncoder(m_context->device().handle(), &encoder_desc);
     if (encoder == nullptr) {
@@ -72,6 +73,7 @@ void WebGpuImguiRendering::render(bool framebuffer_resized) {
     color_attachment.clearValue = clear_color;
 
     WGPURenderPassDescriptor pass_desc = WGPU_RENDER_PASS_DESCRIPTOR_INIT;
+    pass_desc.label = {"imgui_render_pass", WGPU_STRLEN};
     pass_desc.colorAttachmentCount = 1;
     pass_desc.colorAttachments = &color_attachment;
 

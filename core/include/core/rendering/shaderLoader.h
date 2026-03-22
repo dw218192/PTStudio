@@ -42,6 +42,15 @@ class ShaderLoader {
     /// After a failed recompilation, keeps returning the last-good version.
     [[nodiscard]] auto load(std::string_view resource_key) const -> std::string;
 
+    /// Load a preprocessor variant of a registered shader.
+    /// In hot-reload builds, recompiles the shader's Slang source with the
+    /// given defines via libslang. In non-hot-reload builds (or on compile
+    /// failure), falls back to the pre-compiled embedded resource at
+    /// variant_resource_key.
+    [[nodiscard]] auto load_variant(std::string_view resource_key,
+                                    const std::vector<std::string>& defines,
+                                    std::string_view variant_resource_key) const -> std::string;
+
     /// Poll .slang source mtimes. If any changed, recompile via libslang
     /// and update in-memory WGSL cache.
     /// Returns list of resource_keys whose content changed (empty if nothing changed).

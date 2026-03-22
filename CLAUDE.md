@@ -61,6 +61,19 @@ Use `--capture-and-quit` to verify rendering changes without manual inspection:
 
 Never declare a feature "working" based on build/test passing alone. For runtime behavior (rendering, hot-reload, UI), always launch the application (`./repo launch editor`) and verify visually or via log output before concluding and committing. Add diagnostic logging when needed to confirm correctness — guessing at root causes from code alone leads to wasted cycles. `./repo launch editor` returns the editor's log output directly — use it.
 
+## Debug MRT Targets & Device Limits
+
+Scene passes can declare debug MRT outputs (Normals, Base Color, etc.) via `debug_target_names()`. These are gated at runtime by `maxColorAttachmentBytesPerSample` — the WebGPU spec's `renderTargetPixelByteCost` for RGBA8Unorm is 8 bytes (not 4), so 5 attachments cost 40 bytes, exceeding the 32-byte limit on instrumented runtimes (RenderDoc, NSight).
+
+**How it works:**
+- `IScenePass::setup()` queries device limits and computes an all-or-nothing `m_allowed_debug_count` (all debug targets fit, or none)
+- `effective_debug_target_names()` returns the gated count; the editor UI and frame graph use this
+- `load_pass_shader(resource_key)` automatically selects the no-debug shader variant when targets are disabled — passes just call this instead of `ShaderLoader::load()` directly
+- The no-debug variant is compiled at build time with `-DNO_DEBUG_TARGETS` (see `config.yaml` slangc entries with `defines:`)
+- At runtime in hot-reload builds, `ShaderLoader::load_variant()` recompiles via Slang with the define; non-hot-reload builds fall back to the pre-compiled embedded WGSL
+
+**Shader convention:** guard debug MRT struct fields and writes with `#ifndef NO_DEBUG_TARGETS`. The variant key is derived automatically by inserting `_no_debug` before the extension (e.g. `forward.wgsl` → `forward_no_debug.wgsl`). Both the base and variant WGSL must be listed in `config.yaml` under `slangc.shaders` and `embed.resources`.
+
 ## Code Conventions
 
 - C++17, `webgpu.h` API for rendering (same header for Dawn and emdawnwebgpu)

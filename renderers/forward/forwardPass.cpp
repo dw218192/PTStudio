@@ -114,7 +114,8 @@ void ForwardPass::do_setup(const webgpu::Device& device) {
         if (ready->bind_group_layout) wgpuBindGroupLayoutRelease(ready->bind_group_layout);
     }
 
-    auto shader_src = get_shader_loader().load("renderers/forward/generated/shaders/forward.wgsl");
+    auto [dbg_names_setup, dbg_count_setup] = effective_debug_target_names();
+    auto shader_src = load_pass_shader("renderers/forward/generated/shaders/forward.wgsl");
     auto shader = device.create_shader_module_from_source(shader_src);
 
     uint32_t initial_capacity = 64;
@@ -184,7 +185,7 @@ void ForwardPass::do_setup(const webgpu::Device& device) {
                        .cull_mode(WGPUCullMode_Back)
                        .pipeline_layout(pipeline_layout)
                        .vertex_layout<forward_shader::VertexLayout>();
-    for (uint32_t i = 0; i < k_debug_target_count; ++i) {
+    for (uint32_t i = 0; i < dbg_count_setup; ++i) {
         builder.color_format(WGPUTextureFormat_RGBA8Unorm, i + 1);
     }
     auto pipeline = builder.build();
@@ -270,6 +271,8 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
     auto color = fg.find_or_create("scene_color", color_desc);
     auto depth = fg.find_or_create("scene_depth", depth_desc);
 
+    auto [eff_debug_names, eff_debug_count] = effective_debug_target_names();
+
     rendering::TextureDesc debug_desc;
     debug_desc.width = ctx.viewport_width;
     debug_desc.height = ctx.viewport_height;
@@ -277,9 +280,9 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
     debug_desc.clear_color = {0, 0, 0, 1};
 
     rendering::ResourceHandle debug_handles[k_debug_target_count];
-    for (uint32_t i = 0; i < k_debug_target_count; ++i) {
+    for (uint32_t i = 0; i < eff_debug_count; ++i) {
         debug_handles[i] =
-            fg.find_or_create(std::string("debug_") + k_debug_target_names[i], debug_desc);
+            fg.find_or_create(std::string("debug_") + eff_debug_names[i], debug_desc);
     }
 
     auto queue = ctx.queue;
@@ -306,7 +309,7 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
     }
 
     auto pass_builder = fg.add_pass("forward").color(color);
-    for (uint32_t i = 0; i < k_debug_target_count; ++i) {
+    for (uint32_t i = 0; i < eff_debug_count; ++i) {
         pass_builder.color(debug_handles[i]);
     }
     pass_builder.depth(depth).execute([=, &world](WGPURenderPassEncoder pass) {

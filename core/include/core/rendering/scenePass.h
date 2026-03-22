@@ -34,9 +34,9 @@ class IScenePass {
     [[nodiscard]] virtual auto name() const noexcept -> std::string_view = 0;
     [[nodiscard]] virtual auto is_ready() const noexcept -> bool = 0;
 
-    /// Initialize the pass. Validates debug target limits, then calls do_setup().
+    /// Initialize the pass. Computes allowed debug targets, then calls do_setup().
     void setup(const webgpu::Device& device) {
-        validate_debug_limits(device);
+        compute_allowed_debug_targets(device);
         do_setup(device);
     }
 
@@ -72,9 +72,26 @@ class IScenePass {
         return {nullptr, 0};
     }
 
+    /// Debug targets gated by device limits. Returns the same names array but
+    /// with count capped to what the device can actually support. Only valid
+    /// after setup() has been called.
+    [[nodiscard]] auto effective_debug_target_names() const noexcept
+        -> std::pair<const char* const*, uint32_t> {
+        auto [names, count] = debug_target_names();
+        return {names, std::min(count, m_allowed_debug_count)};
+    }
+
     [[nodiscard]] auto get_shader_loader() const noexcept -> const ShaderLoader& {
         return *m_shader_loader;
     }
+
+    /// Load the pass shader, automatically selecting the no-debug-targets
+    /// variant when the device limit requires it. Shaders that declare debug
+    /// MRT outputs must guard them with `#ifndef NO_DEBUG_TARGETS`.
+    /// The variant is loaded from an embedded resource whose key is derived
+    /// by inserting "_no_debug" before the extension (e.g. forward.wgsl →
+    /// forward_no_debug.wgsl).
+    [[nodiscard]] auto load_pass_shader(std::string_view resource_key) const -> std::string;
 
    protected:
     virtual void do_setup(const webgpu::Device& device) = 0;
@@ -120,8 +137,9 @@ class IScenePass {
 
    private:
     const ShaderLoader* m_shader_loader;
+    uint32_t m_allowed_debug_count = UINT32_MAX;
 
-    void validate_debug_limits(const webgpu::Device& device);
+    void compute_allowed_debug_targets(const webgpu::Device& device);
 
     static uint32_t entity_version(PassDataKind kind, uint32_t index, const RenderWorld& world) {
         switch (kind) {
