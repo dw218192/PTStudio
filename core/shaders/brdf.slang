@@ -14,14 +14,20 @@ float D_GGX(float NdotH, float a2) {
     return a2 / (PI * denom * denom);
 }
 
+float Lambda_GGX(float cos_theta, float a2) {
+    if (cos_theta <= 0.0) return 1e10;
+    float cos2 = cos_theta * cos_theta;
+    return (-1.0 + sqrt(1.0 + a2 * (1.0 - cos2) / cos2)) * 0.5;
+}
+
 float G_SmithGGX1(float cos_theta, float a2) {
     if (cos_theta <= 0.0) return 0.0;
-    float cos2 = cos_theta * cos_theta;
-    return 2.0 * cos_theta / (cos_theta + sqrt(a2 + (1.0 - a2) * cos2));
+    return 1.0 / (1.0 + Lambda_GGX(cos_theta, a2));
 }
 
 float G_SmithGGX(float NdotV, float NdotL, float a2) {
-    return G_SmithGGX1(NdotV, a2) * G_SmithGGX1(NdotL, a2);
+    if (NdotV <= 0.0 || NdotL <= 0.0) return 0.0;
+    return 1.0 / (1.0 + Lambda_GGX(NdotV, a2) + Lambda_GGX(NdotL, a2));
 }
 
 float3 F_Schlick(float VdotH, float3 F0) {
