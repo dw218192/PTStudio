@@ -432,7 +432,7 @@ void EditorApplication::on_ready() {
         m_editor_passes.push_back(std::make_unique<LobePass>(m_shader_loader));
         m_lobe_pass = static_cast<LobePass*>(m_editor_passes.back().get());
         m_editor_passes.push_back(std::make_unique<ToneMappingPass>(m_shader_loader));
-        m_tonemapping_pass = static_cast<ToneMappingPass*>(m_editor_passes.back().get());
+        m_tonemapping_pass = m_editor_passes.back().get();
         for (auto& p : m_editor_passes) {
             p->setup(dev);
         }
@@ -1204,12 +1204,12 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
         }
         // Exposure control
         if (m_tonemapping_pass) {
+            auto* tm = static_cast<ToneMappingPass*>(m_tonemapping_pass);
             ImGui::SameLine();
             ImGui::Text("EV:");
             ImGui::SameLine();
             ImGui::SetNextItemWidth(80);
-            ImGui::DragFloat("##exposure", &m_tonemapping_pass->m_exposure, 0.05f, -5.0f, 5.0f,
-                             "%.1f");
+            ImGui::DragFloat("##exposure", &tm->m_exposure, 0.05f, -5.0f, 5.0f, "%.1f");
         }
         // Renderer-specific controls
         if (m_renderer_pass) {

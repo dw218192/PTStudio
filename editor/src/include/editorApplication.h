@@ -110,9 +110,9 @@ struct EditorApplication final : WindowedApplication {
     rendering::RenderWorld m_world;
     std::unique_ptr<rendering::IScenePass> m_renderer_pass;
     std::vector<std::unique_ptr<rendering::IScenePass>> m_editor_passes;
-    EditorPass* m_editor_pass = nullptr;            // non-owning, points into m_editor_passes
-    LobePass* m_lobe_pass = nullptr;                // non-owning, points into m_editor_passes
-    ToneMappingPass* m_tonemapping_pass = nullptr;  // non-owning, points into m_editor_passes
+    EditorPass* m_editor_pass = nullptr;                  // non-owning, points into m_editor_passes
+    LobePass* m_lobe_pass = nullptr;                      // non-owning, points into m_editor_passes
+    rendering::IScenePass* m_tonemapping_pass = nullptr;  // non-owning, points into m_editor_passes
     size_t m_active_config_index = 0;
     bool m_editor_passes_enabled = true;
     rendering::ShaderLoader m_shader_loader;
@@ -123,9 +123,7 @@ struct EditorApplication final : WindowedApplication {
         if (m_renderer_pass) fn(*m_renderer_pass);
         for (auto& p : m_editor_passes) {
             // ToneMappingPass always runs; others respect the toggle
-            if (!m_editor_passes_enabled &&
-                p.get() != static_cast<rendering::IScenePass*>(m_tonemapping_pass))
-                continue;
+            if (!m_editor_passes_enabled && p.get() != m_tonemapping_pass) continue;
             fn(*p);
         }
     }
