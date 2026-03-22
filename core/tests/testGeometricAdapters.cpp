@@ -57,19 +57,19 @@ TEST_CASE("populate_from_stage with progress builds RenderWorld") {
     auto objects = world.get_objects();
     size_t active_count = 0;
     for (const auto& obj : objects) {
-        if (obj.active) ++active_count;
+        if (obj.active()) ++active_count;
     }
     CHECK(active_count == 2);
 
     // CPU data present, no GPU buffers
     auto meshes = world.get_meshes();
     for (const auto& obj : objects) {
-        if (!obj.active) continue;
-        const auto& mesh = meshes[obj.mesh_index];
-        CHECK(mesh.cpu_vertices.size() > 0);
-        CHECK(mesh.cpu_indices.size() > 0);
-        CHECK(mesh.vertex_buffer.handle() == nullptr);
-        CHECK(mesh.index_buffer.handle() == nullptr);
+        if (!obj.active()) continue;
+        const auto& mesh = meshes[obj->mesh_index];
+        CHECK(mesh->cpu_vertices.size() > 0);
+        CHECK(mesh->cpu_indices.size() > 0);
+        CHECK(mesh->vertex_buffer.handle() == nullptr);
+        CHECK(mesh->index_buffer.handle() == nullptr);
     }
 }
 
@@ -161,10 +161,10 @@ struct TestFixture {
         spdlog::drop(logger->name());
     }
 
-    const pts::rendering::Mesh& synced_mesh() const {
+    const pts::rendering::MeshData& synced_mesh() const {
         auto objects = world.get_objects();
         auto meshes = world.get_meshes();
-        return meshes[objects[0].mesh_index];
+        return meshes[objects[0]->mesh_index].data();
     }
 };
 
@@ -186,7 +186,7 @@ TEST_CASE("CubeAdapter - basic cube") {
     f.world.upload_all_meshes(f.device);
 
     REQUIRE(f.world.get_objects().size() == 1);
-    CHECK(f.world.get_objects()[0].prim_path == "/Cube");
+    CHECK(f.world.get_objects()[0]->prim_path == "/Cube");
     // 36 indices (2 tris per face x 6 faces)
     CHECK(f.synced_mesh().index_count == 36);
     CHECK(f.synced_mesh().cpu_indices.size() == 36);
@@ -319,9 +319,9 @@ TEST_CASE("CPU-only sync populates vertices and indices without GPU buffers") {
     pts::rendering::populate_from_stage(world, stage);
 
     REQUIRE(world.get_objects().size() == 1);
-    CHECK(world.get_objects()[0].prim_path == "/Cube");
+    CHECK(world.get_objects()[0]->prim_path == "/Cube");
 
-    auto const& mesh = world.get_meshes()[world.get_objects()[0].mesh_index];
+    auto const& mesh = world.get_meshes()[world.get_objects()[0]->mesh_index].data();
     CHECK(mesh.index_count == 36);
     CHECK(mesh.cpu_indices.size() == 36);
     CHECK(mesh.cpu_vertices.size() > 0);
@@ -362,7 +362,7 @@ TEST_CASE("remove_prim frees object and mesh slots") {
     f.world.upload_all_meshes(f.device);
 
     REQUIRE(f.world.get_objects().size() == 1);
-    CHECK(f.world.get_objects()[0].active);
+    CHECK(f.world.get_objects()[0].active());
     auto initial_version = f.world.get_mesh_version();
 
     {
@@ -370,7 +370,7 @@ TEST_CASE("remove_prim frees object and mesh slots") {
         pts::rendering::remove_prim(scope, pxr::SdfPath("/Cube"));
     }
 
-    CHECK(!f.world.get_objects()[0].active);
+    CHECK(!f.world.get_objects()[0].active());
     CHECK(f.world.find_object_by_prim("/Cube") == -1);
     CHECK(f.world.get_mesh_version() > initial_version);
 }
@@ -393,7 +393,7 @@ TEST_CASE("sync_prim with invalid path calls remove_prim") {
         pts::rendering::sync_prim(scope, stage, pxr::SdfPath("/Cube"));
     }
 
-    CHECK(!f.world.get_objects()[0].active);
+    CHECK(!f.world.get_objects()[0].active());
     CHECK(f.world.find_object_by_prim("/Cube") == -1);
 }
 

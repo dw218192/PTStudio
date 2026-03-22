@@ -290,14 +290,14 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
     const auto& world = ctx.world;
 
     for (uint32_t i = 0; i < object_count; ++i) {
-        if (!objects[i].active) continue;
+        if (!objects[i].active()) continue;
         const auto& obj = objects[i];
         ForwardUniforms u{};
-        u.mvp = proj_mat * view_mat * obj.transform;
-        u.model = obj.transform;
+        u.mvp = proj_mat * view_mat * obj->transform;
+        u.model = obj->transform;
         u.camera_pos = camera_pos;
         u.time = elapsed_time;
-        u.material_index = obj.material_index;
+        u.material_index = obj->material_index;
         u.light_count = light_count;
         wgpuQueueWriteBuffer(queue, uniform_buf, i * k_uniform_align, &u, sizeof(u));
     }
@@ -311,16 +311,16 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
         auto meshes = world.get_meshes();
         wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
         for (uint32_t i = 0; i < static_cast<uint32_t>(objs.size()); ++i) {
-            if (!objs[i].active) continue;
+            if (!objs[i].active()) continue;
             uint32_t dyn_offset = i * k_uniform_align;
             wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 1, &dyn_offset);
-            const auto& mesh = meshes[objs[i].mesh_index];
-            wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh.vertex_buffer.handle(), 0,
-                                                 mesh.vertex_buffer.size());
-            wgpuRenderPassEncoderSetIndexBuffer(pass, mesh.index_buffer.handle(),
+            const auto& mesh = meshes[objs[i]->mesh_index];
+            wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh->vertex_buffer.handle(), 0,
+                                                 mesh->vertex_buffer.size());
+            wgpuRenderPassEncoderSetIndexBuffer(pass, mesh->index_buffer.handle(),
                                                 WGPUIndexFormat_Uint32, 0,
-                                                mesh.index_buffer.size());
-            wgpuRenderPassEncoderDrawIndexed(pass, mesh.index_count, 1, 0, 0, 0);
+                                                mesh->index_buffer.size());
+            wgpuRenderPassEncoderDrawIndexed(pass, mesh->index_count, 1, 0, 0, 0);
         }
     });
 }

@@ -33,13 +33,17 @@ struct TestPass final : IScenePass {
     using IScenePass::get_or_create_pass_data;
 };
 
-/// Helper to build a RenderWorld with a mesh at a given version.
-RenderWorld make_world_with_mesh(uint32_t version) {
+/// Helper to build a RenderWorld with a mesh whose generation
+/// has been bumped a given number of times via write guards.
+RenderWorld make_world_with_mesh(uint32_t write_count) {
     RenderWorld world;
     auto scope = world.begin_sync();
     auto slot = scope.alloc_mesh_slot();
-    auto& m = scope.mesh(slot);
-    m.version = version;
+    // Each write guard bumps generation once
+    for (uint32_t i = 0; i < write_count; ++i) {
+        auto w = scope.write_mesh(slot);
+        PTS_UNUSED(w);
+    }
     return world;
 }
 
@@ -81,10 +85,11 @@ TEST_CASE("get_or_create_pass_data re-creates on version change") {
         return 10;
     });
 
-    // Bump mesh version
+    // Bump mesh generation via write guard
     {
         auto scope = world.begin_sync();
-        ++scope.mesh(0).version;
+        auto w = scope.write_mesh(0);
+        PTS_UNUSED(w);
     }
 
     auto& val = pass.get_or_create_pass_data<int>(PassDataKind::Mesh, 0, world, [&]() {
@@ -102,8 +107,15 @@ TEST_CASE("get_or_create_pass_data supports different keys") {
         auto scope = world.begin_sync();
         auto s0 = scope.alloc_mesh_slot();
         auto s1 = scope.alloc_mesh_slot();
-        scope.mesh(s0).version = 1;
-        scope.mesh(s1).version = 1;
+        // Bump generation on each via write guard
+        {
+            auto w = scope.write_mesh(s0);
+            PTS_UNUSED(w);
+        }
+        {
+            auto w = scope.write_mesh(s1);
+            PTS_UNUSED(w);
+        }
     }
     auto& a = pass.get_or_create_pass_data<int>(PassDataKind::Mesh, 0, world, []() { return 100; });
     auto& b = pass.get_or_create_pass_data<int>(PassDataKind::Mesh, 1, world, []() { return 200; });

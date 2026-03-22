@@ -202,7 +202,7 @@ void EditorApplication::process_dirty_prims() {
 void EditorApplication::normalize_xform_ops(const std::string& prim_path) {
     PRECONDITION(m_stage);
     auto prim = m_stage->GetPrimAtPath(pxr::SdfPath(prim_path));
-    INVARIANT_MSG(prim.IsValid(), "prim_path on ObjectSlot must reference a valid USD prim");
+    INVARIANT_MSG(prim.IsValid(), "prim_path on ObjectData must reference a valid USD prim");
 
     pxr::UsdGeomXformable xformable(prim);
     if (!xformable) return;

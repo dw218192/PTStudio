@@ -48,41 +48,159 @@ struct Light {
 };
 static_assert(sizeof(Light) == 64, "Light must be 64 bytes for GPU alignment");
 
-struct Mesh {
+// --- Slot<T> ---
+
+template <typename T>
+class Slot {
+   public:
+    const T& data() const {
+        return m_data;
+    }
+    const T* operator->() const {
+        return &m_data;
+    }
+    uint32_t generation() const {
+        return m_generation;
+    }
+    bool active() const {
+        return m_active;
+    }
+
+    class WriteGuard {
+       public:
+        T& operator*() {
+            return m_slot->m_data;
+        }
+        T* operator->() {
+            return &m_slot->m_data;
+        }
+        ~WriteGuard() {
+            if (m_slot) ++m_slot->m_generation;
+        }
+        WriteGuard(const WriteGuard&) = delete;
+        WriteGuard& operator=(const WriteGuard&) = delete;
+        WriteGuard(WriteGuard&& o) noexcept : m_slot(o.m_slot) {
+            o.m_slot = nullptr;
+        }
+        WriteGuard& operator=(WriteGuard&&) = delete;
+
+       private:
+        friend class Slot;
+        explicit WriteGuard(Slot& s) : m_slot(&s) {
+        }
+        Slot* m_slot;
+    };
+
+    [[nodiscard]] WriteGuard write() {
+        return WriteGuard{*this};
+    }
+    void activate() {
+        m_active = true;
+        ++m_generation;
+    }
+    void deactivate() {
+        m_active = false;
+        ++m_generation;
+    }
+
+   private:
+    T m_data{};
+    uint32_t m_generation = 0;
+    bool m_active = false;
+};
+
+// Fix WriteGuard destructor to handle moves properly
+// The destructor defined inline above handles it via m_moved_from
+
+// --- SlotVector<T> ---
+
+template <typename T>
+class SlotVector {
+   public:
+    uint32_t alloc() {
+        uint32_t idx;
+        if (!m_free.empty()) {
+            idx = m_free.back();
+            m_free.pop_back();
+            // Reset data to default
+            auto w = m_slots[idx].write();
+            *w = T{};
+        } else {
+            m_slots.push_back(Slot<T>{});
+            idx = static_cast<uint32_t>(m_slots.size() - 1);
+        }
+        m_slots[idx].activate();
+        return idx;
+    }
+
+    void free(uint32_t i) {
+        PRECONDITION(i < m_slots.size());
+        PRECONDITION(m_slots[i].active());
+        m_slots[i].deactivate();
+        m_free.push_back(i);
+    }
+
+    const Slot<T>& operator[](uint32_t i) const {
+        PRECONDITION(i < m_slots.size());
+        return m_slots[i];
+    }
+
+    typename Slot<T>::WriteGuard write(uint32_t i) {
+        PRECONDITION(i < m_slots.size());
+        return m_slots[i].write();
+    }
+
+    uint32_t size() const {
+        return static_cast<uint32_t>(m_slots.size());
+    }
+
+    boost::span<const Slot<T>> span() const {
+        return {m_slots.data(), m_slots.size()};
+    }
+
+    void clear() {
+        m_slots.clear();
+        m_free.clear();
+    }
+
+   private:
+    std::vector<Slot<T>> m_slots;
+    std::vector<uint32_t> m_free;
+};
+
+// --- Data structs (plain POD, no version/active — those live in Slot<>) ---
+
+struct MeshData {
     webgpu::Buffer vertex_buffer;
     webgpu::Buffer index_buffer;
-    uint32_t index_count;
+    uint32_t index_count = 0;
     std::vector<uint32_t> cpu_indices;
     std::vector<Vertex> cpu_vertices;
-    uint32_t version = 0;
 };
 
-struct ObjectSlot {
-    uint32_t mesh_index;
+struct ObjectData {
+    uint32_t mesh_index = 0;
     uint32_t material_index{k_no_material};
-    glm::mat4 transform;
+    glm::mat4 transform{1.0f};
     std::string prim_path;
-    bool active{true};
 };
 
-struct LightSlot {
+struct LightData {
     enum class Type { Distant, Sphere, Rect, Disk, Dome };
-    Type type;
+    Type type = Type::Distant;
     glm::vec3 color{1.0f, 1.0f, 1.0f};
     float intensity{1.0f};
-    glm::mat4 transform;
+    glm::mat4 transform{1.0f};
     glm::vec3 direction{0.0f, -1.0f, 0.0f};
     float angle{0.53f};
     float radius{0.0f};
     float width{1.0f};
     float height{1.0f};
     std::string prim_path;
-    bool active{true};
-    uint32_t version = 0;
 };
 
-/// Convert a LightSlot to a GPU-ready Light struct.
-Light to_light(const LightSlot& slot);
+/// Convert a LightData to a GPU-ready Light struct.
+Light to_light(const LightData& slot);
 
 /// Prim path → slot lookup entry. A single map replaces separate
 /// prim_to_object / prim_to_light maps for better cache locality.
@@ -120,16 +238,20 @@ class SyncScope {
     void free_mesh_slot(uint32_t i);
     void free_light_slot(uint32_t i);
 
-    // Mutable accessors for adapter/sync code (friend-gated).
-    ObjectSlot& object(uint32_t i);
-    Mesh& mesh(uint32_t i);
-    LightSlot& light(uint32_t i);
+    // Write guards for adapter/sync code.
+    Slot<ObjectData>::WriteGuard write_object(uint32_t i);
+    Slot<MeshData>::WriteGuard write_mesh(uint32_t i);
+    Slot<LightData>::WriteGuard write_light(uint32_t i);
+
+    // Read-only accessors through scope (for prim_path lookup etc.)
+    const Slot<ObjectData>& object(uint32_t i) const;
+    const Slot<MeshData>& mesh(uint32_t i) const;
+    const Slot<LightData>& light(uint32_t i) const;
+
     Material& material(uint32_t i);
     std::vector<Material>& materials();
     std::unordered_map<std::string, uint32_t>& material_cache();
     void set_prim_slot(const std::string& path, PrimSlot slot);
-    void mark_light_dirty(uint32_t i);
-    void bump_light_version();
 
    private:
     RenderWorld& m_world;
@@ -137,9 +259,9 @@ class SyncScope {
 
 struct RenderWorld {
     // Read-only accessors
-    boost::span<const ObjectSlot> get_objects() const;
-    boost::span<const Mesh> get_meshes() const;
-    boost::span<const LightSlot> get_lights() const;
+    boost::span<const Slot<ObjectData>> get_objects() const;
+    boost::span<const Slot<MeshData>> get_meshes() const;
+    boost::span<const Slot<LightData>> get_lights() const;
     boost::span<const Material> get_materials() const;
     uint32_t get_mesh_version() const;
     uint32_t get_light_version() const;
@@ -156,10 +278,6 @@ struct RenderWorld {
             fn(std::string_view{path}, slot);
         }
     }
-
-    // Per-slot dirty tracking
-    boost::span<const uint8_t> get_dirty_lights() const;
-    void clear_dirty_lights();
 
     // GPU buffer management
     void prepare_gpu_buffers(const webgpu::Device& device, WGPUQueue queue);
@@ -186,11 +304,10 @@ struct RenderWorld {
    private:
     friend class SyncScope;
 
-    std::vector<Mesh> m_meshes;
-    std::vector<ObjectSlot> m_objects;
+    SlotVector<MeshData> m_meshes;
+    SlotVector<ObjectData> m_objects;
     std::vector<Material> m_materials;
-    std::vector<LightSlot> m_lights;
-    std::vector<uint8_t> m_dirty_lights;
+    SlotVector<LightData> m_lights;
 
     /// Material path → material index (deduplication cache).
     std::unordered_map<std::string, uint32_t> m_material_cache;
@@ -210,9 +327,8 @@ struct RenderWorld {
     uint32_t m_cached_light_version = UINT32_MAX;
     uint32_t m_cached_material_version = UINT32_MAX;
 
-    std::vector<uint32_t> m_free_object_slots;
-    std::vector<uint32_t> m_free_mesh_slots;
-    std::vector<uint32_t> m_free_light_slots;
+    // Per-slot generation cache for partial light updates
+    std::vector<uint32_t> m_cached_light_generations;
 };
 
 }  // namespace pts::rendering

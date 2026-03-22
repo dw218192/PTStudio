@@ -205,14 +205,20 @@ TEST_CASE("prepare_gpu_buffers uploads active lights") {
     {
         auto scope = world.begin_sync();
         auto l0 = scope.alloc_light_slot();
-        scope.light(l0).type = pts::rendering::LightSlot::Type::Distant;
-        scope.light(l0).color = {1.0f, 0.0f, 0.0f};
-        scope.light(l0).intensity = 2.0f;
+        {
+            auto w = scope.write_light(l0);
+            w->type = pts::rendering::LightData::Type::Distant;
+            w->color = {1.0f, 0.0f, 0.0f};
+            w->intensity = 2.0f;
+        }
 
         auto l1 = scope.alloc_light_slot();
-        scope.light(l1).type = pts::rendering::LightSlot::Type::Sphere;
-        scope.light(l1).color = {0.0f, 1.0f, 0.0f};
-        scope.light(l1).intensity = 3.0f;
+        {
+            auto w = scope.write_light(l1);
+            w->type = pts::rendering::LightData::Type::Sphere;
+            w->color = {0.0f, 1.0f, 0.0f};
+            w->intensity = 3.0f;
+        }
     }
 
     world.prepare_gpu_buffers(device, device.queue());
@@ -252,7 +258,10 @@ TEST_CASE("clear resets GPU buffer state") {
         auto scope = world.begin_sync();
         scope.materials().push_back(pts::rendering::Material{});
         auto l = scope.alloc_light_slot();
-        scope.light(l).type = pts::rendering::LightSlot::Type::Distant;
+        {
+            auto w = scope.write_light(l);
+            w->type = pts::rendering::LightData::Type::Distant;
+        }
     }
 
     world.prepare_gpu_buffers(device, device.queue());

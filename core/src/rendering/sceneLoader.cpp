@@ -49,7 +49,7 @@ void remove_prim(SyncScope& scope, const pxr::SdfPath& prim_path) {
     auto path_text = prim_path.GetText();
     int obj_idx = world.find_object_by_prim(path_text);
     if (obj_idx >= 0) {
-        scope.free_mesh_slot(scope.object(static_cast<uint32_t>(obj_idx)).mesh_index);
+        scope.free_mesh_slot(scope.object(static_cast<uint32_t>(obj_idx))->mesh_index);
         scope.free_object_slot(static_cast<uint32_t>(obj_idx));
         return;
     }

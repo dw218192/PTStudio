@@ -88,7 +88,7 @@ struct TestListener : pxr::TfWeakBase {
 // GPU-dependent tests — Device::create() requires native Dawn (not available in node.js)
 #ifndef __EMSCRIPTEN__
 
-TEST_CASE("populate_from_stage populates prim_path on ObjectSlots") {
+TEST_CASE("populate_from_stage populates prim_path on ObjectData slots") {
     // Build a stage with a Mesh prim
     auto stage = pxr::UsdStage::CreateInMemory();
     REQUIRE(stage);
@@ -112,9 +112,9 @@ TEST_CASE("populate_from_stage populates prim_path on ObjectSlots") {
     world.upload_all_meshes(device);
 
     REQUIRE(world.get_objects().size() == 1);
-    CHECK(world.get_objects()[0].prim_path == "/Root/TestMesh");
+    CHECK(world.get_objects()[0]->prim_path == "/Root/TestMesh");
     CHECK(world.get_meshes().size() == 1);
-    CHECK(world.get_meshes()[0].index_count == 3);
+    CHECK(world.get_meshes()[0]->index_count == 3);
 
     spdlog::drop("test_populate");
 }
@@ -175,7 +175,7 @@ TEST_CASE("USD ObjectsChanged fires on xform property edit") {
     pxr::TfNotice::Revoke(key);
 }
 
-TEST_CASE("Xform change updates ObjectSlot transform via notice pattern") {
+TEST_CASE("Xform change updates ObjectData transform via notice pattern") {
     auto stage = pxr::UsdStage::CreateInMemory();
     REQUIRE(stage);
 
@@ -196,7 +196,7 @@ TEST_CASE("Xform change updates ObjectSlot transform via notice pattern") {
     world.upload_all_meshes(device);
 
     REQUIRE(world.get_objects().size() == 1);
-    CHECK(world.get_objects()[0].transform[0][3] == doctest::Approx(0.0f));
+    CHECK(world.get_objects()[0]->transform[0][3] == doctest::Approx(0.0f));
 
     // Simulate the full notice-driven update pattern used in EditorApplication:
     // 1. Notice fires with changed paths
@@ -247,7 +247,7 @@ TEST_CASE("Xform change updates ObjectSlot transform via notice pattern") {
 
     // Verify the transform was updated via the fast path.
     // GfMatrix4d[3][0] maps to glm[3][0] (direct copy, no transpose)
-    CHECK(world.get_objects()[0].transform[3][0] == doctest::Approx(7.0f));
+    CHECK(world.get_objects()[0]->transform[3][0] == doctest::Approx(7.0f));
 
     pxr::TfNotice::Revoke(key);
     spdlog::drop("test_xform_change");
@@ -282,13 +282,13 @@ TEST_CASE("Selection preserved across full resync by prim_path") {
     // Simulate selecting object at index 1 (MeshB)
     int selected_object = -1;
     for (int i = 0; i < static_cast<int>(world.get_objects().size()); ++i) {
-        if (world.get_objects()[i].prim_path == "/Root/MeshB") {
+        if (world.get_objects()[i]->prim_path == "/Root/MeshB") {
             selected_object = i;
             break;
         }
     }
     REQUIRE(selected_object >= 0);
-    std::string selected_prim_path = world.get_objects()[selected_object].prim_path;
+    std::string selected_prim_path = world.get_objects()[selected_object]->prim_path;
 
     // Simulate full resync (mirrors process_dirty_prims resync path)
     world.clear();
@@ -298,14 +298,14 @@ TEST_CASE("Selection preserved across full resync by prim_path") {
     // Restore selection by prim_path
     int restored = -1;
     for (int i = 0; i < static_cast<int>(world.get_objects().size()); ++i) {
-        if (world.get_objects()[i].prim_path == selected_prim_path) {
+        if (world.get_objects()[i]->prim_path == selected_prim_path) {
             restored = i;
             break;
         }
     }
 
     CHECK(restored >= 0);
-    CHECK(world.get_objects()[restored].prim_path == "/Root/MeshB");
+    CHECK(world.get_objects()[restored]->prim_path == "/Root/MeshB");
 
     spdlog::drop("test_selection_resync");
 }
@@ -331,7 +331,7 @@ TEST_CASE("Selection lost when selected prim is removed during resync") {
     world.upload_all_meshes(device);
 
     REQUIRE(world.get_objects().size() == 1);
-    std::string selected_prim_path = world.get_objects()[0].prim_path;
+    std::string selected_prim_path = world.get_objects()[0]->prim_path;
 
     // Remove the prim from the stage
     stage->RemovePrim(pxr::SdfPath("/Root/Mesh"));
@@ -344,7 +344,7 @@ TEST_CASE("Selection lost when selected prim is removed during resync") {
     // Search for the removed prim
     int restored = -1;
     for (int i = 0; i < static_cast<int>(world.get_objects().size()); ++i) {
-        if (world.get_objects()[i].prim_path == selected_prim_path) {
+        if (world.get_objects()[i]->prim_path == selected_prim_path) {
             restored = i;
             break;
         }
@@ -391,7 +391,7 @@ TEST_CASE("Material extraction from UsdPreviewSurface") {
 
     REQUIRE(world.get_objects().size() == 1);
     REQUIRE(world.get_materials().size() == 1);
-    CHECK(world.get_objects()[0].material_index == 0);
+    CHECK(world.get_objects()[0]->material_index == 0);
 
     auto& mat = world.get_materials()[0];
     CHECK(mat.diffuse_color.x == doctest::Approx(0.8f));
@@ -422,7 +422,7 @@ TEST_CASE("Prim without material gets k_no_material") {
     world.upload_all_meshes(device);
 
     REQUIRE(world.get_objects().size() == 1);
-    CHECK(world.get_objects()[0].material_index == pts::rendering::k_no_material);
+    CHECK(world.get_objects()[0]->material_index == pts::rendering::k_no_material);
     CHECK(world.get_materials().empty());
 
     spdlog::drop("test_no_material");
@@ -465,8 +465,8 @@ TEST_CASE("Shared material is deduplicated") {
 
     REQUIRE(world.get_objects().size() == 2);
     CHECK(world.get_materials().size() == 1);
-    CHECK(world.get_objects()[0].material_index == world.get_objects()[1].material_index);
-    CHECK(world.get_objects()[0].material_index == 0);
+    CHECK(world.get_objects()[0]->material_index == world.get_objects()[1]->material_index);
+    CHECK(world.get_objects()[0]->material_index == 0);
 
     spdlog::drop("test_dedup_material");
 }

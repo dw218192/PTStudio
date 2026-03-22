@@ -83,15 +83,15 @@ struct PerfOverlay {
         uint32_t total_triangles = 0;
         uint32_t active_lights = 0;
 
-        for (auto& obj : objects) {
-            if (!obj.active) continue;
+        for (const auto& obj : objects) {
+            if (!obj.active()) continue;
             ++active_objects;
-            if (obj.mesh_index < meshes.size()) {
-                total_triangles += meshes[obj.mesh_index].index_count / 3;
+            if (obj->mesh_index < meshes.size()) {
+                total_triangles += meshes[obj->mesh_index]->index_count / 3;
             }
         }
-        for (auto& light : lights) {
-            if (light.active) ++active_lights;
+        for (const auto& light : lights) {
+            if (light.active()) ++active_lights;
         }
 
         ImGui::Text("Objects:   %u / %u", active_objects, static_cast<uint32_t>(objects.size()));

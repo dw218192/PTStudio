@@ -126,9 +126,9 @@ class IScenePass {
     static uint32_t entity_version(PassDataKind kind, uint32_t index, const RenderWorld& world) {
         switch (kind) {
             case PassDataKind::Mesh:
-                return world.get_meshes()[index].version;
+                return world.get_meshes()[index].generation();
             case PassDataKind::Light:
-                return world.get_lights()[index].version;
+                return world.get_lights()[index].generation();
         }
         INVARIANT_MSG(false, "unknown PassDataKind");
     }

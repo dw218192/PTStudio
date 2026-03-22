@@ -70,10 +70,10 @@ static void generate_circle(std::vector<glm::vec3>& out, glm::vec3 center, glm::
     }
 }
 
-static std::vector<glm::vec3> generate_light_verts(const rendering::LightSlot& light) {
+static std::vector<glm::vec3> generate_light_verts(const rendering::LightData& light) {
     std::vector<glm::vec3> verts;
     switch (light.type) {
-        case rendering::LightSlot::Type::Sphere: {
+        case rendering::LightData::Type::Sphere: {
             float r = std::max(light.radius, 0.1f);
             verts.reserve(k_circle_segments * 2 * 3);
             generate_circle(verts, {0, 0, 0}, {1, 0, 0}, {0, 1, 0}, r);
@@ -81,21 +81,21 @@ static std::vector<glm::vec3> generate_light_verts(const rendering::LightSlot& l
             generate_circle(verts, {0, 0, 0}, {0, 1, 0}, {0, 0, 1}, r);
             break;
         }
-        case rendering::LightSlot::Type::Rect: {
+        case rendering::LightData::Type::Rect: {
             float hw = light.width * 0.5f;
             float hh = light.height * 0.5f;
             verts = {{-hw, -hh, 0}, {hw, -hh, 0}, {hw, -hh, 0}, {hw, hh, 0},
                      {hw, hh, 0},   {-hw, hh, 0}, {-hw, hh, 0}, {-hw, -hh, 0}};
             break;
         }
-        case rendering::LightSlot::Type::Disk: {
+        case rendering::LightData::Type::Disk: {
             float r = std::max(light.radius, 0.1f);
             verts.reserve(k_circle_segments * 2);
             generate_circle(verts, {0, 0, 0}, {1, 0, 0}, {0, 0, 1}, r);
             break;
         }
-        case rendering::LightSlot::Type::Distant:
-        case rendering::LightSlot::Type::Dome:
+        case rendering::LightData::Type::Distant:
+        case rendering::LightData::Type::Dome:
             break;
     }
     return verts;
@@ -308,9 +308,9 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
     // Collect active lights that have volume (Distant/Dome are unpickable)
     std::vector<uint32_t> gizmo_light_indices;
     for (uint32_t i = 0; i < light_count; ++i) {
-        if (!lights[i].active) continue;
-        if (lights[i].type == rendering::LightSlot::Type::Distant ||
-            lights[i].type == rendering::LightSlot::Type::Dome)
+        if (!lights[i].active()) continue;
+        if (lights[i]->type == rendering::LightData::Type::Distant ||
+            lights[i]->type == rendering::LightData::Type::Dome)
             continue;
         gizmo_light_indices.push_back(i);
     }
@@ -320,10 +320,10 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
     m_picking_table.clear();
     m_picking_table.reserve(object_count + gizmo_count);
     for (uint32_t i = 0; i < object_count; ++i) {
-        m_picking_table.push_back(objects[i].prim_path);
+        m_picking_table.push_back(objects[i]->prim_path);
     }
     for (uint32_t slot = 0; slot < gizmo_count; ++slot) {
-        m_picking_table.push_back(lights[gizmo_light_indices[slot]].prim_path);
+        m_picking_table.push_back(lights[gizmo_light_indices[slot]]->prim_path);
     }
 
     uint32_t total_picking_slots = object_count + gizmo_count;
@@ -342,7 +342,7 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
         uint32_t li = gizmo_light_indices[slot];
         auto& mesh =
             get_or_create_pass_data<GizmoMesh>(rendering::PassDataKind::Light, li, ctx.world, [&] {
-                auto verts = generate_light_verts(lights[li]);
+                auto verts = generate_light_verts(lights[li].data());
                 if (verts.empty()) return GizmoMesh{};
                 auto buf = ctx.device.create_buffer(
                     verts.size() * sizeof(glm::vec3),
@@ -377,9 +377,9 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
     auto picking_buf = ready.picking_uniform_buffer.handle();
 
     for (uint32_t i = 0; i < object_count; ++i) {
-        if (!objects[i].active) continue;
+        if (!objects[i].active()) continue;
         PickingUniforms u{};
-        u.mvp = vp * objects[i].transform;
+        u.mvp = vp * objects[i]->transform;
         u.object_id = i;
         wgpuQueueWriteBuffer(queue, picking_buf, i * k_uniform_align, &u, sizeof(u));
     }
@@ -393,14 +393,14 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
         uint32_t picking_slot = object_count + slot;
 
         // Scale gizmo to maintain minimum screen-space size
-        glm::vec3 light_pos = glm::vec3(lights[li].transform[3]);
+        glm::vec3 light_pos = glm::vec3(lights[li]->transform[3]);
         float dist = glm::length(light_pos - camera_pos);
-        float light_radius = (lights[li].type == rendering::LightSlot::Type::Rect)
-                                 ? std::max(lights[li].width, lights[li].height) * 0.5f
-                                 : lights[li].radius;
+        float light_radius = (lights[li]->type == rendering::LightData::Type::Rect)
+                                 ? std::max(lights[li]->width, lights[li]->height) * 0.5f
+                                 : lights[li]->radius;
         float scale = gizmo_distance_scale(dist, light_radius, k_min_screen_radius);
         auto scaled_transform =
-            lights[li].transform * glm::scale(glm::mat4(1.0f), glm::vec3(scale));
+            lights[li]->transform * glm::scale(glm::mat4(1.0f), glm::vec3(scale));
 
         PickingUniforms pu{};
         pu.mvp = vp * scaled_transform;
@@ -432,16 +432,16 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
             // Mesh objects
             wgpuRenderPassEncoderSetPipeline(pass, mesh_picking_pl);
             for (uint32_t i = 0; i < static_cast<uint32_t>(objs.size()); ++i) {
-                if (!objs[i].active) continue;
+                if (!objs[i].active()) continue;
                 uint32_t dyn_offset = i * EditorPass::k_uniform_align;
                 wgpuRenderPassEncoderSetBindGroup(pass, 0, picking_bg, 1, &dyn_offset);
-                const auto& mesh = meshes[objs[i].mesh_index];
-                wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh.vertex_buffer.handle(), 0,
-                                                     mesh.vertex_buffer.size());
-                wgpuRenderPassEncoderSetIndexBuffer(pass, mesh.index_buffer.handle(),
+                const auto& mesh = meshes[objs[i]->mesh_index];
+                wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh->vertex_buffer.handle(), 0,
+                                                     mesh->vertex_buffer.size());
+                wgpuRenderPassEncoderSetIndexBuffer(pass, mesh->index_buffer.handle(),
                                                     WGPUIndexFormat_Uint32, 0,
-                                                    mesh.index_buffer.size());
-                wgpuRenderPassEncoderDrawIndexed(pass, mesh.index_count, 1, 0, 0, 0);
+                                                    mesh->index_buffer.size());
+                wgpuRenderPassEncoderDrawIndexed(pass, mesh->index_count, 1, 0, 0, 0);
             }
 
             // Light gizmo shapes
