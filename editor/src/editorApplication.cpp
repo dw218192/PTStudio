@@ -523,7 +523,7 @@ void EditorApplication::render(FrameContext& ctx) {
     if (viewport() && viewport()->should_close()) return;
 
     bool const capture_mode = m_app_config.is_capture_mode();
-    ++m_frame_count;
+    if (!m_scene_load_task) ++m_frame_count;
 
     // ── Capture readback: tick the async state machine and write PNG when ready ──
     if (capture_mode && m_capture_readback.is_pending()) {
@@ -669,11 +669,14 @@ void EditorApplication::render(FrameContext& ctx) {
         m_world.prepare_gpu_buffers(device, queue);
     }
 
-    // In capture mode, only add the renderer pass (skip editor passes)
+    // In capture mode, add renderer + tone mapping only (skip editor passes)
     if (capture_mode) {
         if (m_renderer_pass && m_renderer_pass->is_ready() &&
             !(m_renderer_pass->requires_viewport() && !has_viewport)) {
             m_renderer_pass->add_to_frame_graph(*m_frame_graph, pass_ctx);
+        }
+        if (m_tonemapping_pass && m_tonemapping_pass->is_ready()) {
+            m_tonemapping_pass->add_to_frame_graph(*m_frame_graph, pass_ctx);
         }
     } else {
         for_each_pass([&](auto& pass) {
