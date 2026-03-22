@@ -51,6 +51,9 @@ static_assert(sizeof(Light) == 64, "Light must be 64 bytes for GPU alignment");
 // --- Slot<T> ---
 
 template <typename T>
+class SlotVector;
+
+template <typename T>
 class Slot {
    public:
     const T& data() const {
@@ -64,6 +67,9 @@ class Slot {
     }
     bool active() const {
         return m_active;
+    }
+    std::string_view get_prim_path() const {
+        return m_prim_path;
     }
 
     class WriteGuard {
@@ -104,7 +110,9 @@ class Slot {
     }
 
    private:
+    friend class SlotVector<T>;
     T m_data{};
+    std::string m_prim_path;
     uint32_t m_generation = 0;
     bool m_active = false;
 };
@@ -129,6 +137,7 @@ class SlotVector {
             m_slots.push_back(Slot<T>{});
             idx = static_cast<uint32_t>(m_slots.size() - 1);
         }
+        m_slots[idx].m_prim_path.clear();
         m_slots[idx].activate();
         return idx;
     }
@@ -158,6 +167,11 @@ class SlotVector {
         return {m_slots.data(), m_slots.size()};
     }
 
+    void set_prim_path(uint32_t i, std::string path) {
+        PRECONDITION(i < m_slots.size());
+        m_slots[i].m_prim_path = std::move(path);
+    }
+
     void clear() {
         m_slots.clear();
         m_free.clear();
@@ -182,7 +196,6 @@ struct ObjectData {
     uint32_t mesh_index = 0;
     uint32_t material_index{k_no_material};
     glm::mat4 transform{1.0f};
-    std::string prim_path;
 };
 
 struct LightData {
@@ -196,7 +209,6 @@ struct LightData {
     float radius{0.0f};
     float width{1.0f};
     float height{1.0f};
-    std::string prim_path;
 };
 
 /// Convert a LightData to a GPU-ready Light struct.
@@ -251,7 +263,7 @@ class SyncScope {
     Material& material(uint32_t i);
     std::vector<Material>& materials();
     std::unordered_map<std::string, uint32_t>& material_cache();
-    void set_prim_slot(const std::string& path, PrimSlot slot);
+    void set_prim_path(uint32_t slot_index, PrimSlot::Kind kind, std::string path);
 
    private:
     RenderWorld& m_world;

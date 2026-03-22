@@ -70,14 +70,12 @@ uint32_t SyncScope::alloc_light_slot() {
 }
 
 void SyncScope::free_object_slot(uint32_t i) {
-    auto& prim_path = m_world.m_objects[i].data().prim_path;
+    auto prim_path = m_world.m_objects[i].get_prim_path();
     if (!prim_path.empty()) {
-        m_world.m_prim_slots.erase(prim_path);
+        auto it = m_world.m_prim_slots.find(prim_path);
+        if (it != m_world.m_prim_slots.end()) m_world.m_prim_slots.erase(it);
     }
-    {
-        auto w = m_world.m_objects.write(i);
-        w->prim_path.clear();
-    }
+    m_world.m_objects.set_prim_path(i, "");
     m_world.m_objects.free(i);
 }
 
@@ -95,14 +93,12 @@ void SyncScope::free_mesh_slot(uint32_t i) {
 }
 
 void SyncScope::free_light_slot(uint32_t i) {
-    auto& prim_path = m_world.m_lights[i].data().prim_path;
+    auto prim_path = m_world.m_lights[i].get_prim_path();
     if (!prim_path.empty()) {
-        m_world.m_prim_slots.erase(prim_path);
+        auto it = m_world.m_prim_slots.find(prim_path);
+        if (it != m_world.m_prim_slots.end()) m_world.m_prim_slots.erase(it);
     }
-    {
-        auto w = m_world.m_lights.write(i);
-        w->prim_path.clear();
-    }
+    m_world.m_lights.set_prim_path(i, "");
     m_world.m_lights.free(i);
 }
 
@@ -144,8 +140,13 @@ std::unordered_map<std::string, uint32_t>& SyncScope::material_cache() {
     return m_world.m_material_cache;
 }
 
-void SyncScope::set_prim_slot(const std::string& path, PrimSlot slot) {
-    m_world.m_prim_slots[path] = slot;
+void SyncScope::set_prim_path(uint32_t slot_index, PrimSlot::Kind kind, std::string path) {
+    if (kind == PrimSlot::Kind::Object) {
+        m_world.m_objects.set_prim_path(slot_index, path);
+    } else {
+        m_world.m_lights.set_prim_path(slot_index, path);
+    }
+    m_world.m_prim_slots[std::move(path)] = PrimSlot{kind, slot_index};
 }
 
 // --- RenderWorld accessors ---

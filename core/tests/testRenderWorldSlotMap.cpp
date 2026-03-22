@@ -67,11 +67,7 @@ TEST_CASE("find_object_by_prim returns correct index") {
     auto scope = world.begin_sync();
 
     auto idx = scope.alloc_object_slot();
-    {
-        auto w = scope.write_object(idx);
-        w->prim_path = "/World/Cube";
-    }
-    scope.set_prim_slot("/World/Cube", PrimSlot{PrimSlot::Kind::Object, idx});
+    scope.set_prim_path(idx, PrimSlot::Kind::Object, "/World/Cube");
 
     CHECK(world.find_object_by_prim("/World/Cube") == static_cast<int>(idx));
 }
@@ -87,11 +83,7 @@ TEST_CASE("find_light_by_prim returns correct index") {
     auto scope = world.begin_sync();
 
     auto idx = scope.alloc_light_slot();
-    {
-        auto w = scope.write_light(idx);
-        w->prim_path = "/World/Light";
-    }
-    scope.set_prim_slot("/World/Light", PrimSlot{PrimSlot::Kind::Light, idx});
+    scope.set_prim_path(idx, PrimSlot::Kind::Light, "/World/Light");
 
     CHECK(world.find_light_by_prim("/World/Light") == static_cast<int>(idx));
 }
@@ -101,15 +93,11 @@ TEST_CASE("free_object_slot removes from prim_slots") {
     auto scope = world.begin_sync();
 
     auto idx = scope.alloc_object_slot();
-    {
-        auto w = scope.write_object(idx);
-        w->prim_path = "/World/Sphere";
-    }
-    scope.set_prim_slot("/World/Sphere", PrimSlot{PrimSlot::Kind::Object, idx});
+    scope.set_prim_path(idx, PrimSlot::Kind::Object, "/World/Sphere");
 
     scope.free_object_slot(idx);
     CHECK(world.find_object_by_prim("/World/Sphere") == -1);
-    CHECK(world.get_objects()[idx]->prim_path.empty());
+    CHECK(world.get_objects()[idx].get_prim_path().empty());
 }
 
 TEST_CASE("free_light_slot removes from prim_slots") {
@@ -117,11 +105,7 @@ TEST_CASE("free_light_slot removes from prim_slots") {
     auto scope = world.begin_sync();
 
     auto idx = scope.alloc_light_slot();
-    {
-        auto w = scope.write_light(idx);
-        w->prim_path = "/World/Sun";
-    }
-    scope.set_prim_slot("/World/Sun", PrimSlot{PrimSlot::Kind::Light, idx});
+    scope.set_prim_path(idx, PrimSlot::Kind::Light, "/World/Sun");
 
     scope.free_light_slot(idx);
     CHECK(world.find_light_by_prim("/World/Sun") == -1);
@@ -134,18 +118,10 @@ TEST_CASE("clear resets everything") {
         auto scope = world.begin_sync();
 
         auto o = scope.alloc_object_slot();
-        {
-            auto w = scope.write_object(o);
-            w->prim_path = "/A";
-        }
-        scope.set_prim_slot("/A", PrimSlot{PrimSlot::Kind::Object, o});
+        scope.set_prim_path(o, PrimSlot::Kind::Object, "/A");
 
         auto l = scope.alloc_light_slot();
-        {
-            auto w = scope.write_light(l);
-            w->prim_path = "/B";
-        }
-        scope.set_prim_slot("/B", PrimSlot{PrimSlot::Kind::Light, l});
+        scope.set_prim_path(l, PrimSlot::Kind::Light, "/B");
 
         scope.alloc_mesh_slot();
 
@@ -252,18 +228,10 @@ TEST_CASE("generation-based tracking") {
     SUBCASE("for_each_prim iterates all slots") {
         auto scope = world.begin_sync();
         auto o = scope.alloc_object_slot();
-        {
-            auto w = scope.write_object(o);
-            w->prim_path = "/Obj";
-        }
-        scope.set_prim_slot("/Obj", PrimSlot{PrimSlot::Kind::Object, o});
+        scope.set_prim_path(o, PrimSlot::Kind::Object, "/Obj");
 
         auto l = scope.alloc_light_slot();
-        {
-            auto w = scope.write_light(l);
-            w->prim_path = "/Light";
-        }
-        scope.set_prim_slot("/Light", PrimSlot{PrimSlot::Kind::Light, l});
+        scope.set_prim_path(l, PrimSlot::Kind::Light, "/Light");
 
         int count = 0;
         world.for_each_prim([&](std::string_view, PrimSlot) { ++count; });

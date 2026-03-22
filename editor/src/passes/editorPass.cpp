@@ -320,10 +320,10 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
     m_picking_table.clear();
     m_picking_table.reserve(object_count + gizmo_count);
     for (uint32_t i = 0; i < object_count; ++i) {
-        m_picking_table.push_back(objects[i]->prim_path);
+        m_picking_table.push_back(std::string{objects[i].get_prim_path()});
     }
     for (uint32_t slot = 0; slot < gizmo_count; ++slot) {
-        m_picking_table.push_back(lights[gizmo_light_indices[slot]]->prim_path);
+        m_picking_table.push_back(std::string{lights[gizmo_light_indices[slot]].get_prim_path()});
     }
 
     uint32_t total_picking_slots = object_count + gizmo_count;
