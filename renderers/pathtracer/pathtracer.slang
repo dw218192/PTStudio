@@ -1,4 +1,7 @@
 import lighting;
+import brdf;
+import light;
+import sampling;
 
 // ── Scene data ──────────────────────────────────────────────────
 

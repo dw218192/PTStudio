@@ -1,4 +1,5 @@
 import lighting;
+import brdf;
 
 struct Uniforms {
     float4x4 mvp;
