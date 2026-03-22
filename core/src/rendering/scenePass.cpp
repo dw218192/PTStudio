@@ -14,7 +14,8 @@ void IScenePass::validate_debug_limits(const webgpu::Device& device) {
                   fmt::format("pass '{}' needs {} color attachments but device supports {}", name(),
                               total_targets, limits.maxColorAttachments)
                       .c_str());
-    uint32_t bytes_per_sample = total_targets * 8;  // RGBA16Float = 8 bytes per target
+    // scene_color is RGBA16Float (8 bytes), debug targets are RGBA8Unorm (4 bytes)
+    uint32_t bytes_per_sample = 8 + count * 4;
     INVARIANT_MSG(bytes_per_sample <= limits.maxColorAttachmentBytesPerSample,
                   fmt::format("pass '{}' needs {} bytes/sample but device supports {}", name(),
                               bytes_per_sample, limits.maxColorAttachmentBytesPerSample)

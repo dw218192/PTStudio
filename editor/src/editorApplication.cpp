@@ -714,7 +714,7 @@ void EditorApplication::render(FrameContext& ctx) {
         rendering::TextureDesc debug_desc;
         debug_desc.width = m_viewport_width;
         debug_desc.height = m_viewport_height;
-        debug_desc.format = WGPUTextureFormat_RGBA16Float;
+        debug_desc.format = WGPUTextureFormat_RGBA8Unorm;
         debug_desc.clear_color = {0, 0, 0, 1};
         if (capture_mode) {
             debug_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment |

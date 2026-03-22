@@ -185,7 +185,7 @@ void ForwardPass::do_setup(const webgpu::Device& device) {
                        .pipeline_layout(pipeline_layout)
                        .vertex_layout<forward_shader::VertexLayout>();
     for (uint32_t i = 0; i < k_debug_target_count; ++i) {
-        builder.color_format(WGPUTextureFormat_RGBA16Float, i + 1);
+        builder.color_format(WGPUTextureFormat_RGBA8Unorm, i + 1);
     }
     auto pipeline = builder.build();
 
@@ -273,7 +273,7 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
     rendering::TextureDesc debug_desc;
     debug_desc.width = ctx.viewport_width;
     debug_desc.height = ctx.viewport_height;
-    debug_desc.format = WGPUTextureFormat_RGBA16Float;
+    debug_desc.format = WGPUTextureFormat_RGBA8Unorm;
     debug_desc.clear_color = {0, 0, 0, 1};
 
     rendering::ResourceHandle debug_handles[k_debug_target_count];
