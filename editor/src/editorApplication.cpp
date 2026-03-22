@@ -829,9 +829,8 @@ void EditorApplication::render(FrameContext& ctx) {
         auto picking_ref = m_frame_graph->get_texture_ref(picking_handle);
 
         if (picking_ref && m_pick_x < m_viewport_width && m_pick_y < m_viewport_height) {
-            constexpr uint32_t k_pick_radius = 3;  // 7x7 pixel search area
             m_picking_readback.request(ctx.encoder(), picking_ref.texture(), m_pick_x, m_pick_y,
-                                       device.handle(), device.instance(), k_pick_radius);
+                                       device.handle(), device.instance());
             m_pick_requested = false;
         } else {
             m_pick_requested = false;

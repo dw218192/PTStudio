@@ -26,14 +26,13 @@ class BufferReadback
     BufferReadback(BufferReadback&&) noexcept;
     BufferReadback& operator=(BufferReadback&&) noexcept;
 
-    /// Issue a readback of a small region around (x, y). Copies a (2*radius+1)^2
-    /// square from the R32Uint picking texture. Coordinates are clamped to texture bounds.
+    /// Issue a readback: records CopyTextureToBuffer on the given encoder.
+    /// The caller must submit the encoder, then call tick() to begin the async map.
     void request(WGPUCommandEncoder encoder, WGPUTexture texture, uint32_t x, uint32_t y,
-                 WGPUDevice device, WGPUInstance instance, uint32_t radius = 0);
+                 WGPUDevice device, WGPUInstance instance);
 
-    /// Try to read the result. Scans the readback region for the closest
-    /// non-background (!=UINT32_MAX) pixel to the center. Returns nullopt if
-    /// not yet mapped, UINT32_MAX if all pixels are background.
+    /// Try to read the result. Returns the u32 value if mapped, nullopt otherwise.
+    /// After successful read, unmaps and transitions to Idle.
     [[nodiscard]] auto try_read_u32() -> std::optional<uint32_t>;
 
     // CRTP interface
@@ -46,10 +45,8 @@ class BufferReadback
     WGPUInstance m_instance = nullptr;
     WGPUDevice m_device = nullptr;
     bool m_needs_map = false;
-    uint32_t m_region_size = 1;    // side length of the readback region
-    uint32_t m_buffer_size = 256;  // current buffer allocation size
 
-    void ensure_buffer(uint32_t required_size);
+    void ensure_buffer();
 };
 
 }  // namespace pts::webgpu
