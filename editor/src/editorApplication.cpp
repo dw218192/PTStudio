@@ -10,7 +10,7 @@
 #include <core/rendering/adapterHelpers.h>
 #include <core/rendering/adapters/registry.h>
 #include <core/rendering/passContext.h>
-#include <core/rendering/rendererConfig.h>
+#include <core/rendering/rendererRegistry.h>
 #include <core/rendering/sceneLoader.h>
 #include <core/rendering/scenePass.h>
 #include <core/rendering/webgpuContext.h>
@@ -27,7 +27,6 @@
 #if defined(__EMSCRIPTEN__)
 #include <emscripten.h>
 #endif
-#include <pathTracerPass.h>
 #include <pxr/usd/usdGeom/xform.h>
 #include <pxr/usd/usdGeom/xformable.h>
 #include <pxr/usd/usdLux/domeLight.h>
@@ -51,11 +50,9 @@
 
 #include "editorResources.h"
 #include "passes/editorPass.h"
-#include "passes/forwardPass.h"
 #include "passes/gridPass.h"
 #include "passes/lobePass.h"
 #include "passes/toneMappingPass.h"
-#include "passes/wireframePass.h"
 
 using namespace pts;
 using namespace pts::editor;
@@ -67,11 +64,7 @@ static constexpr auto k_console_win_name = "Console";
 static constexpr auto k_perf_win_name = "Performance";
 static constexpr auto k_console_log_buffer_size = 1024;
 
-static const std::vector<rendering::RendererConfig> k_renderer_configs = {
-    {"Forward", [](const auto& sl) { return std::make_unique<ForwardPass>(sl); }},
-    {"Wireframe", [](const auto& sl) { return std::make_unique<WireframePass>(sl); }},
-    {"Path Trace", [](const auto& sl) { return std::make_unique<PathTracerPass>(sl); }},
-};
+static constexpr auto k_default_renderer_name = "Forward";
 
 EditorApplication::EditorApplication(std::string_view name, pts::LoggingManager& logging_manager)
     : WindowedApplication{name, logging_manager},
@@ -396,8 +389,8 @@ void EditorApplication::on_ready() {
 
     // Register shaders for hot-reload
     m_shader_loader.register_shader(
-        "editor/generated/shaders/forward.wgsl", "editor/shaders/forward.slang",
-        "editor/generated/shaders/forward.wgsl", editor_resources::get_resource);
+        "renderers/forward/generated/shaders/forward.wgsl", "renderers/forward/forward.slang",
+        "renderers/forward/generated/shaders/forward.wgsl", editor_resources::get_resource);
     m_shader_loader.register_shader(
         "editor/generated/shaders/grid.wgsl", "editor/shaders/grid.slang",
         "editor/generated/shaders/grid.wgsl", editor_resources::get_resource);
@@ -443,18 +436,20 @@ void EditorApplication::on_ready() {
     }
 
     // Set up renderer pass — optionally select by name
-    if (!m_app_config.renderer_name.empty()) {
+    {
+        auto& entries = rendering::RendererRegistry::entries();
+        INVARIANT_MSG(!entries.empty(), "No renderers registered");
+        auto target_name = m_app_config.renderer_name.empty() ? k_default_renderer_name
+                                                              : m_app_config.renderer_name;
         bool found = false;
-        for (size_t i = 0; i < k_renderer_configs.size(); ++i) {
-            if (k_renderer_configs[i].name == m_app_config.renderer_name) {
+        for (size_t i = 0; i < entries.size(); ++i) {
+            if (entries[i].name == target_name) {
                 set_renderer_config(i);
                 found = true;
                 break;
             }
         }
         INVARIANT_MSG(found, "Unknown renderer name");
-    } else {
-        set_renderer_config(0);
     }
 
     // Resolve --debug-output to m_debug_target_selection
@@ -507,8 +502,9 @@ void EditorApplication::on_ready() {
 }
 
 void EditorApplication::set_renderer_config(size_t index) {
-    PRECONDITION(index < k_renderer_configs.size());
-    m_renderer_pass = k_renderer_configs[index].factory(m_shader_loader);
+    auto& entries = rendering::RendererRegistry::entries();
+    PRECONDITION(index < entries.size());
+    m_renderer_pass = entries[index].factory(m_shader_loader);
     auto& device = webgpu_context()->device();
     m_renderer_pass->setup(device);
     m_active_config_index = index;
@@ -636,8 +632,8 @@ void EditorApplication::render(FrameContext& ctx) {
         std::vector<rendering::IScenePass*> all_passes;
         for_each_pass([&](auto& pass) { all_passes.push_back(&pass); });
         m_perf_overlay.draw(get_delta_time(), m_world, *m_frame_graph, all_passes,
-                            k_renderer_configs[m_active_config_index].name, m_viewport_width,
-                            m_viewport_height);
+                            rendering::RendererRegistry::entries()[m_active_config_index].name,
+                            m_viewport_width, m_viewport_height);
 
         m_loading_overlay.draw();
     }
@@ -1159,12 +1155,12 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
         ImGui::Text("Renderer:");
         ImGui::SameLine();
         ImGui::SetNextItemWidth(120);
-        if (ImGui::BeginCombo("##renderer",
-                              k_renderer_configs[m_active_config_index].name.c_str())) {
+        auto& reg_entries = rendering::RendererRegistry::entries();
+        if (ImGui::BeginCombo("##renderer", reg_entries[m_active_config_index].name.c_str())) {
             m_viewport_combo_open = true;
-            for (size_t i = 0; i < k_renderer_configs.size(); ++i) {
+            for (size_t i = 0; i < reg_entries.size(); ++i) {
                 bool selected = (i == m_active_config_index);
-                if (ImGui::Selectable(k_renderer_configs[i].name.c_str(), selected)) {
+                if (ImGui::Selectable(reg_entries[i].name.c_str(), selected)) {
                     if (i != m_active_config_index) {
                         set_renderer_config(i);
                     }

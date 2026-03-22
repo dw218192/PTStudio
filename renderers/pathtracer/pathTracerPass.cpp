@@ -6,6 +6,7 @@
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
+#include <core/rendering/rendererRegistry.h>
 #include <core/rendering/shaderLoader.h>
 #include <core/rendering/vertex.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
@@ -16,6 +17,8 @@
 
 using namespace pts;
 using namespace pts::editor;
+
+REGISTER_RENDERER("Path Trace", PathTracerPass);
 
 struct PTUniforms {
     glm::vec3 camera_pos;

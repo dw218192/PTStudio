@@ -6,14 +6,17 @@
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
+#include <core/rendering/rendererRegistry.h>
 #include <core/rendering/shaderLoader.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
-#include <shader_metadata.h>
+#include <renderers/forward/generated/shader_metadata.h>
 
 #include <glm/glm.hpp>
 
 using namespace pts;
 using namespace pts::editor;
+
+REGISTER_RENDERER("Forward", ForwardPass);
 
 struct ForwardUniforms {
     glm::mat4 mvp;
@@ -111,7 +114,7 @@ void ForwardPass::do_setup(const webgpu::Device& device) {
         if (ready->bind_group_layout) wgpuBindGroupLayoutRelease(ready->bind_group_layout);
     }
 
-    auto shader_src = get_shader_loader().load("editor/generated/shaders/forward.wgsl");
+    auto shader_src = get_shader_loader().load("renderers/forward/generated/shaders/forward.wgsl");
     auto shader = device.create_shader_module_from_source(shader_src);
 
     uint32_t initial_capacity = 64;
@@ -180,7 +183,7 @@ void ForwardPass::do_setup(const webgpu::Device& device) {
                        .depth_compare(WGPUCompareFunction_Less)
                        .cull_mode(WGPUCullMode_Back)
                        .pipeline_layout(pipeline_layout)
-                       .vertex_layout<editor_shader::VertexLayout>();
+                       .vertex_layout<forward_shader::VertexLayout>();
     for (uint32_t i = 0; i < k_debug_target_count; ++i) {
         builder.color_format(WGPUTextureFormat_RGBA16Float, i + 1);
     }

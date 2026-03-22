@@ -6,6 +6,7 @@
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
+#include <core/rendering/rendererRegistry.h>
 #include <core/rendering/shaderLoader.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
 #include <core/rendering/wireframeIndices.h>
@@ -17,6 +18,8 @@
 using namespace pts;
 using namespace pts::editor;
 using namespace pts::rendering;
+
+REGISTER_RENDERER("Wireframe", WireframePass);
 
 struct WireframeMesh {
     webgpu::Buffer index_buffer;

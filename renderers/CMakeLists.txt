@@ -18,4 +18,5 @@ macro(add_renderer TARGET_NAME)
     endif()
 endmacro()
 
+add_subdirectory(forward)
 add_subdirectory(pathtracer)
