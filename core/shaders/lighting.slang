@@ -4,7 +4,7 @@ import ltc;
 import sampling;
 
 // ---------------------------------------------------------------------------
-// Top-level lighting evaluation — generic over BRDF model
+// Lighting evaluation — representative-point only (path tracer)
 // ---------------------------------------------------------------------------
 
 float3 evaluate_lighting<B : IBRDF>(
@@ -48,7 +48,7 @@ float3 evaluate_lighting<B : IBRDF>(
 }
 
 // ---------------------------------------------------------------------------
-// LTC-enhanced lighting evaluation — uses LTC for rect/disk area lights
+// Lighting evaluation — LTC for rect/disk area lights (forward renderer)
 // ---------------------------------------------------------------------------
 
 float3 evaluate_lighting_ltc<B : IBRDF>(
@@ -71,7 +71,6 @@ float3 evaluate_lighting_ltc<B : IBRDF>(
             continue;
         }
 
-        // Use LTC for rect and disk area lights
         if (light.type == LIGHT_RECT || light.type == LIGHT_DISK) {
             float3 diff, spec;
             if (light.type == LIGHT_RECT) {
@@ -87,7 +86,6 @@ float3 evaluate_lighting_ltc<B : IBRDF>(
             continue;
         }
 
-        // Distant + sphere: use representative-point as before
         LightSample ls = light.sample(P, N, V, roughness);
         if (!ls.valid) continue;
 
