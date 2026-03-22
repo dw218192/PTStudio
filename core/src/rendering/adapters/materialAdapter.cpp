@@ -28,26 +28,26 @@ void MaterialAdapter::sync(pxr::UsdPrim prim, SyncScope& scope) {
     if (it == cache.end()) return;  // material not yet in cache — will be resolved on geometry sync
 
     // Re-read properties from the UsdPreviewSurface shader
-    Material mat;
     auto surface = mat_prim.ComputeSurfaceSource();
-    if (surface) {
-        pxr::TfToken shader_id;
-        surface.GetShaderId(&shader_id);
-        if (shader_id == pxr::TfToken("UsdPreviewSurface")) {
-            if (auto input = surface.GetInput(pxr::TfToken("diffuseColor"))) {
-                pxr::GfVec3f color;
-                if (input.Get(&color)) mat.diffuse_color = {color[0], color[1], color[2]};
-            }
-            if (auto input = surface.GetInput(pxr::TfToken("metallic"))) {
-                input.Get(&mat.metallic);
-            }
-            if (auto input = surface.GetInput(pxr::TfToken("roughness"))) {
-                input.Get(&mat.roughness);
-            }
-            if (auto input = surface.GetInput(pxr::TfToken("opacity"))) {
-                input.Get(&mat.opacity);
-            }
-        }
+    if (!surface) return;
+
+    pxr::TfToken shader_id;
+    surface.GetShaderId(&shader_id);
+    if (shader_id != pxr::TfToken("UsdPreviewSurface")) return;
+
+    Material mat;
+    if (auto input = surface.GetInput(pxr::TfToken("diffuseColor"))) {
+        pxr::GfVec3f color;
+        if (input.Get(&color)) mat.diffuse_color = {color[0], color[1], color[2]};
+    }
+    if (auto input = surface.GetInput(pxr::TfToken("metallic"))) {
+        input.Get(&mat.metallic);
+    }
+    if (auto input = surface.GetInput(pxr::TfToken("roughness"))) {
+        input.Get(&mat.roughness);
+    }
+    if (auto input = surface.GetInput(pxr::TfToken("opacity"))) {
+        input.Get(&mat.opacity);
     }
 
     // Update in-place

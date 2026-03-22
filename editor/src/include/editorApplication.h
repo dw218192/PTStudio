@@ -123,7 +123,8 @@ struct EditorApplication final : WindowedApplication {
         if (m_renderer_pass) fn(*m_renderer_pass);
         for (auto& p : m_editor_passes) {
             // ToneMappingPass always runs; others respect the toggle
-            if (!m_editor_passes_enabled && p.get() != static_cast<rendering::IScenePass*>(m_tonemapping_pass))
+            if (!m_editor_passes_enabled &&
+                p.get() != static_cast<rendering::IScenePass*>(m_tonemapping_pass))
                 continue;
             fn(*p);
         }

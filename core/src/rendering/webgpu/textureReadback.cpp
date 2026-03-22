@@ -130,6 +130,8 @@ void TextureReadback::on_tick() {
         map_cb.callback = [](WGPUMapAsyncStatus status, WGPUStringView, void* self_ptr, void*) {
             auto* self = static_cast<TextureReadback*>(self_ptr);
             if (status != WGPUMapAsyncStatus_Success) {
+                wgpuBufferRelease(self->m_buffer);
+                self->m_buffer = nullptr;
                 self->transition<IdleState>();
             }
         };

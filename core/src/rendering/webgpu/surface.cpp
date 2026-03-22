@@ -32,7 +32,7 @@ auto choose_present_mode(const WGPUSurfaceCapabilities& capabilities) -> WGPUPre
             return WGPUPresentMode_Mailbox;
         }
     }
-    return capabilities.presentModes[0];
+    return WGPUPresentMode_Fifo;
 }
 
 auto choose_alpha_mode(const WGPUSurfaceCapabilities& capabilities) -> WGPUCompositeAlphaMode {

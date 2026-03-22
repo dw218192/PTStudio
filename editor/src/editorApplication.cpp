@@ -1259,7 +1259,8 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
     }
 
     // ── ImGuizmo gizmo ──
-    if (m_editor_passes_enabled && !m_selected_prim.IsEmpty() && m_stage && m_viewport_width > 0 && m_viewport_height > 0) {
+    if (m_editor_passes_enabled && !m_selected_prim.IsEmpty() && m_stage && m_viewport_width > 0 &&
+        m_viewport_height > 0) {
         auto prim = m_stage->GetPrimAtPath(m_selected_prim);
         pxr::UsdGeomXformable xformable(prim);
         if (prim.IsValid() && xformable) {

@@ -25,7 +25,7 @@ void OrbitCamera::set_yaw(float radians) {
 }
 
 void OrbitCamera::set_pitch(float radians) {
-    m_pitch = radians;
+    m_pitch = std::clamp(radians, -k_max_pitch, k_max_pitch);
 }
 
 void OrbitCamera::set_clip_planes(float near, float far) {

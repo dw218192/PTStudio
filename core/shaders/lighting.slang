@@ -98,7 +98,7 @@ struct ShadingGeometry {
     static ShadingGeometry from_local(float3 wi, float3 wo, float roughness) {
         ShadingGeometry g;
         g.NdotL = wi.z;
-        g.NdotV = wo.z;
+        g.NdotV = max(wo.z, 0.001);
         g.valid = wi.z > 0.0 && wo.z > 0.0;
         float3 h = normalize(wi + wo);
         g.NdotH = max(h.z, 0.0);
