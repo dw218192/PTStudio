@@ -22,6 +22,15 @@ StructuredBuffer<Material> materials;
 [[vk::binding(2, 0)]]
 StructuredBuffer<Light> lights;
 
+[[vk::binding(3, 0)]]
+Texture2D<float4> ltc_mat;
+
+[[vk::binding(4, 0)]]
+Texture2D<float2> ltc_amp;
+
+[[vk::binding(5, 0)]]
+SamplerState ltc_sampler;
+
 struct VsIn {
     float3 position : POSITION;
     float3 normal   : NORMAL;

@@ -31,8 +31,9 @@ static_assert(ForwardPass::k_uniform_align >= sizeof(ForwardUniforms),
 static WGPUBindGroup create_bind_group(WGPUDevice device, WGPUBindGroupLayout layout,
                                        WGPUBuffer uniform_buf, WGPUBuffer material_buf,
                                        std::size_t material_buf_size, WGPUBuffer light_buf,
-                                       std::size_t light_buf_size) {
-    WGPUBindGroupEntry entries[3] = {};
+                                       std::size_t light_buf_size, WGPUTextureView ltc_mat_view,
+                                       WGPUTextureView ltc_amp_view, WGPUSampler ltc_sampler) {
+    WGPUBindGroupEntry entries[6] = {};
 
     entries[0] = WGPU_BIND_GROUP_ENTRY_INIT;
     entries[0].binding = 0;
@@ -52,9 +53,21 @@ static WGPUBindGroup create_bind_group(WGPUDevice device, WGPUBindGroupLayout la
     entries[2].offset = 0;
     entries[2].size = light_buf_size;
 
+    entries[3] = WGPU_BIND_GROUP_ENTRY_INIT;
+    entries[3].binding = 3;
+    entries[3].textureView = ltc_mat_view;
+
+    entries[4] = WGPU_BIND_GROUP_ENTRY_INIT;
+    entries[4].binding = 4;
+    entries[4].textureView = ltc_amp_view;
+
+    entries[5] = WGPU_BIND_GROUP_ENTRY_INIT;
+    entries[5].binding = 5;
+    entries[5].sampler = ltc_sampler;
+
     WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
     bg_desc.layout = layout;
-    bg_desc.entryCount = 3;
+    bg_desc.entryCount = 6;
     bg_desc.entries = entries;
     return wgpuDeviceCreateBindGroup(device, &bg_desc);
 }
@@ -106,9 +119,9 @@ void ForwardPass::do_setup(const webgpu::Device& device) {
         k_uniform_align * initial_capacity,
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
 
-    // Create bind group layout: binding 0 = uniform (dynamic), 1 = storage (materials), 2 = storage
-    // (lights)
-    WGPUBindGroupLayoutEntry entries[3] = {};
+    // Create bind group layout: binding 0 = uniform (dynamic), 1 = storage (materials),
+    // 2 = storage (lights), 3 = texture (LTC mat), 4 = texture (LTC amp), 5 = sampler (LTC)
+    WGPUBindGroupLayoutEntry entries[6] = {};
 
     entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
     entries[0].binding = 0;
@@ -130,8 +143,27 @@ void ForwardPass::do_setup(const webgpu::Device& device) {
     entries[2].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
     entries[2].buffer.minBindingSize = 0;
 
+    entries[3] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    entries[3].binding = 3;
+    entries[3].visibility = WGPUShaderStage_Fragment;
+    entries[3].texture.sampleType = WGPUTextureSampleType_Float;
+    entries[3].texture.viewDimension = WGPUTextureViewDimension_2D;
+    entries[3].texture.multisampled = false;
+
+    entries[4] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    entries[4].binding = 4;
+    entries[4].visibility = WGPUShaderStage_Fragment;
+    entries[4].texture.sampleType = WGPUTextureSampleType_Float;
+    entries[4].texture.viewDimension = WGPUTextureViewDimension_2D;
+    entries[4].texture.multisampled = false;
+
+    entries[5] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    entries[5].binding = 5;
+    entries[5].visibility = WGPUShaderStage_Fragment;
+    entries[5].sampler.type = WGPUSamplerBindingType_Filtering;
+
     WGPUBindGroupLayoutDescriptor bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    bgl_desc.entryCount = 3;
+    bgl_desc.entryCount = 6;
     bgl_desc.entries = entries;
     auto bind_group_layout = wgpuDeviceCreateBindGroupLayout(device.handle(), &bgl_desc);
 
@@ -156,9 +188,19 @@ void ForwardPass::do_setup(const webgpu::Device& device) {
 
     wgpuPipelineLayoutRelease(pipeline_layout);
 
+    rendering::LtcTextures ltc;
+    ltc.init(device);
+
     m_state = Ready{
-        std::move(shader), std::move(pipeline), std::move(uniform_buffer),
-        nullptr,           bind_group_layout,   initial_capacity,
+        std::move(shader),
+        std::move(pipeline),
+        std::move(uniform_buffer),
+        nullptr,
+        bind_group_layout,
+        initial_capacity,
+        nullptr,
+        nullptr,
+        std::move(ltc),
     };
 }
 
@@ -202,9 +244,11 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
         if (ready.bind_group) {
             wgpuBindGroupRelease(ready.bind_group);
         }
-        ready.bind_group = create_bind_group(ctx.device.handle(), ready.bind_group_layout,
-                                             ready.uniform_buffer.handle(), mat_buf.handle(),
-                                             mat_buf.size(), light_buf.handle(), light_buf.size());
+        ready.bind_group =
+            create_bind_group(ctx.device.handle(), ready.bind_group_layout,
+                              ready.uniform_buffer.handle(), mat_buf.handle(), mat_buf.size(),
+                              light_buf.handle(), light_buf.size(), ready.ltc_textures.mat_view(),
+                              ready.ltc_textures.amp_view(), ready.ltc_textures.sampler());
         ready.cached_light_buf = light_buf.handle();
         ready.cached_material_buf = mat_buf.handle();
     }
