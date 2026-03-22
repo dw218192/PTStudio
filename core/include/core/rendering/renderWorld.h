@@ -13,7 +13,6 @@
 #include <functional>
 #include <glm/glm.hpp>
 #include <string>
-#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -68,7 +67,7 @@ class Slot {
     bool active() const {
         return m_active;
     }
-    std::string_view get_prim_path() const {
+    const pxr::SdfPath& get_prim_path() const {
         return m_prim_path;
     }
 
@@ -112,7 +111,7 @@ class Slot {
    private:
     friend class SlotVector<T>;
     T m_data{};
-    std::string m_prim_path;
+    pxr::SdfPath m_prim_path;
     uint32_t m_generation = 0;
     bool m_active = false;
 };
@@ -137,7 +136,7 @@ class SlotVector {
             m_slots.push_back(Slot<T>{});
             idx = static_cast<uint32_t>(m_slots.size() - 1);
         }
-        m_slots[idx].m_prim_path.clear();
+        m_slots[idx].m_prim_path = pxr::SdfPath();
         m_slots[idx].activate();
         return idx;
     }
@@ -167,7 +166,7 @@ class SlotVector {
         return {m_slots.data(), m_slots.size()};
     }
 
-    void set_prim_path(uint32_t i, std::string path) {
+    void set_prim_path(uint32_t i, pxr::SdfPath path) {
         PRECONDITION(i < m_slots.size());
         m_slots[i].m_prim_path = std::move(path);
     }
@@ -263,7 +262,7 @@ class SyncScope {
     Material& material(uint32_t i);
     std::vector<Material>& materials();
     std::unordered_map<std::string, uint32_t>& material_cache();
-    void set_prim_path(uint32_t slot_index, PrimSlot::Kind kind, std::string path);
+    void set_prim_path(uint32_t slot_index, PrimSlot::Kind kind, pxr::SdfPath path);
 
    private:
     RenderWorld& m_world;
@@ -279,15 +278,15 @@ struct RenderWorld {
     uint32_t get_light_version() const;
     uint32_t get_material_version() const;
 
-    int find_object_by_prim(std::string_view path) const;
-    int find_light_by_prim(std::string_view path) const;
+    int find_object_by_prim(const pxr::SdfPath& path) const;
+    int find_light_by_prim(const pxr::SdfPath& path) const;
 
     /// Iterate prim slots without exposing the container.
-    /// fn(std::string_view path, PrimSlot slot)
+    /// fn(const pxr::SdfPath& path, PrimSlot slot)
     template <typename F>
     void for_each_prim(F&& fn) const {
         for (const auto& [path, slot] : m_prim_slots) {
-            fn(std::string_view{path}, slot);
+            fn(path, slot);
         }
     }
 
@@ -324,9 +323,9 @@ struct RenderWorld {
     /// Material path → material index (deduplication cache).
     std::unordered_map<std::string, uint32_t> m_material_cache;
 
-    /// Prim path → slot (object or light). Uses std::less<> for transparent
-    /// lookup so find() accepts string_view without allocating.
-    boost::container::flat_map<std::string, PrimSlot, std::less<>> m_prim_slots;
+    /// Prim path → slot (object or light). SdfPath has operator< and O(1)
+    /// equality via interned strings.
+    boost::container::flat_map<pxr::SdfPath, PrimSlot> m_prim_slots;
 
     uint32_t m_mesh_version = 0;
     uint32_t m_light_version = 0;

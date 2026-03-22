@@ -146,7 +146,7 @@ struct EditorApplication final : WindowedApplication {
     void revoke_stage_listener();
     void on_objects_changed(const pxr::UsdNotice::ObjectsChanged& notice);
     void process_dirty_prims();
-    void normalize_xform_ops(const std::string& prim_path);
+    void normalize_xform_ops(const pxr::SdfPath& prim_path);
     pxr::SdfPath find_unique_prim_path(std::string_view base_name,
                                        const pxr::SdfPath* parent = nullptr);
     auto draw_add_prim_menu(const pxr::SdfPath* parent = nullptr,

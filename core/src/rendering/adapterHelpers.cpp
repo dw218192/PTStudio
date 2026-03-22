@@ -76,7 +76,7 @@ void sync_object(pxr::UsdPrim prim, SyncScope& scope, std::vector<Vertex>& verti
     auto transform = compute_world_transform(prim);
     auto material_index = resolve_material(prim, scope);
 
-    int existing = world.find_object_by_prim(sdf_path.GetText());
+    int existing = world.find_object_by_prim(sdf_path);
     if (existing >= 0) {
         auto w = scope.write_object(static_cast<uint32_t>(existing));
         auto mesh_index = w->mesh_index;
@@ -93,7 +93,7 @@ void sync_object(pxr::UsdPrim prim, SyncScope& scope, std::vector<Vertex>& verti
             w->transform = transform;
             w->material_index = material_index;
         }
-        scope.set_prim_path(obj_slot, PrimSlot::Kind::Object, sdf_path.GetString());
+        scope.set_prim_path(obj_slot, PrimSlot::Kind::Object, sdf_path);
     }
 }
 
@@ -101,7 +101,7 @@ void sync_light(pxr::UsdPrim prim, SyncScope& scope, const LightData& light) {
     auto& world = scope.world();
     auto sdf_path = prim.GetPath();
 
-    int existing = world.find_light_by_prim(sdf_path.GetText());
+    int existing = world.find_light_by_prim(sdf_path);
     if (existing >= 0) {
         auto w = scope.write_light(static_cast<uint32_t>(existing));
         *w = light;
@@ -111,7 +111,7 @@ void sync_light(pxr::UsdPrim prim, SyncScope& scope, const LightData& light) {
             auto w = scope.write_light(slot);
             *w = light;
         }
-        scope.set_prim_path(slot, PrimSlot::Kind::Light, sdf_path.GetString());
+        scope.set_prim_path(slot, PrimSlot::Kind::Light, sdf_path);
     }
 }
 

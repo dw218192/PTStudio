@@ -70,12 +70,12 @@ uint32_t SyncScope::alloc_light_slot() {
 }
 
 void SyncScope::free_object_slot(uint32_t i) {
-    auto prim_path = m_world.m_objects[i].get_prim_path();
-    if (!prim_path.empty()) {
+    const auto& prim_path = m_world.m_objects[i].get_prim_path();
+    if (!prim_path.IsEmpty()) {
         auto it = m_world.m_prim_slots.find(prim_path);
         if (it != m_world.m_prim_slots.end()) m_world.m_prim_slots.erase(it);
     }
-    m_world.m_objects.set_prim_path(i, "");
+    m_world.m_objects.set_prim_path(i, pxr::SdfPath());
     m_world.m_objects.free(i);
 }
 
@@ -93,12 +93,12 @@ void SyncScope::free_mesh_slot(uint32_t i) {
 }
 
 void SyncScope::free_light_slot(uint32_t i) {
-    auto prim_path = m_world.m_lights[i].get_prim_path();
-    if (!prim_path.empty()) {
+    const auto& prim_path = m_world.m_lights[i].get_prim_path();
+    if (!prim_path.IsEmpty()) {
         auto it = m_world.m_prim_slots.find(prim_path);
         if (it != m_world.m_prim_slots.end()) m_world.m_prim_slots.erase(it);
     }
-    m_world.m_lights.set_prim_path(i, "");
+    m_world.m_lights.set_prim_path(i, pxr::SdfPath());
     m_world.m_lights.free(i);
 }
 
@@ -140,7 +140,7 @@ std::unordered_map<std::string, uint32_t>& SyncScope::material_cache() {
     return m_world.m_material_cache;
 }
 
-void SyncScope::set_prim_path(uint32_t slot_index, PrimSlot::Kind kind, std::string path) {
+void SyncScope::set_prim_path(uint32_t slot_index, PrimSlot::Kind kind, pxr::SdfPath path) {
     if (kind == PrimSlot::Kind::Object) {
         m_world.m_objects.set_prim_path(slot_index, path);
     } else {
@@ -193,13 +193,13 @@ uint32_t RenderWorld::gpu_light_count() const {
 
 // --- RenderWorld read-only + clear ---
 
-int RenderWorld::find_object_by_prim(std::string_view path) const {
+int RenderWorld::find_object_by_prim(const pxr::SdfPath& path) const {
     auto it = m_prim_slots.find(path);
     if (it == m_prim_slots.end() || it->second.kind != PrimSlot::Kind::Object) return -1;
     return static_cast<int>(it->second.index);
 }
 
-int RenderWorld::find_light_by_prim(std::string_view path) const {
+int RenderWorld::find_light_by_prim(const pxr::SdfPath& path) const {
     auto it = m_prim_slots.find(path);
     if (it == m_prim_slots.end() || it->second.kind != PrimSlot::Kind::Light) return -1;
     return static_cast<int>(it->second.index);
@@ -334,10 +334,9 @@ void RenderWorld::update_transforms(const pxr::UsdStageRefPtr& stage,
                                     const std::vector<pxr::SdfPath>& dirty_paths) {
     for (const auto& dirty_path : dirty_paths) {
         for (const auto& [path, slot] : m_prim_slots) {
-            auto slot_path = pxr::SdfPath(path);
-            if (!slot_path.HasPrefix(dirty_path)) continue;
+            if (!path.HasPrefix(dirty_path)) continue;
 
-            auto prim = stage->GetPrimAtPath(slot_path);
+            auto prim = stage->GetPrimAtPath(path);
             if (!prim.IsValid()) continue;
 
             auto xf = compute_world_transform(prim);

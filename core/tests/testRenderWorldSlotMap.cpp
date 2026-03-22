@@ -3,6 +3,7 @@
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/vertex.h>
 #include <doctest/doctest.h>
+#include <pxr/usd/sdf/path.h>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -67,15 +68,15 @@ TEST_CASE("find_object_by_prim returns correct index") {
     auto scope = world.begin_sync();
 
     auto idx = scope.alloc_object_slot();
-    scope.set_prim_path(idx, PrimSlot::Kind::Object, "/World/Cube");
+    scope.set_prim_path(idx, PrimSlot::Kind::Object, pxr::SdfPath("/World/Cube"));
 
-    CHECK(world.find_object_by_prim("/World/Cube") == static_cast<int>(idx));
+    CHECK(world.find_object_by_prim(pxr::SdfPath("/World/Cube")) == static_cast<int>(idx));
 }
 
 TEST_CASE("find returns -1 for unknown path") {
     RenderWorld world;
-    CHECK(world.find_object_by_prim("/does/not/exist") == -1);
-    CHECK(world.find_light_by_prim("/does/not/exist") == -1);
+    CHECK(world.find_object_by_prim(pxr::SdfPath("/does/not/exist")) == -1);
+    CHECK(world.find_light_by_prim(pxr::SdfPath("/does/not/exist")) == -1);
 }
 
 TEST_CASE("find_light_by_prim returns correct index") {
@@ -83,9 +84,9 @@ TEST_CASE("find_light_by_prim returns correct index") {
     auto scope = world.begin_sync();
 
     auto idx = scope.alloc_light_slot();
-    scope.set_prim_path(idx, PrimSlot::Kind::Light, "/World/Light");
+    scope.set_prim_path(idx, PrimSlot::Kind::Light, pxr::SdfPath("/World/Light"));
 
-    CHECK(world.find_light_by_prim("/World/Light") == static_cast<int>(idx));
+    CHECK(world.find_light_by_prim(pxr::SdfPath("/World/Light")) == static_cast<int>(idx));
 }
 
 TEST_CASE("free_object_slot removes from prim_slots") {
@@ -93,11 +94,11 @@ TEST_CASE("free_object_slot removes from prim_slots") {
     auto scope = world.begin_sync();
 
     auto idx = scope.alloc_object_slot();
-    scope.set_prim_path(idx, PrimSlot::Kind::Object, "/World/Sphere");
+    scope.set_prim_path(idx, PrimSlot::Kind::Object, pxr::SdfPath("/World/Sphere"));
 
     scope.free_object_slot(idx);
-    CHECK(world.find_object_by_prim("/World/Sphere") == -1);
-    CHECK(world.get_objects()[idx].get_prim_path().empty());
+    CHECK(world.find_object_by_prim(pxr::SdfPath("/World/Sphere")) == -1);
+    CHECK(world.get_objects()[idx].get_prim_path().IsEmpty());
 }
 
 TEST_CASE("free_light_slot removes from prim_slots") {
@@ -105,10 +106,10 @@ TEST_CASE("free_light_slot removes from prim_slots") {
     auto scope = world.begin_sync();
 
     auto idx = scope.alloc_light_slot();
-    scope.set_prim_path(idx, PrimSlot::Kind::Light, "/World/Sun");
+    scope.set_prim_path(idx, PrimSlot::Kind::Light, pxr::SdfPath("/World/Sun"));
 
     scope.free_light_slot(idx);
-    CHECK(world.find_light_by_prim("/World/Sun") == -1);
+    CHECK(world.find_light_by_prim(pxr::SdfPath("/World/Sun")) == -1);
     CHECK(world.get_lights()[idx].active() == false);
 }
 
@@ -118,10 +119,10 @@ TEST_CASE("clear resets everything") {
         auto scope = world.begin_sync();
 
         auto o = scope.alloc_object_slot();
-        scope.set_prim_path(o, PrimSlot::Kind::Object, "/A");
+        scope.set_prim_path(o, PrimSlot::Kind::Object, pxr::SdfPath("/A"));
 
         auto l = scope.alloc_light_slot();
-        scope.set_prim_path(l, PrimSlot::Kind::Light, "/B");
+        scope.set_prim_path(l, PrimSlot::Kind::Light, pxr::SdfPath("/B"));
 
         scope.alloc_mesh_slot();
 
@@ -228,13 +229,13 @@ TEST_CASE("generation-based tracking") {
     SUBCASE("for_each_prim iterates all slots") {
         auto scope = world.begin_sync();
         auto o = scope.alloc_object_slot();
-        scope.set_prim_path(o, PrimSlot::Kind::Object, "/Obj");
+        scope.set_prim_path(o, PrimSlot::Kind::Object, pxr::SdfPath("/Obj"));
 
         auto l = scope.alloc_light_slot();
-        scope.set_prim_path(l, PrimSlot::Kind::Light, "/Light");
+        scope.set_prim_path(l, PrimSlot::Kind::Light, pxr::SdfPath("/Light"));
 
         int count = 0;
-        world.for_each_prim([&](std::string_view, PrimSlot) { ++count; });
+        world.for_each_prim([&](const pxr::SdfPath&, PrimSlot) { ++count; });
         CHECK(count == 2);
     }
 }

@@ -112,7 +112,7 @@ TEST_CASE("populate_from_stage populates prim_path on ObjectData slots") {
     world.upload_all_meshes(device);
 
     REQUIRE(world.get_objects().size() == 1);
-    CHECK(world.get_objects()[0].get_prim_path() == "/Root/TestMesh");
+    CHECK(world.get_objects()[0].get_prim_path() == pxr::SdfPath("/Root/TestMesh"));
     CHECK(world.get_meshes().size() == 1);
     CHECK(world.get_meshes()[0]->index_count == 3);
 
@@ -282,13 +282,13 @@ TEST_CASE("Selection preserved across full resync by prim_path") {
     // Simulate selecting object at index 1 (MeshB)
     int selected_object = -1;
     for (int i = 0; i < static_cast<int>(world.get_objects().size()); ++i) {
-        if (world.get_objects()[i].get_prim_path() == "/Root/MeshB") {
+        if (world.get_objects()[i].get_prim_path() == pxr::SdfPath("/Root/MeshB")) {
             selected_object = i;
             break;
         }
     }
     REQUIRE(selected_object >= 0);
-    std::string selected_prim_path{world.get_objects()[selected_object].get_prim_path()};
+    pxr::SdfPath selected_prim_path = world.get_objects()[selected_object].get_prim_path();
 
     // Simulate full resync (mirrors process_dirty_prims resync path)
     world.clear();
@@ -305,7 +305,7 @@ TEST_CASE("Selection preserved across full resync by prim_path") {
     }
 
     CHECK(restored >= 0);
-    CHECK(world.get_objects()[restored].get_prim_path() == "/Root/MeshB");
+    CHECK(world.get_objects()[restored].get_prim_path() == pxr::SdfPath("/Root/MeshB"));
 
     spdlog::drop("test_selection_resync");
 }
@@ -331,7 +331,7 @@ TEST_CASE("Selection lost when selected prim is removed during resync") {
     world.upload_all_meshes(device);
 
     REQUIRE(world.get_objects().size() == 1);
-    std::string selected_prim_path{world.get_objects()[0].get_prim_path()};
+    pxr::SdfPath selected_prim_path = world.get_objects()[0].get_prim_path();
 
     // Remove the prim from the stage
     stage->RemovePrim(pxr::SdfPath("/Root/Mesh"));

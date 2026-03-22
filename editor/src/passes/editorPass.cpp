@@ -320,10 +320,10 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
     m_picking_table.clear();
     m_picking_table.reserve(object_count + gizmo_count);
     for (uint32_t i = 0; i < object_count; ++i) {
-        m_picking_table.push_back(std::string{objects[i].get_prim_path()});
+        m_picking_table.push_back(objects[i].get_prim_path());
     }
     for (uint32_t slot = 0; slot < gizmo_count; ++slot) {
-        m_picking_table.push_back(std::string{lights[gizmo_light_indices[slot]].get_prim_path()});
+        m_picking_table.push_back(lights[gizmo_light_indices[slot]].get_prim_path());
     }
 
     uint32_t total_picking_slots = object_count + gizmo_count;
@@ -486,14 +486,15 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
         });
 }
 
-auto EditorPass::resolve_picking_id(uint32_t id) const noexcept -> std::string_view {
+auto EditorPass::resolve_picking_id(uint32_t id) const noexcept -> const pxr::SdfPath& {
     if (id < static_cast<uint32_t>(m_picking_table.size())) {
         return m_picking_table[id];
     }
-    return {};
+    static const pxr::SdfPath k_empty;
+    return k_empty;
 }
 
-auto EditorPass::find_picking_id(std::string_view prim_path) const noexcept -> uint32_t {
+auto EditorPass::find_picking_id(const pxr::SdfPath& prim_path) const noexcept -> uint32_t {
     for (uint32_t i = 0; i < static_cast<uint32_t>(m_picking_table.size()); ++i) {
         if (m_picking_table[i] == prim_path) return i;
     }

@@ -159,10 +159,9 @@ void EditorApplication::process_dirty_prims() {
             for (const auto& resync_path : m_resync_paths) {
                 // Handle ancestor resyncs: resync children under this path
                 std::vector<pxr::SdfPath> children_to_resync;
-                m_world.for_each_prim([&](std::string_view path, rendering::PrimSlot) {
-                    auto child = pxr::SdfPath(std::string{path});
-                    if (child.HasPrefix(resync_path) && child != resync_path) {
-                        children_to_resync.push_back(child);
+                m_world.for_each_prim([&](const pxr::SdfPath& path, rendering::PrimSlot) {
+                    if (path.HasPrefix(resync_path) && path != resync_path) {
+                        children_to_resync.push_back(path);
                     }
                 });
 
@@ -199,9 +198,9 @@ void EditorApplication::process_dirty_prims() {
     }
 }
 
-void EditorApplication::normalize_xform_ops(const std::string& prim_path) {
+void EditorApplication::normalize_xform_ops(const pxr::SdfPath& prim_path) {
     PRECONDITION(m_stage);
-    auto prim = m_stage->GetPrimAtPath(pxr::SdfPath(prim_path));
+    auto prim = m_stage->GetPrimAtPath(prim_path);
     INVARIANT_MSG(prim.IsValid(), "prim_path on ObjectData must reference a valid USD prim");
 
     pxr::UsdGeomXformable xformable(prim);
@@ -250,7 +249,7 @@ void EditorApplication::ensure_default_light() {
 
     // Check if the stage already has any lights
     bool has_light = false;
-    m_world.for_each_prim([&](std::string_view, rendering::PrimSlot slot) {
+    m_world.for_each_prim([&](const pxr::SdfPath&, rendering::PrimSlot slot) {
         if (slot.kind == rendering::PrimSlot::Kind::Light) has_light = true;
     });
     if (has_light) return;
@@ -658,7 +657,7 @@ void EditorApplication::render(FrameContext& ctx) {
     // Resolve selected prim to picking ID via EditorPass table
     uint32_t selected_picking_id = UINT32_MAX;
     if (!capture_mode && !m_selected_prim.IsEmpty() && m_editor_pass) {
-        selected_picking_id = m_editor_pass->find_picking_id(m_selected_prim.GetString());
+        selected_picking_id = m_editor_pass->find_picking_id(m_selected_prim);
     }
 
     rendering::PassContext pass_ctx{
@@ -812,11 +811,11 @@ void EditorApplication::render(FrameContext& ctx) {
         if (*picked_id == UINT32_MAX) {
             m_selected_prim = pxr::SdfPath();
         } else if (m_editor_pass) {
-            auto path = m_editor_pass->resolve_picking_id(*picked_id);
-            if (!path.empty()) {
-                m_selected_prim = pxr::SdfPath(std::string(path));
+            const auto& path = m_editor_pass->resolve_picking_id(*picked_id);
+            if (!path.IsEmpty()) {
+                m_selected_prim = path;
                 if (m_stage) {
-                    normalize_xform_ops(std::string(path));
+                    normalize_xform_ops(path);
                 }
             }
         }
@@ -925,7 +924,7 @@ auto EditorApplication::draw_add_prim_menu(const pxr::SdfPath* parent,
                 if (ImGui::MenuItem(factory->display_name.c_str())) {
                     auto path = find_unique_prim_path(factory->base_name, parent);
                     factory->define(m_stage, path);
-                    normalize_xform_ops(path.GetString());
+                    normalize_xform_ops(path);
                     if (spawn_pos) {
                         auto prim = m_stage->GetPrimAtPath(path);
                         if (pxr::UsdGeomXformable xformable{prim}; xformable) {
@@ -1127,7 +1126,7 @@ void EditorApplication::draw_prim_tree(const pxr::UsdPrim& prim) {
         } else {
             m_selected_prim = path;
             if (pxr::UsdGeomXformable xformable{prim}; xformable) {
-                normalize_xform_ops(path.GetString());
+                normalize_xform_ops(path);
             }
         }
     }
