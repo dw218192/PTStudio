@@ -208,7 +208,7 @@ jobs:
           path: _package/emscripten/
 
       - name: Publish site
-        run: ./repo publish --platform emscripten --build-type ${{ matrix.build_type }}
+        run: ./repo publish --platform emscripten --build-type Release
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
