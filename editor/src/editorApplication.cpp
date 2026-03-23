@@ -270,6 +270,7 @@ void EditorApplication::register_args(CommandLine& cli) {
     cli.add_string("camera-yaw", "Camera yaw in degrees", std::nullopt);
     cli.add_string("camera-pitch", "Camera pitch in degrees", std::nullopt);
     cli.add_string("camera-fov", "Camera vertical FOV in degrees", std::nullopt);
+    cli.add_string("camera", "Select a scene camera by prim name", std::nullopt);
 }
 
 void EditorApplication::process_args(const CommandLine& cli) {
@@ -319,6 +320,9 @@ void EditorApplication::process_args(const CommandLine& cli) {
     }
     if (cli.has("camera-fov")) {
         m_app_config.camera_fov = cli.get_string("camera-fov");
+    }
+    if (cli.has("camera")) {
+        m_app_config.camera_name = cli.get_string("camera");
     }
 }
 
@@ -492,6 +496,18 @@ void EditorApplication::on_ready() {
     }
     if (!m_app_config.camera_fov.empty()) {
         m_camera.set_fov_y(std::stof(m_app_config.camera_fov));
+    }
+
+    // Select scene camera by name (from --camera CLI arg)
+    if (!m_app_config.camera_name.empty()) {
+        auto cameras = m_world.get_cameras();
+        for (uint32_t i = 0; i < cameras.size(); ++i) {
+            if (cameras[i].active() &&
+                cameras[i].get_prim_path().GetName() == m_app_config.camera_name) {
+                m_active_camera_index = static_cast<int>(i + 1);
+                break;
+            }
+        }
     }
 
     // In capture mode, set fixed viewport size (no ImGui layout)
@@ -685,8 +701,12 @@ void EditorApplication::render(FrameContext& ctx) {
                 if (cam.orthographic) {
                     float half_h = cam.ortho_height * 0.5f;
                     float half_w = half_h * aspect;
-                    pass_ctx.proj_matrix =
+                    auto o =
                         glm::ortho(-half_w, half_w, -half_h, half_h, cam.near_clip, cam.far_clip);
+                    // glm::ortho maps Z to [-1,1]; WebGPU clips to [0,1].
+                    o[2][2] *= 0.5f;
+                    o[3][2] = o[3][2] * 0.5f + 0.5f;
+                    pass_ctx.proj_matrix = o;
                 } else {
                     pass_ctx.proj_matrix =
                         glm::perspective(cam.fov_y_radians, aspect, cam.near_clip, cam.far_clip);

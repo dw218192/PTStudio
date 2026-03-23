@@ -527,11 +527,11 @@ def Xform "Root"
 
     def Camera "TopDown"
     {
-        float focalLength = 18
-        float horizontalAperture = 36
-        float verticalAperture = 24
+        token projection = "orthographic"
+        float horizontalAperture = 200
+        float verticalAperture = 150
         float2 clippingRange = (0.1, 100)
-        double3 xformOp:translate = (0, 10, 0)
+        double3 xformOp:translate = (0, 20, 0)
         float3 xformOp:rotateXYZ = (-90, 0, 0)
         uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
     }
