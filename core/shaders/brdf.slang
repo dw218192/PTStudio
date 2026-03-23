@@ -55,7 +55,7 @@ struct ShadingGeometry {
         g.NdotH = max(dot(N, H), 0.0);
         g.NdotV = max(dot(N, V), 0.001);
         g.VdotH = max(dot(V, H), 0.0);
-        g.alpha = max(roughness * roughness, 0.001);
+        g.alpha = ggx_alpha(roughness);
         g.a2 = g.alpha * g.alpha;
         return g;
     }
@@ -68,7 +68,7 @@ struct ShadingGeometry {
         float3 h = normalize(wi + wo);
         g.NdotH = max(h.z, 0.0);
         g.VdotH = max(dot(wo, h), 0.0);
-        g.alpha = max(roughness * roughness, 0.001);
+        g.alpha = ggx_alpha(roughness);
         g.a2 = g.alpha * g.alpha;
         return g;
     }
@@ -127,6 +127,7 @@ struct CookTorranceGGX : IBRDF {
     }
 
     float3 eval_diffuse(ShadingGeometry g, float3 base_color, float metallic) {
+        if (!g.valid) return float3(0.0);
         float3 F0 = lerp(float3(0.04), base_color, metallic);
         float3 F = F_Schlick(g.NdotV, F0);
         float3 kD = (float3(1.0) - F) * (1.0 - metallic);

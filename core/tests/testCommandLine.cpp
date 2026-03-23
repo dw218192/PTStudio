@@ -19,8 +19,10 @@ static auto make_argv(const char* const (&args)[N]) -> std::array<char*, N> {
 
 TEST_CASE("CommandLine - Default construction") {
     pts::CommandLine cli;
-    // Should construct without error
-    CHECK(true);
+    // Verify parse succeeds with no registered options and minimal argv
+    const char* args[] = {"app"};
+    auto argv = make_argv(args);
+    CHECK(cli.parse(1, argv.data()) == true);
 }
 
 TEST_CASE("CommandLine - Defaults before parse") {

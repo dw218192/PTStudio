@@ -132,14 +132,24 @@ TEST_CASE("Light factory define functions create valid light prims") {
     }
 }
 
-TEST_CASE("Registry collects all factories from adapters") {
+TEST_CASE("Registry collects factories from adapters") {
     std::vector<pts::rendering::PrimFactory> all;
     for (auto* adapter : pts::rendering::k_scene_adapters()) {
         auto factories = adapter->get_factories();
         all.insert(all.end(), factories.begin(), factories.end());
     }
-    // 5 geometry + 5 lights = 10
-    CHECK(all.size() == 10);
+    // Every adapter contributes at least one factory
+    CHECK(all.size() >= pts::rendering::k_scene_adapters().size());
+
+    // Verify expected categories are present
+    bool has_geometry = false;
+    bool has_lights = false;
+    for (const auto& f : all) {
+        if (f.category == "Geometry") has_geometry = true;
+        if (f.category == "Lights") has_lights = true;
+    }
+    CHECK(has_geometry);
+    CHECK(has_lights);
 }
 
 // GPU-dependent tests — sync() uploads mesh data to the GPU

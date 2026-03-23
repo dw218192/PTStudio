@@ -42,9 +42,7 @@ def Xform "Root"
         float inputs:height = 2
         float inputs:intensity = 3
         float inputs:width = 2
-        float3 xformOp:rotateXYZ = (-90, 0, 0)
         matrix4d xformOp:transform = ( (1, 0, 0, 0), (0, -2.220446049250313e-16, -1, 0), (0, 1, -2.220446049250313e-16, 0), (0, 0.48168936371803284, 1, 1) )
-        double3 xformOp:translate = (0, 3, 1)
         uniform token[] xformOpOrder = ["xformOp:transform"]
     }
 

@@ -116,9 +116,6 @@ class Slot {
     bool m_active = false;
 };
 
-// Fix WriteGuard destructor to handle moves properly
-// The destructor defined inline above handles it via m_moved_from
-
 // --- SlotVector<T> ---
 
 template <typename T>

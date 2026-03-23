@@ -12,6 +12,7 @@
 #include <core/rendering/webgpu/webgpu.h>
 #include <pxr/base/tf/notice.h>
 #include <pxr/base/tf/weakBase.h>
+#include <pxr/usd/sdf/path.h>
 #include <pxr/usd/usd/notice.h>
 #include <pxr/usd/usd/stage.h>
 #include <spdlog/sinks/ringbuffer_sink.h>

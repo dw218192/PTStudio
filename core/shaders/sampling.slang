@@ -23,6 +23,7 @@ struct Rng {
 /// Sample a direction from the combined specular VNDF + cosine hemisphere distribution.
 /// wo is in tangent space. Returns wi in tangent space.
 float3 sample_brdf(inout Rng rng, float3 wo, float roughness) {
+    if (wo.z <= 0.0) return float3(0, 0, -1);
     if (rng.next() < 0.5) {
         // GGX VNDF (Heitz 2018)
         float a = ggx_alpha(roughness);
