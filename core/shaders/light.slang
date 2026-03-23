@@ -8,6 +8,13 @@ struct Material {
     float2 _pad;
 };
 
+/// Returns true if P is on the emitting (front) side of a directional area light.
+/// Area lights emit along -Z local, i.e. -cross(right, up) in world space.
+bool is_front_facing(float3 P, float3 center, float3 right_vec, float3 up_vec) {
+    float3 light_normal = -normalize(cross(right_vec, up_vec));
+    return dot(P - center, light_normal) > 0.0;
+}
+
 static const uint LIGHT_DISTANT = 0;
 static const uint LIGHT_SPHERE  = 1;
 static const uint LIGHT_RECT    = 2;
@@ -100,6 +107,13 @@ struct Light {
 
         float3 to_center = center - P;
         float center_dist = max(length(to_center), 0.001);
+
+        // Directional area lights (rect, disk) only emit from their front face.
+        if ((type == LIGHT_RECT || type == LIGHT_DISK) && !is_front_facing(P, center, right, up)) {
+            ls.valid = false;
+            return ls;
+        }
+
         ls.diffuse_L = to_center / center_dist;
 
         float min_dist2 = effective_radius * effective_radius;

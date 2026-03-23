@@ -108,6 +108,12 @@ void ltc_evaluate_rect(
     SamplerState ltc_samp,
     out float3 out_diffuse, out float3 out_specular
 ) {
+    out_diffuse = float3(0.0);
+    out_specular = float3(0.0);
+
+    float3 center = light.direction_or_pos;
+    if (!is_front_facing(P, center, light.right, light.up)) return;
+
     float NdotV = clamp(dot(N, V), 0.0, 1.0);
     float2 uv = ltc_coords(NdotV, roughness);
 
@@ -118,9 +124,6 @@ void ltc_evaluate_rect(
 
     // Build tangent frame at shading point
     TangentFrame frame = TangentFrame::build(N);
-
-    // Compute 4 rect corners in world space
-    float3 center = light.direction_or_pos;
     float3 c0 = center - light.right - light.up;
     float3 c1 = center + light.right - light.up;
     float3 c2 = center + light.right + light.up;
@@ -164,6 +167,12 @@ void ltc_evaluate_disk(
     SamplerState ltc_samp,
     out float3 out_diffuse, out float3 out_specular
 ) {
+    out_diffuse = float3(0.0);
+    out_specular = float3(0.0);
+
+    float3 center = light.direction_or_pos;
+    if (!is_front_facing(P, center, light.right, light.up)) return;
+
     float NdotV = clamp(dot(N, V), 0.0, 1.0);
     float2 uv = ltc_coords(NdotV, roughness);
 
@@ -172,7 +181,6 @@ void ltc_evaluate_disk(
     float3x3 Minv = ltc_matrix(t1);
 
     TangentFrame frame = TangentFrame::build(N);
-    float3 center = light.direction_or_pos;
 
     // Generate 16-gon vertices on the disk circumference
     static const int NSEG = 16;
