@@ -96,6 +96,9 @@ list(REMOVE_DUPLICATES src_files)
 #Executable
 add_library(${lib_name} STATIC ${src_files})
 
+# WebGPU uses [0,1] depth; tell GLM to generate matching projection matrices
+target_compile_definitions(${lib_name} PUBLIC GLM_FORCE_DEPTH_ZERO_TO_ONE)
+
 #Libs linked to the executable
 target_link_libraries(${lib_name}
 PRIVATE

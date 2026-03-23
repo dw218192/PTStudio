@@ -701,12 +701,8 @@ void EditorApplication::render(FrameContext& ctx) {
                 if (cam.orthographic) {
                     float half_h = cam.ortho_height * 0.5f;
                     float half_w = half_h * aspect;
-                    auto o =
+                    pass_ctx.proj_matrix =
                         glm::ortho(-half_w, half_w, -half_h, half_h, cam.near_clip, cam.far_clip);
-                    // glm::ortho maps Z to [-1,1]; WebGPU clips to [0,1].
-                    o[2][2] *= 0.5f;
-                    o[3][2] = o[3][2] * 0.5f + 0.5f;
-                    pass_ctx.proj_matrix = o;
                 } else {
                     pass_ctx.proj_matrix =
                         glm::perspective(cam.fov_y_radians, aspect, cam.near_clip, cam.far_clip);
