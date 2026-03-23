@@ -107,6 +107,7 @@ struct EditorApplication final : WindowedApplication {
     // Rendering
     std::unique_ptr<rendering::FrameGraph> m_frame_graph;
     rendering::OrbitCamera m_camera;
+    int m_active_camera_index = 0;  // 0 = free camera, 1..N = scene cameras
     rendering::RenderWorld m_world;
     std::unique_ptr<rendering::IScenePass> m_renderer_pass;
     std::vector<std::unique_ptr<rendering::IScenePass>> m_editor_passes;

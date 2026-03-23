@@ -213,10 +213,17 @@ struct LightData {
 /// Convert a LightData to a GPU-ready Light struct.
 Light to_light(const LightData& slot);
 
+struct CameraData {
+    glm::mat4 view_matrix{1.0f};
+    float fov_y_radians{0.8f};
+    float near_clip{0.1f};
+    float far_clip{10000.0f};
+};
+
 /// Prim path → slot lookup entry. A single map replaces separate
 /// prim_to_object / prim_to_light maps for better cache locality.
 struct PrimSlot {
-    enum class Kind : uint8_t { Object, Light };
+    enum class Kind : uint8_t { Object, Light, Camera };
     Kind kind;
     uint32_t index;
 };
@@ -245,19 +252,23 @@ class SyncScope {
     uint32_t alloc_object_slot();
     uint32_t alloc_mesh_slot();
     uint32_t alloc_light_slot();
+    uint32_t alloc_camera_slot();
     void free_object_slot(uint32_t i);
     void free_mesh_slot(uint32_t i);
     void free_light_slot(uint32_t i);
+    void free_camera_slot(uint32_t i);
 
     // Write guards for adapter/sync code.
     Slot<ObjectData>::WriteGuard write_object(uint32_t i);
     Slot<MeshData>::WriteGuard write_mesh(uint32_t i);
     Slot<LightData>::WriteGuard write_light(uint32_t i);
+    Slot<CameraData>::WriteGuard write_camera(uint32_t i);
 
     // Read-only accessors through scope (for prim_path lookup etc.)
     const Slot<ObjectData>& object(uint32_t i) const;
     const Slot<MeshData>& mesh(uint32_t i) const;
     const Slot<LightData>& light(uint32_t i) const;
+    const Slot<CameraData>& camera(uint32_t i) const;
 
     Material& material(uint32_t i);
     std::vector<Material>& materials();
@@ -273,6 +284,7 @@ struct RenderWorld {
     boost::span<const Slot<ObjectData>> get_objects() const;
     boost::span<const Slot<MeshData>> get_meshes() const;
     boost::span<const Slot<LightData>> get_lights() const;
+    boost::span<const Slot<CameraData>> get_cameras() const;
     boost::span<const Material> get_materials() const;
     uint32_t get_mesh_version() const;
     uint32_t get_light_version() const;
@@ -280,6 +292,7 @@ struct RenderWorld {
 
     int find_object_by_prim(const pxr::SdfPath& path) const;
     int find_light_by_prim(const pxr::SdfPath& path) const;
+    int find_camera_by_prim(const pxr::SdfPath& path) const;
 
     /// Iterate prim slots without exposing the container.
     /// fn(const pxr::SdfPath& path, PrimSlot slot)
@@ -319,6 +332,7 @@ struct RenderWorld {
     SlotVector<ObjectData> m_objects;
     std::vector<Material> m_materials;
     SlotVector<LightData> m_lights;
+    SlotVector<CameraData> m_cameras;
 
     /// Material path → material index (deduplication cache).
     std::unordered_map<std::string, uint32_t> m_material_cache;

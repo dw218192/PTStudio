@@ -25,9 +25,14 @@ void sync_object(pxr::UsdPrim prim, SyncScope& scope, std::vector<Vertex>& verti
                  std::vector<uint32_t>& indices);
 
 struct LightData;
+struct CameraData;
 
 /// Common sync logic for light-producing adapters. Handles slot
 /// lookup/insert and field population via the SyncScope.
 void sync_light(pxr::UsdPrim prim, SyncScope& scope, const LightData& light);
+
+/// Common sync logic for camera-producing adapters. Handles slot
+/// lookup/insert and field population via the SyncScope.
+void sync_camera(pxr::UsdPrim prim, SyncScope& scope, const CameraData& camera);
 
 }  // namespace pts::rendering

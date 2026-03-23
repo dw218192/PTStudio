@@ -102,6 +102,20 @@ void SyncScope::free_light_slot(uint32_t i) {
     m_world.m_lights.free(i);
 }
 
+uint32_t SyncScope::alloc_camera_slot() {
+    return m_world.m_cameras.alloc();
+}
+
+void SyncScope::free_camera_slot(uint32_t i) {
+    const auto& prim_path = m_world.m_cameras[i].get_prim_path();
+    if (!prim_path.IsEmpty()) {
+        auto it = m_world.m_prim_slots.find(prim_path);
+        if (it != m_world.m_prim_slots.end()) m_world.m_prim_slots.erase(it);
+    }
+    m_world.m_cameras.set_prim_path(i, pxr::SdfPath());
+    m_world.m_cameras.free(i);
+}
+
 // --- SyncScope accessors ---
 
 Slot<ObjectData>::WriteGuard SyncScope::write_object(uint32_t i) {
@@ -124,8 +138,16 @@ const Slot<MeshData>& SyncScope::mesh(uint32_t i) const {
     return m_world.m_meshes[i];
 }
 
+Slot<CameraData>::WriteGuard SyncScope::write_camera(uint32_t i) {
+    return m_world.m_cameras.write(i);
+}
+
 const Slot<LightData>& SyncScope::light(uint32_t i) const {
     return m_world.m_lights[i];
+}
+
+const Slot<CameraData>& SyncScope::camera(uint32_t i) const {
+    return m_world.m_cameras[i];
 }
 
 Material& SyncScope::material(uint32_t i) {
@@ -141,10 +163,16 @@ std::unordered_map<std::string, uint32_t>& SyncScope::material_cache() {
 }
 
 void SyncScope::set_prim_path(uint32_t slot_index, PrimSlot::Kind kind, pxr::SdfPath path) {
-    if (kind == PrimSlot::Kind::Object) {
-        m_world.m_objects.set_prim_path(slot_index, path);
-    } else {
-        m_world.m_lights.set_prim_path(slot_index, path);
+    switch (kind) {
+        case PrimSlot::Kind::Object:
+            m_world.m_objects.set_prim_path(slot_index, path);
+            break;
+        case PrimSlot::Kind::Light:
+            m_world.m_lights.set_prim_path(slot_index, path);
+            break;
+        case PrimSlot::Kind::Camera:
+            m_world.m_cameras.set_prim_path(slot_index, path);
+            break;
     }
     m_world.m_prim_slots[std::move(path)] = PrimSlot{kind, slot_index};
 }
@@ -202,6 +230,16 @@ int RenderWorld::find_object_by_prim(const pxr::SdfPath& path) const {
 int RenderWorld::find_light_by_prim(const pxr::SdfPath& path) const {
     auto it = m_prim_slots.find(path);
     if (it == m_prim_slots.end() || it->second.kind != PrimSlot::Kind::Light) return -1;
+    return static_cast<int>(it->second.index);
+}
+
+boost::span<const Slot<CameraData>> RenderWorld::get_cameras() const {
+    return m_cameras.span();
+}
+
+int RenderWorld::find_camera_by_prim(const pxr::SdfPath& path) const {
+    auto it = m_prim_slots.find(path);
+    if (it == m_prim_slots.end() || it->second.kind != PrimSlot::Kind::Camera) return -1;
     return static_cast<int>(it->second.index);
 }
 
@@ -318,6 +356,7 @@ void RenderWorld::clear() {
     m_objects.clear();
     m_materials.clear();
     m_lights.clear();
+    m_cameras.clear();
     m_material_cache.clear();
     m_prim_slots.clear();
     m_gpu_light_buffer = {};

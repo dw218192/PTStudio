@@ -560,6 +560,7 @@ void EditorApplication::render(FrameContext& ctx) {
         m_pick_requested = false;
         m_world = std::move(world);
         m_selected_prim = pxr::SdfPath();
+        m_active_camera_index = 0;
         m_stage = std::move(m_pending_stage);
         m_pending_stage.Reset();
         ensure_default_light();
@@ -663,8 +664,24 @@ void EditorApplication::render(FrameContext& ctx) {
 
     if (has_viewport) {
         float aspect = static_cast<float>(m_viewport_width) / static_cast<float>(m_viewport_height);
-        pass_ctx.view_matrix = m_camera.view_matrix();
-        pass_ctx.proj_matrix = m_camera.projection_matrix(aspect);
+
+        auto cameras = m_world.get_cameras();
+        if (m_active_camera_index > 0) {
+            // Validate that the selected scene camera is still valid
+            uint32_t cam_slot = static_cast<uint32_t>(m_active_camera_index - 1);
+            if (cam_slot < cameras.size() && cameras[cam_slot].active()) {
+                auto& cam = cameras[cam_slot].data();
+                pass_ctx.view_matrix = cam.view_matrix;
+                pass_ctx.proj_matrix =
+                    glm::perspective(cam.fov_y_radians, aspect, cam.near_clip, cam.far_clip);
+            } else {
+                m_active_camera_index = 0;
+            }
+        }
+        if (m_active_camera_index == 0) {
+            pass_ctx.view_matrix = m_camera.view_matrix();
+            pass_ctx.proj_matrix = m_camera.projection_matrix(aspect);
+        }
 
         m_world.prepare_gpu_buffers(device, queue);
     }
@@ -1200,6 +1217,42 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
                 ImGui::EndCombo();
             }
         }
+        // Camera dropdown
+        {
+            auto cameras = m_world.get_cameras();
+            // Collect active camera names
+            std::vector<std::pair<std::string, int>> cam_labels;
+            cam_labels.push_back({"Free Camera", 0});
+            for (uint32_t i = 0; i < cameras.size(); ++i) {
+                if (!cameras[i].active()) continue;
+                auto name = cameras[i].get_prim_path().GetName();
+                cam_labels.push_back({std::move(name), static_cast<int>(i + 1)});
+            }
+            if (cam_labels.size() > 1) {
+                ImGui::SameLine();
+                ImGui::Text("Camera:");
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(140);
+                // Find current label
+                std::string current_label = "Free Camera";
+                for (auto& [label, idx] : cam_labels) {
+                    if (idx == m_active_camera_index) {
+                        current_label = label;
+                        break;
+                    }
+                }
+                if (ImGui::BeginCombo("##camera", current_label.c_str())) {
+                    m_viewport_combo_open = true;
+                    for (auto& [label, idx] : cam_labels) {
+                        bool selected = (idx == m_active_camera_index);
+                        if (ImGui::Selectable(label.c_str(), selected)) {
+                            m_active_camera_index = idx;
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+            }
+        }
         // Exposure control
         if (m_tonemapping_pass) {
             auto* tm = static_cast<ToneMappingPass*>(m_tonemapping_pass);
@@ -1368,6 +1421,8 @@ auto EditorApplication::on_mouse_enter_scene_viewport() noexcept -> void {
 }
 
 auto EditorApplication::handle_input(InputEvent const& event) noexcept -> void {
+    if (m_active_camera_index != 0) return;  // scene camera active — no orbit input
+
     bool rmb_held = ImGui::IsMouseDown(ImGuiMouseButton_Right);
 
     // WASD fly camera works globally while RMB is held (cursor may drift over other panels)

@@ -115,4 +115,22 @@ void sync_light(pxr::UsdPrim prim, SyncScope& scope, const LightData& light) {
     }
 }
 
+void sync_camera(pxr::UsdPrim prim, SyncScope& scope, const CameraData& camera) {
+    auto& world = scope.world();
+    auto sdf_path = prim.GetPath();
+
+    int existing = world.find_camera_by_prim(sdf_path);
+    if (existing >= 0) {
+        auto w = scope.write_camera(static_cast<uint32_t>(existing));
+        *w = camera;
+    } else {
+        auto slot = scope.alloc_camera_slot();
+        {
+            auto w = scope.write_camera(slot);
+            *w = camera;
+        }
+        scope.set_prim_path(slot, PrimSlot::Kind::Camera, sdf_path);
+    }
+}
+
 }  // namespace pts::rendering
