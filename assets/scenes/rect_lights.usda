@@ -83,5 +83,11 @@ def Xform "Root"
         double3 xformOp:translate = (3, 1, 0)
         uniform token[] xformOpOrder = ["xformOp:transform"]
     }
+
+    def SphereLight "SphereLight"
+    {
+        matrix4d xformOp:transform = ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0.024570686742663383, 0.7871137857437134, 3.53519868850708, 1) )
+        uniform token[] xformOpOrder = ["xformOp:transform"]
+    }
 }
 
