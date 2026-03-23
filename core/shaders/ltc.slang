@@ -122,18 +122,23 @@ void ltc_evaluate_rect(
     float2 t2 = ltc_amp_tex.SampleLevel(ltc_samp, uv, 0);
     float3x3 Minv = ltc_matrix(t1);
 
-    // Build tangent frame at shading point
-    TangentFrame frame = TangentFrame::build(N);
+    // Build view-aligned tangent frame (required by LTC fitting convention).
+    // T1 = projection of V onto tangent plane, T2 = cross(N, T1).
+    float3 T1 = normalize(V - N * dot(V, N));
+    float3 T2 = cross(N, T1);
+
+    // Compute 4 rect corners in world space
     float3 c0 = center - light.right - light.up;
     float3 c1 = center + light.right - light.up;
     float3 c2 = center + light.right + light.up;
     float3 c3 = center - light.right + light.up;
 
-    // Transform to tangent space, relative to shading point
-    float3 L0 = frame.to_local(c0 - P);
-    float3 L1 = frame.to_local(c1 - P);
-    float3 L2 = frame.to_local(c2 - P);
-    float3 L3 = frame.to_local(c3 - P);
+    // Transform to tangent space (T1, T2, N), relative to shading point
+    float3 d0 = c0 - P, d1 = c1 - P, d2 = c2 - P, d3 = c3 - P;
+    float3 L0 = float3(dot(d0, T1), dot(d0, T2), dot(d0, N));
+    float3 L1 = float3(dot(d1, T1), dot(d1, T2), dot(d1, N));
+    float3 L2 = float3(dot(d2, T1), dot(d2, T2), dot(d2, N));
+    float3 L3 = float3(dot(d3, T1), dot(d3, T2), dot(d3, N));
 
     // DIFFUSE: integrate with identity M (clamped cosine over polygon)
     float diff_integral = ltc_evaluate_clipped_quad(
@@ -180,7 +185,9 @@ void ltc_evaluate_disk(
     float2 t2 = ltc_amp_tex.SampleLevel(ltc_samp, uv, 0);
     float3x3 Minv = ltc_matrix(t1);
 
-    TangentFrame frame = TangentFrame::build(N);
+    // View-aligned tangent frame
+    float3 T1 = normalize(V - N * dot(V, N));
+    float3 T2 = cross(N, T1);
 
     // Generate 16-gon vertices on the disk circumference
     static const int NSEG = 16;
@@ -189,7 +196,8 @@ void ltc_evaluate_disk(
     for (int i = 0; i < NSEG; i++) {
         float a = 2.0 * PI * float(i) / float(NSEG);
         float3 world_pt = center + light.right * cos(a) + light.up * sin(a);
-        float3 L = frame.to_local(world_pt - P);
+        float3 d = world_pt - P;
+        float3 L = float3(dot(d, T1), dot(d, T2), dot(d, N));
         L.z = max(L.z, 1e-5);
         disk_local[i] = normalize(L);
         disk_spec[i] = normalize(mul(Minv, L));
