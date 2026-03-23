@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/gpuApplication.h>
 #include <core/imgui/loadingOverlay.h>
 #include <core/inputAction.h>
 #include <core/rendering/camera.h>
@@ -9,7 +10,6 @@
 #include <core/rendering/webgpu/bufferReadback.h>
 #include <core/rendering/webgpu/textureReadback.h>
 #include <core/rendering/webgpu/webgpu.h>
-#include <core/windowedApplication.h>
 #include <pxr/base/tf/notice.h>
 #include <pxr/base/tf/weakBase.h>
 #include <pxr/usd/usd/notice.h>
@@ -60,7 +60,7 @@ struct AppConfig {
     }
 };
 
-struct EditorApplication final : WindowedApplication {
+struct EditorApplication final : GpuApplication {
     NO_COPY_MOVE(EditorApplication);
 
     EditorApplication(std::string_view name, pts::LoggingManager& logging_manager);

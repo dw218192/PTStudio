@@ -1,13 +1,13 @@
 #include <core/commandLine.h>
 #include <core/components/imguiComponent.h>
 #include <core/enumUtils.h>
+#include <core/gpuApplication.h>
 #include <core/loggingManager.h>
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/sceneLoader.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
 #include <core/rendering/webgpuContext.h>
-#include <core/windowedApplication.h>
 #include <embedded_resources.h>
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/usd/stage.h>
@@ -28,10 +28,10 @@ struct Uniforms {
     float _pad[2];  // align to 16 bytes (std140)
 };
 
-class HelloApp : public pts::WindowedApplication {
+class HelloApp : public pts::GpuApplication {
    public:
     explicit HelloApp(pts::LoggingManager& logging_manager)
-        : pts::WindowedApplication("Hello Triangle", logging_manager) {
+        : pts::GpuApplication("Hello Triangle", logging_manager) {
     }
 
     ~HelloApp() override {
@@ -58,6 +58,7 @@ class HelloApp : public pts::WindowedApplication {
     float m_rotation_speed = 1.0f;
 
     void on_ready() override {
+        init_windowing();
         auto const& device = webgpu_context()->device();
 
         auto usda = hello_triangle_resources::get_resource("scenes/triangle.usda");

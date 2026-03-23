@@ -67,7 +67,7 @@ static constexpr auto k_console_log_buffer_size = 1024;
 static constexpr auto k_default_renderer_name = "Forward";
 
 EditorApplication::EditorApplication(std::string_view name, pts::LoggingManager& logging_manager)
-    : WindowedApplication{name, logging_manager},
+    : GpuApplication{name, logging_manager},
       m_shader_loader(logging_manager.get_logger_shared("shader_loader")) {
     create_input_actions();
 
@@ -257,7 +257,7 @@ void EditorApplication::ensure_default_light() {
 }
 
 void EditorApplication::register_args(CommandLine& cli) {
-    WindowedApplication::register_args(cli);
+    GpuApplication::register_args(cli);
     cli.add_string("capture-and-quit", "Render, capture viewport to PNG, then quit", std::nullopt,
                    std::string(""));
     cli.add_string("usd", "Load USD file instead of embedded default scene", std::nullopt);
@@ -274,7 +274,7 @@ void EditorApplication::register_args(CommandLine& cli) {
 }
 
 void EditorApplication::process_args(const CommandLine& cli) {
-    WindowedApplication::process_args(cli);
+    GpuApplication::process_args(cli);
 
     if (cli.has("capture-and-quit")) {
         auto path = cli.get_string("capture-and-quit");
@@ -327,20 +327,23 @@ void EditorApplication::process_args(const CommandLine& cli) {
 }
 
 void EditorApplication::on_ready() {
+    // Create windowing + surface + UI components only in interactive mode
+    if (!m_app_config.is_capture_mode()) {
+        init_windowing();
+        m_imgui =
+            std::make_unique<ImGuiComponent>(*viewport(), *webgpu_context(), get_logging_manager());
+        m_input = std::make_unique<InputComponent>(*viewport());
+        m_input->set_handler([this](const InputEvent& e) { handle_input(e); });
+
+        m_imgui->get_window_info(k_scene_view_win_name).on_enter_region.connect([this] {
+            on_mouse_enter_scene_viewport();
+        });
+        m_imgui->get_window_info(k_scene_view_win_name).on_leave_region.connect([this] {
+            on_mouse_leave_scene_viewport();
+        });
+    }
+
     auto const& device = webgpu_context()->device();
-
-    // ImGui + Input
-    m_imgui =
-        std::make_unique<ImGuiComponent>(*viewport(), *webgpu_context(), get_logging_manager());
-    m_input = std::make_unique<InputComponent>(*viewport());
-    m_input->set_handler([this](const InputEvent& e) { handle_input(e); });
-
-    m_imgui->get_window_info(k_scene_view_win_name).on_enter_region.connect([this] {
-        on_mouse_enter_scene_viewport();
-    });
-    m_imgui->get_window_info(k_scene_view_win_name).on_leave_region.connect([this] {
-        on_mouse_leave_scene_viewport();
-    });
 
     // ── Rendering init ──
 
@@ -554,7 +557,7 @@ void EditorApplication::update(float /*dt*/) {
 
 void EditorApplication::render(FrameContext& ctx) {
     PTS_ZONE_SCOPED;
-    if (!m_imgui) return;
+    if (!m_frame_graph) return;
     if (viewport() && viewport()->should_close()) return;
 
     bool const capture_mode = m_app_config.is_capture_mode();
@@ -576,7 +579,11 @@ void EditorApplication::render(FrameContext& ctx) {
             INVARIANT_MSG(ok, "stbi_write_png failed");
             log(LogLevel::Info, "Captured {}x{} to {}", m_viewport_width, m_viewport_height,
                 m_app_config.capture_output);
-            viewport()->request_close();
+            if (viewport()) {
+                viewport()->request_close();
+            } else {
+                request_stop();
+            }
             return;
         }
     }
@@ -623,10 +630,13 @@ void EditorApplication::render(FrameContext& ctx) {
     }
 #endif
 
-    auto scope = m_imgui->frame_scope();
-    ImGuizmo::BeginFrame();
+    // Begin ImGui frame if available (interactive mode only)
+    if (m_imgui) {
+        m_imgui->begin_frame();
+        ImGuizmo::BeginFrame();
+    }
 
-    if (!capture_mode) {
+    if (m_imgui && !capture_mode) {
         // Poll input — prev_hovered_widget makes this order-independent from UI drawing
         m_input->poll(get_time(), window_width(), window_height(), m_imgui->prev_hovered_widget());
 
@@ -828,7 +838,7 @@ void EditorApplication::render(FrameContext& ctx) {
                 imgui_builder.read(lobe_color_handle);
             }
         }
-        imgui_builder.execute([&](WGPURenderPassEncoder pass) { scope.render_into(pass); });
+        imgui_builder.execute([&](WGPURenderPassEncoder pass) { m_imgui->end_frame(pass); });
     }
 
     m_frame_graph->compile();
