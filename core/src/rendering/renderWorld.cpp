@@ -380,17 +380,27 @@ void RenderWorld::update_transforms(const pxr::UsdStageRefPtr& stage,
 
             auto xf = compute_world_transform(prim);
 
-            if (slot.kind == PrimSlot::Kind::Object) {
-                auto w = m_objects.write(slot.index);
-                w->transform = xf;
-            } else {
-                auto w = m_lights.write(slot.index);
-                w->transform = xf;
-                if (w->type == LightData::Type::Distant) {
-                    glm::vec4 local_dir(0.0f, 0.0f, -1.0f, 0.0f);
-                    w->direction = glm::normalize(glm::vec3(xf * local_dir));
+            switch (slot.kind) {
+                case PrimSlot::Kind::Object: {
+                    auto w = m_objects.write(slot.index);
+                    w->transform = xf;
+                    break;
                 }
-                ++m_light_version;
+                case PrimSlot::Kind::Light: {
+                    auto w = m_lights.write(slot.index);
+                    w->transform = xf;
+                    if (w->type == LightData::Type::Distant) {
+                        glm::vec4 local_dir(0.0f, 0.0f, -1.0f, 0.0f);
+                        w->direction = glm::normalize(glm::vec3(xf * local_dir));
+                    }
+                    ++m_light_version;
+                    break;
+                }
+                case PrimSlot::Kind::Camera: {
+                    auto w = m_cameras.write(slot.index);
+                    w->view_matrix = glm::inverse(xf);
+                    break;
+                }
             }
         }
     }

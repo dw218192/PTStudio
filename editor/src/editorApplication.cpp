@@ -1292,13 +1292,7 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
         if (m_stage && m_active_camera_index == 0) {
             ImGui::SameLine();
             if (ImGui::SmallButton("Save View")) {
-                // Generate unique camera name
-                int cam_num = 1;
-                pxr::SdfPath cam_path;
-                do {
-                    cam_path = pxr::SdfPath("/Root/Camera" + std::to_string(cam_num++));
-                } while (m_stage->GetPrimAtPath(cam_path).IsValid());
-
+                auto cam_path = find_unique_prim_path("Camera");
                 rendering::CameraAdapter::create_from_view(
                     m_stage, cam_path, m_camera.view_matrix(),
                     glm::radians(m_camera.fov_y_degrees()), m_camera.near_plane(),
