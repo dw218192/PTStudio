@@ -161,6 +161,7 @@ class HelloApp : public pts::GpuApplication {
                 auto objects = m_world.get_objects();
                 auto meshes = m_world.get_meshes();
                 for (const auto& obj : objects) {
+                    if (!obj.active()) continue;
                     Uniforms uniforms;
                     uniforms.mvp = vp * obj->transform;
                     uniforms.time = t * m_time_scale;
