@@ -46,12 +46,7 @@ jobs:
       fail-fast: false
       matrix:
         platform: [windows-x64, emscripten]
-        build_type: [Debug, Release]
-        exclude:
-          # Emscripten Debug builds produce huge binaries (>1 GB) and are too
-          # slow for CI.  Only Release is built for WASM.
-          - platform: emscripten
-            build_type: Debug
+        build_type: [Release]
         include:
           - platform: windows-x64
             os: windows-latest
@@ -128,10 +123,7 @@ jobs:
       fail-fast: false
       matrix:
         platform: [windows-x64, emscripten]
-        build_type: [Debug, Release]
-        exclude:
-          - platform: emscripten
-            build_type: Debug
+        build_type: [Release]
         include:
           - platform: windows-x64
             os: windows-latest
@@ -216,7 +208,7 @@ jobs:
           path: _package/emscripten/
 
       - name: Publish site
-        run: ./repo publish --platform emscripten --build-type Release
+        run: ./repo publish --platform emscripten --build-type ${{ matrix.build_type }}
 
       - name: Configure Pages
         uses: actions/configure-pages@v5

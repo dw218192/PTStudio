@@ -10,7 +10,7 @@
 #include <core/rendering/adapterHelpers.h>
 #include <core/rendering/adapters/registry.h>
 #include <core/rendering/passContext.h>
-#include <core/rendering/rendererConfig.h>
+#include <core/rendering/rendererRegistry.h>
 #include <core/rendering/sceneLoader.h>
 #include <core/rendering/scenePass.h>
 #include <core/rendering/webgpuContext.h>
@@ -27,7 +27,6 @@
 #if defined(__EMSCRIPTEN__)
 #include <emscripten.h>
 #endif
-#include <pathTracerPass.h>
 #include <pxr/usd/usdGeom/xform.h>
 #include <pxr/usd/usdGeom/xformable.h>
 #include <pxr/usd/usdLux/domeLight.h>
@@ -51,11 +50,9 @@
 
 #include "editorResources.h"
 #include "passes/editorPass.h"
-#include "passes/forwardPass.h"
 #include "passes/gridPass.h"
 #include "passes/lobePass.h"
 #include "passes/toneMappingPass.h"
-#include "passes/wireframePass.h"
 
 using namespace pts;
 using namespace pts::editor;
@@ -67,14 +64,10 @@ static constexpr auto k_console_win_name = "Console";
 static constexpr auto k_perf_win_name = "Performance";
 static constexpr auto k_console_log_buffer_size = 1024;
 
-static const std::vector<rendering::RendererConfig> k_renderer_configs = {
-    {"Forward", [](const auto& sl) { return std::make_unique<ForwardPass>(sl); }},
-    {"Wireframe", [](const auto& sl) { return std::make_unique<WireframePass>(sl); }},
-    {"Path Trace", [](const auto& sl) { return std::make_unique<PathTracerPass>(sl); }},
-};
+static constexpr auto k_default_renderer_name = "Forward";
 
 EditorApplication::EditorApplication(std::string_view name, pts::LoggingManager& logging_manager)
-    : WindowedApplication{name, logging_manager},
+    : GpuApplication{name, logging_manager},
       m_shader_loader(logging_manager.get_logger_shared("shader_loader")) {
     create_input_actions();
 
@@ -159,10 +152,9 @@ void EditorApplication::process_dirty_prims() {
             for (const auto& resync_path : m_resync_paths) {
                 // Handle ancestor resyncs: resync children under this path
                 std::vector<pxr::SdfPath> children_to_resync;
-                m_world.for_each_prim([&](std::string_view path, rendering::PrimSlot) {
-                    auto child = pxr::SdfPath(std::string{path});
-                    if (child.HasPrefix(resync_path) && child != resync_path) {
-                        children_to_resync.push_back(child);
+                m_world.for_each_prim([&](const pxr::SdfPath& path, rendering::PrimSlot) {
+                    if (path.HasPrefix(resync_path) && path != resync_path) {
+                        children_to_resync.push_back(path);
                     }
                 });
 
@@ -199,10 +191,10 @@ void EditorApplication::process_dirty_prims() {
     }
 }
 
-void EditorApplication::normalize_xform_ops(const std::string& prim_path) {
+void EditorApplication::normalize_xform_ops(const pxr::SdfPath& prim_path) {
     PRECONDITION(m_stage);
-    auto prim = m_stage->GetPrimAtPath(pxr::SdfPath(prim_path));
-    INVARIANT_MSG(prim.IsValid(), "prim_path on ObjectSlot must reference a valid USD prim");
+    auto prim = m_stage->GetPrimAtPath(prim_path);
+    INVARIANT_MSG(prim.IsValid(), "prim_path on ObjectData must reference a valid USD prim");
 
     pxr::UsdGeomXformable xformable(prim);
     if (!xformable) return;
@@ -250,7 +242,7 @@ void EditorApplication::ensure_default_light() {
 
     // Check if the stage already has any lights
     bool has_light = false;
-    m_world.for_each_prim([&](std::string_view, rendering::PrimSlot slot) {
+    m_world.for_each_prim([&](const pxr::SdfPath&, rendering::PrimSlot slot) {
         if (slot.kind == rendering::PrimSlot::Kind::Light) has_light = true;
     });
     if (has_light) return;
@@ -265,7 +257,7 @@ void EditorApplication::ensure_default_light() {
 }
 
 void EditorApplication::register_args(CommandLine& cli) {
-    WindowedApplication::register_args(cli);
+    GpuApplication::register_args(cli);
     cli.add_string("capture-and-quit", "Render, capture viewport to PNG, then quit", std::nullopt,
                    std::string(""));
     cli.add_string("usd", "Load USD file instead of embedded default scene", std::nullopt);
@@ -278,10 +270,11 @@ void EditorApplication::register_args(CommandLine& cli) {
     cli.add_string("camera-yaw", "Camera yaw in degrees", std::nullopt);
     cli.add_string("camera-pitch", "Camera pitch in degrees", std::nullopt);
     cli.add_string("camera-fov", "Camera vertical FOV in degrees", std::nullopt);
+    cli.add_string("camera", "Select a scene camera by prim name", std::nullopt);
 }
 
 void EditorApplication::process_args(const CommandLine& cli) {
-    WindowedApplication::process_args(cli);
+    GpuApplication::process_args(cli);
 
     if (cli.has("capture-and-quit")) {
         auto path = cli.get_string("capture-and-quit");
@@ -328,23 +321,29 @@ void EditorApplication::process_args(const CommandLine& cli) {
     if (cli.has("camera-fov")) {
         m_app_config.camera_fov = cli.get_string("camera-fov");
     }
+    if (cli.has("camera")) {
+        m_app_config.camera_name = cli.get_string("camera");
+    }
 }
 
 void EditorApplication::on_ready() {
+    // Create windowing + surface + UI components only in interactive mode
+    if (!m_app_config.is_capture_mode()) {
+        init_windowing();
+        m_imgui =
+            std::make_unique<ImGuiComponent>(*viewport(), *webgpu_context(), get_logging_manager());
+        m_input = std::make_unique<InputComponent>(*viewport());
+        m_input->set_handler([this](const InputEvent& e) { handle_input(e); });
+
+        m_imgui->get_window_info(k_scene_view_win_name).on_enter_region.connect([this] {
+            on_mouse_enter_scene_viewport();
+        });
+        m_imgui->get_window_info(k_scene_view_win_name).on_leave_region.connect([this] {
+            on_mouse_leave_scene_viewport();
+        });
+    }
+
     auto const& device = webgpu_context()->device();
-
-    // ImGui + Input
-    m_imgui =
-        std::make_unique<ImGuiComponent>(*viewport(), *webgpu_context(), get_logging_manager());
-    m_input = std::make_unique<InputComponent>(*viewport());
-    m_input->set_handler([this](const InputEvent& e) { handle_input(e); });
-
-    m_imgui->get_window_info(k_scene_view_win_name).on_enter_region.connect([this] {
-        on_mouse_enter_scene_viewport();
-    });
-    m_imgui->get_window_info(k_scene_view_win_name).on_leave_region.connect([this] {
-        on_mouse_leave_scene_viewport();
-    });
 
     // ── Rendering init ──
 
@@ -397,8 +396,8 @@ void EditorApplication::on_ready() {
 
     // Register shaders for hot-reload
     m_shader_loader.register_shader(
-        "editor/generated/shaders/forward.wgsl", "editor/shaders/forward.slang",
-        "editor/generated/shaders/forward.wgsl", editor_resources::get_resource);
+        "renderers/forward/generated/shaders/forward.wgsl", "renderers/forward/forward.slang",
+        "renderers/forward/generated/shaders/forward.wgsl", editor_resources::get_resource);
     m_shader_loader.register_shader(
         "editor/generated/shaders/grid.wgsl", "editor/shaders/grid.slang",
         "editor/generated/shaders/grid.wgsl", editor_resources::get_resource);
@@ -444,18 +443,20 @@ void EditorApplication::on_ready() {
     }
 
     // Set up renderer pass — optionally select by name
-    if (!m_app_config.renderer_name.empty()) {
+    {
+        auto& entries = rendering::RendererRegistry::entries();
+        INVARIANT_MSG(!entries.empty(), "No renderers registered");
+        auto target_name = m_app_config.renderer_name.empty() ? k_default_renderer_name
+                                                              : m_app_config.renderer_name;
         bool found = false;
-        for (size_t i = 0; i < k_renderer_configs.size(); ++i) {
-            if (k_renderer_configs[i].name == m_app_config.renderer_name) {
+        for (size_t i = 0; i < entries.size(); ++i) {
+            if (entries[i].name == target_name) {
                 set_renderer_config(i);
                 found = true;
                 break;
             }
         }
         INVARIANT_MSG(found, "Unknown renderer name");
-    } else {
-        set_renderer_config(0);
     }
 
     // Resolve --debug-output to m_debug_target_selection
@@ -463,7 +464,7 @@ void EditorApplication::on_ready() {
         int global_index = 1;  // 1-based (0 = "Off")
         bool found = false;
         for_each_pass([&](auto& pass) {
-            auto [names, count] = pass.debug_target_names();
+            auto [names, count] = pass.effective_debug_target_names();
             for (uint32_t i = 0; i < count; ++i) {
                 if (names[i] == m_app_config.debug_output_name) {
                     m_debug_target_selection = global_index;
@@ -500,6 +501,18 @@ void EditorApplication::on_ready() {
         m_camera.set_fov_y(std::stof(m_app_config.camera_fov));
     }
 
+    // Select scene camera by name (from --camera CLI arg)
+    if (!m_app_config.camera_name.empty()) {
+        auto cameras = m_world.get_cameras();
+        for (uint32_t i = 0; i < cameras.size(); ++i) {
+            if (cameras[i].active() &&
+                cameras[i].get_prim_path().GetName() == m_app_config.camera_name) {
+                m_active_camera_index = static_cast<int>(i + 1);
+                break;
+            }
+        }
+    }
+
     // In capture mode, set fixed viewport size (no ImGui layout)
     if (m_app_config.is_capture_mode()) {
         m_viewport_width = 1280;
@@ -507,12 +520,32 @@ void EditorApplication::on_ready() {
     }
 }
 
+auto EditorApplication::compute_active_view(float aspect) const -> ActiveView {
+    auto cameras = m_world.get_cameras();
+    uint32_t cam_slot = static_cast<uint32_t>(m_active_camera_index - 1);
+    if (m_active_camera_index > 0 && cam_slot < cameras.size() && cameras[cam_slot].active()) {
+        auto& cam = cameras[cam_slot].data();
+        glm::mat4 proj;
+        if (cam.orthographic) {
+            float half_h = cam.ortho_height * 0.5f;
+            float half_w = half_h * aspect;
+            proj = glm::ortho(-half_w, half_w, -half_h, half_h, cam.near_clip, cam.far_clip);
+        } else {
+            proj = glm::perspective(cam.fov_y_radians, aspect, cam.near_clip, cam.far_clip);
+        }
+        return {cam.view_matrix, proj, glm::vec3(glm::inverse(cam.view_matrix)[3])};
+    }
+    return {m_camera.view_matrix(), m_camera.projection_matrix(aspect), m_camera.position()};
+}
+
 void EditorApplication::set_renderer_config(size_t index) {
-    PRECONDITION(index < k_renderer_configs.size());
-    m_renderer_pass = k_renderer_configs[index].factory(m_shader_loader);
+    auto& entries = rendering::RendererRegistry::entries();
+    PRECONDITION(index < entries.size());
+    m_renderer_pass = entries[index].factory(m_shader_loader);
     auto& device = webgpu_context()->device();
     m_renderer_pass->setup(device);
     m_active_config_index = index;
+    m_editor_passes_enabled = entries[index].editor_passes;
     m_debug_target_selection = 0;
     m_active_debug_ref = {};
 }
@@ -524,11 +557,11 @@ void EditorApplication::update(float /*dt*/) {
 
 void EditorApplication::render(FrameContext& ctx) {
     PTS_ZONE_SCOPED;
-    if (!m_imgui) return;
+    if (!m_frame_graph) return;
     if (viewport() && viewport()->should_close()) return;
 
     bool const capture_mode = m_app_config.is_capture_mode();
-    ++m_frame_count;
+    if (!m_scene_load_task) ++m_frame_count;
 
     // ── Capture readback: tick the async state machine and write PNG when ready ──
     if (capture_mode && m_capture_readback.is_pending()) {
@@ -546,7 +579,11 @@ void EditorApplication::render(FrameContext& ctx) {
             INVARIANT_MSG(ok, "stbi_write_png failed");
             log(LogLevel::Info, "Captured {}x{} to {}", m_viewport_width, m_viewport_height,
                 m_app_config.capture_output);
-            viewport()->request_close();
+            if (viewport()) {
+                viewport()->request_close();
+            } else {
+                request_stop();
+            }
             return;
         }
     }
@@ -565,6 +602,7 @@ void EditorApplication::render(FrameContext& ctx) {
         m_pick_requested = false;
         m_world = std::move(world);
         m_selected_prim = pxr::SdfPath();
+        m_active_camera_index = 0;
         m_stage = std::move(m_pending_stage);
         m_pending_stage.Reset();
         ensure_default_light();
@@ -592,10 +630,13 @@ void EditorApplication::render(FrameContext& ctx) {
     }
 #endif
 
-    auto scope = m_imgui->frame_scope();
-    ImGuizmo::BeginFrame();
+    // Begin ImGui frame if available (interactive mode only)
+    if (m_imgui) {
+        m_imgui->begin_frame();
+        ImGuizmo::BeginFrame();
+    }
 
-    if (!capture_mode) {
+    if (m_imgui && !capture_mode) {
         // Poll input — prev_hovered_widget makes this order-independent from UI drawing
         m_input->poll(get_time(), window_width(), window_height(), m_imgui->prev_hovered_widget());
 
@@ -637,8 +678,8 @@ void EditorApplication::render(FrameContext& ctx) {
         std::vector<rendering::IScenePass*> all_passes;
         for_each_pass([&](auto& pass) { all_passes.push_back(&pass); });
         m_perf_overlay.draw(get_delta_time(), m_world, *m_frame_graph, all_passes,
-                            k_renderer_configs[m_active_config_index].name, m_viewport_width,
-                            m_viewport_height);
+                            rendering::RendererRegistry::entries()[m_active_config_index].name,
+                            m_viewport_width, m_viewport_height);
 
         m_loading_overlay.draw();
     }
@@ -658,27 +699,42 @@ void EditorApplication::render(FrameContext& ctx) {
     // Resolve selected prim to picking ID via EditorPass table
     uint32_t selected_picking_id = UINT32_MAX;
     if (!capture_mode && !m_selected_prim.IsEmpty() && m_editor_pass) {
-        selected_picking_id = m_editor_pass->find_picking_id(m_selected_prim.GetString());
+        selected_picking_id = m_editor_pass->find_picking_id(m_selected_prim);
     }
 
     rendering::PassContext pass_ctx{
-        device,         queue,          m_camera,   m_world, m_viewport_width,    m_viewport_height,
-        glm::mat4(1.f), glm::mat4(1.f), get_time(), 0,       selected_picking_id,
+        device,
+        queue,
+        m_camera,
+        m_world,
+        m_viewport_width,
+        m_viewport_height,
+        glm::mat4(1.f),
+        glm::mat4(1.f),
+        glm::vec3(0.f),
+        get_time(),
+        0,
+        selected_picking_id,
     };
 
     if (has_viewport) {
         float aspect = static_cast<float>(m_viewport_width) / static_cast<float>(m_viewport_height);
-        pass_ctx.view_matrix = m_camera.view_matrix();
-        pass_ctx.proj_matrix = m_camera.projection_matrix(aspect);
+        auto view = compute_active_view(aspect);
+        pass_ctx.view_matrix = view.view_matrix;
+        pass_ctx.proj_matrix = view.proj_matrix;
+        pass_ctx.camera_position = view.camera_position;
 
         m_world.prepare_gpu_buffers(device, queue);
     }
 
-    // In capture mode, only add the renderer pass (skip editor passes)
+    // In capture mode, add renderer + tone mapping only (skip editor passes)
     if (capture_mode) {
         if (m_renderer_pass && m_renderer_pass->is_ready() &&
             !(m_renderer_pass->requires_viewport() && !has_viewport)) {
             m_renderer_pass->add_to_frame_graph(*m_frame_graph, pass_ctx);
+        }
+        if (m_tonemapping_pass && m_tonemapping_pass->is_ready()) {
+            m_tonemapping_pass->add_to_frame_graph(*m_frame_graph, pass_ctx);
         }
     } else {
         for_each_pass([&](auto& pass) {
@@ -719,7 +775,7 @@ void EditorApplication::render(FrameContext& ctx) {
         rendering::TextureDesc debug_desc;
         debug_desc.width = m_viewport_width;
         debug_desc.height = m_viewport_height;
-        debug_desc.format = WGPUTextureFormat_RGBA16Float;
+        debug_desc.format = WGPUTextureFormat_RGBA8Unorm;
         debug_desc.clear_color = {0, 0, 0, 1};
         if (capture_mode) {
             debug_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment |
@@ -728,7 +784,7 @@ void EditorApplication::render(FrameContext& ctx) {
 
         // In capture mode, only collect debug targets from the renderer pass
         auto collect_debug_targets = [&](auto& pass) {
-            auto [names, count] = pass.debug_target_names();
+            auto [names, count] = pass.effective_debug_target_names();
             for (uint32_t i = 0; i < count; ++i) {
                 auto h =
                     m_frame_graph->find_or_create(std::string("debug_") + names[i], debug_desc);
@@ -782,7 +838,7 @@ void EditorApplication::render(FrameContext& ctx) {
                 imgui_builder.read(lobe_color_handle);
             }
         }
-        imgui_builder.execute([&](WGPURenderPassEncoder pass) { scope.render_into(pass); });
+        imgui_builder.execute([&](WGPURenderPassEncoder pass) { m_imgui->end_frame(pass); });
     }
 
     m_frame_graph->compile();
@@ -812,11 +868,11 @@ void EditorApplication::render(FrameContext& ctx) {
         if (*picked_id == UINT32_MAX) {
             m_selected_prim = pxr::SdfPath();
         } else if (m_editor_pass) {
-            auto path = m_editor_pass->resolve_picking_id(*picked_id);
-            if (!path.empty()) {
-                m_selected_prim = pxr::SdfPath(std::string(path));
+            const auto& path = m_editor_pass->resolve_picking_id(*picked_id);
+            if (!path.IsEmpty()) {
+                m_selected_prim = path;
                 if (m_stage) {
-                    normalize_xform_ops(std::string(path));
+                    normalize_xform_ops(path);
                 }
             }
         }
@@ -925,7 +981,7 @@ auto EditorApplication::draw_add_prim_menu(const pxr::SdfPath* parent,
                 if (ImGui::MenuItem(factory->display_name.c_str())) {
                     auto path = find_unique_prim_path(factory->base_name, parent);
                     factory->define(m_stage, path);
-                    normalize_xform_ops(path.GetString());
+                    normalize_xform_ops(path);
                     if (spawn_pos) {
                         auto prim = m_stage->GetPrimAtPath(path);
                         if (pxr::UsdGeomXformable xformable{prim}; xformable) {
@@ -1127,7 +1183,7 @@ void EditorApplication::draw_prim_tree(const pxr::UsdPrim& prim) {
         } else {
             m_selected_prim = path;
             if (pxr::UsdGeomXformable xformable{prim}; xformable) {
-                normalize_xform_ops(path.GetString());
+                normalize_xform_ops(path);
             }
         }
     }
@@ -1160,12 +1216,12 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
         ImGui::Text("Renderer:");
         ImGui::SameLine();
         ImGui::SetNextItemWidth(120);
-        if (ImGui::BeginCombo("##renderer",
-                              k_renderer_configs[m_active_config_index].name.c_str())) {
+        auto& reg_entries = rendering::RendererRegistry::entries();
+        if (ImGui::BeginCombo("##renderer", reg_entries[m_active_config_index].name.c_str())) {
             m_viewport_combo_open = true;
-            for (size_t i = 0; i < k_renderer_configs.size(); ++i) {
+            for (size_t i = 0; i < reg_entries.size(); ++i) {
                 bool selected = (i == m_active_config_index);
-                if (ImGui::Selectable(k_renderer_configs[i].name.c_str(), selected)) {
+                if (ImGui::Selectable(reg_entries[i].name.c_str(), selected)) {
                     if (i != m_active_config_index) {
                         set_renderer_config(i);
                     }
@@ -1183,7 +1239,7 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
             std::vector<std::string> debug_labels;
             debug_labels.emplace_back("Off");
             for_each_pass([&](auto& pass) {
-                auto [names, count] = pass.debug_target_names();
+                auto [names, count] = pass.effective_debug_target_names();
                 for (uint32_t i = 0; i < count; ++i) {
                     debug_labels.emplace_back(std::string(pass.name()) + ": " + names[i]);
                 }
@@ -1200,6 +1256,53 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
                     }
                 }
                 ImGui::EndCombo();
+            }
+        }
+        // Camera dropdown
+        {
+            auto cameras = m_world.get_cameras();
+            // Collect active camera names
+            std::vector<std::pair<std::string, int>> cam_labels;
+            cam_labels.push_back({"Free Camera", 0});
+            for (uint32_t i = 0; i < cameras.size(); ++i) {
+                if (!cameras[i].active()) continue;
+                auto name = cameras[i].get_prim_path().GetName();
+                cam_labels.push_back({std::move(name), static_cast<int>(i + 1)});
+            }
+            if (cam_labels.size() > 1) {
+                ImGui::SameLine();
+                ImGui::Text("Camera:");
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(140);
+                // Find current label
+                std::string current_label = "Free Camera";
+                for (auto& [label, idx] : cam_labels) {
+                    if (idx == m_active_camera_index) {
+                        current_label = label;
+                        break;
+                    }
+                }
+                if (ImGui::BeginCombo("##camera", current_label.c_str())) {
+                    m_viewport_combo_open = true;
+                    for (auto& [label, idx] : cam_labels) {
+                        bool selected = (idx == m_active_camera_index);
+                        if (ImGui::Selectable(label.c_str(), selected)) {
+                            m_active_camera_index = idx;
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+            }
+        }
+        // Save current view as a scene camera
+        if (m_stage && m_active_camera_index == 0) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Save View")) {
+                auto cam_path = find_unique_prim_path("Camera");
+                rendering::CameraAdapter::create_from_view(
+                    m_stage, cam_path, m_camera.view_matrix(),
+                    glm::radians(m_camera.fov_y_degrees()), m_camera.near_plane(),
+                    m_camera.far_plane());
             }
         }
         // Exposure control
@@ -1266,8 +1369,7 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
         if (prim.IsValid() && xformable) {
             float aspect =
                 static_cast<float>(m_viewport_width) / static_cast<float>(m_viewport_height);
-            auto view_mat = m_camera.view_matrix();
-            auto proj_mat = m_camera.projection_matrix(aspect);
+            auto [view_mat, proj_mat, cam_pos] = compute_active_view(aspect);
 
             ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList());
             ImGuizmo::SetRect(m_viewport_x, m_viewport_y, static_cast<float>(m_viewport_width),
@@ -1370,6 +1472,8 @@ auto EditorApplication::on_mouse_enter_scene_viewport() noexcept -> void {
 }
 
 auto EditorApplication::handle_input(InputEvent const& event) noexcept -> void {
+    if (m_active_camera_index != 0) return;  // scene camera active — no orbit input
+
     bool rmb_held = ImGui::IsMouseDown(ImGuiMouseButton_Right);
 
     // WASD fly camera works globally while RMB is held (cursor may drift over other panels)

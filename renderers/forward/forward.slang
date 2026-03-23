@@ -1,4 +1,6 @@
 import lighting;
+import brdf;
+import light;
 
 struct Uniforms {
     float4x4 mvp;
@@ -19,6 +21,15 @@ StructuredBuffer<Material> materials;
 
 [[vk::binding(2, 0)]]
 StructuredBuffer<Light> lights;
+
+[[vk::binding(3, 0)]]
+Texture2D<float4> ltc_mat;
+
+[[vk::binding(4, 0)]]
+Texture2D<float2> ltc_amp;
+
+[[vk::binding(5, 0)]]
+SamplerState ltc_sampler;
 
 struct VsIn {
     float3 position : POSITION;
@@ -46,6 +57,7 @@ VsOut vs_main(VsIn input) {
     return output;
 }
 
+#ifndef NO_DEBUG_TARGETS
 struct FsOut {
     float4 color      : SV_Target0;
     float4 normals    : SV_Target1;
@@ -53,6 +65,11 @@ struct FsOut {
     float4 direct_diffuse  : SV_Target3;
     float4 direct_specular   : SV_Target4;
 };
+#else
+struct FsOut {
+    float4 color : SV_Target0;
+};
+#endif
 
 [shader("fragment")]
 FsOut fs_main(float3 world_normal : NORMAL, float3 world_pos : WORLD_POS,
@@ -74,19 +91,22 @@ FsOut fs_main(float3 world_normal : NORMAL, float3 world_pos : WORLD_POS,
     CookTorranceGGX brdf;
 
     float3 direct_diffuse, direct_specular;
-    float3 lit = evaluate_lighting(
+    float3 lit = evaluate_lighting_ltc(
         brdf,
         lights,
         u.light_count,
-        world_pos, N, V, albedo, mat_metallic, mat_roughness, 
+        ltc_mat, ltc_amp, ltc_sampler,
+        world_pos, N, V, albedo, mat_metallic, mat_roughness,
         direct_diffuse, direct_specular
     );
 
     FsOut o;
-    o.color      = float4(lit, 1.0);
+    o.color = float4(lit, 1.0);
+#ifndef NO_DEBUG_TARGETS
     o.normals    = float4(N * 0.5 + 0.5, 1.0);
     o.base_color = float4(albedo, 1.0);
     o.direct_diffuse  = float4(direct_diffuse, 1.0);
     o.direct_specular = float4(direct_specular, 1.0);
+#endif
     return o;
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/rendering/ltcTextures.h>
 #include <core/rendering/scenePass.h>
 #include <core/rendering/webgpu/buffer.h>
 #include <core/rendering/webgpu/pipeline.h>
@@ -44,6 +45,7 @@ class ForwardPass final : public rendering::IScenePass {
         uint32_t capacity = 0;
         WGPUBuffer cached_light_buf = nullptr;
         WGPUBuffer cached_material_buf = nullptr;
+        rendering::LtcTextures ltc_textures;
     };
 
     std::variant<std::monostate, Ready> m_state;

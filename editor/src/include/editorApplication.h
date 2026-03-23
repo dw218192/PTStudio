@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/gpuApplication.h>
 #include <core/imgui/loadingOverlay.h>
 #include <core/inputAction.h>
 #include <core/rendering/camera.h>
@@ -9,9 +10,9 @@
 #include <core/rendering/webgpu/bufferReadback.h>
 #include <core/rendering/webgpu/textureReadback.h>
 #include <core/rendering/webgpu/webgpu.h>
-#include <core/windowedApplication.h>
 #include <pxr/base/tf/notice.h>
 #include <pxr/base/tf/weakBase.h>
+#include <pxr/usd/sdf/path.h>
 #include <pxr/usd/usd/notice.h>
 #include <pxr/usd/usd/stage.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
@@ -53,13 +54,14 @@ struct AppConfig {
     std::string camera_yaw;         // degrees, empty = default (0)
     std::string camera_pitch;       // degrees, empty = default (~17)
     std::string camera_fov;         // degrees, empty = default (60)
+    std::string camera_name;        // scene camera prim name, empty = free camera
 
     [[nodiscard]] bool is_capture_mode() const {
         return !capture_output.empty();
     }
 };
 
-struct EditorApplication final : WindowedApplication {
+struct EditorApplication final : GpuApplication {
     NO_COPY_MOVE(EditorApplication);
 
     EditorApplication(std::string_view name, pts::LoggingManager& logging_manager);
@@ -74,6 +76,13 @@ struct EditorApplication final : WindowedApplication {
     void render(FrameContext& ctx) override;
 
    private:
+    struct ActiveView {
+        glm::mat4 view_matrix;
+        glm::mat4 proj_matrix;
+        glm::vec3 camera_position;
+    };
+    ActiveView compute_active_view(float aspect) const;
+
     void setup_docking_layout();
     void set_renderer_config(size_t index);
     auto create_input_actions() noexcept -> void;
@@ -107,6 +116,7 @@ struct EditorApplication final : WindowedApplication {
     // Rendering
     std::unique_ptr<rendering::FrameGraph> m_frame_graph;
     rendering::OrbitCamera m_camera;
+    int m_active_camera_index = 0;  // 0 = free camera, 1..N = scene cameras
     rendering::RenderWorld m_world;
     std::unique_ptr<rendering::IScenePass> m_renderer_pass;
     std::vector<std::unique_ptr<rendering::IScenePass>> m_editor_passes;
@@ -146,7 +156,7 @@ struct EditorApplication final : WindowedApplication {
     void revoke_stage_listener();
     void on_objects_changed(const pxr::UsdNotice::ObjectsChanged& notice);
     void process_dirty_prims();
-    void normalize_xform_ops(const std::string& prim_path);
+    void normalize_xform_ops(const pxr::SdfPath& prim_path);
     pxr::SdfPath find_unique_prim_path(std::string_view base_name,
                                        const pxr::SdfPath* parent = nullptr);
     auto draw_add_prim_menu(const pxr::SdfPath* parent = nullptr,

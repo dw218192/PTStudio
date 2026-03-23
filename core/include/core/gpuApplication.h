@@ -21,11 +21,11 @@ struct RenderPassDesc {
     bool depth = false;
 };
 
-struct WindowedApplication;
+struct GpuApplication;
 
 class FrameContext {
     NO_COPY_MOVE(FrameContext);
-    friend struct WindowedApplication;
+    friend struct GpuApplication;
 
    public:
     [[nodiscard]] auto device() const noexcept -> const webgpu::Device&;
@@ -100,11 +100,18 @@ class FrameContext {
     uint32_t m_height;
 };
 
-struct WindowedApplication : Application {
-    NO_COPY_MOVE(WindowedApplication);
+/**
+ * @brief GPU application with headless-first design.
+ *
+ * Owns the WebGPU device and render loop. Windowing is opt-in:
+ * subclasses call init_windowing() to create a window + surface.
+ * Without windowing, the application runs headless (no surface, no present).
+ */
+struct GpuApplication : Application {
+    NO_COPY_MOVE(GpuApplication);
 
-    explicit WindowedApplication(std::string_view name, pts::LoggingManager& logging_manager);
-    ~WindowedApplication() override;
+    explicit GpuApplication(std::string_view name, pts::LoggingManager& logging_manager);
+    ~GpuApplication() override;
 
     void run() override;
 
@@ -117,6 +124,10 @@ struct WindowedApplication : Application {
     }
     virtual void on_resize(uint32_t /*w*/, uint32_t /*h*/) {
     }
+
+    /// Create windowing system, viewport, and attach surface to the WebGPU context.
+    /// Must be called after WebGPU context is ready (i.e. from on_ready() or later).
+    void init_windowing();
 
     [[nodiscard]] auto webgpu_context() noexcept -> rendering::WebGpuContext*;
     [[nodiscard]] auto webgpu_context() const noexcept -> const rendering::WebGpuContext*;
@@ -131,7 +142,6 @@ struct WindowedApplication : Application {
 
    private:
     void loop(float dt) final;
-    void init_windowing();
     [[nodiscard]] bool ensure_webgpu_ready();
 
     std::unique_ptr<rendering::IWindowing> m_windowing;

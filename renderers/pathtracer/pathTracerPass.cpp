@@ -6,6 +6,7 @@
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
+#include <core/rendering/rendererRegistry.h>
 #include <core/rendering/shaderLoader.h>
 #include <core/rendering/vertex.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
@@ -16,6 +17,8 @@
 
 using namespace pts;
 using namespace pts::editor;
+
+REGISTER_RENDERER("Path Trace", PathTracerPass, false);
 
 struct PTUniforms {
     glm::vec3 camera_pos;
@@ -162,18 +165,18 @@ void PathTracerPass::rebuild_scene_buffer(const webgpu::Device& device, WGPUQueu
     auto meshes = world.get_meshes();
 
     for (const auto& obj : objects) {
-        if (!obj.active) continue;
-        PRECONDITION(obj.mesh_index < static_cast<uint32_t>(meshes.size()));
-        const auto& mesh = meshes[obj.mesh_index];
-        if (mesh.cpu_vertices.empty() || mesh.cpu_indices.empty()) continue;
+        if (!obj.active()) continue;
+        PRECONDITION(obj->mesh_index < static_cast<uint32_t>(meshes.size()));
+        const auto& mesh = meshes[obj->mesh_index];
+        if (mesh->cpu_vertices.empty() || mesh->cpu_indices.empty()) continue;
 
-        const auto& xform = obj.transform;
+        const auto& xform = obj->transform;
         auto normal_mat = glm::mat3(glm::transpose(glm::inverse(xform)));
 
-        for (uint32_t i = 0; i + 2 < static_cast<uint32_t>(mesh.cpu_indices.size()); i += 3) {
-            const auto& v0 = mesh.cpu_vertices[mesh.cpu_indices[i + 0]];
-            const auto& v1 = mesh.cpu_vertices[mesh.cpu_indices[i + 1]];
-            const auto& v2 = mesh.cpu_vertices[mesh.cpu_indices[i + 2]];
+        for (uint32_t i = 0; i + 2 < static_cast<uint32_t>(mesh->cpu_indices.size()); i += 3) {
+            const auto& v0 = mesh->cpu_vertices[mesh->cpu_indices[i + 0]];
+            const auto& v1 = mesh->cpu_vertices[mesh->cpu_indices[i + 1]];
+            const auto& v2 = mesh->cpu_vertices[mesh->cpu_indices[i + 2]];
 
             auto xform_pos = [&](const float* p) -> glm::vec3 {
                 return glm::vec3(xform * glm::vec4(p[0], p[1], p[2], 1.0f));
@@ -189,7 +192,7 @@ void PathTracerPass::rebuild_scene_buffer(const webgpu::Device& device, WGPUQueu
             tri.n0 = xform_nrm(v0.normal);
             tri.n1 = xform_nrm(v1.normal);
             tri.n2 = xform_nrm(v2.normal);
-            tri.material_index = obj.material_index;
+            tri.material_index = obj->material_index;
             m_scene_triangles.push_back(tri);
         }
     }
@@ -244,7 +247,7 @@ void PathTracerPass::add_to_frame_graph(rendering::FrameGraph& fg,
     m_frame_count++;
 
     PTUniforms uniforms{};
-    uniforms.camera_pos = ctx.camera.position();
+    uniforms.camera_pos = ctx.camera_position;
     uniforms.frame_index = m_frame_count;
     uniforms.inv_vp = glm::inverse(current_vp);
     uniforms.width = ctx.viewport_width;

@@ -7,6 +7,7 @@
 #include <core/rendering/windowing.h>
 
 #include <memory>
+#include <optional>
 
 namespace spdlog {
 class logger;
@@ -20,16 +21,24 @@ namespace pts::rendering {
 
 /// State when context is initializing (device creation in flight)
 struct ContextInitializingState {
-    NativeViewportHandle viewport_handle{};
-    Extent2D viewport_extent{};
+    struct ViewportInfo {
+        NativeViewportHandle handle;
+        Extent2D extent;
+    };
+    std::optional<ViewportInfo> viewport_info;  ///< nullopt for headless
     std::unique_ptr<pts::webgpu::Device> device;
 };
 
 /// State when context is ready and usable
 struct ContextReadyState {
     pts::webgpu::Device device;
-    pts::webgpu::Surface surface;
+    std::optional<pts::webgpu::Surface> surface;
 
+    /// Headless (device only)
+    explicit ContextReadyState(pts::webgpu::Device d) : device(std::move(d)) {
+    }
+
+    /// Windowed (device + surface)
     ContextReadyState(pts::webgpu::Device d, pts::webgpu::Surface s)
         : device(std::move(d)), surface(std::move(s)) {
     }
@@ -45,8 +54,13 @@ struct ContextReadyState {
 struct ContextFailedState {};
 
 /**
- * @brief WebGPU rendering context bundling device, surface, and callbacks.
- * The application owns this context and passes it to rendering backends.
+ * @brief WebGPU rendering context bundling device and optional surface.
+ *
+ * Supports two creation modes:
+ *   - `create()`: windowed — device + surface from viewport
+ *   - `create_headless()`: device only, no surface
+ *
+ * After headless creation, call `create_surface()` to attach a surface.
  */
 class WebGpuContext : public pts::webgpu::AsyncStateMachine<WebGpuContext, ContextInitializingState,
                                                             ContextReadyState, ContextFailedState> {
@@ -65,19 +79,28 @@ class WebGpuContext : public pts::webgpu::AsyncStateMachine<WebGpuContext, Conte
     WebGpuContext(WebGpuContext&&) noexcept;
     auto operator=(WebGpuContext&&) noexcept -> WebGpuContext&;
 
-    /// Create a context and start async initialization. Returns Initializing state.
-    /// Call tick() in a loop until is<ContextReadyState>() or is<ContextFailedState>().
+    /// Create a windowed context (device + surface). Returns Initializing state.
     [[nodiscard]] static auto create(const IViewport& viewport,
                                      pts::LoggingManager& logging_manager)
         -> std::unique_ptr<WebGpuContext>;
 
+    /// Create a headless context (device only, no surface). Returns Initializing state.
+    [[nodiscard]] static auto create_headless(pts::LoggingManager& logging_manager)
+        -> std::unique_ptr<WebGpuContext>;
+
+    /// Attach a surface to a headless context. Only valid when is<ContextReadyState>().
+    void create_surface(const IViewport& viewport);
+
+    /// Whether the context has a surface attached.
+    [[nodiscard]] auto has_surface() const noexcept -> bool;
+
     /// Access device. Only valid when is<ContextReadyState>().
     [[nodiscard]] auto device() const noexcept -> const pts::webgpu::Device&;
 
-    /// Access surface. Only valid when is<ContextReadyState>().
+    /// Access surface. Only valid when is<ContextReadyState>() and has_surface().
     [[nodiscard]] auto surface() noexcept -> pts::webgpu::Surface&;
 
-    /// Get surface format. Only valid when is<ContextReadyState>().
+    /// Get surface format. Only valid when is<ContextReadyState>() and has_surface().
     [[nodiscard]] auto surface_format() const noexcept -> WGPUTextureFormat;
 
    private:

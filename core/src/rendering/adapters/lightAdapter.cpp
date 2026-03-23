@@ -20,7 +20,7 @@ bool LightAdapter::can_adapt(const pxr::UsdPrim& prim) const {
 }
 
 void LightAdapter::sync(pxr::UsdPrim prim, SyncScope& scope) {
-    LightSlot light;
+    LightData light;
 
     // Common attributes via LightAPI
     pxr::UsdLuxLightAPI light_api(prim);
@@ -37,7 +37,7 @@ void LightAdapter::sync(pxr::UsdPrim prim, SyncScope& scope) {
 
     // Type-specific attributes
     if (prim.IsA<pxr::UsdLuxDistantLight>()) {
-        light.type = LightSlot::Type::Distant;
+        light.type = LightData::Type::Distant;
         // Direction = negative Z axis in light's local space, transformed to world.
         glm::vec4 local_dir(0.0f, 0.0f, -1.0f, 0.0f);
         glm::vec3 world_dir = glm::normalize(glm::vec3(light.transform * local_dir));
@@ -47,13 +47,13 @@ void LightAdapter::sync(pxr::UsdPrim prim, SyncScope& scope) {
         distant.GetAngleAttr().Get(&angle);
         light.angle = angle;
     } else if (prim.IsA<pxr::UsdLuxSphereLight>()) {
-        light.type = LightSlot::Type::Sphere;
+        light.type = LightData::Type::Sphere;
         pxr::UsdLuxSphereLight sphere_light(prim);
         float radius = 0.0f;
         sphere_light.GetRadiusAttr().Get(&radius);
         light.radius = radius;
     } else if (prim.IsA<pxr::UsdLuxRectLight>()) {
-        light.type = LightSlot::Type::Rect;
+        light.type = LightData::Type::Rect;
         pxr::UsdLuxRectLight rect_light(prim);
         float w = 1.0f, h = 1.0f;
         rect_light.GetWidthAttr().Get(&w);
@@ -61,13 +61,13 @@ void LightAdapter::sync(pxr::UsdPrim prim, SyncScope& scope) {
         light.width = w;
         light.height = h;
     } else if (prim.IsA<pxr::UsdLuxDiskLight>()) {
-        light.type = LightSlot::Type::Disk;
+        light.type = LightData::Type::Disk;
         pxr::UsdLuxDiskLight disk_light(prim);
         float radius = 0.0f;
         disk_light.GetRadiusAttr().Get(&radius);
         light.radius = radius;
     } else if (prim.IsA<pxr::UsdLuxDomeLight>()) {
-        light.type = LightSlot::Type::Dome;
+        light.type = LightData::Type::Dome;
     } else {
         return;
     }

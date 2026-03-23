@@ -1,6 +1,6 @@
 #include <core/diagnostics.h>
+#include <core/gpuApplication.h>
 #include <core/rendering/webgpuContext.h>
-#include <core/windowedApplication.h>
 
 namespace pts {
 
@@ -8,13 +8,15 @@ auto FrameContext::device() const noexcept -> const webgpu::Device& {
     return *m_device;
 }
 
-WindowedApplication::WindowedApplication(std::string_view name,
-                                         pts::LoggingManager& logging_manager)
+GpuApplication::GpuApplication(std::string_view name, pts::LoggingManager& logging_manager)
     : Application{name, logging_manager} {
 }
 
-void WindowedApplication::init_windowing() {
-    if (m_windowing) return;
+void GpuApplication::init_windowing() {
+    PRECONDITION_MSG(
+        m_webgpu_context != nullptr && m_webgpu_context->is<rendering::ContextReadyState>(),
+        "init_windowing() requires ready WebGPU context");
+    PRECONDITION_MSG(!m_windowing, "init_windowing() already called");
 
     m_windowing = pts::rendering::create_windowing(get_logging_manager());
     INVARIANT_MSG(m_windowing != nullptr, "create_windowing must return valid windowing system");
@@ -27,11 +29,10 @@ void WindowedApplication::init_windowing() {
     m_viewport->on_drawable_resized.connect(
         [this](pts::rendering::Extent2D) { m_framebuffer_resized = true; });
 
-    m_webgpu_context = pts::rendering::WebGpuContext::create(*m_viewport, get_logging_manager());
-    INVARIANT_MSG(m_webgpu_context != nullptr, "WebGpuContext::create must return valid context");
+    m_webgpu_context->create_surface(*m_viewport);
 }
 
-WindowedApplication::~WindowedApplication() {
+GpuApplication::~GpuApplication() {
     if (m_depth_view) {
         wgpuTextureViewRelease(m_depth_view);
     }
@@ -41,19 +42,23 @@ WindowedApplication::~WindowedApplication() {
     }
 }
 
-void WindowedApplication::run() {
-    init_windowing();
+void GpuApplication::run() {
+    m_webgpu_context = pts::rendering::WebGpuContext::create_headless(get_logging_manager());
+    INVARIANT_MSG(m_webgpu_context != nullptr,
+                  "WebGpuContext::create_headless must return valid context");
+
 #if defined(__EMSCRIPTEN__)
     Application::run();
 #else
-    while (!m_viewport->should_close() && !should_stop()) {
+    while (!should_stop()) {
+        if (m_viewport && m_viewport->should_close()) break;
         run_one_frame();
         check_frame_limit();
     }
 #endif
 }
 
-bool WindowedApplication::ensure_webgpu_ready() {
+bool GpuApplication::ensure_webgpu_ready() {
     if (m_webgpu_context->is<rendering::ContextFailedState>()) {
         return false;
     }
@@ -63,7 +68,11 @@ bool WindowedApplication::ensure_webgpu_ready() {
 
         if (m_webgpu_context->is<rendering::ContextFailedState>()) {
             log(pts::LogLevel::Error, "WebGPU context initialization failed");
-            m_viewport->request_close();
+            if (m_viewport) {
+                m_viewport->request_close();
+            } else {
+                request_stop();
+            }
             return false;
         }
 
@@ -77,7 +86,7 @@ bool WindowedApplication::ensure_webgpu_ready() {
     return true;
 }
 
-void WindowedApplication::ensure_depth_buffer(uint32_t w, uint32_t h) {
+void GpuApplication::ensure_depth_buffer(uint32_t w, uint32_t h) {
     if (m_depth_width == w && m_depth_height == h) {
         return;
     }
@@ -114,8 +123,10 @@ void WindowedApplication::ensure_depth_buffer(uint32_t w, uint32_t h) {
     m_depth_height = h;
 }
 
-void WindowedApplication::loop(float dt) {
-    m_windowing->pump_events(pts::rendering::PumpEventMode::Poll);
+void GpuApplication::loop(float dt) {
+    if (m_windowing) {
+        m_windowing->pump_events(pts::rendering::PumpEventMode::Poll);
+    }
 
     if (!ensure_webgpu_ready()) {
         return;
@@ -126,7 +137,7 @@ void WindowedApplication::loop(float dt) {
         m_ready = true;
     }
 
-    if (m_framebuffer_resized) {
+    if (m_viewport && m_framebuffer_resized && m_webgpu_context->has_surface()) {
         auto const extent = m_viewport->drawable_extent();
         m_webgpu_context->surface().resize(extent);
         on_resize(extent.w, extent.h);
@@ -135,22 +146,33 @@ void WindowedApplication::loop(float dt) {
 
     update(dt);
 
-    auto& surface = m_webgpu_context->surface();
-    WGPUTextureView surface_view = surface.acquire_texture_view();
-    if (!surface_view) {
-        return;
+    // Determine render dimensions and surface view
+    WGPUTextureView surface_view = nullptr;
+    WGPUTextureFormat surface_fmt = WGPUTextureFormat_BGRA8Unorm;
+    uint32_t render_w = m_width;
+    uint32_t render_h = m_height;
+
+    if (m_viewport && m_webgpu_context->has_surface()) {
+        auto& surface = m_webgpu_context->surface();
+        surface_view = surface.acquire_texture_view();
+        if (!surface_view) {
+            return;
+        }
+        auto const extent = m_viewport->drawable_extent();
+        render_w = extent.w;
+        render_h = extent.h;
+        surface_fmt = m_webgpu_context->surface_format();
     }
 
-    auto const extent = m_viewport->drawable_extent();
-    ensure_depth_buffer(extent.w, extent.h);
+    ensure_depth_buffer(render_w, render_h);
 
     auto const& device = m_webgpu_context->device();
 
     WGPUCommandEncoderDescriptor enc_desc = WGPU_COMMAND_ENCODER_DESCRIPTOR_INIT;
+    enc_desc.label = {"frame_encoder", WGPU_STRLEN};
     WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device.handle(), &enc_desc);
 
-    FrameContext ctx{device,       encoder,  surface_view, m_webgpu_context->surface_format(),
-                     m_depth_view, extent.w, extent.h};
+    FrameContext ctx{device, encoder, surface_view, surface_fmt, m_depth_view, render_w, render_h};
     render(ctx);
 
     WGPUCommandBufferDescriptor cmd_desc = WGPU_COMMAND_BUFFER_DESCRIPTOR_INIT;
@@ -159,40 +181,42 @@ void WindowedApplication::loop(float dt) {
     wgpuCommandBufferRelease(cmd);
     wgpuCommandEncoderRelease(encoder);
 
-    surface.present();
+    if (surface_view && m_webgpu_context->has_surface()) {
+        m_webgpu_context->surface().present();
+    }
 }
 
-auto WindowedApplication::webgpu_context() noexcept -> rendering::WebGpuContext* {
+auto GpuApplication::webgpu_context() noexcept -> rendering::WebGpuContext* {
     return m_webgpu_context.get();
 }
 
-auto WindowedApplication::webgpu_context() const noexcept -> const rendering::WebGpuContext* {
+auto GpuApplication::webgpu_context() const noexcept -> const rendering::WebGpuContext* {
     return m_webgpu_context.get();
 }
 
-auto WindowedApplication::windowing() noexcept -> rendering::IWindowing* {
+auto GpuApplication::windowing() noexcept -> rendering::IWindowing* {
     return m_windowing.get();
 }
 
-auto WindowedApplication::viewport() noexcept -> rendering::IViewport* {
+auto GpuApplication::viewport() noexcept -> rendering::IViewport* {
     return m_viewport.get();
 }
 
-auto WindowedApplication::viewport() const noexcept -> const rendering::IViewport* {
+auto GpuApplication::viewport() const noexcept -> const rendering::IViewport* {
     return m_viewport.get();
 }
 
-auto WindowedApplication::window_width() const noexcept -> int {
+auto GpuApplication::window_width() const noexcept -> int {
     if (!m_viewport) return static_cast<int>(m_width);
     return static_cast<int>(m_viewport->drawable_extent().w);
 }
 
-auto WindowedApplication::window_height() const noexcept -> int {
+auto GpuApplication::window_height() const noexcept -> int {
     if (!m_viewport) return static_cast<int>(m_height);
     return static_cast<int>(m_viewport->drawable_extent().h);
 }
 
-auto WindowedApplication::depth_view() const noexcept -> WGPUTextureView {
+auto GpuApplication::depth_view() const noexcept -> WGPUTextureView {
     return m_depth_view;
 }
 

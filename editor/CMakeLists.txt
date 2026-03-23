@@ -10,6 +10,7 @@ file(GLOB_RECURSE src_files
 	${CMAKE_CURRENT_SOURCE_DIR}/src/include/imgui/*.*
 )
 list(FILTER src_files EXCLUDE REGEX "editorRenderer")
+list(FILTER src_files EXCLUDE REGEX "forwardPass")
 
 #Executable
 add_executable(${exec_name} ${src_files})
@@ -19,6 +20,7 @@ target_link_libraries(${exec_name}
 PRIVATE
 	$<BUILD_INTERFACE:developer_flags>
 	core
+	renderer_forward
 	renderer_pathtracer
 	imguizmo::imguizmo
 	stb::stb

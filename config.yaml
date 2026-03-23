@@ -72,9 +72,12 @@ slangc:
     - input: "hello_triangle/shaders/hello_triangle.slang"
       output: "hello_triangle/generated/shaders/hello_triangle.wgsl"
       reflect: true
-    - input: "editor/shaders/forward.slang"
-      output: "editor/generated/shaders/forward.wgsl"
+    - input: "renderers/forward/forward.slang"
+      output: "renderers/forward/generated/shaders/forward.wgsl"
       reflect: true
+    - input: "renderers/forward/forward.slang"
+      output: "renderers/forward/generated/shaders/forward_no_debug.wgsl"
+      defines: ["NO_DEBUG_TARGETS"]
     - input: "editor/shaders/picking.slang"
       output: "editor/generated/shaders/picking.wgsl"
       reflect: true
@@ -104,9 +107,9 @@ shader_codegen:
     - reflect: "hello_triangle/generated/shaders/hello_triangle.reflect.json"
       output: "hello_triangle/generated/shader_metadata.h"
       namespace: "hello_triangle_shader"
-    - reflect: "editor/generated/shaders/forward.reflect.json"
-      output: "editor/generated/shader_metadata.h"
-      namespace: "editor_shader"
+    - reflect: "renderers/forward/generated/shaders/forward.reflect.json"
+      output: "renderers/forward/generated/shader_metadata.h"
+      namespace: "forward_shader"
     - reflect: "editor/generated/shaders/picking.reflect.json"
       output: "editor/generated/picking_shader_metadata.h"
       namespace: "editor_picking_shader"
@@ -130,7 +133,8 @@ embed:
   template: "core/templates/embedded_resources.h.j2"
   resources:
     - input:
-        - "editor/generated/shaders/forward.wgsl"
+        - "renderers/forward/generated/shaders/forward.wgsl"
+        - "renderers/forward/generated/shaders/forward_no_debug.wgsl"
         - "editor/generated/shaders/picking.wgsl"
         - "editor/generated/shaders/grid.wgsl"
         - "editor/generated/shaders/wireframe.wgsl"

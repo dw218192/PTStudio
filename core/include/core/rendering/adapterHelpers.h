@@ -24,10 +24,15 @@ void store_mesh(SyncScope& scope, const std::vector<Vertex>& vertices,
 void sync_object(pxr::UsdPrim prim, SyncScope& scope, std::vector<Vertex>& vertices,
                  std::vector<uint32_t>& indices);
 
-struct LightSlot;
+struct LightData;
+struct CameraData;
 
 /// Common sync logic for light-producing adapters. Handles slot
 /// lookup/insert and field population via the SyncScope.
-void sync_light(pxr::UsdPrim prim, SyncScope& scope, const LightSlot& light);
+void sync_light(pxr::UsdPrim prim, SyncScope& scope, const LightData& light);
+
+/// Common sync logic for camera-producing adapters. Handles slot
+/// lookup/insert and field population via the SyncScope.
+void sync_camera(pxr::UsdPrim prim, SyncScope& scope, const CameraData& camera);
 
 }  // namespace pts::rendering

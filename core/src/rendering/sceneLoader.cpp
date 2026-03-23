@@ -46,16 +46,20 @@ void sync_prim(SyncScope& scope, const pxr::UsdStageRefPtr& stage, const pxr::Sd
 
 void remove_prim(SyncScope& scope, const pxr::SdfPath& prim_path) {
     auto& world = scope.world();
-    auto path_text = prim_path.GetText();
-    int obj_idx = world.find_object_by_prim(path_text);
+    int obj_idx = world.find_object_by_prim(prim_path);
     if (obj_idx >= 0) {
-        scope.free_mesh_slot(scope.object(static_cast<uint32_t>(obj_idx)).mesh_index);
+        scope.free_mesh_slot(scope.object(static_cast<uint32_t>(obj_idx))->mesh_index);
         scope.free_object_slot(static_cast<uint32_t>(obj_idx));
         return;
     }
-    int light_idx = world.find_light_by_prim(path_text);
+    int light_idx = world.find_light_by_prim(prim_path);
     if (light_idx >= 0) {
         scope.free_light_slot(static_cast<uint32_t>(light_idx));
+        return;
+    }
+    int cam_idx = world.find_camera_by_prim(prim_path);
+    if (cam_idx >= 0) {
+        scope.free_camera_slot(static_cast<uint32_t>(cam_idx));
     }
 }
 

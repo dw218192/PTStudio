@@ -34,6 +34,7 @@ class RenderPipelineBuilder {
     auto depth_format(WGPUTextureFormat format) -> RenderPipelineBuilder&;
     auto depth_write(bool enabled) -> RenderPipelineBuilder&;
     auto depth_compare(WGPUCompareFunction func) -> RenderPipelineBuilder&;
+    auto depth_bias(int32_t constant, float slope_scale) -> RenderPipelineBuilder&;
     auto sample_count(uint32_t count) -> RenderPipelineBuilder&;
     auto vertex_buffer(VertexBufferLayout layout) -> RenderPipelineBuilder&;
     auto pipeline_layout(WGPUPipelineLayout layout) -> RenderPipelineBuilder&;
@@ -73,6 +74,8 @@ class RenderPipelineBuilder {
     WGPUTextureFormat m_depth_format = WGPUTextureFormat_Undefined;
     bool m_depth_write = false;
     WGPUCompareFunction m_depth_compare = WGPUCompareFunction_Always;
+    int32_t m_depth_bias = 0;
+    float m_depth_bias_slope_scale = 0.0f;
     uint32_t m_sample_count = 1;
     std::vector<VertexBufferLayout> m_vertex_buffers;
     WGPUPipelineLayout m_pipeline_layout = nullptr;

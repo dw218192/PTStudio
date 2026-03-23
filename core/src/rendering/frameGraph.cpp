@@ -392,6 +392,7 @@ void FrameGraph::execute(WGPUCommandEncoder encoder) {
             }
 
             WGPURenderPassDescriptor pass_desc = WGPU_RENDER_PASS_DESCRIPTOR_INIT;
+            pass_desc.label = {pass.name.c_str(), pass.name.size()};
             if (!color_attachments.empty()) {
                 pass_desc.colorAttachmentCount = color_attachments.size();
                 pass_desc.colorAttachments = color_attachments.data();

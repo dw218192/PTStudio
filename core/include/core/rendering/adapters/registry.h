@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/rendering/adapters/cameraAdapter.h>
 #include <core/rendering/adapters/capsuleAdapter.h>
 #include <core/rendering/adapters/coneAdapter.h>
 #include <core/rendering/adapters/cubeAdapter.h>
@@ -22,7 +23,7 @@ inline const auto& k_scene_adapters() {
     static const auto adapters = k_scene_adapters_build(
         MaterialAdapter::instance(), MeshAdapter::instance(), CubeAdapter::instance(),
         SphereAdapter::instance(), CylinderAdapter::instance(), ConeAdapter::instance(),
-        CapsuleAdapter::instance(), LightAdapter::instance());
+        CapsuleAdapter::instance(), LightAdapter::instance(), CameraAdapter::instance());
     return adapters;
 }
 

@@ -12,6 +12,7 @@ namespace pts::rendering {
 struct RendererEntry {
     std::string name;
     PassFactory factory;
+    bool editor_passes = true;  // false to disable grid/wireframe/gizmo overlays
 };
 
 class RendererRegistry {
@@ -36,8 +37,8 @@ class RendererRegistry {
 
 }  // namespace pts::rendering
 
-#define REGISTER_RENDERER(name, PassClass)                                       \
-    static int s_register_##PassClass = ::pts::rendering::RendererRegistry::add( \
-        {name, [](const ::pts::rendering::ShaderLoader& sl) {                    \
-             return std::make_unique<PassClass>(sl);                             \
-         }})
+#define REGISTER_RENDERER(name, PassClass, ...)                                                    \
+    static int s_register_##PassClass = ::pts::rendering::RendererRegistry::add(                   \
+        {name,                                                                                     \
+         [](const ::pts::rendering::ShaderLoader& sl) { return std::make_unique<PassClass>(sl); }, \
+         ##__VA_ARGS__})

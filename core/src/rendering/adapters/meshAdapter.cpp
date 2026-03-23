@@ -139,8 +139,12 @@ void MeshAdapter::sync(pxr::UsdPrim prim, SyncScope& scope) {
 
     if (vertices.empty()) return;
 
-    pxr::HdMeshTopology hd_topo(pxr::PxOsdOpenSubdivTokens->none, pxr::UsdGeomTokens->rightHanded,
-                                face_vertex_counts, seq_fv_indices);
+    pxr::TfToken orientation;
+    mesh.GetOrientationAttr().Get(&orientation);
+    if (orientation.IsEmpty()) orientation = pxr::UsdGeomTokens->leftHanded;
+
+    pxr::HdMeshTopology hd_topo(pxr::PxOsdOpenSubdivTokens->none, orientation, face_vertex_counts,
+                                seq_fv_indices);
     pxr::HdMeshUtil mesh_util(&hd_topo, pxr::SdfPath());
     pxr::VtVec3iArray tri_indices;
     pxr::VtIntArray prim_params;
