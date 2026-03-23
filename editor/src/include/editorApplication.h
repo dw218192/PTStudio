@@ -75,6 +75,13 @@ struct EditorApplication final : WindowedApplication {
     void render(FrameContext& ctx) override;
 
    private:
+    struct ActiveView {
+        glm::mat4 view_matrix;
+        glm::mat4 proj_matrix;
+        glm::vec3 camera_position;
+    };
+    ActiveView compute_active_view(float aspect) const;
+
     void setup_docking_layout();
     void set_renderer_config(size_t index);
     auto create_input_actions() noexcept -> void;

@@ -517,6 +517,24 @@ void EditorApplication::on_ready() {
     }
 }
 
+auto EditorApplication::compute_active_view(float aspect) const -> ActiveView {
+    auto cameras = m_world.get_cameras();
+    uint32_t cam_slot = static_cast<uint32_t>(m_active_camera_index - 1);
+    if (m_active_camera_index > 0 && cam_slot < cameras.size() && cameras[cam_slot].active()) {
+        auto& cam = cameras[cam_slot].data();
+        glm::mat4 proj;
+        if (cam.orthographic) {
+            float half_h = cam.ortho_height * 0.5f;
+            float half_w = half_h * aspect;
+            proj = glm::ortho(-half_w, half_w, -half_h, half_h, cam.near_clip, cam.far_clip);
+        } else {
+            proj = glm::perspective(cam.fov_y_radians, aspect, cam.near_clip, cam.far_clip);
+        }
+        return {cam.view_matrix, proj, glm::vec3(glm::inverse(cam.view_matrix)[3])};
+    }
+    return {m_camera.view_matrix(), m_camera.projection_matrix(aspect), m_camera.position()};
+}
+
 void EditorApplication::set_renderer_config(size_t index) {
     auto& entries = rendering::RendererRegistry::entries();
     PRECONDITION(index < entries.size());
@@ -524,6 +542,7 @@ void EditorApplication::set_renderer_config(size_t index) {
     auto& device = webgpu_context()->device();
     m_renderer_pass->setup(device);
     m_active_config_index = index;
+    m_editor_passes_enabled = entries[index].editor_passes;
     m_debug_target_selection = 0;
     m_active_debug_ref = {};
 }
@@ -690,33 +709,10 @@ void EditorApplication::render(FrameContext& ctx) {
 
     if (has_viewport) {
         float aspect = static_cast<float>(m_viewport_width) / static_cast<float>(m_viewport_height);
-
-        auto cameras = m_world.get_cameras();
-        if (m_active_camera_index > 0) {
-            // Validate that the selected scene camera is still valid
-            uint32_t cam_slot = static_cast<uint32_t>(m_active_camera_index - 1);
-            if (cam_slot < cameras.size() && cameras[cam_slot].active()) {
-                auto& cam = cameras[cam_slot].data();
-                pass_ctx.view_matrix = cam.view_matrix;
-                if (cam.orthographic) {
-                    float half_h = cam.ortho_height * 0.5f;
-                    float half_w = half_h * aspect;
-                    pass_ctx.proj_matrix =
-                        glm::ortho(-half_w, half_w, -half_h, half_h, cam.near_clip, cam.far_clip);
-                } else {
-                    pass_ctx.proj_matrix =
-                        glm::perspective(cam.fov_y_radians, aspect, cam.near_clip, cam.far_clip);
-                }
-                pass_ctx.camera_position = glm::vec3(glm::inverse(cam.view_matrix)[3]);
-            } else {
-                m_active_camera_index = 0;
-            }
-        }
-        if (m_active_camera_index == 0) {
-            pass_ctx.view_matrix = m_camera.view_matrix();
-            pass_ctx.proj_matrix = m_camera.projection_matrix(aspect);
-            pass_ctx.camera_position = m_camera.position();
-        }
+        auto view = compute_active_view(aspect);
+        pass_ctx.view_matrix = view.view_matrix;
+        pass_ctx.proj_matrix = view.proj_matrix;
+        pass_ctx.camera_position = view.camera_position;
 
         m_world.prepare_gpu_buffers(device, queue);
     }
@@ -1363,8 +1359,7 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
         if (prim.IsValid() && xformable) {
             float aspect =
                 static_cast<float>(m_viewport_width) / static_cast<float>(m_viewport_height);
-            auto view_mat = m_camera.view_matrix();
-            auto proj_mat = m_camera.projection_matrix(aspect);
+            auto [view_mat, proj_mat, cam_pos] = compute_active_view(aspect);
 
             ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList());
             ImGuizmo::SetRect(m_viewport_x, m_viewport_y, static_cast<float>(m_viewport_width),

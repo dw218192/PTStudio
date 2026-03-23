@@ -18,7 +18,7 @@
 using namespace pts;
 using namespace pts::editor;
 
-REGISTER_RENDERER("Path Trace", PathTracerPass);
+REGISTER_RENDERER("Path Trace", PathTracerPass, false);
 
 struct PTUniforms {
     glm::vec3 camera_pos;
