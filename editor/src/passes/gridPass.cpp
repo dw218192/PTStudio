@@ -136,7 +136,7 @@ void GridPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::Pa
     auto queue = ctx.queue;
     auto view_mat = ctx.view_matrix;
     auto proj_mat = ctx.proj_matrix;
-    auto cam_pos = ctx.camera.position();
+    auto cam_pos = ctx.camera_position;
     auto near_plane = ctx.camera.near_plane();
     auto far_plane = ctx.camera.far_plane();
     auto* pipeline_handle = ready.pipeline.handle();

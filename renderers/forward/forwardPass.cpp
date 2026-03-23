@@ -289,7 +289,7 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
     auto view_mat = ctx.view_matrix;
     auto proj_mat = ctx.proj_matrix;
     auto elapsed_time = ctx.time;
-    auto camera_pos = ctx.camera.position();
+    auto camera_pos = ctx.camera_position;
     auto* pipeline_handle = ready.pipeline.handle();
     auto uniform_buf = ready.uniform_buffer.handle();
     auto bind_group = ready.bind_group;

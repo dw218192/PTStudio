@@ -385,7 +385,7 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
     }
 
     auto gizmo_buf = ready.gizmo_uniform_buffer.handle();
-    auto camera_pos = ctx.camera.position();
+    auto camera_pos = ctx.camera_position;
     constexpr float k_min_screen_radius = 0.05f;  // ~5% of viewport height
 
     for (uint32_t slot = 0; slot < gizmo_count; ++slot) {

@@ -658,8 +658,18 @@ void EditorApplication::render(FrameContext& ctx) {
     }
 
     rendering::PassContext pass_ctx{
-        device,         queue,          m_camera,   m_world, m_viewport_width,    m_viewport_height,
-        glm::mat4(1.f), glm::mat4(1.f), get_time(), 0,       selected_picking_id,
+        device,
+        queue,
+        m_camera,
+        m_world,
+        m_viewport_width,
+        m_viewport_height,
+        glm::mat4(1.f),
+        glm::mat4(1.f),
+        glm::vec3(0.f),
+        get_time(),
+        0,
+        selected_picking_id,
     };
 
     if (has_viewport) {
@@ -674,6 +684,7 @@ void EditorApplication::render(FrameContext& ctx) {
                 pass_ctx.view_matrix = cam.view_matrix;
                 pass_ctx.proj_matrix =
                     glm::perspective(cam.fov_y_radians, aspect, cam.near_clip, cam.far_clip);
+                pass_ctx.camera_position = glm::vec3(glm::inverse(cam.view_matrix)[3]);
             } else {
                 m_active_camera_index = 0;
             }
@@ -681,6 +692,7 @@ void EditorApplication::render(FrameContext& ctx) {
         if (m_active_camera_index == 0) {
             pass_ctx.view_matrix = m_camera.view_matrix();
             pass_ctx.proj_matrix = m_camera.projection_matrix(aspect);
+            pass_ctx.camera_position = m_camera.position();
         }
 
         m_world.prepare_gpu_buffers(device, queue);

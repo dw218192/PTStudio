@@ -16,7 +16,7 @@ Light to_light(const LightData& slot) {
     Light l{};
     l.type = static_cast<uint32_t>(slot.type);
     l.color = slot.color;
-    l.intensity = slot.intensity;
+    l.intensity = std::max(slot.intensity, 0.0f);
     l.radius = slot.radius;
     l.angle = slot.angle;
 

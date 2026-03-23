@@ -247,7 +247,7 @@ void PathTracerPass::add_to_frame_graph(rendering::FrameGraph& fg,
     m_frame_count++;
 
     PTUniforms uniforms{};
-    uniforms.camera_pos = ctx.camera.position();
+    uniforms.camera_pos = ctx.camera_position;
     uniforms.frame_index = m_frame_count;
     uniforms.inv_vp = glm::inverse(current_vp);
     uniforms.width = ctx.viewport_width;
