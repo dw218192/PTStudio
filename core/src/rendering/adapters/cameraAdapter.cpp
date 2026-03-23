@@ -88,4 +88,34 @@ std::vector<PrimFactory> CameraAdapter::get_factories() const {
     };
 }
 
+pxr::UsdPrim CameraAdapter::create_from_view(const pxr::UsdStageRefPtr& stage,
+                                             const pxr::SdfPath& path, const glm::mat4& view_matrix,
+                                             float fov_y_radians, float near_clip, float far_clip) {
+    auto cam = pxr::UsdGeomCamera::Define(stage, path);
+
+    // Convert FOV back to focal length + aperture.
+    // fov_y = 2 * atan(vAperture / (2 * focalLength))
+    // Pick standard 35mm full-frame vertical aperture (24mm), solve for focal length.
+    constexpr float k_v_aperture = 24.0f;
+    constexpr float k_h_aperture = 36.0f;
+    float focal_length = k_v_aperture / (2.0f * std::tan(fov_y_radians * 0.5f));
+
+    cam.GetFocalLengthAttr().Set(focal_length);
+    cam.GetHorizontalApertureAttr().Set(k_h_aperture);
+    cam.GetVerticalApertureAttr().Set(k_v_aperture);
+    cam.GetClippingRangeAttr().Set(pxr::GfVec2f(near_clip, far_clip));
+
+    // View matrix → world transform (inverse), then set as xformOp:transform.
+    auto world_xf = glm::inverse(view_matrix);
+    pxr::GfMatrix4d usd_xf;
+    for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 4; ++j) usd_xf[i][j] = static_cast<double>(world_xf[i][j]);
+
+    auto xformable = pxr::UsdGeomXformable(cam.GetPrim());
+    xformable.ClearXformOpOrder();
+    xformable.AddTransformOp().Set(usd_xf);
+
+    return cam.GetPrim();
+}
+
 }  // namespace pts::rendering
