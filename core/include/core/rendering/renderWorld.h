@@ -216,8 +216,10 @@ Light to_light(const LightData& slot);
 struct CameraData {
     glm::mat4 view_matrix{1.0f};
     float fov_y_radians{0.8f};
+    float ortho_height{10.0f};
     float near_clip{0.1f};
     float far_clip{10000.0f};
+    bool orthographic{false};
 };
 
 /// Prim path → slot lookup entry. A single map replaces separate

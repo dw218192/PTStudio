@@ -682,8 +682,15 @@ void EditorApplication::render(FrameContext& ctx) {
             if (cam_slot < cameras.size() && cameras[cam_slot].active()) {
                 auto& cam = cameras[cam_slot].data();
                 pass_ctx.view_matrix = cam.view_matrix;
-                pass_ctx.proj_matrix =
-                    glm::perspective(cam.fov_y_radians, aspect, cam.near_clip, cam.far_clip);
+                if (cam.orthographic) {
+                    float half_h = cam.ortho_height * 0.5f;
+                    float half_w = half_h * aspect;
+                    pass_ctx.proj_matrix =
+                        glm::ortho(-half_w, half_w, -half_h, half_h, cam.near_clip, cam.far_clip);
+                } else {
+                    pass_ctx.proj_matrix =
+                        glm::perspective(cam.fov_y_radians, aspect, cam.near_clip, cam.far_clip);
+                }
                 pass_ctx.camera_position = glm::vec3(glm::inverse(cam.view_matrix)[3]);
             } else {
                 m_active_camera_index = 0;

@@ -2,6 +2,7 @@
 #include <core/rendering/adapters/cameraAdapter.h>
 #include <core/rendering/renderWorld.h>
 #include <pxr/usd/usdGeom/camera.h>
+#include <pxr/usd/usdGeom/tokens.h>
 
 #include <cmath>
 
@@ -31,11 +32,17 @@ void CameraAdapter::sync(pxr::UsdPrim prim, SyncScope& scope) {
     pxr::GfVec2f clip_range(0.1f, 10000.0f);
     cam.GetClippingRangeAttr().Get(&clip_range);
 
+    pxr::TfToken projection;
+    cam.GetProjectionAttr().Get(&projection);
+
     auto world_xf = compute_world_transform(prim);
 
     CameraData data;
     data.view_matrix = glm::inverse(world_xf);
+    data.orthographic = (projection == pxr::UsdGeomTokens->orthographic);
     data.fov_y_radians = 2.0f * std::atan(v_aperture / (2.0f * focal_length));
+    // USD aperture is in mm; orthographic size is aperture / 10 (cm to scene units)
+    data.ortho_height = v_aperture / 10.0f;
     data.near_clip = clip_range[0];
     data.far_clip = clip_range[1];
 
