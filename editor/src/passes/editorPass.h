@@ -57,8 +57,10 @@ class EditorPass final : public rendering::IScenePass {
     void ensure_gizmo_capacity(const webgpu::Device& device, uint32_t count);
 
     struct GizmoMesh {
-        webgpu::Buffer vertex_buffer;
+        webgpu::Buffer vertex_buffer;  // line-list for color overlay
         uint32_t vertex_count = 0;
+        webgpu::Buffer pick_vertex_buffer;  // triangle-list for picking
+        uint32_t pick_vertex_count = 0;
     };
 
     struct Ready {

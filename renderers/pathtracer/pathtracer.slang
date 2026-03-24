@@ -128,10 +128,11 @@ void cs_main(uint3 did : SV_DispatchThreadID) {
 
         // Direct lighting
         float3 direct_diffuse, direct_specular;
-        float3 direct = evaluate_lighting(
+        float3 direct = evaluate_lighting_nee(
             brdf, lights, u.light_count,
             hit.position, N, V,
             base_color, metallic, roughness,
+            rng,
             direct_diffuse, direct_specular);
         radiance += throughput * direct;
 

@@ -181,8 +181,9 @@ class SlotVector {
 // --- Data structs (plain POD, no version/active — those live in Slot<>) ---
 
 struct MeshData {
-    webgpu::Buffer vertex_buffer;
+    webgpu::Buffer vertex_buffer;  // interleaved (pos+normal+color+mat_idx)
     webgpu::Buffer index_buffer;
+    webgpu::Buffer position_buffer;  // position-only (for picking, depth prepass)
     uint32_t index_count = 0;
     std::vector<uint32_t> cpu_indices;
     std::vector<Vertex> cpu_vertices;

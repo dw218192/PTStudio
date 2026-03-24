@@ -70,6 +70,48 @@ static void generate_circle(std::vector<glm::vec3>& out, glm::vec3 center, glm::
     }
 }
 
+/// Generate filled triangle-list geometry for the picking pass.
+static std::vector<glm::vec3> generate_light_pick_verts(const rendering::LightData& light) {
+    std::vector<glm::vec3> verts;
+    auto triangle_fan = [&](glm::vec3 center, glm::vec3 axis_a, glm::vec3 axis_b, float radius) {
+        for (uint32_t i = 0; i < k_circle_segments; ++i) {
+            float a0 = glm::two_pi<float>() * static_cast<float>(i) / k_circle_segments;
+            float a1 = glm::two_pi<float>() * static_cast<float>(i + 1) / k_circle_segments;
+            verts.push_back(center);
+            verts.push_back(center + (std::cos(a0) * axis_a + std::sin(a0) * axis_b) * radius);
+            verts.push_back(center + (std::cos(a1) * axis_a + std::sin(a1) * axis_b) * radius);
+        }
+    };
+    switch (light.type) {
+        case rendering::LightData::Type::Sphere: {
+            float r = std::max(light.radius, 0.1f);
+            verts.reserve(k_circle_segments * 3 * 3);
+            triangle_fan({0, 0, 0}, {1, 0, 0}, {0, 1, 0}, r);
+            triangle_fan({0, 0, 0}, {1, 0, 0}, {0, 0, 1}, r);
+            triangle_fan({0, 0, 0}, {0, 1, 0}, {0, 0, 1}, r);
+            break;
+        }
+        case rendering::LightData::Type::Rect: {
+            float hw = light.width * 0.5f;
+            float hh = light.height * 0.5f;
+            verts = {{-hw, -hh, 0}, {hw, -hh, 0}, {hw, hh, 0},
+                     {-hw, -hh, 0}, {hw, hh, 0},  {-hw, hh, 0}};
+            break;
+        }
+        case rendering::LightData::Type::Disk: {
+            float r = std::max(light.radius, 0.1f);
+            verts.reserve(k_circle_segments * 3);
+            triangle_fan({0, 0, 0}, {1, 0, 0}, {0, 1, 0}, r);
+            break;
+        }
+        case rendering::LightData::Type::Distant:
+        case rendering::LightData::Type::Dome:
+            break;
+    }
+    return verts;
+}
+
+/// Generate line-list wireframe geometry for the color overlay.
 static std::vector<glm::vec3> generate_light_verts(const rendering::LightData& light) {
     std::vector<glm::vec3> verts;
     switch (light.type) {
@@ -84,14 +126,28 @@ static std::vector<glm::vec3> generate_light_verts(const rendering::LightData& l
         case rendering::LightData::Type::Rect: {
             float hw = light.width * 0.5f;
             float hh = light.height * 0.5f;
-            verts = {{-hw, -hh, 0}, {hw, -hh, 0}, {hw, -hh, 0}, {hw, hh, 0},
-                     {hw, hh, 0},   {-hw, hh, 0}, {-hw, hh, 0}, {-hw, -hh, 0}};
+            float arrow = std::min(hw, hh) * 0.7f;
+            verts = {{-hw, -hh, 0},
+                     {hw, -hh, 0},
+                     {hw, -hh, 0},
+                     {hw, hh, 0},
+                     {hw, hh, 0},
+                     {-hw, hh, 0},
+                     {-hw, hh, 0},
+                     {-hw, -hh, 0},
+                     // Direction arrow along -Z (emission direction)
+                     {0, 0, 0},
+                     {0, 0, -arrow}};
             break;
         }
         case rendering::LightData::Type::Disk: {
             float r = std::max(light.radius, 0.1f);
-            verts.reserve(k_circle_segments * 2);
-            generate_circle(verts, {0, 0, 0}, {1, 0, 0}, {0, 0, 1}, r);
+            float arrow = r * 0.7f;
+            verts.reserve(k_circle_segments * 2 + 2);
+            generate_circle(verts, {0, 0, 0}, {1, 0, 0}, {0, 1, 0}, r);
+            // Direction arrow along -Z (emission direction)
+            verts.push_back({0, 0, 0});
+            verts.push_back({0, 0, -arrow});
             break;
         }
         case rendering::LightData::Type::Distant:
@@ -186,7 +242,7 @@ void EditorPass::do_setup(const webgpu::Device& device) {
                                       .depth_write(true)
                                       .depth_compare(WGPUCompareFunction_Less)
                                       .cull_mode(WGPUCullMode_None)
-                                      .topology(WGPUPrimitiveTopology_LineList)
+                                      .topology(WGPUPrimitiveTopology_TriangleList)
                                       .pipeline_layout(picking_pl)
                                       .vertex_layout<editor_gizmo_shader::VertexLayout>()
                                       .build();
@@ -332,26 +388,43 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
 
     // ── Create/cache gizmo meshes and collect handles ──────────────────
     struct GizmoDrawInfo {
-        WGPUBuffer vertex_buffer;
+        WGPUBuffer vertex_buffer;  // lines for color overlay
         uint32_t vertex_count;
+        WGPUBuffer pick_vertex_buffer;  // triangles for picking
+        uint32_t pick_vertex_count;
     };
     std::vector<GizmoDrawInfo> gizmo_draws;
     gizmo_draws.reserve(gizmo_count);
+
+    auto make_vbuf = [&](const std::vector<glm::vec3>& verts) {
+        auto buf = ctx.device.create_buffer(
+            verts.size() * sizeof(glm::vec3),
+            static_cast<WGPUBufferUsage>(WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst));
+        wgpuQueueWriteBuffer(ctx.queue, buf.handle(), 0, verts.data(),
+                             verts.size() * sizeof(glm::vec3));
+        return buf;
+    };
 
     for (uint32_t slot = 0; slot < gizmo_count; ++slot) {
         uint32_t li = gizmo_light_indices[slot];
         auto& mesh =
             get_or_create_pass_data<GizmoMesh>(rendering::PassDataKind::Light, li, ctx.world, [&] {
-                auto verts = generate_light_verts(lights[li].data());
-                if (verts.empty()) return GizmoMesh{};
-                auto buf = ctx.device.create_buffer(
-                    verts.size() * sizeof(glm::vec3),
-                    static_cast<WGPUBufferUsage>(WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst));
-                wgpuQueueWriteBuffer(ctx.queue, buf.handle(), 0, verts.data(),
-                                     verts.size() * sizeof(glm::vec3));
-                return GizmoMesh{std::move(buf), static_cast<uint32_t>(verts.size())};
+                auto line_verts = generate_light_verts(lights[li].data());
+                auto pick_verts = generate_light_pick_verts(lights[li].data());
+                if (line_verts.empty() && pick_verts.empty()) return GizmoMesh{};
+                GizmoMesh m;
+                if (!line_verts.empty()) {
+                    m.vertex_buffer = make_vbuf(line_verts);
+                    m.vertex_count = static_cast<uint32_t>(line_verts.size());
+                }
+                if (!pick_verts.empty()) {
+                    m.pick_vertex_buffer = make_vbuf(pick_verts);
+                    m.pick_vertex_count = static_cast<uint32_t>(pick_verts.size());
+                }
+                return m;
             });
-        gizmo_draws.push_back({mesh.vertex_buffer.handle(), mesh.vertex_count});
+        gizmo_draws.push_back({mesh.vertex_buffer.handle(), mesh.vertex_count,
+                               mesh.pick_vertex_buffer.handle(), mesh.pick_vertex_count});
     }
 
     // ── Texture descriptors ────────────────────────────────────────────
@@ -436,25 +509,25 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
                 uint32_t dyn_offset = i * EditorPass::k_uniform_align;
                 wgpuRenderPassEncoderSetBindGroup(pass, 0, picking_bg, 1, &dyn_offset);
                 const auto& mesh = meshes[objs[i]->mesh_index];
-                wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh->vertex_buffer.handle(), 0,
-                                                     mesh->vertex_buffer.size());
+                wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh->position_buffer.handle(), 0,
+                                                     mesh->position_buffer.size());
                 wgpuRenderPassEncoderSetIndexBuffer(pass, mesh->index_buffer.handle(),
                                                     WGPUIndexFormat_Uint32, 0,
                                                     mesh->index_buffer.size());
                 wgpuRenderPassEncoderDrawIndexed(pass, mesh->index_count, 1, 0, 0, 0);
             }
 
-            // Light gizmo shapes
+            // Light gizmo shapes (filled triangles for easier picking)
             wgpuRenderPassEncoderSetPipeline(pass, line_picking_pl);
             for (uint32_t slot = 0; slot < static_cast<uint32_t>(gizmo_draws.size()); ++slot) {
                 auto& draw = gizmo_draws[slot];
-                if (draw.vertex_count == 0) continue;
+                if (draw.pick_vertex_count == 0) continue;
                 uint32_t picking_slot = obj_count_cap + slot;
                 uint32_t dyn_offset = picking_slot * EditorPass::k_uniform_align;
                 wgpuRenderPassEncoderSetBindGroup(pass, 0, picking_bg, 1, &dyn_offset);
-                wgpuRenderPassEncoderSetVertexBuffer(pass, 0, draw.vertex_buffer, 0,
-                                                     draw.vertex_count * sizeof(glm::vec3));
-                wgpuRenderPassEncoderDraw(pass, draw.vertex_count, 1, 0, 0);
+                wgpuRenderPassEncoderSetVertexBuffer(pass, 0, draw.pick_vertex_buffer, 0,
+                                                     draw.pick_vertex_count * sizeof(glm::vec3));
+                wgpuRenderPassEncoderDraw(pass, draw.pick_vertex_count, 1, 0, 0);
             }
         });
 

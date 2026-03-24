@@ -4,14 +4,15 @@ import ltc;
 import sampling;
 
 // ---------------------------------------------------------------------------
-// Lighting evaluation — representative-point only (path tracer)
+// Lighting evaluation — NEE with stochastic light sampling (path tracer)
 // ---------------------------------------------------------------------------
 
-float3 evaluate_lighting<B : IBRDF>(
+float3 evaluate_lighting_nee<B : IBRDF>(
     B brdf,
     StructuredBuffer<Light> lights, uint light_count,
     float3 P, float3 N, float3 V,
     float3 base_color, float metallic, float roughness,
+    inout Rng rng,
     out float3 direct_diffuse, out float3 direct_specular
 ) {
     direct_diffuse = float3(0.0);
@@ -26,23 +27,21 @@ float3 evaluate_lighting<B : IBRDF>(
             continue;
         }
 
-        LightSample ls = light.sample(P, N, V, roughness);
-        if (!ls.valid) continue;
+        LightSampleStochastic ls = sample_direct(light, P, rng);
+        if (!ls.valid || ls.pdf <= 0.0) continue;
 
-        ShadingGeometry gd = ShadingGeometry::from_world(N, ls.diffuse_L, V, roughness);
-        ShadingGeometry gs = ShadingGeometry::from_world(N, ls.spec_L, V, ls.spec_roughness);
-        float3 brdf_diffuse = brdf.eval_diffuse(gd, base_color, metallic);
-        float3 brdf_specular = brdf.eval_specular(gs, base_color, metallic);
+        float3 wi = normalize(ls.position - P);
+        float NdotL = dot(N, wi);
+        if (NdotL <= 0.0) continue;
 
-        float3 radiance_diffuse = light.color * light.intensity * ls.diffuse_attenuation;
-        float3 radiance_specular = light.color * light.intensity * ls.spec_attenuation;
+        ShadingGeometry g = ShadingGeometry::from_world(N, wi, V, roughness);
+        float3 f_diffuse = brdf.eval_diffuse(g, base_color, metallic);
+        float3 f_specular = brdf.eval_specular(g, base_color, metallic);
 
-        float3 diffuse = brdf_diffuse * max(dot(N, ls.diffuse_L), 0.0) * radiance_diffuse;
-        float3 specular = brdf_specular * max(dot(N, ls.spec_L), 0.0) * radiance_specular;
-
-        result += diffuse + specular;
-        direct_diffuse += diffuse;
-        direct_specular += specular;
+        float3 contrib = ls.radiance * NdotL / ls.pdf;
+        direct_diffuse += f_diffuse * contrib;
+        direct_specular += f_specular * contrib;
+        result += (f_diffuse + f_specular) * contrib;
     }
     return result;
 }
@@ -86,7 +85,7 @@ float3 evaluate_lighting_ltc<B : IBRDF>(
             continue;
         }
 
-        LightSample ls = light.sample(P, N, V, roughness);
+        LightSample ls = sample_representative(light, P, N, V, roughness);
         if (!ls.valid) continue;
 
         ShadingGeometry gd = ShadingGeometry::from_world(N, ls.diffuse_L, V, roughness);

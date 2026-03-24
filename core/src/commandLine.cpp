@@ -68,15 +68,6 @@ auto CommandLine::parse(int argc, char* argv[]) -> bool {
     try {
         auto result = m_impl->options.parse(argc, argv);
 
-        auto unknown = result.unmatched();
-        if (!unknown.empty()) {
-            std::cerr << "Ignoring unknown arguments:";
-            for (const auto& arg : unknown) {
-                std::cerr << " " << arg;
-            }
-            std::cerr << std::endl;
-        }
-
         if (result.count("help")) {
             std::cout << m_impl->options.help() << std::endl;
             m_impl->result.emplace(std::move(result));
