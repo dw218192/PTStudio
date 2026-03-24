@@ -92,7 +92,7 @@ This project uses [repokit](tools/framework/README.md) for general project tooli
 ### Contributing to the framework
 1. `cd tools/framework && git fetch origin && git switch main && git pull --ff-only origin main`
 2. Make changes, bump the version in `pyproject.toml`, add a `CHANGELOG.md` entry
-3. Commit, push, and wait for CI to pass
+3. Commit, push, and wait for CI to pass (CI auto-tags `v<version>` from `pyproject.toml`)
 4. Back in this project: `cd tools/framework && git checkout v<new-version>`
 5. Commit the submodule pointer update
 
