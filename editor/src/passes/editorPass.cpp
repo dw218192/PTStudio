@@ -509,8 +509,8 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
                 uint32_t dyn_offset = i * EditorPass::k_uniform_align;
                 wgpuRenderPassEncoderSetBindGroup(pass, 0, picking_bg, 1, &dyn_offset);
                 const auto& mesh = meshes[objs[i]->mesh_index];
-                wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh->vertex_buffer.handle(), 0,
-                                                     mesh->vertex_buffer.size());
+                wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh->position_buffer.handle(), 0,
+                                                     mesh->position_buffer.size());
                 wgpuRenderPassEncoderSetIndexBuffer(pass, mesh->index_buffer.handle(),
                                                     WGPUIndexFormat_Uint32, 0,
                                                     mesh->index_buffer.size());

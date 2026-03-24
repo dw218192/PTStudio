@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <glm/glm.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 namespace pts::rendering {
 
@@ -348,6 +349,18 @@ void RenderWorld::upload_all_meshes(const webgpu::Device& device) {
                              mesh.cpu_indices.size() * sizeof(uint32_t));
 
         w->index_count = static_cast<uint32_t>(mesh.cpu_indices.size());
+
+        // Position-only buffer for picking and depth prepass
+        auto vert_count = mesh.cpu_vertices.size();
+        std::vector<glm::vec3> positions(vert_count);
+        for (size_t v = 0; v < vert_count; ++v) {
+            positions[v] = glm::make_vec3(mesh.cpu_vertices[v].position);
+        }
+        w->position_buffer = device.create_buffer(
+            vert_count * sizeof(glm::vec3),
+            static_cast<WGPUBufferUsage>(WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst));
+        wgpuQueueWriteBuffer(device.queue(), w->position_buffer.handle(), 0, positions.data(),
+                             vert_count * sizeof(glm::vec3));
     }
 }
 
