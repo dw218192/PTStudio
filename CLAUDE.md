@@ -74,6 +74,18 @@ Scene passes can declare debug MRT outputs (Normals, Base Color, etc.) via `debu
 
 **Shader convention:** guard debug MRT struct fields and writes with `#ifndef NO_DEBUG_TARGETS`. The variant key is derived automatically by inserting `_no_debug` before the extension (e.g. `forward.wgsl` → `forward_no_debug.wgsl`). Both the base and variant WGSL must be listed in `config.yaml` under `slangc.shaders` and `embed.resources`.
 
+## Slang Shader Conventions
+
+### GLSL→Slang porting: `mul` and matrix constructors
+
+Slang `float3x3(A, B, C)` passes A, B, C directly to WGSL `mat3x3(A, B, C)`, which interprets them as **columns** (not rows). When porting GLSL code that constructs a matrix with `mat3(col0, col1, col2)`, use the same arguments in Slang — they'll arrive as columns in WGSL unchanged.
+
+For matrix-vector multiplication: `mul(M, v)` = `M * v`, `mul(v, M)` = `v * M`. When porting GLSL `M * v` where M was built with column arguments, use `mul(v, M)` in Slang — the column-as-column constructor plus row-vector multiply gives the correct result.
+
+### Visibility modifiers
+
+Default visibility is `public`, but once ANY declaration uses an explicit modifier (`internal`, `public`, `private`), all non-annotated declarations become `internal`. To use `internal` on helpers, explicitly mark the public API surface with `public` — including struct fields.
+
 ## Code Conventions
 
 - C++17, `webgpu.h` API for rendering (same header for Dawn and emdawnwebgpu)
