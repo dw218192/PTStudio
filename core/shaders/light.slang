@@ -418,7 +418,8 @@ public float pdf_direct(Light light, float3 P, float3 wi) {
         if (abs(u) > 1.0 || abs(v) > 1.0) return 0.0;
 
         float pdf_area = 1.0 / light_area(light);
-        float cos_theta_light = abs(dot(normal, -wi));
+        float cos_theta_light = dot(normal, -wi);
+        if (cos_theta_light <= 0.0) return 0.0;
         return pdf_area_to_solid_angle(pdf_area, t, cos_theta_light);
     }
 
@@ -433,7 +434,8 @@ public float pdf_direct(Light light, float3 P, float3 wi) {
         if (length(hit - light.direction_or_pos) > light.radius) return 0.0;
 
         float pdf_area = 1.0 / light_area(light);
-        float cos_theta_light = abs(dot(normal, -wi));
+        float cos_theta_light = dot(normal, -wi);
+        if (cos_theta_light <= 0.0) return 0.0;
         return pdf_area_to_solid_angle(pdf_area, t, cos_theta_light);
     }
 
