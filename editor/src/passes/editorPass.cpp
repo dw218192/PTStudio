@@ -84,14 +84,28 @@ static std::vector<glm::vec3> generate_light_verts(const rendering::LightData& l
         case rendering::LightData::Type::Rect: {
             float hw = light.width * 0.5f;
             float hh = light.height * 0.5f;
-            verts = {{-hw, -hh, 0}, {hw, -hh, 0}, {hw, -hh, 0}, {hw, hh, 0},
-                     {hw, hh, 0},   {-hw, hh, 0}, {-hw, hh, 0}, {-hw, -hh, 0}};
+            float arrow = std::min(hw, hh) * 0.5f;
+            verts = {{-hw, -hh, 0},
+                     {hw, -hh, 0},
+                     {hw, -hh, 0},
+                     {hw, hh, 0},
+                     {hw, hh, 0},
+                     {-hw, hh, 0},
+                     {-hw, hh, 0},
+                     {-hw, -hh, 0},
+                     // Direction arrow along -Z (emission direction)
+                     {0, 0, 0},
+                     {0, 0, -arrow}};
             break;
         }
         case rendering::LightData::Type::Disk: {
             float r = std::max(light.radius, 0.1f);
-            verts.reserve(k_circle_segments * 2);
-            generate_circle(verts, {0, 0, 0}, {1, 0, 0}, {0, 0, 1}, r);
+            float arrow = r * 0.5f;
+            verts.reserve(k_circle_segments * 2 + 2);
+            generate_circle(verts, {0, 0, 0}, {1, 0, 0}, {0, 1, 0}, r);
+            // Direction arrow along -Z (emission direction)
+            verts.push_back({0, 0, 0});
+            verts.push_back({0, 0, -arrow});
             break;
         }
         case rendering::LightData::Type::Distant:
