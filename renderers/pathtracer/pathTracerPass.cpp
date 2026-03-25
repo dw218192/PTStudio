@@ -2,6 +2,7 @@
 
 #include <core/diagnostics.h>
 #include <core/profiling.h>
+#include <core/rendering/bvh.h>
 #include <core/rendering/camera.h>
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/passContext.h>
@@ -58,7 +59,7 @@ auto PathTracerPass::is_ready() const noexcept -> bool {
     return std::holds_alternative<Ready>(m_state);
 }
 
-void PathTracerPass::do_setup(const webgpu::Device& device) {
+void PathTracerPass::do_renderer_setup(const webgpu::Device& device) {
     if (auto* r = std::get_if<Ready>(&m_state)) {
         if (r->compute_bgl) wgpuBindGroupLayoutRelease(r->compute_bgl);
         if (r->blit_bgl) wgpuBindGroupLayoutRelease(r->blit_bgl);
@@ -72,8 +73,8 @@ void PathTracerPass::do_setup(const webgpu::Device& device) {
         sizeof(PTUniforms),
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
 
-    WGPUBindGroupLayoutEntry ce[6] = {};
-    for (int i = 0; i < 6; ++i) ce[i] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    WGPUBindGroupLayoutEntry ce[7] = {};
+    for (int i = 0; i < 7; ++i) ce[i] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
 
     ce[0].binding = 0;
     ce[0].visibility = WGPUShaderStage_Compute;
@@ -94,8 +95,14 @@ void PathTracerPass::do_setup(const webgpu::Device& device) {
     ce[5].visibility = WGPUShaderStage_Compute;
     ce[5].buffer.type = WGPUBufferBindingType_Storage;
 
+    // binding 6: BVH nodes (read-only storage)
+    ce[6].binding = 6;
+    ce[6].visibility = WGPUShaderStage_Compute;
+    ce[6].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
+    ce[6].buffer.minBindingSize = 32;  // sizeof(BVHNode)
+
     WGPUBindGroupLayoutDescriptor cbgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    cbgl_desc.entryCount = 6;
+    cbgl_desc.entryCount = 7;
     cbgl_desc.entries = ce;
     auto compute_bgl = wgpuDeviceCreateBindGroupLayout(device.handle(), &cbgl_desc);
 
@@ -157,10 +164,11 @@ void PathTracerPass::do_setup(const webgpu::Device& device) {
     };
 }
 
-void PathTracerPass::rebuild_scene_buffer(const webgpu::Device& device, WGPUQueue queue,
-                                          const rendering::RenderWorld& world) {
+PathTracerPass::SceneData PathTracerPass::build_scene_data(const webgpu::Device& device,
+                                                           WGPUQueue queue,
+                                                           const rendering::RenderWorld& world) {
     // Flatten all active objects into world-space triangles
-    m_scene_triangles.clear();
+    std::vector<PackedTriangle> triangles;
     auto objects = world.get_objects();
     auto meshes = world.get_meshes();
 
@@ -193,24 +201,62 @@ void PathTracerPass::rebuild_scene_buffer(const webgpu::Device& device, WGPUQueu
             tri.n1 = xform_nrm(v1.normal);
             tri.n2 = xform_nrm(v2.normal);
             tri.material_index = obj->material_index;
-            m_scene_triangles.push_back(tri);
+            triangles.push_back(tri);
         }
     }
 
-    m_scene_triangle_count = static_cast<uint32_t>(m_scene_triangles.size());
-    auto required =
-        std::max(k_min_scene_buffer_size,
-                 static_cast<std::size_t>(m_scene_triangle_count) * sizeof(PackedTriangle));
-    if (!m_scene_buffer.is_valid() || m_scene_buffer.size() < required) {
-        m_scene_buffer = device.create_buffer(
-            required,
+    auto triangle_count = static_cast<uint32_t>(triangles.size());
+
+    // Build BVH and reorder triangles
+    if (triangle_count > 0) {
+        std::vector<glm::vec3> centroids(triangle_count);
+        std::vector<glm::vec3> aabb_mins(triangle_count);
+        std::vector<glm::vec3> aabb_maxs(triangle_count);
+        for (uint32_t i = 0; i < triangle_count; ++i) {
+            auto& t = triangles[i];
+            centroids[i] = (t.v0 + t.v1 + t.v2) / 3.0f;
+            aabb_mins[i] = glm::min(t.v0, glm::min(t.v1, t.v2));
+            aabb_maxs[i] = glm::max(t.v0, glm::max(t.v1, t.v2));
+        }
+
+        auto bvh = rendering::build_bvh(centroids, aabb_mins, aabb_maxs, triangle_count);
+
+        std::vector<PackedTriangle> reordered(triangle_count);
+        for (uint32_t i = 0; i < triangle_count; ++i) {
+            reordered[i] = triangles[bvh.tri_indices[i]];
+        }
+        triangles = std::move(reordered);
+
+        SceneData result;
+        result.triangle_count = triangle_count;
+        result.node_count = static_cast<uint32_t>(bvh.nodes.size());
+
+        auto tri_bytes = static_cast<std::size_t>(triangle_count) * sizeof(PackedTriangle);
+        result.buffer = device.create_buffer(
+            std::max(k_min_scene_buffer_size, tri_bytes),
             static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
+        wgpuQueueWriteBuffer(queue, result.buffer.handle(), 0, triangles.data(), tri_bytes);
+
+        auto bvh_bytes = bvh.nodes.size() * sizeof(rendering::BVHNode);
+        result.bvh_buffer = device.create_buffer(
+            std::max(sizeof(rendering::BVHNode), bvh_bytes),
+            static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
+        wgpuQueueWriteBuffer(queue, result.bvh_buffer.handle(), 0, bvh.nodes.data(), bvh_bytes);
+
+        return result;
     }
-    if (m_scene_triangle_count > 0) {
-        wgpuQueueWriteBuffer(queue, m_scene_buffer.handle(), 0, m_scene_triangles.data(),
-                             m_scene_triangle_count * sizeof(PackedTriangle));
-    }
-    m_cached_mesh_version = world.get_mesh_version();
+
+    // Empty scene — create minimum-size placeholder buffers
+    SceneData result;
+    result.triangle_count = 0;
+    result.node_count = 0;
+    result.buffer = device.create_buffer(
+        k_min_scene_buffer_size,
+        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
+    result.bvh_buffer = device.create_buffer(
+        sizeof(rendering::BVHNode),
+        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
+    return result;
 }
 
 void PathTracerPass::ensure_pixel_buffers(const webgpu::Device& device, uint32_t width,
@@ -227,16 +273,22 @@ void PathTracerPass::ensure_pixel_buffers(const webgpu::Device& device, uint32_t
     m_frame_count = 0;
 }
 
-void PathTracerPass::add_to_frame_graph(rendering::FrameGraph& fg,
-                                        const rendering::PassContext& ctx) {
+void PathTracerPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
+                                           const rendering::PassContext& ctx) {
     PTS_ZONE_SCOPED;
     PRECONDITION(is_ready());
     auto& r = std::get<Ready>(m_state);
 
-    if (ctx.world.get_mesh_version() != m_cached_mesh_version) {
-        rebuild_scene_buffer(ctx.device, ctx.queue, ctx.world);
+    auto& scene = get_or_create_pass_data<SceneData>(rendering::PassDataKind::Mesh, ctx.world, [&] {
+        return build_scene_data(ctx.device, ctx.queue, ctx.world);
+    });
+
+    // Detect scene rebuild → reset accumulation
+    if (scene.buffer.handle() != m_prev_scene_buffer) {
+        m_prev_scene_buffer = scene.buffer.handle();
         m_frame_count = 0;
     }
+
     ensure_pixel_buffers(ctx.device, ctx.viewport_width, ctx.viewport_height);
 
     auto current_vp = ctx.proj_matrix * ctx.view_matrix;
@@ -252,7 +304,7 @@ void PathTracerPass::add_to_frame_graph(rendering::FrameGraph& fg,
     uniforms.inv_vp = glm::inverse(current_vp);
     uniforms.width = ctx.viewport_width;
     uniforms.height = ctx.viewport_height;
-    uniforms.triangle_count = m_scene_triangle_count;
+    uniforms.triangle_count = scene.triangle_count;
     uniforms.light_count = ctx.world.gpu_light_count();
     uniforms.total_frames = m_frame_count;
     wgpuQueueWriteBuffer(ctx.queue, r.uniform_buffer.handle(), 0, &uniforms, sizeof(uniforms));
@@ -268,17 +320,17 @@ void PathTracerPass::add_to_frame_graph(rendering::FrameGraph& fg,
     auto dev = ctx.device.handle();
     auto width = ctx.viewport_width;
     auto height = ctx.viewport_height;
-    auto tri_count = m_scene_triangle_count;
+    auto tri_count = scene.triangle_count;
 
     // --- Create compute bind group ---
-    WGPUBindGroupEntry cbe[6] = {};
-    for (int i = 0; i < 6; ++i) cbe[i] = WGPU_BIND_GROUP_ENTRY_INIT;
+    WGPUBindGroupEntry cbe[7] = {};
+    for (int i = 0; i < 7; ++i) cbe[i] = WGPU_BIND_GROUP_ENTRY_INIT;
     cbe[0].binding = 0;
     cbe[0].buffer = r.uniform_buffer.handle();
     cbe[0].size = sizeof(PTUniforms);
     cbe[1].binding = 1;
-    cbe[1].buffer = m_scene_buffer.handle();
-    cbe[1].size = m_scene_buffer.size();
+    cbe[1].buffer = scene.buffer.handle();
+    cbe[1].size = scene.buffer.size();
     cbe[2].binding = 2;
     cbe[2].buffer = mat_buf.handle();
     cbe[2].size = mat_buf.size();
@@ -291,10 +343,13 @@ void PathTracerPass::add_to_frame_graph(rendering::FrameGraph& fg,
     cbe[5].binding = 5;
     cbe[5].buffer = m_output_buffer.handle();
     cbe[5].size = m_output_buffer.size();
+    cbe[6].binding = 6;
+    cbe[6].buffer = scene.bvh_buffer.handle();
+    cbe[6].size = scene.bvh_buffer.size();
 
     WGPUBindGroupDescriptor cbg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
     cbg_desc.layout = r.compute_bgl;
-    cbg_desc.entryCount = 6;
+    cbg_desc.entryCount = 7;
     cbg_desc.entries = cbe;
     auto compute_bg = wgpuDeviceCreateBindGroup(dev, &cbg_desc);
 

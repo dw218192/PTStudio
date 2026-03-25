@@ -1,6 +1,6 @@
 #pragma once
 
-#include <core/rendering/scenePass.h>
+#include <core/rendering/renderer.h>
 #include <core/rendering/webgpu/buffer.h>
 #include <core/rendering/webgpu/pipeline.h>
 #include <core/rendering/webgpu/shader.h>
@@ -32,9 +32,9 @@ struct PackedTriangle {
 };
 static_assert(sizeof(PackedTriangle) == 112, "PackedTriangle must be 112 bytes for GPU alignment");
 
-class PathTracerPass final : public rendering::IScenePass {
+class PathTracerPass final : public rendering::IRenderer {
    public:
-    using IScenePass::IScenePass;
+    using IRenderer::IRenderer;
     ~PathTracerPass() override;
 
     PathTracerPass(const PathTracerPass&) = delete;
@@ -45,8 +45,9 @@ class PathTracerPass final : public rendering::IScenePass {
     [[nodiscard]] auto name() const noexcept -> std::string_view override;
     [[nodiscard]] auto is_ready() const noexcept -> bool override;
 
-    void do_setup(const webgpu::Device& device) override;
-    void add_to_frame_graph(rendering::FrameGraph& fg, const rendering::PassContext& ctx) override;
+    void do_renderer_setup(const webgpu::Device& device) override;
+    void do_add_to_frame_graph(rendering::FrameGraph& fg,
+                               const rendering::PassContext& ctx) override;
     void draw_viewport_controls() override;
 
    private:
@@ -68,11 +69,16 @@ class PathTracerPass final : public rendering::IScenePass {
 
     std::variant<std::monostate, Ready> m_state;
 
-    // Scene data — flattened triangles built from RenderWorld mesh data
-    std::vector<PackedTriangle> m_scene_triangles;
-    webgpu::Buffer m_scene_buffer;
-    uint32_t m_cached_mesh_version = UINT32_MAX;
-    uint32_t m_scene_triangle_count = 0;
+    /// Cached scene data — managed by per-category pass_data API.
+    struct SceneData {
+        webgpu::Buffer buffer;      // triangles (reordered by BVH)
+        webgpu::Buffer bvh_buffer;  // flat BVH node array
+        uint32_t triangle_count = 0;
+        uint32_t node_count = 0;
+    };
+    static SceneData build_scene_data(const webgpu::Device& device, WGPUQueue queue,
+                                      const rendering::RenderWorld& world);
+    WGPUBuffer m_prev_scene_buffer = nullptr;  // change detection for frame_count reset
 
     // Per-pixel buffers
     webgpu::Buffer m_accum_buffer;

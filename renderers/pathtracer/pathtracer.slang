@@ -33,6 +33,15 @@ struct PTUniforms {
 [[vk::binding(4, 0)]] RWStructuredBuffer<float4> accumulation;
 [[vk::binding(5, 0)]] RWStructuredBuffer<float4> output_buf;
 
+struct BVHNode {
+    float3 aabb_min;
+    uint left_first;
+    float3 aabb_max;
+    uint count;
+};
+
+[[vk::binding(6, 0)]] StructuredBuffer<BVHNode> bvh_nodes;
+
 static const float PT_EPS = 0.0001;
 
 // ── Ray-triangle intersection ───────────────────────────────────
@@ -62,24 +71,51 @@ float intersect_triangle(float3 ro, float3 rd, PackedTriangle tri,
     return t > PT_EPS ? t : -1.0;
 }
 
+bool ray_aabb(float3 ro, float3 rd, float3 bmin, float3 bmax, float t_best) {
+    float3 inv_rd = 1.0 / rd;
+    float3 t0 = (bmin - ro) * inv_rd;
+    float3 t1 = (bmax - ro) * inv_rd;
+    float3 tmin = min(t0, t1);
+    float3 tmax = max(t0, t1);
+    float enter = max(max(tmin.x, tmin.y), tmin.z);
+    float exit  = min(min(tmax.x, tmax.y), tmax.z);
+    return enter <= exit && exit >= 0.0 && enter < t_best;
+}
+
 HitRecord trace_scene(float3 ro, float3 rd) {
-    HitRecord result;
-    result.hit = false;
-    float best = 1e30;
-    for (uint i = 0; i < u.triangle_count; i++) {
-        PackedTriangle tri = triangles[i];
-        float bu, bv;
-        float t = intersect_triangle(ro, rd, tri, bu, bv);
-        if (t > 0.0 && t < best) {
-            best = t;
-            float w = 1.0 - bu - bv;
-            result.position = ro + rd * t;
-            result.normal = normalize(tri.n0 * w + tri.n1 * bu + tri.n2 * bv);
-            result.material_index = tri.material_index;
-            result.hit = true;
+    HitRecord best;
+    best.hit = false;
+    float t_best = 1e30;
+
+    uint stack[32];
+    int sp = 0;
+    stack[sp++] = 0;  // root
+
+    while (sp > 0) {
+        BVHNode node = bvh_nodes[stack[--sp]];
+        if (!ray_aabb(ro, rd, node.aabb_min, node.aabb_max, t_best)) continue;
+        if (node.count > 0) {
+            // Leaf — test triangles
+            for (uint i = 0; i < node.count; i++) {
+                PackedTriangle tri = triangles[node.left_first + i];
+                float bu, bv;
+                float t = intersect_triangle(ro, rd, tri, bu, bv);
+                if (t > 0.0 && t < t_best) {
+                    t_best = t;
+                    best.hit = true;
+                    best.position = ro + rd * t;
+                    best.normal = normalize(
+                        tri.n0 * (1.0 - bu - bv) + tri.n1 * bu + tri.n2 * bv);
+                    best.material_index = tri.material_index;
+                }
+            }
+        } else {
+            // Interior — push both children
+            stack[sp++] = node.left_first;
+            stack[sp++] = node.left_first + 1;
         }
     }
-    return result;
+    return best;
 }
 
 // ── Main ────────────────────────────────────────────────────────
