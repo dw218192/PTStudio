@@ -55,6 +55,15 @@ class IRenderPass {
     virtual void draw_viewport_controls() {
     }
 
+    /// Draw debug overlays on the viewport's ImGui draw list.
+    /// Called after the viewport image, with viewport screen-space params.
+    struct ViewportOverlayParams {
+        glm::mat4 view_proj;
+        float x, y, w, h;
+    };
+    virtual void draw_viewport_overlay(const ViewportOverlayParams& params) {
+    }
+
     /// Cache texture refs after frame graph execute, for ImGui display next frame.
     virtual void update_texture_refs(FrameGraph& fg) {
     }

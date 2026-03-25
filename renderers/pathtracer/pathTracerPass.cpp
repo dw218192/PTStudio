@@ -208,54 +208,40 @@ PathTracerPass::SceneData PathTracerPass::build_scene_data(const webgpu::Device&
     auto triangle_count = static_cast<uint32_t>(triangles.size());
 
     // Build BVH and reorder triangles
-    if (triangle_count > 0) {
-        std::vector<glm::vec3> centroids(triangle_count);
-        std::vector<glm::vec3> aabb_mins(triangle_count);
-        std::vector<glm::vec3> aabb_maxs(triangle_count);
-        for (uint32_t i = 0; i < triangle_count; ++i) {
-            auto& t = triangles[i];
-            centroids[i] = (t.v0 + t.v1 + t.v2) / 3.0f;
-            aabb_mins[i] = glm::min(t.v0, glm::min(t.v1, t.v2));
-            aabb_maxs[i] = glm::max(t.v0, glm::max(t.v1, t.v2));
-        }
-
-        auto bvh = rendering::build_bvh(centroids, aabb_mins, aabb_maxs, triangle_count);
-
-        std::vector<PackedTriangle> reordered(triangle_count);
-        for (uint32_t i = 0; i < triangle_count; ++i) {
-            reordered[i] = triangles[bvh.tri_indices[i]];
-        }
-        triangles = std::move(reordered);
-
-        SceneData result;
-        result.triangle_count = triangle_count;
-        result.node_count = static_cast<uint32_t>(bvh.nodes.size());
-
-        auto tri_bytes = static_cast<std::size_t>(triangle_count) * sizeof(PackedTriangle);
-        result.buffer = device.create_buffer(
-            std::max(k_min_scene_buffer_size, tri_bytes),
-            static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
-        wgpuQueueWriteBuffer(queue, result.buffer.handle(), 0, triangles.data(), tri_bytes);
-
-        auto bvh_bytes = bvh.nodes.size() * sizeof(rendering::BVHNode);
-        result.bvh_buffer = device.create_buffer(
-            std::max(sizeof(rendering::BVHNode), bvh_bytes),
-            static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
-        wgpuQueueWriteBuffer(queue, result.bvh_buffer.handle(), 0, bvh.nodes.data(), bvh_bytes);
-
-        return result;
+    std::vector<rendering::AABB> tri_aabbs(triangle_count);
+    for (uint32_t i = 0; i < triangle_count; ++i) {
+        auto& t = triangles[i];
+        tri_aabbs[i] = rendering::AABB::from_point(t.v0);
+        tri_aabbs[i].expand(t.v1);
+        tri_aabbs[i].expand(t.v2);
     }
 
-    // Empty scene — create minimum-size placeholder buffers
     SceneData result;
-    result.triangle_count = 0;
-    result.node_count = 0;
+    result.triangle_count = triangle_count;
+    result.bvh.build(tri_aabbs, triangle_count);
+
+    // Reorder triangles by BVH spatial locality
+    if (triangle_count > 0) {
+        std::vector<PackedTriangle> reordered(triangle_count);
+        for (uint32_t i = 0; i < triangle_count; ++i) {
+            reordered[i] = triangles[result.bvh.tri_indices()[i]];
+        }
+        triangles = std::move(reordered);
+    }
+
+    // Upload triangles
+    auto tri_bytes = std::max(k_min_scene_buffer_size,
+                              static_cast<std::size_t>(triangle_count) * sizeof(PackedTriangle));
     result.buffer = device.create_buffer(
-        k_min_scene_buffer_size,
-        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
-    result.bvh_buffer = device.create_buffer(
-        sizeof(rendering::BVHNode),
-        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
+        tri_bytes, static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
+    if (triangle_count > 0) {
+        wgpuQueueWriteBuffer(queue, result.buffer.handle(), 0, triangles.data(),
+                             triangle_count * sizeof(PackedTriangle));
+    }
+
+    // Upload BVH nodes
+    result.bvh.upload(device, queue);
+
     return result;
 }
 
@@ -282,6 +268,7 @@ void PathTracerPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     auto& scene = get_or_create_pass_data<SceneData>(rendering::PassDataKind::Mesh, ctx.world, [&] {
         return build_scene_data(ctx.device, ctx.queue, ctx.world);
     });
+    m_active_bvh = &scene.bvh;
 
     // Detect scene rebuild → reset accumulation
     if (scene.buffer.handle() != m_prev_scene_buffer) {
@@ -344,8 +331,8 @@ void PathTracerPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     cbe[5].buffer = m_output_buffer.handle();
     cbe[5].size = m_output_buffer.size();
     cbe[6].binding = 6;
-    cbe[6].buffer = scene.bvh_buffer.handle();
-    cbe[6].size = scene.bvh_buffer.size();
+    cbe[6].buffer = scene.bvh.gpu_nodes().handle();
+    cbe[6].size = scene.bvh.gpu_nodes().size();
 
     WGPUBindGroupDescriptor cbg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
     cbg_desc.layout = r.compute_bgl;
@@ -401,4 +388,17 @@ void PathTracerPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
 void PathTracerPass::draw_viewport_controls() {
     ImGui::SameLine();
     ImGui::Text("SPP: %u", m_frame_count);
+}
+
+void PathTracerPass::do_draw_imgui() {
+    if (m_active_bvh && ImGui::CollapsingHeader("BVH")) {
+        m_active_bvh->draw_imgui();
+    }
+}
+
+void PathTracerPass::draw_viewport_overlay(const ViewportOverlayParams& params) {
+    IRenderer::draw_viewport_overlay(params);  // forward to children
+    if (m_active_bvh) {
+        m_active_bvh->draw_overlay({params.view_proj, params.x, params.y, params.w, params.h});
+    }
 }

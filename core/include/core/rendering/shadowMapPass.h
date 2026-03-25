@@ -35,7 +35,6 @@ class ShadowMapPass final : public IRenderPass {
 
     void do_setup(const webgpu::Device& device) override;
     void add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) override;
-    void draw_imgui() override;
 
     [[nodiscard]] WGPUTextureView shadow_array_view() const;
 

@@ -345,7 +345,4 @@ void ShadowMapPass::release_shadow_texture() {
     m_current_layer_count = 0;
 }
 
-void ShadowMapPass::draw_imgui() {
-}
-
 }  // namespace pts::rendering

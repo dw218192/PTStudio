@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/rendering/bvh.h>
 #include <core/rendering/renderer.h>
 #include <core/rendering/webgpu/buffer.h>
 #include <core/rendering/webgpu/pipeline.h>
@@ -46,6 +47,8 @@ class PathTracerPass final : public rendering::IRenderer {
     [[nodiscard]] auto is_ready() const noexcept -> bool override;
 
     void do_renderer_setup(const webgpu::Device& device) override;
+    void do_draw_imgui() override;
+    void draw_viewport_overlay(const ViewportOverlayParams& params) override;
     void do_add_to_frame_graph(rendering::FrameGraph& fg,
                                const rendering::PassContext& ctx) override;
     void draw_viewport_controls() override;
@@ -71,14 +74,14 @@ class PathTracerPass final : public rendering::IRenderer {
 
     /// Cached scene data — managed by per-category pass_data API.
     struct SceneData {
-        webgpu::Buffer buffer;      // triangles (reordered by BVH)
-        webgpu::Buffer bvh_buffer;  // flat BVH node array
+        webgpu::Buffer buffer;  // triangles (reordered by BVH)
+        rendering::BVH bvh;     // owns nodes + GPU buffer
         uint32_t triangle_count = 0;
-        uint32_t node_count = 0;
     };
     static SceneData build_scene_data(const webgpu::Device& device, WGPUQueue queue,
                                       const rendering::RenderWorld& world);
     WGPUBuffer m_prev_scene_buffer = nullptr;  // change detection for frame_count reset
+    rendering::BVH* m_active_bvh = nullptr;    // non-owning, points into pass_data SceneData
 
     // Per-pixel buffers
     webgpu::Buffer m_accum_buffer;

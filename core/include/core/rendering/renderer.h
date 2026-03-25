@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/rendering/renderPass.h>
+#include <imgui.h>
 
 #include <memory>
 #include <vector>
@@ -43,7 +44,18 @@ class IRenderer : public IRenderPass {
     }
 
     void draw_imgui() override {
-        for (auto& c : m_children) c->draw_imgui();
+        if (!ImGui::CollapsingHeader(name().data(), ImGuiTreeNodeFlags_DefaultOpen)) return;
+        for (auto& c : m_children) {
+            if (ImGui::TreeNode(c->name().data())) {
+                c->draw_imgui();
+                ImGui::TreePop();
+            }
+        }
+        do_draw_imgui();
+    }
+
+    void draw_viewport_overlay(const ViewportOverlayParams& params) override {
+        for (auto& c : m_children) c->draw_viewport_overlay(params);
     }
 
     void update_texture_refs(FrameGraph& fg) override {
@@ -59,6 +71,7 @@ class IRenderer : public IRenderPass {
 
     virtual void do_renderer_setup(const webgpu::Device& device) = 0;
     virtual void do_add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) = 0;
+    virtual void do_draw_imgui() {};
 
    private:
     std::vector<std::unique_ptr<IRenderPass>> m_children;

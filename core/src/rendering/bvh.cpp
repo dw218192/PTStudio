@@ -1,24 +1,14 @@
 #include <core/diagnostics.h>
 #include <core/rendering/bvh.h>
+#include <core/rendering/webgpu/device.h>
+#include <imgui.h>
 
 #include <algorithm>
-#include <glm/common.hpp>
-#include <limits>
+#include <functional>
 #include <numeric>
 
 namespace pts::rendering {
 namespace {
-
-float compute_surface_area(const glm::vec3& aabb_min, const glm::vec3& aabb_max) {
-    auto d = aabb_max - aabb_min;
-    return 2.0f * (d.x * d.y + d.y * d.z + d.z * d.x);
-}
-
-struct Bin {
-    glm::vec3 aabb_min{std::numeric_limits<float>::max()};
-    glm::vec3 aabb_max{std::numeric_limits<float>::lowest()};
-    uint32_t count = 0;
-};
 
 struct SplitResult {
     float cost = std::numeric_limits<float>::max();
@@ -26,61 +16,56 @@ struct SplitResult {
     int split_bin = -1;
 };
 
-SplitResult evaluate_sah(boost::span<const uint32_t> tri_indices,
-                         boost::span<const glm::vec3> centroids,
-                         boost::span<const glm::vec3> aabb_mins,
-                         boost::span<const glm::vec3> aabb_maxs, const glm::vec3& node_min,
-                         const glm::vec3& node_max, uint32_t first, uint32_t count) {
+SplitResult evaluate_sah(boost::span<const uint32_t> tri_indices, boost::span<const AABB> tri_aabbs,
+                         const AABB& centroid_bounds, uint32_t first, uint32_t count) {
+    struct Bin {
+        AABB bounds;
+        uint32_t count = 0;
+    };
+
     SplitResult best;
 
     for (int axis = 0; axis < 3; ++axis) {
-        float extent = node_max[axis] - node_min[axis];
+        float extent = centroid_bounds.max[axis] - centroid_bounds.min[axis];
         if (extent <= 0.0f) continue;
 
         Bin bins[k_bvh_bin_count] = {};
-
         float inv_extent = 1.0f / extent;
+
         for (uint32_t i = first; i < first + count; ++i) {
             uint32_t ti = tri_indices[i];
-            float t = (centroids[ti][axis] - node_min[axis]) * inv_extent;
-            int bin_idx = static_cast<int>(t * k_bvh_bin_count);
-            bin_idx = std::clamp(bin_idx, 0, static_cast<int>(k_bvh_bin_count) - 1);
-            bins[bin_idx].aabb_min = glm::min(bins[bin_idx].aabb_min, aabb_mins[ti]);
-            bins[bin_idx].aabb_max = glm::max(bins[bin_idx].aabb_max, aabb_maxs[ti]);
+            float t = (tri_aabbs[ti].center()[axis] - centroid_bounds.min[axis]) * inv_extent;
+            int bin_idx = std::clamp(static_cast<int>(t * k_bvh_bin_count), 0,
+                                     static_cast<int>(k_bvh_bin_count) - 1);
+            bins[bin_idx].bounds.merge(tri_aabbs[ti]);
             bins[bin_idx].count++;
         }
 
-        // Sweep from left to compute prefix counts and AABBs
+        // Left sweep
         float left_area[k_bvh_bin_count - 1];
         uint32_t left_count[k_bvh_bin_count - 1];
         {
-            glm::vec3 running_min{std::numeric_limits<float>::max()};
-            glm::vec3 running_max{std::numeric_limits<float>::lowest()};
-            uint32_t running_count = 0;
+            AABB running;
+            uint32_t rc = 0;
             for (uint32_t i = 0; i < k_bvh_bin_count - 1; ++i) {
-                running_min = glm::min(running_min, bins[i].aabb_min);
-                running_max = glm::max(running_max, bins[i].aabb_max);
-                running_count += bins[i].count;
-                left_area[i] =
-                    (running_count > 0) ? compute_surface_area(running_min, running_max) : 0.0f;
-                left_count[i] = running_count;
+                running.merge(bins[i].bounds);
+                rc += bins[i].count;
+                left_area[i] = rc > 0 ? running.surface_area() : 0.0f;
+                left_count[i] = rc;
             }
         }
 
-        // Sweep from right
+        // Right sweep
         float right_area[k_bvh_bin_count - 1];
         uint32_t right_count[k_bvh_bin_count - 1];
         {
-            glm::vec3 running_min{std::numeric_limits<float>::max()};
-            glm::vec3 running_max{std::numeric_limits<float>::lowest()};
-            uint32_t running_count = 0;
+            AABB running;
+            uint32_t rc = 0;
             for (int i = static_cast<int>(k_bvh_bin_count) - 1; i > 0; --i) {
-                running_min = glm::min(running_min, bins[i].aabb_min);
-                running_max = glm::max(running_max, bins[i].aabb_max);
-                running_count += bins[i].count;
-                right_area[i - 1] =
-                    (running_count > 0) ? compute_surface_area(running_min, running_max) : 0.0f;
-                right_count[i - 1] = running_count;
+                running.merge(bins[i].bounds);
+                rc += bins[i].count;
+                right_area[i - 1] = rc > 0 ? running.surface_area() : 0.0f;
+                right_count[i - 1] = rc;
             }
         }
 
@@ -98,54 +83,40 @@ SplitResult evaluate_sah(boost::span<const uint32_t> tri_indices,
 }
 
 void update_node_bounds(BVHNode& node, boost::span<const uint32_t> tri_indices,
-                        boost::span<const glm::vec3> aabb_mins,
-                        boost::span<const glm::vec3> aabb_maxs, uint32_t first, uint32_t count) {
-    glm::vec3 node_min{std::numeric_limits<float>::max()};
-    glm::vec3 node_max{std::numeric_limits<float>::lowest()};
+                        boost::span<const AABB> tri_aabbs, uint32_t first, uint32_t count) {
+    AABB bounds;
     for (uint32_t i = first; i < first + count; ++i) {
-        uint32_t ti = tri_indices[i];
-        node_min = glm::min(node_min, aabb_mins[ti]);
-        node_max = glm::max(node_max, aabb_maxs[ti]);
+        bounds.merge(tri_aabbs[tri_indices[i]]);
     }
-    node.aabb_min = node_min;
-    node.aabb_max = node_max;
+    node.aabb_min = bounds.min;
+    node.aabb_max = bounds.max;
 }
 
 void subdivide(std::vector<BVHNode>& nodes, std::vector<uint32_t>& tri_indices,
-               boost::span<const glm::vec3> centroids, boost::span<const glm::vec3> aabb_mins,
-               boost::span<const glm::vec3> aabb_maxs, uint32_t node_idx) {
+               boost::span<const AABB> tri_aabbs, uint32_t node_idx) {
     BVHNode& node = nodes[node_idx];
     uint32_t first = node.left_first;
     uint32_t count = node.count;
 
     if (count <= k_bvh_max_leaf_size) return;
 
-    // Compute centroid bounds for binning
-    glm::vec3 centroid_min{std::numeric_limits<float>::max()};
-    glm::vec3 centroid_max{std::numeric_limits<float>::lowest()};
+    // Centroid bounds for binning
+    AABB centroid_bounds;
     for (uint32_t i = first; i < first + count; ++i) {
-        uint32_t ti = tri_indices[i];
-        centroid_min = glm::min(centroid_min, centroids[ti]);
-        centroid_max = glm::max(centroid_max, centroids[ti]);
+        centroid_bounds.expand(tri_aabbs[tri_indices[i]].center());
     }
 
-    SplitResult best = evaluate_sah(tri_indices, centroids, aabb_mins, aabb_maxs, centroid_min,
-                                    centroid_max, first, count);
+    auto best = evaluate_sah(tri_indices, tri_aabbs, centroid_bounds, first, count);
 
-    // No valid split found (degenerate centroid range) — try median split
+    // No valid split (degenerate centroid range) — try median split
     if (best.axis < 0) {
         if (count <= 2 * k_bvh_max_leaf_size) return;
 
-        // Median split on the longest axis
-        auto extent = centroid_max - centroid_min;
-        int axis = 0;
-        if (extent.y > extent[axis]) axis = 1;
-        if (extent.z > extent[axis]) axis = 2;
-
+        int axis = centroid_bounds.longest_axis();
         uint32_t mid = first + count / 2;
         std::nth_element(tri_indices.begin() + first, tri_indices.begin() + mid,
                          tri_indices.begin() + first + count, [&](uint32_t a, uint32_t b) {
-                             return centroids[a][axis] < centroids[b][axis];
+                             return tri_aabbs[a].center()[axis] < tri_aabbs[b].center()[axis];
                          });
 
         uint32_t left_count = mid - first;
@@ -155,45 +126,42 @@ void subdivide(std::vector<BVHNode>& nodes, std::vector<uint32_t>& tri_indices,
         nodes.push_back({});
         nodes.push_back({});
 
-        // Re-fetch node reference after push_back (may invalidate)
         nodes[node_idx].left_first = left_idx;
         nodes[node_idx].count = 0;
 
         nodes[left_idx].left_first = first;
         nodes[left_idx].count = left_count;
-        update_node_bounds(nodes[left_idx], tri_indices, aabb_mins, aabb_maxs, first, left_count);
+        update_node_bounds(nodes[left_idx], tri_indices, tri_aabbs, first, left_count);
 
         nodes[left_idx + 1].left_first = mid;
         nodes[left_idx + 1].count = right_count;
-        update_node_bounds(nodes[left_idx + 1], tri_indices, aabb_mins, aabb_maxs, mid,
-                           right_count);
+        update_node_bounds(nodes[left_idx + 1], tri_indices, tri_aabbs, mid, right_count);
 
-        subdivide(nodes, tri_indices, centroids, aabb_mins, aabb_maxs, left_idx);
-        subdivide(nodes, tri_indices, centroids, aabb_mins, aabb_maxs, left_idx + 1);
+        subdivide(nodes, tri_indices, tri_aabbs, left_idx);
+        subdivide(nodes, tri_indices, tri_aabbs, left_idx + 1);
         return;
     }
 
     // Check if splitting is worthwhile
-    float no_split_cost =
-        count * compute_surface_area(nodes[node_idx].aabb_min, nodes[node_idx].aabb_max);
+    AABB node_bounds = AABB::from_min_max(nodes[node_idx].aabb_min, nodes[node_idx].aabb_max);
+    float no_split_cost = count * node_bounds.surface_area();
     if (best.cost >= no_split_cost) return;
 
     // Partition triangles by the best split
-    float extent = centroid_max[best.axis] - centroid_min[best.axis];
+    float extent = centroid_bounds.max[best.axis] - centroid_bounds.min[best.axis];
     INVARIANT(extent > 0.0f);
     float inv_extent = 1.0f / extent;
 
     auto partition_point = std::partition(
         tri_indices.begin() + first, tri_indices.begin() + first + count, [&](uint32_t ti) {
-            float t = (centroids[ti][best.axis] - centroid_min[best.axis]) * inv_extent;
-            int bin_idx = static_cast<int>(t * k_bvh_bin_count);
-            bin_idx = std::clamp(bin_idx, 0, static_cast<int>(k_bvh_bin_count) - 1);
+            float t =
+                (tri_aabbs[ti].center()[best.axis] - centroid_bounds.min[best.axis]) * inv_extent;
+            int bin_idx = std::clamp(static_cast<int>(t * k_bvh_bin_count), 0,
+                                     static_cast<int>(k_bvh_bin_count) - 1);
             return bin_idx <= best.split_bin;
         });
 
     uint32_t left_count = static_cast<uint32_t>(partition_point - (tri_indices.begin() + first));
-
-    // Degenerate partition — all went to one side
     if (left_count == 0 || left_count == count) return;
 
     uint32_t right_count = count - left_count;
@@ -202,65 +170,144 @@ void subdivide(std::vector<BVHNode>& nodes, std::vector<uint32_t>& tri_indices,
     nodes.push_back({});
     nodes.push_back({});
 
-    // Re-fetch after push_back
     nodes[node_idx].left_first = left_idx;
     nodes[node_idx].count = 0;
 
     nodes[left_idx].left_first = first;
     nodes[left_idx].count = left_count;
-    update_node_bounds(nodes[left_idx], tri_indices, aabb_mins, aabb_maxs, first, left_count);
+    update_node_bounds(nodes[left_idx], tri_indices, tri_aabbs, first, left_count);
 
     nodes[left_idx + 1].left_first = first + left_count;
     nodes[left_idx + 1].count = right_count;
-    update_node_bounds(nodes[left_idx + 1], tri_indices, aabb_mins, aabb_maxs, first + left_count,
+    update_node_bounds(nodes[left_idx + 1], tri_indices, tri_aabbs, first + left_count,
                        right_count);
 
-    subdivide(nodes, tri_indices, centroids, aabb_mins, aabb_maxs, left_idx);
-    subdivide(nodes, tri_indices, centroids, aabb_mins, aabb_maxs, left_idx + 1);
+    subdivide(nodes, tri_indices, tri_aabbs, left_idx);
+    subdivide(nodes, tri_indices, tri_aabbs, left_idx + 1);
 }
 
 }  // namespace
 
-BVH build_bvh(boost::span<const glm::vec3> centroids, boost::span<const glm::vec3> aabb_mins,
-              boost::span<const glm::vec3> aabb_maxs, uint32_t count) {
-    PRECONDITION(centroids.size() == count);
-    PRECONDITION(aabb_mins.size() == count);
-    PRECONDITION(aabb_maxs.size() == count);
+void BVH::build(boost::span<const AABB> tri_aabbs, uint32_t count) {
+    PRECONDITION(tri_aabbs.size() == count);
 
-    BVH bvh;
+    m_nodes.clear();
+    m_tri_indices.clear();
 
     if (count == 0) {
-        bvh.nodes.push_back(BVHNode{{0, 0, 0}, 0, {0, 0, 0}, 0});
-        return bvh;
+        m_nodes.push_back(BVHNode{{0, 0, 0}, 0, {0, 0, 0}, 0});
+        return;
     }
 
-    // Initialize triangle index array
-    bvh.tri_indices.resize(count);
-    std::iota(bvh.tri_indices.begin(), bvh.tri_indices.end(), 0u);
+    m_tri_indices.resize(count);
+    std::iota(m_tri_indices.begin(), m_tri_indices.end(), 0u);
 
-    // Compute scene AABB
-    glm::vec3 scene_min{std::numeric_limits<float>::max()};
-    glm::vec3 scene_max{std::numeric_limits<float>::lowest()};
+    AABB root_bounds;
     for (uint32_t i = 0; i < count; ++i) {
-        scene_min = glm::min(scene_min, aabb_mins[i]);
-        scene_max = glm::max(scene_max, aabb_maxs[i]);
+        root_bounds.merge(tri_aabbs[i]);
     }
-    bvh.scene_aabb_min = scene_min;
-    bvh.scene_aabb_max = scene_max;
 
-    // Reserve conservative upper bound for nodes (2*N - 1 for a full binary tree)
-    bvh.nodes.reserve(2 * count);
+    m_nodes.reserve(2 * count);
+    m_nodes.push_back({});
+    m_nodes[0].left_first = 0;
+    m_nodes[0].count = count;
+    m_nodes[0].aabb_min = root_bounds.min;
+    m_nodes[0].aabb_max = root_bounds.max;
 
-    // Create root node
-    bvh.nodes.push_back({});
-    bvh.nodes[0].left_first = 0;
-    bvh.nodes[0].count = count;
-    bvh.nodes[0].aabb_min = scene_min;
-    bvh.nodes[0].aabb_max = scene_max;
+    subdivide(m_nodes, m_tri_indices, tri_aabbs, 0);
 
-    subdivide(bvh.nodes, bvh.tri_indices, centroids, aabb_mins, aabb_maxs, 0);
+    // Compute tree depth for debug slider range
+    std::function<int(uint32_t)> depth = [&](uint32_t idx) -> int {
+        auto& n = m_nodes[idx];
+        if (n.count > 0) return 0;
+        return 1 + std::max(depth(n.left_first), depth(n.left_first + 1));
+    };
+    m_tree_depth = depth(0);
+}
 
-    return bvh;
+void BVH::upload(const webgpu::Device& device, WGPUQueue queue) {
+    auto byte_size = std::max(sizeof(BVHNode), m_nodes.size() * sizeof(BVHNode));
+    if (!m_gpu_nodes.is_valid() || m_gpu_nodes.size() < byte_size) {
+        m_gpu_nodes = device.create_buffer(
+            byte_size,
+            static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
+    }
+    if (!m_nodes.empty()) {
+        wgpuQueueWriteBuffer(queue, m_gpu_nodes.handle(), 0, m_nodes.data(),
+                             m_nodes.size() * sizeof(BVHNode));
+    }
+}
+
+void BVH::draw_imgui() {
+    if (m_nodes.empty()) return;
+    ImGui::Checkbox("Show BVH", &m_debug_enabled);
+    if (m_debug_enabled) {
+        ImGui::SliderInt("Level", &m_debug_level, 0, m_tree_depth);
+        ImGui::Text("Nodes: %u  Depth: %d", node_count(), m_tree_depth);
+    }
+}
+
+void BVH::draw_overlay(const OverlayParams& p) const {
+    if (!m_debug_enabled || m_nodes.empty()) return;
+
+    auto* draw_list = ImGui::GetWindowDrawList();
+    if (!draw_list) return;
+
+    // Project a world-space point to viewport pixel coordinates.
+    auto project = [&](const glm::vec3& world) -> std::pair<ImVec2, bool> {
+        auto clip = p.view_proj * glm::vec4(world, 1.0f);
+        if (clip.w <= 0.0f) return {{}, false};
+        auto ndc = glm::vec3(clip) / clip.w;
+        float sx = p.viewport_x + (ndc.x * 0.5f + 0.5f) * p.viewport_w;
+        float sy = p.viewport_y + (-ndc.y * 0.5f + 0.5f) * p.viewport_h;
+        return {ImVec2(sx, sy), true};
+    };
+
+    // Draw wireframe box from AABB
+    auto draw_aabb = [&](const glm::vec3& lo, const glm::vec3& hi, ImU32 col) {
+        glm::vec3 corners[8];
+        for (int c = 0; c < 8; ++c) {
+            corners[c] = {(c & 1) ? hi.x : lo.x, (c & 2) ? hi.y : lo.y, (c & 4) ? hi.z : lo.z};
+        }
+        // 12 edges of a box
+        static constexpr int edges[12][2] = {{0, 1}, {2, 3}, {4, 5}, {6, 7}, {0, 2}, {1, 3},
+                                             {4, 6}, {5, 7}, {0, 4}, {1, 5}, {2, 6}, {3, 7}};
+        for (auto& e : edges) {
+            auto [a, a_ok] = project(corners[e[0]]);
+            auto [b, b_ok] = project(corners[e[1]]);
+            if (a_ok && b_ok) {
+                draw_list->AddLine(a, b, col);
+            }
+        }
+    };
+
+    // Level-based color (hue rotates with depth)
+    auto level_color = [](int level) -> ImU32 {
+        float hue = static_cast<float>(level % 6) / 6.0f;
+        ImVec4 c;
+        ImGui::ColorConvertHSVtoRGB(hue, 0.8f, 1.0f, c.x, c.y, c.z);
+        return IM_COL32(static_cast<int>(c.x * 255), static_cast<int>(c.y * 255),
+                        static_cast<int>(c.z * 255), 180);
+    };
+
+    // Walk tree, draw nodes at the target level
+    struct Entry {
+        uint32_t idx;
+        int level;
+    };
+    std::vector<Entry> stack = {{0, 0}};
+    while (!stack.empty()) {
+        auto [idx, lvl] = stack.back();
+        stack.pop_back();
+        auto& n = m_nodes[idx];
+
+        if (lvl == m_debug_level || n.count > 0) {
+            draw_aabb(n.aabb_min, n.aabb_max, level_color(lvl));
+        } else if (n.count == 0 && lvl < m_debug_level) {
+            stack.push_back({n.left_first, lvl + 1});
+            stack.push_back({n.left_first + 1, lvl + 1});
+        }
+    }
 }
 
 }  // namespace pts::rendering
