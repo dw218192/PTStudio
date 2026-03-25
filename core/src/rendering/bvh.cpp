@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <limits>
 #include <numeric>
 
 namespace pts::rendering {
@@ -196,6 +197,8 @@ void BVH::build(boost::span<const AABB> tri_aabbs, uint32_t count) {
 
     if (count == 0) {
         m_nodes.push_back(BVHNode{{0, 0, 0}, 0, {0, 0, 0}, 0});
+        m_tree_depth = 0;
+        m_debug_level = 0;
         return;
     }
 

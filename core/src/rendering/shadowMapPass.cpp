@@ -248,6 +248,14 @@ void ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
         ready.bind_group = wgpuDeviceCreateBindGroup(ctx.device.handle(), &bg_desc);
     }
 
+    // Build layer → light index mapping
+    std::vector<uint32_t> layer_to_light;
+    layer_to_light.reserve(layer_index);
+    for (uint32_t li = 0; li < static_cast<uint32_t>(lights.size()); ++li) {
+        if (infos[li].has_shadow) layer_to_light.push_back(li);
+    }
+    INVARIANT(layer_to_light.size() == layer_index);
+
     // For each shadow layer, upload uniforms and add a frame graph pass
     auto* pipeline_handle = ready.pipeline.handle();
     auto bind_group = ready.bind_group;
@@ -255,7 +263,7 @@ void ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
     const auto& world = ctx.world;
 
     for (uint32_t layer = 0; layer < layer_index; ++layer) {
-        const auto& light_vp = infos[layer].light_vp;
+        const auto& light_vp = infos[layer_to_light[layer]].light_vp;
 
         // Write per-object uniforms for this layer
         // Interleaved: buffer[layer * total_slots + obj_index]
