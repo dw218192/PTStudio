@@ -1,0 +1,277 @@
+#define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+#define NOMINMAX
+#include <core/rendering/camera.h>
+#include <core/rendering/frameGraph.h>
+#include <core/rendering/passContext.h>
+#include <core/rendering/renderWorld.h>
+#include <core/rendering/shaderLoader.h>
+#include <core/rendering/shadowMapPass.h>
+#include <core/rendering/webgpu/device.h>
+#include <doctest/doctest.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
+#include <spdlog/spdlog.h>
+
+#include <glm/glm.hpp>
+
+using namespace pts::rendering;
+
+// Minimal shadow-compatible WGSL: position-only vertex shader, no fragment.
+static constexpr auto k_shadow_wgsl = R"(
+struct ShadowPerObject {
+    light_mvp : mat4x4<f32>,
+}
+@group(0) @binding(0) var<uniform> u : ShadowPerObject;
+
+struct VsIn {
+    @location(0) position : vec3<f32>,
+}
+
+struct VsOut {
+    @builtin(position) position : vec4<f32>,
+}
+
+@vertex
+fn vs_main(input : VsIn) -> VsOut {
+    var output : VsOut;
+    output.position = u.light_mvp * vec4<f32>(input.position, 1.0);
+    return output;
+}
+)";
+
+namespace {
+
+auto make_logger() -> std::shared_ptr<spdlog::logger> {
+    auto logger = spdlog::get("shadow_map_test");
+    if (!logger) {
+        logger = spdlog::stdout_color_mt("shadow_map_test");
+    }
+    logger->set_level(spdlog::level::debug);
+    return logger;
+}
+
+auto fake_shader_getter(std::string_view key) -> std::optional<std::string_view> {
+    if (key == "core/generated/shaders/shadow.wgsl") {
+        return k_shadow_wgsl;
+    }
+    return std::nullopt;
+}
+
+}  // namespace
+
+// --- Non-GPU tests ---
+
+TEST_CASE("ShadowMapPass starts in unready state") {
+    auto logger = make_logger();
+    ShaderLoader loader(logger);
+    ShadowMapPass pass(loader);
+    CHECK_FALSE(pass.is_ready());
+    CHECK(pass.shadow_array_view() == nullptr);
+}
+
+// --- GPU tests ---
+
+#ifndef __EMSCRIPTEN__
+
+TEST_CASE("ShadowMapPass setup transitions to ready") {
+    auto logger = make_logger();
+    auto device = pts::webgpu::Device::create(logger);
+
+    ShaderLoader loader(logger);
+    loader.register_shader("core/generated/shaders/shadow.wgsl", "core/shaders/shadow.slang",
+                           "core/generated/shaders/shadow.wgsl", fake_shader_getter, {"vs_main"});
+
+    ShadowMapPass pass(loader);
+    CHECK_FALSE(pass.is_ready());
+
+    pass.setup(device);
+    CHECK(pass.is_ready());
+}
+
+TEST_CASE("ShadowMapPass add_to_frame_graph with no lights clears shadow data") {
+    auto logger = make_logger();
+    auto device = pts::webgpu::Device::create(logger);
+
+    ShaderLoader loader(logger);
+    loader.register_shader("core/generated/shaders/shadow.wgsl", "core/shaders/shadow.slang",
+                           "core/generated/shaders/shadow.wgsl", fake_shader_getter, {"vs_main"});
+
+    ShadowMapPass pass(loader);
+    pass.setup(device);
+
+    FrameGraph fg(device, logger);
+    OrbitCamera camera;
+    RenderWorld world;
+
+    PassContext ctx{device,       device.queue(), camera,       world, 800, 600,
+                    glm::mat4(1), glm::mat4(1),   glm::vec3(0), 0.0f,  0};
+
+    fg.begin_frame();
+    pass.add_to_frame_graph(fg, ctx);
+
+    CHECK(world.shadow_count() == 0);
+}
+
+TEST_CASE("ShadowMapPass add_to_frame_graph with distant light produces shadow data") {
+    auto logger = make_logger();
+    auto device = pts::webgpu::Device::create(logger);
+
+    ShaderLoader loader(logger);
+    loader.register_shader("core/generated/shaders/shadow.wgsl", "core/shaders/shadow.slang",
+                           "core/generated/shaders/shadow.wgsl", fake_shader_getter, {"vs_main"});
+
+    ShadowMapPass pass(loader);
+    pass.setup(device);
+
+    FrameGraph fg(device, logger);
+    OrbitCamera camera;
+    RenderWorld world;
+
+    // Add a distant light
+    {
+        auto scope = world.begin_sync();
+        auto li = scope.alloc_light_slot();
+        auto lw = scope.write_light(li);
+        lw->type = LightData::Type::Distant;
+        lw->direction = glm::vec3(0, -1, 0);
+        lw->color = glm::vec3(1);
+        lw->intensity = 1.0f;
+    }
+
+    // Add a mesh with some geometry
+    uint32_t mesh_idx;
+    {
+        auto scope = world.begin_sync();
+        mesh_idx = scope.alloc_mesh_slot();
+        auto mw = scope.write_mesh(mesh_idx);
+        mw->cpu_vertices = {
+            {{-1, -1, -1}, {0, 1, 0}, {1, 1, 1}, {0, 0}},
+            {{1, -1, -1}, {0, 1, 0}, {1, 1, 1}, {1, 0}},
+            {{0, 1, 0}, {0, 1, 0}, {1, 1, 1}, {0.5f, 1}},
+        };
+        mw->cpu_indices = {0, 1, 2};
+        mw->index_count = 3;
+    }
+    world.upload_all_meshes(device);
+
+    // Add an object referencing the mesh
+    {
+        auto scope = world.begin_sync();
+        auto oi = scope.alloc_object_slot();
+        auto ow = scope.write_object(oi);
+        ow->mesh_index = mesh_idx;
+        ow->transform = glm::mat4(1.0f);
+    }
+
+    world.prepare_gpu_buffers(device, device.queue());
+
+    PassContext ctx{device,       device.queue(), camera,       world, 800, 600,
+                    glm::mat4(1), glm::mat4(1),   glm::vec3(0), 0.0f,  0};
+
+    fg.begin_frame();
+    pass.add_to_frame_graph(fg, ctx);
+
+    CHECK(world.shadow_count() == 1);
+    CHECK(pass.shadow_array_view() != nullptr);
+    CHECK(world.shadow_info_buffer().is_valid());
+}
+
+TEST_CASE("ShadowMapPass caps shadow count at k_max_shadow_maps") {
+    auto logger = make_logger();
+    auto device = pts::webgpu::Device::create(logger);
+
+    ShaderLoader loader(logger);
+    loader.register_shader("core/generated/shaders/shadow.wgsl", "core/shaders/shadow.slang",
+                           "core/generated/shaders/shadow.wgsl", fake_shader_getter, {"vs_main"});
+
+    ShadowMapPass pass(loader);
+    pass.setup(device);
+
+    FrameGraph fg(device, logger);
+    OrbitCamera camera;
+    RenderWorld world;
+
+    // Add more distant lights than k_max_shadow_maps
+    {
+        auto scope = world.begin_sync();
+        for (uint32_t i = 0; i < k_max_shadow_maps + 2; ++i) {
+            auto li = scope.alloc_light_slot();
+            auto lw = scope.write_light(li);
+            lw->type = LightData::Type::Distant;
+            lw->direction = glm::vec3(0, -1, 0);
+        }
+    }
+
+    // Add geometry
+    uint32_t mesh_idx;
+    {
+        auto scope = world.begin_sync();
+        mesh_idx = scope.alloc_mesh_slot();
+        auto mw = scope.write_mesh(mesh_idx);
+        mw->cpu_vertices = {
+            {{-1, -1, -1}, {0, 1, 0}, {1, 1, 1}, {0, 0}},
+            {{1, -1, -1}, {0, 1, 0}, {1, 1, 1}, {1, 0}},
+            {{0, 1, 0}, {0, 1, 0}, {1, 1, 1}, {0.5f, 1}},
+        };
+        mw->cpu_indices = {0, 1, 2};
+        mw->index_count = 3;
+    }
+    world.upload_all_meshes(device);
+
+    {
+        auto scope = world.begin_sync();
+        auto oi = scope.alloc_object_slot();
+        auto ow = scope.write_object(oi);
+        ow->mesh_index = mesh_idx;
+        ow->transform = glm::mat4(1.0f);
+    }
+
+    world.prepare_gpu_buffers(device, device.queue());
+
+    PassContext ctx{device,       device.queue(), camera,       world, 800, 600,
+                    glm::mat4(1), glm::mat4(1),   glm::vec3(0), 0.0f,  0};
+
+    fg.begin_frame();
+    pass.add_to_frame_graph(fg, ctx);
+
+    CHECK(world.shadow_count() == k_max_shadow_maps);
+}
+
+TEST_CASE("ShadowMapPass skips non-distant lights") {
+    auto logger = make_logger();
+    auto device = pts::webgpu::Device::create(logger);
+
+    ShaderLoader loader(logger);
+    loader.register_shader("core/generated/shaders/shadow.wgsl", "core/shaders/shadow.slang",
+                           "core/generated/shaders/shadow.wgsl", fake_shader_getter, {"vs_main"});
+
+    ShadowMapPass pass(loader);
+    pass.setup(device);
+
+    FrameGraph fg(device, logger);
+    OrbitCamera camera;
+    RenderWorld world;
+
+    // Add only non-distant lights (sphere, rect)
+    {
+        auto scope = world.begin_sync();
+        auto l1 = scope.alloc_light_slot();
+        auto lw1 = scope.write_light(l1);
+        lw1->type = LightData::Type::Sphere;
+
+        auto l2 = scope.alloc_light_slot();
+        auto lw2 = scope.write_light(l2);
+        lw2->type = LightData::Type::Rect;
+    }
+
+    world.prepare_gpu_buffers(device, device.queue());
+
+    PassContext ctx{device,       device.queue(), camera,       world, 800, 600,
+                    glm::mat4(1), glm::mat4(1),   glm::vec3(0), 0.0f,  0};
+
+    fg.begin_frame();
+    pass.add_to_frame_graph(fg, ctx);
+
+    CHECK(world.shadow_count() == 0);
+}
+
+#endif  // !__EMSCRIPTEN__

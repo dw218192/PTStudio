@@ -1,4 +1,4 @@
-#include <core/rendering/scenePass.h>
+#include <core/rendering/renderPass.h>
 #include <core/rendering/shaderLoader.h>
 #include <core/rendering/webgpu/device.h>
 #include <spdlog/spdlog.h>
@@ -99,7 +99,7 @@ uint32_t color_attachment_bytes_per_sample(WGPUTextureFormat scene_format,
 
 }  // namespace
 
-void IScenePass::compute_allowed_debug_targets(const webgpu::Device& device) {
+void IRenderPass::compute_allowed_debug_targets(const webgpu::Device& device) {
     auto [names, desired] = debug_target_names();
     if (desired == 0) {
         m_allowed_debug_count = 0;
@@ -132,7 +132,7 @@ void IScenePass::compute_allowed_debug_targets(const webgpu::Device& device) {
     m_allowed_debug_count = fits ? desired : 0;
 }
 
-auto IScenePass::load_pass_shader(std::string_view resource_key) const -> std::string {
+auto IRenderPass::load_pass_shader(std::string_view resource_key) const -> std::string {
     auto [names, count] = effective_debug_target_names();
     if (count > 0) {
         return m_shader_loader->load(resource_key);

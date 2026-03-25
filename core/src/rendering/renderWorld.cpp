@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <limits>
 
 namespace pts::rendering {
 
@@ -350,18 +351,64 @@ void RenderWorld::upload_all_meshes(const webgpu::Device& device) {
 
         w->index_count = static_cast<uint32_t>(mesh.cpu_indices.size());
 
-        // Position-only buffer for picking and depth prepass
+        // Position-only buffer for picking and depth prepass, plus local AABB
         auto vert_count = mesh.cpu_vertices.size();
         std::vector<glm::vec3> positions(vert_count);
+        glm::vec3 aabb_min(std::numeric_limits<float>::max());
+        glm::vec3 aabb_max(std::numeric_limits<float>::lowest());
         for (size_t v = 0; v < vert_count; ++v) {
             positions[v] = glm::make_vec3(mesh.cpu_vertices[v].position);
+            aabb_min = glm::min(aabb_min, positions[v]);
+            aabb_max = glm::max(aabb_max, positions[v]);
         }
+        w->local_aabb_min = aabb_min;
+        w->local_aabb_max = aabb_max;
         w->position_buffer = device.create_buffer(
             vert_count * sizeof(glm::vec3),
             static_cast<WGPUBufferUsage>(WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst));
         wgpuQueueWriteBuffer(device.queue(), w->position_buffer.handle(), 0, positions.data(),
                              vert_count * sizeof(glm::vec3));
     }
+}
+
+// --- Shadow data ---
+
+namespace {
+constexpr std::size_t k_min_shadow_info_size = sizeof(ShadowInfo);  // 80 bytes
+}  // namespace
+
+void RenderWorld::set_shadow_data(boost::span<const ShadowInfo> infos, const webgpu::Device& device,
+                                  WGPUQueue queue) {
+    auto info_bytes = std::max(k_min_shadow_info_size,
+                               static_cast<std::size_t>(infos.size()) * sizeof(ShadowInfo));
+    if (!m_shadow_info_buffer.is_valid() || m_shadow_info_buffer.size() < info_bytes) {
+        m_shadow_info_buffer = device.create_buffer(
+            info_bytes,
+            static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
+    }
+    if (!infos.empty()) {
+        wgpuQueueWriteBuffer(queue, m_shadow_info_buffer.handle(), 0, infos.data(),
+                             infos.size() * sizeof(ShadowInfo));
+    }
+
+    // Count entries with has_shadow set
+    uint32_t active = 0;
+    for (const auto& si : infos) {
+        if (si.has_shadow) ++active;
+    }
+    m_shadow_count = active;
+}
+
+void RenderWorld::clear_shadow_data() {
+    m_shadow_count = 0;
+}
+
+const webgpu::Buffer& RenderWorld::shadow_info_buffer() const {
+    return m_shadow_info_buffer;
+}
+
+uint32_t RenderWorld::shadow_count() const {
+    return m_shadow_count;
 }
 
 void RenderWorld::clear() {
@@ -378,6 +425,7 @@ void RenderWorld::clear() {
     m_cached_light_version = UINT32_MAX;
     m_cached_material_version = UINT32_MAX;
     m_cached_light_generations.clear();
+    clear_shadow_data();
 }
 
 // --- update_transforms ---

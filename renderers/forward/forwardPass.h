@@ -1,7 +1,8 @@
 #pragma once
 
 #include <core/rendering/ltcTextures.h>
-#include <core/rendering/scenePass.h>
+#include <core/rendering/renderer.h>
+#include <core/rendering/shadowMapPass.h>
 #include <core/rendering/webgpu/buffer.h>
 #include <core/rendering/webgpu/pipeline.h>
 #include <core/rendering/webgpu/shader.h>
@@ -13,9 +14,9 @@
 
 namespace pts::editor {
 
-class ForwardPass final : public rendering::IScenePass {
+class ForwardPass final : public rendering::IRenderer {
    public:
-    using IScenePass::IScenePass;
+    explicit ForwardPass(const rendering::ShaderLoader& sl);
     ~ForwardPass() override;
 
     ForwardPass(const ForwardPass&) = delete;
@@ -28,8 +29,9 @@ class ForwardPass final : public rendering::IScenePass {
     [[nodiscard]] auto debug_target_names() const noexcept
         -> std::pair<const char* const*, uint32_t> override;
 
-    void do_setup(const webgpu::Device& device) override;
-    void add_to_frame_graph(rendering::FrameGraph& fg, const rendering::PassContext& ctx) override;
+    void do_renderer_setup(const webgpu::Device& device) override;
+    void do_add_to_frame_graph(rendering::FrameGraph& fg,
+                               const rendering::PassContext& ctx) override;
 
     static constexpr uint32_t k_uniform_align = 256;
 
@@ -46,6 +48,9 @@ class ForwardPass final : public rendering::IScenePass {
         WGPUBuffer cached_light_buf = nullptr;
         WGPUBuffer cached_material_buf = nullptr;
         rendering::LtcTextures ltc_textures;
+        // Shadow receiver resources (bind group 1)
+        WGPUBindGroupLayout shadow_recv_bgl = nullptr;
+        WGPUSampler shadow_sampler = nullptr;
     };
 
     std::variant<std::monostate, Ready> m_state;

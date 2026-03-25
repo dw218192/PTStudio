@@ -1,0 +1,155 @@
+#usda 1.0
+(
+    defaultPrim = "Root"
+    upAxis = "Y"
+)
+
+def Xform "Root"
+{
+    def Scope "Materials"
+    {
+        def Material "Gray"
+        {
+            token outputs:surface.connect = </Root/Materials/Gray/Shader.outputs:surface>
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.5, 0.5, 0.5)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.9
+                token outputs:surface
+            }
+        }
+
+        def Material "Red"
+        {
+            token outputs:surface.connect = </Root/Materials/Red/Shader.outputs:surface>
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.15, 0.1)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.5
+                token outputs:surface
+            }
+        }
+
+        def Material "Blue"
+        {
+            token outputs:surface.connect = </Root/Materials/Blue/Shader.outputs:surface>
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.1, 0.2, 0.8)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.4
+                token outputs:surface
+            }
+        }
+
+        def Material "Green"
+        {
+            token outputs:surface.connect = </Root/Materials/Green/Shader.outputs:surface>
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.1, 0.7, 0.15)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.5
+                token outputs:surface
+            }
+        }
+    }
+
+    # Ground plane: large quad at Y=0, extends -5 to 5 on XZ
+    def Mesh "Ground" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        token orientation = "rightHanded"
+        point3f[] points = [(-5, 0, -5), (5, 0, -5), (5, 0, 5), (-5, 0, 5)]
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)]
+        token subdivisionScheme = "none"
+        rel material:binding = </Root/Materials/Gray>
+    }
+
+    # Cube at (0, 0.5, 0), size 1 — sits on ground plane
+    def Cube "Cube" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double size = 1
+        double3 xformOp:translate = (0, 0.5, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </Root/Materials/Red>
+    }
+
+    # Sphere at (-2, 1.0, 1), radius 0.5
+    def Sphere "Sphere" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 0.5
+        double3 xformOp:translate = (-2, 1.0, 1)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </Root/Materials/Blue>
+    }
+
+    # Cylinder at (1.5, 0.75, -1), height 1.5 — sits on ground plane
+    def Cylinder "Cylinder" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        token axis = "Y"
+        double height = 1.5
+        double radius = 0.4
+        double3 xformOp:translate = (1.5, 0.75, -1)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </Root/Materials/Green>
+    }
+
+    # Distant light 1 (main sun): direction ~(0.5, -1.0, 0.3), intensity 3.0, warm white
+    def DistantLight "MainSun"
+    {
+        float inputs:intensity = 3.0
+        color3f inputs:color = (1, 0.95, 0.85)
+        float inputs:angle = 0.53
+        float3 xformOp:rotateXYZ = (-60, -120, 0)
+        uniform token[] xformOpOrder = ["xformOp:rotateXYZ"]
+    }
+
+    # Distant light 2 (secondary): direction ~(-0.3, -1.0, -0.5), intensity 1.5, cool white
+    def DistantLight "FillSun"
+    {
+        float inputs:intensity = 1.5
+        color3f inputs:color = (0.85, 0.9, 1)
+        float inputs:angle = 0.53
+        float3 xformOp:rotateXYZ = (-60, 30, 0)
+        uniform token[] xformOpOrder = ["xformOp:rotateXYZ"]
+    }
+
+    # Dome light: low intensity ambient fill
+    def DomeLight "AmbientFill"
+    {
+        float inputs:intensity = 0.3
+        color3f inputs:color = (0.9, 0.92, 1)
+    }
+
+    # Camera at (3, 4, 5) looking at origin
+    def Camera "ShadowCam"
+    {
+        float2 clippingRange = (0.1, 100)
+        float focalLength = 35
+        float horizontalAperture = 36
+        float verticalAperture = 24
+        matrix4d xformOp:transform = (
+            (0.85749, 0, -0.51450, 0),
+            (-0.29104, 0.82440, -0.48507, 0),
+            (0.42426, 0.56569, 0.70711, 0),
+            (3, 4, 5, 1)
+        )
+        uniform token[] xformOpOrder = ["xformOp:transform"]
+    }
+}

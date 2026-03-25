@@ -1,5 +1,6 @@
 """Slang shader compilation command."""
 
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -144,6 +145,43 @@ def _emit_reflection_json(
     logger.info(f"slangc emitted reflection JSON: {reflect_path}")
 
 
+# Slang's WGSL backend emits texture_2d_array<f32> for Texture2DArray<float>
+# even when used with SampleCmpLevelZero / SamplerComparisonState.  WGSL requires
+# texture_depth_2d_array for comparison sampling.  This mapping covers all depth
+# texture shapes; only declarations whose variables appear in
+# textureSampleCompareLevel calls are patched.
+_DEPTH_TYPE_MAP = {
+    "texture_2d<f32>": "texture_depth_2d",
+    "texture_2d_array<f32>": "texture_depth_2d_array",
+    "texture_cube<f32>": "texture_depth_cube",
+    "texture_cube_array<f32>": "texture_depth_cube_array",
+}
+_CMP_CALL_RE = re.compile(r"textureSampleCompareLevel\(\((\w+)\)")
+
+
+def _fixup_wgsl_depth_textures(wgsl_path: Path) -> bool:
+    """Patch Slang WGSL output so depth-comparison textures use the correct type."""
+    text = wgsl_path.read_text(encoding="utf-8")
+
+    depth_vars = set(_CMP_CALL_RE.findall(text))
+    if not depth_vars:
+        return False
+
+    changed = False
+    for var in depth_vars:
+        for old_type, new_type in _DEPTH_TYPE_MAP.items():
+            old = f"{var} : {old_type}"
+            new = f"{var} : {new_type}"
+            if old in text:
+                text = text.replace(old, new)
+                changed = True
+
+    if changed:
+        wgsl_path.write_text(text, encoding="utf-8")
+        logger.info(f"Fixed WGSL depth texture types in {wgsl_path.name}")
+    return changed
+
+
 class SlangcTool(RepoTool):
     name = "slangc"
     help = "Compile Slang shaders"
@@ -246,8 +284,10 @@ class SlangcTool(RepoTool):
                         )
                     logger.error(f"Command: {' '.join(cmd)}")
                     raise
+                _fixup_wgsl_depth_textures(output_path)
                 compiled += 1
             else:
+                _fixup_wgsl_depth_textures(output_path)
                 logger.info(f"Skipping up-to-date shader: {input_path}")
                 skipped += 1
 

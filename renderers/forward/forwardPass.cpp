@@ -18,6 +18,10 @@ using namespace pts::editor;
 
 REGISTER_RENDERER("Forward", ForwardPass);
 
+ForwardPass::ForwardPass(const rendering::ShaderLoader& sl) : IRenderer(sl) {
+    add_pass<rendering::ShadowMapPass>(sl);
+}
+
 struct ForwardUniforms {
     glm::mat4 mvp;
     glm::mat4 model;
@@ -77,12 +81,10 @@ static WGPUBindGroup create_bind_group(WGPUDevice device, WGPUBindGroupLayout la
 
 ForwardPass::~ForwardPass() {
     if (auto* ready = std::get_if<Ready>(&m_state)) {
-        if (ready->bind_group) {
-            wgpuBindGroupRelease(ready->bind_group);
-        }
-        if (ready->bind_group_layout) {
-            wgpuBindGroupLayoutRelease(ready->bind_group_layout);
-        }
+        if (ready->bind_group) wgpuBindGroupRelease(ready->bind_group);
+        if (ready->bind_group_layout) wgpuBindGroupLayoutRelease(ready->bind_group_layout);
+        if (ready->shadow_recv_bgl) wgpuBindGroupLayoutRelease(ready->shadow_recv_bgl);
+        if (ready->shadow_sampler) wgpuSamplerRelease(ready->shadow_sampler);
     }
 }
 
@@ -107,11 +109,13 @@ auto ForwardPass::debug_target_names() const noexcept -> std::pair<const char* c
     return {k_debug_target_names, k_debug_target_count};
 }
 
-void ForwardPass::do_setup(const webgpu::Device& device) {
+void ForwardPass::do_renderer_setup(const webgpu::Device& device) {
     // Release existing state for re-entry (hot-reload)
     if (auto* ready = std::get_if<Ready>(&m_state)) {
         if (ready->bind_group) wgpuBindGroupRelease(ready->bind_group);
         if (ready->bind_group_layout) wgpuBindGroupLayoutRelease(ready->bind_group_layout);
+        if (ready->shadow_recv_bgl) wgpuBindGroupLayoutRelease(ready->shadow_recv_bgl);
+        if (ready->shadow_sampler) wgpuSamplerRelease(ready->shadow_sampler);
     }
 
     auto [dbg_names_setup, dbg_count_setup] = effective_debug_target_names();
@@ -123,7 +127,7 @@ void ForwardPass::do_setup(const webgpu::Device& device) {
         k_uniform_align * initial_capacity,
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
 
-    // Create bind group layout: binding 0 = uniform (dynamic), 1 = storage (materials),
+    // Create bind group 0 layout: binding 0 = uniform (dynamic), 1 = storage (materials),
     // 2 = storage (lights), 3 = texture (LTC mat), 4 = texture (LTC amp), 5 = sampler (LTC)
     WGPUBindGroupLayoutEntry entries[6] = {};
 
@@ -171,9 +175,48 @@ void ForwardPass::do_setup(const webgpu::Device& device) {
     bgl_desc.entries = entries;
     auto bind_group_layout = wgpuDeviceCreateBindGroupLayout(device.handle(), &bgl_desc);
 
+    // --- Shadow receiver bind group layout (group 1) ---
+    WGPUBindGroupLayoutEntry shadow_entries[3] = {};
+
+    // binding 0: ShadowInfo storage buffer (read-only, one per light)
+    shadow_entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    shadow_entries[0].binding = 0;
+    shadow_entries[0].visibility = WGPUShaderStage_Fragment;
+    shadow_entries[0].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
+    shadow_entries[0].buffer.minBindingSize = 80;  // sizeof(ShadowInfo)
+
+    // binding 1: shadow depth texture array
+    shadow_entries[1] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    shadow_entries[1].binding = 1;
+    shadow_entries[1].visibility = WGPUShaderStage_Fragment;
+    shadow_entries[1].texture.sampleType = WGPUTextureSampleType_UnfilterableFloat;
+    shadow_entries[1].texture.viewDimension = WGPUTextureViewDimension_2DArray;
+
+    // binding 2: sampler
+    shadow_entries[2] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    shadow_entries[2].binding = 2;
+    shadow_entries[2].visibility = WGPUShaderStage_Fragment;
+    shadow_entries[2].sampler.type = WGPUSamplerBindingType_NonFiltering;
+
+    WGPUBindGroupLayoutDescriptor shadow_bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
+    shadow_bgl_desc.entryCount = 3;
+    shadow_bgl_desc.entries = shadow_entries;
+    auto shadow_recv_bgl = wgpuDeviceCreateBindGroupLayout(device.handle(), &shadow_bgl_desc);
+
+    // --- Comparison sampler ---
+    WGPUSamplerDescriptor sampler_desc = WGPU_SAMPLER_DESCRIPTOR_INIT;
+    sampler_desc.magFilter = WGPUFilterMode_Nearest;
+    sampler_desc.minFilter = WGPUFilterMode_Nearest;
+    sampler_desc.addressModeU = WGPUAddressMode_ClampToEdge;
+    sampler_desc.addressModeV = WGPUAddressMode_ClampToEdge;
+    sampler_desc.addressModeW = WGPUAddressMode_ClampToEdge;
+    auto shadow_sampler = wgpuDeviceCreateSampler(device.handle(), &sampler_desc);
+
+    // --- Pipeline layout with 2 bind groups ---
+    WGPUBindGroupLayout bgls[2] = {bind_group_layout, shadow_recv_bgl};
     WGPUPipelineLayoutDescriptor pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
-    pl_desc.bindGroupLayoutCount = 1;
-    pl_desc.bindGroupLayouts = &bind_group_layout;
+    pl_desc.bindGroupLayoutCount = 2;
+    pl_desc.bindGroupLayouts = bgls;
     WGPUPipelineLayout pipeline_layout = wgpuDeviceCreatePipelineLayout(device.handle(), &pl_desc);
 
     auto builder = webgpu::RenderPipelineBuilder(device)
@@ -205,6 +248,8 @@ void ForwardPass::do_setup(const webgpu::Device& device) {
         nullptr,
         nullptr,
         std::move(ltc),
+        shadow_recv_bgl,
+        shadow_sampler,
     };
 }
 
@@ -225,9 +270,11 @@ bool ForwardPass::ensure_capacity(const webgpu::Device& device, uint32_t object_
     return true;
 }
 
-void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::PassContext& ctx) {
+void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
+                                        const rendering::PassContext& ctx) {
     PTS_ZONE_SCOPED;
     PRECONDITION(is_ready());
+
     auto& ready = std::get<Ready>(m_state);
 
     auto objects = ctx.world.get_objects();
@@ -295,6 +342,16 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
     auto bind_group = ready.bind_group;
     const auto& world = ctx.world;
 
+    // Capture shadow resources for the execute lambda
+    auto dev = ctx.device.handle();
+    auto shadow_recv_bgl = ready.shadow_recv_bgl;
+    auto shadow_samp = ready.shadow_sampler;
+    auto shadow_array_view = get_pass<rendering::ShadowMapPass>()->shadow_array_view();
+    auto& shadow_info_buf = ctx.world.shadow_info_buffer();
+    PRECONDITION(shadow_info_buf.is_valid());
+    auto shadow_info_handle = shadow_info_buf.handle();
+    auto shadow_info_size = shadow_info_buf.size();
+
     for (uint32_t i = 0; i < object_count; ++i) {
         if (!objects[i].active()) continue;
         const auto& obj = objects[i];
@@ -315,7 +372,31 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
     pass_builder.depth(depth).execute([=, &world](WGPURenderPassEncoder pass) {
         auto objs = world.get_objects();
         auto meshes = world.get_meshes();
+
+        // Shadow bind group (group 1) — created per-frame
+        WGPUBindGroupEntry shadow_bg_entries[3] = {};
+        shadow_bg_entries[0] = WGPU_BIND_GROUP_ENTRY_INIT;
+        shadow_bg_entries[0].binding = 0;
+        shadow_bg_entries[0].buffer = shadow_info_handle;
+        shadow_bg_entries[0].size = shadow_info_size;
+
+        shadow_bg_entries[1] = WGPU_BIND_GROUP_ENTRY_INIT;
+        shadow_bg_entries[1].binding = 1;
+        shadow_bg_entries[1].textureView = shadow_array_view;
+
+        shadow_bg_entries[2] = WGPU_BIND_GROUP_ENTRY_INIT;
+        shadow_bg_entries[2].binding = 2;
+        shadow_bg_entries[2].sampler = shadow_samp;
+
+        WGPUBindGroupDescriptor shadow_bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
+        shadow_bg_desc.layout = shadow_recv_bgl;
+        shadow_bg_desc.entryCount = 3;
+        shadow_bg_desc.entries = shadow_bg_entries;
+        auto shadow_bg = wgpuDeviceCreateBindGroup(dev, &shadow_bg_desc);
+
         wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
+        wgpuRenderPassEncoderSetBindGroup(pass, 1, shadow_bg, 0, nullptr);
+
         for (uint32_t i = 0; i < static_cast<uint32_t>(objs.size()); ++i) {
             if (!objs[i].active()) continue;
             uint32_t dyn_offset = i * k_uniform_align;
@@ -328,5 +409,7 @@ void ForwardPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering:
                                                 mesh->index_buffer.size());
             wgpuRenderPassEncoderDrawIndexed(pass, mesh->index_count, 1, 0, 0, 0);
         }
+
+        wgpuBindGroupRelease(shadow_bg);
     });
 }

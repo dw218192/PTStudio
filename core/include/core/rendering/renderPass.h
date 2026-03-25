@@ -23,13 +23,13 @@ struct PassContext;
 
 /// Entity type for pass data keying. Determines which entity's
 /// version field is used for automatic invalidation.
-enum class PassDataKind : uint8_t { Mesh, Light };
+enum class PassDataKind : uint8_t { Mesh, Light, Material };
 
-class IScenePass {
+class IRenderPass {
    public:
-    explicit IScenePass(const ShaderLoader& shader_loader) : m_shader_loader(&shader_loader) {
+    explicit IRenderPass(const ShaderLoader& shader_loader) : m_shader_loader(&shader_loader) {
     }
-    virtual ~IScenePass() = default;
+    virtual ~IRenderPass() = default;
 
     [[nodiscard]] virtual auto name() const noexcept -> std::string_view = 0;
     [[nodiscard]] virtual auto is_ready() const noexcept -> bool = 0;
@@ -130,6 +130,27 @@ class IScenePass {
         return *static_cast<T*>(it->second.data.get());
     }
 
+    /// Per-category pass data — cached result invalidated when *any* entity in
+    /// the category changes.  Same API as the per-entity variant but without an
+    /// index: the key is the kind alone.
+    template <typename T, typename Factory>
+    auto get_or_create_pass_data(PassDataKind kind, const RenderWorld& world, Factory&& factory)
+        -> T& {
+        auto version = category_version(kind, world);
+        auto key = make_category_key(kind);
+        auto it = m_pass_data.find(key);
+        if (it == m_pass_data.end()) {
+            it = m_pass_data.emplace(key, PassDataEntry{}).first;
+        }
+        auto& entry = it->second;
+        if (entry.version != version || !entry.data) {
+            entry.data = ErasedPtr(new T(std::forward<Factory>(factory)()),
+                                   [](void* p) { delete static_cast<T*>(p); });
+            entry.version = version;
+        }
+        return *static_cast<T*>(entry.data.get());
+    }
+
     /// Clear all pass data.
     void clear_pass_data() {
         m_pass_data.clear();
@@ -147,12 +168,31 @@ class IScenePass {
                 return world.get_meshes()[index].generation();
             case PassDataKind::Light:
                 return world.get_lights()[index].generation();
+            case PassDataKind::Material:
+                break;
+        }
+        INVARIANT_MSG(false, "per-entity version not supported for this PassDataKind");
+    }
+
+    static uint32_t category_version(PassDataKind kind, const RenderWorld& world) {
+        switch (kind) {
+            case PassDataKind::Mesh:
+                return world.get_mesh_version();
+            case PassDataKind::Light:
+                return world.get_light_version();
+            case PassDataKind::Material:
+                return world.get_material_version();
         }
         INVARIANT_MSG(false, "unknown PassDataKind");
     }
 
     static uint64_t make_key(PassDataKind kind, uint32_t index) {
         return (static_cast<uint64_t>(kind) << 32) | index;
+    }
+
+    /// Category-wide key uses a sentinel index that can't collide with entity keys.
+    static uint64_t make_category_key(PassDataKind kind) {
+        return (static_cast<uint64_t>(kind) << 32) | UINT32_MAX;
     }
 
     using ErasedPtr = std::unique_ptr<void, void (*)(void*)>;

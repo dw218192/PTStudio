@@ -1,7 +1,7 @@
 #pragma once
 
 #include <core/rendering/frameGraph.h>
-#include <core/rendering/scenePass.h>
+#include <core/rendering/renderPass.h>
 #include <core/rendering/webgpu/buffer.h>
 #include <core/rendering/webgpu/pipeline.h>
 #include <core/rendering/webgpu/shader.h>
@@ -13,9 +13,9 @@
 
 namespace pts::editor {
 
-class LobePass final : public rendering::IScenePass {
+class LobePass final : public rendering::IRenderPass {
    public:
-    using IScenePass::IScenePass;
+    using IRenderPass::IRenderPass;
     ~LobePass() override;
 
     LobePass(const LobePass&) = delete;

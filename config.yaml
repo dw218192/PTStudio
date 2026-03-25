@@ -78,6 +78,9 @@ slangc:
     - input: "renderers/forward/forward.slang"
       output: "renderers/forward/generated/shaders/forward_no_debug.wgsl"
       defines: ["NO_DEBUG_TARGETS"]
+    - input: "core/shaders/shadow.slang"
+      output: "core/generated/shaders/shadow.wgsl"
+      reflect: true
     - input: "editor/shaders/picking.slang"
       output: "editor/generated/shaders/picking.wgsl"
       reflect: true
@@ -110,6 +113,9 @@ shader_codegen:
     - reflect: "renderers/forward/generated/shaders/forward.reflect.json"
       output: "renderers/forward/generated/shader_metadata.h"
       namespace: "forward_shader"
+    - reflect: "core/generated/shaders/shadow.reflect.json"
+      output: "core/generated/shadow_shader_metadata.h"
+      namespace: "shadow_shader"
     - reflect: "editor/generated/shaders/picking.reflect.json"
       output: "editor/generated/picking_shader_metadata.h"
       namespace: "editor_picking_shader"
@@ -135,6 +141,7 @@ embed:
     - input:
         - "renderers/forward/generated/shaders/forward.wgsl"
         - "renderers/forward/generated/shaders/forward_no_debug.wgsl"
+        - "core/generated/shaders/shadow.wgsl"
         - "editor/generated/shaders/picking.wgsl"
         - "editor/generated/shaders/grid.wgsl"
         - "editor/generated/shaders/wireframe.wgsl"

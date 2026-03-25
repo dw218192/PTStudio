@@ -10,9 +10,9 @@
 #include <core/rendering/adapterHelpers.h>
 #include <core/rendering/adapters/registry.h>
 #include <core/rendering/passContext.h>
+#include <core/rendering/renderer.h>
 #include <core/rendering/rendererRegistry.h>
 #include <core/rendering/sceneLoader.h>
-#include <core/rendering/scenePass.h>
 #include <core/rendering/webgpuContext.h>
 #include <core/rendering/windowing.h>
 #include <imgui_internal.h>
@@ -423,6 +423,11 @@ void EditorApplication::on_ready() {
         "editor/generated/shaders/pt_blit.wgsl", "editor/shaders/pt_blit.slang",
         "editor/generated/shaders/pt_blit.wgsl", editor_resources::get_resource);
 
+    // Register shadow shader for hot-reload (vertex-only: no fragment stage)
+    m_shader_loader.register_shader(
+        "core/generated/shaders/shadow.wgsl", "core/shaders/shadow.slang",
+        "core/generated/shaders/shadow.wgsl", editor_resources::get_resource, {"vs_main"});
+
     // Create editor passes (always-on, independent of renderer choice)
     {
         auto& dev = webgpu_context()->device();
@@ -675,7 +680,7 @@ void EditorApplication::render(FrameContext& ctx) {
         for_each_pass([](auto& pass) { pass.draw_imgui(); });
 
         // Collect all passes for perf overlay
-        std::vector<rendering::IScenePass*> all_passes;
+        std::vector<rendering::IRenderPass*> all_passes;
         for_each_pass([&](auto& pass) { all_passes.push_back(&pass); });
         m_perf_overlay.draw(get_delta_time(), m_world, *m_frame_graph, all_passes,
                             rendering::RendererRegistry::entries()[m_active_config_index].name,

@@ -187,6 +187,8 @@ struct MeshData {
     uint32_t index_count = 0;
     std::vector<uint32_t> cpu_indices;
     std::vector<Vertex> cpu_vertices;
+    glm::vec3 local_aabb_min{0};
+    glm::vec3 local_aabb_max{0};
 };
 
 struct ObjectData {
@@ -227,6 +229,17 @@ struct PrimSlot {
     Kind kind;
     uint32_t index;
 };
+
+/// 80-byte per-light shadow info (one entry per light in the light buffer).
+/// Lights without shadows have has_shadow == 0.
+struct ShadowInfo {
+    glm::mat4 light_vp{1.0f};  // 64 bytes
+    float texel_size = 0.0f;   //  4 bytes
+    float normal_bias = 0.0f;  //  4 bytes
+    uint32_t has_shadow = 0;   //  4 bytes — 0 = no shadow, 1 = active
+    uint32_t layer = 0;        //  4 bytes — texture array layer index
+};
+static_assert(sizeof(ShadowInfo) == 80, "ShadowInfo must be 80 bytes for GPU alignment");
 
 struct RenderWorld;
 
@@ -286,9 +299,6 @@ struct RenderWorld {
     boost::span<const Slot<LightData>> get_lights() const;
     boost::span<const Slot<CameraData>> get_cameras() const;
     boost::span<const Material> get_materials() const;
-    uint32_t get_mesh_version() const;
-    uint32_t get_light_version() const;
-    uint32_t get_material_version() const;
 
     int find_object_by_prim(const pxr::SdfPath& path) const;
     int find_light_by_prim(const pxr::SdfPath& path) const;
@@ -309,6 +319,14 @@ struct RenderWorld {
     const webgpu::Buffer& material_buffer() const;
     uint32_t gpu_light_count() const;
 
+    // Shadow data — written by ShadowMapPass, read by renderers.
+    // One ShadowInfo per light (matching light buffer order).
+    void set_shadow_data(boost::span<const ShadowInfo> infos, const webgpu::Device& device,
+                         WGPUQueue queue);
+    void clear_shadow_data();
+    const webgpu::Buffer& shadow_info_buffer() const;
+    uint32_t shadow_count() const;
+
     /// Lightweight xform-only update: recomputes world transforms for all
     /// synced prims at or under the given paths. Does not re-upload meshes.
     void update_transforms(const pxr::UsdStageRefPtr& stage,
@@ -324,6 +342,14 @@ struct RenderWorld {
     void upload_all_meshes(const webgpu::Device& device);
 
     void clear();
+
+    // Category version counters — bumped by SyncScope when any slot in that
+    // category changes.  Used internally by IRenderPass::get_or_create_pass_data
+    // and prepare_gpu_buffers.  Prefer the pass_data API over reading these
+    // directly in renderer code.
+    uint32_t get_mesh_version() const;
+    uint32_t get_light_version() const;
+    uint32_t get_material_version() const;
 
    private:
     friend class SyncScope;
@@ -354,6 +380,10 @@ struct RenderWorld {
 
     // Per-slot generation cache for partial light updates
     std::vector<uint32_t> m_cached_light_generations;
+
+    // Shadow data
+    webgpu::Buffer m_shadow_info_buffer;
+    uint32_t m_shadow_count = 0;
 };
 
 }  // namespace pts::rendering

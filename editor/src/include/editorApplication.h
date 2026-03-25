@@ -33,8 +33,9 @@ class BackgroundTask;
 }  // namespace pts
 
 namespace pts::rendering {
-class IScenePass;
-}
+class IRenderPass;
+class IRenderer;
+}  // namespace pts::rendering
 namespace pts::editor {
 class EditorPass;
 class LobePass;
@@ -118,11 +119,12 @@ struct EditorApplication final : GpuApplication {
     rendering::OrbitCamera m_camera;
     int m_active_camera_index = 0;  // 0 = free camera, 1..N = scene cameras
     rendering::RenderWorld m_world;
-    std::unique_ptr<rendering::IScenePass> m_renderer_pass;
-    std::vector<std::unique_ptr<rendering::IScenePass>> m_editor_passes;
-    EditorPass* m_editor_pass = nullptr;                  // non-owning, points into m_editor_passes
-    LobePass* m_lobe_pass = nullptr;                      // non-owning, points into m_editor_passes
-    rendering::IScenePass* m_tonemapping_pass = nullptr;  // non-owning, points into m_editor_passes
+    std::unique_ptr<rendering::IRenderer> m_renderer_pass;
+    std::vector<std::unique_ptr<rendering::IRenderPass>> m_editor_passes;
+    EditorPass* m_editor_pass = nullptr;  // non-owning, points into m_editor_passes
+    LobePass* m_lobe_pass = nullptr;      // non-owning, points into m_editor_passes
+    rendering::IRenderPass* m_tonemapping_pass =
+        nullptr;  // non-owning, points into m_editor_passes
     size_t m_active_config_index = 0;
     bool m_editor_passes_enabled = true;
     rendering::ShaderLoader m_shader_loader;
