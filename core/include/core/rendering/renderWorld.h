@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/diagnostics.h>
+#include <core/rendering/bvh.h>
 #include <core/rendering/vertex.h>
 #include <core/rendering/webgpu/buffer.h>
 #include <pxr/usd/sdf/path.h>
@@ -320,6 +321,10 @@ struct RenderWorld {
     const webgpu::Buffer& material_buffer() const;
     uint32_t gpu_light_count() const;
 
+    /// Scene BVH — built from world-space triangle positions, rebuilt when
+    /// mesh_version changes.  Available after prepare_gpu_buffers().
+    const BVH& scene_bvh() const;
+
     // Shadow data — written by ShadowMapPass, read by renderers.
     // One ShadowInfo per light (matching light buffer order).
     void set_shadow_data(boost::span<const ShadowInfo> infos, const webgpu::Device& device,
@@ -385,6 +390,10 @@ struct RenderWorld {
     // Shadow data
     webgpu::Buffer m_shadow_info_buffer;
     uint32_t m_shadow_count = 0;
+
+    // Scene BVH (world-space, rebuilt when meshes change)
+    BVH m_scene_bvh;
+    uint32_t m_cached_bvh_mesh_version = UINT32_MAX;
 };
 
 }  // namespace pts::rendering

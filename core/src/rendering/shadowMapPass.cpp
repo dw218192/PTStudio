@@ -133,35 +133,12 @@ void ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
         return;
     }
 
-    // Compute scene AABB from active objects (for ortho frustum fitting)
+    // Scene AABB from BVH root node (built by RenderWorld::prepare_gpu_buffers)
+    auto scene_bounds = ctx.world.scene_bvh().scene_bounds();
+    auto aabb_min = scene_bounds.min;
+    auto aabb_max = scene_bounds.max;
+
     auto objects = ctx.world.get_objects();
-    auto meshes = ctx.world.get_meshes();
-
-    glm::vec3 aabb_min(0.0f);
-    glm::vec3 aabb_max(0.0f);
-
-    bool has_geometry = false;
-    for (uint32_t oi = 0; oi < static_cast<uint32_t>(objects.size()); ++oi) {
-        if (!objects[oi].active()) continue;
-        const auto& obj = objects[oi].data();
-        const auto& mesh = meshes[obj.mesh_index];
-        if (!mesh.active() || mesh->cpu_vertices.empty()) continue;
-
-        // Use cached per-mesh local AABB instead of iterating all vertices
-        for (int c = 0; c < 8; ++c) {
-            glm::vec3 corner((c & 1) ? mesh->local_aabb_max.x : mesh->local_aabb_min.x,
-                             (c & 2) ? mesh->local_aabb_max.y : mesh->local_aabb_min.y,
-                             (c & 4) ? mesh->local_aabb_max.z : mesh->local_aabb_min.z);
-            glm::vec3 world_pt = glm::vec3(obj.transform * glm::vec4(corner, 1.0f));
-            if (!has_geometry) {
-                aabb_min = aabb_max = world_pt;
-                has_geometry = true;
-            } else {
-                aabb_min = glm::min(aabb_min, world_pt);
-                aabb_max = glm::max(aabb_max, world_pt);
-            }
-        }
-    }
 
     // Build one ShadowInfo per light (matching light buffer order)
     std::vector<ShadowInfo> infos(lights.size());

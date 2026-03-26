@@ -327,6 +327,38 @@ void RenderWorld::prepare_gpu_buffers(const webgpu::Device& device, WGPUQueue qu
             ++gpu_idx;
         }
     }
+
+    // --- Scene BVH ---
+    if (m_mesh_version != m_cached_bvh_mesh_version) {
+        auto objects = get_objects();
+        auto meshes_span = get_meshes();
+
+        // Flatten all world-space triangle AABBs
+        std::vector<AABB> tri_aabbs;
+        for (const auto& obj : objects) {
+            if (!obj.active()) continue;
+            const auto& mesh = meshes_span[obj->mesh_index];
+            if (!mesh.active() || mesh->cpu_vertices.empty() || mesh->cpu_indices.empty()) continue;
+            const auto& xform = obj->transform;
+            for (uint32_t i = 0; i + 2 < static_cast<uint32_t>(mesh->cpu_indices.size()); i += 3) {
+                AABB a;
+                for (int vi = 0; vi < 3; ++vi) {
+                    const auto& v = mesh->cpu_vertices[mesh->cpu_indices[i + vi]];
+                    a.expand(glm::vec3(
+                        xform * glm::vec4(v.position[0], v.position[1], v.position[2], 1.0f)));
+                }
+                tri_aabbs.push_back(a);
+            }
+        }
+
+        m_scene_bvh.build(tri_aabbs, static_cast<uint32_t>(tri_aabbs.size()));
+        m_scene_bvh.upload(device, queue);
+        m_cached_bvh_mesh_version = m_mesh_version;
+    }
+}
+
+const BVH& RenderWorld::scene_bvh() const {
+    return m_scene_bvh;
 }
 
 void RenderWorld::upload_all_meshes(const webgpu::Device& device) {

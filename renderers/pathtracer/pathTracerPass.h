@@ -1,6 +1,5 @@
 #pragma once
 
-#include <core/rendering/bvh.h>
 #include <core/rendering/renderer.h>
 #include <core/rendering/webgpu/buffer.h>
 #include <core/rendering/webgpu/pipeline.h>
@@ -73,9 +72,9 @@ class PathTracerPass final : public rendering::IRenderer {
     std::variant<std::monostate, Ready> m_state;
 
     /// Cached scene data — managed by per-category pass_data API.
+    /// BVH is owned by RenderWorld, not duplicated here.
     struct SceneData {
         webgpu::Buffer buffer;  // triangles (reordered by BVH)
-        rendering::BVH bvh;     // owns nodes + GPU buffer
         uint32_t triangle_count = 0;
     };
     static SceneData build_scene_data(const webgpu::Device& device, WGPUQueue queue,

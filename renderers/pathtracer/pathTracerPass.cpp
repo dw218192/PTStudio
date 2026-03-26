@@ -207,29 +207,20 @@ PathTracerPass::SceneData PathTracerPass::build_scene_data(const webgpu::Device&
 
     auto triangle_count = static_cast<uint32_t>(triangles.size());
 
-    // Build BVH and reorder triangles
-    std::vector<rendering::AABB> tri_aabbs(triangle_count);
-    for (uint32_t i = 0; i < triangle_count; ++i) {
-        auto& t = triangles[i];
-        tri_aabbs[i] = rendering::AABB::from_point(t.v0);
-        tri_aabbs[i].expand(t.v1);
-        tri_aabbs[i].expand(t.v2);
-    }
-
-    SceneData result;
-    result.triangle_count = triangle_count;
-    result.bvh.build(tri_aabbs, triangle_count);
-
-    // Reorder triangles by BVH spatial locality
-    if (triangle_count > 0) {
+    // Reorder triangles by RenderWorld's BVH spatial locality
+    const auto& bvh = world.scene_bvh();
+    if (triangle_count > 0 && !bvh.tri_indices().empty()) {
+        INVARIANT(bvh.tri_indices().size() == triangle_count);
         std::vector<PackedTriangle> reordered(triangle_count);
         for (uint32_t i = 0; i < triangle_count; ++i) {
-            reordered[i] = triangles[result.bvh.tri_indices()[i]];
+            reordered[i] = triangles[bvh.tri_indices()[i]];
         }
         triangles = std::move(reordered);
     }
 
     // Upload triangles
+    SceneData result;
+    result.triangle_count = triangle_count;
     auto tri_bytes = std::max(k_min_scene_buffer_size,
                               static_cast<std::size_t>(triangle_count) * sizeof(PackedTriangle));
     result.buffer = device.create_buffer(
@@ -238,9 +229,6 @@ PathTracerPass::SceneData PathTracerPass::build_scene_data(const webgpu::Device&
         wgpuQueueWriteBuffer(queue, result.buffer.handle(), 0, triangles.data(),
                              triangle_count * sizeof(PackedTriangle));
     }
-
-    // Upload BVH nodes
-    result.bvh.upload(device, queue);
 
     return result;
 }
@@ -268,7 +256,7 @@ void PathTracerPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     auto& scene = get_or_create_pass_data<SceneData>(rendering::PassDataKind::Mesh, ctx.world, [&] {
         return build_scene_data(ctx.device, ctx.queue, ctx.world);
     });
-    m_active_bvh = &scene.bvh;
+    m_active_bvh = const_cast<rendering::BVH*>(&ctx.world.scene_bvh());
 
     // Detect scene rebuild → reset accumulation
     if (scene.buffer.handle() != m_prev_scene_buffer) {
@@ -331,8 +319,8 @@ void PathTracerPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     cbe[5].buffer = m_output_buffer.handle();
     cbe[5].size = m_output_buffer.size();
     cbe[6].binding = 6;
-    cbe[6].buffer = scene.bvh.gpu_nodes().handle();
-    cbe[6].size = scene.bvh.gpu_nodes().size();
+    cbe[6].buffer = ctx.world.scene_bvh().gpu_nodes().handle();
+    cbe[6].size = ctx.world.scene_bvh().gpu_nodes().size();
 
     WGPUBindGroupDescriptor cbg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
     cbg_desc.layout = r.compute_bgl;
