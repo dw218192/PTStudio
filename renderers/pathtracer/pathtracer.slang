@@ -1,3 +1,4 @@
+import bvh;
 import lighting;
 import brdf;
 import light;
@@ -33,13 +34,6 @@ struct PTUniforms {
 [[vk::binding(4, 0)]] RWStructuredBuffer<float4> accumulation;
 [[vk::binding(5, 0)]] RWStructuredBuffer<float4> output_buf;
 
-struct BVHNode {
-    float3 aabb_min;
-    uint left_first;
-    float3 aabb_max;
-    uint count;
-};
-
 [[vk::binding(6, 0)]] StructuredBuffer<BVHNode> bvh_nodes;
 
 static const float PT_EPS = 0.0001;
@@ -69,17 +63,6 @@ float intersect_triangle(float3 ro, float3 rd, PackedTriangle tri,
     if (bv < 0.0 || bu + bv > 1.0) return -1.0;
     float t = inv * dot(e2, q);
     return t > PT_EPS ? t : -1.0;
-}
-
-bool ray_aabb(float3 ro, float3 rd, float3 bmin, float3 bmax, float t_best) {
-    float3 inv_rd = 1.0 / rd;
-    float3 t0 = (bmin - ro) * inv_rd;
-    float3 t1 = (bmax - ro) * inv_rd;
-    float3 tmin = min(t0, t1);
-    float3 tmax = max(t0, t1);
-    float enter = max(max(tmin.x, tmin.y), tmin.z);
-    float exit  = min(min(tmax.x, tmax.y), tmax.z);
-    return enter <= exit && exit >= 0.0 && enter < t_best;
 }
 
 HitRecord trace_scene(float3 ro, float3 rd) {
