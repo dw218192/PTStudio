@@ -153,14 +153,31 @@ void cs_main(uint3 did : SV_DispatchThreadID) {
             roughness = mat.roughness;
         }
 
-        // Direct lighting
-        float3 direct_diffuse, direct_specular;
-        float3 direct = evaluate_lighting_nee(
-            brdf, lights, u.light_count,
-            hit.position, N, V,
-            base_color, metallic, roughness,
-            rng,
-            direct_diffuse, direct_specular);
+        // Direct lighting (NEE with shadow rays)
+        float3 direct = float3(0.0);
+        for (uint li = 0; li < u.light_count; li++) {
+            Light light = lights[li];
+            if (light.type == LIGHT_DOME) continue;
+
+            LightSampleStochastic ls = sample_direct(light, hit.position, rng);
+            if (!ls.valid || ls.pdf <= 0.0) continue;
+
+            float3 wi = normalize(ls.position - hit.position);
+            float NdotL = dot(N, wi);
+            if (NdotL <= 0.0) continue;
+
+            // Shadow ray
+            float dist_to_light = length(ls.position - hit.position);
+            HitRecord shadow_hit = trace_scene(hit.position + N * PT_EPS, wi);
+            if (shadow_hit.hit) {
+                float shadow_dist = length(shadow_hit.position - hit.position);
+                if (shadow_dist < dist_to_light - PT_EPS) continue;
+            }
+
+            ShadingGeometry g = ShadingGeometry::from_world(N, wi, V, roughness);
+            float3 f = brdf.eval(g, base_color, metallic);
+            direct += f * ls.radiance * NdotL / ls.pdf;
+        }
         radiance += throughput * direct;
 
         // Russian roulette (after first bounce)

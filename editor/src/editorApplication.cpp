@@ -506,12 +506,14 @@ void EditorApplication::on_ready() {
         m_camera.set_fov_y(std::stof(m_app_config.camera_fov));
     }
 
-    // Select scene camera by name (from --camera CLI arg)
+    // Select scene camera by name or prim path (from --camera CLI arg)
     if (!m_app_config.camera_name.empty()) {
         auto cameras = m_world.get_cameras();
         for (uint32_t i = 0; i < cameras.size(); ++i) {
-            if (cameras[i].active() &&
-                cameras[i].get_prim_path().GetName() == m_app_config.camera_name) {
+            if (!cameras[i].active()) continue;
+            auto path = cameras[i].get_prim_path();
+            if (path.GetString() == m_app_config.camera_name ||
+                path.GetName() == m_app_config.camera_name) {
                 m_active_camera_index = static_cast<int>(i + 1);
                 break;
             }
