@@ -1,6 +1,8 @@
 #include <core/rendering/renderPass.h>
+#include <core/rendering/renderer.h>
 #include <core/rendering/shaderLoader.h>
 #include <core/rendering/webgpu/device.h>
+#include <imgui.h>
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
@@ -144,6 +146,17 @@ auto IRenderPass::load_pass_shader(std::string_view resource_key) const -> std::
     auto variant_key = key.substr(0, dot) + "_no_debug" + key.substr(dot);
     std::string_view defines[] = {k_no_debug_define};
     return m_shader_loader->load_variant(resource_key, defines, variant_key);
+}
+
+void IRenderer::draw_imgui() {
+    if (!ImGui::CollapsingHeader(name().data(), ImGuiTreeNodeFlags_DefaultOpen)) return;
+    for (auto& c : m_children) {
+        if (ImGui::TreeNodeEx(c->name().data(), ImGuiTreeNodeFlags_DefaultOpen)) {
+            c->draw_imgui();
+            ImGui::TreePop();
+        }
+    }
+    do_draw_imgui();
 }
 
 }  // namespace pts::rendering

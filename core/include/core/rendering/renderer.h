@@ -1,7 +1,6 @@
 #pragma once
 
 #include <core/rendering/renderPass.h>
-#include <imgui.h>
 
 #include <memory>
 #include <vector>
@@ -43,16 +42,7 @@ class IRenderer : public IRenderPass {
         IRenderPass::on_shaders_reloaded(device);
     }
 
-    void draw_imgui() override {
-        if (!ImGui::CollapsingHeader(name().data(), ImGuiTreeNodeFlags_DefaultOpen)) return;
-        for (auto& c : m_children) {
-            if (ImGui::TreeNode(c->name().data())) {
-                c->draw_imgui();
-                ImGui::TreePop();
-            }
-        }
-        do_draw_imgui();
-    }
+    void draw_imgui() override;
 
     void draw_viewport_overlay(const ViewportOverlayParams& params) override {
         for (auto& c : m_children) c->draw_viewport_overlay(params);
