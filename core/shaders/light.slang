@@ -4,9 +4,16 @@ import sampling;
 public struct Material {
     public float3 diffuse_color;
     public float metallic;
+    public float3 emissive_color;
     public float roughness;
     public float opacity;
-    public float2 _pad;
+    public uint diffuse_tex;
+    public uint normal_tex;
+    public uint metallic_tex;
+    public uint roughness_tex;
+    public uint emissive_tex;
+    public uint opacity_tex;
+    public uint tex_channels;
 };
 
 /// Returns true if P is on the emitting (front) side of a directional area light.

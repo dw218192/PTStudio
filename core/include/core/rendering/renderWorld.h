@@ -6,6 +6,7 @@
 #include <core/rendering/webgpu/buffer.h>
 #include <pxr/usd/sdf/path.h>
 #include <pxr/usd/usd/stage.h>
+#include <webgpu/webgpu.h>
 
 #include <boost/container/flat_map.hpp>
 #include <boost/core/span.hpp>
@@ -25,15 +26,22 @@ namespace pts::rendering {
 
 static constexpr uint32_t k_no_material = UINT32_MAX;
 
-/// 32-byte GPU struct
+/// 64-byte GPU struct
 struct Material {
     glm::vec3 diffuse_color{1.0f, 1.0f, 1.0f};
     float metallic{0.0f};
+    glm::vec3 emissive_color{0.0f, 0.0f, 0.0f};
     float roughness{0.5f};
     float opacity{1.0f};
-    uint32_t _padding[2]{};
+    uint32_t diffuse_tex{UINT32_MAX};
+    uint32_t normal_tex{UINT32_MAX};
+    uint32_t metallic_tex{UINT32_MAX};
+    uint32_t roughness_tex{UINT32_MAX};
+    uint32_t emissive_tex{UINT32_MAX};
+    uint32_t opacity_tex{UINT32_MAX};
+    uint32_t tex_channels{0};
 };
-static_assert(sizeof(Material) == 32, "Material must be 32 bytes for GPU alignment");
+static_assert(sizeof(Material) == 64, "Material must be 64 bytes for GPU alignment");
 
 /// 64-byte GPU struct
 struct Light {
@@ -290,6 +298,10 @@ class SyncScope {
     std::unordered_map<std::string, uint32_t>& material_cache();
     void set_prim_path(uint32_t slot_index, PrimSlot::Kind kind, pxr::SdfPath path);
 
+    /// Load a texture from disk, deduplicate by path. Returns layer index
+    /// or UINT32_MAX on failure. Bumps texture version.
+    uint32_t load_texture(const std::string& resolved_path);
+
    private:
     RenderWorld& m_world;
 };
@@ -320,6 +332,8 @@ struct RenderWorld {
     const webgpu::Buffer& light_buffer() const;
     const webgpu::Buffer& material_buffer() const;
     uint32_t gpu_light_count() const;
+    WGPUTextureView texture_array_view() const;
+    WGPUSampler texture_sampler() const;
 
     /// Scene BVH — built from world-space triangle positions, rebuilt when
     /// mesh_version changes.  Available after prepare_gpu_buffers().
@@ -394,6 +408,21 @@ struct RenderWorld {
     // Scene BVH (world-space, rebuilt when meshes change)
     BVH m_scene_bvh;
     uint32_t m_cached_bvh_mesh_version = UINT32_MAX;
+
+    // Texture array state
+    struct ImageData {
+        std::vector<uint8_t> pixels;
+        uint32_t width;
+        uint32_t height;
+    };
+    std::vector<ImageData> m_texture_images;
+    std::unordered_map<std::string, uint32_t> m_texture_cache;
+    WGPUTexture m_texture_array = nullptr;
+    WGPUTextureView m_texture_array_view = nullptr;
+    WGPUSampler m_texture_sampler = nullptr;
+    uint32_t m_texture_version = 0;
+    uint32_t m_cached_texture_version = UINT32_MAX;
+    uint32_t m_texture_size = 1024;
 };
 
 }  // namespace pts::rendering

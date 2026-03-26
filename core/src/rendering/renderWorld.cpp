@@ -4,8 +4,10 @@
 #include <core/rendering/webgpu/device.h>
 #include <pxr/usd/sdf/path.h>
 #include <pxr/usd/usd/stage.h>
+#include <stb_image.h>
 
 #include <algorithm>
+#include <cmath>
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <limits>
@@ -221,6 +223,14 @@ uint32_t RenderWorld::gpu_light_count() const {
     return m_gpu_light_count;
 }
 
+WGPUTextureView RenderWorld::texture_array_view() const {
+    return m_texture_array_view;
+}
+
+WGPUSampler RenderWorld::texture_sampler() const {
+    return m_texture_sampler;
+}
+
 // --- RenderWorld read-only + clear ---
 
 int RenderWorld::find_object_by_prim(const pxr::SdfPath& path) const {
@@ -245,11 +255,70 @@ int RenderWorld::find_camera_by_prim(const pxr::SdfPath& path) const {
     return static_cast<int>(it->second.index);
 }
 
+// --- Texture loading ---
+
+namespace {
+void resize_rgba8(const uint8_t* src, uint32_t src_w, uint32_t src_h, uint8_t* dst, uint32_t dst_w,
+                  uint32_t dst_h) {
+    for (uint32_t y = 0; y < dst_h; ++y) {
+        float v = static_cast<float>(y) * static_cast<float>(src_h) / static_cast<float>(dst_h);
+        auto y0 = static_cast<uint32_t>(v);
+        float fy = v - static_cast<float>(y0);
+        uint32_t y1 = std::min(y0 + 1, src_h - 1);
+        for (uint32_t x = 0; x < dst_w; ++x) {
+            float u = static_cast<float>(x) * static_cast<float>(src_w) / static_cast<float>(dst_w);
+            auto x0 = static_cast<uint32_t>(u);
+            float fx = u - static_cast<float>(x0);
+            uint32_t x1 = std::min(x0 + 1, src_w - 1);
+            for (int c = 0; c < 4; ++c) {
+                float p00 = src[(y0 * src_w + x0) * 4 + c];
+                float p10 = src[(y0 * src_w + x1) * 4 + c];
+                float p01 = src[(y1 * src_w + x0) * 4 + c];
+                float p11 = src[(y1 * src_w + x1) * 4 + c];
+                float val = p00 * (1 - fx) * (1 - fy) + p10 * fx * (1 - fy) + p01 * (1 - fx) * fy +
+                            p11 * fx * fy;
+                dst[(y * dst_w + x) * 4 + c] =
+                    static_cast<uint8_t>(std::min(std::max(val, 0.0f), 255.0f));
+            }
+        }
+    }
+}
+}  // namespace
+
+uint32_t SyncScope::load_texture(const std::string& resolved_path) {
+    auto it = m_world.m_texture_cache.find(resolved_path);
+    if (it != m_world.m_texture_cache.end()) return it->second;
+
+    int w = 0, h = 0, channels = 0;
+    auto* data = stbi_load(resolved_path.c_str(), &w, &h, &channels, 4);
+    if (!data) return UINT32_MAX;
+
+    auto index = static_cast<uint32_t>(m_world.m_texture_images.size());
+    auto tex_size = m_world.m_texture_size;
+
+    RenderWorld::ImageData img;
+    if (static_cast<uint32_t>(w) == tex_size && static_cast<uint32_t>(h) == tex_size) {
+        img.pixels.assign(data, data + tex_size * tex_size * 4);
+    } else {
+        img.pixels.resize(tex_size * tex_size * 4);
+        resize_rgba8(data, static_cast<uint32_t>(w), static_cast<uint32_t>(h), img.pixels.data(),
+                     tex_size, tex_size);
+    }
+    stbi_image_free(data);
+
+    img.width = tex_size;
+    img.height = tex_size;
+    m_world.m_texture_images.push_back(std::move(img));
+    m_world.m_texture_cache[resolved_path] = index;
+    ++m_world.m_texture_version;
+    return index;
+}
+
 // --- GPU buffer upload ---
 
 namespace {
-constexpr std::size_t k_min_material_buffer_size = sizeof(Material);  // 32 bytes
-constexpr std::size_t k_min_light_buffer_size = sizeof(Light);        // 48 bytes
+constexpr std::size_t k_min_material_buffer_size = sizeof(Material);
+constexpr std::size_t k_min_light_buffer_size = sizeof(Light);  // 48 bytes
 }  // namespace
 
 void RenderWorld::prepare_gpu_buffers(const webgpu::Device& device, WGPUQueue queue) {
@@ -355,6 +424,94 @@ void RenderWorld::prepare_gpu_buffers(const webgpu::Device& device, WGPUQueue qu
         m_scene_bvh.upload(device, queue);
         m_cached_bvh_mesh_version = m_mesh_version;
     }
+
+    // --- Texture array ---
+    if (m_texture_version != m_cached_texture_version) {
+        // Release old resources
+        if (m_texture_array_view) {
+            wgpuTextureViewRelease(m_texture_array_view);
+            m_texture_array_view = nullptr;
+        }
+        if (m_texture_array) {
+            wgpuTextureDestroy(m_texture_array);
+            wgpuTextureRelease(m_texture_array);
+            m_texture_array = nullptr;
+        }
+        if (m_texture_sampler) {
+            wgpuSamplerRelease(m_texture_sampler);
+            m_texture_sampler = nullptr;
+        }
+
+        uint32_t layer_count =
+            m_texture_images.empty() ? 1 : static_cast<uint32_t>(m_texture_images.size());
+        uint32_t tex_w = m_texture_images.empty() ? 1 : m_texture_size;
+        uint32_t tex_h = tex_w;
+
+        WGPUTextureDescriptor tex_desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
+        tex_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_TextureBinding |
+                                                       WGPUTextureUsage_CopyDst);
+        tex_desc.dimension = WGPUTextureDimension_2D;
+        tex_desc.size = {tex_w, tex_h, layer_count};
+        tex_desc.format = WGPUTextureFormat_RGBA8Unorm;
+        tex_desc.mipLevelCount = 1;
+        m_texture_array = wgpuDeviceCreateTexture(device.handle(), &tex_desc);
+        POSTCONDITION(m_texture_array);
+
+        if (m_texture_images.empty()) {
+            // 1x1 white placeholder
+            uint8_t white[] = {255, 255, 255, 255};
+            WGPUTexelCopyTextureInfo dst = {};
+            dst.texture = m_texture_array;
+            dst.mipLevel = 0;
+            dst.origin = {0, 0, 0};
+            dst.aspect = WGPUTextureAspect_All;
+            WGPUTexelCopyBufferLayout layout = {};
+            layout.offset = 0;
+            layout.bytesPerRow = 4;
+            layout.rowsPerImage = 1;
+            WGPUExtent3D extent = {1, 1, 1};
+            wgpuQueueWriteTexture(queue, &dst, white, sizeof(white), &layout, &extent);
+        } else {
+            uint32_t bytes_per_row = tex_w * 4;
+            for (uint32_t i = 0; i < static_cast<uint32_t>(m_texture_images.size()); ++i) {
+                WGPUTexelCopyTextureInfo dst = {};
+                dst.texture = m_texture_array;
+                dst.mipLevel = 0;
+                dst.origin = {0, 0, i};
+                dst.aspect = WGPUTextureAspect_All;
+                WGPUTexelCopyBufferLayout layout = {};
+                layout.offset = 0;
+                layout.bytesPerRow = bytes_per_row;
+                layout.rowsPerImage = tex_h;
+                WGPUExtent3D extent = {tex_w, tex_h, 1};
+                wgpuQueueWriteTexture(queue, &dst, m_texture_images[i].pixels.data(),
+                                      m_texture_images[i].pixels.size(), &layout, &extent);
+            }
+        }
+
+        WGPUTextureViewDescriptor view_desc = WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT;
+        view_desc.format = WGPUTextureFormat_RGBA8Unorm;
+        view_desc.dimension = WGPUTextureViewDimension_2DArray;
+        view_desc.baseMipLevel = 0;
+        view_desc.mipLevelCount = 1;
+        view_desc.baseArrayLayer = 0;
+        view_desc.arrayLayerCount = layer_count;
+        m_texture_array_view = wgpuTextureCreateView(m_texture_array, &view_desc);
+        POSTCONDITION(m_texture_array_view);
+
+        WGPUSamplerDescriptor sampler_desc = WGPU_SAMPLER_DESCRIPTOR_INIT;
+        sampler_desc.addressModeU = WGPUAddressMode_Repeat;
+        sampler_desc.addressModeV = WGPUAddressMode_Repeat;
+        sampler_desc.addressModeW = WGPUAddressMode_Repeat;
+        sampler_desc.magFilter = WGPUFilterMode_Linear;
+        sampler_desc.minFilter = WGPUFilterMode_Linear;
+        sampler_desc.mipmapFilter = WGPUMipmapFilterMode_Linear;
+        sampler_desc.maxAnisotropy = 1;
+        m_texture_sampler = wgpuDeviceCreateSampler(device.handle(), &sampler_desc);
+        POSTCONDITION(m_texture_sampler);
+
+        m_cached_texture_version = m_texture_version;
+    }
 }
 
 const BVH& RenderWorld::scene_bvh() const {
@@ -458,6 +615,25 @@ void RenderWorld::clear() {
     m_cached_material_version = UINT32_MAX;
     m_cached_light_generations.clear();
     clear_shadow_data();
+
+    // Texture state
+    m_texture_images.clear();
+    m_texture_cache.clear();
+    if (m_texture_array_view) {
+        wgpuTextureViewRelease(m_texture_array_view);
+        m_texture_array_view = nullptr;
+    }
+    if (m_texture_array) {
+        wgpuTextureDestroy(m_texture_array);
+        wgpuTextureRelease(m_texture_array);
+        m_texture_array = nullptr;
+    }
+    if (m_texture_sampler) {
+        wgpuSamplerRelease(m_texture_sampler);
+        m_texture_sampler = nullptr;
+    }
+    m_texture_version = 0;
+    m_cached_texture_version = UINT32_MAX;
 }
 
 // --- update_transforms ---

@@ -29,18 +29,23 @@ TEST_CASE("Material SSBO round-trip via storage buffer") {
     std::vector<pts::rendering::Material> materials(3);
     materials[0].diffuse_color = {0.8f, 0.2f, 0.1f};
     materials[0].metallic = 0.9f;
+    materials[0].emissive_color = {1.0f, 0.5f, 0.0f};
     materials[0].roughness = 0.3f;
     materials[0].opacity = 0.7f;
+    materials[0].diffuse_tex = 42;
 
     materials[1].diffuse_color = {0.1f, 0.9f, 0.2f};
     materials[1].metallic = 0.0f;
+    materials[1].emissive_color = {0.0f, 0.0f, 0.0f};
     materials[1].roughness = 1.0f;
     materials[1].opacity = 1.0f;
 
     materials[2].diffuse_color = {0.2f, 0.4f, 0.9f};
     materials[2].metallic = 0.5f;
+    materials[2].emissive_color = {0.3f, 0.3f, 0.3f};
     materials[2].roughness = 0.5f;
     materials[2].opacity = 0.5f;
+    materials[2].emissive_tex = 7;
 
     auto buf_size = materials.size() * sizeof(pts::rendering::Material);
 
@@ -109,8 +114,18 @@ TEST_CASE("Material SSBO round-trip via storage buffer") {
         CHECK(readback[i].diffuse_color.y == doctest::Approx(materials[i].diffuse_color.y));
         CHECK(readback[i].diffuse_color.z == doctest::Approx(materials[i].diffuse_color.z));
         CHECK(readback[i].metallic == doctest::Approx(materials[i].metallic));
+        CHECK(readback[i].emissive_color.x == doctest::Approx(materials[i].emissive_color.x));
+        CHECK(readback[i].emissive_color.y == doctest::Approx(materials[i].emissive_color.y));
+        CHECK(readback[i].emissive_color.z == doctest::Approx(materials[i].emissive_color.z));
         CHECK(readback[i].roughness == doctest::Approx(materials[i].roughness));
         CHECK(readback[i].opacity == doctest::Approx(materials[i].opacity));
+        CHECK(readback[i].diffuse_tex == materials[i].diffuse_tex);
+        CHECK(readback[i].normal_tex == materials[i].normal_tex);
+        CHECK(readback[i].metallic_tex == materials[i].metallic_tex);
+        CHECK(readback[i].roughness_tex == materials[i].roughness_tex);
+        CHECK(readback[i].emissive_tex == materials[i].emissive_tex);
+        CHECK(readback[i].opacity_tex == materials[i].opacity_tex);
+        CHECK(readback[i].tex_channels == materials[i].tex_channels);
     }
 
     wgpuBufferRelease(staging);
@@ -120,8 +135,8 @@ TEST_CASE("Empty material buffer has minimum size for bind group validity") {
     auto logger = create_test_logger();
     auto device = pts::webgpu::Device::create(logger);
 
-    // Even with zero materials, the SSBO must be at least 32 bytes for a valid bind group
-    constexpr uint32_t k_min_material_buffer_size = 32;
+    // Even with zero materials, the SSBO must be at least sizeof(Material) for a valid bind group
+    constexpr uint32_t k_min_material_buffer_size = sizeof(pts::rendering::Material);
     auto ssbo = device.create_buffer(
         k_min_material_buffer_size,
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
@@ -249,6 +264,36 @@ TEST_CASE("prepare_gpu_buffers skips upload when versions unchanged") {
     CHECK(world.light_buffer().handle() == light_buf_handle);
 }
 
+TEST_CASE("prepare_gpu_buffers creates placeholder texture array when no textures loaded") {
+    auto logger = create_test_logger();
+    auto device = pts::webgpu::Device::create(logger);
+
+    pts::rendering::RenderWorld world;
+    {
+        auto scope = world.begin_sync();
+    }
+
+    world.prepare_gpu_buffers(device, device.queue());
+
+    CHECK(world.texture_array_view() != nullptr);
+    CHECK(world.texture_sampler() != nullptr);
+}
+
+TEST_CASE("Material struct is 64 bytes") {
+    CHECK(sizeof(pts::rendering::Material) == 64);
+}
+
+TEST_CASE("Material default texture indices are UINT32_MAX") {
+    pts::rendering::Material mat{};
+    CHECK(mat.diffuse_tex == UINT32_MAX);
+    CHECK(mat.normal_tex == UINT32_MAX);
+    CHECK(mat.metallic_tex == UINT32_MAX);
+    CHECK(mat.roughness_tex == UINT32_MAX);
+    CHECK(mat.emissive_tex == UINT32_MAX);
+    CHECK(mat.opacity_tex == UINT32_MAX);
+    CHECK(mat.tex_channels == 0);
+}
+
 TEST_CASE("clear resets GPU buffer state") {
     auto logger = create_test_logger();
     auto device = pts::webgpu::Device::create(logger);
@@ -272,6 +317,8 @@ TEST_CASE("clear resets GPU buffer state") {
     CHECK_FALSE(world.material_buffer().is_valid());
     CHECK_FALSE(world.light_buffer().is_valid());
     CHECK(world.gpu_light_count() == 0);
+    CHECK(world.texture_array_view() == nullptr);
+    CHECK(world.texture_sampler() == nullptr);
 }
 
 #endif  // !__EMSCRIPTEN__

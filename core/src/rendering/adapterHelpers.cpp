@@ -51,6 +51,10 @@ uint32_t resolve_material(pxr::UsdPrim prim, SyncScope& scope) {
             if (auto input = surface.GetInput(pxr::TfToken("opacity"))) {
                 input.Get(&mat.opacity);
             }
+            if (auto input = surface.GetInput(pxr::TfToken("emissiveColor"))) {
+                pxr::GfVec3f color;
+                if (input.Get(&color)) mat.emissive_color = {color[0], color[1], color[2]};
+            }
         }
     }
 
