@@ -55,7 +55,7 @@ struct AppConfig {
     std::string camera_yaw;         // degrees, empty = default (0)
     std::string camera_pitch;       // degrees, empty = default (~17)
     std::string camera_fov;         // degrees, empty = default (60)
-    std::string camera_prim_path;        // scene camera prim name, empty = free camera
+    std::string camera_prim_path;   // scene camera prim name, empty = free camera
 
     [[nodiscard]] bool is_capture_mode() const {
         return !capture_output.empty();
