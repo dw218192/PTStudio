@@ -128,7 +128,15 @@ void cs_main(uint3 did : SV_DispatchThreadID) {
 
     for (uint bounce = 0; bounce < MAX_BOUNCES; bounce++) {
         HitRecord hit = trace_scene(ray_origin, ray_dir);
-        if (!hit.hit) break;
+        if (!hit.hit) {
+            // Miss → dome light contributes as environment
+            for (uint li = 0; li < u.light_count; li++) {
+                if (lights[li].type == LIGHT_DOME) {
+                    radiance += throughput * lights[li].color * lights[li].intensity;
+                }
+            }
+            break;
+        }
 
         float3 N = hit.normal;
         float3 V = -ray_dir;

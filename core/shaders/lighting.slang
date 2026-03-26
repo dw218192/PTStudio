@@ -23,10 +23,7 @@ float3 evaluate_lighting_nee<B : IBRDF>(
     for (uint i = 0; i < light_count; i++) {
         Light light = lights[i];
 
-        if (light.type == LIGHT_DOME) {
-            result += light.color * light.intensity * base_color * 0.2;
-            continue;
-        }
+        if (light.type == LIGHT_DOME) continue;
 
         LightSampleStochastic ls = sample_direct(light, P, rng);
         if (!ls.valid || ls.pdf <= 0.0) continue;
@@ -69,10 +66,7 @@ float3 evaluate_lighting_ltc<B : IBRDF>(
     for (uint i = 0; i < light_count; i++) {
         Light light = lights[i];
 
-        if (light.type == LIGHT_DOME) {
-            result += light.color * light.intensity * base_color * 0.2;
-            continue;
-        }
+        if (light.type == LIGHT_DOME) continue;
 
         float shadow_vis = 1.0;
         ShadowInfo si = shadow_infos[i];
