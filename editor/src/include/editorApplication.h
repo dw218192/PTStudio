@@ -174,6 +174,11 @@ struct EditorApplication final : GpuApplication {
     enum class GizmoOp { Translate, Rotate, Scale };
     GizmoOp m_gizmo_op = GizmoOp::Translate;
 
+    // Inline rename state
+    pxr::SdfPath m_renaming_prim;
+    char m_rename_buf[256]{};
+    bool m_rename_focus_set = false;
+
     // Viewport tracking
     uint32_t m_viewport_width = 0;
     uint32_t m_viewport_height = 0;
