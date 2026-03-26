@@ -11,9 +11,12 @@ import tempfile
 import threading
 import time
 import webbrowser
+import zipfile
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
+from urllib.request import urlopen
 
 import click
 
@@ -28,6 +31,37 @@ from repo_tools.core import (
     logger,
     to_cmake_build_type,
 )
+
+# Tracy release to download — update when upgrading tracy Conan package
+_TRACY_VERSION = "0.13.1"
+_TRACY_VIEWER_URL = (
+    f"https://github.com/wolfpld/tracy/releases/download/v{_TRACY_VERSION}/"
+    f"windows-{_TRACY_VERSION}.zip"
+)
+
+
+def _ensure_tracy_viewer(workspace_root: Path) -> Path:
+    """Download Tracy profiler viewer if not cached."""
+    cache_dir = workspace_root / "_build" / "tools" / "tracy"
+    viewer = cache_dir / "tracy-profiler.exe"
+
+    if viewer.exists():
+        return viewer
+
+    logger.info(f"Downloading Tracy profiler v{_TRACY_VERSION}...")
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    resp = urlopen(_TRACY_VIEWER_URL)
+    with zipfile.ZipFile(BytesIO(resp.read())) as zf:
+        zf.extractall(cache_dir)
+
+    if not viewer.exists():
+        raise RuntimeError(
+            f"tracy-profiler.exe not found in downloaded archive from {_TRACY_VIEWER_URL}"
+        )
+
+    logger.info(f"Tracy viewer cached at {viewer}")
+    return viewer
 
 
 def _interactive_select(exe_paths: list[Path]) -> Path | None:
@@ -499,6 +533,15 @@ class LaunchTool(RepoTool):
             default=None,
             help="Interactive menu to select executable",
         )(cmd)
+        cmd = click.option(
+            "--profile",
+            is_flag=False,
+            flag_value="viewer",
+            default=None,
+            help="Launch Tracy profiler (Windows only). "
+            "Bare --profile opens the GUI viewer with auto-connect. "
+            "--profile trace.tracy uses headless capture with auto-save.",
+        )(cmd)
         return cmd
 
     def default_args(self, tokens: dict[str, str]) -> dict[str, Any]:
@@ -507,6 +550,7 @@ class LaunchTool(RepoTool):
             "config": None,
             "env": (),
             "interactive": False,
+            "profile": None,
         }
 
     def execute(self, ctx: ToolContext, args: dict[str, Any]) -> None:
@@ -584,5 +628,38 @@ class LaunchTool(RepoTool):
                 logger.info(f"  {exe.stem}")
             sys.exit(1)
 
-        result = _run_executable(target_exe, ctx.passthrough_args, context)
+        tracy_proc: subprocess.Popen | None = None
+        profile_val = args.get("profile")
+        if profile_val is not None:
+            if sys.platform != "win32":
+                raise RuntimeError(
+                    "Tracy profiler pre-built binaries are only available for Windows. "
+                    "On Linux/macOS, build from source: "
+                    "https://github.com/wolfpld/tracy"
+                )
+            tracy_dir = _ensure_tracy_viewer(root).parent
+            if profile_val == "viewer":
+                # GUI viewer with auto-connect
+                tracy_exe = tracy_dir / "tracy-profiler.exe"
+                tracy_proc = subprocess.Popen([str(tracy_exe), "-a", "127.0.0.1"])
+                logger.info("Tracy viewer started (auto-connect to 127.0.0.1)")
+            else:
+                # Headless capture with auto-save
+                tracy_exe = tracy_dir / "tracy-capture.exe"
+                out_path = Path(profile_val)
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                tracy_proc = subprocess.Popen(
+                    [str(tracy_exe), "-a", "127.0.0.1", "-o", str(out_path), "-f"],
+                )
+                logger.info(f"Tracy capture started → {out_path}")
+
+        try:
+            result = _run_executable(target_exe, ctx.passthrough_args, context)
+        except KeyboardInterrupt:
+            result = subprocess.CompletedProcess(args=[], returncode=0)
+        finally:
+            if tracy_proc is not None and tracy_proc.poll() is None:
+                logger.info("Stopping Tracy")
+                tracy_proc.terminate()
+
         sys.exit(result.returncode)
