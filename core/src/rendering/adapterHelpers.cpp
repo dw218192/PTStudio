@@ -1,12 +1,68 @@
 #include <core/rendering/adapterHelpers.h>
 #include <core/rendering/renderWorld.h>
+#include <pxr/usd/ar/resolver.h>
+#include <pxr/usd/sdf/assetPath.h>
 #include <pxr/usd/usd/prim.h>
 #include <pxr/usd/usdGeom/xformable.h>
+#include <pxr/usd/usdShade/connectableAPI.h>
 #include <pxr/usd/usdShade/material.h>
 #include <pxr/usd/usdShade/materialBindingAPI.h>
 #include <pxr/usd/usdShade/shader.h>
 
 namespace pts::rendering {
+
+namespace {
+
+uint32_t channel_from_output_name(const pxr::TfToken& name) {
+    static const pxr::TfToken k_r("r"), k_R("R");
+    static const pxr::TfToken k_g("g"), k_G("G");
+    static const pxr::TfToken k_b("b"), k_B("B");
+    static const pxr::TfToken k_a("a"), k_A("A");
+    if (name == k_r || name == k_R) return 0;
+    if (name == k_g || name == k_G) return 1;
+    if (name == k_b || name == k_B) return 2;
+    if (name == k_a || name == k_A) return 3;
+    return 0;  // "rgb" or default → red channel fallback for scalar
+}
+
+/// Try to resolve a texture connection on a UsdShadeInput.
+/// Returns texture layer index (UINT32_MAX if no texture connected or load failed).
+/// Sets out_source_name to the output name of the UsdUVTexture (for channel selection).
+uint32_t try_resolve_texture(pxr::UsdShadeInput input, SyncScope& scope,
+                             pxr::TfToken& out_source_name) {
+    pxr::UsdShadeConnectableAPI source;
+    pxr::TfToken source_name;
+    pxr::UsdShadeAttributeType source_type;
+    if (!input.GetConnectedSource(&source, &source_name, &source_type)) {
+        return UINT32_MAX;
+    }
+
+    auto shader = pxr::UsdShadeShader(source.GetPrim());
+    pxr::TfToken shader_id;
+    shader.GetShaderId(&shader_id);
+    if (shader_id != pxr::TfToken("UsdUVTexture")) {
+        return UINT32_MAX;
+    }
+
+    pxr::SdfAssetPath file_path;
+    auto file_input = shader.GetInput(pxr::TfToken("file"));
+    if (!file_input || !file_input.Get(&file_path)) {
+        return UINT32_MAX;
+    }
+
+    std::string resolved = file_path.GetResolvedPath();
+    if (resolved.empty()) {
+        resolved = pxr::ArGetResolver().Resolve(file_path.GetAssetPath()).GetPathString();
+    }
+    if (resolved.empty()) {
+        return UINT32_MAX;
+    }
+
+    out_source_name = source_name;
+    return scope.load_texture(resolved);
+}
+
+}  // namespace
 
 glm::mat4 compute_world_transform(pxr::UsdPrim prim) {
     pxr::GfMatrix4d xf =
@@ -15,6 +71,74 @@ glm::mat4 compute_world_transform(pxr::UsdPrim prim) {
     for (int i = 0; i < 4; i++)
         for (int j = 0; j < 4; j++) transform[i][j] = static_cast<float>(xf[i][j]);
     return transform;
+}
+
+Material read_preview_surface(pxr::UsdShadeShader surface, SyncScope& scope) {
+    Material mat;
+
+    // --- diffuseColor ---
+    if (auto input = surface.GetInput(pxr::TfToken("diffuseColor"))) {
+        pxr::GfVec3f color;
+        if (input.Get(&color)) mat.diffuse_color = {color[0], color[1], color[2]};
+        pxr::TfToken source_name;
+        auto tex = try_resolve_texture(input, scope, source_name);
+        if (tex != UINT32_MAX) mat.diffuse_tex = tex;
+    }
+
+    // --- metallic ---
+    uint32_t metallic_ch = 0;
+    if (auto input = surface.GetInput(pxr::TfToken("metallic"))) {
+        input.Get(&mat.metallic);
+        pxr::TfToken source_name;
+        auto tex = try_resolve_texture(input, scope, source_name);
+        if (tex != UINT32_MAX) {
+            mat.metallic_tex = tex;
+            metallic_ch = channel_from_output_name(source_name);
+        }
+    }
+
+    // --- roughness ---
+    uint32_t roughness_ch = 0;
+    if (auto input = surface.GetInput(pxr::TfToken("roughness"))) {
+        input.Get(&mat.roughness);
+        pxr::TfToken source_name;
+        auto tex = try_resolve_texture(input, scope, source_name);
+        if (tex != UINT32_MAX) {
+            mat.roughness_tex = tex;
+            roughness_ch = channel_from_output_name(source_name);
+        }
+    }
+
+    // --- opacity ---
+    uint32_t opacity_ch = 0;
+    if (auto input = surface.GetInput(pxr::TfToken("opacity"))) {
+        input.Get(&mat.opacity);
+        pxr::TfToken source_name;
+        auto tex = try_resolve_texture(input, scope, source_name);
+        if (tex != UINT32_MAX) {
+            mat.opacity_tex = tex;
+            opacity_ch = channel_from_output_name(source_name);
+        }
+    }
+
+    // --- normal ---
+    if (auto input = surface.GetInput(pxr::TfToken("normal"))) {
+        pxr::TfToken source_name;
+        auto tex = try_resolve_texture(input, scope, source_name);
+        if (tex != UINT32_MAX) mat.normal_tex = tex;
+    }
+
+    // --- emissiveColor ---
+    if (auto input = surface.GetInput(pxr::TfToken("emissiveColor"))) {
+        pxr::GfVec3f color;
+        if (input.Get(&color)) mat.emissive_color = {color[0], color[1], color[2]};
+        pxr::TfToken source_name;
+        auto tex = try_resolve_texture(input, scope, source_name);
+        if (tex != UINT32_MAX) mat.emissive_tex = tex;
+    }
+
+    mat.tex_channels = metallic_ch | (roughness_ch << 2) | (opacity_ch << 4);
+    return mat;
 }
 
 uint32_t resolve_material(pxr::UsdPrim prim, SyncScope& scope) {
@@ -38,23 +162,7 @@ uint32_t resolve_material(pxr::UsdPrim prim, SyncScope& scope) {
         pxr::TfToken shader_id;
         surface.GetShaderId(&shader_id);
         if (shader_id == pxr::TfToken("UsdPreviewSurface")) {
-            if (auto input = surface.GetInput(pxr::TfToken("diffuseColor"))) {
-                pxr::GfVec3f color;
-                if (input.Get(&color)) mat.diffuse_color = {color[0], color[1], color[2]};
-            }
-            if (auto input = surface.GetInput(pxr::TfToken("metallic"))) {
-                input.Get(&mat.metallic);
-            }
-            if (auto input = surface.GetInput(pxr::TfToken("roughness"))) {
-                input.Get(&mat.roughness);
-            }
-            if (auto input = surface.GetInput(pxr::TfToken("opacity"))) {
-                input.Get(&mat.opacity);
-            }
-            if (auto input = surface.GetInput(pxr::TfToken("emissiveColor"))) {
-                pxr::GfVec3f color;
-                if (input.Get(&color)) mat.emissive_color = {color[0], color[1], color[2]};
-            }
+            mat = read_preview_surface(surface, scope);
         }
     }
 

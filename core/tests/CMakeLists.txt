@@ -109,6 +109,11 @@ list(APPEND TEST_NAMES testBvh)
 set(testBvh_source testBvh.cpp)
 set(testBvh_libs core)
 
+# Texture resolution from UsdShade graph - works on all platforms
+list(APPEND TEST_NAMES testTextureResolution)
+set(testTextureResolution_source testTextureResolution.cpp)
+set(testTextureResolution_libs core)
+
 
 function(add_core_test target_name)
     message(STATUS "Building test: ${target_name}")

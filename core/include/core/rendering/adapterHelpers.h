@@ -2,6 +2,7 @@
 
 #include <core/rendering/vertex.h>
 #include <pxr/usd/usd/prim.h>
+#include <pxr/usd/usdShade/shader.h>
 
 #include <cstdint>
 #include <glm/glm.hpp>
@@ -9,10 +10,15 @@
 
 namespace pts::rendering {
 
+struct Material;
 struct RenderWorld;
 class SyncScope;
 
 glm::mat4 compute_world_transform(pxr::UsdPrim prim);
+
+/// Read scalar values and texture connections from a UsdPreviewSurface shader.
+/// Resolves UsdUVTexture file paths and loads them via SyncScope::load_texture().
+Material read_preview_surface(pxr::UsdShadeShader surface, SyncScope& scope);
 
 uint32_t resolve_material(pxr::UsdPrim prim, SyncScope& scope);
 
