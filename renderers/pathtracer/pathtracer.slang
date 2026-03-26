@@ -2,6 +2,7 @@ import bvh;
 import lighting;
 import brdf;
 import light;
+import material_sampling;
 import sampling;
 
 // ── Scene data ──────────────────────────────────────────────────
@@ -50,6 +51,8 @@ static const float PT_EPS = 0.0001;
 struct HitRecord {
     float3 position;
     float3 normal;
+    float3 tangent;
+    float3 bitangent;
     float2 uv;
     uint material_index;
     bool hit;
@@ -130,6 +133,25 @@ HitRecord trace_scene(float3 ro, float3 rd) {
                                 best.uv = tri.uv0 * (1.0 - bu - bv)
                                         + tri.uv1 * bu + tri.uv2 * bv;
                                 best.material_index = inst.material_index;
+
+                                // Tangent frame from triangle UVs
+                                float3 dp1 = tri.v1 - tri.v0;
+                                float3 dp2 = tri.v2 - tri.v0;
+                                float2 duv1 = tri.uv1 - tri.uv0;
+                                float2 duv2 = tri.uv2 - tri.uv0;
+                                float uv_det = duv1.x * duv2.y - duv1.y * duv2.x;
+                                if (abs(uv_det) > 1e-8) {
+                                    float inv_det = 1.0 / uv_det;
+                                    float3 local_T = (dp1 * duv2.y - dp2 * duv1.y) * inv_det;
+                                    float3 local_B = (dp2 * duv1.x - dp1 * duv2.x) * inv_det;
+                                    float3x3 M = float3x3(inst.transform);
+                                    best.tangent = normalize(mul(M, local_T));
+                                    best.bitangent = normalize(mul(M, local_B));
+                                } else {
+                                    TangentFrame tf = TangentFrame::build(best.normal);
+                                    best.tangent = tf.T;
+                                    best.bitangent = tf.B;
+                                }
                             }
                         }
                     } else {
@@ -193,29 +215,14 @@ void cs_main(uint3 did : SV_DispatchThreadID) {
         float3 base_color = float3(0.8);
         float metallic = 0.0;
         float roughness = 0.5;
-        if (hit.material_index != 0xFFFFFFFF) {
+        if (has_texture(hit.material_index)) {
             Material mat = materials[hit.material_index];
-            base_color = mat.diffuse_color;
-            metallic = mat.metallic;
-            roughness = mat.roughness;
-
-            // Diffuse texture (sRGB → linear)
-            if (mat.diffuse_tex != 0xFFFFFFFF) {
-                float4 tc = scene_textures.SampleLevel(scene_sampler, float3(hit.uv, float(mat.diffuse_tex)), 0.0);
-                base_color = pow(tc.rgb, float3(2.2));
-            }
-
-            // Metallic texture (channel selection from tex_channels bits 0-1)
-            if (mat.metallic_tex != 0xFFFFFFFF) {
-                uint ch = mat.tex_channels & 0x3;
-                metallic = scene_textures.SampleLevel(scene_sampler, float3(hit.uv, float(mat.metallic_tex)), 0.0)[ch];
-            }
-
-            // Roughness texture (channel selection from tex_channels bits 2-3)
-            if (mat.roughness_tex != 0xFFFFFFFF) {
-                uint ch = (mat.tex_channels >> 2) & 0x3;
-                roughness = scene_textures.SampleLevel(scene_sampler, float3(hit.uv, float(mat.roughness_tex)), 0.0)[ch];
-            }
+            MaterialSample sm = sample_material_lod(mat, hit.uv, scene_textures, scene_sampler, 0.0);
+            base_color = sm.base_color;
+            metallic = sm.metallic;
+            roughness = sm.roughness;
+            N = apply_normal_map(N, hit.tangent, hit.bitangent, mat, hit.uv,
+                                 scene_textures, scene_sampler, 0.0);
         }
 
         // Direct lighting (NEE with shadow rays)

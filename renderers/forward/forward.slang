@@ -1,6 +1,7 @@
 import lighting;
 import brdf;
 import light;
+import material_sampling;
 import shadow_sampling;
 
 struct Uniforms {
@@ -92,44 +93,15 @@ FsOut fs_main(float3 world_normal : NORMAL, float3 world_pos : WORLD_POS,
     float3 albedo;
     float mat_metallic = 0.0;
     float mat_roughness = 0.5;
-    if (u.material_index == 0xFFFFFFFF) {
+    if (!has_texture(u.material_index)) {
         albedo = color;
     } else {
         Material mat = materials[u.material_index];
-        albedo = mat.diffuse_color;
-        mat_metallic = mat.metallic;
-        mat_roughness = mat.roughness;
-
-        // Diffuse texture (sRGB → linear)
-        if (mat.diffuse_tex != 0xFFFFFFFF) {
-            float4 tc = scene_textures.Sample(scene_sampler, float3(uv, float(mat.diffuse_tex)));
-            albedo = pow(tc.rgb, float3(2.2));
-        }
-
-        // Metallic texture (channel selection from tex_channels bits 0-1)
-        if (mat.metallic_tex != 0xFFFFFFFF) {
-            uint ch = mat.tex_channels & 0x3;
-            mat_metallic = scene_textures.Sample(scene_sampler, float3(uv, float(mat.metallic_tex)))[ch];
-        }
-
-        // Roughness texture (channel selection from tex_channels bits 2-3)
-        if (mat.roughness_tex != 0xFFFFFFFF) {
-            uint ch = (mat.tex_channels >> 2) & 0x3;
-            mat_roughness = scene_textures.Sample(scene_sampler, float3(uv, float(mat.roughness_tex)))[ch];
-        }
-
-        // Normal map (tangent frame from screen-space derivatives)
-        if (mat.normal_tex != 0xFFFFFFFF) {
-            float3 ns = scene_textures.Sample(scene_sampler, float3(uv, float(mat.normal_tex))).rgb;
-            ns = ns * 2.0 - 1.0;
-            float3 dp1 = ddx(world_pos);
-            float3 dp2 = ddy(world_pos);
-            float2 duv1 = ddx(uv);
-            float2 duv2 = ddy(uv);
-            float3 T = normalize(dp1 * duv2.y - dp2 * duv1.y);
-            float3 B = normalize(dp2 * duv1.x - dp1 * duv2.x);
-            N = normalize(T * ns.x + B * ns.y + N * ns.z);
-        }
+        MaterialSample sm = sample_material(mat, uv, scene_textures, scene_sampler);
+        albedo = sm.base_color;
+        mat_metallic = sm.metallic;
+        mat_roughness = sm.roughness;
+        N = apply_normal_map_screen(N, world_pos, uv, mat, scene_textures, scene_sampler);
     }
 
     CookTorranceGGX brdf;
