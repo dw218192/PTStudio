@@ -18,11 +18,13 @@
 #include <imgui_internal.h>
 
 #include "propertyInspector.h"
+#include "transformDecompose.h"
 // clang-format off
 #include <ImGuizmo.h>  // must follow imgui.h
 // clang-format on
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/sdf/path.h>
+#include <pxr/usd/sdf/primSpec.h>
 #include <pxr/usd/usd/stage.h>
 #if defined(__EMSCRIPTEN__)
 #include <emscripten.h>
@@ -1110,6 +1112,43 @@ auto EditorApplication::draw_inspector_panel() noexcept -> void {
     if (!m_selected_prim.IsEmpty()) {
         auto prim = m_stage->GetPrimAtPath(m_selected_prim);
         if (prim.IsValid()) {
+            // ── Transform section (TRS) ──
+            pxr::UsdGeomXformable xformable(prim);
+            if (xformable) {
+                bool reset_xform_stack = false;
+                auto ops = xformable.GetOrderedXformOps(&reset_xform_stack);
+                INVARIANT_MSG(
+                    ops.size() == 1 && ops[0].GetOpType() == pxr::UsdGeomXformOp::TypeTransform,
+                    "xform ops must be normalized to a single TypeTransform for inspector TRS");
+
+                pxr::GfMatrix4d gf_local;
+                ops[0].Get(&gf_local);
+
+                glm::mat4 local_mat;
+                for (int i = 0; i < 4; ++i)
+                    for (int j = 0; j < 4; ++j)
+                        local_mat[i][j] = static_cast<float>(gf_local[i][j]);
+
+                auto trs = decompose_trs(local_mat);
+
+                if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    bool changed = false;
+                    changed |= ImGui::DragFloat3("Translate", &trs.translate.x, 0.01f);
+                    changed |= ImGui::DragFloat3("Rotate", &trs.rotate_degrees.x, 0.5f);
+                    changed |= ImGui::DragFloat3("Scale", &trs.scale.x, 0.01f);
+
+                    if (changed) {
+                        glm::mat4 new_local = compose_trs(trs);
+                        pxr::GfMatrix4d new_gf;
+                        for (int i = 0; i < 4; ++i)
+                            for (int j = 0; j < 4; ++j)
+                                new_gf[i][j] = static_cast<double>(new_local[i][j]);
+                        ops[0].Set(new_gf);
+                    }
+                }
+                ImGui::Spacing();
+            }
+
             draw_prim_properties(prim);
 
             // Show BRDF lobe viewer if prim has a bound material
@@ -1160,50 +1199,112 @@ void EditorApplication::draw_prim_tree(const pxr::UsdPrim& prim) {
     auto type_name = prim.GetTypeName().GetString();
 
     bool is_selected = (m_selected_prim == path);
+    bool is_renaming = (m_renaming_prim == path);
     bool has_children = !prim.GetChildren().empty();
 
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
     if (is_selected) flags |= ImGuiTreeNodeFlags_Selected;
     if (!has_children) flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
 
-    // Label: "Name (TypeName)" or just "Name"
-    std::string label = type_name.empty() ? name : name + " (" + type_name + ")";
-
     // Auto-open parent nodes when a child is selected (e.g. via picking)
     if (!is_selected && !m_selected_prim.IsEmpty() && m_selected_prim.HasPrefix(path)) {
         ImGui::SetNextItemOpen(true);
     }
 
-    bool node_open = ImGui::TreeNodeEx(path.GetText(), flags, "%s", label.c_str());
+    bool node_open;
+    if (is_renaming) {
+        // Render tree node with blank label, overlay InputText for rename
+        node_open = ImGui::TreeNodeEx(path.GetText(), flags, " ");
 
-    // Auto-scroll to the selected prim in the tree
-    if (is_selected) {
-        ImGui::ScrollToItem();
-    }
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+        if (!m_rename_focus_set) {
+            ImGui::SetKeyboardFocusHere();
+            m_rename_focus_set = true;
+        }
 
-    if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+        bool apply = ImGui::InputText(
+            "##rename", m_rename_buf, sizeof(m_rename_buf),
+            ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
+        bool cancel = ImGui::IsKeyPressed(ImGuiKey_Escape);
+        bool lost_focus =
+            !ImGui::IsItemActive() && m_rename_focus_set && ImGui::GetFrameCount() > 1;
+
+        if (apply) {
+            std::string new_name(m_rename_buf);
+            if (!new_name.empty() && new_name != name) {
+                auto layer = m_stage->GetRootLayer();
+                auto spec = layer->GetPrimAtPath(m_renaming_prim);
+                CHECK_MSG(spec, "prim being renamed must have a spec in the root layer");
+                if (spec->SetName(new_name)) {
+                    auto parent = m_renaming_prim.GetParentPath();
+                    m_selected_prim = parent.AppendChild(pxr::TfToken(new_name));
+                }
+            }
+            m_renaming_prim = pxr::SdfPath();
+        } else if (cancel || lost_focus) {
+            m_renaming_prim = pxr::SdfPath();
+        }
+    } else {
+        // Normal tree node rendering
+        std::string label = type_name.empty() ? name : name + " (" + type_name + ")";
+        node_open = ImGui::TreeNodeEx(path.GetText(), flags, "%s", label.c_str());
+
+        // Auto-scroll to the selected prim in the tree
         if (is_selected) {
-            m_selected_prim = pxr::SdfPath();
-        } else {
-            m_selected_prim = path;
-            if (pxr::UsdGeomXformable xformable{prim}; xformable) {
-                normalize_xform_ops(path);
-            }
+            ImGui::ScrollToItem();
         }
-    }
 
-    if (ImGui::BeginPopupContextItem()) {
-        if (ImGui::BeginMenu("Add Child")) {
-            draw_add_prim_menu(&path);
-            ImGui::EndMenu();
-        }
-        if (ImGui::MenuItem("Delete")) {
-            m_stage->RemovePrim(path);
-            if (m_selected_prim == path || m_selected_prim.HasPrefix(path)) {
+        // Double-click to rename
+        bool double_clicked = ImGui::IsItemHovered() &&
+                              ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) &&
+                              !ImGui::IsItemToggledOpen();
+
+        if (double_clicked) {
+            m_renaming_prim = path;
+            m_selected_prim = path;
+            std::strncpy(m_rename_buf, name.c_str(), sizeof(m_rename_buf) - 1);
+            m_rename_buf[sizeof(m_rename_buf) - 1] = '\0';
+            m_rename_focus_set = false;
+        } else if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+            if (is_selected) {
                 m_selected_prim = pxr::SdfPath();
+            } else {
+                m_selected_prim = path;
+                if (pxr::UsdGeomXformable xformable{prim}; xformable) {
+                    normalize_xform_ops(path);
+                }
             }
         }
-        ImGui::EndPopup();
+
+        // F2 to rename selected prim
+        if (is_selected && ImGui::IsKeyPressed(ImGuiKey_F2) && !ImGui::GetIO().WantTextInput) {
+            m_renaming_prim = path;
+            std::strncpy(m_rename_buf, name.c_str(), sizeof(m_rename_buf) - 1);
+            m_rename_buf[sizeof(m_rename_buf) - 1] = '\0';
+            m_rename_focus_set = false;
+        }
+
+        if (ImGui::BeginPopupContextItem()) {
+            if (ImGui::BeginMenu("Add Child")) {
+                draw_add_prim_menu(&path);
+                ImGui::EndMenu();
+            }
+            if (ImGui::MenuItem("Delete")) {
+                m_stage->RemovePrim(path);
+                if (m_selected_prim == path || m_selected_prim.HasPrefix(path)) {
+                    m_selected_prim = pxr::SdfPath();
+                }
+            }
+            if (ImGui::MenuItem("Rename", "F2")) {
+                m_renaming_prim = path;
+                m_selected_prim = path;
+                std::strncpy(m_rename_buf, name.c_str(), sizeof(m_rename_buf) - 1);
+                m_rename_buf[sizeof(m_rename_buf) - 1] = '\0';
+                m_rename_focus_set = false;
+            }
+            ImGui::EndPopup();
+        }
     }
 
     if (node_open && has_children) {
@@ -1518,6 +1619,16 @@ auto EditorApplication::handle_input(InputEvent const& event) noexcept -> void {
         if (fwd != 0.0f || right != 0.0f || up != 0.0f) {
             m_camera.move(fwd, right, up, ImGui::GetIO().DeltaTime);
         }
+        return;
+    }
+
+    // Delete key: remove selected prim (works from any window, guarded against text input)
+    if (event.input.input_type == InputType::KEYBOARD &&
+        event.input.action_type == ActionType::PRESS &&
+        event.input.key_or_button == ImGuiKey_Delete && !m_selected_prim.IsEmpty() && m_stage &&
+        !ImGui::GetIO().WantTextInput) {
+        m_stage->RemovePrim(m_selected_prim);
+        m_selected_prim = pxr::SdfPath();
         return;
     }
 

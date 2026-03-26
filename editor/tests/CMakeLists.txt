@@ -6,9 +6,11 @@ find_package(doctest REQUIRED)
 
 # testCaptureConfig — tests AppConfig and CLI flag registration (no GPU needed)
 # testGizmoScale — tests gizmo distance-based scaling (no GPU needed)
-set(TEST_NAMES testCaptureConfig testGizmoScale)
+# testTransformDecompose — tests TRS matrix decompose/recompose roundtrip (no GPU needed)
+set(TEST_NAMES testCaptureConfig testGizmoScale testTransformDecompose)
 set(testCaptureConfig_source testCaptureConfig.cpp)
 set(testGizmoScale_source testGizmoScale.cpp)
+set(testTransformDecompose_source testTransformDecompose.cpp)
 
 foreach(TEST_NAME IN LISTS TEST_NAMES)
     message(STATUS "Building test: ${TEST_NAME}")
