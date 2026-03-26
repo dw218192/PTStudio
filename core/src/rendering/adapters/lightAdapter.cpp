@@ -6,6 +6,7 @@
 #include <pxr/usd/usdLux/domeLight.h>
 #include <pxr/usd/usdLux/lightAPI.h>
 #include <pxr/usd/usdLux/rectLight.h>
+#include <pxr/usd/usdLux/shadowAPI.h>
 #include <pxr/usd/usdLux/sphereLight.h>
 
 namespace pts::rendering {
@@ -70,6 +71,14 @@ void LightAdapter::sync(pxr::UsdPrim prim, SyncScope& scope) {
         light.type = LightData::Type::Dome;
     } else {
         return;
+    }
+
+    // Shadow API (optional — defaults to true if not authored)
+    pxr::UsdLuxShadowAPI shadow_api(prim);
+    if (shadow_api) {
+        bool enable = true;
+        shadow_api.GetShadowEnableAttr().Get(&enable);
+        light.casts_shadow = enable;
     }
 
     sync_light(prim, scope, light);

@@ -118,6 +118,7 @@ void ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
     for (uint32_t li = 0; li < static_cast<uint32_t>(lights.size()); ++li) {
         if (!lights[li].active()) continue;
         if (lights[li]->type != LightData::Type::Distant) continue;
+        if (!lights[li]->casts_shadow) continue;
         ++shadow_count;
         if (shadow_count >= k_max_shadow_maps) break;
     }
@@ -169,6 +170,7 @@ void ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
     for (uint32_t li = 0; li < static_cast<uint32_t>(lights.size()); ++li) {
         if (!lights[li].active()) continue;
         if (lights[li]->type != LightData::Type::Distant) continue;
+        if (!lights[li]->casts_shadow) continue;
         if (layer_index >= k_max_shadow_maps) continue;
 
         auto dir = glm::normalize(lights[li]->direction);

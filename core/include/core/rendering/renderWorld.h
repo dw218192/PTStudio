@@ -208,6 +208,7 @@ struct LightData {
     float radius{0.0f};
     float width{1.0f};
     float height{1.0f};
+    bool casts_shadow{true};  // from UsdLuxShadowAPI inputs:shadow:enable
 };
 
 /// Convert a LightData to a GPU-ready Light struct.
