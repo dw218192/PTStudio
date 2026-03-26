@@ -477,6 +477,7 @@ void RenderWorld::update_transforms(const pxr::UsdStageRefPtr& stage,
                 case PrimSlot::Kind::Object: {
                     auto w = m_objects.write(slot.index);
                     w->transform = xf;
+                    ++m_mesh_version;
                     break;
                 }
                 case PrimSlot::Kind::Light: {
