@@ -139,6 +139,7 @@ void EditorApplication::on_objects_changed(const pxr::UsdNotice::ObjectsChanged&
 }
 
 void EditorApplication::process_dirty_prims() {
+    PTS_ZONE_SCOPED;
     if (!m_stage) return;
 
     if (!m_resync_paths.empty()) {
@@ -734,20 +735,23 @@ void EditorApplication::render(FrameContext& ctx) {
     }
 
     // In capture mode, add renderer + tone mapping only (skip editor passes)
-    if (capture_mode) {
-        if (m_renderer_pass && m_renderer_pass->is_ready() &&
-            !(m_renderer_pass->requires_viewport() && !has_viewport)) {
-            m_renderer_pass->add_to_frame_graph(*m_frame_graph, pass_ctx);
+    {
+        PTS_ZONE_NAMED("add_to_frame_graph");
+        if (capture_mode) {
+            if (m_renderer_pass && m_renderer_pass->is_ready() &&
+                !(m_renderer_pass->requires_viewport() && !has_viewport)) {
+                m_renderer_pass->add_to_frame_graph(*m_frame_graph, pass_ctx);
+            }
+            if (m_tonemapping_pass && m_tonemapping_pass->is_ready()) {
+                m_tonemapping_pass->add_to_frame_graph(*m_frame_graph, pass_ctx);
+            }
+        } else {
+            for_each_pass([&](auto& pass) {
+                if (!pass.is_ready()) return;
+                if (pass.requires_viewport() && !has_viewport) return;
+                pass.add_to_frame_graph(*m_frame_graph, pass_ctx);
+            });
         }
-        if (m_tonemapping_pass && m_tonemapping_pass->is_ready()) {
-            m_tonemapping_pass->add_to_frame_graph(*m_frame_graph, pass_ctx);
-        }
-    } else {
-        for_each_pass([&](auto& pass) {
-            if (!pass.is_ready()) return;
-            if (pass.requires_viewport() && !has_viewport) return;
-            pass.add_to_frame_graph(*m_frame_graph, pass_ctx);
-        });
     }
 
     if (has_viewport) {

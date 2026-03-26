@@ -1,4 +1,5 @@
 #include <core/diagnostics.h>
+#include <core/profiling.h>
 #include <core/rendering/adapterHelpers.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/webgpu/device.h>
@@ -322,6 +323,7 @@ constexpr std::size_t k_min_light_buffer_size = sizeof(Light);  // 48 bytes
 }  // namespace
 
 void RenderWorld::prepare_gpu_buffers(const webgpu::Device& device, WGPUQueue queue) {
+    PTS_ZONE_SCOPED;
     // --- Materials ---
     if (m_material_version != m_cached_material_version) {
         auto material_count = static_cast<uint32_t>(m_materials.size());
@@ -399,6 +401,7 @@ void RenderWorld::prepare_gpu_buffers(const webgpu::Device& device, WGPUQueue qu
 
     // --- Scene BVH ---
     if (m_mesh_version != m_cached_bvh_mesh_version) {
+        PTS_ZONE_NAMED("BVH rebuild");
         auto objects = get_objects();
         auto meshes_span = get_meshes();
 
@@ -427,6 +430,7 @@ void RenderWorld::prepare_gpu_buffers(const webgpu::Device& device, WGPUQueue qu
 
     // --- Texture array ---
     if (m_texture_version != m_cached_texture_version) {
+        PTS_ZONE_NAMED("texture array upload");
         // Release old resources
         if (m_texture_array_view) {
             wgpuTextureViewRelease(m_texture_array_view);
@@ -519,6 +523,7 @@ const BVH& RenderWorld::scene_bvh() const {
 }
 
 void RenderWorld::upload_all_meshes(const webgpu::Device& device) {
+    PTS_ZONE_SCOPED;
     for (uint32_t i = 0; i < m_meshes.size(); ++i) {
         const auto& mesh = m_meshes[i].data();
         if (mesh.cpu_vertices.empty()) continue;

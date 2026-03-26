@@ -384,17 +384,20 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     auto shadow_info_handle = shadow_info_buf.handle();
     auto shadow_info_size = shadow_info_buf.size();
 
-    for (uint32_t i = 0; i < object_count; ++i) {
-        if (!objects[i].active()) continue;
-        const auto& obj = objects[i];
-        ForwardUniforms u{};
-        u.mvp = proj_mat * view_mat * obj->transform;
-        u.model = obj->transform;
-        u.camera_pos = camera_pos;
-        u.time = elapsed_time;
-        u.material_index = obj->material_index;
-        u.light_count = light_count;
-        wgpuQueueWriteBuffer(queue, uniform_buf, i * k_uniform_align, &u, sizeof(u));
+    {
+        PTS_ZONE_NAMED("forward uniform upload");
+        for (uint32_t i = 0; i < object_count; ++i) {
+            if (!objects[i].active()) continue;
+            const auto& obj = objects[i];
+            ForwardUniforms u{};
+            u.mvp = proj_mat * view_mat * obj->transform;
+            u.model = obj->transform;
+            u.camera_pos = camera_pos;
+            u.time = elapsed_time;
+            u.material_index = obj->material_index;
+            u.light_count = light_count;
+            wgpuQueueWriteBuffer(queue, uniform_buf, i * k_uniform_align, &u, sizeof(u));
+        }
     }
 
     auto pass_builder = fg.add_pass("forward").color(color);

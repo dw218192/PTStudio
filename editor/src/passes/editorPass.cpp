@@ -449,12 +449,15 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
     auto vp = ctx.proj_matrix * ctx.view_matrix;
     auto picking_buf = ready.picking_uniform_buffer.handle();
 
-    for (uint32_t i = 0; i < object_count; ++i) {
-        if (!objects[i].active()) continue;
-        PickingUniforms u{};
-        u.mvp = vp * objects[i]->transform;
-        u.object_id = i;
-        wgpuQueueWriteBuffer(queue, picking_buf, i * k_uniform_align, &u, sizeof(u));
+    {
+        PTS_ZONE_NAMED("picking uniform upload");
+        for (uint32_t i = 0; i < object_count; ++i) {
+            if (!objects[i].active()) continue;
+            PickingUniforms u{};
+            u.mvp = vp * objects[i]->transform;
+            u.object_id = i;
+            wgpuQueueWriteBuffer(queue, picking_buf, i * k_uniform_align, &u, sizeof(u));
+        }
     }
 
     auto gizmo_buf = ready.gizmo_uniform_buffer.handle();

@@ -659,7 +659,17 @@ class LaunchTool(RepoTool):
             result = subprocess.CompletedProcess(args=[], returncode=0)
         finally:
             if tracy_proc is not None and tracy_proc.poll() is None:
-                logger.info("Stopping Tracy")
-                tracy_proc.terminate()
+                if profile_val != "viewer":
+                    # tracy-capture exits on its own after the app disconnects;
+                    # wait for it to flush the trace file.
+                    logger.info("Waiting for Tracy capture to finish writing...")
+                    try:
+                        tracy_proc.wait(timeout=30)
+                        logger.info("Tracy capture finished")
+                    except subprocess.TimeoutExpired:
+                        logger.warning("Tracy capture timed out, terminating")
+                        tracy_proc.terminate()
+                else:
+                    tracy_proc.terminate()
 
         sys.exit(result.returncode)
