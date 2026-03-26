@@ -47,6 +47,8 @@ class ForwardPass final : public rendering::IRenderer {
         uint32_t capacity = 0;
         WGPUBuffer cached_light_buf = nullptr;
         WGPUBuffer cached_material_buf = nullptr;
+        WGPUTextureView cached_texture_view = nullptr;
+        WGPUSampler cached_texture_sampler = nullptr;
         rendering::LtcTextures ltc_textures;
         // Shadow receiver resources (bind group 1)
         WGPUBindGroupLayout shadow_recv_bgl = nullptr;

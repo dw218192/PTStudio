@@ -13,7 +13,8 @@ struct PackedTriangle {
     float3 n0; uint _p3;
     float3 n1; uint _p4;
     float3 n2; uint material_index;
-    uint _p5[4];
+    float2 uv0; float2 uv1;
+    float2 uv2; uint _p5[2];
 };
 
 struct PTUniforms {
@@ -36,6 +37,9 @@ struct PTUniforms {
 
 [[vk::binding(6, 0)]] StructuredBuffer<BVHNode> bvh_nodes;
 
+[[vk::binding(7, 0)]] Texture2DArray<float4> scene_textures;
+[[vk::binding(8, 0)]] SamplerState scene_sampler;
+
 static const float PT_EPS = 0.0001;
 
 // ── Ray-triangle intersection ───────────────────────────────────
@@ -43,6 +47,7 @@ static const float PT_EPS = 0.0001;
 struct HitRecord {
     float3 position;
     float3 normal;
+    float2 uv;
     uint material_index;
     bool hit;
 };
@@ -89,6 +94,7 @@ HitRecord trace_scene(float3 ro, float3 rd) {
                     best.position = ro + rd * t;
                     best.normal = normalize(
                         tri.n0 * (1.0 - bu - bv) + tri.n1 * bu + tri.n2 * bv);
+                    best.uv = tri.uv0 * (1.0 - bu - bv) + tri.uv1 * bu + tri.uv2 * bv;
                     best.material_index = tri.material_index;
                 }
             }
@@ -151,6 +157,24 @@ void cs_main(uint3 did : SV_DispatchThreadID) {
             base_color = mat.diffuse_color;
             metallic = mat.metallic;
             roughness = mat.roughness;
+
+            // Diffuse texture (sRGB → linear)
+            if (mat.diffuse_tex != 0xFFFFFFFF) {
+                float4 tc = scene_textures.SampleLevel(scene_sampler, float3(hit.uv, float(mat.diffuse_tex)), 0.0);
+                base_color = pow(tc.rgb, float3(2.2));
+            }
+
+            // Metallic texture (channel selection from tex_channels bits 0-1)
+            if (mat.metallic_tex != 0xFFFFFFFF) {
+                uint ch = mat.tex_channels & 0x3;
+                metallic = scene_textures.SampleLevel(scene_sampler, float3(hit.uv, float(mat.metallic_tex)), 0.0)[ch];
+            }
+
+            // Roughness texture (channel selection from tex_channels bits 2-3)
+            if (mat.roughness_tex != 0xFFFFFFFF) {
+                uint ch = (mat.tex_channels >> 2) & 0x3;
+                roughness = scene_textures.SampleLevel(scene_sampler, float3(hit.uv, float(mat.roughness_tex)), 0.0)[ch];
+            }
         }
 
         // Direct lighting (NEE with shadow rays)

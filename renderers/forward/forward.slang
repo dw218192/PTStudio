@@ -32,6 +32,12 @@ Texture2D<float2> ltc_amp;
 [[vk::binding(5, 0)]]
 SamplerState ltc_sampler;
 
+[[vk::binding(6, 0)]]
+Texture2DArray<float4> scene_textures;
+
+[[vk::binding(7, 0)]]
+SamplerState scene_sampler;
+
 // Bind group 1: shadow data
 [[vk::binding(0, 1)]] StructuredBuffer<ShadowInfo> shadow_infos;
 [[vk::binding(1, 1)]] Texture2DArray<float> shadow_map;
@@ -79,7 +85,7 @@ struct FsOut {
 
 [shader("fragment")]
 FsOut fs_main(float3 world_normal : NORMAL, float3 world_pos : WORLD_POS,
-              float3 color : COLOR) {
+              float3 color : COLOR, float2 uv : TEXCOORD) {
     float3 N = normalize(world_normal);
     float3 V = normalize(u.camera_pos - world_pos);
 
@@ -89,9 +95,41 @@ FsOut fs_main(float3 world_normal : NORMAL, float3 world_pos : WORLD_POS,
     if (u.material_index == 0xFFFFFFFF) {
         albedo = color;
     } else {
-        albedo = materials[u.material_index].diffuse_color;
-        mat_metallic = materials[u.material_index].metallic;
-        mat_roughness = materials[u.material_index].roughness;
+        Material mat = materials[u.material_index];
+        albedo = mat.diffuse_color;
+        mat_metallic = mat.metallic;
+        mat_roughness = mat.roughness;
+
+        // Diffuse texture (sRGB → linear)
+        if (mat.diffuse_tex != 0xFFFFFFFF) {
+            float4 tc = scene_textures.Sample(scene_sampler, float3(uv, float(mat.diffuse_tex)));
+            albedo = pow(tc.rgb, float3(2.2));
+        }
+
+        // Metallic texture (channel selection from tex_channels bits 0-1)
+        if (mat.metallic_tex != 0xFFFFFFFF) {
+            uint ch = mat.tex_channels & 0x3;
+            mat_metallic = scene_textures.Sample(scene_sampler, float3(uv, float(mat.metallic_tex)))[ch];
+        }
+
+        // Roughness texture (channel selection from tex_channels bits 2-3)
+        if (mat.roughness_tex != 0xFFFFFFFF) {
+            uint ch = (mat.tex_channels >> 2) & 0x3;
+            mat_roughness = scene_textures.Sample(scene_sampler, float3(uv, float(mat.roughness_tex)))[ch];
+        }
+
+        // Normal map (tangent frame from screen-space derivatives)
+        if (mat.normal_tex != 0xFFFFFFFF) {
+            float3 ns = scene_textures.Sample(scene_sampler, float3(uv, float(mat.normal_tex))).rgb;
+            ns = ns * 2.0 - 1.0;
+            float3 dp1 = ddx(world_pos);
+            float3 dp2 = ddy(world_pos);
+            float2 duv1 = ddx(uv);
+            float2 duv2 = ddy(uv);
+            float3 T = normalize(dp1 * duv2.y - dp2 * duv1.y);
+            float3 B = normalize(dp2 * duv1.x - dp1 * duv2.x);
+            N = normalize(T * ns.x + B * ns.y + N * ns.z);
+        }
     }
 
     CookTorranceGGX brdf;

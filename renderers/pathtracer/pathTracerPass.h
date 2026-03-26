@@ -28,9 +28,12 @@ struct PackedTriangle {
     uint32_t _pad4{};
     glm::vec3 n2;
     uint32_t material_index{UINT32_MAX};
-    uint32_t _pad5[4]{};
+    glm::vec2 uv0{};
+    glm::vec2 uv1{};
+    glm::vec2 uv2{};
+    uint32_t _pad5[2]{};
 };
-static_assert(sizeof(PackedTriangle) == 112, "PackedTriangle must be 112 bytes for GPU alignment");
+static_assert(sizeof(PackedTriangle) == 128, "PackedTriangle must be 128 bytes for GPU alignment");
 
 class PathTracerPass final : public rendering::IRenderer {
    public:

@@ -41,7 +41,7 @@ struct BlitUniforms {
 };
 static_assert(sizeof(BlitUniforms) == 16);
 
-static constexpr std::size_t k_min_scene_buffer_size = 112;
+static constexpr std::size_t k_min_scene_buffer_size = 128;
 static constexpr std::size_t k_min_pixel_buffer_size = 16;
 
 PathTracerPass::~PathTracerPass() {
@@ -73,8 +73,8 @@ void PathTracerPass::do_renderer_setup(const webgpu::Device& device) {
         sizeof(PTUniforms),
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
 
-    WGPUBindGroupLayoutEntry ce[7] = {};
-    for (int i = 0; i < 7; ++i) ce[i] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    WGPUBindGroupLayoutEntry ce[9] = {};
+    for (int i = 0; i < 9; ++i) ce[i] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
 
     ce[0].binding = 0;
     ce[0].visibility = WGPUShaderStage_Compute;
@@ -101,8 +101,20 @@ void PathTracerPass::do_renderer_setup(const webgpu::Device& device) {
     ce[6].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
     ce[6].buffer.minBindingSize = 32;  // sizeof(BVHNode)
 
+    // binding 7: scene texture array
+    ce[7].binding = 7;
+    ce[7].visibility = WGPUShaderStage_Compute;
+    ce[7].texture.sampleType = WGPUTextureSampleType_Float;
+    ce[7].texture.viewDimension = WGPUTextureViewDimension_2DArray;
+    ce[7].texture.multisampled = false;
+
+    // binding 8: scene texture sampler
+    ce[8].binding = 8;
+    ce[8].visibility = WGPUShaderStage_Compute;
+    ce[8].sampler.type = WGPUSamplerBindingType_Filtering;
+
     WGPUBindGroupLayoutDescriptor cbgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    cbgl_desc.entryCount = 7;
+    cbgl_desc.entryCount = 9;
     cbgl_desc.entries = ce;
     auto compute_bgl = wgpuDeviceCreateBindGroupLayout(device.handle(), &cbgl_desc);
 
@@ -201,6 +213,9 @@ PathTracerPass::SceneData PathTracerPass::build_scene_data(const webgpu::Device&
             tri.n1 = xform_nrm(v1.normal);
             tri.n2 = xform_nrm(v2.normal);
             tri.material_index = obj->material_index;
+            tri.uv0 = glm::vec2(v0.uv[0], v0.uv[1]);
+            tri.uv1 = glm::vec2(v1.uv[0], v1.uv[1]);
+            tri.uv2 = glm::vec2(v2.uv[0], v2.uv[1]);
             triangles.push_back(tri);
         }
     }
@@ -298,8 +313,11 @@ void PathTracerPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     auto tri_count = scene.triangle_count;
 
     // --- Create compute bind group ---
-    WGPUBindGroupEntry cbe[7] = {};
-    for (int i = 0; i < 7; ++i) cbe[i] = WGPU_BIND_GROUP_ENTRY_INIT;
+    auto scene_tex_view = ctx.world.texture_array_view();
+    auto scene_tex_sampler = ctx.world.texture_sampler();
+
+    WGPUBindGroupEntry cbe[9] = {};
+    for (int i = 0; i < 9; ++i) cbe[i] = WGPU_BIND_GROUP_ENTRY_INIT;
     cbe[0].binding = 0;
     cbe[0].buffer = r.uniform_buffer.handle();
     cbe[0].size = sizeof(PTUniforms);
@@ -321,10 +339,14 @@ void PathTracerPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     cbe[6].binding = 6;
     cbe[6].buffer = ctx.world.scene_bvh().gpu_nodes().handle();
     cbe[6].size = ctx.world.scene_bvh().gpu_nodes().size();
+    cbe[7].binding = 7;
+    cbe[7].textureView = scene_tex_view;
+    cbe[8].binding = 8;
+    cbe[8].sampler = scene_tex_sampler;
 
     WGPUBindGroupDescriptor cbg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
     cbg_desc.layout = r.compute_bgl;
-    cbg_desc.entryCount = 7;
+    cbg_desc.entryCount = 9;
     cbg_desc.entries = cbe;
     auto compute_bg = wgpuDeviceCreateBindGroup(dev, &cbg_desc);
 
