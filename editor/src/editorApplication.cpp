@@ -10,9 +10,9 @@
 #include <core/rendering/adapterHelpers.h>
 #include <core/rendering/adapters/registry.h>
 #include <core/rendering/passContext.h>
+#include <core/rendering/renderer.h>
 #include <core/rendering/rendererRegistry.h>
 #include <core/rendering/sceneLoader.h>
-#include <core/rendering/scenePass.h>
 #include <core/rendering/webgpuContext.h>
 #include <core/rendering/windowing.h>
 #include <imgui_internal.h>
@@ -322,7 +322,7 @@ void EditorApplication::process_args(const CommandLine& cli) {
         m_app_config.camera_fov = cli.get_string("camera-fov");
     }
     if (cli.has("camera")) {
-        m_app_config.camera_name = cli.get_string("camera");
+        m_app_config.camera_prim_path = cli.get_string("camera");
     }
 }
 
@@ -423,6 +423,11 @@ void EditorApplication::on_ready() {
         "editor/generated/shaders/pt_blit.wgsl", "editor/shaders/pt_blit.slang",
         "editor/generated/shaders/pt_blit.wgsl", editor_resources::get_resource);
 
+    // Register shadow shader for hot-reload (vertex-only: no fragment stage)
+    m_shader_loader.register_shader(
+        "core/generated/shaders/shadow.wgsl", "core/shaders/shadow.slang",
+        "core/generated/shaders/shadow.wgsl", editor_resources::get_resource, {"vs_main"});
+
     // Create editor passes (always-on, independent of renderer choice)
     {
         auto& dev = webgpu_context()->device();
@@ -501,15 +506,11 @@ void EditorApplication::on_ready() {
         m_camera.set_fov_y(std::stof(m_app_config.camera_fov));
     }
 
-    // Select scene camera by name (from --camera CLI arg)
-    if (!m_app_config.camera_name.empty()) {
-        auto cameras = m_world.get_cameras();
-        for (uint32_t i = 0; i < cameras.size(); ++i) {
-            if (cameras[i].active() &&
-                cameras[i].get_prim_path().GetName() == m_app_config.camera_name) {
-                m_active_camera_index = static_cast<int>(i + 1);
-                break;
-            }
+    // Select scene camera by prim path (from --camera CLI arg)
+    if (!m_app_config.camera_prim_path.empty()) {
+        int idx = m_world.find_camera_by_prim(pxr::SdfPath(m_app_config.camera_prim_path));
+        if (idx >= 0) {
+            m_active_camera_index = idx + 1;
         }
     }
 
@@ -671,11 +672,14 @@ void EditorApplication::render(FrameContext& ctx) {
         }
         m_imgui->end_window();
 
-        // Pass-owned ImGui windows
-        for_each_pass([](auto& pass) { pass.draw_imgui(); });
+        // Renderer settings window — one shared window, each pass draws a section
+        if (ImGui::Begin("Renderer")) {
+            for_each_pass([](auto& pass) { pass.draw_imgui(); });
+        }
+        ImGui::End();
 
         // Collect all passes for perf overlay
-        std::vector<rendering::IScenePass*> all_passes;
+        std::vector<rendering::IRenderPass*> all_passes;
         for_each_pass([&](auto& pass) { all_passes.push_back(&pass); });
         m_perf_overlay.draw(get_delta_time(), m_world, *m_frame_graph, all_passes,
                             rendering::RendererRegistry::entries()[m_active_config_index].name,
@@ -1355,6 +1359,15 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
                              m_viewport_y + static_cast<float>(m_viewport_height));
                 draw_list->AddImage(reinterpret_cast<ImTextureID>(m_gizmo_overlay_ref.view()),
                                     p_min, p_max);
+            }
+            // Draw renderer debug overlays (e.g. BVH wireframes)
+            if (m_renderer_pass && m_viewport_width > 0 && m_viewport_height > 0) {
+                auto view = compute_active_view(static_cast<float>(m_viewport_width) /
+                                                static_cast<float>(m_viewport_height));
+                rendering::IRenderPass::ViewportOverlayParams overlay_params{
+                    view.proj_matrix * view.view_matrix, m_viewport_x, m_viewport_y,
+                    static_cast<float>(m_viewport_width), static_cast<float>(m_viewport_height)};
+                m_renderer_pass->draw_viewport_overlay(overlay_params);
             }
         } else {
             ImGui::TextUnformatted("Renderer output not available");

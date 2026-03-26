@@ -1,6 +1,6 @@
 #pragma once
 
-#include <core/rendering/scenePass.h>
+#include <core/rendering/renderPass.h>
 #include <core/rendering/webgpu/buffer.h>
 #include <core/rendering/webgpu/pipeline.h>
 #include <core/rendering/webgpu/shader.h>
@@ -12,9 +12,9 @@
 
 namespace pts::editor {
 
-class ToneMappingPass final : public rendering::IScenePass {
+class ToneMappingPass final : public rendering::IRenderPass {
    public:
-    using IScenePass::IScenePass;
+    using IRenderPass::IRenderPass;
     ~ToneMappingPass() override;
 
     ToneMappingPass(const ToneMappingPass&) = delete;

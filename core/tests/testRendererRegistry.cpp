@@ -1,6 +1,6 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+#include <core/rendering/renderer.h>
 #include <core/rendering/rendererRegistry.h>
-#include <core/rendering/scenePass.h>
 #include <core/rendering/shaderLoader.h>
 #include <doctest/doctest.h>
 #include <spdlog/spdlog.h>
@@ -14,32 +14,57 @@ static ShaderLoader make_test_shader_loader() {
 }
 static auto s_test_sl = make_test_shader_loader();
 
-struct FakePass final : IScenePass {
-    using IScenePass::IScenePass;
+struct FakePass final : IRenderer {
+    using IRenderer::IRenderer;
     auto name() const noexcept -> std::string_view override {
         return "fake";
     }
     auto is_ready() const noexcept -> bool override {
         return true;
     }
-    void do_setup(const pts::webgpu::Device& /*device*/) override {
+    void do_renderer_setup(const pts::webgpu::Device& /*device*/) override {
     }
-    void add_to_frame_graph(FrameGraph& /*fg*/, const PassContext& /*ctx*/) override {
+    void do_add_to_frame_graph(FrameGraph& /*fg*/, const PassContext& /*ctx*/) override {
     }
 };
 
-struct AnotherFakePass final : IScenePass {
-    using IScenePass::IScenePass;
+struct AnotherFakePass final : IRenderer {
+    using IRenderer::IRenderer;
     auto name() const noexcept -> std::string_view override {
         return "another";
     }
     auto is_ready() const noexcept -> bool override {
         return true;
     }
+    void do_renderer_setup(const pts::webgpu::Device& /*device*/) override {
+    }
+    void do_add_to_frame_graph(FrameGraph& /*fg*/, const PassContext& /*ctx*/) override {
+    }
+};
+
+/// A minimal IRenderPass child (not a renderer — has no children of its own).
+struct FakeChild final : IRenderPass {
+    using IRenderPass::IRenderPass;
+    auto name() const noexcept -> std::string_view override {
+        return "fake_child";
+    }
+    auto is_ready() const noexcept -> bool override {
+        return ready;
+    }
     void do_setup(const pts::webgpu::Device& /*device*/) override {
+        ++setup_count;
     }
     void add_to_frame_graph(FrameGraph& /*fg*/, const PassContext& /*ctx*/) override {
+        ++frame_graph_count;
     }
+    void draw_imgui() override {
+        ++imgui_count;
+    }
+
+    bool ready = true;
+    int setup_count = 0;
+    int frame_graph_count = 0;
+    int imgui_count = 0;
 };
 
 // Exercise the REGISTER_RENDERER macro at file scope.
@@ -78,3 +103,12 @@ TEST_CASE("RendererRegistry::entries contains all registered renderers") {
     CHECK(found_fake);
     CHECK(found_another);
 }
+
+TEST_CASE("IRenderer::add_pass returns reference and owns child") {
+    FakePass renderer{s_test_sl};
+    auto& child = renderer.add_pass<FakeChild>(s_test_sl);
+    CHECK(child.name() == "fake_child");
+}
+
+// draw_imgui forwarding is exercised at runtime — ImGui widget state
+// makes it impractical to unit-test without a full render backend.

@@ -7,14 +7,14 @@
 
 namespace pts::rendering {
 
-class IScenePass;
+class IRenderer;
 class ShaderLoader;
 
-using PassFactory = std::function<std::unique_ptr<IScenePass>(const ShaderLoader&)>;
+using RendererFactory = std::function<std::unique_ptr<IRenderer>(const ShaderLoader&)>;
 
 struct RendererConfig {
     std::string name;
-    PassFactory factory;
+    RendererFactory factory;
 };
 
 }  // namespace pts::rendering

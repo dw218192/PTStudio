@@ -1,7 +1,7 @@
 #pragma once
 
+#include <core/rendering/renderPass.h>
 #include <core/rendering/renderWorld.h>
-#include <core/rendering/scenePass.h>
 #include <imgui.h>
 
 #include <algorithm>
@@ -17,7 +17,7 @@ struct PerfOverlay {
     static constexpr float k_ema_alpha = 0.05f;
 
     void draw(float dt, const rendering::RenderWorld& world, const rendering::FrameGraph& fg,
-              const std::vector<rendering::IScenePass*>& passes, std::string_view renderer_name,
+              const std::vector<rendering::IRenderPass*>& passes, std::string_view renderer_name,
               uint32_t viewport_w, uint32_t viewport_h) {
         update_timing(dt);
 
@@ -101,7 +101,7 @@ struct PerfOverlay {
     }
 
     void draw_renderer_section(const rendering::FrameGraph& fg,
-                               const std::vector<rendering::IScenePass*>& passes,
+                               const std::vector<rendering::IRenderPass*>& passes,
                                std::string_view renderer_name, uint32_t viewport_w,
                                uint32_t viewport_h) const {
         if (!ImGui::CollapsingHeader("Renderer", ImGuiTreeNodeFlags_DefaultOpen)) return;

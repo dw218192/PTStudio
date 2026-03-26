@@ -1,6 +1,8 @@
-#include <core/rendering/scenePass.h>
+#include <core/rendering/renderPass.h>
+#include <core/rendering/renderer.h>
 #include <core/rendering/shaderLoader.h>
 #include <core/rendering/webgpu/device.h>
+#include <imgui.h>
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
@@ -99,7 +101,7 @@ uint32_t color_attachment_bytes_per_sample(WGPUTextureFormat scene_format,
 
 }  // namespace
 
-void IScenePass::compute_allowed_debug_targets(const webgpu::Device& device) {
+void IRenderPass::compute_allowed_debug_targets(const webgpu::Device& device) {
     auto [names, desired] = debug_target_names();
     if (desired == 0) {
         m_allowed_debug_count = 0;
@@ -132,7 +134,7 @@ void IScenePass::compute_allowed_debug_targets(const webgpu::Device& device) {
     m_allowed_debug_count = fits ? desired : 0;
 }
 
-auto IScenePass::load_pass_shader(std::string_view resource_key) const -> std::string {
+auto IRenderPass::load_pass_shader(std::string_view resource_key) const -> std::string {
     auto [names, count] = effective_debug_target_names();
     if (count > 0) {
         return m_shader_loader->load(resource_key);
@@ -144,6 +146,17 @@ auto IScenePass::load_pass_shader(std::string_view resource_key) const -> std::s
     auto variant_key = key.substr(0, dot) + "_no_debug" + key.substr(dot);
     std::string_view defines[] = {k_no_debug_define};
     return m_shader_loader->load_variant(resource_key, defines, variant_key);
+}
+
+void IRenderer::draw_imgui() {
+    if (!ImGui::CollapsingHeader(name().data(), ImGuiTreeNodeFlags_DefaultOpen)) return;
+    for (auto& c : m_children) {
+        if (ImGui::TreeNodeEx(c->name().data(), ImGuiTreeNodeFlags_DefaultOpen)) {
+            c->draw_imgui();
+            ImGui::TreePop();
+        }
+    }
+    do_draw_imgui();
 }
 
 }  // namespace pts::rendering

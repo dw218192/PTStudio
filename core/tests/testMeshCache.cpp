@@ -1,4 +1,4 @@
-#include <core/rendering/scenePass.h>
+#include <core/rendering/renderPass.h>
 #include <core/rendering/shaderLoader.h>
 #include <spdlog/spdlog.h>
 
@@ -15,8 +15,8 @@ static ShaderLoader make_test_shader_loader() {
 static auto s_test_sl = make_test_shader_loader();
 
 /// Concrete pass that exposes get_or_create_pass_data for testing.
-struct TestPass final : IScenePass {
-    using IScenePass::IScenePass;
+struct TestPass final : IRenderPass {
+    using IRenderPass::IRenderPass;
     auto name() const noexcept -> std::string_view override {
         return "test";
     }
@@ -29,8 +29,8 @@ struct TestPass final : IScenePass {
     }
 
     // Expose protected members for testing.
-    using IScenePass::clear_pass_data;
-    using IScenePass::get_or_create_pass_data;
+    using IRenderPass::clear_pass_data;
+    using IRenderPass::get_or_create_pass_data;
 };
 
 }  // namespace

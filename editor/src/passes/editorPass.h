@@ -1,6 +1,6 @@
 #pragma once
 
-#include <core/rendering/scenePass.h>
+#include <core/rendering/renderPass.h>
 #include <core/rendering/webgpu/buffer.h>
 #include <core/rendering/webgpu/pipeline.h>
 #include <core/rendering/webgpu/shader.h>
@@ -27,9 +27,9 @@ inline float gizmo_distance_scale(float camera_distance, float world_radius,
 /// Submits two frame graph passes:
 ///   "editor_picking" — renders mesh objects + light shapes to picking_ids
 ///   "editor_gizmos"  — renders light wireframe shapes to scene_color
-class EditorPass final : public rendering::IScenePass {
+class EditorPass final : public rendering::IRenderPass {
    public:
-    using IScenePass::IScenePass;
+    using IRenderPass::IRenderPass;
     ~EditorPass() override;
 
     EditorPass(const EditorPass&) = delete;

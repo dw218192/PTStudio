@@ -1,3 +1,4 @@
+import bvh;
 import lighting;
 import brdf;
 import light;
@@ -33,6 +34,8 @@ struct PTUniforms {
 [[vk::binding(4, 0)]] RWStructuredBuffer<float4> accumulation;
 [[vk::binding(5, 0)]] RWStructuredBuffer<float4> output_buf;
 
+[[vk::binding(6, 0)]] StructuredBuffer<BVHNode> bvh_nodes;
+
 static const float PT_EPS = 0.0001;
 
 // ── Ray-triangle intersection ───────────────────────────────────
@@ -63,23 +66,39 @@ float intersect_triangle(float3 ro, float3 rd, PackedTriangle tri,
 }
 
 HitRecord trace_scene(float3 ro, float3 rd) {
-    HitRecord result;
-    result.hit = false;
-    float best = 1e30;
-    for (uint i = 0; i < u.triangle_count; i++) {
-        PackedTriangle tri = triangles[i];
-        float bu, bv;
-        float t = intersect_triangle(ro, rd, tri, bu, bv);
-        if (t > 0.0 && t < best) {
-            best = t;
-            float w = 1.0 - bu - bv;
-            result.position = ro + rd * t;
-            result.normal = normalize(tri.n0 * w + tri.n1 * bu + tri.n2 * bv);
-            result.material_index = tri.material_index;
-            result.hit = true;
+    HitRecord best;
+    best.hit = false;
+    float t_best = 1e30;
+
+    uint stack[32];
+    int sp = 0;
+    stack[sp++] = 0;  // root
+
+    while (sp > 0) {
+        BVHNode node = bvh_nodes[stack[--sp]];
+        if (!ray_aabb(ro, rd, node.aabb_min, node.aabb_max, t_best)) continue;
+        if (node.count > 0) {
+            // Leaf — test triangles
+            for (uint i = 0; i < node.count; i++) {
+                PackedTriangle tri = triangles[node.left_first + i];
+                float bu, bv;
+                float t = intersect_triangle(ro, rd, tri, bu, bv);
+                if (t > 0.0 && t < t_best) {
+                    t_best = t;
+                    best.hit = true;
+                    best.position = ro + rd * t;
+                    best.normal = normalize(
+                        tri.n0 * (1.0 - bu - bv) + tri.n1 * bu + tri.n2 * bv);
+                    best.material_index = tri.material_index;
+                }
+            }
+        } else {
+            // Interior — push both children
+            stack[sp++] = node.left_first;
+            stack[sp++] = node.left_first + 1;
         }
     }
-    return result;
+    return best;
 }
 
 // ── Main ────────────────────────────────────────────────────────
@@ -109,7 +128,15 @@ void cs_main(uint3 did : SV_DispatchThreadID) {
 
     for (uint bounce = 0; bounce < MAX_BOUNCES; bounce++) {
         HitRecord hit = trace_scene(ray_origin, ray_dir);
-        if (!hit.hit) break;
+        if (!hit.hit) {
+            // Miss → dome light contributes as environment
+            for (uint li = 0; li < u.light_count; li++) {
+                if (lights[li].type == LIGHT_DOME) {
+                    radiance += throughput * lights[li].color * lights[li].intensity;
+                }
+            }
+            break;
+        }
 
         float3 N = hit.normal;
         float3 V = -ray_dir;
@@ -126,14 +153,31 @@ void cs_main(uint3 did : SV_DispatchThreadID) {
             roughness = mat.roughness;
         }
 
-        // Direct lighting
-        float3 direct_diffuse, direct_specular;
-        float3 direct = evaluate_lighting_nee(
-            brdf, lights, u.light_count,
-            hit.position, N, V,
-            base_color, metallic, roughness,
-            rng,
-            direct_diffuse, direct_specular);
+        // Direct lighting (NEE with shadow rays)
+        float3 direct = float3(0.0);
+        for (uint li = 0; li < u.light_count; li++) {
+            Light light = lights[li];
+            if (light.type == LIGHT_DOME) continue;
+
+            LightSampleStochastic ls = sample_direct(light, hit.position, rng);
+            if (!ls.valid || ls.pdf <= 0.0) continue;
+
+            float3 wi = normalize(ls.position - hit.position);
+            float NdotL = dot(N, wi);
+            if (NdotL <= 0.0) continue;
+
+            // Shadow ray
+            float dist_to_light = length(ls.position - hit.position);
+            HitRecord shadow_hit = trace_scene(hit.position + N * PT_EPS, wi);
+            if (shadow_hit.hit) {
+                float shadow_dist = length(shadow_hit.position - hit.position);
+                if (shadow_dist < dist_to_light - PT_EPS) continue;
+            }
+
+            ShadingGeometry g = ShadingGeometry::from_world(N, wi, V, roughness);
+            float3 f = brdf.eval(g, base_color, metallic);
+            direct += f * ls.radiance * NdotL / ls.pdf;
+        }
         radiance += throughput * direct;
 
         // Russian roulette (after first bounce)

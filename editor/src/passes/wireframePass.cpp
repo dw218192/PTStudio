@@ -67,7 +67,7 @@ auto WireframePass::is_ready() const noexcept -> bool {
     return std::holds_alternative<Ready>(m_state);
 }
 
-void WireframePass::do_setup(const webgpu::Device& device) {
+void WireframePass::do_renderer_setup(const webgpu::Device& device) {
     // Capture old state for deferred release (after new state is built)
     WGPUBindGroup old_bind_group = nullptr;
     WGPUBindGroupLayout old_layout = nullptr;
@@ -153,8 +153,8 @@ void WireframePass::ensure_capacity(const webgpu::Device& device, uint32_t objec
     ready.capacity = new_capacity;
 }
 
-void WireframePass::add_to_frame_graph(rendering::FrameGraph& fg,
-                                       const rendering::PassContext& ctx) {
+void WireframePass::do_add_to_frame_graph(rendering::FrameGraph& fg,
+                                          const rendering::PassContext& ctx) {
     PTS_ZONE_SCOPED;
     PRECONDITION(is_ready());
     auto& ready = std::get<Ready>(m_state);

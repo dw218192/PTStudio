@@ -38,6 +38,14 @@ if(NOT EMSCRIPTEN)
     set(testMaterialBuffer_source testMaterialBuffer.cpp)
     set(testMaterialBuffer_libs core)
 
+    list(APPEND TEST_NAMES testShadowData)
+    set(testShadowData_source testShadowData.cpp)
+    set(testShadowData_libs core)
+
+    list(APPEND TEST_NAMES testShadowMapPass)
+    set(testShadowMapPass_source testShadowMapPass.cpp)
+    set(testShadowMapPass_libs core)
+
     list(APPEND TEST_NAMES testPipelineBuilder)
     set(testPipelineBuilder_source testPipelineBuilder.cpp)
     set(testPipelineBuilder_libs core)
@@ -65,7 +73,7 @@ list(APPEND TEST_NAMES testWireframeIndices)
 set(testWireframeIndices_source testWireframeIndices.cpp)
 set(testWireframeIndices_libs core)
 
-# Mesh cache service on IScenePass - works on all platforms (no GPU needed)
+# Mesh cache service on IRenderPass - works on all platforms (no GPU needed)
 list(APPEND TEST_NAMES testMeshCache)
 set(testMeshCache_source testMeshCache.cpp)
 set(testMeshCache_libs core)
@@ -95,6 +103,11 @@ set(testBackgroundTask_libs core)
 list(APPEND TEST_NAMES testLoadingOverlay)
 set(testLoadingOverlay_source testLoadingOverlay.cpp)
 set(testLoadingOverlay_libs core)
+
+# BVH builder - no GPU needed, pure CPU algorithm
+list(APPEND TEST_NAMES testBvh)
+set(testBvh_source testBvh.cpp)
+set(testBvh_libs core)
 
 
 function(add_core_test target_name)

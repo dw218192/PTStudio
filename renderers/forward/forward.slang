@@ -1,6 +1,7 @@
 import lighting;
 import brdf;
 import light;
+import shadow_sampling;
 
 struct Uniforms {
     float4x4 mvp;
@@ -30,6 +31,11 @@ Texture2D<float2> ltc_amp;
 
 [[vk::binding(5, 0)]]
 SamplerState ltc_sampler;
+
+// Bind group 1: shadow data
+[[vk::binding(0, 1)]] StructuredBuffer<ShadowInfo> shadow_infos;
+[[vk::binding(1, 1)]] Texture2DArray<float> shadow_map;
+[[vk::binding(2, 1)]] SamplerState shadow_sampler;
 
 struct VsIn {
     float3 position : POSITION;
@@ -97,6 +103,7 @@ FsOut fs_main(float3 world_normal : NORMAL, float3 world_pos : WORLD_POS,
         u.light_count,
         ltc_mat, ltc_amp, ltc_sampler,
         world_pos, N, V, albedo, mat_metallic, mat_roughness,
+        shadow_infos, shadow_map, shadow_sampler,
         direct_diffuse, direct_specular
     );
 

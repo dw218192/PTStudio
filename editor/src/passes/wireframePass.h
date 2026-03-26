@@ -1,6 +1,6 @@
 #pragma once
 
-#include <core/rendering/scenePass.h>
+#include <core/rendering/renderer.h>
 #include <core/rendering/webgpu/buffer.h>
 #include <core/rendering/webgpu/pipeline.h>
 #include <core/rendering/webgpu/shader.h>
@@ -12,9 +12,9 @@
 
 namespace pts::editor {
 
-class WireframePass final : public rendering::IScenePass {
+class WireframePass final : public rendering::IRenderer {
    public:
-    using IScenePass::IScenePass;
+    using IRenderer::IRenderer;
     ~WireframePass() override;
 
     WireframePass(const WireframePass&) = delete;
@@ -25,8 +25,9 @@ class WireframePass final : public rendering::IScenePass {
     [[nodiscard]] auto name() const noexcept -> std::string_view override;
     [[nodiscard]] auto is_ready() const noexcept -> bool override;
 
-    void do_setup(const webgpu::Device& device) override;
-    void add_to_frame_graph(rendering::FrameGraph& fg, const rendering::PassContext& ctx) override;
+    void do_renderer_setup(const webgpu::Device& device) override;
+    void do_add_to_frame_graph(rendering::FrameGraph& fg,
+                               const rendering::PassContext& ctx) override;
 
     static constexpr uint32_t k_uniform_align = 256;
 

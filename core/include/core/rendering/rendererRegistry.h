@@ -11,7 +11,7 @@ namespace pts::rendering {
 
 struct RendererEntry {
     std::string name;
-    PassFactory factory;
+    RendererFactory factory;
     bool editor_passes = true;  // false to disable grid/wireframe/gizmo overlays
 };
 
@@ -27,7 +27,7 @@ class RendererRegistry {
         return 0;
     }
 
-    static PassFactory find(std::string_view name) {
+    static RendererFactory find(std::string_view name) {
         for (auto& e : entries()) {
             if (e.name == name) return e.factory;
         }
