@@ -322,7 +322,7 @@ void EditorApplication::process_args(const CommandLine& cli) {
         m_app_config.camera_fov = cli.get_string("camera-fov");
     }
     if (cli.has("camera")) {
-        m_app_config.camera_name = cli.get_string("camera");
+        m_app_config.camera_prim_path = cli.get_string("camera");
     }
 }
 
@@ -506,17 +506,11 @@ void EditorApplication::on_ready() {
         m_camera.set_fov_y(std::stof(m_app_config.camera_fov));
     }
 
-    // Select scene camera by name or prim path (from --camera CLI arg)
-    if (!m_app_config.camera_name.empty()) {
-        auto cameras = m_world.get_cameras();
-        for (uint32_t i = 0; i < cameras.size(); ++i) {
-            if (!cameras[i].active()) continue;
-            auto path = cameras[i].get_prim_path();
-            if (path.GetString() == m_app_config.camera_name ||
-                path.GetName() == m_app_config.camera_name) {
-                m_active_camera_index = static_cast<int>(i + 1);
-                break;
-            }
+    // Select scene camera by prim path (from --camera CLI arg)
+    if (!m_app_config.camera_prim_path.empty()) {
+        int idx = m_world.find_camera_by_prim(pxr::SdfPath(m_app_config.camera_prim_path));
+        if (idx >= 0) {
+            m_active_camera_index = idx + 1;
         }
     }
 

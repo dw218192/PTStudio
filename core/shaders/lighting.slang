@@ -1,48 +1,7 @@
 import brdf;
 import light;
 import ltc;
-import sampling;
 import shadow_sampling;
-
-// ---------------------------------------------------------------------------
-// Lighting evaluation — NEE with stochastic light sampling (path tracer)
-// ---------------------------------------------------------------------------
-
-float3 evaluate_lighting_nee<B : IBRDF>(
-    B brdf,
-    StructuredBuffer<Light> lights, uint light_count,
-    float3 P, float3 N, float3 V,
-    float3 base_color, float metallic, float roughness,
-    inout Rng rng,
-    out float3 direct_diffuse, out float3 direct_specular
-) {
-    direct_diffuse = float3(0.0);
-    direct_specular = float3(0.0);
-
-    float3 result = float3(0.0);
-    for (uint i = 0; i < light_count; i++) {
-        Light light = lights[i];
-
-        if (light.type == LIGHT_DOME) continue;
-
-        LightSampleStochastic ls = sample_direct(light, P, rng);
-        if (!ls.valid || ls.pdf <= 0.0) continue;
-
-        float3 wi = normalize(ls.position - P);
-        float NdotL = dot(N, wi);
-        if (NdotL <= 0.0) continue;
-
-        ShadingGeometry g = ShadingGeometry::from_world(N, wi, V, roughness);
-        float3 f_diffuse = brdf.eval_diffuse(g, base_color, metallic);
-        float3 f_specular = brdf.eval_specular(g, base_color, metallic);
-
-        float3 contrib = ls.radiance * NdotL / ls.pdf;
-        direct_diffuse += f_diffuse * contrib;
-        direct_specular += f_specular * contrib;
-        result += (f_diffuse + f_specular) * contrib;
-    }
-    return result;
-}
 
 // ---------------------------------------------------------------------------
 // Lighting evaluation — LTC for rect/disk area lights (forward renderer)
