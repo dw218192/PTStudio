@@ -1,4 +1,6 @@
 #include <core/rendering/bvh.h>
+#include <core/rendering/packedTriangle.h>
+#include <core/rendering/renderWorld.h>
 
 #include <algorithm>
 #include <numeric>
@@ -183,6 +185,277 @@ TEST_CASE("BVH - scene AABB matches union of inputs") {
 
     CHECK(bvh.scene_bounds().min == glm::vec3(-5, -3, -1));
     CHECK(bvh.scene_bounds().max == glm::vec3(10, 4, 7));
+}
+
+// --- transform_aabb tests ---
+
+TEST_CASE("transform_aabb - identity") {
+    auto aabb = AABB::from_min_max({-1, -2, -3}, {4, 5, 6});
+    auto result = transform_aabb(aabb, glm::mat4(1.0f));
+    CHECK(result.min.x == doctest::Approx(-1));
+    CHECK(result.min.y == doctest::Approx(-2));
+    CHECK(result.min.z == doctest::Approx(-3));
+    CHECK(result.max.x == doctest::Approx(4));
+    CHECK(result.max.y == doctest::Approx(5));
+    CHECK(result.max.z == doctest::Approx(6));
+}
+
+TEST_CASE("transform_aabb - translation") {
+    auto aabb = AABB::from_min_max({0, 0, 0}, {1, 1, 1});
+    glm::mat4 m(1.0f);
+    m[3] = glm::vec4(10, 20, 30, 1);
+    auto result = transform_aabb(aabb, m);
+    CHECK(result.min.x == doctest::Approx(10));
+    CHECK(result.min.y == doctest::Approx(20));
+    CHECK(result.min.z == doctest::Approx(30));
+    CHECK(result.max.x == doctest::Approx(11));
+    CHECK(result.max.y == doctest::Approx(21));
+    CHECK(result.max.z == doctest::Approx(31));
+}
+
+TEST_CASE("transform_aabb - uniform scale") {
+    auto aabb = AABB::from_min_max({-1, -1, -1}, {1, 1, 1});
+    glm::mat4 m(1.0f);
+    m[0][0] = 3.0f;
+    m[1][1] = 3.0f;
+    m[2][2] = 3.0f;
+    auto result = transform_aabb(aabb, m);
+    CHECK(result.min.x == doctest::Approx(-3));
+    CHECK(result.max.x == doctest::Approx(3));
+    CHECK(result.min.y == doctest::Approx(-3));
+    CHECK(result.max.y == doctest::Approx(3));
+}
+
+TEST_CASE("transform_aabb - 90-degree rotation around Z") {
+    // After rotating 90° around Z: X→Y, Y→-X
+    auto aabb = AABB::from_min_max({1, 0, 0}, {3, 1, 1});
+    glm::mat4 m(1.0f);
+    // column 0 = (0, 1, 0), column 1 = (-1, 0, 0)
+    m[0] = glm::vec4(0, 1, 0, 0);
+    m[1] = glm::vec4(-1, 0, 0, 0);
+    m[2] = glm::vec4(0, 0, 1, 0);
+    auto result = transform_aabb(aabb, m);
+    // Center of input = (2, 0.5, 0.5), extent = (1, 0.5, 0.5)
+    // Rotated center = (-0.5, 2, 0.5)
+    // new_extent[0] = |m[0][0]|*1 + |m[1][0]|*0.5 + |m[2][0]|*0.5 = 0+1*0.5+0 = 0.5
+    // new_extent[1] = |m[0][1]|*1 + |m[1][1]|*0.5 + |m[2][1]|*0.5 = 1+0+0 = 1
+    CHECK(result.min.x == doctest::Approx(-1));
+    CHECK(result.max.x == doctest::Approx(0));
+    CHECK(result.min.y == doctest::Approx(1));
+    CHECK(result.max.y == doctest::Approx(3));
+}
+
+// --- PackedTriangle tests ---
+
+TEST_CASE("PackedTriangle - size is 128 bytes") {
+    CHECK(sizeof(PackedTriangle) == 128);
+}
+
+// --- GPUInstance tests ---
+
+TEST_CASE("GPUInstance - size is 144 bytes") {
+    CHECK(sizeof(GPUInstance) == 144);
+}
+
+TEST_CASE("GPUInstance - default values") {
+    GPUInstance inst;
+    CHECK(inst.transform == glm::mat4(1.0f));
+    CHECK(inst.inv_transform == glm::mat4(1.0f));
+    CHECK(inst.blas_offset == 0);
+    CHECK(inst.tri_offset == 0);
+    CHECK(inst.tri_count == 0);
+    CHECK(inst.material_index == UINT32_MAX);
+}
+
+// --- Two-level BVH concatenation test ---
+
+TEST_CASE("BVH - TLAS over two BLAS produces valid concatenated tree") {
+    // Build two BLAS in local space
+    // Mesh A: triangles at x=[0..5]
+    std::vector<AABB> mesh_a_aabbs;
+    for (int i = 0; i < 5; ++i) {
+        float x = static_cast<float>(i);
+        mesh_a_aabbs.push_back(AABB::from_min_max({x, 0, 0}, {x + 1, 1, 0}));
+    }
+    BVH blas_a;
+    blas_a.build(mesh_a_aabbs, 5);
+
+    // Mesh B: triangles at x=[100..105]
+    std::vector<AABB> mesh_b_aabbs;
+    for (int i = 0; i < 5; ++i) {
+        float x = 100.0f + static_cast<float>(i);
+        mesh_b_aabbs.push_back(AABB::from_min_max({x, 0, 0}, {x + 1, 1, 0}));
+    }
+    BVH blas_b;
+    blas_b.build(mesh_b_aabbs, 5);
+
+    // Build TLAS over 2 instances
+    AABB inst_a_aabb = AABB::from_min_max({0, 0, 0}, {5, 1, 0});
+    AABB inst_b_aabb = AABB::from_min_max({100, 0, 0}, {105, 1, 0});
+    std::vector<AABB> tlas_aabbs = {inst_a_aabb, inst_b_aabb};
+    BVH tlas;
+    tlas.build(tlas_aabbs, 2);
+
+    uint32_t tlas_nc = tlas.node_count();
+
+    // Concatenate TLAS + BLAS nodes
+    std::vector<BVHNode> all_nodes;
+    auto tlas_nodes = tlas.nodes();
+    all_nodes.insert(all_nodes.end(), tlas_nodes.begin(), tlas_nodes.end());
+
+    uint32_t blas_a_base = tlas_nc;
+    for (const auto& node : blas_a.nodes()) {
+        BVHNode n = node;
+        if (n.count == 0) n.left_first += blas_a_base;
+        all_nodes.push_back(n);
+    }
+
+    uint32_t blas_b_base = tlas_nc + blas_a.node_count();
+    for (const auto& node : blas_b.nodes()) {
+        BVHNode n = node;
+        if (n.count == 0) n.left_first += blas_b_base;
+        all_nodes.push_back(n);
+    }
+
+    // TLAS root should cover both instances
+    CHECK(all_nodes[0].aabb_min.x == doctest::Approx(0));
+    CHECK(all_nodes[0].aabb_max.x == doctest::Approx(105));
+
+    // Verify all interior nodes point to valid children
+    for (uint32_t i = 0; i < static_cast<uint32_t>(all_nodes.size()); ++i) {
+        const auto& n = all_nodes[i];
+        if (n.count == 0) {
+            CHECK(n.left_first < static_cast<uint32_t>(all_nodes.size()));
+            CHECK(n.left_first + 1 < static_cast<uint32_t>(all_nodes.size()));
+        }
+    }
+
+    // Total nodes = TLAS + BLAS_A + BLAS_B
+    CHECK(all_nodes.size() == tlas_nc + blas_a.node_count() + blas_b.node_count());
+}
+
+// --- build_from_mesh tests ---
+
+TEST_CASE("BVH::build_from_mesh - builds BVH and returns reordered PackedTriangles") {
+    // Two triangles forming a quad
+    std::vector<Vertex> verts = {
+        {{0, 0, 0}, {0, 0, 1}, {1, 1, 1}, {0, 0}},
+        {{1, 0, 0}, {0, 0, 1}, {1, 1, 1}, {1, 0}},
+        {{1, 1, 0}, {0, 0, 1}, {1, 1, 1}, {1, 1}},
+        {{0, 1, 0}, {0, 0, 1}, {1, 1, 1}, {0, 1}},
+    };
+    std::vector<uint32_t> indices = {0, 1, 2, 0, 2, 3};
+
+    BVH bvh;
+    auto tris = bvh.build_from_mesh(verts, indices);
+
+    CHECK(tris.size() == 2);
+    CHECK(bvh.node_count() >= 1);
+    CHECK(bvh.tri_indices().size() == 2);
+
+    // Verify positions are populated correctly (in some reordered order)
+    for (const auto& tri : tris) {
+        // Each vertex position should be within [0,1]^2 x 0
+        for (auto* v : {&tri.v0, &tri.v1, &tri.v2}) {
+            CHECK(v->x >= doctest::Approx(0));
+            CHECK(v->x <= doctest::Approx(1));
+            CHECK(v->y >= doctest::Approx(0));
+            CHECK(v->y <= doctest::Approx(1));
+            CHECK(v->z == doctest::Approx(0));
+        }
+        // Normals should be (0, 0, 1)
+        for (auto* n : {&tri.n0, &tri.n1, &tri.n2}) {
+            CHECK(n->z == doctest::Approx(1));
+        }
+    }
+}
+
+TEST_CASE("BVH::build_from_mesh - many triangles produces valid tree") {
+    // Build a strip of 20 triangles spread along X
+    std::vector<Vertex> verts;
+    std::vector<uint32_t> indices;
+    for (uint32_t i = 0; i < 20; ++i) {
+        float x = static_cast<float>(i) * 10.0f;
+        uint32_t base = static_cast<uint32_t>(verts.size());
+        verts.push_back({{x, 0, 0}, {0, 0, 1}, {}, {0, 0}});
+        verts.push_back({{x + 1, 0, 0}, {0, 0, 1}, {}, {1, 0}});
+        verts.push_back({{x, 1, 0}, {0, 0, 1}, {}, {0, 1}});
+        indices.push_back(base);
+        indices.push_back(base + 1);
+        indices.push_back(base + 2);
+    }
+
+    BVH bvh;
+    auto tris = bvh.build_from_mesh(verts, indices);
+
+    CHECK(tris.size() == 20);
+    check_tree_validity(bvh, 20);
+}
+
+// --- concatenate_nodes tests ---
+
+TEST_CASE("BVH::concatenate_nodes - matches manual concatenation") {
+    // Build two BLAS
+    std::vector<AABB> mesh_a_aabbs;
+    for (int i = 0; i < 5; ++i) {
+        float x = static_cast<float>(i);
+        mesh_a_aabbs.push_back(AABB::from_min_max({x, 0, 0}, {x + 1, 1, 0}));
+    }
+    BVH blas_a;
+    blas_a.build(mesh_a_aabbs, 5);
+
+    std::vector<AABB> mesh_b_aabbs;
+    for (int i = 0; i < 5; ++i) {
+        float x = 100.0f + static_cast<float>(i);
+        mesh_b_aabbs.push_back(AABB::from_min_max({x, 0, 0}, {x + 1, 1, 0}));
+    }
+    BVH blas_b;
+    blas_b.build(mesh_b_aabbs, 5);
+
+    // Build TLAS
+    std::vector<AABB> tlas_aabbs = {
+        AABB::from_min_max({0, 0, 0}, {5, 1, 0}),
+        AABB::from_min_max({100, 0, 0}, {105, 1, 0}),
+    };
+    BVH tlas;
+    tlas.build(tlas_aabbs, 2);
+
+    uint32_t tlas_nc = tlas.node_count();
+
+    // Use concatenate_nodes()
+    std::vector<BlasEntry> entries = {
+        {&blas_a, 0},
+        {&blas_b, 5},
+    };
+    auto all_nodes = tlas.concatenate_nodes(entries);
+
+    // Total nodes = TLAS + BLAS_A + BLAS_B
+    CHECK(all_nodes.size() == tlas_nc + blas_a.node_count() + blas_b.node_count());
+
+    // TLAS root covers both instances
+    CHECK(all_nodes[0].aabb_min.x == doctest::Approx(0));
+    CHECK(all_nodes[0].aabb_max.x == doctest::Approx(105));
+
+    // All interior nodes point to valid children
+    for (uint32_t i = 0; i < static_cast<uint32_t>(all_nodes.size()); ++i) {
+        const auto& n = all_nodes[i];
+        if (n.count == 0) {
+            CHECK(n.left_first < static_cast<uint32_t>(all_nodes.size()));
+            CHECK(n.left_first + 1 < static_cast<uint32_t>(all_nodes.size()));
+        }
+    }
+}
+
+TEST_CASE("BVH::concatenate_nodes - empty blas_list returns TLAS nodes only") {
+    std::vector<AABB> tlas_aabbs = {AABB::from_min_max({0, 0, 0}, {1, 1, 1})};
+    BVH tlas;
+    tlas.build(tlas_aabbs, 1);
+
+    auto all_nodes = tlas.concatenate_nodes({});
+
+    CHECK(all_nodes.size() == tlas.node_count());
+    CHECK(all_nodes[0].aabb_min == tlas.nodes()[0].aabb_min);
+    CHECK(all_nodes[0].aabb_max == tlas.nodes()[0].aabb_max);
 }
 
 PTS_TEST_MAIN()

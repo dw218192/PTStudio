@@ -1,5 +1,6 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #define NOMINMAX
+#include <core/profiling.h>
 #include <core/rendering/camera.h>
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/passContext.h>
@@ -14,6 +15,11 @@
 #include <glm/glm.hpp>
 
 using namespace pts::rendering;
+
+// Tracy profiler must be initialized for instrumented code paths (PTS_ZONE_SCOPED).
+TEST_CASE("profiler init" * doctest::test_suite("setup")) {
+    PTS_STARTUP_PROFILER();
+}
 
 // Minimal shadow-compatible WGSL: position-only vertex shader, no fragment.
 static constexpr auto k_shadow_wgsl = R"(

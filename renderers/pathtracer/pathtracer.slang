@@ -12,7 +12,7 @@ struct PackedTriangle {
     float3 v2; uint _p2;
     float3 n0; uint _p3;
     float3 n1; uint _p4;
-    float3 n2; uint material_index;
+    float3 n2; uint _pad6;
     float2 uv0; float2 uv1;
     float2 uv2; uint _p5[2];
 };
@@ -23,9 +23,10 @@ struct PTUniforms {
     float4x4 inv_vp;
     uint width;
     uint height;
-    uint triangle_count;
+    uint instance_count;
     uint light_count;
     uint total_frames;
+    uint tlas_node_count;
 };
 
 [[vk::binding(0, 0)]] ConstantBuffer<PTUniforms> u;
@@ -39,6 +40,8 @@ struct PTUniforms {
 
 [[vk::binding(7, 0)]] Texture2DArray<float4> scene_textures;
 [[vk::binding(8, 0)]] SamplerState scene_sampler;
+
+[[vk::binding(9, 0)]] StructuredBuffer<Instance> instances;
 
 static const float PT_EPS = 0.0001;
 
@@ -75,33 +78,71 @@ HitRecord trace_scene(float3 ro, float3 rd) {
     best.hit = false;
     float t_best = 1e30;
 
-    uint stack[32];
-    int sp = 0;
-    stack[sp++] = 0;  // root
+    // TLAS traversal (world space)
+    uint tlas_stack[32];
+    int tlas_sp = 0;
+    tlas_stack[tlas_sp++] = 0;  // TLAS root
 
-    while (sp > 0) {
-        BVHNode node = bvh_nodes[stack[--sp]];
-        if (!ray_aabb(ro, rd, node.aabb_min, node.aabb_max, t_best)) continue;
-        if (node.count > 0) {
-            // Leaf — test triangles
-            for (uint i = 0; i < node.count; i++) {
-                PackedTriangle tri = triangles[node.left_first + i];
-                float bu, bv;
-                float t = intersect_triangle(ro, rd, tri, bu, bv);
-                if (t > 0.0 && t < t_best) {
-                    t_best = t;
-                    best.hit = true;
-                    best.position = ro + rd * t;
-                    best.normal = normalize(
-                        tri.n0 * (1.0 - bu - bv) + tri.n1 * bu + tri.n2 * bv);
-                    best.uv = tri.uv0 * (1.0 - bu - bv) + tri.uv1 * bu + tri.uv2 * bv;
-                    best.material_index = tri.material_index;
+    while (tlas_sp > 0) {
+        BVHNode tlas_node = bvh_nodes[tlas_stack[--tlas_sp]];
+        if (!ray_aabb(ro, rd, tlas_node.aabb_min, tlas_node.aabb_max, t_best))
+            continue;
+
+        if (tlas_node.count > 0) {
+            // TLAS leaf — iterate instances
+            for (uint i = 0; i < tlas_node.count; i++) {
+                Instance inst = instances[tlas_node.left_first + i];
+
+                // Transform ray to local space (don't normalize — preserves t)
+                float3 local_ro = mul(inst.inv_transform, float4(ro, 1.0)).xyz;
+                float3 local_rd = mul(inst.inv_transform, float4(rd, 0.0)).xyz;
+
+                // BLAS traversal (local space)
+                uint blas_stack[32];
+                int blas_sp = 0;
+                blas_stack[blas_sp++] = inst.blas_offset;
+
+                while (blas_sp > 0) {
+                    BVHNode blas_node = bvh_nodes[blas_stack[--blas_sp]];
+                    if (!ray_aabb(local_ro, local_rd,
+                                  blas_node.aabb_min, blas_node.aabb_max, t_best))
+                        continue;
+
+                    if (blas_node.count > 0) {
+                        // BLAS leaf — test triangles
+                        for (uint j = 0; j < blas_node.count; j++) {
+                            PackedTriangle tri =
+                                triangles[inst.tri_offset + blas_node.left_first + j];
+                            float bu, bv;
+                            float t = intersect_triangle(local_ro, local_rd, tri, bu, bv);
+                            if (t > 0.0 && t < t_best) {
+                                t_best = t;
+                                best.hit = true;
+                                float3 local_hit = local_ro + local_rd * t;
+                                best.position =
+                                    mul(inst.transform, float4(local_hit, 1.0)).xyz;
+                                float3 local_normal = normalize(
+                                    tri.n0 * (1.0 - bu - bv) + tri.n1 * bu + tri.n2 * bv);
+                                float3x3 normal_mat =
+                                    transpose(float3x3(inst.inv_transform));
+                                best.normal =
+                                    normalize(mul(normal_mat, local_normal));
+                                best.uv = tri.uv0 * (1.0 - bu - bv)
+                                        + tri.uv1 * bu + tri.uv2 * bv;
+                                best.material_index = inst.material_index;
+                            }
+                        }
+                    } else {
+                        // BLAS interior — push children
+                        blas_stack[blas_sp++] = blas_node.left_first;
+                        blas_stack[blas_sp++] = blas_node.left_first + 1;
+                    }
                 }
             }
         } else {
-            // Interior — push both children
-            stack[sp++] = node.left_first;
-            stack[sp++] = node.left_first + 1;
+            // TLAS interior — push children
+            tlas_stack[tlas_sp++] = tlas_node.left_first;
+            tlas_stack[tlas_sp++] = tlas_node.left_first + 1;
         }
     }
     return best;

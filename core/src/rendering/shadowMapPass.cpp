@@ -135,8 +135,8 @@ void ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
         return;
     }
 
-    // Scene AABB from BVH root node (built by RenderWorld::prepare_gpu_buffers)
-    auto scene_bounds = ctx.world.scene_bvh().scene_bounds();
+    // Scene AABB from TLAS root (built by RenderWorld::prepare_gpu_buffers)
+    auto scene_bounds = ctx.world.scene_bounds();
     auto aabb_min = scene_bounds.min;
     auto aabb_max = scene_bounds.max;
 

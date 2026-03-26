@@ -1,5 +1,7 @@
 #include <core/diagnostics.h>
 #include <core/rendering/bvh.h>
+#include <core/rendering/packedTriangle.h>
+#include <core/rendering/vertex.h>
 #include <core/rendering/webgpu/device.h>
 #include <imgui.h>
 
@@ -226,6 +228,94 @@ void BVH::build(boost::span<const AABB> tri_aabbs, uint32_t count) {
         return 1 + std::max(depth(n.left_first), depth(n.left_first + 1));
     };
     m_tree_depth = depth(0);
+}
+
+std::vector<PackedTriangle> BVH::build_from_mesh(boost::span<const Vertex> vertices,
+                                                 boost::span<const uint32_t> indices) {
+    PRECONDITION(!vertices.empty());
+    PRECONDITION(!indices.empty());
+    PRECONDITION(indices.size() % 3 == 0);
+
+    uint32_t tri_count = static_cast<uint32_t>(indices.size()) / 3;
+
+    // Build local-space triangle AABBs
+    std::vector<AABB> tri_aabbs;
+    tri_aabbs.reserve(tri_count);
+    for (uint32_t i = 0; i < static_cast<uint32_t>(indices.size()); i += 3) {
+        AABB a;
+        for (int vi = 0; vi < 3; ++vi) {
+            const auto& v = vertices[indices[i + vi]];
+            a.expand(glm::vec3(v.position[0], v.position[1], v.position[2]));
+        }
+        tri_aabbs.push_back(a);
+    }
+
+    build(tri_aabbs, tri_count);
+
+    // Create PackedTriangle array in local space
+    std::vector<PackedTriangle> tris;
+    tris.reserve(tri_count);
+    for (uint32_t i = 0; i < static_cast<uint32_t>(indices.size()); i += 3) {
+        const auto& v0 = vertices[indices[i + 0]];
+        const auto& v1 = vertices[indices[i + 1]];
+        const auto& v2 = vertices[indices[i + 2]];
+
+        PackedTriangle tri{};
+        tri.v0 = glm::vec3(v0.position[0], v0.position[1], v0.position[2]);
+        tri.v1 = glm::vec3(v1.position[0], v1.position[1], v1.position[2]);
+        tri.v2 = glm::vec3(v2.position[0], v2.position[1], v2.position[2]);
+        tri.n0 = glm::vec3(v0.normal[0], v0.normal[1], v0.normal[2]);
+        tri.n1 = glm::vec3(v1.normal[0], v1.normal[1], v1.normal[2]);
+        tri.n2 = glm::vec3(v2.normal[0], v2.normal[1], v2.normal[2]);
+        tri.uv0 = glm::vec2(v0.uv[0], v0.uv[1]);
+        tri.uv1 = glm::vec2(v1.uv[0], v1.uv[1]);
+        tri.uv2 = glm::vec2(v2.uv[0], v2.uv[1]);
+        tris.push_back(tri);
+    }
+
+    // Reorder by BVH tri_indices for spatial locality
+    if (!m_tri_indices.empty()) {
+        INVARIANT(m_tri_indices.size() == tris.size());
+        std::vector<PackedTriangle> reordered(tris.size());
+        for (uint32_t i = 0; i < static_cast<uint32_t>(tris.size()); ++i) {
+            reordered[i] = tris[m_tri_indices[i]];
+        }
+        tris = std::move(reordered);
+    }
+
+    return tris;
+}
+
+std::vector<BVHNode> BVH::concatenate_nodes(boost::span<const BlasEntry> blas_list) const {
+    uint32_t tlas_nc = node_count();
+
+    uint32_t total_blas_nodes = 0;
+    for (const auto& entry : blas_list) {
+        PRECONDITION(entry.bvh != nullptr);
+        total_blas_nodes += entry.bvh->node_count();
+    }
+
+    std::vector<BVHNode> all_nodes;
+    all_nodes.reserve(tlas_nc + total_blas_nodes);
+
+    // TLAS nodes first
+    all_nodes.insert(all_nodes.end(), m_nodes.begin(), m_nodes.end());
+
+    // BLAS nodes with interior left_first offset
+    uint32_t running_blas_offset = 0;
+    for (const auto& entry : blas_list) {
+        uint32_t blas_base = tlas_nc + running_blas_offset;
+        for (const auto& node : entry.bvh->nodes()) {
+            BVHNode offset_node = node;
+            if (offset_node.count == 0) {
+                offset_node.left_first += blas_base;
+            }
+            all_nodes.push_back(offset_node);
+        }
+        running_blas_offset += entry.bvh->node_count();
+    }
+
+    return all_nodes;
 }
 
 void BVH::upload(const webgpu::Device& device, WGPUQueue queue) {

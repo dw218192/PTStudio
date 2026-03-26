@@ -9,11 +9,9 @@
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/rendererRegistry.h>
 #include <core/rendering/shaderLoader.h>
-#include <core/rendering/vertex.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
 #include <imgui.h>
 
-#include <algorithm>
 #include <glm/glm.hpp>
 
 using namespace pts;
@@ -27,10 +25,11 @@ struct PTUniforms {
     glm::mat4 inv_vp;
     uint32_t width;
     uint32_t height;
-    uint32_t triangle_count;
+    uint32_t instance_count;
     uint32_t light_count;
     uint32_t total_frames;
-    uint32_t _pad[3];
+    uint32_t tlas_node_count;
+    uint32_t _pad[2];
 };
 static_assert(sizeof(PTUniforms) == 112, "PTUniforms must match shader layout");
 
@@ -41,7 +40,6 @@ struct BlitUniforms {
 };
 static_assert(sizeof(BlitUniforms) == 16);
 
-static constexpr std::size_t k_min_scene_buffer_size = 128;
 static constexpr std::size_t k_min_pixel_buffer_size = 16;
 
 PathTracerPass::~PathTracerPass() {
@@ -73,8 +71,8 @@ void PathTracerPass::do_renderer_setup(const webgpu::Device& device) {
         sizeof(PTUniforms),
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
 
-    WGPUBindGroupLayoutEntry ce[9] = {};
-    for (int i = 0; i < 9; ++i) ce[i] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    WGPUBindGroupLayoutEntry ce[10] = {};
+    for (int i = 0; i < 10; ++i) ce[i] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
 
     ce[0].binding = 0;
     ce[0].visibility = WGPUShaderStage_Compute;
@@ -113,8 +111,13 @@ void PathTracerPass::do_renderer_setup(const webgpu::Device& device) {
     ce[8].visibility = WGPUShaderStage_Compute;
     ce[8].sampler.type = WGPUSamplerBindingType_Filtering;
 
+    // binding 9: instances (read-only storage)
+    ce[9].binding = 9;
+    ce[9].visibility = WGPUShaderStage_Compute;
+    ce[9].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
+
     WGPUBindGroupLayoutDescriptor cbgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    cbgl_desc.entryCount = 9;
+    cbgl_desc.entryCount = 10;
     cbgl_desc.entries = ce;
     auto compute_bgl = wgpuDeviceCreateBindGroupLayout(device.handle(), &cbgl_desc);
 
@@ -176,78 +179,6 @@ void PathTracerPass::do_renderer_setup(const webgpu::Device& device) {
     };
 }
 
-PathTracerPass::SceneData PathTracerPass::build_scene_data(const webgpu::Device& device,
-                                                           WGPUQueue queue,
-                                                           const rendering::RenderWorld& world) {
-    // Flatten all active objects into world-space triangles
-    std::vector<PackedTriangle> triangles;
-    auto objects = world.get_objects();
-    auto meshes = world.get_meshes();
-
-    for (const auto& obj : objects) {
-        if (!obj.active()) continue;
-        PRECONDITION(obj->mesh_index < static_cast<uint32_t>(meshes.size()));
-        const auto& mesh = meshes[obj->mesh_index];
-        if (mesh->cpu_vertices.empty() || mesh->cpu_indices.empty()) continue;
-
-        const auto& xform = obj->transform;
-        auto normal_mat = glm::mat3(glm::transpose(glm::inverse(xform)));
-
-        for (uint32_t i = 0; i + 2 < static_cast<uint32_t>(mesh->cpu_indices.size()); i += 3) {
-            const auto& v0 = mesh->cpu_vertices[mesh->cpu_indices[i + 0]];
-            const auto& v1 = mesh->cpu_vertices[mesh->cpu_indices[i + 1]];
-            const auto& v2 = mesh->cpu_vertices[mesh->cpu_indices[i + 2]];
-
-            auto xform_pos = [&](const float* p) -> glm::vec3 {
-                return glm::vec3(xform * glm::vec4(p[0], p[1], p[2], 1.0f));
-            };
-            auto xform_nrm = [&](const float* n) -> glm::vec3 {
-                return glm::normalize(normal_mat * glm::vec3(n[0], n[1], n[2]));
-            };
-
-            PackedTriangle tri{};
-            tri.v0 = xform_pos(v0.position);
-            tri.v1 = xform_pos(v1.position);
-            tri.v2 = xform_pos(v2.position);
-            tri.n0 = xform_nrm(v0.normal);
-            tri.n1 = xform_nrm(v1.normal);
-            tri.n2 = xform_nrm(v2.normal);
-            tri.material_index = obj->material_index;
-            tri.uv0 = glm::vec2(v0.uv[0], v0.uv[1]);
-            tri.uv1 = glm::vec2(v1.uv[0], v1.uv[1]);
-            tri.uv2 = glm::vec2(v2.uv[0], v2.uv[1]);
-            triangles.push_back(tri);
-        }
-    }
-
-    auto triangle_count = static_cast<uint32_t>(triangles.size());
-
-    // Reorder triangles by RenderWorld's BVH spatial locality
-    const auto& bvh = world.scene_bvh();
-    if (triangle_count > 0 && !bvh.tri_indices().empty()) {
-        INVARIANT(bvh.tri_indices().size() == triangle_count);
-        std::vector<PackedTriangle> reordered(triangle_count);
-        for (uint32_t i = 0; i < triangle_count; ++i) {
-            reordered[i] = triangles[bvh.tri_indices()[i]];
-        }
-        triangles = std::move(reordered);
-    }
-
-    // Upload triangles
-    SceneData result;
-    result.triangle_count = triangle_count;
-    auto tri_bytes = std::max(k_min_scene_buffer_size,
-                              static_cast<std::size_t>(triangle_count) * sizeof(PackedTriangle));
-    result.buffer = device.create_buffer(
-        tri_bytes, static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
-    if (triangle_count > 0) {
-        wgpuQueueWriteBuffer(queue, result.buffer.handle(), 0, triangles.data(),
-                             triangle_count * sizeof(PackedTriangle));
-    }
-
-    return result;
-}
-
 void PathTracerPass::ensure_pixel_buffers(const webgpu::Device& device, uint32_t width,
                                           uint32_t height) {
     if (m_pixel_width == width && m_pixel_height == height && m_accum_buffer.is_valid()) return;
@@ -268,17 +199,6 @@ void PathTracerPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     PRECONDITION(is_ready());
     auto& r = std::get<Ready>(m_state);
 
-    auto& scene = get_or_create_pass_data<SceneData>(rendering::PassDataKind::Mesh, ctx.world, [&] {
-        return build_scene_data(ctx.device, ctx.queue, ctx.world);
-    });
-    m_active_bvh = const_cast<rendering::BVH*>(&ctx.world.scene_bvh());
-
-    // Detect scene rebuild → reset accumulation
-    if (scene.buffer.handle() != m_prev_scene_buffer) {
-        m_prev_scene_buffer = scene.buffer.handle();
-        m_frame_count = 0;
-    }
-
     ensure_pixel_buffers(ctx.device, ctx.viewport_width, ctx.viewport_height);
 
     auto current_vp = ctx.proj_matrix * ctx.view_matrix;
@@ -286,6 +206,14 @@ void PathTracerPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
         m_frame_count = 0;
         m_prev_vp = current_vp;
     }
+
+    // Reset accumulation when the scene changes (instance buffer rebuilt)
+    auto current_instance_handle = ctx.world.instance_buffer().handle();
+    if (current_instance_handle != m_prev_instance_handle) {
+        m_frame_count = 0;
+        m_prev_instance_handle = current_instance_handle;
+    }
+
     m_frame_count++;
 
     PTUniforms uniforms{};
@@ -294,9 +222,10 @@ void PathTracerPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     uniforms.inv_vp = glm::inverse(current_vp);
     uniforms.width = ctx.viewport_width;
     uniforms.height = ctx.viewport_height;
-    uniforms.triangle_count = scene.triangle_count;
+    uniforms.instance_count = ctx.world.instance_count();
     uniforms.light_count = ctx.world.gpu_light_count();
     uniforms.total_frames = m_frame_count;
+    uniforms.tlas_node_count = ctx.world.tlas_node_count();
     wgpuQueueWriteBuffer(ctx.queue, r.uniform_buffer.handle(), 0, &uniforms, sizeof(uniforms));
 
     BlitUniforms bu{};
@@ -307,23 +236,26 @@ void PathTracerPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     // Capture handles for lambdas
     auto& mat_buf = ctx.world.material_buffer();
     auto& light_buf = ctx.world.light_buffer();
+    auto& tri_buf = ctx.world.triangle_buffer();
+    auto& inst_buf = ctx.world.instance_buffer();
+    auto& bvh_buf = ctx.world.bvh_node_buffer();
     auto dev = ctx.device.handle();
     auto width = ctx.viewport_width;
     auto height = ctx.viewport_height;
-    auto tri_count = scene.triangle_count;
+    auto inst_count = ctx.world.instance_count();
 
     // --- Create compute bind group ---
     auto scene_tex_view = ctx.world.texture_array_view();
     auto scene_tex_sampler = ctx.world.texture_sampler();
 
-    WGPUBindGroupEntry cbe[9] = {};
-    for (int i = 0; i < 9; ++i) cbe[i] = WGPU_BIND_GROUP_ENTRY_INIT;
+    WGPUBindGroupEntry cbe[10] = {};
+    for (int i = 0; i < 10; ++i) cbe[i] = WGPU_BIND_GROUP_ENTRY_INIT;
     cbe[0].binding = 0;
     cbe[0].buffer = r.uniform_buffer.handle();
     cbe[0].size = sizeof(PTUniforms);
     cbe[1].binding = 1;
-    cbe[1].buffer = scene.buffer.handle();
-    cbe[1].size = scene.buffer.size();
+    cbe[1].buffer = tri_buf.handle();
+    cbe[1].size = tri_buf.size();
     cbe[2].binding = 2;
     cbe[2].buffer = mat_buf.handle();
     cbe[2].size = mat_buf.size();
@@ -337,22 +269,25 @@ void PathTracerPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     cbe[5].buffer = m_output_buffer.handle();
     cbe[5].size = m_output_buffer.size();
     cbe[6].binding = 6;
-    cbe[6].buffer = ctx.world.scene_bvh().gpu_nodes().handle();
-    cbe[6].size = ctx.world.scene_bvh().gpu_nodes().size();
+    cbe[6].buffer = bvh_buf.handle();
+    cbe[6].size = bvh_buf.size();
     cbe[7].binding = 7;
     cbe[7].textureView = scene_tex_view;
     cbe[8].binding = 8;
     cbe[8].sampler = scene_tex_sampler;
+    cbe[9].binding = 9;
+    cbe[9].buffer = inst_buf.handle();
+    cbe[9].size = inst_buf.size();
 
     WGPUBindGroupDescriptor cbg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
     cbg_desc.layout = r.compute_bgl;
-    cbg_desc.entryCount = 9;
+    cbg_desc.entryCount = 10;
     cbg_desc.entries = cbe;
     auto compute_bg = wgpuDeviceCreateBindGroup(dev, &cbg_desc);
 
     auto* cp = r.compute_pipeline.handle();
     fg.add_pass("pathtracer_compute").execute([=](WGPUComputePassEncoder enc) {
-        if (tri_count == 0) {
+        if (inst_count == 0) {
             wgpuBindGroupRelease(compute_bg);
             return;
         }
@@ -401,14 +336,8 @@ void PathTracerPass::draw_viewport_controls() {
 }
 
 void PathTracerPass::do_draw_imgui() {
-    if (m_active_bvh && ImGui::CollapsingHeader("BVH")) {
-        m_active_bvh->draw_imgui();
-    }
 }
 
 void PathTracerPass::draw_viewport_overlay(const ViewportOverlayParams& params) {
     IRenderer::draw_viewport_overlay(params);  // forward to children
-    if (m_active_bvh) {
-        m_active_bvh->draw_overlay({params.view_proj, params.x, params.y, params.w, params.h});
-    }
 }

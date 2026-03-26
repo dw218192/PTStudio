@@ -26,3 +26,6 @@ tools/uv.lock
 .claude/settings.local.json
 repo.ps1
 config.local.yaml
+
+# Tracy profiling data
+*.tracy

@@ -1,5 +1,6 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #define NOMINMAX
+#include <core/profiling.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/webgpu/device.h>
 #include <doctest/doctest.h>
@@ -9,6 +10,10 @@
 #include <cstring>
 
 #ifndef __EMSCRIPTEN__
+
+TEST_CASE("profiler init" * doctest::test_suite("setup")) {
+    PTS_STARTUP_PROFILER();
+}
 
 namespace {
 auto create_test_logger() -> std::shared_ptr<spdlog::logger> {

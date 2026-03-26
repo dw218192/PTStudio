@@ -881,9 +881,6 @@ void EditorApplication::render(FrameContext& ctx) {
             const auto& path = m_editor_pass->resolve_picking_id(*picked_id);
             if (!path.IsEmpty()) {
                 m_selected_prim = path;
-                if (m_stage) {
-                    normalize_xform_ops(path);
-                }
             }
         }
     }
@@ -1119,14 +1116,10 @@ auto EditorApplication::draw_inspector_panel() noexcept -> void {
             // ── Transform section (TRS) ──
             pxr::UsdGeomXformable xformable(prim);
             if (xformable) {
-                bool reset_xform_stack = false;
-                auto ops = xformable.GetOrderedXformOps(&reset_xform_stack);
-                INVARIANT_MSG(
-                    ops.size() == 1 && ops[0].GetOpType() == pxr::UsdGeomXformOp::TypeTransform,
-                    "xform ops must be normalized to a single TypeTransform for inspector TRS");
-
                 pxr::GfMatrix4d gf_local;
-                ops[0].Get(&gf_local);
+                bool resetsXformStack;
+                xformable.GetLocalTransformation(&gf_local, &resetsXformStack,
+                                                 pxr::UsdTimeCode::Default());
 
                 glm::mat4 local_mat;
                 for (int i = 0; i < 4; ++i)
@@ -1142,6 +1135,10 @@ auto EditorApplication::draw_inspector_panel() noexcept -> void {
                     changed |= ImGui::DragFloat3("Scale", &trs.scale.x, 0.01f);
 
                     if (changed) {
+                        normalize_xform_ops(m_selected_prim);
+                        bool reset = false;
+                        auto ops = xformable.GetOrderedXformOps(&reset);
+                        INVARIANT(ops.size() == 1);
                         glm::mat4 new_local = compose_trs(trs);
                         pxr::GfMatrix4d new_gf;
                         for (int i = 0; i < 4; ++i)
@@ -1275,9 +1272,6 @@ void EditorApplication::draw_prim_tree(const pxr::UsdPrim& prim) {
                 m_selected_prim = pxr::SdfPath();
             } else {
                 m_selected_prim = path;
-                if (pxr::UsdGeomXformable xformable{prim}; xformable) {
-                    normalize_xform_ops(path);
-                }
             }
         }
 
@@ -1512,6 +1506,11 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
                                  ImGuizmo::WORLD, glm::value_ptr(gizmo_transform));
 
             if (ImGuizmo::IsUsing()) {
+                if (m_selected_prim != m_xform_normalized_prim) {
+                    normalize_xform_ops(m_selected_prim);
+                    m_xform_normalized_prim = m_selected_prim;
+                }
+
                 pxr::GfMatrix4d gf_world;
                 for (int i = 0; i < 4; ++i)
                     for (int j = 0; j < 4; ++j)

@@ -112,6 +112,7 @@ PUBLIC
 	fmt::fmt
 	spdlog::spdlog
 	nlohmann_json::nlohmann_json
+	TBB::tbb
 )
 
 # Optional USD schema modules (configured via PTS_USD_MODULES)
