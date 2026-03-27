@@ -5,6 +5,8 @@ reviews:
   auto_review:
     base_branches:
       - develop
+    path_filters:
+      - "!assets/**"
   path_instructions:
     - path: "**/*.{h,cpp}"
       instructions: |
