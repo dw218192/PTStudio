@@ -6,6 +6,16 @@ public struct BVHNode {
     public uint count;          // 0 = interior, >0 = leaf tri count
 };
 
+/// Per-instance data for two-level BVH traversal — matches C++ GPUInstance (144 bytes).
+public struct Instance {
+    public float4x4 transform;
+    public float4x4 inv_transform;
+    public uint blas_offset;
+    public uint tri_offset;
+    public uint tri_count;
+    public uint material_index;
+};
+
 /// Ray-AABB slab test. Returns true if the ray enters the box before t_best.
 public bool ray_aabb(float3 ro, float3 rd, float3 bmin, float3 bmax, float t_best) {
     float3 inv_rd = 1.0 / rd;

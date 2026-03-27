@@ -1,0 +1,107 @@
+#usda 1.0
+(
+    defaultPrim = "Root"
+    upAxis = "Y"
+)
+
+def Xform "Root"
+{
+    def Scope "Materials"
+    {
+        def Material "StainedGlass"
+        {
+            token outputs:surface.connect = </Root/Materials/StainedGlass/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.8, 0.8)
+                color3f inputs:diffuseColor.connect = </Root/Materials/StainedGlass/DiffuseTex.outputs:rgb>
+                float inputs:metallic = 0
+                float inputs:metallic.connect = </Root/Materials/StainedGlass/MetallicTex.outputs:r>
+                normal3f inputs:normal.connect = </Root/Materials/StainedGlass/NormalTex.outputs:rgb>
+                float inputs:roughness = 0.5
+                float inputs:roughness.connect = </Root/Materials/StainedGlass/RoughnessTex.outputs:r>
+                token outputs:surface
+            }
+
+            def Shader "DiffuseTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @../materials/glass_stained/Glass_Stained_Panel_001_basecolor.png@
+                float2 inputs:st.connect = </Root/Materials/StainedGlass/UVReader.outputs:result>
+                float3 outputs:rgb
+            }
+
+            def Shader "NormalTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @../materials/glass_stained/Glass_Stained_Panel_001_normal.png@
+                float2 inputs:st.connect = </Root/Materials/StainedGlass/UVReader.outputs:result>
+                float3 outputs:rgb
+            }
+
+            def Shader "MetallicTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @../materials/glass_stained/Glass_Stained_Panel_001_metallic.png@
+                float2 inputs:st.connect = </Root/Materials/StainedGlass/UVReader.outputs:result>
+                float outputs:r
+            }
+
+            def Shader "RoughnessTex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @../materials/glass_stained/Glass_Stained_Panel_001_roughness.png@
+                float2 inputs:st.connect = </Root/Materials/StainedGlass/UVReader.outputs:result>
+                float outputs:r
+            }
+
+            def Shader "UVReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+        }
+    }
+
+    def Mesh "Ground" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        rel material:binding = </Root/Materials/StainedGlass>
+        normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)]
+        token orientation = "rightHanded"
+        point3f[] points = [(-5, 0, -5), (5, 0, -5), (5, 0, 5), (-5, 0, 5)]
+        texCoord2f[] primvars:st = [(0, 0), (2, 0), (2, 2), (0, 2)] (
+            interpolation = "vertex"
+        )
+        token subdivisionScheme = "none"
+    }
+
+    def RectLight "AreaLight"
+    {
+        color3f inputs:color = (1, 1, 1)
+        float inputs:height = 3
+        float inputs:intensity = 10.9
+        float inputs:width = 3
+        float3 xformOp:rotateXYZ = (-90, 0, 0)
+        matrix4d xformOp:transform = ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 1.5, 5, 1) )
+        double3 xformOp:translate = (0, 3, 0)
+        uniform token[] xformOpOrder = ["xformOp:transform"]
+    }
+
+    def Camera "Camera"
+    {
+        float2 clippingRange = (0.1, 1000)
+        float focalLength = 20.78461
+        float horizontalAperture = 36
+        float verticalAperture = 24
+        matrix4d xformOp:transform = ( (-0.9541196227073669, -7.450581485102248e-9, 0.2994258999824524, -0), (0.10579144954681396, 0.9355047345161438, 0.33710408210754395, 0), (-0.2801143229007721, 0.35331425070762634, -0.8925833106040955, 0), (-1.9549052715301514, 1.6761951446533203, -2.942295789718628, 1) )
+        uniform token[] xformOpOrder = ["xformOp:transform"]
+    }
+}
+

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <core/rendering/aabb.h>
+#include <core/rendering/packedTriangle.h>
+#include <core/rendering/vertex.h>
 #include <core/rendering/webgpu/buffer.h>
 #include <core/rendering/webgpu/webgpu.h>
 
@@ -29,11 +31,32 @@ static_assert(sizeof(BVHNode) == 32);
 inline constexpr uint32_t k_bvh_max_leaf_size = 4;
 inline constexpr uint32_t k_bvh_bin_count = 16;
 
+class BVH;
+
+/// Entry describing one BLAS for concatenation into the combined node buffer.
+struct BlasEntry {
+    const BVH* bvh;
+    uint32_t tri_offset;  // first triangle index in concatenated triangle buffer
+};
+
 /// CPU-side BVH with optional GPU buffer upload.
 class BVH {
    public:
     /// Build from per-triangle AABBs and centroids (binned SAH, top-down).
     void build(boost::span<const AABB> tri_aabbs, uint32_t count);
+
+    /// Build local-space BVH from mesh vertex/index data.
+    /// Computes triangle AABBs, builds SAH tree, creates PackedTriangles
+    /// reordered by BVH spatial locality.
+    std::vector<PackedTriangle> build_from_mesh(boost::span<const Vertex> vertices,
+                                                boost::span<const uint32_t> indices);
+
+    /// Concatenate TLAS (this BVH) with multiple BLAS trees into a single
+    /// node array suitable for GPU upload. Offsets interior node child indices
+    /// in each BLAS to account for their position in the concatenated buffer.
+    /// blas_list entries must be in the same order used to compute blas_offset.
+    /// Returns: concatenated nodes. TLAS nodes appear first (0..node_count()-1).
+    std::vector<BVHNode> concatenate_nodes(boost::span<const BlasEntry> blas_list) const;
 
     /// Upload node array to a GPU storage buffer.
     void upload(const webgpu::Device& device, WGPUQueue queue);

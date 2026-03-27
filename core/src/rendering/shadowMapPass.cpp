@@ -1,4 +1,5 @@
 #include <core/diagnostics.h>
+#include <core/profiling.h>
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
@@ -109,6 +110,7 @@ void ShadowMapPass::do_setup(const webgpu::Device& device) {
 }
 
 void ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
+    PTS_ZONE_SCOPED;
     PRECONDITION(is_ready());
     auto& ready = std::get<Ready>(m_state);
 
@@ -133,8 +135,8 @@ void ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
         return;
     }
 
-    // Scene AABB from BVH root node (built by RenderWorld::prepare_gpu_buffers)
-    auto scene_bounds = ctx.world.scene_bvh().scene_bounds();
+    // Scene AABB from TLAS root (built by RenderWorld::prepare_gpu_buffers)
+    auto scene_bounds = ctx.world.scene_bounds();
     auto aabb_min = scene_bounds.min;
     auto aabb_max = scene_bounds.max;
 
@@ -246,11 +248,15 @@ void ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
 
         // Write per-object uniforms for this layer
         // Interleaved: buffer[layer * total_slots + obj_index]
-        for (uint32_t oi = 0; oi < total_slots; ++oi) {
-            if (!objects[oi].active()) continue;
-            glm::mat4 light_mvp = light_vp * objects[oi]->transform;
-            uint64_t offset = (static_cast<uint64_t>(layer) * total_slots + oi) * k_uniform_align;
-            wgpuQueueWriteBuffer(ctx.queue, uniform_buf, offset, &light_mvp, sizeof(glm::mat4));
+        {
+            PTS_ZONE_NAMED("shadow uniform upload");
+            for (uint32_t oi = 0; oi < total_slots; ++oi) {
+                if (!objects[oi].active()) continue;
+                glm::mat4 light_mvp = light_vp * objects[oi]->transform;
+                uint64_t offset =
+                    (static_cast<uint64_t>(layer) * total_slots + oi) * k_uniform_align;
+                wgpuQueueWriteBuffer(ctx.queue, uniform_buf, offset, &light_mvp, sizeof(glm::mat4));
+            }
         }
 
         // Emit frame graph pass

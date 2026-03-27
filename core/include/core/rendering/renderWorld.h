@@ -2,10 +2,12 @@
 
 #include <core/diagnostics.h>
 #include <core/rendering/bvh.h>
+#include <core/rendering/packedTriangle.h>
 #include <core/rendering/vertex.h>
 #include <core/rendering/webgpu/buffer.h>
 #include <pxr/usd/sdf/path.h>
 #include <pxr/usd/usd/stage.h>
+#include <webgpu/webgpu.h>
 
 #include <boost/container/flat_map.hpp>
 #include <boost/core/span.hpp>
@@ -25,15 +27,22 @@ namespace pts::rendering {
 
 static constexpr uint32_t k_no_material = UINT32_MAX;
 
-/// 32-byte GPU struct
+/// 64-byte GPU struct
 struct Material {
     glm::vec3 diffuse_color{1.0f, 1.0f, 1.0f};
     float metallic{0.0f};
+    glm::vec3 emissive_color{0.0f, 0.0f, 0.0f};
     float roughness{0.5f};
     float opacity{1.0f};
-    uint32_t _padding[2]{};
+    uint32_t diffuse_tex{UINT32_MAX};
+    uint32_t normal_tex{UINT32_MAX};
+    uint32_t metallic_tex{UINT32_MAX};
+    uint32_t roughness_tex{UINT32_MAX};
+    uint32_t emissive_tex{UINT32_MAX};
+    uint32_t opacity_tex{UINT32_MAX};
+    uint32_t tex_channels{0};
 };
-static_assert(sizeof(Material) == 32, "Material must be 32 bytes for GPU alignment");
+static_assert(sizeof(Material) == 64, "Material must be 64 bytes for GPU alignment");
 
 /// 64-byte GPU struct
 struct Light {
@@ -243,6 +252,17 @@ struct ShadowInfo {
 };
 static_assert(sizeof(ShadowInfo) == 80, "ShadowInfo must be 80 bytes for GPU alignment");
 
+/// Per-instance data for two-level BVH traversal on the GPU.
+struct GPUInstance {
+    glm::mat4 transform{1.0f};      // 64 bytes: object-to-world
+    glm::mat4 inv_transform{1.0f};  // 64 bytes: world-to-object
+    uint32_t blas_offset{0};        // absolute index into bvh_nodes buffer
+    uint32_t tri_offset{0};         // offset into global triangle buffer
+    uint32_t tri_count{0};          // triangles in this mesh
+    uint32_t material_index{UINT32_MAX};
+};
+static_assert(sizeof(GPUInstance) == 144);
+
 struct RenderWorld;
 
 /// RAII scope guard for batched sync operations. Bumps mesh_version
@@ -290,6 +310,10 @@ class SyncScope {
     std::unordered_map<std::string, uint32_t>& material_cache();
     void set_prim_path(uint32_t slot_index, PrimSlot::Kind kind, pxr::SdfPath path);
 
+    /// Load a texture from disk, deduplicate by path. Returns layer index
+    /// or UINT32_MAX on failure. Bumps texture version.
+    uint32_t load_texture(const std::string& resolved_path);
+
    private:
     RenderWorld& m_world;
 };
@@ -320,10 +344,26 @@ struct RenderWorld {
     const webgpu::Buffer& light_buffer() const;
     const webgpu::Buffer& material_buffer() const;
     uint32_t gpu_light_count() const;
+    WGPUTextureView texture_array_view() const;
+    WGPUSampler texture_sampler() const;
 
-    /// Scene BVH — built from world-space triangle positions, rebuilt when
-    /// mesh_version changes.  Available after prepare_gpu_buffers().
-    const BVH& scene_bvh() const;
+    /// World-space scene AABB (TLAS root bounds).
+    AABB scene_bounds() const;
+
+    /// Concatenated TLAS + BLAS node buffer for GPU traversal.
+    const webgpu::Buffer& bvh_node_buffer() const;
+
+    /// Concatenated local-space triangle buffer (ordered by per-mesh BLAS).
+    const webgpu::Buffer& triangle_buffer() const;
+
+    /// GPUInstance array (reordered by TLAS).
+    const webgpu::Buffer& instance_buffer() const;
+
+    /// Number of TLAS nodes (first N nodes in the concatenated BVH buffer).
+    uint32_t tlas_node_count() const;
+
+    /// Number of active instances.
+    uint32_t instance_count() const;
 
     // Shadow data — written by ShadowMapPass, read by renderers.
     // One ShadowInfo per light (matching light buffer order).
@@ -391,9 +431,38 @@ struct RenderWorld {
     webgpu::Buffer m_shadow_info_buffer;
     uint32_t m_shadow_count = 0;
 
-    // Scene BVH (world-space, rebuilt when meshes change)
-    BVH m_scene_bvh;
-    uint32_t m_cached_bvh_mesh_version = UINT32_MAX;
+    // Two-level acceleration structure
+    struct BlasData {
+        BVH bvh;                           // local-space BVH tree
+        std::vector<PackedTriangle> tris;  // local-space triangles (BVH-reordered)
+        uint32_t generation = UINT32_MAX;  // mesh slot generation when built
+    };
+    std::unordered_map<uint32_t, BlasData> m_blas_cache;
+
+    BVH m_tlas;                      // world-space TLAS
+    webgpu::Buffer m_gpu_bvh_nodes;  // concatenated TLAS + BLAS nodes
+    webgpu::Buffer m_gpu_triangles;  // concatenated local-space triangles
+    webgpu::Buffer m_gpu_instances;  // GPUInstance array
+    uint32_t m_tlas_node_count = 0;
+    uint32_t m_instance_count = 0;
+    uint32_t m_transform_version = 0;
+    uint32_t m_cached_transform_version = UINT32_MAX;
+    uint32_t m_cached_geometry_version = UINT32_MAX;
+
+    // Texture array state
+    struct ImageData {
+        std::vector<uint8_t> pixels;
+        uint32_t width;
+        uint32_t height;
+    };
+    std::vector<ImageData> m_texture_images;
+    std::unordered_map<std::string, uint32_t> m_texture_cache;
+    WGPUTexture m_texture_array = nullptr;
+    WGPUTextureView m_texture_array_view = nullptr;
+    WGPUSampler m_texture_sampler = nullptr;
+    uint32_t m_texture_version = 0;
+    uint32_t m_cached_texture_version = UINT32_MAX;
+    uint32_t m_texture_size = 1024;
 };
 
 }  // namespace pts::rendering

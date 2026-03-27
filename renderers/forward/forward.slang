@@ -1,6 +1,7 @@
 import lighting;
 import brdf;
 import light;
+import material_sampling;
 import shadow_sampling;
 
 struct Uniforms {
@@ -31,6 +32,12 @@ Texture2D<float2> ltc_amp;
 
 [[vk::binding(5, 0)]]
 SamplerState ltc_sampler;
+
+[[vk::binding(6, 0)]]
+Texture2DArray<float4> scene_textures;
+
+[[vk::binding(7, 0)]]
+SamplerState scene_sampler;
 
 // Bind group 1: shadow data
 [[vk::binding(0, 1)]] StructuredBuffer<ShadowInfo> shadow_infos;
@@ -79,19 +86,22 @@ struct FsOut {
 
 [shader("fragment")]
 FsOut fs_main(float3 world_normal : NORMAL, float3 world_pos : WORLD_POS,
-              float3 color : COLOR) {
+              float3 color : COLOR, float2 uv : TEXCOORD) {
     float3 N = normalize(world_normal);
     float3 V = normalize(u.camera_pos - world_pos);
 
     float3 albedo;
     float mat_metallic = 0.0;
     float mat_roughness = 0.5;
-    if (u.material_index == 0xFFFFFFFF) {
+    if (!has_texture(u.material_index)) {
         albedo = color;
     } else {
-        albedo = materials[u.material_index].diffuse_color;
-        mat_metallic = materials[u.material_index].metallic;
-        mat_roughness = materials[u.material_index].roughness;
+        Material mat = materials[u.material_index];
+        MaterialSample sm = sample_material(mat, uv, scene_textures, scene_sampler);
+        albedo = sm.base_color;
+        mat_metallic = sm.metallic;
+        mat_roughness = sm.roughness;
+        N = apply_normal_map_screen(N, world_pos, uv, mat, scene_textures, scene_sampler);
     }
 
     CookTorranceGGX brdf;

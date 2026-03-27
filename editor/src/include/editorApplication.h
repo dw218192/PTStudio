@@ -170,9 +170,15 @@ struct EditorApplication final : GpuApplication {
 
     // Selection & gizmo
     pxr::SdfPath m_selected_prim;
-    pxr::SdfPath m_lobe_bound_prim;  // tracks which prim's material is loaded in lobe viewer
+    pxr::SdfPath m_xform_normalized_prim;  // last prim whose xform was normalized for gizmo
+    pxr::SdfPath m_lobe_bound_prim;        // tracks which prim's material is loaded in lobe viewer
     enum class GizmoOp { Translate, Rotate, Scale };
     GizmoOp m_gizmo_op = GizmoOp::Translate;
+
+    // Inline rename state
+    pxr::SdfPath m_renaming_prim;
+    char m_rename_buf[256]{};
+    bool m_rename_focus_set = false;
 
     // Viewport tracking
     uint32_t m_viewport_width = 0;

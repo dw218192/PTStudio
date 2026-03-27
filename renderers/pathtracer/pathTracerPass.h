@@ -10,27 +10,8 @@
 #include <glm/glm.hpp>
 #include <string_view>
 #include <variant>
-#include <vector>
 
 namespace pts::editor {
-
-/// GPU-aligned flattened triangle for brute-force ray intersection.
-struct PackedTriangle {
-    glm::vec3 v0;
-    uint32_t _pad0{};
-    glm::vec3 v1;
-    uint32_t _pad1{};
-    glm::vec3 v2;
-    uint32_t _pad2{};
-    glm::vec3 n0;
-    uint32_t _pad3{};
-    glm::vec3 n1;
-    uint32_t _pad4{};
-    glm::vec3 n2;
-    uint32_t material_index{UINT32_MAX};
-    uint32_t _pad5[4]{};
-};
-static_assert(sizeof(PackedTriangle) == 112, "PackedTriangle must be 112 bytes for GPU alignment");
 
 class PathTracerPass final : public rendering::IRenderer {
    public:
@@ -53,8 +34,6 @@ class PathTracerPass final : public rendering::IRenderer {
     void draw_viewport_controls() override;
 
    private:
-    void rebuild_scene_buffer(const webgpu::Device& device, WGPUQueue queue,
-                              const rendering::RenderWorld& world);
     void ensure_pixel_buffers(const webgpu::Device& device, uint32_t width, uint32_t height);
 
     struct Ready {
@@ -71,25 +50,15 @@ class PathTracerPass final : public rendering::IRenderer {
 
     std::variant<std::monostate, Ready> m_state;
 
-    /// Cached scene data — managed by per-category pass_data API.
-    /// BVH is owned by RenderWorld, not duplicated here.
-    struct SceneData {
-        webgpu::Buffer buffer;  // triangles (reordered by BVH)
-        uint32_t triangle_count = 0;
-    };
-    static SceneData build_scene_data(const webgpu::Device& device, WGPUQueue queue,
-                                      const rendering::RenderWorld& world);
-    WGPUBuffer m_prev_scene_buffer = nullptr;  // change detection for frame_count reset
-    rendering::BVH* m_active_bvh = nullptr;    // non-owning, points into pass_data SceneData
-
     // Per-pixel buffers
     webgpu::Buffer m_accum_buffer;
     webgpu::Buffer m_output_buffer;
     uint32_t m_pixel_width = 0;
     uint32_t m_pixel_height = 0;
 
-    // Camera change detection
+    // Camera / scene change detection
     glm::mat4 m_prev_vp{0.0f};
+    WGPUBuffer m_prev_instance_handle = nullptr;
     uint32_t m_frame_count = 0;
 };
 

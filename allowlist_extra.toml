@@ -14,3 +14,12 @@ patterns = [
     'git\s+rebase\s+--(continue|abort|skip)', # rebase recovery
     'git\s+stash\b',                    # stash / stash pop
 ]
+
+[[allow]]
+name = "framework_contrib"
+override_deny = true
+commands = ["cmd.exe", "bash"]
+patterns = [
+    'mklink\s+/J\b',                    # create junction for test driver
+    'bootstrap\.sh\b',                  # bootstrap test driver
+]

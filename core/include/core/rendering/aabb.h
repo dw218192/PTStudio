@@ -1,7 +1,10 @@
 #pragma once
 
+#include <cmath>
 #include <glm/common.hpp>
+#include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
+#include <glm/vec4.hpp>
 #include <limits>
 
 namespace pts::rendering {
@@ -58,5 +61,16 @@ struct AABB {
         return {lo, hi};
     }
 };
+
+/// Transform an AABB by a 4x4 matrix (Arvo's method).
+inline AABB transform_aabb(const AABB& local, const glm::mat4& m) {
+    glm::vec3 center = (local.min + local.max) * 0.5f;
+    glm::vec3 extent = (local.max - local.min) * 0.5f;
+    glm::vec3 new_center = glm::vec3(m * glm::vec4(center, 1.0f));
+    glm::vec3 new_extent(0.0f);
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j) new_extent[i] += std::abs(m[j][i]) * extent[j];
+    return AABB::from_min_max(new_center - new_extent, new_center + new_extent);
+}
 
 }  // namespace pts::rendering

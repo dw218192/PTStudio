@@ -103,6 +103,7 @@ target_compile_definitions(${lib_name} PUBLIC GLM_FORCE_DEPTH_ZERO_TO_ONE)
 target_link_libraries(${lib_name}
 PRIVATE
 	$<BUILD_INTERFACE:developer_flags>
+	stb::stb
 PUBLIC
 	openusd::usd_usd
 	glm::glm
@@ -111,6 +112,7 @@ PUBLIC
 	fmt::fmt
 	spdlog::spdlog
 	nlohmann_json::nlohmann_json
+	TBB::tbb
 )
 
 # Optional USD schema modules (configured via PTS_USD_MODULES)

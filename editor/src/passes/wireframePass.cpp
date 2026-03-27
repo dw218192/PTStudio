@@ -188,29 +188,36 @@ void WireframePass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     auto bind_group = ready.bind_group;
     const auto& world = ctx.world;
 
-    // Lazily build wireframe index buffers via the per-pass mesh cache.
-    for (uint32_t i = 0; i < object_count; ++i) {
-        if (!objects[i].active()) continue;
-        const auto& obj = objects[i];
-        get_or_create_pass_data<WireframeMesh>(
-            rendering::PassDataKind::Mesh, obj->mesh_index, ctx.world, [&]() {
-                const auto& mesh = meshes[obj->mesh_index];
-                auto indices = expand_wireframe_indices(mesh->cpu_indices);
-                auto buf = ctx.device.create_buffer(
-                    indices.size() * sizeof(uint32_t),
-                    static_cast<WGPUBufferUsage>(WGPUBufferUsage_Index | WGPUBufferUsage_CopyDst));
-                wgpuQueueWriteBuffer(queue, buf.handle(), 0, indices.data(),
-                                     indices.size() * sizeof(uint32_t));
-                return WireframeMesh{std::move(buf), static_cast<uint32_t>(indices.size())};
-            });
+    {
+        PTS_ZONE_NAMED("wireframe mesh cache");
+        // Lazily build wireframe index buffers via the per-pass mesh cache.
+        for (uint32_t i = 0; i < object_count; ++i) {
+            if (!objects[i].active()) continue;
+            const auto& obj = objects[i];
+            get_or_create_pass_data<WireframeMesh>(
+                rendering::PassDataKind::Mesh, obj->mesh_index, ctx.world, [&]() {
+                    const auto& mesh = meshes[obj->mesh_index];
+                    auto indices = expand_wireframe_indices(mesh->cpu_indices);
+                    auto buf = ctx.device.create_buffer(
+                        indices.size() * sizeof(uint32_t),
+                        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Index |
+                                                     WGPUBufferUsage_CopyDst));
+                    wgpuQueueWriteBuffer(queue, buf.handle(), 0, indices.data(),
+                                         indices.size() * sizeof(uint32_t));
+                    return WireframeMesh{std::move(buf), static_cast<uint32_t>(indices.size())};
+                });
+        }
     }
 
-    for (uint32_t i = 0; i < object_count; ++i) {
-        if (!objects[i].active()) continue;
-        const auto& obj = objects[i];
-        WireframeUniforms u{};
-        u.mvp = proj_mat * view_mat * obj->transform;
-        wgpuQueueWriteBuffer(queue, uniform_buf, i * k_uniform_align, &u, sizeof(u));
+    {
+        PTS_ZONE_NAMED("wireframe uniform upload");
+        for (uint32_t i = 0; i < object_count; ++i) {
+            if (!objects[i].active()) continue;
+            const auto& obj = objects[i];
+            WireframeUniforms u{};
+            u.mvp = proj_mat * view_mat * obj->transform;
+            wgpuQueueWriteBuffer(queue, uniform_buf, i * k_uniform_align, &u, sizeof(u));
+        }
     }
 
     fg.add_pass("wireframe")

@@ -39,8 +39,10 @@ static WGPUBindGroup create_bind_group(WGPUDevice device, WGPUBindGroupLayout la
                                        WGPUBuffer uniform_buf, WGPUBuffer material_buf,
                                        std::size_t material_buf_size, WGPUBuffer light_buf,
                                        std::size_t light_buf_size, WGPUTextureView ltc_mat_view,
-                                       WGPUTextureView ltc_amp_view, WGPUSampler ltc_sampler) {
-    WGPUBindGroupEntry entries[6] = {};
+                                       WGPUTextureView ltc_amp_view, WGPUSampler ltc_sampler,
+                                       WGPUTextureView scene_tex_view,
+                                       WGPUSampler scene_tex_sampler) {
+    WGPUBindGroupEntry entries[8] = {};
 
     entries[0] = WGPU_BIND_GROUP_ENTRY_INIT;
     entries[0].binding = 0;
@@ -72,9 +74,17 @@ static WGPUBindGroup create_bind_group(WGPUDevice device, WGPUBindGroupLayout la
     entries[5].binding = 5;
     entries[5].sampler = ltc_sampler;
 
+    entries[6] = WGPU_BIND_GROUP_ENTRY_INIT;
+    entries[6].binding = 6;
+    entries[6].textureView = scene_tex_view;
+
+    entries[7] = WGPU_BIND_GROUP_ENTRY_INIT;
+    entries[7].binding = 7;
+    entries[7].sampler = scene_tex_sampler;
+
     WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
     bg_desc.layout = layout;
-    bg_desc.entryCount = 6;
+    bg_desc.entryCount = 8;
     bg_desc.entries = entries;
     return wgpuDeviceCreateBindGroup(device, &bg_desc);
 }
@@ -128,8 +138,9 @@ void ForwardPass::do_renderer_setup(const webgpu::Device& device) {
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
 
     // Create bind group 0 layout: binding 0 = uniform (dynamic), 1 = storage (materials),
-    // 2 = storage (lights), 3 = texture (LTC mat), 4 = texture (LTC amp), 5 = sampler (LTC)
-    WGPUBindGroupLayoutEntry entries[6] = {};
+    // 2 = storage (lights), 3 = texture (LTC mat), 4 = texture (LTC amp), 5 = sampler (LTC),
+    // 6 = texture array (scene textures), 7 = sampler (scene textures)
+    WGPUBindGroupLayoutEntry entries[8] = {};
 
     entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
     entries[0].binding = 0;
@@ -170,8 +181,20 @@ void ForwardPass::do_renderer_setup(const webgpu::Device& device) {
     entries[5].visibility = WGPUShaderStage_Fragment;
     entries[5].sampler.type = WGPUSamplerBindingType_Filtering;
 
+    entries[6] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    entries[6].binding = 6;
+    entries[6].visibility = WGPUShaderStage_Fragment;
+    entries[6].texture.sampleType = WGPUTextureSampleType_Float;
+    entries[6].texture.viewDimension = WGPUTextureViewDimension_2DArray;
+    entries[6].texture.multisampled = false;
+
+    entries[7] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    entries[7].binding = 7;
+    entries[7].visibility = WGPUShaderStage_Fragment;
+    entries[7].sampler.type = WGPUSamplerBindingType_Filtering;
+
     WGPUBindGroupLayoutDescriptor bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    bgl_desc.entryCount = 6;
+    bgl_desc.entryCount = 8;
     bgl_desc.entries = entries;
     auto bind_group_layout = wgpuDeviceCreateBindGroupLayout(device.handle(), &bgl_desc);
 
@@ -247,6 +270,8 @@ void ForwardPass::do_renderer_setup(const webgpu::Device& device) {
         initial_capacity,
         nullptr,
         nullptr,
+        nullptr,
+        nullptr,
         std::move(ltc),
         shadow_recv_bgl,
         shadow_sampler,
@@ -289,19 +314,26 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     auto& mat_buf = ctx.world.material_buffer();
     auto light_count = ctx.world.gpu_light_count();
 
+    auto scene_tex_view = ctx.world.texture_array_view();
+    auto scene_tex_sampler = ctx.world.texture_sampler();
+
     if (ready.bind_group == nullptr || bind_group_dirty ||
         light_buf.handle() != ready.cached_light_buf ||
-        mat_buf.handle() != ready.cached_material_buf) {
+        mat_buf.handle() != ready.cached_material_buf ||
+        scene_tex_view != ready.cached_texture_view ||
+        scene_tex_sampler != ready.cached_texture_sampler) {
         if (ready.bind_group) {
             wgpuBindGroupRelease(ready.bind_group);
         }
-        ready.bind_group =
-            create_bind_group(ctx.device.handle(), ready.bind_group_layout,
-                              ready.uniform_buffer.handle(), mat_buf.handle(), mat_buf.size(),
-                              light_buf.handle(), light_buf.size(), ready.ltc_textures.mat_view(),
-                              ready.ltc_textures.amp_view(), ready.ltc_textures.sampler());
+        ready.bind_group = create_bind_group(
+            ctx.device.handle(), ready.bind_group_layout, ready.uniform_buffer.handle(),
+            mat_buf.handle(), mat_buf.size(), light_buf.handle(), light_buf.size(),
+            ready.ltc_textures.mat_view(), ready.ltc_textures.amp_view(),
+            ready.ltc_textures.sampler(), scene_tex_view, scene_tex_sampler);
         ready.cached_light_buf = light_buf.handle();
         ready.cached_material_buf = mat_buf.handle();
+        ready.cached_texture_view = scene_tex_view;
+        ready.cached_texture_sampler = scene_tex_sampler;
     }
 
     rendering::TextureDesc color_desc;
@@ -352,17 +384,20 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     auto shadow_info_handle = shadow_info_buf.handle();
     auto shadow_info_size = shadow_info_buf.size();
 
-    for (uint32_t i = 0; i < object_count; ++i) {
-        if (!objects[i].active()) continue;
-        const auto& obj = objects[i];
-        ForwardUniforms u{};
-        u.mvp = proj_mat * view_mat * obj->transform;
-        u.model = obj->transform;
-        u.camera_pos = camera_pos;
-        u.time = elapsed_time;
-        u.material_index = obj->material_index;
-        u.light_count = light_count;
-        wgpuQueueWriteBuffer(queue, uniform_buf, i * k_uniform_align, &u, sizeof(u));
+    {
+        PTS_ZONE_NAMED("forward uniform upload");
+        for (uint32_t i = 0; i < object_count; ++i) {
+            if (!objects[i].active()) continue;
+            const auto& obj = objects[i];
+            ForwardUniforms u{};
+            u.mvp = proj_mat * view_mat * obj->transform;
+            u.model = obj->transform;
+            u.camera_pos = camera_pos;
+            u.time = elapsed_time;
+            u.material_index = obj->material_index;
+            u.light_count = light_count;
+            wgpuQueueWriteBuffer(queue, uniform_buf, i * k_uniform_align, &u, sizeof(u));
+        }
     }
 
     auto pass_builder = fg.add_pass("forward").color(color);
