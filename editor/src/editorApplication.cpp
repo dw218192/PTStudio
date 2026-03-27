@@ -1,6 +1,5 @@
 #include "editorApplication.h"
 
-#include <core/backgroundTask.h>
 #include <core/commandLine.h>
 #include <core/components/imguiComponent.h>
 #include <core/components/inputComponent.h>
@@ -15,6 +14,7 @@
 #include <core/rendering/sceneLoader.h>
 #include <core/rendering/webgpuContext.h>
 #include <core/rendering/windowing.h>
+#include <core/worker.h>
 #include <imgui_internal.h>
 
 #include "propertyInspector.h"
@@ -110,6 +110,10 @@ static void discover_demo_scenes(std::vector<std::string>& paths, std::vector<st
 
 EditorApplication::EditorApplication(std::string_view name, pts::LoggingManager& logging_manager)
     : GpuApplication{name, logging_manager},
+      m_prep_worker(std::make_unique<Worker<CpuPrepJob, rendering::PreparedSceneData>>(
+          [this](CpuPrepJob&&, TaskProgress&) -> rendering::PreparedSceneData {
+              return m_world.prepare_scene_data();
+          })),
       m_shader_loader(logging_manager.get_logger_shared("shader_loader")) {
     create_input_actions();
 
@@ -121,6 +125,7 @@ EditorApplication::EditorApplication(std::string_view name, pts::LoggingManager&
 }
 
 EditorApplication::~EditorApplication() {
+    m_prep_worker.reset();      // stop worker before tearing down world
     m_scene_load_task.reset();  // join background thread before tearing down
     m_pending_stage.Reset();
     revoke_stage_listener();
@@ -638,6 +643,7 @@ void EditorApplication::render(FrameContext& ctx) {
         revoke_stage_listener();
         m_picking_readback = webgpu::BufferReadback{};
         m_pick_requested = false;
+        m_first_prep = true;  // next frame uses synchronous prep (old result is stale)
         m_world = std::move(world);
         m_selected_prim = pxr::SdfPath();
         m_active_camera_index = 0;
@@ -766,7 +772,24 @@ void EditorApplication::render(FrameContext& ctx) {
         pass_ctx.proj_matrix = view.proj_matrix;
         pass_ctx.camera_position = view.camera_position;
 
-        m_world.prepare_gpu_buffers(device, queue);
+        if (capture_mode) {
+            // Capture mode: always synchronous for deterministic output
+            m_world.prepare_gpu_buffers(device, queue);
+        } else if (m_first_prep) {
+            // First frame: synchronous fallback (no stale data)
+            m_world.prepare_gpu_buffers(device, queue);
+            m_prep_worker->take_result();  // discard stale result after scene load
+            m_prep_worker->submit(CpuPrepJob{});
+            m_first_prep = false;
+        } else {
+            // Async: upload previous frame's result, submit next frame's work
+            if (m_prep_worker->has_result()) {
+                auto prepared = m_prep_worker->take_result();
+                INVARIANT(prepared.has_value());
+                m_world.upload_prepared_data(device, queue, *prepared);
+            }
+            m_prep_worker->submit(CpuPrepJob{});
+        }
     }
 
     // In capture mode, add renderer + tone mapping only (skip editor passes)
@@ -1056,7 +1079,7 @@ void EditorApplication::load_scene_background(pxr::UsdStageRefPtr stage, std::st
 
     m_pending_stage = stage;
 
-    m_scene_load_task = std::make_unique<BackgroundTask<rendering::RenderWorld>>(
+    m_scene_load_task = std::make_unique<OneShotTask<rendering::RenderWorld>>(
         "Loading Scene", [stage](TaskProgress& progress) -> rendering::RenderWorld {
             return rendering::populate_from_stage(stage, progress);
         });

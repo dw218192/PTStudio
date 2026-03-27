@@ -1,6 +1,7 @@
 #include <core/diagnostics.h>
 #include <core/profiling.h>
 #include <core/rendering/adapterHelpers.h>
+#include <core/rendering/preparedSceneData.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/webgpu/device.h>
 #include <pxr/usd/ar/asset.h>
@@ -335,25 +336,14 @@ constexpr std::size_t k_min_material_buffer_size = sizeof(Material);
 constexpr std::size_t k_min_light_buffer_size = sizeof(Light);  // 48 bytes
 }  // namespace
 
-void RenderWorld::prepare_gpu_buffers(const webgpu::Device& device, WGPUQueue queue) {
+PreparedSceneData RenderWorld::prepare_scene_data() {
     PTS_ZONE_SCOPED;
+    PreparedSceneData data;
+
     // --- Materials ---
     if (m_material_version != m_cached_material_version) {
-        auto material_count = static_cast<uint32_t>(m_materials.size());
-        auto required_size = std::max(k_min_material_buffer_size,
-                                      static_cast<std::size_t>(material_count) * sizeof(Material));
-
-        if (required_size > m_gpu_material_buffer.size()) {
-            m_gpu_material_buffer = device.create_buffer(
-                required_size,
-                static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
-        }
-
-        if (material_count > 0) {
-            wgpuQueueWriteBuffer(queue, m_gpu_material_buffer.handle(), 0, m_materials.data(),
-                                 material_count * sizeof(Material));
-        }
-
+        data.materials = m_materials;
+        data.materials_dirty = true;
         m_cached_material_version = m_material_version;
     }
 
@@ -362,33 +352,22 @@ void RenderWorld::prepare_gpu_buffers(const webgpu::Device& device, WGPUQueue qu
 
     if (m_light_version != m_cached_light_version) {
         // Structural change — full rebuild
-        std::vector<Light> gpu_lights;
         for (const auto& slot : lights) {
             if (!slot.active()) continue;
-            gpu_lights.push_back(to_light(slot.data()));
+            data.gpu_lights.push_back(to_light(slot.data()));
         }
 
         // Default fallback: single distant light when scene has no lights
-        if (gpu_lights.empty()) {
+        if (data.gpu_lights.empty()) {
             Light def{};
             def.type = 0;
             def.direction_or_pos = glm::normalize(glm::vec3(0.3f, -1.0f, 0.5f));
             def.color = {1.0f, 0.95f, 0.9f};
             def.intensity = 1.0f;
-            gpu_lights.push_back(def);
+            data.gpu_lights.push_back(def);
         }
 
-        auto buf_size = std::max(k_min_light_buffer_size, gpu_lights.size() * sizeof(Light));
-
-        if (!m_gpu_light_buffer.is_valid() || m_gpu_light_buffer.size() < buf_size) {
-            m_gpu_light_buffer = device.create_buffer(
-                buf_size,
-                static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
-        }
-
-        wgpuQueueWriteBuffer(queue, m_gpu_light_buffer.handle(), 0, gpu_lights.data(),
-                             gpu_lights.size() * sizeof(Light));
-        m_gpu_light_count = static_cast<uint32_t>(gpu_lights.size());
+        data.lights_dirty = true;
         m_cached_light_version = m_light_version;
 
         // Snapshot all generations
@@ -403,9 +382,7 @@ void RenderWorld::prepare_gpu_buffers(const webgpu::Device& device, WGPUQueue qu
             if (!lights[i].active()) continue;
             if (i < static_cast<uint32_t>(m_cached_light_generations.size()) &&
                 lights[i].generation() != m_cached_light_generations[i]) {
-                auto gl = to_light(lights[i].data());
-                wgpuQueueWriteBuffer(queue, m_gpu_light_buffer.handle(), gpu_idx * sizeof(Light),
-                                     &gl, sizeof(Light));
+                data.partial_light_updates.push_back({gpu_idx, to_light(lights[i].data())});
                 m_cached_light_generations[i] = lights[i].generation();
             }
             ++gpu_idx;
@@ -530,62 +507,25 @@ void RenderWorld::prepare_gpu_buffers(const webgpu::Device& device, WGPUQueue qu
                 gpu_instances = std::move(reordered);
             }
 
-            // Step 3: Concatenate TLAS + BLAS nodes
+            // Concatenate TLAS + BLAS nodes
             std::vector<BlasEntry> blas_entries;
             blas_entries.reserve(unique_meshes.size());
             for (uint32_t mi : unique_meshes) {
                 blas_entries.push_back({&m_blas_cache[mi].bvh, mesh_offsets[mi].tri_offset});
             }
-            auto all_nodes = m_tlas.concatenate_nodes(blas_entries);
+            data.all_nodes = m_tlas.concatenate_nodes(blas_entries);
 
-            m_tlas_node_count = tlas_nc;
-            m_instance_count = inst_count;
-
-            // Step 4: Upload buffers
-            // Upload concatenated TLAS + BLAS nodes
-            auto node_bytes = std::max(sizeof(BVHNode), all_nodes.size() * sizeof(BVHNode));
-            if (!m_gpu_bvh_nodes.is_valid() || m_gpu_bvh_nodes.size() < node_bytes) {
-                m_gpu_bvh_nodes = device.create_buffer(
-                    node_bytes, static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage |
-                                                             WGPUBufferUsage_CopyDst));
-            }
-            if (!all_nodes.empty()) {
-                wgpuQueueWriteBuffer(queue, m_gpu_bvh_nodes.handle(), 0, all_nodes.data(),
-                                     all_nodes.size() * sizeof(BVHNode));
-            }
-
-            // Upload concatenated triangles
-            std::vector<PackedTriangle> all_tris;
-            all_tris.reserve(running_tri_offset);
+            // Concatenate triangles
+            data.all_tris.reserve(running_tri_offset);
             for (uint32_t mesh_idx : unique_meshes) {
                 const auto& blas = m_blas_cache[mesh_idx];
-                all_tris.insert(all_tris.end(), blas.tris.begin(), blas.tris.end());
+                data.all_tris.insert(data.all_tris.end(), blas.tris.begin(), blas.tris.end());
             }
 
-            auto tri_bytes =
-                std::max(sizeof(PackedTriangle), all_tris.size() * sizeof(PackedTriangle));
-            if (!m_gpu_triangles.is_valid() || m_gpu_triangles.size() < tri_bytes) {
-                m_gpu_triangles = device.create_buffer(
-                    tri_bytes, static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage |
-                                                            WGPUBufferUsage_CopyDst));
-            }
-            if (!all_tris.empty()) {
-                wgpuQueueWriteBuffer(queue, m_gpu_triangles.handle(), 0, all_tris.data(),
-                                     all_tris.size() * sizeof(PackedTriangle));
-            }
-
-            // Upload instances
-            auto inst_bytes =
-                std::max(sizeof(GPUInstance), gpu_instances.size() * sizeof(GPUInstance));
-            if (!m_gpu_instances.is_valid() || m_gpu_instances.size() < inst_bytes) {
-                m_gpu_instances = device.create_buffer(
-                    inst_bytes, static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage |
-                                                             WGPUBufferUsage_CopyDst));
-            }
-            if (!gpu_instances.empty()) {
-                wgpuQueueWriteBuffer(queue, m_gpu_instances.handle(), 0, gpu_instances.data(),
-                                     gpu_instances.size() * sizeof(GPUInstance));
-            }
+            data.gpu_instances = std::move(gpu_instances);
+            data.tlas_node_count = tlas_nc;
+            data.instance_count = inst_count;
+            data.geometry_dirty = true;
 
             m_cached_transform_version = m_transform_version;
             m_cached_geometry_version = m_mesh_version;
@@ -594,6 +534,105 @@ void RenderWorld::prepare_gpu_buffers(const webgpu::Device& device, WGPUQueue qu
 
     // --- Texture array ---
     if (m_texture_version != m_cached_texture_version) {
+        data.texture_size = m_texture_size;
+        for (const auto& img : m_texture_images) {
+            data.texture_layers.push_back({img.pixels.data(), img.width, img.height});
+        }
+        data.textures_dirty = true;
+        m_cached_texture_version = m_texture_version;
+    }
+
+    return data;
+}
+
+void RenderWorld::upload_prepared_data(const webgpu::Device& device, WGPUQueue queue,
+                                       const PreparedSceneData& data) {
+    PTS_ZONE_SCOPED;
+
+    // --- Materials ---
+    if (data.materials_dirty) {
+        auto material_count = static_cast<uint32_t>(data.materials.size());
+        auto required_size = std::max(k_min_material_buffer_size,
+                                      static_cast<std::size_t>(material_count) * sizeof(Material));
+
+        if (required_size > m_gpu_material_buffer.size()) {
+            m_gpu_material_buffer = device.create_buffer(
+                required_size,
+                static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
+        }
+
+        if (material_count > 0) {
+            wgpuQueueWriteBuffer(queue, m_gpu_material_buffer.handle(), 0, data.materials.data(),
+                                 material_count * sizeof(Material));
+        }
+    }
+
+    // --- Lights ---
+    if (data.lights_dirty) {
+        auto buf_size = std::max(k_min_light_buffer_size, data.gpu_lights.size() * sizeof(Light));
+
+        if (!m_gpu_light_buffer.is_valid() || m_gpu_light_buffer.size() < buf_size) {
+            m_gpu_light_buffer = device.create_buffer(
+                buf_size,
+                static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
+        }
+
+        wgpuQueueWriteBuffer(queue, m_gpu_light_buffer.handle(), 0, data.gpu_lights.data(),
+                             data.gpu_lights.size() * sizeof(Light));
+        m_gpu_light_count = static_cast<uint32_t>(data.gpu_lights.size());
+    } else {
+        for (const auto& update : data.partial_light_updates) {
+            wgpuQueueWriteBuffer(queue, m_gpu_light_buffer.handle(),
+                                 update.gpu_index * sizeof(Light), &update.data, sizeof(Light));
+        }
+    }
+
+    // --- BVH + geometry ---
+    if (data.geometry_dirty) {
+        // Upload concatenated TLAS + BLAS nodes
+        auto node_bytes = std::max(sizeof(BVHNode), data.all_nodes.size() * sizeof(BVHNode));
+        if (!m_gpu_bvh_nodes.is_valid() || m_gpu_bvh_nodes.size() < node_bytes) {
+            m_gpu_bvh_nodes = device.create_buffer(
+                node_bytes,
+                static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
+        }
+        if (!data.all_nodes.empty()) {
+            wgpuQueueWriteBuffer(queue, m_gpu_bvh_nodes.handle(), 0, data.all_nodes.data(),
+                                 data.all_nodes.size() * sizeof(BVHNode));
+        }
+
+        // Upload concatenated triangles
+        auto tri_bytes =
+            std::max(sizeof(PackedTriangle), data.all_tris.size() * sizeof(PackedTriangle));
+        if (!m_gpu_triangles.is_valid() || m_gpu_triangles.size() < tri_bytes) {
+            m_gpu_triangles = device.create_buffer(
+                tri_bytes,
+                static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
+        }
+        if (!data.all_tris.empty()) {
+            wgpuQueueWriteBuffer(queue, m_gpu_triangles.handle(), 0, data.all_tris.data(),
+                                 data.all_tris.size() * sizeof(PackedTriangle));
+        }
+
+        // Upload instances
+        auto inst_bytes =
+            std::max(sizeof(GPUInstance), data.gpu_instances.size() * sizeof(GPUInstance));
+        if (!m_gpu_instances.is_valid() || m_gpu_instances.size() < inst_bytes) {
+            m_gpu_instances = device.create_buffer(
+                inst_bytes,
+                static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
+        }
+        if (!data.gpu_instances.empty()) {
+            wgpuQueueWriteBuffer(queue, m_gpu_instances.handle(), 0, data.gpu_instances.data(),
+                                 data.gpu_instances.size() * sizeof(GPUInstance));
+        }
+
+        m_tlas_node_count = data.tlas_node_count;
+        m_instance_count = data.instance_count;
+    }
+
+    // --- Texture array ---
+    if (data.textures_dirty) {
         PTS_ZONE_NAMED("texture array upload");
         // Release old resources
         if (m_texture_array_view) {
@@ -611,8 +650,8 @@ void RenderWorld::prepare_gpu_buffers(const webgpu::Device& device, WGPUQueue qu
         }
 
         uint32_t layer_count =
-            m_texture_images.empty() ? 1 : static_cast<uint32_t>(m_texture_images.size());
-        uint32_t tex_w = m_texture_images.empty() ? 1 : m_texture_size;
+            data.texture_layers.empty() ? 1 : static_cast<uint32_t>(data.texture_layers.size());
+        uint32_t tex_w = data.texture_layers.empty() ? 1 : data.texture_size;
         uint32_t tex_h = tex_w;
 
         WGPUTextureDescriptor tex_desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
@@ -625,7 +664,7 @@ void RenderWorld::prepare_gpu_buffers(const webgpu::Device& device, WGPUQueue qu
         m_texture_array = wgpuDeviceCreateTexture(device.handle(), &tex_desc);
         POSTCONDITION(m_texture_array);
 
-        if (m_texture_images.empty()) {
+        if (data.texture_layers.empty()) {
             // 1x1 white placeholder
             uint8_t white[] = {255, 255, 255, 255};
             WGPUTexelCopyTextureInfo dst = {};
@@ -641,7 +680,8 @@ void RenderWorld::prepare_gpu_buffers(const webgpu::Device& device, WGPUQueue qu
             wgpuQueueWriteTexture(queue, &dst, white, sizeof(white), &layout, &extent);
         } else {
             uint32_t bytes_per_row = tex_w * 4;
-            for (uint32_t i = 0; i < static_cast<uint32_t>(m_texture_images.size()); ++i) {
+            for (uint32_t i = 0; i < static_cast<uint32_t>(data.texture_layers.size()); ++i) {
+                const auto& layer = data.texture_layers[i];
                 WGPUTexelCopyTextureInfo dst = {};
                 dst.texture = m_texture_array;
                 dst.mipLevel = 0;
@@ -652,8 +692,9 @@ void RenderWorld::prepare_gpu_buffers(const webgpu::Device& device, WGPUQueue qu
                 layout.bytesPerRow = bytes_per_row;
                 layout.rowsPerImage = tex_h;
                 WGPUExtent3D extent = {tex_w, tex_h, 1};
-                wgpuQueueWriteTexture(queue, &dst, m_texture_images[i].pixels.data(),
-                                      m_texture_images[i].pixels.size(), &layout, &extent);
+                wgpuQueueWriteTexture(queue, &dst, layer.pixels,
+                                      static_cast<std::size_t>(tex_w) * tex_h * 4, &layout,
+                                      &extent);
             }
         }
 
@@ -677,9 +718,12 @@ void RenderWorld::prepare_gpu_buffers(const webgpu::Device& device, WGPUQueue qu
         sampler_desc.maxAnisotropy = 1;
         m_texture_sampler = wgpuDeviceCreateSampler(device.handle(), &sampler_desc);
         POSTCONDITION(m_texture_sampler);
-
-        m_cached_texture_version = m_texture_version;
     }
+}
+
+void RenderWorld::prepare_gpu_buffers(const webgpu::Device& device, WGPUQueue queue) {
+    auto prepared = prepare_scene_data();
+    upload_prepared_data(device, queue, prepared);
 }
 
 AABB RenderWorld::scene_bounds() const {

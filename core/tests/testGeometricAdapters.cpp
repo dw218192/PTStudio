@@ -1,4 +1,3 @@
-#include <core/backgroundTask.h>
 #include <core/rendering/adapters/capsuleAdapter.h>
 #include <core/rendering/adapters/coneAdapter.h>
 #include <core/rendering/adapters/cubeAdapter.h>
@@ -9,6 +8,7 @@
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/sceneLoader.h>
 #include <core/rendering/webgpu/device.h>
+#include <core/worker.h>
 #include <embedded_test_resources.h>
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/sdf/path.h>

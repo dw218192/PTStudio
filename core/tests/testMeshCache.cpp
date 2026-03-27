@@ -141,7 +141,10 @@ TEST_CASE("world swap invalidates pass data cache") {
         RenderWorld world;
         auto scope = world.begin_sync();
         auto slot = scope.alloc_mesh_slot();
-        { auto w = scope.write_mesh(slot); PTS_UNUSED(w); }
+        {
+            auto w = scope.write_mesh(slot);
+            PTS_UNUSED(w);
+        }
         pass.get_or_create_pass_data<int>(PassDataKind::Mesh, slot, world, [&]() {
             ++factory_calls;
             return 1;
@@ -152,7 +155,10 @@ TEST_CASE("world swap invalidates pass data cache") {
     RenderWorld world2;
     auto scope2 = world2.begin_sync();
     auto slot2 = scope2.alloc_mesh_slot();
-    { auto w = scope2.write_mesh(slot2); PTS_UNUSED(w); }
+    {
+        auto w = scope2.write_mesh(slot2);
+        PTS_UNUSED(w);
+    }
     pass.get_or_create_pass_data<int>(PassDataKind::Mesh, slot2, world2, [&]() {
         ++factory_calls;
         return 99;

@@ -5,11 +5,13 @@
 #include <core/inputAction.h>
 #include <core/rendering/camera.h>
 #include <core/rendering/frameGraph.h>
+#include <core/rendering/preparedSceneData.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/shaderLoader.h>
 #include <core/rendering/webgpu/bufferReadback.h>
 #include <core/rendering/webgpu/textureReadback.h>
 #include <core/rendering/webgpu/webgpu.h>
+#include <core/worker.h>
 #include <pxr/base/tf/notice.h>
 #include <pxr/base/tf/weakBase.h>
 #include <pxr/usd/sdf/path.h>
@@ -28,8 +30,6 @@
 namespace pts {
 class ImGuiComponent;
 class InputComponent;
-template <typename T>
-class BackgroundTask;
 }  // namespace pts
 
 namespace pts::rendering {
@@ -124,6 +124,12 @@ struct EditorApplication final : GpuApplication {
     rendering::OrbitCamera m_camera;
     int m_active_camera_index = 0;  // 0 = free camera, 1..N = scene cameras
     rendering::RenderWorld m_world;
+
+    // Async CPU scene preparation
+    struct CpuPrepJob {};
+    std::unique_ptr<Worker<CpuPrepJob, rendering::PreparedSceneData>> m_prep_worker;
+    bool m_first_prep{true};
+
     std::unique_ptr<rendering::IRenderer> m_renderer_pass;
     std::vector<std::unique_ptr<rendering::IRenderPass>> m_editor_passes;
     EditorPass* m_editor_pass = nullptr;  // non-owning, points into m_editor_passes
@@ -222,7 +228,7 @@ struct EditorApplication final : GpuApplication {
     webgpu::TextureReadback m_capture_readback;
 
     // Async scene loading
-    std::unique_ptr<pts::BackgroundTask<rendering::RenderWorld>> m_scene_load_task;
+    std::unique_ptr<pts::OneShotTask<rendering::RenderWorld>> m_scene_load_task;
     pxr::UsdStageRefPtr m_pending_stage;
 
     std::vector<std::string> m_demo_scene_paths;
