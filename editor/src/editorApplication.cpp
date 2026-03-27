@@ -1020,12 +1020,19 @@ auto EditorApplication::draw_scene_panel() noexcept -> void {
         ImGui::FileDialogueAsync(
             ImGui::FileDialogueMode::Open, ".usda,.usdc,.usd",
             [this](ImGui::FileDialogueResult result) {
+                pxr::UsdStageRefPtr stage;
+#ifdef __EMSCRIPTEN__
+                // Emscripten: no filesystem access, load from string
                 auto layer = pxr::SdfLayer::CreateAnonymous(result.name);
                 if (!layer || !layer->ImportFromString(result.contents)) {
                     log(LogLevel::Error, "Failed to parse scene: {}", result.name);
                     return;
                 }
-                auto stage = pxr::UsdStage::Open(layer);
+                stage = pxr::UsdStage::Open(layer);
+#else
+                // Native: open from file path so relative asset references resolve
+                stage = pxr::UsdStage::Open(result.name);
+#endif
                 if (!stage) {
                     log(LogLevel::Error, "Failed to open stage: {}", result.name);
                     return;
