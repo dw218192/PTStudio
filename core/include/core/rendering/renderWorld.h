@@ -373,6 +373,18 @@ struct RenderWorld {
     const webgpu::Buffer& shadow_info_buffer() const;
     uint32_t shadow_count() const;
 
+    // --- Per-pass data cache (owned by the world, destroyed on world swap) ---
+    using ErasedPtr = std::unique_ptr<void, void (*)(void*)>;
+    struct PassDataEntry {
+        ErasedPtr data{nullptr, nullptr};
+        uint32_t version = UINT32_MAX;
+    };
+    using PassDataMap = boost::container::flat_map<uint64_t, PassDataEntry>;
+
+    /// Get or create the per-pass cache for a given pass instance.
+    /// The void* key is typically the pass's `this` pointer.
+    PassDataMap& pass_data_for(const void* pass_id) { return m_pass_data_cache[pass_id]; }
+
     /// Lightweight xform-only update: recomputes world transforms for all
     /// synced prims at or under the given paths. Does not re-upload meshes.
     void update_transforms(const pxr::UsdStageRefPtr& stage,
@@ -463,6 +475,9 @@ struct RenderWorld {
     uint32_t m_texture_version = 0;
     uint32_t m_cached_texture_version = UINT32_MAX;
     uint32_t m_texture_size = 1024;
+
+    // Per-pass data cache — keyed by pass identity (this pointer)
+    std::unordered_map<const void*, PassDataMap> m_pass_data_cache;
 };
 
 }  // namespace pts::rendering

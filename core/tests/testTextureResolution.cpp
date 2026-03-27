@@ -315,6 +315,26 @@ TEST_CASE("Texture deduplication across material inputs") {
     remove_test_texture(tex_path);
 }
 
+TEST_CASE("load_texture resolves filesystem paths via ArResolver") {
+    auto tex_path = create_test_texture("pts_test_ar_resolve.ppm");
+
+    pts::rendering::RenderWorld world;
+    auto scope = world.begin_sync();
+
+    // ArResolver handles filesystem paths — exercises the stbi_load_from_memory path
+    auto idx = scope.load_texture(tex_path);
+    CHECK(idx != UINT32_MAX);
+    CHECK(idx == 0);
+
+    // Deduplication: same path returns same index
+    CHECK(scope.load_texture(tex_path) == idx);
+
+    // Nonexistent path returns UINT32_MAX
+    CHECK(scope.load_texture("/nonexistent/image.png") == UINT32_MAX);
+
+    remove_test_texture(tex_path);
+}
+
 // --- GPU-dependent tests ---
 
 #ifndef __EMSCRIPTEN__

@@ -3,6 +3,9 @@
 #include <core/rendering/adapterHelpers.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/webgpu/device.h>
+#include <pxr/usd/ar/asset.h>
+#include <pxr/usd/ar/resolvedPath.h>
+#include <pxr/usd/ar/resolver.h>
 #include <pxr/usd/sdf/path.h>
 #include <pxr/usd/usd/stage.h>
 #include <stb_image.h>
@@ -292,8 +295,16 @@ uint32_t SyncScope::load_texture(const std::string& resolved_path) {
     auto it = m_world.m_texture_cache.find(resolved_path);
     if (it != m_world.m_texture_cache.end()) return it->second;
 
+    auto asset = pxr::ArGetResolver().OpenAsset(pxr::ArResolvedPath(resolved_path));
+    if (!asset) return UINT32_MAX;
+
+    auto buffer = asset->GetBuffer();
+    auto size = asset->GetSize();
+    CHECK_MSG(buffer != nullptr, "ArAsset::GetBuffer() returned null for opened asset");
+
     int w = 0, h = 0, channels = 0;
-    auto* data = stbi_load(resolved_path.c_str(), &w, &h, &channels, 4);
+    auto* data = stbi_load_from_memory(reinterpret_cast<const stbi_uc*>(buffer.get()),
+                                       static_cast<int>(size), &w, &h, &channels, 4);
     if (!data) return UINT32_MAX;
 
     auto index = static_cast<uint32_t>(m_world.m_texture_images.size());

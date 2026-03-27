@@ -85,9 +85,14 @@ struct EditorApplication final : GpuApplication {
     ActiveView compute_active_view(float aspect) const;
 
     void setup_docking_layout();
-    void set_renderer_config(size_t index);
+    void create_renderer(size_t index);
     auto create_input_actions() noexcept -> void;
     auto wrap_mouse_pos() noexcept -> void;
+
+    // Scene I/O
+    void load_scene_background(pxr::UsdStageRefPtr stage, std::string_view label);
+    void open_scene_dialog();
+    void save_scene_dialog();
 
     // imgui rendering
     auto draw_scene_panel() noexcept -> void;
@@ -219,6 +224,13 @@ struct EditorApplication final : GpuApplication {
     // Async scene loading
     std::unique_ptr<pts::BackgroundTask<rendering::RenderWorld>> m_scene_load_task;
     pxr::UsdStageRefPtr m_pending_stage;
+
+    std::vector<std::string> m_demo_scene_paths;
+    std::vector<std::string> m_demo_scene_names;
+    int m_demo_scene_index = 0;
+#ifdef __EMSCRIPTEN__
+    std::string m_memfs_path;  // last uploaded file in MEMFS, for cleanup
+#endif
 
     // Loading overlay
     pts::LoadingOverlay m_loading_overlay;

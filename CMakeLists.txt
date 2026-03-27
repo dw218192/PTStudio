@@ -172,6 +172,12 @@ if(EMSCRIPTEN)
         "--emrun")
 endif()
 
+# Host tool: USDZ packager (native only, used by prebuild step)
+if(NOT EMSCRIPTEN)
+    add_executable(usdz_pack tools/conan/usdz_pack/usdz_pack.cpp)
+    target_link_libraries(usdz_pack PRIVATE openusd::usd_usdUtils)
+endif()
+
 # add subprojects
 add_subdirectory(core)
 add_subdirectory(renderers)

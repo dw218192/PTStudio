@@ -75,7 +75,8 @@ void ImGui::FileDialogueAsync(FileDialogueMode mode, const std::string& accept,
 
 namespace {
 auto open_file_dialog(ImGui::FileDialogueMode mode) -> std::string {
-    std::vector<std::string> filters = {"Scene Files", "*.usda *.usdc *.usd", "All Files", "*"};
+    std::vector<std::string> filters = {"Scene Files", "*.usda *.usdc *.usd *.usdz", "All Files",
+                                        "*"};
     if (mode == ImGui::FileDialogueMode::Open) {
         auto selection = pfd::open_file("Open File", "", filters).result();
         if (!selection.empty()) return selection[0];

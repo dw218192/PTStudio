@@ -38,3 +38,22 @@ foreach(TEST_NAME IN LISTS TEST_NAMES)
 
     add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
 endforeach()
+
+# testDemoScenes — validates USDZ demo scene files open correctly (native only,
+# reads files from the source tree).
+if(NOT EMSCRIPTEN)
+    set(_test testDemoScenes)
+    message(STATUS "Building test: ${_test}")
+    add_executable(${_test} testDemoScenes.cpp)
+    target_compile_definitions(${_test} PRIVATE
+        DEMO_SCENES_DIR=${CMAKE_SOURCE_DIR}/assets/scenes)
+    target_link_libraries(${_test} PRIVATE doctest::doctest core)
+    set_target_properties(${_test} PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tests)
+    foreach(config Debug Release RelWithDebInfo MinSizeRel)
+        string(TOUPPER ${config} config_upper)
+        set_target_properties(${_test} PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY_${config_upper} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tests)
+    endforeach()
+    add_test(NAME ${_test} COMMAND ${_test})
+endif()
