@@ -46,7 +46,7 @@ if(NOT EMSCRIPTEN)
     message(STATUS "Building test: ${_test}")
     add_executable(${_test} testDemoScenes.cpp)
     target_compile_definitions(${_test} PRIVATE
-        DEMO_SCENES_DIR=${CMAKE_SOURCE_DIR}/assets/scenes)
+        "DEMO_SCENES_DIR=\"${CMAKE_SOURCE_DIR}/assets/scenes\"")
     target_link_libraries(${_test} PRIVATE doctest::doctest core)
     set_target_properties(${_test} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tests)

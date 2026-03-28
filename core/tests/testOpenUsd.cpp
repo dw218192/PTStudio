@@ -629,11 +629,7 @@ TEST_CASE("USDZ round-trip via UsdUtilsCreateNewUsdzPackage preserves geometry")
     REQUIRE(packaged);
 
     // Verify the file is non-empty
-    std::FILE* f = std::fopen(tmp_usdz.c_str(), "rb");
-    REQUIRE(f);
-    std::fseek(f, 0, SEEK_END);
-    auto const nbytes = std::ftell(f);
-    std::fclose(f);
+    auto const nbytes = std::filesystem::file_size(tmp_usdz);
     CHECK(nbytes > 0);
 
     // Reopen the USDZ and verify geometry

@@ -174,7 +174,7 @@ endif()
 
 # Host tool: USDZ packager (native only, used by prebuild step)
 if(NOT EMSCRIPTEN)
-    add_executable(usdz_pack tools/conan/usdz_pack/usdz_pack.cpp)
+    add_executable(usdz_pack tools/conan/usdz_pack/usdzPack.cpp)
     target_link_libraries(usdz_pack PRIVATE openusd::usd_usdUtils)
 endif()
 

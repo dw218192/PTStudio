@@ -113,16 +113,16 @@ class Worker {
    private:
     void loop() {
         while (true) {
-            Job job;
+            std::optional<Job> job_local;
             {
                 std::unique_lock lock(m_mutex);
                 m_cv.wait(lock, [&] { return m_pending.has_value() || m_shutdown; });
                 if (m_shutdown && !m_pending.has_value()) return;
-                job = std::move(*m_pending);
+                job_local.emplace(std::move(*m_pending));
                 m_pending.reset();
             }
             m_progress.reset();
-            Result r = m_work_fn(std::move(job), m_progress);
+            Result r = m_work_fn(std::move(*job_local), m_progress);
             delete m_result.exchange(new Result(std::move(r)), std::memory_order_acq_rel);
         }
     }

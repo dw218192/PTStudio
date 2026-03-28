@@ -343,7 +343,7 @@ struct RenderWorld {
     // GPU buffer management
 
     /// CPU-only: compute all scene data. No GPU calls.
-    PreparedSceneData prepare_scene_data();
+    [[nodiscard]] PreparedSceneData prepare_scene_data();
 
     /// GPU-only: upload a PreparedSceneData snapshot to GPU buffers.
     void upload_prepared_data(const webgpu::Device& device, WGPUQueue queue,

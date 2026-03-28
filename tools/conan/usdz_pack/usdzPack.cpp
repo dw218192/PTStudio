@@ -9,5 +9,8 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     bool ok = pxr::UsdUtilsCreateNewUsdzPackage(pxr::SdfAssetPath(argv[1]), argv[2]);
+    if (!ok) {
+        std::fprintf(stderr, "Failed to package %s -> %s\n", argv[1], argv[2]);
+    }
     return ok ? 0 : 1;
 }

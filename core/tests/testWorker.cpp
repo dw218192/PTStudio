@@ -195,11 +195,13 @@ TEST_CASE("Worker - shutdown with no pending work returns immediately") {
 }
 
 TEST_CASE("Worker - progress resets between jobs") {
-    pts::Worker<int, int> worker([](int&& x, pts::TaskProgress& p) {
+    std::atomic<bool> job_started{false};
+    pts::Worker<int, int> worker([&](int&& x, pts::TaskProgress& p) {
         // Each job sets a unique progress value
         p.set_progress(static_cast<float>(x) / 10.0f);
         p.set_status("job " + std::to_string(x));
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        job_started.store(true, std::memory_order_release);
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
         return x;
     });
 
@@ -211,12 +213,17 @@ TEST_CASE("Worker - progress resets between jobs") {
 
     // After taking result, submit a new job; progress should reset to 0 initially
     // We check that the new job gets its own progress state
+    job_started.store(false, std::memory_order_release);
     worker.submit(8);
+    // Wait for job 8 to start so we observe its progress, not stale values
+    while (!job_started.load(std::memory_order_acquire)) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    float in_flight_progress = worker.progress();
+    CHECK(in_flight_progress == doctest::Approx(0.8f));
     while (!worker.has_result()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
-    // The progress should reflect job 8's value, not job 5's
-    CHECK(worker.progress() == doctest::Approx(0.8f));
     auto r = worker.take_result();
     CHECK(*r == 8);
 }

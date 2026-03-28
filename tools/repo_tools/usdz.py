@@ -33,8 +33,8 @@ def _collect_deps(input_path: Path) -> list[Path]:
                 if ref_path.exists():
                     deps.append(ref_path)
                 start = line.find("@", end + 1)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Failed to parse dependencies from {input_path}: {e}")
     return deps
 
 
@@ -43,6 +43,11 @@ class UsdzTool(RepoTool):
     help = "Package USDA scenes as USDZ archives via usdz_pack"
 
     def execute(self, ctx: ToolContext, args: dict[str, Any]) -> None:
+        platform = ctx.dimensions.get("platform", "")
+        if platform == "emscripten":
+            logger.info("Skipping usdz packaging (host-only tool, not available on Emscripten)")
+            return
+
         root = ctx.workspace_root
         scenes = ctx.config.get("usdz", {}).get("scenes", [])
         if not scenes:
@@ -70,7 +75,7 @@ class UsdzTool(RepoTool):
             work.append((input_path, output_path))
 
         if not work:
-            logger.info(f"usdz packaged 0 scene(s)")
+            logger.info("usdz packaged 0 scene(s)")
             return
 
         # Find the usdz_pack binary (built by host tools phase)

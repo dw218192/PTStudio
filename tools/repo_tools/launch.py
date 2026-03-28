@@ -549,6 +549,11 @@ def _run_tests(context: dict[str, Any], verbose: bool) -> int:
                                 f.write(f"Test: {test_name}\nException: {e}\n")
                             failed += 1
                             failed_tests.append(test_name)
+        else:
+            if not editor_exe.exists():
+                logger.info("Smoke tests skipped: editor executable not found")
+            elif not scenes:
+                logger.info("Smoke tests skipped: no .usdz scene files found")
 
     with log_section("Test summary"):
         logger.info(f"Total:  {passed + failed}")

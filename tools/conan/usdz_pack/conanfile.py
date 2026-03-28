@@ -1,5 +1,3 @@
-import os
-
 from conan import ConanFile
 from conan.tools.cmake import CMake, CMakeDeps, CMakeToolchain, cmake_layout
 from conan.tools.files import copy
@@ -11,7 +9,7 @@ class UsdzPackConan(ConanFile):
     description = "CLI tool wrapping UsdUtilsCreateNewUsdzPackage"
     package_type = "application"
     settings = "os", "arch", "compiler", "build_type"
-    exports_sources = "CMakeLists.txt", "usdz_pack.cpp"
+    exports_sources = "CMakeLists.txt", "usdzPack.cpp"
 
     def requirements(self):
         self.requires("openusd/25.11-dev")
