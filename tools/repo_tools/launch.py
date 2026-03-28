@@ -125,17 +125,19 @@ def _discover_executables(target_dir: Path, is_emscripten: bool = False) -> list
     return exe_paths
 
 
-def _resolve_runtime_deploy_dir(build_dir: Path) -> Path | None:
+def _resolve_runtime_deploy_dir(build_dir: Path, conan_deps_root: str | None = None) -> Path | None:
     """Return the runtime_deploy directory if it exists.
 
     When Conan's ``runtime_deploy`` deployer is used, shared libraries are
-    copied into the deployer-folder (typically ``deps/``) as a flat directory.
-    This can be added to PATH directly, without needing a conanrun script.
+    copied into the deployer-folder as a flat directory.  This can be added
+    to PATH directly, without needing a conanrun script.
+
+    Uses *conan_deps_root* (from the ``{conan_deps_root}`` config token)
+    when available, otherwise falls back to ``build_dir/../deps``.
     """
-    deps_dir = build_dir.parent / "deps"
+    deps_dir = Path(conan_deps_root) if conan_deps_root else build_dir.parent / "deps"
     if not deps_dir.exists():
         return None
-    # Check for at least one shared library to confirm runtime_deploy was used
     dll_ext = ".dll" if is_windows() else ".so"
     for _ in deps_dir.glob(f"*{dll_ext}"):
         return deps_dir
@@ -384,7 +386,9 @@ def _run_executable(
     if not is_emscripten:
         env_script = _resolve_env_script(build_dir, is_emscripten=False)
         if not env_script:
-            runtime_dir = _resolve_runtime_deploy_dir(build_dir)
+            runtime_dir = _resolve_runtime_deploy_dir(
+                build_dir, context.get("conan_deps_root")
+            )
             if runtime_dir:
                 logger.debug(f"Using runtime_deploy: {runtime_dir}")
                 path_sep = ";" if is_windows() else ":"
@@ -427,7 +431,7 @@ def _can_run(context: dict[str, Any]) -> bool:
         return shutil.which("node") is not None
     if _resolve_env_script(build_dir, is_emscripten=False) is not None:
         return True
-    if _resolve_runtime_deploy_dir(build_dir) is not None:
+    if _resolve_runtime_deploy_dir(build_dir, context.get("conan_deps_root")) is not None:
         return True
     # Inline check: can only run natively if target matches host
     return context["platform"] == detect_platform_identifier()
@@ -488,6 +492,88 @@ def _run_tests(context: dict[str, Any], verbose: bool) -> int:
                     f.write(f"Test: {test_name}\nException: {e}\n")
                 failed += 1
                 failed_tests.append(test_name)
+
+    # Smoke tests: launch the editor with --capture-and-quit for each built-in
+    # demo scene. Exercises the full GPU pipeline (device, shaders, BVH,
+    # rendering, readback) with real geometry.
+    # Skipped on Emscripten (no headless GPU adapter).
+    if not is_emscripten:
+        editor_exe = build_dir / "bin" / ("editor.exe" if is_windows() else "editor")
+        # Look for .usdz scenes in the source tree (local builds) and in
+        # the packaged artifacts (CI: downloaded to _build/<platform>/).
+        scenes: list[Path] = []
+        for candidate_dir in [
+            Path(context["workspace_root"]) / "assets" / "scenes",
+            build_dir / "assets" / "scenes",
+        ]:
+            if candidate_dir.is_dir():
+                scenes = sorted(candidate_dir.glob("*.usdz"))
+                if scenes:
+                    break
+        scenes_dir = scenes[0].parent if scenes else Path(context["workspace_root"]) / "assets" / "scenes"
+        if not editor_exe.exists():
+            logger.error("FAILED: smoke tests — editor executable not found")
+            failed += 1
+            failed_tests.append("editorSmoke (missing editor)")
+        elif not scenes:
+            logger.error(
+                "FAILED: smoke tests — no .usdz scene files in "
+                f"{scenes_dir}. Run './repo build' to generate them."
+            )
+            failed += 1
+            failed_tests.append("editorSmoke (missing scenes)")
+        else:
+            with tempfile.TemporaryDirectory(prefix="pts_smoke_") as tmp_dir:
+                for scene_path in scenes:
+                    scene_name = scene_path.stem
+                    test_name = f"editorSmoke_{scene_name}"
+                    log_file = logs_dir / f"test_{test_name}.log"
+                    capture_path = Path(tmp_dir) / f"{scene_name}.png"
+                    with log_section(f"Test: {test_name}"):
+                        try:
+                            result = _run_executable(
+                                editor_exe,
+                                [
+                                    f"--capture-and-quit={capture_path}",
+                                    "--frames", "3",
+                                    "--usd", str(scene_path),
+                                ],
+                                context,
+                                capture_output=True,
+                            )
+                            with open(log_file, "w", encoding="utf-8", errors="replace") as f:
+                                f.write(f"Test: {test_name}\n")
+                                f.write(f"Scene: {scene_path}\n")
+                                f.write(f"Capture: {capture_path}\n")
+                                f.write(f"Exit code: {result.returncode}\n")
+                                f.write("=" * 70 + "\n")
+                                f.write(result.stdout or "")
+
+                            if result.stdout:
+                                sys.stdout.write(result.stdout)
+                                if not result.stdout.endswith("\n"):
+                                    sys.stdout.write("\n")
+
+                            if result.returncode != 0:
+                                logger.error(
+                                    f"FAILED: {test_name} (exit code: {result.returncode})"
+                                )
+                                failed += 1
+                                failed_tests.append(test_name)
+                            elif not capture_path.exists():
+                                logger.error(f"FAILED: {test_name} (no capture produced)")
+                                failed += 1
+                                failed_tests.append(test_name)
+                            else:
+                                logger.info(f"PASSED: {test_name}")
+                                passed += 1
+
+                        except Exception as e:
+                            logger.error(f"FAILED: {test_name} (exception: {e})")
+                            with open(log_file, "w", encoding="utf-8", errors="replace") as f:
+                                f.write(f"Test: {test_name}\nException: {e}\n")
+                            failed += 1
+                            failed_tests.append(test_name)
 
     with log_section("Test summary"):
         logger.info(f"Total:  {passed + failed}")
@@ -571,6 +657,7 @@ class LaunchTool(RepoTool):
         context: dict[str, Any] = {
             "workspace_root": str(root),
             "build_dir": ctx.tokens["build_dir"],
+            "conan_deps_root": ctx.tokens["conan_deps_root"],
             "platform": platform_id,
             "build_type": build_type,
             "logs_root": ctx.tokens["logs_root"],

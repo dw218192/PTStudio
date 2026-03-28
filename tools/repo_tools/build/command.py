@@ -125,6 +125,13 @@ def _host_package_names(lock_file: Path) -> list[str]:
     return names
 
 
+# Prebuild tools that require a compiled host binary (two-phase build).
+# Maps prebuild step name → CMake target name.
+_HOST_TOOL_TARGETS: dict[str, str] = {
+    "usdz": "usdz_pack",
+}
+
+
 def _cmake_preset_name(build_type: str, emscripten: bool) -> str:
     bt = build_type.lower()
     return f"conan-emscripten-{bt}" if emscripten else f"conan-{bt}"
@@ -332,7 +339,29 @@ def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> 
             if not skip_deploy:
                 _write_deploy_sentinel(lock_file, conan_deps_root, build_type)
 
-        # Execute prebuild steps
+        # Conan build environment script (vcvars on Windows for Ninja + MSVC)
+        conanbuild = build_dir / "conanbuild"
+
+        # Phase 1: configure + build host tools needed by prebuild steps
+        host_tools = [t for t in (prebuild_steps or {}) if t in _HOST_TOOL_TARGETS]
+        if host_tools and not emscripten_build:
+            with CommandGroup("Host tools", cwd=build_folder, env=build_env) as g:
+                cmake_exe = find_venv_executable("cmake")
+                ensure_cmake_file_api_query(build_folder / build_type)
+                configure_args = [
+                    cmake_exe, "--preset", preset_name, "-S", str(root),
+                ]
+                if usd_modules:
+                    configure_args.append(f"-DPTS_USD_MODULES={';'.join(usd_modules)}")
+                g.run(configure_args, log_file=logs_dir / "cmake_configure_tools.log",
+                      env_script=conanbuild)
+                for tool_name in host_tools:
+                    target = _HOST_TOOL_TARGETS[tool_name]
+                    g.run([cmake_exe, "--build", "--preset", preset_name, "--target", target],
+                          log_file=logs_dir / f"cmake_build_{target}.log",
+                          env_script=conanbuild, cwd=root)
+
+        # Phase 2: Execute prebuild steps (may use host tools built above)
         if prebuild_steps:
             with CommandGroup("Prebuild steps"):
                 execute_build_steps(
@@ -345,9 +374,6 @@ def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> 
                     "prebuild",
                     current_tool,
                 )
-
-        # Conan build environment script (vcvars on Windows for Ninja + MSVC)
-        conanbuild = build_dir / "conanbuild"
 
         with CommandGroup("CMake configure", cwd=build_folder, env=build_env) as g:
             configure_log_file = logs_dir / "cmake_configure.log"

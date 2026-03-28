@@ -1,6 +1,5 @@
 #include "editorApplication.h"
 
-#include <core/backgroundTask.h>
 #include <core/commandLine.h>
 #include <core/components/imguiComponent.h>
 #include <core/components/inputComponent.h>
@@ -15,6 +14,7 @@
 #include <core/rendering/sceneLoader.h>
 #include <core/rendering/webgpuContext.h>
 #include <core/rendering/windowing.h>
+#include <core/worker.h>
 #include <imgui_internal.h>
 
 #include "propertyInspector.h"
@@ -22,12 +22,15 @@
 // clang-format off
 #include <ImGuizmo.h>  // must follow imgui.h
 // clang-format on
+#include <pxr/usd/sdf/assetPath.h>
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/sdf/path.h>
 #include <pxr/usd/sdf/primSpec.h>
 #include <pxr/usd/usd/stage.h>
 #if defined(__EMSCRIPTEN__)
 #include <emscripten.h>
+
+#include <fstream>
 #endif
 #include <pxr/usd/usdGeom/xform.h>
 #include <pxr/usd/usdGeom/xformable.h>
@@ -35,6 +38,7 @@
 #include <pxr/usd/usdShade/material.h>
 #include <pxr/usd/usdShade/materialBindingAPI.h>
 #include <pxr/usd/usdShade/shader.h>
+#include <pxr/usd/usdUtils/usdzPackage.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 #include <stb_image_write.h>
 
@@ -48,7 +52,9 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <map>
+#include <numeric>
 #include <stdexcept>
+#include <vector>
 
 #include "editorResources.h"
 #include "passes/editorPass.h"
@@ -68,8 +74,46 @@ static constexpr auto k_console_log_buffer_size = 1024;
 
 static constexpr auto k_default_renderer_name = "Forward";
 
+static constexpr auto k_demo_scenes_dir = "assets/scenes";
+
+static std::string display_name_from_path(const std::filesystem::path& p) {
+    auto stem = p.stem().string();
+    for (auto& c : stem)
+        if (c == '_') c = ' ';
+    if (!stem.empty())
+        stem[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(stem[0])));
+    return stem;
+}
+
+static void discover_demo_scenes(std::vector<std::string>& paths, std::vector<std::string>& names) {
+    paths.clear();
+    names.clear();
+    std::error_code ec;
+    for (auto& entry : std::filesystem::directory_iterator(k_demo_scenes_dir, ec)) {
+        if (entry.path().extension() == ".usdz") {
+            paths.push_back(entry.path().string());
+            names.push_back(display_name_from_path(entry.path()));
+        }
+    }
+    // Sort for stable dropdown order
+    std::vector<size_t> indices(paths.size());
+    std::iota(indices.begin(), indices.end(), 0);
+    std::sort(indices.begin(), indices.end(),
+              [&](size_t a, size_t b) { return names[a] < names[b]; });
+    auto sorted_paths = paths;
+    auto sorted_names = names;
+    for (size_t i = 0; i < indices.size(); ++i) {
+        paths[i] = sorted_paths[indices[i]];
+        names[i] = sorted_names[indices[i]];
+    }
+}
+
 EditorApplication::EditorApplication(std::string_view name, pts::LoggingManager& logging_manager)
     : GpuApplication{name, logging_manager},
+      m_prep_worker(std::make_unique<Worker<CpuPrepJob, rendering::PreparedSceneData>>(
+          [this](CpuPrepJob&&, TaskProgress&) -> rendering::PreparedSceneData {
+              return m_world.prepare_scene_data();
+          })),
       m_shader_loader(logging_manager.get_logger_shared("shader_loader")) {
     create_input_actions();
 
@@ -81,6 +125,7 @@ EditorApplication::EditorApplication(std::string_view name, pts::LoggingManager&
 }
 
 EditorApplication::~EditorApplication() {
+    m_prep_worker.reset();      // stop worker before tearing down world
     m_scene_load_task.reset();  // join background thread before tearing down
     m_pending_stage.Reset();
     revoke_stage_listener();
@@ -366,20 +411,14 @@ void EditorApplication::on_ready() {
         log(LogLevel::Info, "Loaded scene from {} ({} objects)", m_app_config.usd_path,
             m_world.get_objects().size());
     } else {
-        // Load embedded default scene
-        auto usda = editor_resources::get_resource("assets/scenes/primitives.usda");
-        if (usda) {
-            auto layer = pxr::SdfLayer::CreateAnonymous(".usda");
-            layer->ImportFromString(std::string{*usda});
-            m_stage = pxr::UsdStage::Open(layer);
-            rendering::populate_from_stage(m_world, m_stage);
-            m_world.upload_all_meshes(device);
-            ensure_default_light();
-            register_stage_listener();
-            log(LogLevel::Info, "Loaded default scene ({} objects)", m_world.get_objects().size());
-        } else {
-            log(LogLevel::Warning, "Missing embedded resource: assets/scenes/primitives.usda");
-        }
+        discover_demo_scenes(m_demo_scene_paths, m_demo_scene_names);
+        INVARIANT_MSG(!m_demo_scene_paths.empty(), "No demo scenes found in assets/scenes/");
+        m_stage = pxr::UsdStage::Open(m_demo_scene_paths[0]);
+        rendering::populate_from_stage(m_world, m_stage);
+        m_world.upload_all_meshes(device);
+        ensure_default_light();
+        register_stage_listener();
+        log(LogLevel::Info, "Loaded default scene ({} objects)", m_world.get_objects().size());
     }
 
     // Apply USD override layer
@@ -459,7 +498,7 @@ void EditorApplication::on_ready() {
         bool found = false;
         for (size_t i = 0; i < entries.size(); ++i) {
             if (entries[i].name == target_name) {
-                set_renderer_config(i);
+                create_renderer(i);
                 found = true;
                 break;
             }
@@ -542,7 +581,7 @@ auto EditorApplication::compute_active_view(float aspect) const -> ActiveView {
     return {m_camera.view_matrix(), m_camera.projection_matrix(aspect), m_camera.position()};
 }
 
-void EditorApplication::set_renderer_config(size_t index) {
+void EditorApplication::create_renderer(size_t index) {
     auto& entries = rendering::RendererRegistry::entries();
     PRECONDITION(index < entries.size());
     m_renderer_pass = entries[index].factory(m_shader_loader);
@@ -604,6 +643,7 @@ void EditorApplication::render(FrameContext& ctx) {
         revoke_stage_listener();
         m_picking_readback = webgpu::BufferReadback{};
         m_pick_requested = false;
+        m_first_prep = true;  // next frame uses synchronous prep (old result is stale)
         m_world = std::move(world);
         m_selected_prim = pxr::SdfPath();
         m_active_camera_index = 0;
@@ -612,8 +652,9 @@ void EditorApplication::render(FrameContext& ctx) {
         ensure_default_light();
         register_stage_listener();
 
-        // Re-setup passes (they cache world references)
-        set_renderer_config(m_active_config_index);
+        // Re-setup passes (pass data cache lives in the world, so it was
+        // already destroyed when m_world was replaced above)
+        create_renderer(m_active_config_index);
         auto& dev = webgpu_context()->device();
         for (auto& p : m_editor_passes) p->setup(dev);
 
@@ -731,7 +772,24 @@ void EditorApplication::render(FrameContext& ctx) {
         pass_ctx.proj_matrix = view.proj_matrix;
         pass_ctx.camera_position = view.camera_position;
 
-        m_world.prepare_gpu_buffers(device, queue);
+        if (capture_mode) {
+            // Capture mode: always synchronous for deterministic output
+            m_world.prepare_gpu_buffers(device, queue);
+        } else if (m_first_prep) {
+            // First frame: synchronous fallback (no stale data)
+            m_world.prepare_gpu_buffers(device, queue);
+            m_prep_worker->take_result();  // discard stale result after scene load
+            m_prep_worker->submit(CpuPrepJob{});
+            m_first_prep = false;
+        } else {
+            // Async: upload previous frame's result, submit next frame's work
+            if (m_prep_worker->has_result()) {
+                auto prepared = m_prep_worker->take_result();
+                INVARIANT(prepared.has_value());
+                m_world.upload_prepared_data(device, queue, *prepared);
+            }
+            m_prep_worker->submit(CpuPrepJob{});
+        }
     }
 
     // In capture mode, add renderer + tone mapping only (skip editor passes)
@@ -1012,91 +1070,151 @@ auto EditorApplication::draw_add_prim_menu(const pxr::SdfPath* parent,
     }
 }
 
+void EditorApplication::load_scene_background(pxr::UsdStageRefPtr stage, std::string_view label) {
+    INVARIANT_MSG(stage, "load_scene_background called with null stage");
+
+    // Cancel any in-flight load
+    m_scene_load_task.reset();
+    m_pending_stage.Reset();
+
+    m_pending_stage = stage;
+
+    m_scene_load_task = std::make_unique<OneShotTask<rendering::RenderWorld>>(
+        "Loading Scene", [stage](TaskProgress& progress) -> rendering::RenderWorld {
+            return rendering::populate_from_stage(stage, progress);
+        });
+
+    m_loading_overlay.track({
+        "Loading Scene",
+        [this] { return !m_scene_load_task || m_scene_load_task->is_done(); },
+        [this] { return m_scene_load_task ? m_scene_load_task->progress() : 1.0f; },
+        [this] { return m_scene_load_task ? m_scene_load_task->status() : std::string{}; },
+    });
+
+    log(LogLevel::Info, "Loading scene: {} (background)", label);
+}
+
 auto EditorApplication::draw_scene_panel() noexcept -> void {
     ImGui::TextUnformatted(k_editor_tutorial_text);
     ImGui::Separator();
 
-    if (ImGui::Button("Open Scene")) {
-        ImGui::FileDialogueAsync(
-            ImGui::FileDialogueMode::Open, ".usda,.usdc,.usd",
-            [this](ImGui::FileDialogueResult result) {
-                pxr::UsdStageRefPtr stage;
-#ifdef __EMSCRIPTEN__
-                // Emscripten: no filesystem access, load from string
-                auto layer = pxr::SdfLayer::CreateAnonymous(result.name);
-                if (!layer || !layer->ImportFromString(result.contents)) {
-                    log(LogLevel::Error, "Failed to parse scene: {}", result.name);
-                    return;
-                }
-                stage = pxr::UsdStage::Open(layer);
-#else
-                // Native: open from file path so relative asset references resolve
-                stage = pxr::UsdStage::Open(result.name);
-#endif
-                if (!stage) {
-                    log(LogLevel::Error, "Failed to open stage: {}", result.name);
-                    return;
-                }
-
-                // Cancel any in-flight load
-                m_scene_load_task.reset();
-                m_pending_stage.Reset();
-
-                // Store stage for later (background thread will read it)
-                m_pending_stage = stage;
-
-                // Kick off background CPU extraction
-                m_scene_load_task = std::make_unique<BackgroundTask<rendering::RenderWorld>>(
-                    "Loading Scene", [stage](TaskProgress& progress) -> rendering::RenderWorld {
-                        return rendering::populate_from_stage(stage, progress);
-                    });
-
-                // Track in overlay
-                m_loading_overlay.track({
-                    "Loading Scene",
-                    [this] { return !m_scene_load_task || m_scene_load_task->is_done(); },
-                    [this] { return m_scene_load_task ? m_scene_load_task->progress() : 1.0f; },
-                    [this] {
-                        return m_scene_load_task ? m_scene_load_task->status() : std::string{};
-                    },
-                });
-
-                log(LogLevel::Info, "Loading scene: {} (background)", result.name);
-            });
+    if (!m_demo_scene_paths.empty()) {
+        ImGui::SetNextItemWidth(160.0f);
+        auto count = static_cast<int>(m_demo_scene_paths.size());
+        auto* names = &m_demo_scene_names;
+        if (ImGui::Combo(
+                "##demo_scene", &m_demo_scene_index,
+                [](void* data, int idx) -> const char* {
+                    return (*static_cast<std::vector<std::string>*>(data))[idx].c_str();
+                },
+                names, count)) {
+            auto stage = pxr::UsdStage::Open(m_demo_scene_paths[m_demo_scene_index]);
+            INVARIANT_MSG(stage, "Failed to open demo scene");
+            load_scene_background(stage, m_demo_scene_names[m_demo_scene_index]);
+        }
+        ImGui::SameLine();
     }
+
+    if (ImGui::Button("Open Scene")) open_scene_dialog();
 
     if (m_stage) {
         ImGui::SameLine();
-        if (ImGui::Button("Save Scene")) {
-#if defined(__EMSCRIPTEN__)
-            std::string usda;
-            m_stage->GetRootLayer()->ExportToString(&usda);
-            // clang-format off
-            EM_ASM({
-                var data = UTF8ToString($0);
-                var blob = new Blob([data], {type: 'text/plain'});
-                var a = document.createElement('a');
-                a.href = URL.createObjectURL(blob);
-                a.download = 'scene.usda';
-                a.click();
-                URL.revokeObjectURL(a.href);
-            }, usda.c_str());
-            // clang-format on
-            log(LogLevel::Info, "Scene download triggered");
-#else
-            ImGui::FileDialogueAsync(ImGui::FileDialogueMode::Save, ".usda,.usdc,.usd",
-                                     [this](ImGui::FileDialogueResult result) {
-                                         if (result.name.empty()) return;
-                                         bool ok = m_stage->GetRootLayer()->Export(result.name);
-                                         if (ok)
-                                             log(LogLevel::Info, "Saved scene to {}", result.name);
-                                         else
-                                             log(LogLevel::Error, "Failed to save scene to {}",
-                                                 result.name);
-                                     });
-#endif
-        }
+        if (ImGui::Button("Save Scene")) save_scene_dialog();
     }
+}
+
+void EditorApplication::open_scene_dialog() {
+    ImGui::FileDialogueAsync(
+        ImGui::FileDialogueMode::Open, ".usdz,.usda,.usdc,.usd",
+        [this](ImGui::FileDialogueResult result) {
+            pxr::UsdStageRefPtr stage;
+#ifdef __EMSCRIPTEN__
+            auto memfs_path = "/tmp/" + result.name;
+            {
+                std::ofstream ofs(memfs_path, std::ios::binary);
+                CHECK_MSG(ofs.is_open(), "Failed to open MEMFS path for writing");
+                ofs.write(result.contents.data(),
+                          static_cast<std::streamsize>(result.contents.size()));
+                CHECK_MSG(ofs.good(), "Failed to write uploaded file to MEMFS");
+            }
+            if (!m_memfs_path.empty()) std::remove(m_memfs_path.c_str());
+            m_memfs_path = memfs_path;
+            stage = pxr::UsdStage::Open(memfs_path);
+#else
+            stage = pxr::UsdStage::Open(result.name);
+#endif
+            if (!stage) {
+                log(LogLevel::Error, "Failed to open stage: {}", result.name);
+                return;
+            }
+            load_scene_background(stage, result.name);
+        });
+}
+
+void EditorApplication::save_scene_dialog() {
+#ifdef __EMSCRIPTEN__
+    auto flat = m_stage->Flatten();
+    CHECK_MSG(flat, "Failed to flatten stage for USDZ export");
+    bool exported = flat->Export("/tmp/_export.usda");
+    CHECK_MSG(exported, "Failed to export flattened stage to temp file");
+
+    bool packaged = pxr::UsdUtilsCreateNewUsdzPackage(pxr::SdfAssetPath("/tmp/_export.usda"),
+                                                      "/tmp/_export.usdz");
+    CHECK_MSG(packaged, "Failed to create USDZ package");
+
+    std::FILE* f = std::fopen("/tmp/_export.usdz", "rb");
+    CHECK_MSG(f, "Failed to open USDZ temp file for reading");
+    std::fseek(f, 0, SEEK_END);
+    auto const nbytes = std::ftell(f);
+    std::fseek(f, 0, SEEK_SET);
+    std::vector<char> bytes(nbytes);
+    std::fread(bytes.data(), 1, nbytes, f);
+    std::fclose(f);
+
+    // clang-format off
+    EM_ASM({
+        var data = HEAPU8.subarray($0, $0 + $1);
+        var blob = new Blob([new Uint8Array(data)], {type: 'application/octet-stream'});
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'scene.usdz';
+        a.click();
+        URL.revokeObjectURL(a.href);
+    }, bytes.data(), bytes.size());
+    // clang-format on
+
+    std::remove("/tmp/_export.usda");
+    std::remove("/tmp/_export.usdz");
+    log(LogLevel::Info, "USDZ download triggered");
+#else
+    ImGui::FileDialogueAsync(
+        ImGui::FileDialogueMode::Save, ".usdz,.usda,.usdc,.usd",
+        [this](ImGui::FileDialogueResult result) {
+            if (result.name.empty()) return;
+            auto const& path = result.name;
+            bool const is_usdz = path.size() >= 5 && path.compare(path.size() - 5, 5, ".usdz") == 0;
+            if (is_usdz) {
+                auto tmp_path = std::filesystem::temp_directory_path() / "_pts_export.usda";
+                auto tmp = tmp_path.string();
+                auto flat = m_stage->Flatten();
+                CHECK_MSG(flat, "Failed to flatten stage for USDZ export");
+                bool exported = flat->Export(tmp);
+                CHECK_MSG(exported, "Failed to export flattened stage");
+                bool ok = pxr::UsdUtilsCreateNewUsdzPackage(pxr::SdfAssetPath(tmp), path);
+                std::filesystem::remove(tmp_path);
+                if (ok)
+                    log(LogLevel::Info, "Saved scene to {}", path);
+                else
+                    log(LogLevel::Error, "Failed to create USDZ package for {}", path);
+            } else {
+                bool ok = m_stage->GetRootLayer()->Export(path);
+                if (ok)
+                    log(LogLevel::Info, "Saved scene to {}", path);
+                else
+                    log(LogLevel::Error, "Failed to save scene to {}", path);
+            }
+        });
+#endif
 }
 
 auto EditorApplication::draw_inspector_panel() noexcept -> void {
@@ -1333,7 +1451,7 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
                 bool selected = (i == m_active_config_index);
                 if (ImGui::Selectable(reg_entries[i].name.c_str(), selected)) {
                     if (i != m_active_config_index) {
-                        set_renderer_config(i);
+                        create_renderer(i);
                     }
                 }
             }

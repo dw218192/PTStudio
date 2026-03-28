@@ -1,6 +1,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #define NOMINMAX
 #include <core/profiling.h>
+#include <core/rendering/preparedSceneData.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/webgpu/device.h>
 #include <doctest/doctest.h>
@@ -324,6 +325,136 @@ TEST_CASE("clear resets GPU buffer state") {
     CHECK(world.gpu_light_count() == 0);
     CHECK(world.texture_array_view() == nullptr);
     CHECK(world.texture_sampler() == nullptr);
+}
+
+TEST_CASE("prepare_scene_data populates materials when dirty") {
+    pts::rendering::RenderWorld world;
+    {
+        auto scope = world.begin_sync();
+        auto& mats = scope.materials();
+        pts::rendering::Material m{};
+        m.diffuse_color = {0.5f, 0.6f, 0.7f};
+        m.roughness = 0.8f;
+        mats.push_back(m);
+    }
+
+    auto data = world.prepare_scene_data();
+    CHECK(data.materials_dirty);
+    REQUIRE(data.materials.size() == 1);
+    CHECK(data.materials[0].diffuse_color.x == doctest::Approx(0.5f));
+    CHECK(data.materials[0].roughness == doctest::Approx(0.8f));
+}
+
+TEST_CASE("prepare_scene_data provides fallback light when no lights present") {
+    pts::rendering::RenderWorld world;
+    {
+        auto scope = world.begin_sync();
+    }
+
+    auto data = world.prepare_scene_data();
+    CHECK(data.lights_dirty);
+    REQUIRE(data.gpu_lights.size() == 1);
+    CHECK(data.gpu_lights[0].type == 0);
+    CHECK(data.gpu_lights[0].intensity == doctest::Approx(1.0f));
+}
+
+TEST_CASE("prepare_scene_data populates active lights") {
+    pts::rendering::RenderWorld world;
+    {
+        auto scope = world.begin_sync();
+        auto l0 = scope.alloc_light_slot();
+        {
+            auto w = scope.write_light(l0);
+            w->type = pts::rendering::LightData::Type::Distant;
+            w->color = {1.0f, 0.0f, 0.0f};
+            w->intensity = 2.0f;
+        }
+        auto l1 = scope.alloc_light_slot();
+        {
+            auto w = scope.write_light(l1);
+            w->type = pts::rendering::LightData::Type::Sphere;
+            w->color = {0.0f, 1.0f, 0.0f};
+            w->intensity = 3.0f;
+        }
+    }
+
+    auto data = world.prepare_scene_data();
+    CHECK(data.lights_dirty);
+    REQUIRE(data.gpu_lights.size() == 2);
+}
+
+TEST_CASE("prepare_scene_data is clean on second call without changes") {
+    pts::rendering::RenderWorld world;
+    {
+        auto scope = world.begin_sync();
+        scope.materials().push_back(pts::rendering::Material{});
+    }
+
+    auto data1 = world.prepare_scene_data();
+    CHECK(data1.materials_dirty);
+    CHECK(data1.lights_dirty);
+
+    auto data2 = world.prepare_scene_data();
+    CHECK_FALSE(data2.materials_dirty);
+    CHECK_FALSE(data2.lights_dirty);
+    CHECK_FALSE(data2.geometry_dirty);
+    CHECK_FALSE(data2.textures_dirty);
+    CHECK(data2.partial_light_updates.empty());
+}
+
+TEST_CASE("prepare_scene_data produces geometry for mesh+object") {
+    pts::rendering::RenderWorld world;
+    {
+        auto scope = world.begin_sync();
+
+        auto mesh_slot = scope.alloc_mesh_slot();
+        {
+            auto w = scope.write_mesh(mesh_slot);
+            w->cpu_vertices = {
+                {{0, 0, 0}, {0, 0, 1}, {1, 1, 1}, {0, 0}},
+                {{1, 0, 0}, {0, 0, 1}, {1, 1, 1}, {1, 0}},
+                {{0, 1, 0}, {0, 0, 1}, {1, 1, 1}, {0, 1}},
+            };
+            w->cpu_indices = {0, 1, 2};
+            w->local_aabb_min = {0, 0, 0};
+            w->local_aabb_max = {1, 1, 0};
+        }
+
+        auto obj_slot = scope.alloc_object_slot();
+        {
+            auto w = scope.write_object(obj_slot);
+            w->mesh_index = mesh_slot;
+            w->material_index = 0;
+            w->transform = glm::mat4(1.0f);
+        }
+    }
+
+    auto data = world.prepare_scene_data();
+    CHECK(data.geometry_dirty);
+    CHECK(data.tlas_node_count > 0);
+    CHECK(data.instance_count == 1);
+    CHECK_FALSE(data.all_nodes.empty());
+    CHECK_FALSE(data.all_tris.empty());
+    REQUIRE(data.gpu_instances.size() == 1);
+    CHECK(data.gpu_instances[0].material_index == 0);
+}
+
+TEST_CASE("PreparedSceneData default-constructs with all flags clean") {
+    pts::rendering::PreparedSceneData data;
+    CHECK_FALSE(data.materials_dirty);
+    CHECK_FALSE(data.lights_dirty);
+    CHECK_FALSE(data.geometry_dirty);
+    CHECK_FALSE(data.textures_dirty);
+    CHECK(data.tlas_node_count == 0);
+    CHECK(data.instance_count == 0);
+    CHECK(data.texture_size == 0);
+    CHECK(data.materials.empty());
+    CHECK(data.gpu_lights.empty());
+    CHECK(data.partial_light_updates.empty());
+    CHECK(data.all_nodes.empty());
+    CHECK(data.all_tris.empty());
+    CHECK(data.gpu_instances.empty());
+    CHECK(data.texture_layers.empty());
 }
 
 #endif  // !__EMSCRIPTEN__

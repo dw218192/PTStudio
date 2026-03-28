@@ -75,6 +75,7 @@ class TestTool(RepoTool):
         context: dict[str, Any] = {
             "workspace_root": str(ctx.workspace_root),
             "build_dir": ctx.tokens["build_dir"],
+            "conan_deps_root": ctx.tokens["conan_deps_root"],
             "platform": platform_id,
             "build_type": build_type,
             "logs_root": ctx.tokens["logs_root"],

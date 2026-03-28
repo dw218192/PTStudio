@@ -4,6 +4,7 @@
 #include <embedded_test_resources.h>
 #include <pxr/base/tf/notice.h>
 #include <pxr/base/tf/weakBase.h>
+#include <pxr/usd/sdf/assetPath.h>
 #include <pxr/usd/sdf/layer.h>
 #include <pxr/usd/sdf/path.h>
 #include <pxr/usd/usd/notice.h>
@@ -15,8 +16,11 @@
 #include <pxr/usd/usdShade/material.h>
 #include <pxr/usd/usdShade/materialBindingAPI.h>
 #include <pxr/usd/usdShade/shader.h>
+#include <pxr/usd/usdUtils/usdzPackage.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
+#include <cstdio>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -594,6 +598,60 @@ TEST_CASE("Already-normalized xform ops are left unchanged") {
     CHECK_FALSE(listener.got_resync);
 
     pxr::TfNotice::Revoke(key);
+}
+
+TEST_CASE("USDZ round-trip via UsdUtilsCreateNewUsdzPackage preserves geometry") {
+    namespace fs = std::filesystem;
+
+    auto stage = pxr::UsdStage::CreateInMemory();
+    REQUIRE(stage);
+
+    pxr::UsdGeomXform::Define(stage, pxr::SdfPath("/Root"));
+    auto cube = pxr::UsdGeomCube::Define(stage, pxr::SdfPath("/Root/MyCube"));
+    cube.GetSizeAttr().Set(2.0);
+
+    pxr::UsdGeomXformable xformable(cube.GetPrim());
+    pxr::GfMatrix4d mat(1.0);
+    mat[3][0] = 7.0;
+    xformable.AddTransformOp().Set(mat);
+
+    // Flatten and export to temp USDA
+    auto tmp_dir = fs::temp_directory_path();
+    auto tmp_usda = (tmp_dir / "_test_usdz.usda").string();
+    auto tmp_usdz = (tmp_dir / "_test_usdz.usdz").string();
+
+    auto flat = stage->Flatten();
+    REQUIRE(flat);
+    REQUIRE(flat->Export(tmp_usda));
+
+    // Package as USDZ
+    bool packaged = pxr::UsdUtilsCreateNewUsdzPackage(pxr::SdfAssetPath(tmp_usda), tmp_usdz);
+    REQUIRE(packaged);
+
+    // Verify the file is non-empty
+    auto const nbytes = std::filesystem::file_size(tmp_usdz);
+    CHECK(nbytes > 0);
+
+    // Reopen the USDZ and verify geometry
+    auto reopened = pxr::UsdStage::Open(tmp_usdz);
+    REQUIRE(reopened);
+
+    auto cube2 = pxr::UsdGeomCube::Get(reopened, pxr::SdfPath("/Root/MyCube"));
+    REQUIRE(bool(cube2));
+
+    double size = 0;
+    cube2.GetSizeAttr().Get(&size);
+    CHECK(size == doctest::Approx(2.0));
+
+    pxr::UsdGeomXformable xformable2(cube2.GetPrim());
+    pxr::GfMatrix4d reloaded;
+    bool reset = false;
+    xformable2.GetLocalTransformation(&reloaded, &reset, pxr::UsdTimeCode::Default());
+    CHECK(reloaded[3][0] == doctest::Approx(7.0));
+
+    // Cleanup
+    fs::remove(tmp_usda);
+    fs::remove(tmp_usdz);
 }
 
 PTS_TEST_MAIN()

@@ -77,7 +77,6 @@ void WireframePass::do_renderer_setup(const webgpu::Device& device) {
         ready->bind_group = nullptr;
         ready->bind_group_layout = nullptr;
     }
-    clear_pass_data();
 
     auto shader_src = get_shader_loader().load("editor/generated/shaders/wireframe.wgsl");
     auto shader = device.create_shader_module_from_source(shader_src);

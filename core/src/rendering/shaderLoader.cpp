@@ -1,6 +1,6 @@
-#include <core/backgroundTask.h>
 #include <core/diagnostics.h>
 #include <core/rendering/shaderLoader.h>
+#include <core/worker.h>
 #include <spdlog/spdlog.h>
 
 #include <filesystem>
@@ -207,7 +207,7 @@ struct ShaderLoader::Impl {
         };
         std::vector<ShaderResult> results;
     };
-    std::unique_ptr<pts::BackgroundTask<ReloadResult>> reload_task;
+    std::unique_ptr<pts::OneShotTask<ReloadResult>> reload_task;
     std::unique_ptr<SlangCompiler> compiler;
 #endif
 
@@ -346,7 +346,7 @@ bool ShaderLoader::poll_and_start_reload() {
     }
 
     auto* compiler = m_impl->compiler.get();
-    m_impl->reload_task = std::make_unique<pts::BackgroundTask<Impl::ReloadResult>>(
+    m_impl->reload_task = std::make_unique<pts::OneShotTask<Impl::ReloadResult>>(
         "Compiling Shaders",
         [compiler, jobs = std::move(jobs)](pts::TaskProgress& progress) -> Impl::ReloadResult {
             Impl::ReloadResult result;

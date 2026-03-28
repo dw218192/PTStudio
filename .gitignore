@@ -29,3 +29,6 @@ config.local.yaml
 
 # Tracy profiling data
 *.tracy
+
+# Generated USDZ packages (built from .usda sources)
+*.usdz

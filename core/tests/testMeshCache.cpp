@@ -29,7 +29,6 @@ struct TestPass final : IRenderPass {
     }
 
     // Expose protected members for testing.
-    using IRenderPass::clear_pass_data;
     using IRenderPass::get_or_create_pass_data;
 };
 
@@ -135,25 +134,36 @@ TEST_CASE("get_or_create_pass_data supports different keys") {
     CHECK(b == 200);
 }
 
-TEST_CASE("clear_pass_data removes all entries") {
+TEST_CASE("world swap invalidates pass data cache") {
     TestPass pass{s_test_sl};
-    RenderWorld world;
-    auto scope = world.begin_sync();
-    auto slot = scope.alloc_mesh_slot();
+    int factory_calls = 0;
     {
-        auto w = scope.write_mesh(slot);
+        RenderWorld world;
+        auto scope = world.begin_sync();
+        auto slot = scope.alloc_mesh_slot();
+        {
+            auto w = scope.write_mesh(slot);
+            PTS_UNUSED(w);
+        }
+        pass.get_or_create_pass_data<int>(PassDataKind::Mesh, slot, world, [&]() {
+            ++factory_calls;
+            return 1;
+        });
+        CHECK(factory_calls == 1);
+    }
+    // Old world destroyed — cache gone. New world must recreate.
+    RenderWorld world2;
+    auto scope2 = world2.begin_sync();
+    auto slot2 = scope2.alloc_mesh_slot();
+    {
+        auto w = scope2.write_mesh(slot2);
         PTS_UNUSED(w);
     }
-
-    pass.get_or_create_pass_data<int>(PassDataKind::Mesh, slot, world, []() { return 1; });
-    pass.clear_pass_data();
-
-    int factory_calls = 0;
-    pass.get_or_create_pass_data<int>(PassDataKind::Mesh, slot, world, [&]() {
+    pass.get_or_create_pass_data<int>(PassDataKind::Mesh, slot2, world2, [&]() {
         ++factory_calls;
         return 99;
     });
-    CHECK(factory_calls == 1);
+    CHECK(factory_calls == 2);
 }
 
 TEST_CASE("get_or_create_pass_data with nullptr factory succeeds on hit") {

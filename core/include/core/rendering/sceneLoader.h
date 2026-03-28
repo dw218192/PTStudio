@@ -1,6 +1,6 @@
 #pragma once
 
-#include <core/backgroundTask.h>
+#include <core/worker.h>
 #include <pxr/usd/sdf/path.h>
 #include <pxr/usd/usd/stage.h>
 

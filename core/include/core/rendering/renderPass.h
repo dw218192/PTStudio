@@ -105,65 +105,61 @@ class IRenderPass {
 
    protected:
     virtual void do_setup(const webgpu::Device& device) = 0;
-    /// Lazily create or return per-entity pass data.
-    /// Version is read automatically from the entity (Mesh::version or Light::version).
-    /// Re-creates when the entity's version changes from the cached version.
-    /// T may be move-only (e.g. contains webgpu::Buffer).
+
+    /// Lazily create or return per-entity pass data, cached in the world.
+    /// Version is read from the entity (Mesh::generation or Light::generation).
+    /// Re-creates when the version changes. Cache is destroyed with the world,
+    /// so no stale data survives a scene swap.
     template <typename T, typename Factory>
     auto get_or_create_pass_data(PassDataKind kind, uint32_t index, const RenderWorld& world,
                                  Factory&& factory) -> T& {
         auto version = entity_version(kind, index, world);
         auto key = make_key(kind, index);
-        auto it = m_pass_data.find(key);
-        if (it == m_pass_data.end()) {
-            it = m_pass_data.emplace(key, PassDataEntry{}).first;
+        auto& map = const_cast<RenderWorld&>(world).pass_data_for(this);
+        auto it = map.find(key);
+        if (it == map.end()) {
+            it = map.emplace(key, RenderWorld::PassDataEntry{}).first;
         }
         auto& entry = it->second;
         if (entry.version != version || !entry.data) {
-            entry.data = ErasedPtr(new T(std::forward<Factory>(factory)()),
-                                   [](void* p) { delete static_cast<T*>(p); });
+            entry.data = RenderWorld::ErasedPtr(new T(std::forward<Factory>(factory)()),
+                                                [](void* p) { delete static_cast<T*>(p); });
             entry.version = version;
         }
         return *static_cast<T*>(entry.data.get());
     }
 
-    /// get_or_create_pass_data without factory — asserts that the entry already exists
-    /// and its version matches.
+    /// get_or_create_pass_data without factory — asserts that the entry already exists.
     template <typename T>
     auto get_or_create_pass_data(PassDataKind kind, uint32_t index, const RenderWorld& world,
                                  std::nullptr_t) -> T& {
         auto version = entity_version(kind, index, world);
         auto key = make_key(kind, index);
-        auto it = m_pass_data.find(key);
-        INVARIANT_MSG(it != m_pass_data.end() && it->second.data && it->second.version == version,
+        auto& map = const_cast<RenderWorld&>(world).pass_data_for(this);
+        auto it = map.find(key);
+        INVARIANT_MSG(it != map.end() && it->second.data && it->second.version == version,
                       "pass data miss with no factory");
         return *static_cast<T*>(it->second.data.get());
     }
 
-    /// Per-category pass data — cached result invalidated when *any* entity in
-    /// the category changes.  Same API as the per-entity variant but without an
-    /// index: the key is the kind alone.
+    /// Per-category pass data — invalidated when *any* entity in the category changes.
     template <typename T, typename Factory>
     auto get_or_create_pass_data(PassDataKind kind, const RenderWorld& world, Factory&& factory)
         -> T& {
         auto version = category_version(kind, world);
         auto key = make_category_key(kind);
-        auto it = m_pass_data.find(key);
-        if (it == m_pass_data.end()) {
-            it = m_pass_data.emplace(key, PassDataEntry{}).first;
+        auto& map = const_cast<RenderWorld&>(world).pass_data_for(this);
+        auto it = map.find(key);
+        if (it == map.end()) {
+            it = map.emplace(key, RenderWorld::PassDataEntry{}).first;
         }
         auto& entry = it->second;
         if (entry.version != version || !entry.data) {
-            entry.data = ErasedPtr(new T(std::forward<Factory>(factory)()),
-                                   [](void* p) { delete static_cast<T*>(p); });
+            entry.data = RenderWorld::ErasedPtr(new T(std::forward<Factory>(factory)()),
+                                                [](void* p) { delete static_cast<T*>(p); });
             entry.version = version;
         }
         return *static_cast<T*>(entry.data.get());
-    }
-
-    /// Clear all pass data.
-    void clear_pass_data() {
-        m_pass_data.clear();
     }
 
    private:
@@ -200,17 +196,9 @@ class IRenderPass {
         return (static_cast<uint64_t>(kind) << 32) | index;
     }
 
-    /// Category-wide key uses a sentinel index that can't collide with entity keys.
     static uint64_t make_category_key(PassDataKind kind) {
         return (static_cast<uint64_t>(kind) << 32) | UINT32_MAX;
     }
-
-    using ErasedPtr = std::unique_ptr<void, void (*)(void*)>;
-    struct PassDataEntry {
-        ErasedPtr data{nullptr, nullptr};
-        uint32_t version = UINT32_MAX;
-    };
-    boost::container::flat_map<uint64_t, PassDataEntry> m_pass_data;
 };
 
 }  // namespace rendering

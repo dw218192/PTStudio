@@ -41,6 +41,17 @@ install(TARGETS ${exec_name}
 	RUNTIME DESTINATION ${PROJECT_BINARY_DIR}
 )
 
+# Embed all .usdz scene files into MEMFS for Emscripten builds
+# Paths mirror native layout so the same DemoScene::path works on both platforms
+if(EMSCRIPTEN)
+	file(GLOB _usdz_scenes "${CMAKE_SOURCE_DIR}/assets/scenes/*.usdz")
+	foreach(_scene ${_usdz_scenes})
+		file(RELATIVE_PATH _rel "${CMAKE_SOURCE_DIR}" "${_scene}")
+		target_link_options(${exec_name} PRIVATE
+			"SHELL:--embed-file ${_scene}@/${_rel}")
+	endforeach()
+endif()
+
 if(CORE_BUILD_TESTS)
 	add_subdirectory(tests)
 endif()

@@ -25,12 +25,14 @@ build:
     - usdGeom
     - usdShade
     - usdLux
+    - usdUtils
     - geomUtil
     - hd
   prebuild:
     format: {}
     slangc: {}
     shader_codegen: {}
+    usdz: {}
     embed: {}
   postbuild: {}
   conan:
@@ -62,6 +64,17 @@ agent:
       unrelated to the ticket — scope creep, drive-by refactors, or formatting
       changes outside touched functions should be called out and excluded.
       Diff against the base branch (not just HEAD) to catch accumulated drift.
+
+usdz:
+  scenes:
+    - input: "assets/scenes/primitives.usda"
+      output: "assets/scenes/primitives.usdz"
+    - input: "assets/scenes/area_test.usda"
+      output: "assets/scenes/area_test.usdz"
+    - input: "assets/scenes/normal_map_test.usda"
+      output: "assets/scenes/normal_map_test.usdz"
+    - input: "assets/scenes/kitchen/Kitchen_set.usd"
+      output: "assets/scenes/kitchen_set.usdz"
 
 slangc:
   search_paths:
@@ -151,7 +164,6 @@ embed:
         - "editor/generated/shaders/pathtracer.wgsl"
         - "editor/generated/shaders/pt_blit.wgsl"
         - "editor/icons/*.*"
-        - "assets/scenes/primitives.usda"
       output: "editor/generated/embedded_resources.h"
       namespace: "editor_resources"
     - input:
@@ -194,6 +206,8 @@ package:
       dest: "deps/"
     - src: "{conan_deps_root}/usd/**/*"
       dest: "deps/usd/"
+    - src: "{workspace_root}/assets/scenes/*.usdz"
+      dest: "assets/scenes/"
   mappings@emscripten:
     - src: "{build_dir}/bin/**/*"
       dest: "{build_type}/bin/"

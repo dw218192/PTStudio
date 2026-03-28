@@ -160,6 +160,10 @@ jobs:
           name: build-${{ matrix.platform }}-${{ matrix.build_type }}
           path: _build/${{ matrix.platform }}/
 
+      - name: Generate USDZ scenes
+        if: matrix.platform == 'windows-x64'
+        run: ${{ matrix.repo }} usdz --build-type ${{ matrix.build_type }}
+
       - name: Run tests
         run: ${{ matrix.repo }} test --platform ${{ matrix.platform }} --build-type ${{ matrix.build_type }}
 

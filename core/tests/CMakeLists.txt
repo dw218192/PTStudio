@@ -94,10 +94,10 @@ set(testShaderLoader_source testShaderLoader.cpp)
 set(testShaderLoader_libs core)
 set(testShaderLoader_includes ${CMAKE_CURRENT_SOURCE_DIR}/generated)
 
-# BackgroundTask - works on all platforms (no GPU needed)
-list(APPEND TEST_NAMES testBackgroundTask)
-set(testBackgroundTask_source testBackgroundTask.cpp)
-set(testBackgroundTask_libs core)
+# Worker / OneShotTask - works on all platforms (no GPU needed)
+list(APPEND TEST_NAMES testWorker)
+set(testWorker_source testWorker.cpp)
+set(testWorker_libs core)
 
 # LoadingOverlay - no GPU needed, tests non-draw logic
 list(APPEND TEST_NAMES testLoadingOverlay)

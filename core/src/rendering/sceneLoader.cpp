@@ -1,10 +1,10 @@
-#include <core/backgroundTask.h>
 #include <core/diagnostics.h>
 #include <core/profiling.h>
 #include <core/rendering/adapterHelpers.h>
 #include <core/rendering/adapters/registry.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/sceneLoader.h>
+#include <core/worker.h>
 #include <pxr/usd/usd/primRange.h>
 
 #include <glm/glm.hpp>
