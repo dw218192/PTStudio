@@ -16,14 +16,28 @@ git status --porcelain
 
 If dirty, stop and ask the user to commit or stash.
 
-### 2. Switch to develop and pull
+### 2. Clean up stale worktrees
+
+Remove all agent worktrees and their branches left over from ticket work.
+
+```bash
+git worktree prune
+```
+
+For each worktree under `_agent/worktrees/`:
+```bash
+git worktree remove --force <path>
+git branch -D <worktree-branch>
+```
+
+### 3. Switch to develop and pull
 
 ```bash
 git checkout develop
 git pull --ff-only origin develop
 ```
 
-### 3. Delete the old dev branch (local + remote)
+### 4. Delete the old dev branch (local + remote)
 
 ```bash
 git branch -D dev/rendering-next
@@ -32,18 +46,19 @@ git push origin --delete dev/rendering-next
 
 Use the argument if provided, otherwise default to `dev/rendering-next`.
 
-### 4. Create and push the new branch
+### 5. Create and push the new branch
 
 ```bash
 git checkout -b dev/rendering-next
 git push -u origin dev/rendering-next
 ```
 
-### 5. Print summary
+### 6. Print summary
 
 ```
 Rotated dev/rendering-next
   Base: develop @ <short-hash> (<commit message>)
+  Worktrees cleaned: <count>
   Old branch pruned (local + remote)
   New branch pushed to origin
 ```
