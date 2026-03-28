@@ -125,17 +125,19 @@ def _discover_executables(target_dir: Path, is_emscripten: bool = False) -> list
     return exe_paths
 
 
-def _resolve_runtime_deploy_dir(build_dir: Path) -> Path | None:
+def _resolve_runtime_deploy_dir(build_dir: Path, conan_deps_root: str | None = None) -> Path | None:
     """Return the runtime_deploy directory if it exists.
 
     When Conan's ``runtime_deploy`` deployer is used, shared libraries are
-    copied into the deployer-folder (typically ``deps/``) as a flat directory.
-    This can be added to PATH directly, without needing a conanrun script.
+    copied into the deployer-folder as a flat directory.  This can be added
+    to PATH directly, without needing a conanrun script.
+
+    Uses *conan_deps_root* (from the ``{conan_deps_root}`` config token)
+    when available, otherwise falls back to ``build_dir/../deps``.
     """
-    deps_dir = build_dir.parent / "deps"
+    deps_dir = Path(conan_deps_root) if conan_deps_root else build_dir.parent / "deps"
     if not deps_dir.exists():
         return None
-    # Check for at least one shared library to confirm runtime_deploy was used
     dll_ext = ".dll" if is_windows() else ".so"
     for _ in deps_dir.glob(f"*{dll_ext}"):
         return deps_dir
@@ -384,7 +386,9 @@ def _run_executable(
     if not is_emscripten:
         env_script = _resolve_env_script(build_dir, is_emscripten=False)
         if not env_script:
-            runtime_dir = _resolve_runtime_deploy_dir(build_dir)
+            runtime_dir = _resolve_runtime_deploy_dir(
+                build_dir, context.get("conan_deps_root")
+            )
             if runtime_dir:
                 logger.debug(f"Using runtime_deploy: {runtime_dir}")
                 path_sep = ";" if is_windows() else ":"
@@ -427,7 +431,7 @@ def _can_run(context: dict[str, Any]) -> bool:
         return shutil.which("node") is not None
     if _resolve_env_script(build_dir, is_emscripten=False) is not None:
         return True
-    if _resolve_runtime_deploy_dir(build_dir) is not None:
+    if _resolve_runtime_deploy_dir(build_dir, context.get("conan_deps_root")) is not None:
         return True
     # Inline check: can only run natively if target matches host
     return context["platform"] == detect_platform_identifier()
@@ -653,6 +657,7 @@ class LaunchTool(RepoTool):
         context: dict[str, Any] = {
             "workspace_root": str(root),
             "build_dir": ctx.tokens["build_dir"],
+            "conan_deps_root": ctx.tokens["conan_deps_root"],
             "platform": platform_id,
             "build_type": build_type,
             "logs_root": ctx.tokens["logs_root"],

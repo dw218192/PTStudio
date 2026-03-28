@@ -56,8 +56,9 @@ class UsdzTool(RepoTool):
             return
 
         build_dir = Path(ctx.tokens["build_dir"])
+        conan_deps_root = Path(ctx.tokens["conan_deps_root"])
         # usdz_pack needs runtime DLLs (USD).  Prefer conanrun env script;
-        # fall back to the flat deps/ directory (CI test jobs that only have
+        # fall back to conan_deps_root (CI test jobs that only have
         # packaged artifacts without conanrun).
         conanrun_ext = ".bat" if is_windows() else ".sh"
         conanrun_path = (build_dir / "conanrun").with_suffix(conanrun_ext)
@@ -66,10 +67,11 @@ class UsdzTool(RepoTool):
             extra_env: dict[str, str] | None = None
         else:
             env_script = None
-            deps_dir = build_dir.parent / "deps"
-            if deps_dir.is_dir():
+            if conan_deps_root.is_dir():
                 path_sep = ";" if is_windows() else ":"
-                extra_env = {"PATH": f"{deps_dir}{path_sep}{os.environ.get('PATH', '')}"}
+                extra_env = {
+                    "PATH": f"{conan_deps_root}{path_sep}{os.environ.get('PATH', '')}"
+                }
             else:
                 extra_env = None
         logs_dir = Path(ctx.tokens["logs_root"])
