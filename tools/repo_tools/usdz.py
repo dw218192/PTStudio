@@ -4,12 +4,13 @@ Phase 1: cmake --build --target usdz_pack (compiles the host tool)
 Phase 2: run usdz_pack for each scene (creates .usdz from .usda)
 """
 
+import os
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
-from repo_tools.core import RepoTool, ShellCommand, ToolContext, logger
+from repo_tools.core import RepoTool, ShellCommand, ToolContext, is_windows, logger
 
 
 def _newest_mtime(paths: list[Path]) -> float:
@@ -55,8 +56,22 @@ class UsdzTool(RepoTool):
             return
 
         build_dir = Path(ctx.tokens["build_dir"])
-        # usdz_pack needs runtime DLLs (USD), not just compiler tools
-        conanrun = build_dir / "conanrun"
+        # usdz_pack needs runtime DLLs (USD).  Prefer conanrun env script;
+        # fall back to the flat deps/ directory (CI test jobs that only have
+        # packaged artifacts without conanrun).
+        conanrun_ext = ".bat" if is_windows() else ".sh"
+        conanrun_path = (build_dir / "conanrun").with_suffix(conanrun_ext)
+        if conanrun_path.exists():
+            env_script: Path | None = build_dir / "conanrun"
+            extra_env: dict[str, str] | None = None
+        else:
+            env_script = None
+            deps_dir = build_dir.parent / "deps"
+            if deps_dir.is_dir():
+                path_sep = ";" if is_windows() else ":"
+                extra_env = {"PATH": f"{deps_dir}{path_sep}{os.environ.get('PATH', '')}"}
+            else:
+                extra_env = None
         logs_dir = Path(ctx.tokens["logs_root"])
         logs_dir.mkdir(parents=True, exist_ok=True)
 
@@ -97,7 +112,8 @@ class UsdzTool(RepoTool):
             log_file = logs_dir / f"usdz_{output_path.stem}.log"
             cmd = ShellCommand(
                 [str(usdz_pack), str(input_path), str(output_path)],
-                env_script=conanrun,
+                env_script=env_script,
+                env=extra_env,
             )
             cmd.exec(log_file=log_file)
             size_kb = output_path.stat().st_size / 1024
