@@ -73,6 +73,8 @@ usdz:
       output: "assets/scenes/area_test.usdz"
     - input: "assets/scenes/normal_map_test.usda"
       output: "assets/scenes/normal_map_test.usdz"
+    - input: "assets/scenes/kitchen/Kitchen_set.usd"
+      output: "assets/scenes/kitchen_set.usdz"
 
 slangc:
   search_paths:

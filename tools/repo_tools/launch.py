@@ -489,6 +489,67 @@ def _run_tests(context: dict[str, Any], verbose: bool) -> int:
                 failed += 1
                 failed_tests.append(test_name)
 
+    # Smoke tests: launch the editor with --capture-and-quit for each built-in
+    # demo scene. Exercises the full GPU pipeline (device, shaders, BVH,
+    # rendering, readback) with real geometry.
+    # Skipped on Emscripten (no headless GPU adapter).
+    if not is_emscripten:
+        editor_exe = build_dir / "bin" / ("editor.exe" if is_windows() else "editor")
+        scenes_dir = Path(context["workspace_root"]) / "assets" / "scenes"
+        scenes = sorted(scenes_dir.glob("*.usdz")) if scenes_dir.is_dir() else []
+        if editor_exe.exists() and scenes:
+            with tempfile.TemporaryDirectory(prefix="pts_smoke_") as tmp_dir:
+                for scene_path in scenes:
+                    scene_name = scene_path.stem
+                    test_name = f"editorSmoke_{scene_name}"
+                    log_file = logs_dir / f"test_{test_name}.log"
+                    capture_path = Path(tmp_dir) / f"{scene_name}.png"
+                    with log_section(f"Test: {test_name}"):
+                        try:
+                            result = _run_executable(
+                                editor_exe,
+                                [
+                                    f"--capture-and-quit={capture_path}",
+                                    "--frames", "3",
+                                    "--usd", str(scene_path),
+                                ],
+                                context,
+                                capture_output=True,
+                            )
+                            with open(log_file, "w", encoding="utf-8", errors="replace") as f:
+                                f.write(f"Test: {test_name}\n")
+                                f.write(f"Scene: {scene_path}\n")
+                                f.write(f"Capture: {capture_path}\n")
+                                f.write(f"Exit code: {result.returncode}\n")
+                                f.write("=" * 70 + "\n")
+                                f.write(result.stdout or "")
+
+                            if result.stdout:
+                                sys.stdout.write(result.stdout)
+                                if not result.stdout.endswith("\n"):
+                                    sys.stdout.write("\n")
+
+                            if result.returncode != 0:
+                                logger.error(
+                                    f"FAILED: {test_name} (exit code: {result.returncode})"
+                                )
+                                failed += 1
+                                failed_tests.append(test_name)
+                            elif not capture_path.exists():
+                                logger.error(f"FAILED: {test_name} (no capture produced)")
+                                failed += 1
+                                failed_tests.append(test_name)
+                            else:
+                                logger.info(f"PASSED: {test_name}")
+                                passed += 1
+
+                        except Exception as e:
+                            logger.error(f"FAILED: {test_name} (exception: {e})")
+                            with open(log_file, "w", encoding="utf-8", errors="replace") as f:
+                                f.write(f"Test: {test_name}\nException: {e}\n")
+                            failed += 1
+                            failed_tests.append(test_name)
+
     with log_section("Test summary"):
         logger.info(f"Total:  {passed + failed}")
         logger.info(f"Passed: {passed}")
