@@ -22,7 +22,9 @@ struct GridUniforms {
     glm::vec3 camera_pos;
     float near_plane;
     float far_plane;
-    float _pad[3];
+    float meters_per_unit;
+    int32_t up_axis;
+    float _pad;
 };
 static_assert(sizeof(GridUniforms) == 160, "GridUniforms must match shader std140 layout");
 
@@ -139,6 +141,8 @@ void GridPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::Pa
     auto cam_pos = ctx.camera_position;
     auto near_plane = ctx.camera.near_plane();
     auto far_plane = ctx.camera.far_plane();
+    auto meters_per_unit = ctx.meters_per_unit;
+    auto up_axis = ctx.up_axis;
     auto* pipeline_handle = ready.pipeline.handle();
     auto uniform_buf = ready.uniform_buffer.handle();
     auto bind_group = ready.bind_group;
@@ -153,7 +157,9 @@ void GridPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::Pa
         gu.camera_pos = cam_pos;
         gu.near_plane = near_plane;
         gu.far_plane = far_plane;
-        gu._pad[0] = gu._pad[1] = gu._pad[2] = 0.0f;
+        gu.meters_per_unit = meters_per_unit;
+        gu.up_axis = static_cast<int32_t>(up_axis);
+        gu._pad = 0.0f;
         wgpuQueueWriteBuffer(queue, uniform_buf, 0, &gu, sizeof(gu));
         wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
         wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 0, nullptr);

@@ -6,10 +6,21 @@
 #include <core/rendering/sceneLoader.h>
 #include <core/worker.h>
 #include <pxr/usd/usd/primRange.h>
+#include <pxr/usd/usdGeom/metrics.h>
+#include <pxr/usd/usdGeom/tokens.h>
 
 #include <glm/glm.hpp>
 
 namespace pts::rendering {
+
+StageSettings read_stage_settings(const pxr::UsdStageRefPtr& stage) {
+    PRECONDITION(stage);
+    StageSettings s;
+    s.meters_per_unit = static_cast<float>(pxr::UsdGeomGetStageMetersPerUnit(stage));
+    auto axis = pxr::UsdGeomGetStageUpAxis(stage);
+    s.up_axis = (axis == pxr::UsdGeomTokens->z) ? UpAxis::Z : UpAxis::Y;
+    return s;
+}
 
 namespace {
 

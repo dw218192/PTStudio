@@ -399,41 +399,17 @@ void EditorApplication::on_ready() {
     m_frame_graph = std::make_unique<rendering::FrameGraph>(
         device, get_logging_manager().get_logger_shared("frame_graph"));
 
-    // Load scene
+    // Load scene via unified load_stage()
     if (!m_app_config.usd_path.empty()) {
-        // Load USD file from disk
-        m_stage = pxr::UsdStage::Open(m_app_config.usd_path);
-        INVARIANT_MSG(m_stage, "Failed to open USD stage from path");
-        rendering::populate_from_stage(m_world, m_stage);
-        m_world.upload_all_meshes(device);
-        ensure_default_light();
-        register_stage_listener();
-        log(LogLevel::Info, "Loaded scene from {} ({} objects)", m_app_config.usd_path,
-            m_world.get_objects().size());
+        auto stage = pxr::UsdStage::Open(m_app_config.usd_path);
+        INVARIANT_MSG(stage, "Failed to open USD stage from path");
+        load_stage(stage, m_app_config.usd_path);
     } else {
         discover_demo_scenes(m_demo_scene_paths, m_demo_scene_names);
         INVARIANT_MSG(!m_demo_scene_paths.empty(), "No demo scenes found in assets/scenes/");
-        m_stage = pxr::UsdStage::Open(m_demo_scene_paths[0]);
-        rendering::populate_from_stage(m_world, m_stage);
-        m_world.upload_all_meshes(device);
-        ensure_default_light();
-        register_stage_listener();
-        log(LogLevel::Info, "Loaded default scene ({} objects)", m_world.get_objects().size());
-    }
-
-    // Apply USD override layer
-    if (!m_app_config.usd_override_path.empty()) {
-        INVARIANT_MSG(m_stage, "Cannot apply USD override without a loaded stage");
-        auto session = m_stage->GetSessionLayer();
-        session->InsertSubLayerPath(m_app_config.usd_override_path);
-        // Re-sync world from stage with override applied
-        revoke_stage_listener();
-        m_world.clear();
-        rendering::populate_from_stage(m_world, m_stage);
-        m_world.upload_all_meshes(device);
-        ensure_default_light();
-        register_stage_listener();
-        log(LogLevel::Info, "Applied USD override: {}", m_app_config.usd_override_path);
+        auto stage = pxr::UsdStage::Open(m_demo_scene_paths[0]);
+        INVARIANT_MSG(stage, "Failed to open default demo scene");
+        load_stage(stage, m_demo_scene_names[0]);
     }
 
     // Register shaders for hot-reload
@@ -561,6 +537,8 @@ void EditorApplication::on_ready() {
         m_viewport_width = 1280;
         m_viewport_height = 720;
     }
+
+    m_init_complete = true;
 }
 
 auto EditorApplication::compute_active_view(float aspect) const -> ActiveView {
@@ -598,6 +576,46 @@ void EditorApplication::update(float /*dt*/) {
     // synchronization with ImGui::NewFrame() and the FrameGraph.
 }
 
+void EditorApplication::save_capture_png(boost::span<const uint8_t> pixels, std::string_view path) {
+#ifdef __EMSCRIPTEN__
+    // clang-format off
+    EM_ASM({
+        var width = $0;
+        var height = $1;
+        var dataPtr = $2;
+        var size = width * height * 4;
+        var data = new Uint8Array(HEAPU8.buffer, dataPtr, size);
+        var canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        var ctx = canvas.getContext('2d');
+        var imageData = ctx.createImageData(width, height);
+        imageData.data.set(data);
+        ctx.putImageData(imageData, 0, 0);
+        canvas.toBlob(function(blob) {
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = UTF8ToString($3);
+            a.click();
+            URL.revokeObjectURL(url);
+        }, 'image/png');
+    }, m_viewport_width, m_viewport_height, pixels.data(), path.data());
+    // clang-format on
+    log(LogLevel::Info, "Screenshot download triggered: {}", path);
+#else
+    auto parent = std::filesystem::path(path).parent_path();
+    if (!parent.empty()) {
+        std::filesystem::create_directories(parent);
+    }
+    int const ok = stbi_write_png(std::string(path).c_str(), static_cast<int>(m_viewport_width),
+                                  static_cast<int>(m_viewport_height), 4, pixels.data(),
+                                  static_cast<int>(m_viewport_width * 4));
+    INVARIANT_MSG(ok, "stbi_write_png failed");
+    log(LogLevel::Info, "Captured {}x{} to {}", m_viewport_width, m_viewport_height, path);
+#endif
+}
+
 void EditorApplication::render(FrameContext& ctx) {
     PTS_ZONE_SCOPED;
     if (!m_frame_graph) return;
@@ -606,28 +624,30 @@ void EditorApplication::render(FrameContext& ctx) {
     bool const capture_mode = m_app_config.is_capture_mode();
     if (!m_scene_load_task) ++m_frame_count;
 
-    // ── Capture readback: tick the async state machine and write PNG when ready ──
-    if (capture_mode && m_capture_readback.is_pending()) {
+    // ── Capture readback: tick the async state machine and save when ready ──
+    if (m_capture_readback.is_pending()) {
         m_capture_readback.tick();
         auto pixels = m_capture_readback.try_read();
         if (!pixels.empty()) {
-            auto parent = std::filesystem::path(m_app_config.capture_output).parent_path();
-            if (!parent.empty()) {
-                std::filesystem::create_directories(parent);
-            }
-            int const ok = stbi_write_png(m_app_config.capture_output.c_str(),
-                                          static_cast<int>(m_viewport_width),
-                                          static_cast<int>(m_viewport_height), 4, pixels.data(),
-                                          static_cast<int>(m_viewport_width * 4));
-            INVARIANT_MSG(ok, "stbi_write_png failed");
-            log(LogLevel::Info, "Captured {}x{} to {}", m_viewport_width, m_viewport_height,
-                m_app_config.capture_output);
-            if (viewport()) {
-                viewport()->request_close();
+            std::string path;
+            if (capture_mode) {
+                path = m_app_config.capture_output;
             } else {
-                request_stop();
+                auto now = std::chrono::system_clock::now();
+                auto tt = std::chrono::system_clock::to_time_t(now);
+                char buf[64];
+                std::strftime(buf, sizeof(buf), "%Y%m%d_%H%M%S", std::localtime(&tt));
+                path = std::string("_captures/") + buf + ".png";
             }
-            return;
+            save_capture_png(pixels, path);
+            if (capture_mode) {
+                if (viewport()) {
+                    viewport()->request_close();
+                } else {
+                    request_stop();
+                }
+                return;
+            }
         }
     }
 
@@ -639,18 +659,12 @@ void EditorApplication::render(FrameContext& ctx) {
         // GPU upload on main thread
         world.upload_all_meshes(webgpu_context()->device());
 
-        // Swap into editor state — invalidate stale picking from old world
-        revoke_stage_listener();
-        m_picking_readback = webgpu::BufferReadback{};
-        m_pick_requested = false;
-        m_first_prep = true;  // next frame uses synchronous prep (old result is stale)
+        // Swap world and stage, then call activate_stage() for shared ceremony
         m_world = std::move(world);
-        m_selected_prim = pxr::SdfPath();
         m_active_camera_index = 0;
         m_stage = std::move(m_pending_stage);
         m_pending_stage.Reset();
-        ensure_default_light();
-        register_stage_listener();
+        activate_stage();
 
         // Re-setup passes (pass data cache lives in the world, so it was
         // already destroyed when m_world was replaced above)
@@ -763,6 +777,8 @@ void EditorApplication::render(FrameContext& ctx) {
         get_time(),
         0,
         selected_picking_id,
+        m_stage_settings.meters_per_unit,
+        m_stage_settings.up_axis,
     };
 
     if (has_viewport) {
@@ -830,10 +846,8 @@ void EditorApplication::render(FrameContext& ctx) {
         ldr_desc.height = m_viewport_height;
         ldr_desc.format = WGPUTextureFormat_RGBA8Unorm;
         ldr_desc.clear_color = {0, 0, 0, 1};
-        if (capture_mode) {
-            ldr_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment |
-                                                           WGPUTextureUsage_CopySrc);
-        }
+        ldr_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment |
+                                                       WGPUTextureUsage_CopySrc);
         display_color_handle = m_frame_graph->find_or_create("tone_mapped_color", ldr_desc);
     }
 
@@ -845,10 +859,8 @@ void EditorApplication::render(FrameContext& ctx) {
         debug_desc.height = m_viewport_height;
         debug_desc.format = WGPUTextureFormat_RGBA8Unorm;
         debug_desc.clear_color = {0, 0, 0, 1};
-        if (capture_mode) {
-            debug_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment |
-                                                             WGPUTextureUsage_CopySrc);
-        }
+        debug_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment |
+                                                         WGPUTextureUsage_CopySrc);
 
         // In capture mode, only collect debug targets from the renderer pass
         auto collect_debug_targets = [&](auto& pass) {
@@ -912,21 +924,28 @@ void EditorApplication::render(FrameContext& ctx) {
     m_frame_graph->compile();
     m_frame_graph->execute(ctx.encoder());
 
-    // ── Capture: issue readback after target frame ──
-    if (capture_mode && !m_capture_readback.is_pending() &&
-        m_frame_count >= m_app_config.capture_frames) {
-        rendering::TextureRef capture_ref;
-        if (m_debug_target_selection > 0 &&
-            static_cast<size_t>(m_debug_target_selection - 1) < debug_target_handles.size()) {
-            capture_ref =
-                m_frame_graph->get_texture_ref(debug_target_handles[m_debug_target_selection - 1]);
-        } else {
-            capture_ref = m_frame_graph->get_texture_ref(display_color_handle);
+    // ── Issue capture readback (shared by --capture-and-quit and interactive screenshot) ──
+    {
+        bool should_capture = false;
+        if (capture_mode && m_frame_count >= m_app_config.capture_frames) {
+            should_capture = true;
+        } else if (m_screenshot_pending) {
+            m_screenshot_pending = false;
+            should_capture = true;
         }
-        INVARIANT_MSG(capture_ref, "Capture target texture not available");
-
-        m_capture_readback.request(ctx.encoder(), capture_ref.texture(), m_viewport_width,
-                                   m_viewport_height, device.handle(), device.instance());
+        if (should_capture && !m_capture_readback.is_pending()) {
+            rendering::TextureRef ref;
+            if (m_debug_target_selection > 0 &&
+                static_cast<size_t>(m_debug_target_selection - 1) < debug_target_handles.size()) {
+                ref = m_frame_graph->get_texture_ref(
+                    debug_target_handles[m_debug_target_selection - 1]);
+            } else {
+                ref = m_frame_graph->get_texture_ref(display_color_handle);
+            }
+            INVARIANT_MSG(ref, "Capture target texture not available");
+            m_capture_readback.request(ctx.encoder(), ref.texture(), m_viewport_width,
+                                       m_viewport_height, device.handle(), device.instance());
+        }
     }
 
     // ── GPU picking readback ──
@@ -1070,28 +1089,68 @@ auto EditorApplication::draw_add_prim_menu(const pxr::SdfPath* parent,
     }
 }
 
-void EditorApplication::load_scene_background(pxr::UsdStageRefPtr stage, std::string_view label) {
-    INVARIANT_MSG(stage, "load_scene_background called with null stage");
+void EditorApplication::load_stage(pxr::UsdStageRefPtr stage, std::string_view label) {
+    INVARIANT_MSG(stage, "load_stage called with null stage");
 
-    // Cancel any in-flight load
-    m_scene_load_task.reset();
-    m_pending_stage.Reset();
+    if (m_init_complete) {
+        // Async path — populate in background, finalize in render()
+        m_scene_load_task.reset();
+        m_pending_stage.Reset();
+        m_pending_stage = stage;
 
-    m_pending_stage = stage;
+        m_scene_load_task = std::make_unique<OneShotTask<rendering::RenderWorld>>(
+            "Loading Scene", [stage](TaskProgress& progress) -> rendering::RenderWorld {
+                return rendering::populate_from_stage(stage, progress);
+            });
 
-    m_scene_load_task = std::make_unique<OneShotTask<rendering::RenderWorld>>(
-        "Loading Scene", [stage](TaskProgress& progress) -> rendering::RenderWorld {
-            return rendering::populate_from_stage(stage, progress);
+        m_loading_overlay.track({
+            "Loading Scene",
+            [this] { return !m_scene_load_task || m_scene_load_task->is_done(); },
+            [this] { return m_scene_load_task ? m_scene_load_task->progress() : 1.0f; },
+            [this] { return m_scene_load_task ? m_scene_load_task->status() : std::string{}; },
         });
 
-    m_loading_overlay.track({
-        "Loading Scene",
-        [this] { return !m_scene_load_task || m_scene_load_task->is_done(); },
-        [this] { return m_scene_load_task ? m_scene_load_task->progress() : 1.0f; },
-        [this] { return m_scene_load_task ? m_scene_load_task->status() : std::string{}; },
-    });
+        log(LogLevel::Info, "Loading scene: {} (background)", label);
+    } else {
+        // Sync path — during on_ready(), before init is complete
+        auto const& device = webgpu_context()->device();
 
-    log(LogLevel::Info, "Loading scene: {} (background)", label);
+        // Apply override layer if specified (only on initial load)
+        if (!m_app_config.usd_override_path.empty()) {
+            auto session = stage->GetSessionLayer();
+            session->InsertSubLayerPath(m_app_config.usd_override_path);
+            log(LogLevel::Info, "Applied USD override: {}", m_app_config.usd_override_path);
+        }
+
+        rendering::populate_from_stage(m_world, stage);
+        m_world.upload_all_meshes(device);
+        m_stage = stage;
+        activate_stage();
+        log(LogLevel::Info, "Loaded scene: {} ({} objects)", label, m_world.get_objects().size());
+    }
+}
+
+void EditorApplication::activate_stage() {
+    PRECONDITION(m_stage);
+
+    // Read stage metadata
+    m_stage_settings = rendering::read_stage_settings(m_stage);
+
+    // Update camera for stage coordinate system
+    m_camera.set_up_axis(m_stage_settings.up_axis);
+    m_camera.apply_meters_per_unit(m_stage_settings.meters_per_unit);
+
+    // Stage listener
+    revoke_stage_listener();
+    register_stage_listener();
+
+    ensure_default_light();
+
+    // Reset selection/picking state
+    m_selected_prim = pxr::SdfPath();
+    m_picking_readback = webgpu::BufferReadback{};
+    m_pick_requested = false;
+    m_first_prep = true;
 }
 
 auto EditorApplication::draw_scene_panel() noexcept -> void {
@@ -1110,7 +1169,7 @@ auto EditorApplication::draw_scene_panel() noexcept -> void {
                 names, count)) {
             auto stage = pxr::UsdStage::Open(m_demo_scene_paths[m_demo_scene_index]);
             INVARIANT_MSG(stage, "Failed to open demo scene");
-            load_scene_background(stage, m_demo_scene_names[m_demo_scene_index]);
+            load_stage(stage, m_demo_scene_names[m_demo_scene_index]);
         }
         ImGui::SameLine();
     }
@@ -1147,7 +1206,7 @@ void EditorApplication::open_scene_dialog() {
                 log(LogLevel::Error, "Failed to open stage: {}", result.name);
                 return;
             }
-            load_scene_background(stage, result.name);
+            load_stage(stage, result.name);
         });
 }
 
@@ -1548,6 +1607,10 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
         }
         ImGui::SameLine();
         ImGui::Checkbox("Grid", &m_editor_passes_enabled);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Capture")) {
+            m_screenshot_pending = true;
+        }
         ImGui::EndMenuBar();
     }
 

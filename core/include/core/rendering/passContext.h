@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/rendering/upAxis.h>
 #include <core/rendering/webgpu/webgpu.h>
 
 #include <cstdint>
@@ -29,6 +30,8 @@ struct PassContext {
     float time = 0.0f;
     uint32_t frame_index = 0;
     uint32_t selected_picking_id = UINT32_MAX;
+    float meters_per_unit = 0.01f;
+    UpAxis up_axis = UpAxis::Y;
 };
 
 }  // namespace rendering

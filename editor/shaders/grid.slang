@@ -4,6 +4,8 @@ struct Uniforms {
     float3 camera_pos;
     float near_plane;
     float far_plane;
+    float meters_per_unit;
+    int up_axis;
 };
 
 [[vk::binding(0, 0)]]
@@ -57,10 +59,33 @@ struct FsOut {
 FsOut fs_main(float3 near_point : NEAR_POINT, float3 far_point : FAR_POINT) {
     FsOut o;
 
-    // Ray–plane intersection with Y = 0
-    float denom = far_point.y - near_point.y;
-    float t     = -near_point.y / denom;
-    float3 world_pos = near_point + t * (far_point - near_point);
+    // Scale factors from meters_per_unit
+    float unit_scale = 1.0 / u.meters_per_unit;
+    float fine_spacing = unit_scale * 0.1;   // 10cm physical
+    float major_spacing = unit_scale;         // 1m physical
+
+    // Ray-plane intersection and coordinate selection based on up_axis
+    float denom;
+    float t;
+    float3 world_pos;
+    float2 coord;
+    float dist;
+
+    if (u.up_axis == 2) {
+        // Z-up: intersect Z=0 plane, sample XY coords
+        denom = far_point.z - near_point.z;
+        t = -near_point.z / denom;
+        world_pos = near_point + t * (far_point - near_point);
+        coord = world_pos.xy;
+        dist = length(world_pos.xy - u.camera_pos.xy);
+    } else {
+        // Y-up: intersect Y=0 plane, sample XZ coords
+        denom = far_point.y - near_point.y;
+        t = -near_point.y / denom;
+        world_pos = near_point + t * (far_point - near_point);
+        coord = world_pos.xz;
+        dist = length(world_pos.xz - u.camera_pos.xz);
+    }
 
     // Clip-space depth for the intersection point
     float depth = compute_depth(world_pos);
@@ -69,44 +94,58 @@ FsOut fs_main(float3 near_point : NEAR_POINT, float3 far_point : FAR_POINT) {
     if (t < 0.0 || depth < 0.0 || depth > 1.0) discard;
 
     // ── distance fade ────────────────────────────────────────────────
-    float dist = length(world_pos.xz - u.camera_pos.xz);
-    float fade = 1.0 - smoothstep(20.0, 150.0, dist);
+    float fade = 1.0 - smoothstep(unit_scale * 20.0, unit_scale * 150.0, dist);
     if (fade <= 0.0) discard;
 
-    // ── grid lines (1-unit and 10-unit) ──────────────────────────────
-    float2 coord = world_pos.xz;
-    float line1  = grid_line(coord, 1.0);
-    float line10 = grid_line(coord, 0.1);
+    // ── grid lines (fine = 10cm physical, major = 1m physical) ──────
+    float line_fine  = grid_line(coord, 1.0 / fine_spacing);
+    float line_major = grid_line(coord, 1.0 / major_spacing);
 
-    float alpha  = max(line1 * 0.3, line10 * 0.5) * fade;
+    float alpha  = max(line_fine * 0.3, line_major * 0.5) * fade;
     float3 color = float3(0.5, 0.5, 0.5);
 
     // ── axis highlighting ────────────────────────────────────────────
     float2 deriv = fwidth(coord);
 
-    // X axis (Z = 0) -> red, darker for negative X
-    if (abs(coord.y) < deriv.y * 1.5) {
-        color = float3(0.8, 0.15, 0.15);
-        if (coord.x < 0) {
-            color *= 0.2;
+    if (u.up_axis == 2) {
+        // Z-up: X-axis red (when Y near 0), Y-axis green (when X near 0)
+        if (abs(coord.y) < deriv.y * 1.5) {
+            color = float3(0.8, 0.15, 0.15);
+            if (coord.x < 0) {
+                color *= 0.2;
+            }
+            alpha = max(alpha, fade * 0.7);
         }
-        alpha = max(alpha, fade * 0.7);
-    }
-
-    // Z axis (X = 0) -> blue, darker for negative Z
-    if (abs(coord.x) < deriv.x * 1.5) {
-        color = float3(0.15, 0.15, 0.8);
-        if (coord.y < 0) {
-            color *= 0.2;
+        if (abs(coord.x) < deriv.x * 1.5) {
+            color = float3(0.15, 0.8, 0.15);
+            if (coord.y < 0) {
+                color *= 0.2;
+            }
+            alpha = max(alpha, fade * 0.7);
         }
-        alpha = max(alpha, fade * 0.7);
+    } else {
+        // Y-up: X-axis red (when Z near 0), Z-axis blue (when X near 0)
+        if (abs(coord.y) < deriv.y * 1.5) {
+            color = float3(0.8, 0.15, 0.15);
+            if (coord.x < 0) {
+                color *= 0.2;
+            }
+            alpha = max(alpha, fade * 0.7);
+        }
+        if (abs(coord.x) < deriv.x * 1.5) {
+            color = float3(0.15, 0.15, 0.8);
+            if (coord.y < 0) {
+                color *= 0.2;
+            }
+            alpha = max(alpha, fade * 0.7);
+        }
     }
 
     if (alpha < 0.001) discard;
 
     // Premultiplied alpha output
     o.color = float4(color * alpha, alpha);
-    // Push grid slightly behind coplanar scene geometry to avoid z-fighting
-    o.depth = depth + 0.0001;
+    // Push grid behind coplanar scene geometry, biased by how fast the depth changes
+    o.depth = saturate(depth + max(4.0 * fwidth(depth), 1e-5));
     return o;
 }

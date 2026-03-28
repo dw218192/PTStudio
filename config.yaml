@@ -59,11 +59,12 @@ agent:
       Prefer Rule of Zero, RAII, string_view/span for non-owning views.
       Use #pragma once, include what you use, forward-declare in headers.
     reviewer: >
-      Watch for regressions: verify that changes don't break existing behavior
-      (run the full test suite, not just new tests). Flag any changes that are
-      unrelated to the ticket — scope creep, drive-by refactors, or formatting
-      changes outside touched functions should be called out and excluded.
+      Watch for regressions: run the full test suite, not just new tests.
+      Flag scope creep, drive-by refactors, or formatting outside touched functions.
       Diff against the base branch (not just HEAD) to catch accumulated drift.
+      Reject self-testing mock tests: tests that define local stubs of the system
+      under test and assert against those stubs are worthless. Every test must call
+      real production code. If that's not feasible, don't add the test.
 
 usdz:
   scenes:
