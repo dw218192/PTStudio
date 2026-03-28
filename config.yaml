@@ -206,6 +206,8 @@ package:
       dest: "deps/"
     - src: "{conan_deps_root}/usd/**/*"
       dest: "deps/usd/"
+    - src: "{workspace_root}/assets/scenes/*.usdz"
+      dest: "assets/scenes/"
   mappings@emscripten:
     - src: "{build_dir}/bin/**/*"
       dest: "{build_type}/bin/"

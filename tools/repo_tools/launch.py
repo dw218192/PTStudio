@@ -495,9 +495,30 @@ def _run_tests(context: dict[str, Any], verbose: bool) -> int:
     # Skipped on Emscripten (no headless GPU adapter).
     if not is_emscripten:
         editor_exe = build_dir / "bin" / ("editor.exe" if is_windows() else "editor")
-        scenes_dir = Path(context["workspace_root"]) / "assets" / "scenes"
-        scenes = sorted(scenes_dir.glob("*.usdz")) if scenes_dir.is_dir() else []
-        if editor_exe.exists() and scenes:
+        # Look for .usdz scenes in the source tree (local builds) and in
+        # the packaged artifacts (CI: downloaded to _build/<platform>/).
+        scenes: list[Path] = []
+        for candidate_dir in [
+            Path(context["workspace_root"]) / "assets" / "scenes",
+            build_dir / "assets" / "scenes",
+        ]:
+            if candidate_dir.is_dir():
+                scenes = sorted(candidate_dir.glob("*.usdz"))
+                if scenes:
+                    break
+        scenes_dir = scenes[0].parent if scenes else Path(context["workspace_root"]) / "assets" / "scenes"
+        if not editor_exe.exists():
+            logger.error("FAILED: smoke tests — editor executable not found")
+            failed += 1
+            failed_tests.append("editorSmoke (missing editor)")
+        elif not scenes:
+            logger.error(
+                "FAILED: smoke tests — no .usdz scene files in "
+                f"{scenes_dir}. Run './repo build' to generate them."
+            )
+            failed += 1
+            failed_tests.append("editorSmoke (missing scenes)")
+        else:
             with tempfile.TemporaryDirectory(prefix="pts_smoke_") as tmp_dir:
                 for scene_path in scenes:
                     scene_name = scene_path.stem
@@ -549,11 +570,6 @@ def _run_tests(context: dict[str, Any], verbose: bool) -> int:
                                 f.write(f"Test: {test_name}\nException: {e}\n")
                             failed += 1
                             failed_tests.append(test_name)
-        else:
-            if not editor_exe.exists():
-                logger.info("Smoke tests skipped: editor executable not found")
-            elif not scenes:
-                logger.info("Smoke tests skipped: no .usdz scene files found")
 
     with log_section("Test summary"):
         logger.info(f"Total:  {passed + failed}")
