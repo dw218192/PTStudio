@@ -203,7 +203,8 @@ boost::span<const Slot<LightData>> RenderWorld::get_lights() const {
 }
 
 boost::span<const Material> RenderWorld::get_materials() const {
-    return {m_materials.data(), m_materials.size()};
+    // Skip the reserved default material at index 0.
+    return {m_materials.data() + 1, m_materials.size() - 1};
 }
 
 uint32_t RenderWorld::get_mesh_version() const {

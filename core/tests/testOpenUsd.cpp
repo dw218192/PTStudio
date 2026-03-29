@@ -395,11 +395,10 @@ TEST_CASE("Material extraction from UsdPreviewSurface") {
     world.upload_all_meshes(device);
 
     REQUIRE(world.get_objects().size() == 1);
-    // Default material at index 0, user material at index 1
-    REQUIRE(world.get_materials().size() == 2);
+    REQUIRE(world.get_materials().size() == 1);
     CHECK(world.get_objects()[0]->material_index == 1);
 
-    auto& mat = world.get_materials()[1];
+    auto& mat = world.get_materials()[0];
     CHECK(mat.diffuse_color.x == doctest::Approx(0.8f));
     CHECK(mat.diffuse_color.y == doctest::Approx(0.2f));
     CHECK(mat.diffuse_color.z == doctest::Approx(0.1f));
@@ -429,8 +428,7 @@ TEST_CASE("Prim without material gets k_default_material") {
 
     REQUIRE(world.get_objects().size() == 1);
     CHECK(world.get_objects()[0]->material_index == pts::rendering::k_default_material);
-    // Only the default material (index 0) — no user materials added
-    CHECK(world.get_materials().size() == 1);
+    CHECK(world.get_materials().empty());
 
     spdlog::drop("test_no_material");
 }
@@ -471,36 +469,18 @@ TEST_CASE("Shared material is deduplicated") {
     world.upload_all_meshes(device);
 
     REQUIRE(world.get_objects().size() == 2);
-    // Default material at index 0, shared user material at index 1
-    CHECK(world.get_materials().size() == 2);
+    CHECK(world.get_materials().size() == 1);
     CHECK(world.get_objects()[0]->material_index == world.get_objects()[1]->material_index);
     CHECK(world.get_objects()[0]->material_index == 1);
 
     spdlog::drop("test_dedup_material");
 }
 
-TEST_CASE("Default material at index 0 is white diffuse with plastic PBR") {
+TEST_CASE("Default material is hidden from get_materials") {
     pts::rendering::RenderWorld world;
-    REQUIRE(world.get_materials().size() == 1);
-    auto& def = world.get_materials()[0];
-    CHECK(def.diffuse_color.x == doctest::Approx(1.0f));
-    CHECK(def.diffuse_color.y == doctest::Approx(1.0f));
-    CHECK(def.diffuse_color.z == doctest::Approx(1.0f));
-    CHECK(def.metallic == doctest::Approx(0.0f));
-    CHECK(def.roughness == doctest::Approx(0.5f));
-    CHECK(def.diffuse_tex == UINT32_MAX);
-    CHECK(def.normal_tex == UINT32_MAX);
-    CHECK(def.metallic_tex == UINT32_MAX);
-    CHECK(def.roughness_tex == UINT32_MAX);
-    CHECK(def.emissive_tex == UINT32_MAX);
-    CHECK(def.opacity_tex == UINT32_MAX);
-}
-
-TEST_CASE("Default material survives clear") {
-    pts::rendering::RenderWorld world;
+    CHECK(world.get_materials().empty());
     world.clear();
-    REQUIRE(world.get_materials().size() == 1);
-    CHECK(world.get_materials()[0].diffuse_color == glm::vec3(1.0f));
+    CHECK(world.get_materials().empty());
 }
 
 TEST_CASE("Prim with displayColor creates material from displayColor") {
@@ -527,12 +507,11 @@ TEST_CASE("Prim with displayColor creates material from displayColor") {
     world.upload_all_meshes(device);
 
     REQUIRE(world.get_objects().size() == 1);
-    // Default at index 0, displayColor material at index 1
-    REQUIRE(world.get_materials().size() == 2);
+    REQUIRE(world.get_materials().size() == 1);
     auto mat_idx = world.get_objects()[0]->material_index;
     CHECK(mat_idx == 1);
 
-    auto& mat = world.get_materials()[mat_idx];
+    auto& mat = world.get_materials()[0];
     CHECK(mat.diffuse_color.x == doctest::Approx(0.8f));
     CHECK(mat.diffuse_color.y == doctest::Approx(0.2f));
     CHECK(mat.diffuse_color.z == doctest::Approx(0.1f));
@@ -578,7 +557,7 @@ TEST_CASE("Bound material takes precedence over displayColor") {
     REQUIRE(world.get_objects().size() == 1);
     auto mat_idx = world.get_objects()[0]->material_index;
     // Bound material wins — displayColor is ignored
-    auto& mat = world.get_materials()[mat_idx];
+    auto& mat = world.get_materials()[mat_idx - 1];
     CHECK(mat.diffuse_color.x == doctest::Approx(0.0f));
     CHECK(mat.diffuse_color.y == doctest::Approx(0.5f));
     CHECK(mat.diffuse_color.z == doctest::Approx(1.0f));

@@ -347,10 +347,9 @@ TEST_CASE("Full pipeline: textured material through populate_from_stage") {
     pts::rendering::populate_from_stage(world, stage);
 
     REQUIRE(world.get_objects().size() == 1);
-    // Default material at index 0, user material at index 1
-    REQUIRE(world.get_materials().size() == 2);
+    REQUIRE(world.get_materials().size() == 1);
 
-    auto& mat = world.get_materials()[1];
+    auto& mat = world.get_materials()[0];
     CHECK(mat.diffuse_tex != UINT32_MAX);
     CHECK(mat.metallic_tex != UINT32_MAX);
     CHECK(mat.normal_tex != UINT32_MAX);
