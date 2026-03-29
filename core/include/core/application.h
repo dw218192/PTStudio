@@ -1,9 +1,11 @@
 #pragma once
+#include <core/error.h>
 #include <core/loggingManager.h>
 #include <spdlog/spdlog.h>
 
 #include <chrono>
 #include <memory>
+#include <optional>
 
 namespace pts {
 
@@ -26,10 +28,11 @@ struct Application {
      * @brief Initialize command-line arguments and process them.
      *
      * Creates a CommandLine, calls register_args() for virtual dispatch,
-     * parses argc/argv, then calls process_args(). Returns false if --help
-     * was requested (caller should exit).
+     * parses argc/argv, then calls process_args().
+     * Returns nullopt on success (caller should proceed to run()),
+     * or an exit code (caller should return it from main()).
      */
-    [[nodiscard]] bool init(int argc, char* argv[]);
+    [[nodiscard]] auto init(int argc, char* argv[]) -> std::optional<int>;
 
     /**
      * @brief Register command-line arguments. Override to add app-specific args.
@@ -43,9 +46,10 @@ struct Application {
      * @brief Process parsed command-line arguments. Override to read app-specific args.
      *
      * Base implementation reads --num-frames and calls set_max_frames().
-     * Derived classes should call the base version first.
+     * Derived classes should call the base version first and propagate errors.
+     * Return ErrorCode::Ok on success, or an error code to abort.
      */
-    virtual void process_args(const CommandLine& cli);
+    virtual auto process_args(const CommandLine& cli) -> ErrorCode;
 
     virtual void run();
 

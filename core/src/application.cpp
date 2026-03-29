@@ -21,14 +21,17 @@ Application::Application(std::string_view name, pts::LoggingManager& logging_man
     m_start_time = std::chrono::steady_clock::now();
 }
 
-bool Application::init(int argc, char* argv[]) {
+auto Application::init(int argc, char* argv[]) -> std::optional<int> {
     CommandLine cli;
     register_args(cli);
     if (!cli.parse(argc, argv)) {
-        return false;
+        return 0;  // --help was shown
     }
-    process_args(cli);
-    return true;
+    auto ec = process_args(cli);
+    if (ec != ErrorCode::Ok) {
+        return static_cast<int>(ec);
+    }
+    return std::nullopt;
 }
 
 void Application::register_args(CommandLine& cli) {
@@ -41,7 +44,7 @@ void Application::register_args(CommandLine& cli) {
     cli.add_string("log-level", "Log level (trace, debug, info, warn, error, critical)");
 }
 
-void Application::process_args(const CommandLine& cli) {
+auto Application::process_args(const CommandLine& cli) -> ErrorCode {
     set_max_frames(cli.get_int("num-frames"));
     auto width = cli.get_int("width", 1280);
     auto height = cli.get_int("height", 720);
@@ -51,6 +54,7 @@ void Application::process_args(const CommandLine& cli) {
     if (max_fps > 0) {
         set_min_frame_time(1.0f / static_cast<float>(max_fps));
     }
+    return ErrorCode::Ok;
 }
 
 Application::~Application() = default;

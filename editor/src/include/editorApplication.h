@@ -71,7 +71,7 @@ struct EditorApplication final : GpuApplication {
     ~EditorApplication() override;
 
     void register_args(CommandLine& cli) override;
-    void process_args(const CommandLine& cli) override;
+    auto process_args(const CommandLine& cli) -> ErrorCode override;
 
    protected:
     void on_ready() override;

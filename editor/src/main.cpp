@@ -32,8 +32,8 @@ int main(int argc, char* argv[]) {
 
         // Create application, init (register + parse + process args), and run
         pts::editor::EditorApplication app{"Editor", logging_manager};
-        if (!app.init(argc, argv)) {
-            return 0;  // --help was shown
+        if (auto exit_code = app.init(argc, argv)) {
+            return *exit_code;
         }
         app.run();
     } catch (std::exception& e) {

@@ -321,8 +321,9 @@ void EditorApplication::register_args(CommandLine& cli) {
     cli.add_string("camera", "Select a scene camera by prim name", std::nullopt);
 }
 
-void EditorApplication::process_args(const CommandLine& cli) {
-    GpuApplication::process_args(cli);
+auto EditorApplication::process_args(const CommandLine& cli) -> ErrorCode {
+    auto ec = GpuApplication::process_args(cli);
+    if (ec != ErrorCode::Ok) return ec;
 
     if (cli.has("capture-and-quit")) {
         auto path = cli.get_string("capture-and-quit");
@@ -340,13 +341,20 @@ void EditorApplication::process_args(const CommandLine& cli) {
 
     if (cli.has("usd")) {
         m_app_config.usd_path = cli.get_string("usd");
+        if (!std::filesystem::exists(m_app_config.usd_path)) {
+            log(LogLevel::Error, "USD file not found: {}", m_app_config.usd_path);
+            return ErrorCode::InvalidArgument;
+        }
     }
     if (cli.has("usd-override")) {
         m_app_config.usd_override_path = cli.get_string("usd-override");
     }
     if (cli.has("frames")) {
         m_app_config.capture_frames = cli.get_int("frames", 1);
-        PRECONDITION_MSG(m_app_config.capture_frames >= 1, "frames must be >= 1");
+        if (m_app_config.capture_frames < 1) {
+            log(LogLevel::Error, "--frames must be >= 1 (got: {})", m_app_config.capture_frames);
+            return ErrorCode::InvalidArgument;
+        }
     }
     if (cli.has("renderer")) {
         m_app_config.renderer_name = cli.get_string("renderer");
@@ -356,6 +364,12 @@ void EditorApplication::process_args(const CommandLine& cli) {
     }
     if (cli.has("camera-target")) {
         m_app_config.camera_target = cli.get_string("camera-target");
+        float x, y, z;
+        if (std::sscanf(m_app_config.camera_target.c_str(), "%f,%f,%f", &x, &y, &z) != 3) {
+            log(LogLevel::Error, "--camera-target must be x,y,z (got: {})",
+                m_app_config.camera_target);
+            return ErrorCode::InvalidArgument;
+        }
     }
     if (cli.has("camera-distance")) {
         m_app_config.camera_distance = cli.get_string("camera-distance");
@@ -372,6 +386,7 @@ void EditorApplication::process_args(const CommandLine& cli) {
     if (cli.has("camera")) {
         m_app_config.camera_prim_path = cli.get_string("camera");
     }
+    return ErrorCode::Ok;
 }
 
 void EditorApplication::on_ready() {
@@ -405,7 +420,11 @@ void EditorApplication::on_ready() {
 
     if (!m_app_config.usd_path.empty()) {
         auto stage = pxr::UsdStage::Open(m_app_config.usd_path);
-        INVARIANT_MSG(stage, "Failed to open USD stage from path");
+        if (!stage) {
+            log(LogLevel::Error, "Failed to open USD stage: {}", m_app_config.usd_path);
+            request_stop();
+            return;
+        }
         load_stage(stage, m_app_config.usd_path);
     } else {
         auto stage = pxr::UsdStage::Open(m_demo_scene_paths[0]);
@@ -483,7 +502,11 @@ void EditorApplication::on_ready() {
                 break;
             }
         }
-        INVARIANT_MSG(found, "Unknown renderer name");
+        if (!found) {
+            log(LogLevel::Error, "Unknown renderer: {}", target_name);
+            request_stop();
+            return;
+        }
     }
 
     // Resolve --debug-output to m_debug_target_selection
@@ -501,7 +524,11 @@ void EditorApplication::on_ready() {
                 ++global_index;
             }
         });
-        INVARIANT_MSG(found, "Unknown debug output name");
+        if (!found) {
+            log(LogLevel::Error, "Unknown debug output: {}", m_app_config.debug_output_name);
+            request_stop();
+            return;
+        }
     }
 
     // Camera defaults, overridable via CLI
@@ -511,8 +538,8 @@ void EditorApplication::on_ready() {
 
     if (!m_app_config.camera_target.empty()) {
         float x, y, z;
-        INVARIANT_MSG(std::sscanf(m_app_config.camera_target.c_str(), "%f,%f,%f", &x, &y, &z) == 3,
-                      "--camera-target must be x,y,z");
+        // Format already validated in process_args — parse is safe here
+        std::sscanf(m_app_config.camera_target.c_str(), "%f,%f,%f", &x, &y, &z);
         m_camera.set_target({x, y, z});
     }
     if (!m_app_config.camera_distance.empty()) {
