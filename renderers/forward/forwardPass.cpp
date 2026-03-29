@@ -119,7 +119,8 @@ ForwardPass::~ForwardPass() {
 }
 
 static constexpr const char* k_debug_target_names[] = {
-    "Normals", "Base Color", "Direct Diffuse", "Direct Specular", "IBL Diffuse", "IBL Specular",
+    "Direct Diffuse", "Direct Specular", "IBL Diffuse",
+    "IBL Specular",   "Prefiltered Env", "BRDF LUT",
 };
 static constexpr uint32_t k_debug_target_count =
     static_cast<uint32_t>(sizeof(k_debug_target_names) / sizeof(k_debug_target_names[0]));

@@ -82,12 +82,12 @@ VsOut vs_main(VsIn input) {
 #ifndef NO_DEBUG_TARGETS
 struct FsOut {
     float4 color           : SV_Target0;
-    float4 normals         : SV_Target1;
-    float4 base_color      : SV_Target2;
-    float4 direct_diffuse  : SV_Target3;
-    float4 direct_specular : SV_Target4;
-    float4 ibl_diffuse     : SV_Target5;
-    float4 ibl_specular    : SV_Target6;
+    float4 direct_diffuse  : SV_Target1;
+    float4 direct_specular : SV_Target2;
+    float4 ibl_diffuse     : SV_Target3;
+    float4 ibl_specular    : SV_Target4;
+    float4 prefiltered_env : SV_Target5;
+    float4 brdf_lut        : SV_Target6;
 };
 #else
 struct FsOut {
@@ -121,21 +121,21 @@ FsOut fs_main(float3 world_normal : NORMAL, float3 world_pos : WORLD_POS,
         direct_diffuse, direct_specular
     );
 
-    float3 ibl_diff, ibl_spec;
+    float3 ibl_diff, ibl_spec, ibl_prefilt, ibl_brdf_scale;
     float3 ibl = evaluate_ibl(ibl_prefiltered, ibl_irradiance, ibl_brdf_lut, ibl_sampler,
                                N, V, albedo, mat_metallic, mat_roughness, u.ibl_mip_count,
-                               ibl_diff, ibl_spec);
+                               ibl_diff, ibl_spec, ibl_prefilt, ibl_brdf_scale);
     lit += ibl * u.ibl_dome_modulation;
 
     FsOut o;
     o.color = float4(lit, 1.0);
 #ifndef NO_DEBUG_TARGETS
-    o.normals    = float4(N * 0.5 + 0.5, 1.0);
-    o.base_color = float4(albedo, 1.0);
     o.direct_diffuse  = float4(direct_diffuse, 1.0);
     o.direct_specular = float4(direct_specular, 1.0);
     o.ibl_diffuse     = float4(ibl_diff * u.ibl_dome_modulation, 1.0);
     o.ibl_specular    = float4(ibl_spec * u.ibl_dome_modulation, 1.0);
+    o.prefiltered_env = float4(ibl_prefilt * u.ibl_dome_modulation, 1.0);
+    o.brdf_lut        = float4(ibl_brdf_scale, 1.0);
 #endif
     return o;
 }
