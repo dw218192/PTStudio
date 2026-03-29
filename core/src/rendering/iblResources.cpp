@@ -168,6 +168,35 @@ WGPUBindGroupLayout create_equirect_bgl(WGPUDevice dev) {
     return bgl;
 }
 
+WGPUBindGroupLayout create_downsample_bgl(WGPUDevice dev) {
+    WGPUBindGroupLayoutEntry entries[3] = {};
+
+    entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    entries[0].binding = 0;
+    entries[0].visibility = WGPUShaderStage_Compute;
+    entries[0].buffer.type = WGPUBufferBindingType_Uniform;
+
+    entries[1] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    entries[1].binding = 1;
+    entries[1].visibility = WGPUShaderStage_Compute;
+    entries[1].texture.sampleType = WGPUTextureSampleType_Float;
+    entries[1].texture.viewDimension = WGPUTextureViewDimension_2DArray;
+
+    entries[2] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    entries[2].binding = 2;
+    entries[2].visibility = WGPUShaderStage_Compute;
+    entries[2].storageTexture.access = WGPUStorageTextureAccess_WriteOnly;
+    entries[2].storageTexture.format = WGPUTextureFormat_RGBA16Float;
+    entries[2].storageTexture.viewDimension = WGPUTextureViewDimension_2DArray;
+
+    WGPUBindGroupLayoutDescriptor desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
+    desc.entryCount = 3;
+    desc.entries = entries;
+    auto bgl = wgpuDeviceCreateBindGroupLayout(dev, &desc);
+    CHECK_MSG(bgl, "Failed to create downsample bind group layout");
+    return bgl;
+}
+
 WGPUBindGroupLayout create_convolve_bgl(WGPUDevice dev) {
     WGPUBindGroupLayoutEntry entries[4] = {};
 
@@ -220,10 +249,14 @@ WGPUPipelineLayout make_pipeline_layout(WGPUDevice dev, WGPUBindGroupLayout bgl)
 void IblResources::release_env() {
     if (m_irradiance_view) wgpuTextureViewRelease(m_irradiance_view);
     if (m_irradiance) wgpuTextureRelease(m_irradiance);
+    if (m_prefiltered_view) wgpuTextureViewRelease(m_prefiltered_view);
+    if (m_prefiltered) wgpuTextureRelease(m_prefiltered);
     if (m_env_cube_view) wgpuTextureViewRelease(m_env_cube_view);
     if (m_env_cubemap) wgpuTextureRelease(m_env_cubemap);
     m_irradiance_view = nullptr;
     m_irradiance = nullptr;
+    m_prefiltered_view = nullptr;
+    m_prefiltered = nullptr;
     m_env_cube_view = nullptr;
     m_env_cubemap = nullptr;
     m_env_ready = false;
@@ -235,15 +268,18 @@ void IblResources::release_all() {
     if (m_brdf_lut) wgpuTextureRelease(m_brdf_lut);
     if (m_sampler) wgpuSamplerRelease(m_sampler);
     if (m_equirect_bgl) wgpuBindGroupLayoutRelease(m_equirect_bgl);
+    if (m_downsample_bgl) wgpuBindGroupLayoutRelease(m_downsample_bgl);
     if (m_convolve_bgl) wgpuBindGroupLayoutRelease(m_convolve_bgl);
     if (m_brdf_lut_bgl) wgpuBindGroupLayoutRelease(m_brdf_lut_bgl);
     m_brdf_lut_view = nullptr;
     m_brdf_lut = nullptr;
     m_sampler = nullptr;
     m_equirect_bgl = nullptr;
+    m_downsample_bgl = nullptr;
     m_convolve_bgl = nullptr;
     m_brdf_lut_bgl = nullptr;
     m_equirect_to_cube_pipeline.reset();
+    m_downsample_pipeline.reset();
     m_irradiance_pipeline.reset();
     m_prefilter_pipeline.reset();
     m_brdf_lut_pipeline.reset();
@@ -256,17 +292,21 @@ IblResources::~IblResources() {
 
 IblResources::IblResources(IblResources&& o) noexcept
     : m_env_cubemap(std::exchange(o.m_env_cubemap, nullptr)),
+      m_prefiltered(std::exchange(o.m_prefiltered, nullptr)),
       m_irradiance(std::exchange(o.m_irradiance, nullptr)),
       m_brdf_lut(std::exchange(o.m_brdf_lut, nullptr)),
       m_env_cube_view(std::exchange(o.m_env_cube_view, nullptr)),
+      m_prefiltered_view(std::exchange(o.m_prefiltered_view, nullptr)),
       m_irradiance_view(std::exchange(o.m_irradiance_view, nullptr)),
       m_brdf_lut_view(std::exchange(o.m_brdf_lut_view, nullptr)),
       m_sampler(std::exchange(o.m_sampler, nullptr)),
       m_equirect_to_cube_pipeline(std::move(o.m_equirect_to_cube_pipeline)),
+      m_downsample_pipeline(std::move(o.m_downsample_pipeline)),
       m_irradiance_pipeline(std::move(o.m_irradiance_pipeline)),
       m_prefilter_pipeline(std::move(o.m_prefilter_pipeline)),
       m_brdf_lut_pipeline(std::move(o.m_brdf_lut_pipeline)),
       m_equirect_bgl(std::exchange(o.m_equirect_bgl, nullptr)),
+      m_downsample_bgl(std::exchange(o.m_downsample_bgl, nullptr)),
       m_convolve_bgl(std::exchange(o.m_convolve_bgl, nullptr)),
       m_brdf_lut_bgl(std::exchange(o.m_brdf_lut_bgl, nullptr)),
       m_initialized(std::exchange(o.m_initialized, false)),
@@ -277,17 +317,21 @@ IblResources& IblResources::operator=(IblResources&& o) noexcept {
     if (this != &o) {
         release_all();
         m_env_cubemap = std::exchange(o.m_env_cubemap, nullptr);
+        m_prefiltered = std::exchange(o.m_prefiltered, nullptr);
         m_irradiance = std::exchange(o.m_irradiance, nullptr);
         m_brdf_lut = std::exchange(o.m_brdf_lut, nullptr);
         m_env_cube_view = std::exchange(o.m_env_cube_view, nullptr);
+        m_prefiltered_view = std::exchange(o.m_prefiltered_view, nullptr);
         m_irradiance_view = std::exchange(o.m_irradiance_view, nullptr);
         m_brdf_lut_view = std::exchange(o.m_brdf_lut_view, nullptr);
         m_sampler = std::exchange(o.m_sampler, nullptr);
         m_equirect_to_cube_pipeline = std::move(o.m_equirect_to_cube_pipeline);
+        m_downsample_pipeline = std::move(o.m_downsample_pipeline);
         m_irradiance_pipeline = std::move(o.m_irradiance_pipeline);
         m_prefilter_pipeline = std::move(o.m_prefilter_pipeline);
         m_brdf_lut_pipeline = std::move(o.m_brdf_lut_pipeline);
         m_equirect_bgl = std::exchange(o.m_equirect_bgl, nullptr);
+        m_downsample_bgl = std::exchange(o.m_downsample_bgl, nullptr);
         m_convolve_bgl = std::exchange(o.m_convolve_bgl, nullptr);
         m_brdf_lut_bgl = std::exchange(o.m_brdf_lut_bgl, nullptr);
         m_initialized = std::exchange(o.m_initialized, false);
@@ -305,6 +349,10 @@ bool IblResources::is_ready() const noexcept {
 }
 
 WGPUTextureView IblResources::prefiltered_env_view() const noexcept {
+    return m_prefiltered_view;
+}
+
+WGPUTextureView IblResources::env_cubemap_view() const noexcept {
     return m_env_cube_view;
 }
 
@@ -331,6 +379,7 @@ void IblResources::init(const webgpu::Device& device, WGPUQueue queue) {
     // Bind group layouts
     m_brdf_lut_bgl = create_brdf_lut_bgl(dev);
     m_equirect_bgl = create_equirect_bgl(dev);
+    m_downsample_bgl = create_downsample_bgl(dev);
     m_convolve_bgl = create_convolve_bgl(dev);
 
     // Pipelines
@@ -354,6 +403,17 @@ void IblResources::init(const webgpu::Device& device, WGPUQueue queue) {
                                           .entry_point("cs_main")
                                           .pipeline_layout(layout)
                                           .build();
+        wgpuPipelineLayoutRelease(layout);
+    }
+    {
+        auto wgsl = load_shader("downsample_cube.wgsl");
+        auto shader = device.create_shader_module_from_source(wgsl);
+        auto layout = make_pipeline_layout(dev, m_downsample_bgl);
+        m_downsample_pipeline = webgpu::ComputePipelineBuilder(device)
+                                    .shader(shader)
+                                    .entry_point("cs_main")
+                                    .pipeline_layout(layout)
+                                    .build();
         wgpuPipelineLayoutRelease(layout);
     }
     {
@@ -518,22 +578,58 @@ void IblResources::set_environment(const webgpu::Device& device, WGPUQueue queue
                               &layout, &extent);
     }
 
-    // Create env cubemap (mipped) and irradiance cubemap.
-    constexpr auto tex_usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_StorageBinding |
+    // Create env cubemap with full mip chain for mip-biased sampling.
+    constexpr auto env_usage =
+        static_cast<WGPUTextureUsage>(WGPUTextureUsage_StorageBinding |
+                                      WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc);
+    m_env_cubemap = create_cubemap_texture(dev, k_env_size, k_env_mip_count,
+                                           WGPUTextureFormat_RGBA16Float, env_usage);
+
+    // Prefiltered specular cubemap (separate from raw env).
+    constexpr auto prefilter_usage =
+        static_cast<WGPUTextureUsage>(WGPUTextureUsage_StorageBinding |
+                                      WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst);
+    m_prefiltered = create_cubemap_texture(dev, k_env_size, k_prefilter_mip_count,
+                                           WGPUTextureFormat_RGBA16Float, prefilter_usage);
+
+    constexpr auto irr_usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_StorageBinding |
                                                              WGPUTextureUsage_TextureBinding);
-    m_env_cubemap = create_cubemap_texture(dev, k_env_size, k_prefilter_mip_count,
-                                           WGPUTextureFormat_RGBA16Float, tex_usage);
     m_irradiance =
-        create_cubemap_texture(dev, k_irradiance_size, 1, WGPUTextureFormat_RGBA16Float, tex_usage);
+        create_cubemap_texture(dev, k_irradiance_size, 1, WGPUTextureFormat_RGBA16Float, irr_usage);
 
     // Run compute passes
     convert_equirect_to_cubemap(device, queue, equirect);
+    generate_env_mipmaps(device, queue);
+
+    // Copy mip 0 from env cubemap to prefiltered (roughness=0 = raw env)
+    {
+        auto encoder = wgpuDeviceCreateCommandEncoder(dev, nullptr);
+
+        WGPUTexelCopyTextureInfo src = WGPU_TEXEL_COPY_TEXTURE_INFO_INIT;
+        src.texture = m_env_cubemap;
+        src.mipLevel = 0;
+
+        WGPUTexelCopyTextureInfo dst = WGPU_TEXEL_COPY_TEXTURE_INFO_INIT;
+        dst.texture = m_prefiltered;
+        dst.mipLevel = 0;
+
+        WGPUExtent3D extent = {k_env_size, k_env_size, 6};
+        wgpuCommandEncoderCopyTextureToTexture(encoder, &src, &dst, &extent);
+
+        auto cmd = wgpuCommandEncoderFinish(encoder, nullptr);
+        wgpuQueueSubmit(queue, 1, &cmd);
+        wgpuCommandBufferRelease(cmd);
+        wgpuCommandEncoderRelease(encoder);
+    }
+
     convolve_irradiance(device, queue);
     prefilter_specular(device, queue);
 
     // Create final views
     m_env_cube_view =
-        create_cube_view(m_env_cubemap, WGPUTextureFormat_RGBA16Float, k_prefilter_mip_count);
+        create_cube_view(m_env_cubemap, WGPUTextureFormat_RGBA16Float, k_env_mip_count);
+    m_prefiltered_view =
+        create_cube_view(m_prefiltered, WGPUTextureFormat_RGBA16Float, k_prefilter_mip_count);
     m_irradiance_view = create_cube_view(m_irradiance, WGPUTextureFormat_RGBA16Float, 1);
 
     wgpuTextureRelease(equirect);
@@ -592,9 +688,11 @@ void IblResources::set_uniform_environment(const webgpu::Device& device, WGPUQue
         static_cast<WGPUTextureUsage>(WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst);
 
     m_env_cubemap = create_cubemap_texture(dev, 1, 1, WGPUTextureFormat_RGBA16Float, tex_usage);
+    m_prefiltered = create_cubemap_texture(dev, 1, 1, WGPUTextureFormat_RGBA16Float, tex_usage);
     m_irradiance = create_cubemap_texture(dev, 1, 1, WGPUTextureFormat_RGBA16Float, tex_usage);
 
     fill_cubemap(m_env_cubemap, 1, 1);
+    fill_cubemap(m_prefiltered, 1, 1);
 
     // Irradiance of a uniform environment = PI * color
     uint16_t ir = float_to_half(r * 3.14159265f);
@@ -618,6 +716,7 @@ void IblResources::set_uniform_environment(const webgpu::Device& device, WGPUQue
     }
 
     m_env_cube_view = create_cube_view(m_env_cubemap, WGPUTextureFormat_RGBA16Float, 1);
+    m_prefiltered_view = create_cube_view(m_prefiltered, WGPUTextureFormat_RGBA16Float, 1);
     m_irradiance_view = create_cube_view(m_irradiance, WGPUTextureFormat_RGBA16Float, 1);
     m_env_ready = true;
 }
@@ -688,6 +787,71 @@ void IblResources::convert_equirect_to_cubemap(const webgpu::Device& device, WGP
 }
 
 // ---------------------------------------------------------------------------
+// Env cubemap mipmap generation (box-filter downsample)
+// ---------------------------------------------------------------------------
+
+void IblResources::generate_env_mipmaps(const webgpu::Device& device, WGPUQueue queue) {
+    auto dev = device.handle();
+
+    struct alignas(16) Params {
+        uint32_t output_size;
+    };
+
+    for (uint32_t mip = 1; mip < k_env_mip_count; ++mip) {
+        uint32_t output_size = k_env_size >> mip;
+        Params params{output_size};
+
+        auto uniform_buf = device.create_buffer(
+            sizeof(params),
+            static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
+        wgpuQueueWriteBuffer(queue, uniform_buf.handle(), 0, &params, sizeof(params));
+
+        auto input_view =
+            create_mip_array_view(m_env_cubemap, WGPUTextureFormat_RGBA16Float, mip - 1);
+        auto output_view = create_mip_array_view(m_env_cubemap, WGPUTextureFormat_RGBA16Float, mip);
+
+        WGPUBindGroupEntry entries[3] = {};
+        entries[0] = WGPU_BIND_GROUP_ENTRY_INIT;
+        entries[0].binding = 0;
+        entries[0].buffer = uniform_buf.handle();
+        entries[0].offset = 0;
+        entries[0].size = sizeof(params);
+
+        entries[1] = WGPU_BIND_GROUP_ENTRY_INIT;
+        entries[1].binding = 1;
+        entries[1].textureView = input_view;
+
+        entries[2] = WGPU_BIND_GROUP_ENTRY_INIT;
+        entries[2].binding = 2;
+        entries[2].textureView = output_view;
+
+        WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
+        bg_desc.layout = m_downsample_bgl;
+        bg_desc.entryCount = 3;
+        bg_desc.entries = entries;
+        auto bg = wgpuDeviceCreateBindGroup(dev, &bg_desc);
+        CHECK_MSG(bg, "Failed to create downsample bind group");
+
+        auto encoder = wgpuDeviceCreateCommandEncoder(dev, nullptr);
+        auto pass = wgpuCommandEncoderBeginComputePass(encoder, nullptr);
+        wgpuComputePassEncoderSetPipeline(pass, m_downsample_pipeline->handle());
+        wgpuComputePassEncoderSetBindGroup(pass, 0, bg, 0, nullptr);
+        wgpuComputePassEncoderDispatchWorkgroups(pass, div_ceil(output_size, 8),
+                                                 div_ceil(output_size, 8), 6);
+        wgpuComputePassEncoderEnd(pass);
+        wgpuComputePassEncoderRelease(pass);
+
+        auto cmd = wgpuCommandEncoderFinish(encoder, nullptr);
+        wgpuQueueSubmit(queue, 1, &cmd);
+        wgpuCommandBufferRelease(cmd);
+        wgpuCommandEncoderRelease(encoder);
+        wgpuBindGroupRelease(bg);
+        wgpuTextureViewRelease(output_view);
+        wgpuTextureViewRelease(input_view);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Irradiance convolution
 // ---------------------------------------------------------------------------
 
@@ -696,16 +860,18 @@ void IblResources::convolve_irradiance(const webgpu::Device& device, WGPUQueue q
 
     struct alignas(16) Params {
         uint32_t size;
+        uint32_t env_size;
     };
-    Params params{k_irradiance_size};
+    Params params{k_irradiance_size, k_env_size};
 
     auto uniform_buf = device.create_buffer(
         sizeof(params),
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
     wgpuQueueWriteBuffer(queue, uniform_buf.handle(), 0, &params, sizeof(params));
 
-    // Read from mip 0 of env cubemap
-    auto input_view = create_cube_view(m_env_cubemap, WGPUTextureFormat_RGBA16Float, 1);
+    // Read from env cubemap with full mip chain for mip-biased sampling
+    auto input_view =
+        create_cube_view(m_env_cubemap, WGPUTextureFormat_RGBA16Float, k_env_mip_count);
     auto output_view = create_mip_array_view(m_irradiance, WGPUTextureFormat_RGBA16Float, 0);
 
     WGPUBindGroupEntry entries[4] = {};
@@ -759,26 +925,28 @@ void IblResources::convolve_irradiance(const webgpu::Device& device, WGPUQueue q
 void IblResources::prefilter_specular(const webgpu::Device& device, WGPUQueue queue) {
     auto dev = device.handle();
 
-    // Read from mip 0 of env cubemap (full resolution)
-    auto input_view = create_cube_view(m_env_cubemap, WGPUTextureFormat_RGBA16Float, 1);
+    // Read from env cubemap with full mip chain for mip-biased sampling
+    auto input_view =
+        create_cube_view(m_env_cubemap, WGPUTextureFormat_RGBA16Float, k_env_mip_count);
 
     struct alignas(16) Params {
         uint32_t size;
         float roughness;
+        uint32_t env_size;
     };
 
     for (uint32_t mip = 1; mip < k_prefilter_mip_count; ++mip) {
         uint32_t mip_size = k_env_size >> mip;
         float roughness = static_cast<float>(mip) / static_cast<float>(k_prefilter_mip_count - 1);
 
-        Params params{mip_size, roughness};
+        Params params{mip_size, roughness, k_env_size};
 
         auto uniform_buf = device.create_buffer(
             sizeof(params),
             static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
         wgpuQueueWriteBuffer(queue, uniform_buf.handle(), 0, &params, sizeof(params));
 
-        auto output_view = create_mip_array_view(m_env_cubemap, WGPUTextureFormat_RGBA16Float, mip);
+        auto output_view = create_mip_array_view(m_prefiltered, WGPUTextureFormat_RGBA16Float, mip);
 
         WGPUBindGroupEntry entries[4] = {};
         entries[0] = WGPU_BIND_GROUP_ENTRY_INIT;

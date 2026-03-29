@@ -589,6 +589,7 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     auto ibl_bgl = ready.ibl_bgl;
     auto ibl_samp = ready.ibl_sampler;
     auto ibl_prefiltered_view = ibl_ready ? ibl.prefiltered_env_view() : ready.fallback_cube_view;
+    auto ibl_env_cubemap_view = ibl_ready ? ibl.env_cubemap_view() : ready.fallback_cube_view;
     auto ibl_irradiance_view = ibl_ready ? ibl.irradiance_view() : ready.fallback_cube_view;
     auto ibl_brdf_lut_view = ibl_ready ? ibl.brdf_lut_view() : ready.fallback_2d_view;
 
@@ -683,7 +684,7 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
             sky_entries[0].size = sizeof(SkyboxUniforms);
             sky_entries[1] = WGPU_BIND_GROUP_ENTRY_INIT;
             sky_entries[1].binding = 1;
-            sky_entries[1].textureView = ibl_prefiltered_view;
+            sky_entries[1].textureView = ibl_env_cubemap_view;
             sky_entries[2] = WGPU_BIND_GROUP_ENTRY_INIT;
             sky_entries[2].binding = 2;
             sky_entries[2].sampler = ibl_samp;

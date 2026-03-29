@@ -57,6 +57,7 @@ TEST_CASE("update_ibl with no lights produces black uniform IBL") {
     CHECK(world.ibl_resources().brdf_lut_view() != nullptr);
     CHECK(world.ibl_resources().irradiance_view() != nullptr);
     CHECK(world.ibl_resources().prefiltered_env_view() != nullptr);
+    CHECK(world.ibl_resources().env_cubemap_view() != nullptr);
     CHECK(world.ibl_resources().sampler() != nullptr);
 }
 
@@ -79,6 +80,7 @@ TEST_CASE("update_ibl with dome light (no texture) produces uniform color IBL") 
     CHECK(world.ibl_resources().is_ready());
     CHECK(world.ibl_resources().irradiance_view() != nullptr);
     CHECK(world.ibl_resources().prefiltered_env_view() != nullptr);
+    CHECK(world.ibl_resources().env_cubemap_view() != nullptr);
 }
 
 TEST_CASE("update_ibl skips when light_version unchanged") {

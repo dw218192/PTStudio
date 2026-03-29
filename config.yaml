@@ -126,6 +126,8 @@ slangc:
       output: "core/generated/shaders/equirect_to_cube.wgsl"
     - input: "core/shaders/ibl/irradiance_convolve.slang"
       output: "core/generated/shaders/irradiance_convolve.wgsl"
+    - input: "core/shaders/ibl/downsample_cube.slang"
+      output: "core/generated/shaders/downsample_cube.wgsl"
     - input: "core/shaders/ibl/prefilter_env.slang"
       output: "core/generated/shaders/prefilter_env.wgsl"
 
@@ -181,6 +183,7 @@ embed:
       namespace: "editor_resources"
     - input:
         - "core/generated/shaders/brdf_lut.wgsl"
+        - "core/generated/shaders/downsample_cube.wgsl"
         - "core/generated/shaders/equirect_to_cube.wgsl"
         - "core/generated/shaders/irradiance_convolve.wgsl"
         - "core/generated/shaders/prefilter_env.wgsl"

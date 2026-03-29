@@ -3,6 +3,7 @@ import ibl_sampling;
 
 struct IrradianceParams {
     uint size;
+    uint env_size;
 };
 
 [[vk::binding(0, 0)]] ConstantBuffer<IrradianceParams> params;
@@ -23,6 +24,7 @@ void cs_main(uint3 tid : SV_DispatchThreadID) {
     up = cross(N, right);
 
     float3 irradiance = float3(0, 0, 0);
+    float sa_texel = 4.0 * PI / (6.0 * float(params.env_size) * float(params.env_size));
 
     static const uint SAMPLE_COUNT = 1024;
     for (uint i = 0; i < SAMPLE_COUNT; ++i) {
@@ -36,7 +38,11 @@ void cs_main(uint3 tid : SV_DispatchThreadID) {
         float3 local_dir = float3(cos(phi) * sin_theta, sin(phi) * sin_theta, cos_theta);
         float3 sample_dir = right * local_dir.x + up * local_dir.y + N * local_dir.z;
 
-        irradiance += env_cubemap.SampleLevel(env_sampler, sample_dir, 0).rgb;
+        float pdf = cos_theta / PI;
+        float sa_sample = 1.0 / (float(SAMPLE_COUNT) * max(pdf, 0.001));
+        float mip = 0.5 * log2(sa_sample / sa_texel);
+
+        irradiance += env_cubemap.SampleLevel(env_sampler, sample_dir, max(mip, 0.0)).rgb;
     }
 
     // Cosine-weighted: integral = PI * (1/N) * sum(L)
