@@ -69,6 +69,14 @@ void LightAdapter::sync(pxr::UsdPrim prim, SyncScope& scope) {
         light.radius = radius;
     } else if (prim.IsA<pxr::UsdLuxDomeLight>()) {
         light.type = LightData::Type::Dome;
+        pxr::UsdLuxDomeLight dome(prim);
+        pxr::SdfAssetPath tex_path;
+        if (dome.GetTextureFileAttr().Get(&tex_path)) {
+            auto resolved = tex_path.GetResolvedPath();
+            if (!resolved.empty()) {
+                light.env_texture_path = resolved;
+            }
+        }
     } else {
         return;
     }

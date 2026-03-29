@@ -1,6 +1,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #define NOMINMAX
 #include <core/rendering/renderWorld.h>
+#include <core/rendering/shadowMapPass.h>
 #include <core/rendering/webgpu/device.h>
 #include <doctest/doctest.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
@@ -20,11 +21,9 @@ TEST_CASE("ShadowInfo default has no shadow") {
     CHECK(info.layer == 0);
 }
 
-TEST_CASE("clear resets shadow_count") {
+TEST_CASE("fresh world has no ShadowPassData") {
     RenderWorld world;
-    CHECK(world.shadow_count() == 0);
-    world.clear();
-    CHECK(world.shadow_count() == 0);
+    CHECK(ShadowPassData::find(world) == nullptr);
 }
 
 #ifndef __EMSCRIPTEN__
@@ -40,7 +39,7 @@ auto create_test_logger() -> std::shared_ptr<spdlog::logger> {
 }
 }  // namespace
 
-TEST_CASE("set_shadow_data creates valid buffer") {
+TEST_CASE("upload creates valid buffer") {
     auto logger = create_test_logger();
     auto device = pts::webgpu::Device::create(logger);
 
@@ -56,14 +55,15 @@ TEST_CASE("set_shadow_data creates valid buffer") {
 
     std::vector<ShadowInfo> infos = {active, inactive};
 
-    world.set_shadow_data(infos, device, device.queue());
+    auto& sd = ShadowPassData::get_or_create(world);
+    sd.upload(infos, device, device.queue());
 
-    CHECK(world.shadow_count() == 1);  // only one active
-    CHECK(world.shadow_info_buffer().is_valid());
-    CHECK(world.shadow_info_buffer().size() >= 2 * sizeof(ShadowInfo));
+    CHECK(sd.count == 1);  // only one active
+    CHECK(sd.info_buffer.is_valid());
+    CHECK(sd.info_buffer.size() >= 2 * sizeof(ShadowInfo));
 }
 
-TEST_CASE("set_shadow_data grows buffer when capacity exceeded") {
+TEST_CASE("upload grows buffer when capacity exceeded") {
     auto logger = create_test_logger();
     auto device = pts::webgpu::Device::create(logger);
 
@@ -73,19 +73,20 @@ TEST_CASE("set_shadow_data grows buffer when capacity exceeded") {
     info.has_shadow = 1;
     std::vector<ShadowInfo> one_info = {info};
 
-    world.set_shadow_data(one_info, device, device.queue());
-    auto info_handle = world.shadow_info_buffer().handle();
+    auto& sd = ShadowPassData::get_or_create(world);
+    sd.upload(one_info, device, device.queue());
+    auto info_handle = sd.info_buffer.handle();
 
     // Grow to 3 entries
     std::vector<ShadowInfo> large(3, info);
-    world.set_shadow_data(large, device, device.queue());
+    sd.upload(large, device, device.queue());
 
-    CHECK(world.shadow_count() == 3);
-    CHECK(world.shadow_info_buffer().size() >= 3 * sizeof(ShadowInfo));
-    CHECK(world.shadow_info_buffer().handle() != info_handle);
+    CHECK(sd.count == 3);
+    CHECK(sd.info_buffer.size() >= 3 * sizeof(ShadowInfo));
+    CHECK(sd.info_buffer.handle() != info_handle);
 }
 
-TEST_CASE("set_shadow_data reuses buffer when capacity sufficient") {
+TEST_CASE("upload reuses buffer when capacity sufficient") {
     auto logger = create_test_logger();
     auto device = pts::webgpu::Device::create(logger);
 
@@ -95,51 +96,19 @@ TEST_CASE("set_shadow_data reuses buffer when capacity sufficient") {
     info.has_shadow = 1;
     std::vector<ShadowInfo> infos(3, info);
 
-    world.set_shadow_data(infos, device, device.queue());
-    auto info_handle = world.shadow_info_buffer().handle();
+    auto& sd = ShadowPassData::get_or_create(world);
+    sd.upload(infos, device, device.queue());
+    auto info_handle = sd.info_buffer.handle();
 
     // Fewer entries — buffer reused
     std::vector<ShadowInfo> fewer(1, info);
-    world.set_shadow_data(fewer, device, device.queue());
+    sd.upload(fewer, device, device.queue());
 
-    CHECK(world.shadow_count() == 1);
-    CHECK(world.shadow_info_buffer().handle() == info_handle);
+    CHECK(sd.count == 1);
+    CHECK(sd.info_buffer.handle() == info_handle);
 }
 
-TEST_CASE("clear_shadow_data resets count but preserves buffer") {
-    auto logger = create_test_logger();
-    auto device = pts::webgpu::Device::create(logger);
-
-    RenderWorld world;
-
-    ShadowInfo info{};
-    info.has_shadow = 1;
-    std::vector<ShadowInfo> infos = {info};
-
-    world.set_shadow_data(infos, device, device.queue());
-    CHECK(world.shadow_count() == 1);
-
-    world.clear_shadow_data();
-    CHECK(world.shadow_count() == 0);
-    CHECK(world.shadow_info_buffer().is_valid());
-}
-
-TEST_CASE("clear() resets shadow state") {
-    auto logger = create_test_logger();
-    auto device = pts::webgpu::Device::create(logger);
-
-    RenderWorld world;
-
-    ShadowInfo info{};
-    info.has_shadow = 1;
-    std::vector<ShadowInfo> infos = {info};
-
-    world.set_shadow_data(infos, device, device.queue());
-    world.clear();
-    CHECK(world.shadow_count() == 0);
-}
-
-TEST_CASE("set_shadow_data with all inactive creates minimum-size buffer") {
+TEST_CASE("upload with all inactive creates minimum-size buffer") {
     auto logger = create_test_logger();
     auto device = pts::webgpu::Device::create(logger);
 
@@ -148,11 +117,12 @@ TEST_CASE("set_shadow_data with all inactive creates minimum-size buffer") {
     ShadowInfo inactive{};  // has_shadow = 0
     std::vector<ShadowInfo> infos = {inactive, inactive};
 
-    world.set_shadow_data(infos, device, device.queue());
+    auto& sd = ShadowPassData::get_or_create(world);
+    sd.upload(infos, device, device.queue());
 
-    CHECK(world.shadow_count() == 0);
-    CHECK(world.shadow_info_buffer().is_valid());
-    CHECK(world.shadow_info_buffer().size() >= 2 * sizeof(ShadowInfo));
+    CHECK(sd.count == 0);
+    CHECK(sd.info_buffer.is_valid());
+    CHECK(sd.info_buffer.size() >= 2 * sizeof(ShadowInfo));
 }
 
 #endif  // !__EMSCRIPTEN__

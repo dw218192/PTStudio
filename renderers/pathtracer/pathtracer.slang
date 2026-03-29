@@ -28,6 +28,9 @@ struct PTUniforms {
     uint light_count;
     uint total_frames;
     uint tlas_node_count;
+    uint _pad0;
+    uint _pad1;
+    float3 dome_modulation;
 };
 
 [[vk::binding(0, 0)]] ConstantBuffer<PTUniforms> u;
@@ -43,6 +46,9 @@ struct PTUniforms {
 [[vk::binding(8, 0)]] SamplerState scene_sampler;
 
 [[vk::binding(9, 0)]] StructuredBuffer<Instance> instances;
+
+[[vk::binding(0, 1)]] TextureCube<float4> env_cubemap;
+[[vk::binding(1, 1)]] SamplerState env_sampler;
 
 static const float PT_EPS = 0.0001;
 
@@ -198,12 +204,9 @@ void cs_main(uint3 did : SV_DispatchThreadID) {
     for (uint bounce = 0; bounce < MAX_BOUNCES; bounce++) {
         HitRecord hit = trace_scene(ray_origin, ray_dir);
         if (!hit.hit) {
-            // Miss → dome light contributes as environment
-            for (uint li = 0; li < u.light_count; li++) {
-                if (lights[li].type == LIGHT_DOME) {
-                    radiance += throughput * lights[li].color * lights[li].intensity;
-                }
-            }
+            // Miss → sample environment cubemap
+            float3 env_color = env_cubemap.SampleLevel(env_sampler, ray_dir, 0.0).rgb;
+            radiance += throughput * env_color * u.dome_modulation;
             break;
         }
 
@@ -232,7 +235,7 @@ void cs_main(uint3 did : SV_DispatchThreadID) {
             if (light.type == LIGHT_DOME) continue;
 
             LightSampleStochastic ls = sample_direct(light, hit.position, rng);
-            if (!ls.valid || ls.pdf <= 0.0) continue;
+            if (!ls.valid || ls.pdf < 1e-4) continue;
 
             float3 wi = normalize(ls.position - hit.position);
             float NdotL = dot(N, wi);
@@ -264,15 +267,20 @@ void cs_main(uint3 did : SV_DispatchThreadID) {
         float3 wo_local = frame.to_local(V);
         float3 wi_local = sample_brdf(rng, wo_local, roughness);
         float pdf = pdf_brdf(wi_local, wo_local, roughness);
-        if (pdf <= 0.0 || wi_local.z <= 0.0) break;
+        if (pdf < 1e-4 || wi_local.z <= 0.0) break;
 
         ShadingGeometry g = ShadingGeometry::from_local(wi_local, wo_local, roughness);
         float3 f = brdf.eval(g, base_color, metallic);
-        throughput *= f * wi_local.z / pdf;
+        float3 bounce_weight = f * wi_local.z / pdf;
+        // Clamp per-bounce weight to suppress fireflies from degenerate GGX lobes
+        float max_comp = max(bounce_weight.x, max(bounce_weight.y, bounce_weight.z));
+        if (max_comp > 10.0) bounce_weight *= 10.0 / max_comp;
+        throughput *= bounce_weight;
 
         ray_origin = hit.position + N * PT_EPS;
         ray_dir = frame.to_world(wi_local);
     }
+
 
     // Accumulate
     float4 prev = (u.total_frames == 1) ? float4(0.0) : accumulation[pixel_index];

@@ -41,6 +41,7 @@ class PathTracerPass final : public rendering::IRenderer {
         webgpu::ComputePipeline compute_pipeline;
         webgpu::Buffer uniform_buffer;
         WGPUBindGroupLayout compute_bgl = nullptr;
+        WGPUBindGroupLayout ibl_bgl = nullptr;
 
         webgpu::ShaderModule blit_shader;
         webgpu::RenderPipeline blit_pipeline;
@@ -59,6 +60,7 @@ class PathTracerPass final : public rendering::IRenderer {
     // Camera / scene change detection
     glm::mat4 m_prev_vp{0.0f};
     WGPUBuffer m_prev_instance_handle = nullptr;
+    uint32_t m_prev_light_version = UINT32_MAX;
     uint32_t m_frame_count = 0;
 };
 

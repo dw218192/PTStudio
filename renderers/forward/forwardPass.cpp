@@ -4,10 +4,12 @@
 #include <core/profiling.h>
 #include <core/rendering/camera.h>
 #include <core/rendering/frameGraph.h>
+#include <core/rendering/iblResources.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/rendererRegistry.h>
 #include <core/rendering/shaderLoader.h>
+#include <core/rendering/shadowMapPass.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
 #include <renderers/forward/generated/shader_metadata.h>
 
@@ -30,8 +32,10 @@ struct ForwardUniforms {
     uint32_t material_index;
     uint32_t light_count;
     uint32_t _pad[2];
+    glm::vec3 ibl_dome_modulation;
+    uint32_t ibl_mip_count;
 };
-static_assert(sizeof(ForwardUniforms) == 160, "ForwardUniforms must match shader std140 layout");
+static_assert(sizeof(ForwardUniforms) == 176, "ForwardUniforms must match shader std140 layout");
 static_assert(ForwardPass::k_uniform_align >= sizeof(ForwardUniforms),
               "Alignment must be >= uniform struct size");
 
@@ -95,14 +99,17 @@ ForwardPass::~ForwardPass() {
         if (ready->bind_group_layout) wgpuBindGroupLayoutRelease(ready->bind_group_layout);
         if (ready->shadow_recv_bgl) wgpuBindGroupLayoutRelease(ready->shadow_recv_bgl);
         if (ready->shadow_sampler) wgpuSamplerRelease(ready->shadow_sampler);
+        if (ready->ibl_bgl) wgpuBindGroupLayoutRelease(ready->ibl_bgl);
+        if (ready->ibl_sampler) wgpuSamplerRelease(ready->ibl_sampler);
+        if (ready->fallback_cube_view) wgpuTextureViewRelease(ready->fallback_cube_view);
+        if (ready->fallback_cube_tex) wgpuTextureRelease(ready->fallback_cube_tex);
+        if (ready->fallback_2d_view) wgpuTextureViewRelease(ready->fallback_2d_view);
+        if (ready->fallback_2d_tex) wgpuTextureRelease(ready->fallback_2d_tex);
     }
 }
 
 static constexpr const char* k_debug_target_names[] = {
-    "Normals",
-    "Base Color",
-    "Direct Diffuse",
-    "Direct Specular",
+    "Normals", "Base Color", "Direct Diffuse", "Direct Specular", "IBL Diffuse", "IBL Specular",
 };
 static constexpr uint32_t k_debug_target_count =
     static_cast<uint32_t>(sizeof(k_debug_target_names) / sizeof(k_debug_target_names[0]));
@@ -126,6 +133,12 @@ void ForwardPass::do_renderer_setup(const webgpu::Device& device) {
         if (ready->bind_group_layout) wgpuBindGroupLayoutRelease(ready->bind_group_layout);
         if (ready->shadow_recv_bgl) wgpuBindGroupLayoutRelease(ready->shadow_recv_bgl);
         if (ready->shadow_sampler) wgpuSamplerRelease(ready->shadow_sampler);
+        if (ready->ibl_bgl) wgpuBindGroupLayoutRelease(ready->ibl_bgl);
+        if (ready->ibl_sampler) wgpuSamplerRelease(ready->ibl_sampler);
+        if (ready->fallback_cube_view) wgpuTextureViewRelease(ready->fallback_cube_view);
+        if (ready->fallback_cube_tex) wgpuTextureRelease(ready->fallback_cube_tex);
+        if (ready->fallback_2d_view) wgpuTextureViewRelease(ready->fallback_2d_view);
+        if (ready->fallback_2d_tex) wgpuTextureRelease(ready->fallback_2d_tex);
     }
 
     auto [dbg_names_setup, dbg_count_setup] = effective_debug_target_names();
@@ -235,10 +248,86 @@ void ForwardPass::do_renderer_setup(const webgpu::Device& device) {
     sampler_desc.addressModeW = WGPUAddressMode_ClampToEdge;
     auto shadow_sampler = wgpuDeviceCreateSampler(device.handle(), &sampler_desc);
 
-    // --- Pipeline layout with 2 bind groups ---
-    WGPUBindGroupLayout bgls[2] = {bind_group_layout, shadow_recv_bgl};
+    // --- IBL bind group layout (group 2) ---
+    WGPUBindGroupLayoutEntry ibl_entries[4] = {};
+
+    // binding 0: prefiltered env cubemap
+    ibl_entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    ibl_entries[0].binding = 0;
+    ibl_entries[0].visibility = WGPUShaderStage_Fragment;
+    ibl_entries[0].texture.sampleType = WGPUTextureSampleType_Float;
+    ibl_entries[0].texture.viewDimension = WGPUTextureViewDimension_Cube;
+
+    // binding 1: irradiance cubemap
+    ibl_entries[1] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    ibl_entries[1].binding = 1;
+    ibl_entries[1].visibility = WGPUShaderStage_Fragment;
+    ibl_entries[1].texture.sampleType = WGPUTextureSampleType_Float;
+    ibl_entries[1].texture.viewDimension = WGPUTextureViewDimension_Cube;
+
+    // binding 2: BRDF LUT
+    ibl_entries[2] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    ibl_entries[2].binding = 2;
+    ibl_entries[2].visibility = WGPUShaderStage_Fragment;
+    ibl_entries[2].texture.sampleType = WGPUTextureSampleType_Float;
+    ibl_entries[2].texture.viewDimension = WGPUTextureViewDimension_2D;
+
+    // binding 3: sampler
+    ibl_entries[3] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    ibl_entries[3].binding = 3;
+    ibl_entries[3].visibility = WGPUShaderStage_Fragment;
+    ibl_entries[3].sampler.type = WGPUSamplerBindingType_Filtering;
+
+    WGPUBindGroupLayoutDescriptor ibl_bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
+    ibl_bgl_desc.entryCount = 4;
+    ibl_bgl_desc.entries = ibl_entries;
+    auto ibl_bgl = wgpuDeviceCreateBindGroupLayout(device.handle(), &ibl_bgl_desc);
+
+    // --- IBL sampler ---
+    WGPUSamplerDescriptor ibl_samp_desc = WGPU_SAMPLER_DESCRIPTOR_INIT;
+    ibl_samp_desc.magFilter = WGPUFilterMode_Linear;
+    ibl_samp_desc.minFilter = WGPUFilterMode_Linear;
+    ibl_samp_desc.mipmapFilter = WGPUMipmapFilterMode_Linear;
+    ibl_samp_desc.addressModeU = WGPUAddressMode_ClampToEdge;
+    ibl_samp_desc.addressModeV = WGPUAddressMode_ClampToEdge;
+    ibl_samp_desc.addressModeW = WGPUAddressMode_ClampToEdge;
+    auto ibl_sampler = wgpuDeviceCreateSampler(device.handle(), &ibl_samp_desc);
+
+    // --- 1x1 black fallback textures for IBL when not yet ready ---
+    WGPUTextureDescriptor fb_cube_desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
+    fb_cube_desc.size = {1, 1, 6};
+    fb_cube_desc.format = WGPUTextureFormat_RGBA8Unorm;
+    fb_cube_desc.usage = WGPUTextureUsage_TextureBinding;
+    fb_cube_desc.dimension = WGPUTextureDimension_2D;
+    fb_cube_desc.mipLevelCount = 1;
+    auto fallback_cube_tex = wgpuDeviceCreateTexture(device.handle(), &fb_cube_desc);
+
+    WGPUTextureViewDescriptor fb_cube_view_desc = WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT;
+    fb_cube_view_desc.dimension = WGPUTextureViewDimension_Cube;
+    fb_cube_view_desc.format = WGPUTextureFormat_RGBA8Unorm;
+    fb_cube_view_desc.arrayLayerCount = 6;
+    fb_cube_view_desc.mipLevelCount = 1;
+    auto fallback_cube_view = wgpuTextureCreateView(fallback_cube_tex, &fb_cube_view_desc);
+
+    WGPUTextureDescriptor fb_2d_desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
+    fb_2d_desc.size = {1, 1, 1};
+    fb_2d_desc.format = WGPUTextureFormat_RGBA8Unorm;
+    fb_2d_desc.usage = WGPUTextureUsage_TextureBinding;
+    fb_2d_desc.dimension = WGPUTextureDimension_2D;
+    fb_2d_desc.mipLevelCount = 1;
+    auto fallback_2d_tex = wgpuDeviceCreateTexture(device.handle(), &fb_2d_desc);
+
+    WGPUTextureViewDescriptor fb_2d_view_desc = WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT;
+    fb_2d_view_desc.dimension = WGPUTextureViewDimension_2D;
+    fb_2d_view_desc.format = WGPUTextureFormat_RGBA8Unorm;
+    fb_2d_view_desc.arrayLayerCount = 1;
+    fb_2d_view_desc.mipLevelCount = 1;
+    auto fallback_2d_view = wgpuTextureCreateView(fallback_2d_tex, &fb_2d_view_desc);
+
+    // --- Pipeline layout with 3 bind groups ---
+    WGPUBindGroupLayout bgls[3] = {bind_group_layout, shadow_recv_bgl, ibl_bgl};
     WGPUPipelineLayoutDescriptor pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
-    pl_desc.bindGroupLayoutCount = 2;
+    pl_desc.bindGroupLayoutCount = 3;
     pl_desc.bindGroupLayouts = bgls;
     WGPUPipelineLayout pipeline_layout = wgpuDeviceCreatePipelineLayout(device.handle(), &pl_desc);
 
@@ -275,6 +364,12 @@ void ForwardPass::do_renderer_setup(const webgpu::Device& device) {
         std::move(ltc),
         shadow_recv_bgl,
         shadow_sampler,
+        ibl_bgl,
+        ibl_sampler,
+        fallback_cube_tex,
+        fallback_cube_view,
+        fallback_2d_tex,
+        fallback_2d_view,
     };
 }
 
@@ -379,10 +474,27 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     auto shadow_recv_bgl = ready.shadow_recv_bgl;
     auto shadow_samp = ready.shadow_sampler;
     auto shadow_array_view = get_pass<rendering::ShadowMapPass>()->shadow_array_view();
-    auto& shadow_info_buf = ctx.world.shadow_info_buffer();
-    PRECONDITION(shadow_info_buf.is_valid());
-    auto shadow_info_handle = shadow_info_buf.handle();
-    auto shadow_info_size = shadow_info_buf.size();
+    auto& sd = rendering::ShadowPassData::get_or_create(ctx.world);
+    PRECONDITION(sd.info_buffer.is_valid());
+    auto shadow_info_handle = sd.info_buffer.handle();
+    auto shadow_info_size = sd.info_buffer.size();
+
+    // Compute dome modulation: for HDR domes the cubemap has raw HDR values
+    // and needs color*intensity applied; for uniform domes the cubemap already
+    // has color*intensity baked in, so modulation is (1,1,1).
+    glm::vec3 dome_mod{1.0f};
+    for (const auto& slot : ctx.world.get_lights()) {
+        if (!slot.active()) continue;
+        if (slot.data().type == rendering::LightData::Type::Dome) {
+            if (!slot.data().env_texture_path.empty()) {
+                dome_mod = slot.data().color * slot.data().intensity;
+            }
+            break;
+        }
+    }
+
+    auto& ibl = ctx.world.ibl_resources();
+    auto ibl_ready = ibl.is_ready();
 
     {
         PTS_ZONE_NAMED("forward uniform upload");
@@ -396,9 +508,18 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
             u.time = elapsed_time;
             u.material_index = obj->material_index;
             u.light_count = light_count;
+            u.ibl_dome_modulation = ibl_ready ? dome_mod : glm::vec3{0.0f};
+            u.ibl_mip_count = rendering::IblResources::k_prefilter_mip_count;
             wgpuQueueWriteBuffer(queue, uniform_buf, i * k_uniform_align, &u, sizeof(u));
         }
     }
+
+    // Capture IBL bind group resources (use fallback textures when IBL not ready)
+    auto ibl_bgl = ready.ibl_bgl;
+    auto ibl_samp = ready.ibl_sampler;
+    auto ibl_prefiltered_view = ibl_ready ? ibl.prefiltered_env_view() : ready.fallback_cube_view;
+    auto ibl_irradiance_view = ibl_ready ? ibl.irradiance_view() : ready.fallback_cube_view;
+    auto ibl_brdf_lut_view = ibl_ready ? ibl.brdf_lut_view() : ready.fallback_2d_view;
 
     auto pass_builder = fg.add_pass("forward").color(color);
     for (uint32_t i = 0; i < eff_debug_count; ++i) {
@@ -429,8 +550,33 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
         shadow_bg_desc.entries = shadow_bg_entries;
         auto shadow_bg = wgpuDeviceCreateBindGroup(dev, &shadow_bg_desc);
 
+        // IBL bind group (group 2) — created per-frame
+        WGPUBindGroupEntry ibl_bg_entries[4] = {};
+        ibl_bg_entries[0] = WGPU_BIND_GROUP_ENTRY_INIT;
+        ibl_bg_entries[0].binding = 0;
+        ibl_bg_entries[0].textureView = ibl_prefiltered_view;
+
+        ibl_bg_entries[1] = WGPU_BIND_GROUP_ENTRY_INIT;
+        ibl_bg_entries[1].binding = 1;
+        ibl_bg_entries[1].textureView = ibl_irradiance_view;
+
+        ibl_bg_entries[2] = WGPU_BIND_GROUP_ENTRY_INIT;
+        ibl_bg_entries[2].binding = 2;
+        ibl_bg_entries[2].textureView = ibl_brdf_lut_view;
+
+        ibl_bg_entries[3] = WGPU_BIND_GROUP_ENTRY_INIT;
+        ibl_bg_entries[3].binding = 3;
+        ibl_bg_entries[3].sampler = ibl_samp;
+
+        WGPUBindGroupDescriptor ibl_bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
+        ibl_bg_desc.layout = ibl_bgl;
+        ibl_bg_desc.entryCount = 4;
+        ibl_bg_desc.entries = ibl_bg_entries;
+        auto ibl_bg = wgpuDeviceCreateBindGroup(dev, &ibl_bg_desc);
+
         wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
         wgpuRenderPassEncoderSetBindGroup(pass, 1, shadow_bg, 0, nullptr);
+        wgpuRenderPassEncoderSetBindGroup(pass, 2, ibl_bg, 0, nullptr);
 
         for (uint32_t i = 0; i < static_cast<uint32_t>(objs.size()); ++i) {
             if (!objs[i].active()) continue;
@@ -446,5 +592,6 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
         }
 
         wgpuBindGroupRelease(shadow_bg);
+        wgpuBindGroupRelease(ibl_bg);
     });
 }

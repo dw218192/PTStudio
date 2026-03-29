@@ -30,8 +30,10 @@ struct PTUniforms {
     uint32_t total_frames;
     uint32_t tlas_node_count;
     uint32_t _pad[2];
+    glm::vec3 dome_modulation;
+    uint32_t _pad2;
 };
-static_assert(sizeof(PTUniforms) == 112, "PTUniforms must match shader layout");
+static_assert(sizeof(PTUniforms) == 128, "PTUniforms must match shader layout");
 
 struct BlitUniforms {
     uint32_t width;
@@ -45,6 +47,7 @@ static constexpr std::size_t k_min_pixel_buffer_size = 16;
 PathTracerPass::~PathTracerPass() {
     if (auto* r = std::get_if<Ready>(&m_state)) {
         if (r->compute_bgl) wgpuBindGroupLayoutRelease(r->compute_bgl);
+        if (r->ibl_bgl) wgpuBindGroupLayoutRelease(r->ibl_bgl);
         if (r->blit_bgl) wgpuBindGroupLayoutRelease(r->blit_bgl);
     }
 }
@@ -60,6 +63,7 @@ auto PathTracerPass::is_ready() const noexcept -> bool {
 void PathTracerPass::do_renderer_setup(const webgpu::Device& device) {
     if (auto* r = std::get_if<Ready>(&m_state)) {
         if (r->compute_bgl) wgpuBindGroupLayoutRelease(r->compute_bgl);
+        if (r->ibl_bgl) wgpuBindGroupLayoutRelease(r->ibl_bgl);
         if (r->blit_bgl) wgpuBindGroupLayoutRelease(r->blit_bgl);
     }
 
@@ -121,9 +125,28 @@ void PathTracerPass::do_renderer_setup(const webgpu::Device& device) {
     cbgl_desc.entries = ce;
     auto compute_bgl = wgpuDeviceCreateBindGroupLayout(device.handle(), &cbgl_desc);
 
+    // IBL bind group layout (group 1): env cubemap + sampler
+    WGPUBindGroupLayoutEntry ie[2] = {};
+    ie[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    ie[0].binding = 0;
+    ie[0].visibility = WGPUShaderStage_Compute;
+    ie[0].texture.sampleType = WGPUTextureSampleType_Float;
+    ie[0].texture.viewDimension = WGPUTextureViewDimension_Cube;
+
+    ie[1] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    ie[1].binding = 1;
+    ie[1].visibility = WGPUShaderStage_Compute;
+    ie[1].sampler.type = WGPUSamplerBindingType_Filtering;
+
+    WGPUBindGroupLayoutDescriptor ibgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
+    ibgl_desc.entryCount = 2;
+    ibgl_desc.entries = ie;
+    auto ibl_bgl = wgpuDeviceCreateBindGroupLayout(device.handle(), &ibgl_desc);
+
+    WGPUBindGroupLayout compute_bgls[2] = {compute_bgl, ibl_bgl};
     WGPUPipelineLayoutDescriptor cpl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
-    cpl_desc.bindGroupLayoutCount = 1;
-    cpl_desc.bindGroupLayouts = &compute_bgl;
+    cpl_desc.bindGroupLayoutCount = 2;
+    cpl_desc.bindGroupLayouts = compute_bgls;
     auto cpl = wgpuDeviceCreatePipelineLayout(device.handle(), &cpl_desc);
 
     auto compute_pipeline = webgpu::ComputePipelineBuilder(device)
@@ -172,10 +195,15 @@ void PathTracerPass::do_renderer_setup(const webgpu::Device& device) {
     wgpuPipelineLayoutRelease(bpl);
 
     m_state = Ready{
-        std::move(compute_shader),      std::move(compute_pipeline),
-        std::move(uniform_buffer),      compute_bgl,
-        std::move(blit_shader),         std::move(blit_pipeline),
-        std::move(blit_uniform_buffer), blit_bgl,
+        std::move(compute_shader),
+        std::move(compute_pipeline),
+        std::move(uniform_buffer),
+        compute_bgl,
+        ibl_bgl,
+        std::move(blit_shader),
+        std::move(blit_pipeline),
+        std::move(blit_uniform_buffer),
+        blit_bgl,
     };
 }
 
@@ -214,7 +242,28 @@ void PathTracerPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
         m_prev_instance_handle = current_instance_handle;
     }
 
+    // Reset accumulation when lights change (dome color/intensity/HDR)
+    auto light_ver = ctx.world.get_light_version();
+    if (light_ver != m_prev_light_version) {
+        m_frame_count = 0;
+        m_prev_light_version = light_ver;
+    }
+
     m_frame_count++;
+
+    // Compute dome modulation: for HDR domes the cubemap has raw HDR values
+    // and needs color*intensity applied; for uniform domes the cubemap already
+    // has color*intensity baked in, so modulation is (1,1,1).
+    glm::vec3 dome_mod{1.0f};
+    for (const auto& slot : ctx.world.get_lights()) {
+        if (!slot.active()) continue;
+        if (slot.data().type == rendering::LightData::Type::Dome) {
+            if (!slot.data().env_texture_path.empty()) {
+                dome_mod = slot.data().color * slot.data().intensity;
+            }
+            break;
+        }
+    }
 
     PTUniforms uniforms{};
     uniforms.camera_pos = ctx.camera_position;
@@ -226,6 +275,7 @@ void PathTracerPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     uniforms.light_count = ctx.world.gpu_light_count();
     uniforms.total_frames = m_frame_count;
     uniforms.tlas_node_count = ctx.world.tlas_node_count();
+    uniforms.dome_modulation = dome_mod;
     wgpuQueueWriteBuffer(ctx.queue, r.uniform_buffer.handle(), 0, &uniforms, sizeof(uniforms));
 
     BlitUniforms bu{};
@@ -285,16 +335,38 @@ void PathTracerPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     cbg_desc.entries = cbe;
     auto compute_bg = wgpuDeviceCreateBindGroup(dev, &cbg_desc);
 
+    // IBL bind group (group 1): env cubemap + sampler
+    auto& ibl = ctx.world.ibl_resources();
+    WGPUBindGroup ibl_bg = nullptr;
+    if (ibl.is_ready()) {
+        WGPUBindGroupEntry ibe[2] = {};
+        ibe[0] = WGPU_BIND_GROUP_ENTRY_INIT;
+        ibe[0].binding = 0;
+        ibe[0].textureView = ibl.prefiltered_env_view();
+        ibe[1] = WGPU_BIND_GROUP_ENTRY_INIT;
+        ibe[1].binding = 1;
+        ibe[1].sampler = ibl.sampler();
+
+        WGPUBindGroupDescriptor ibg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
+        ibg_desc.layout = r.ibl_bgl;
+        ibg_desc.entryCount = 2;
+        ibg_desc.entries = ibe;
+        ibl_bg = wgpuDeviceCreateBindGroup(dev, &ibg_desc);
+    }
+
     auto* cp = r.compute_pipeline.handle();
     fg.add_pass("pathtracer_compute").execute([=](WGPUComputePassEncoder enc) {
-        if (inst_count == 0) {
+        if (inst_count == 0 || !ibl_bg) {
             wgpuBindGroupRelease(compute_bg);
+            if (ibl_bg) wgpuBindGroupRelease(ibl_bg);
             return;
         }
         wgpuComputePassEncoderSetPipeline(enc, cp);
         wgpuComputePassEncoderSetBindGroup(enc, 0, compute_bg, 0, nullptr);
+        wgpuComputePassEncoderSetBindGroup(enc, 1, ibl_bg, 0, nullptr);
         wgpuComputePassEncoderDispatchWorkgroups(enc, (width + 7) / 8, (height + 7) / 8, 1);
         wgpuBindGroupRelease(compute_bg);
+        wgpuBindGroupRelease(ibl_bg);
     });
 
     // --- Blit pass ---

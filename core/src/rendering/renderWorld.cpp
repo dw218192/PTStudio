@@ -793,46 +793,6 @@ void RenderWorld::upload_all_meshes(const webgpu::Device& device) {
     }
 }
 
-// --- Shadow data ---
-
-namespace {
-constexpr std::size_t k_min_shadow_info_size = sizeof(ShadowInfo);  // 80 bytes
-}  // namespace
-
-void RenderWorld::set_shadow_data(boost::span<const ShadowInfo> infos, const webgpu::Device& device,
-                                  WGPUQueue queue) {
-    auto info_bytes = std::max(k_min_shadow_info_size,
-                               static_cast<std::size_t>(infos.size()) * sizeof(ShadowInfo));
-    if (!m_shadow_info_buffer.is_valid() || m_shadow_info_buffer.size() < info_bytes) {
-        m_shadow_info_buffer = device.create_buffer(
-            info_bytes,
-            static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
-    }
-    if (!infos.empty()) {
-        wgpuQueueWriteBuffer(queue, m_shadow_info_buffer.handle(), 0, infos.data(),
-                             infos.size() * sizeof(ShadowInfo));
-    }
-
-    // Count entries with has_shadow set
-    uint32_t active = 0;
-    for (const auto& si : infos) {
-        if (si.has_shadow) ++active;
-    }
-    m_shadow_count = active;
-}
-
-void RenderWorld::clear_shadow_data() {
-    m_shadow_count = 0;
-}
-
-const webgpu::Buffer& RenderWorld::shadow_info_buffer() const {
-    return m_shadow_info_buffer;
-}
-
-uint32_t RenderWorld::shadow_count() const {
-    return m_shadow_count;
-}
-
 void RenderWorld::clear() {
     m_meshes.clear();
     m_objects.clear();
@@ -847,7 +807,6 @@ void RenderWorld::clear() {
     m_cached_light_version = UINT32_MAX;
     m_cached_material_version = UINT32_MAX;
     m_cached_light_generations.clear();
-    clear_shadow_data();
 
     // Two-level BVH state
     m_blas_cache.clear();
@@ -878,6 +837,12 @@ void RenderWorld::clear() {
     }
     m_texture_version = 0;
     m_cached_texture_version = UINT32_MAX;
+
+    // IBL state
+    m_ibl = {};
+    m_ibl_env_path.clear();
+    m_ibl_light_version = UINT32_MAX;
+    m_ibl_uniform_color = glm::vec3(-1.0f);
 }
 
 // --- update_transforms ---
@@ -917,6 +882,81 @@ void RenderWorld::update_transforms(const pxr::UsdStageRefPtr& stage,
                 }
             }
         }
+    }
+}
+
+// --- IBL ---
+
+IblResources& RenderWorld::ibl_resources() {
+    return m_ibl;
+}
+
+const IblResources& RenderWorld::ibl_resources() const {
+    return m_ibl;
+}
+
+void RenderWorld::update_ibl(const webgpu::Device& device, WGPUQueue queue) {
+    PTS_ZONE_SCOPED;
+
+    // Lazy-init BRDF LUT on first call
+    if (!m_ibl.brdf_lut_view()) {
+        m_ibl.init(device, queue);
+    }
+
+    // Only re-evaluate when lights change
+    if (m_ibl_light_version == m_light_version) return;
+    m_ibl_light_version = m_light_version;
+
+    // Find first dome light
+    const LightData* dome = nullptr;
+    auto lights = get_lights();
+    for (const auto& slot : lights) {
+        if (!slot.active()) continue;
+        if (slot.data().type == LightData::Type::Dome) {
+            dome = &slot.data();
+            break;
+        }
+    }
+
+    if (!dome) {
+        // No dome light — black ambient
+        if (m_ibl_env_path.empty() && m_ibl_uniform_color == glm::vec3(0.0f)) return;
+        m_ibl.set_uniform_environment(device, queue, 0.0f, 0.0f, 0.0f);
+        m_ibl_env_path.clear();
+        m_ibl_uniform_color = glm::vec3(0.0f);
+        return;
+    }
+
+    if (!dome->env_texture_path.empty()) {
+        // HDR environment map
+        if (dome->env_texture_path == m_ibl_env_path) return;
+
+        auto asset = pxr::ArGetResolver().OpenAsset(pxr::ArResolvedPath(dome->env_texture_path));
+        CHECK_MSG(asset != nullptr, "Failed to open HDR environment asset via USD resolver");
+
+        auto buffer = asset->GetBuffer();
+        auto size = asset->GetSize();
+        CHECK_MSG(buffer != nullptr, "ArAsset::GetBuffer() returned null for HDR environment");
+
+        int w = 0, h = 0, channels = 0;
+        float* data = stbi_loadf_from_memory(reinterpret_cast<const stbi_uc*>(buffer.get()),
+                                             static_cast<int>(size), &w, &h, &channels, 4);
+        CHECK_MSG(data != nullptr, "stbi_loadf_from_memory failed for HDR environment");
+
+        m_ibl.set_environment(device, queue, data, static_cast<uint32_t>(w),
+                              static_cast<uint32_t>(h));
+        stbi_image_free(data);
+
+        m_ibl_env_path = dome->env_texture_path;
+        m_ibl_uniform_color = glm::vec3(-1.0f);  // invalidate uniform sentinel
+    } else {
+        // Uniform color environment: dome color * intensity
+        glm::vec3 c = dome->color * dome->intensity;
+        if (m_ibl_env_path.empty() && m_ibl_uniform_color == c) return;
+
+        m_ibl.set_uniform_environment(device, queue, c.r, c.g, c.b);
+        m_ibl_env_path.clear();
+        m_ibl_uniform_color = c;
     }
 }
 

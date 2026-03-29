@@ -50,6 +50,14 @@ if(NOT EMSCRIPTEN)
     set(testPipelineBuilder_source testPipelineBuilder.cpp)
     set(testPipelineBuilder_libs core)
 
+    list(APPEND TEST_NAMES testIblResources)
+    set(testIblResources_source testIblResources.cpp)
+    set(testIblResources_libs core)
+
+    list(APPEND TEST_NAMES testDomeIbl)
+    set(testDomeIbl_source testDomeIbl.cpp)
+    set(testDomeIbl_libs core)
+
     # Geometric adapter tests - sync() requires GPU for mesh upload
     list(APPEND TEST_NAMES testGeometricAdapters)
     set(testGeometricAdapters_source testGeometricAdapters.cpp)

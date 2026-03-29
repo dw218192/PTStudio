@@ -1,5 +1,6 @@
 import lighting;
 import brdf;
+import ibl;
 import light;
 import material_sampling;
 import shadow_sampling;
@@ -13,6 +14,8 @@ struct Uniforms {
     uint light_count;
     uint _pad1;
     uint _pad2;
+    float3 ibl_dome_modulation;
+    uint ibl_mip_count;
 };
 
 [[vk::binding(0, 0)]]
@@ -44,6 +47,12 @@ SamplerState scene_sampler;
 [[vk::binding(1, 1)]] Texture2DArray<float> shadow_map;
 [[vk::binding(2, 1)]] SamplerState shadow_sampler;
 
+// Bind group 2: IBL
+[[vk::binding(0, 2)]] TextureCube<float4> ibl_prefiltered;
+[[vk::binding(1, 2)]] TextureCube<float4> ibl_irradiance;
+[[vk::binding(2, 2)]] Texture2D<float4> ibl_brdf_lut;
+[[vk::binding(3, 2)]] SamplerState ibl_sampler;
+
 struct VsIn {
     float3 position : POSITION;
     float3 normal   : NORMAL;
@@ -72,11 +81,13 @@ VsOut vs_main(VsIn input) {
 
 #ifndef NO_DEBUG_TARGETS
 struct FsOut {
-    float4 color      : SV_Target0;
-    float4 normals    : SV_Target1;
-    float4 base_color : SV_Target2;
+    float4 color           : SV_Target0;
+    float4 normals         : SV_Target1;
+    float4 base_color      : SV_Target2;
     float4 direct_diffuse  : SV_Target3;
-    float4 direct_specular   : SV_Target4;
+    float4 direct_specular : SV_Target4;
+    float4 ibl_diffuse     : SV_Target5;
+    float4 ibl_specular    : SV_Target6;
 };
 #else
 struct FsOut {
@@ -117,6 +128,12 @@ FsOut fs_main(float3 world_normal : NORMAL, float3 world_pos : WORLD_POS,
         direct_diffuse, direct_specular
     );
 
+    float3 ibl_diff, ibl_spec;
+    float3 ibl = evaluate_ibl(ibl_prefiltered, ibl_irradiance, ibl_brdf_lut, ibl_sampler,
+                               N, V, albedo, mat_metallic, mat_roughness, u.ibl_mip_count,
+                               ibl_diff, ibl_spec);
+    lit += ibl * u.ibl_dome_modulation;
+
     FsOut o;
     o.color = float4(lit, 1.0);
 #ifndef NO_DEBUG_TARGETS
@@ -124,6 +141,8 @@ FsOut fs_main(float3 world_normal : NORMAL, float3 world_pos : WORLD_POS,
     o.base_color = float4(albedo, 1.0);
     o.direct_diffuse  = float4(direct_diffuse, 1.0);
     o.direct_specular = float4(direct_specular, 1.0);
+    o.ibl_diffuse     = float4(ibl_diff * u.ibl_dome_modulation, 1.0);
+    o.ibl_specular    = float4(ibl_spec * u.ibl_dome_modulation, 1.0);
 #endif
     return o;
 }

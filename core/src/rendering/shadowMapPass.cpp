@@ -131,7 +131,7 @@ void ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
     if (shadow_count == 0) {
         // Write all-inactive ShadowInfo entries so the buffer is valid
         std::vector<ShadowInfo> empty(std::max(1u, static_cast<uint32_t>(lights.size())));
-        ctx.world.set_shadow_data(empty, ctx.device, ctx.queue);
+        ShadowPassData::get_or_create(ctx.world).upload(empty, ctx.device, ctx.queue);
         return;
     }
 
@@ -184,8 +184,8 @@ void ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
         ++layer_index;
     }
 
-    // Upload shadow data to RenderWorld
-    ctx.world.set_shadow_data(infos, ctx.device, ctx.queue);
+    // Upload shadow data via pass_data_for
+    ShadowPassData::get_or_create(ctx.world).upload(infos, ctx.device, ctx.queue);
 
     // Ensure texture array
     ensure_shadow_texture(ctx.device, layer_index);

@@ -114,7 +114,9 @@ TEST_CASE("ShadowMapPass add_to_frame_graph with no lights clears shadow data") 
     fg.begin_frame();
     pass.add_to_frame_graph(fg, ctx);
 
-    CHECK(world.shadow_count() == 0);
+    auto* sd = ShadowPassData::find(world);
+    CHECK(sd != nullptr);
+    CHECK(sd->count == 0);
 }
 
 TEST_CASE("ShadowMapPass add_to_frame_graph with distant light produces shadow data") {
@@ -176,9 +178,11 @@ TEST_CASE("ShadowMapPass add_to_frame_graph with distant light produces shadow d
     fg.begin_frame();
     pass.add_to_frame_graph(fg, ctx);
 
-    CHECK(world.shadow_count() == 1);
+    auto* sd = ShadowPassData::find(world);
+    REQUIRE(sd != nullptr);
+    CHECK(sd->count == 1);
     CHECK(pass.shadow_array_view() != nullptr);
-    CHECK(world.shadow_info_buffer().is_valid());
+    CHECK(sd->info_buffer.is_valid());
 }
 
 TEST_CASE("ShadowMapPass caps shadow count at k_max_shadow_maps") {
@@ -239,7 +243,9 @@ TEST_CASE("ShadowMapPass caps shadow count at k_max_shadow_maps") {
     fg.begin_frame();
     pass.add_to_frame_graph(fg, ctx);
 
-    CHECK(world.shadow_count() == k_max_shadow_maps);
+    auto* sd = ShadowPassData::find(world);
+    REQUIRE(sd != nullptr);
+    CHECK(sd->count == k_max_shadow_maps);
 }
 
 TEST_CASE("ShadowMapPass skips non-distant lights") {
@@ -277,7 +283,9 @@ TEST_CASE("ShadowMapPass skips non-distant lights") {
     fg.begin_frame();
     pass.add_to_frame_graph(fg, ctx);
 
-    CHECK(world.shadow_count() == 0);
+    auto* sd = ShadowPassData::find(world);
+    CHECK(sd != nullptr);
+    CHECK(sd->count == 0);
 }
 
 #endif  // !__EMSCRIPTEN__

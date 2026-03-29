@@ -2,6 +2,7 @@
 
 #include <core/diagnostics.h>
 #include <core/rendering/bvh.h>
+#include <core/rendering/iblResources.h>
 #include <core/rendering/packedTriangle.h>
 #include <core/rendering/vertex.h>
 #include <core/rendering/webgpu/buffer.h>
@@ -218,7 +219,8 @@ struct LightData {
     float radius{0.0f};
     float width{1.0f};
     float height{1.0f};
-    bool casts_shadow{true};  // from UsdLuxShadowAPI inputs:shadow:enable
+    bool casts_shadow{true};       // from UsdLuxShadowAPI inputs:shadow:enable
+    std::string env_texture_path;  // resolved path to HDR environment map (dome lights only)
 };
 
 /// Convert a LightData to a GPU-ready Light struct.
@@ -374,14 +376,6 @@ struct RenderWorld {
     /// Number of active instances.
     uint32_t instance_count() const;
 
-    // Shadow data — written by ShadowMapPass, read by renderers.
-    // One ShadowInfo per light (matching light buffer order).
-    void set_shadow_data(boost::span<const ShadowInfo> infos, const webgpu::Device& device,
-                         WGPUQueue queue);
-    void clear_shadow_data();
-    const webgpu::Buffer& shadow_info_buffer() const;
-    uint32_t shadow_count() const;
-
     // --- Per-pass data cache (owned by the world, destroyed on world swap) ---
     using ErasedPtr = std::unique_ptr<void, void (*)(void*)>;
     struct PassDataEntry {
@@ -400,6 +394,13 @@ struct RenderWorld {
     /// synced prims at or under the given paths. Does not re-upload meshes.
     void update_transforms(const pxr::UsdStageRefPtr& stage,
                            const std::vector<pxr::SdfPath>& dirty_paths);
+
+    /// Update IBL resources from the current dome light state.
+    /// Inits BRDF LUT on first call, then loads HDR or sets uniform color.
+    void update_ibl(const webgpu::Device& device, WGPUQueue queue);
+
+    IblResources& ibl_resources();
+    const IblResources& ibl_resources() const;
 
     /// Begin a batched sync operation. mesh_version is bumped when
     /// the returned scope guard is destroyed. sync_object/remove_prim
@@ -450,10 +451,6 @@ struct RenderWorld {
     // Per-slot generation cache for partial light updates
     std::vector<uint32_t> m_cached_light_generations;
 
-    // Shadow data
-    webgpu::Buffer m_shadow_info_buffer;
-    uint32_t m_shadow_count = 0;
-
     // Two-level acceleration structure
     struct BlasData {
         BVH bvh;                           // local-space BVH tree
@@ -489,6 +486,12 @@ struct RenderWorld {
 
     // Per-pass data cache — keyed by pass identity (this pointer)
     std::unordered_map<const void*, PassDataMap> m_pass_data_cache;
+
+    // IBL state
+    IblResources m_ibl;
+    std::string m_ibl_env_path;                 // currently loaded HDR path (empty = uniform)
+    uint32_t m_ibl_light_version = UINT32_MAX;  // light version when IBL was last updated
+    glm::vec3 m_ibl_uniform_color{-1.0f};       // sentinel: never matches real color
 };
 
 }  // namespace pts::rendering

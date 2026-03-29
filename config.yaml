@@ -80,6 +80,7 @@ usdz:
 slangc:
   search_paths:
     - "core/shaders"
+    - "core/shaders/ibl"
   shaders:
     - input: "assets/shaders/test/*.slang"
       output: "assets/shaders/test/*.wgsl"
@@ -117,6 +118,14 @@ slangc:
       output: "editor/generated/shaders/pathtracer.wgsl"
     - input: "renderers/pathtracer/pt_blit.slang"
       output: "editor/generated/shaders/pt_blit.wgsl"
+    - input: "core/shaders/ibl/brdf_lut.slang"
+      output: "core/generated/shaders/brdf_lut.wgsl"
+    - input: "core/shaders/ibl/equirect_to_cube.slang"
+      output: "core/generated/shaders/equirect_to_cube.wgsl"
+    - input: "core/shaders/ibl/irradiance_convolve.slang"
+      output: "core/generated/shaders/irradiance_convolve.wgsl"
+    - input: "core/shaders/ibl/prefilter_env.slang"
+      output: "core/generated/shaders/prefilter_env.wgsl"
 
 shader_codegen:
   template: "core/templates/shader_metadata.h.j2"
@@ -167,6 +176,13 @@ embed:
         - "editor/icons/*.*"
       output: "editor/generated/embedded_resources.h"
       namespace: "editor_resources"
+    - input:
+        - "core/generated/shaders/brdf_lut.wgsl"
+        - "core/generated/shaders/equirect_to_cube.wgsl"
+        - "core/generated/shaders/irradiance_convolve.wgsl"
+        - "core/generated/shaders/prefilter_env.wgsl"
+      output: "core/generated/embedded_ibl_shaders.h"
+      namespace: "ibl_resources"
     - input:
         - "assets/shaders/test/simple.wgsl"
         - "assets/scenes/test_cube.usda"
