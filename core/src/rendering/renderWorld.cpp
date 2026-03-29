@@ -797,6 +797,7 @@ void RenderWorld::clear() {
     m_meshes.clear();
     m_objects.clear();
     m_materials.clear();
+    m_materials.push_back(Material{});  // default material at index 0
     m_lights.clear();
     m_cameras.clear();
     m_material_cache.clear();

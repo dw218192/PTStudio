@@ -215,18 +215,13 @@ void cs_main(uint3 did : SV_DispatchThreadID) {
         if (dot(N, V) < 0.0) N = -N;
 
         // Material
-        float3 base_color = float3(0.8);
-        float metallic = 0.0;
-        float roughness = 0.5;
-        if (has_texture(hit.material_index)) {
-            Material mat = materials[hit.material_index];
-            MaterialSample sm = sample_material_lod(mat, hit.uv, scene_textures, scene_sampler, 0.0);
-            base_color = sm.base_color;
-            metallic = sm.metallic;
-            roughness = sm.roughness;
-            N = apply_normal_map(N, hit.tangent, hit.bitangent, mat, hit.uv,
-                                 scene_textures, scene_sampler, 0.0);
-        }
+        Material mat = materials[hit.material_index];
+        MaterialSample sm = sample_material_lod(mat, hit.uv, scene_textures, scene_sampler, 0.0);
+        float3 base_color = sm.base_color;
+        float metallic = sm.metallic;
+        float roughness = sm.roughness;
+        N = apply_normal_map(N, hit.tangent, hit.bitangent, mat, hit.uv,
+                             scene_textures, scene_sampler, 0.0);
 
         // Direct lighting (NEE with shadow rays)
         float3 direct = float3(0.0);

@@ -340,9 +340,10 @@ TEST_CASE("prepare_scene_data populates materials when dirty") {
 
     auto data = world.prepare_scene_data();
     CHECK(data.materials_dirty);
-    REQUIRE(data.materials.size() == 1);
-    CHECK(data.materials[0].diffuse_color.x == doctest::Approx(0.5f));
-    CHECK(data.materials[0].roughness == doctest::Approx(0.8f));
+    // Default material at index 0, user material at index 1
+    REQUIRE(data.materials.size() == 2);
+    CHECK(data.materials[1].diffuse_color.x == doctest::Approx(0.5f));
+    CHECK(data.materials[1].roughness == doctest::Approx(0.8f));
 }
 
 TEST_CASE("prepare_scene_data provides fallback light when no lights present") {

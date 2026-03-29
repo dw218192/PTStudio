@@ -27,6 +27,7 @@ class Device;
 namespace pts::rendering {
 
 static constexpr uint32_t k_no_material = UINT32_MAX;
+static constexpr uint32_t k_default_material = 0;
 
 /// 64-byte GPU struct
 struct Material {
@@ -322,6 +323,10 @@ class SyncScope {
 };
 
 struct RenderWorld {
+    RenderWorld() {
+        m_materials.push_back(Material{});
+    }
+
     // Read-only accessors
     boost::span<const Slot<ObjectData>> get_objects() const;
     boost::span<const Slot<MeshData>> get_meshes() const;

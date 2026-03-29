@@ -135,7 +135,8 @@ TEST_CASE("clear resets everything") {
     CHECK(world.get_objects().empty());
     CHECK(world.get_meshes().empty());
     CHECK(world.get_lights().empty());
-    CHECK(world.get_materials().empty());
+    // Default material at index 0 is always present after clear
+    CHECK(world.get_materials().size() == 1);
 }
 
 TEST_CASE("active flag defaults to true on alloc") {

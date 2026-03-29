@@ -101,19 +101,12 @@ FsOut fs_main(float3 world_normal : NORMAL, float3 world_pos : WORLD_POS,
     float3 N = normalize(world_normal);
     float3 V = normalize(u.camera_pos - world_pos);
 
-    float3 albedo;
-    float mat_metallic = 0.0;
-    float mat_roughness = 0.5;
-    if (!has_texture(u.material_index)) {
-        albedo = color;
-    } else {
-        Material mat = materials[u.material_index];
-        MaterialSample sm = sample_material(mat, uv, scene_textures, scene_sampler);
-        albedo = sm.base_color;
-        mat_metallic = sm.metallic;
-        mat_roughness = sm.roughness;
-        N = apply_normal_map_screen(N, world_pos, uv, mat, scene_textures, scene_sampler);
-    }
+    Material mat = materials[u.material_index];
+    MaterialSample sm = sample_material(mat, uv, scene_textures, scene_sampler);
+    float3 albedo = sm.base_color;
+    float mat_metallic = sm.metallic;
+    float mat_roughness = sm.roughness;
+    N = apply_normal_map_screen(N, world_pos, uv, mat, scene_textures, scene_sampler);
 
     CookTorranceGGX brdf;
 
