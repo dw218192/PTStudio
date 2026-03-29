@@ -57,6 +57,8 @@ agent:
       never let exceptions escape. Use ABI-safe types only at DLL boundaries
       (fixed-width ints, POD structs, opaque handles — no std::string/vector).
       Prefer Rule of Zero, RAII, string_view/span for non-owning views.
+      Prefer returning values over storing state — e.g. init() returns an
+      error code rather than storing it as a member for the caller to query.
       Use #pragma once, include what you use, forward-declare in headers.
     reviewer: >
       Watch for regressions: run the full test suite, not just new tests.
