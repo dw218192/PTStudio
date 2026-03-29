@@ -67,6 +67,13 @@ auto RenderPipelineBuilder::blend_state(const WGPUBlendState& blend, uint32_t in
     return *this;
 }
 
+auto RenderPipelineBuilder::write_mask(WGPUColorWriteMask mask, uint32_t index)
+    -> RenderPipelineBuilder& {
+    ensure_target_count(index);
+    m_color_targets[index].writeMask = mask;
+    return *this;
+}
+
 auto RenderPipelineBuilder::depth_format(WGPUTextureFormat format) -> RenderPipelineBuilder& {
     m_depth_format = format;
     return *this;

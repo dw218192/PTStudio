@@ -39,6 +39,15 @@ static_assert(sizeof(ForwardUniforms) == 176, "ForwardUniforms must match shader
 static_assert(ForwardPass::k_uniform_align >= sizeof(ForwardUniforms),
               "Alignment must be >= uniform struct size");
 
+struct SkyboxUniforms {
+    glm::mat4 inv_vp;           // 64 bytes
+    glm::vec3 camera_pos;       // 12 bytes
+    float _pad0;                // 4 bytes
+    glm::vec3 dome_modulation;  // 12 bytes
+    float _pad1;                // 4 bytes
+};
+static_assert(sizeof(SkyboxUniforms) == 96, "SkyboxUniforms must match shader std140 layout");
+
 static WGPUBindGroup create_bind_group(WGPUDevice device, WGPUBindGroupLayout layout,
                                        WGPUBuffer uniform_buf, WGPUBuffer material_buf,
                                        std::size_t material_buf_size, WGPUBuffer light_buf,
@@ -105,6 +114,7 @@ ForwardPass::~ForwardPass() {
         if (ready->fallback_cube_tex) wgpuTextureRelease(ready->fallback_cube_tex);
         if (ready->fallback_2d_view) wgpuTextureViewRelease(ready->fallback_2d_view);
         if (ready->fallback_2d_tex) wgpuTextureRelease(ready->fallback_2d_tex);
+        if (ready->skybox_bgl) wgpuBindGroupLayoutRelease(ready->skybox_bgl);
     }
 }
 
@@ -139,6 +149,7 @@ void ForwardPass::do_renderer_setup(const webgpu::Device& device) {
         if (ready->fallback_cube_tex) wgpuTextureRelease(ready->fallback_cube_tex);
         if (ready->fallback_2d_view) wgpuTextureViewRelease(ready->fallback_2d_view);
         if (ready->fallback_2d_tex) wgpuTextureRelease(ready->fallback_2d_tex);
+        if (ready->skybox_bgl) wgpuBindGroupLayoutRelease(ready->skybox_bgl);
     }
 
     auto [dbg_names_setup, dbg_count_setup] = effective_debug_target_names();
@@ -347,6 +358,62 @@ void ForwardPass::do_renderer_setup(const webgpu::Device& device) {
 
     wgpuPipelineLayoutRelease(pipeline_layout);
 
+    // --- Skybox pipeline ---
+    auto skybox_shader_src =
+        get_shader_loader().load("renderers/forward/generated/shaders/skybox.wgsl");
+    auto skybox_shader = device.create_shader_module_from_source(skybox_shader_src);
+
+    // Skybox BGL: uniform buffer (Vert|Frag), cube texture (Frag), sampler (Frag)
+    WGPUBindGroupLayoutEntry skybox_bgl_entries[3] = {};
+
+    skybox_bgl_entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    skybox_bgl_entries[0].binding = 0;
+    skybox_bgl_entries[0].visibility =
+        static_cast<WGPUShaderStage>(WGPUShaderStage_Vertex | WGPUShaderStage_Fragment);
+    skybox_bgl_entries[0].buffer.type = WGPUBufferBindingType_Uniform;
+    skybox_bgl_entries[0].buffer.minBindingSize = sizeof(SkyboxUniforms);
+
+    skybox_bgl_entries[1] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    skybox_bgl_entries[1].binding = 1;
+    skybox_bgl_entries[1].visibility = WGPUShaderStage_Fragment;
+    skybox_bgl_entries[1].texture.sampleType = WGPUTextureSampleType_Float;
+    skybox_bgl_entries[1].texture.viewDimension = WGPUTextureViewDimension_Cube;
+
+    skybox_bgl_entries[2] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    skybox_bgl_entries[2].binding = 2;
+    skybox_bgl_entries[2].visibility = WGPUShaderStage_Fragment;
+    skybox_bgl_entries[2].sampler.type = WGPUSamplerBindingType_Filtering;
+
+    WGPUBindGroupLayoutDescriptor skybox_bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
+    skybox_bgl_desc.entryCount = 3;
+    skybox_bgl_desc.entries = skybox_bgl_entries;
+    auto skybox_bgl = wgpuDeviceCreateBindGroupLayout(device.handle(), &skybox_bgl_desc);
+
+    WGPUPipelineLayoutDescriptor skybox_pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
+    skybox_pl_desc.bindGroupLayoutCount = 1;
+    skybox_pl_desc.bindGroupLayouts = &skybox_bgl;
+    auto skybox_pl = wgpuDeviceCreatePipelineLayout(device.handle(), &skybox_pl_desc);
+
+    auto skybox_builder = webgpu::RenderPipelineBuilder(device)
+                              .shader(skybox_shader)
+                              .color_format(WGPUTextureFormat_RGBA16Float, 0)
+                              .depth_format(WGPUTextureFormat_Depth24Plus)
+                              .depth_write(false)
+                              .depth_compare(WGPUCompareFunction_LessEqual)
+                              .cull_mode(WGPUCullMode_None)
+                              .pipeline_layout(skybox_pl);
+    for (uint32_t i = 0; i < dbg_count_setup; ++i) {
+        skybox_builder.color_format(WGPUTextureFormat_RGBA8Unorm, i + 1)
+            .write_mask(WGPUColorWriteMask_None, i + 1);
+    }
+    auto skybox_pipeline = skybox_builder.build();
+
+    wgpuPipelineLayoutRelease(skybox_pl);
+
+    auto skybox_uniform_buffer = device.create_buffer(
+        sizeof(SkyboxUniforms),
+        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
+
     rendering::LtcTextures ltc;
     ltc.init(device);
 
@@ -370,6 +437,10 @@ void ForwardPass::do_renderer_setup(const webgpu::Device& device) {
         fallback_cube_view,
         fallback_2d_tex,
         fallback_2d_view,
+        std::move(skybox_shader),
+        std::move(skybox_pipeline),
+        skybox_bgl,
+        std::move(skybox_uniform_buffer),
     };
 }
 
@@ -521,6 +592,18 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     auto ibl_irradiance_view = ibl_ready ? ibl.irradiance_view() : ready.fallback_cube_view;
     auto ibl_brdf_lut_view = ibl_ready ? ibl.brdf_lut_view() : ready.fallback_2d_view;
 
+    // Upload skybox uniforms
+    SkyboxUniforms sky_u{};
+    sky_u.inv_vp = glm::inverse(proj_mat * view_mat);
+    sky_u.camera_pos = camera_pos;
+    sky_u.dome_modulation = ibl_ready ? dome_mod : glm::vec3{0.0f};
+    wgpuQueueWriteBuffer(queue, ready.skybox_uniform_buffer.handle(), 0, &sky_u, sizeof(sky_u));
+
+    // Capture skybox resources for the lambda
+    auto skybox_pipeline_handle = ready.skybox_pipeline.handle();
+    auto skybox_bgl_handle = ready.skybox_bgl;
+    auto skybox_uniform_buf = ready.skybox_uniform_buffer.handle();
+
     auto pass_builder = fg.add_pass("forward").color(color);
     for (uint32_t i = 0; i < eff_debug_count; ++i) {
         pass_builder.color(debug_handles[i]);
@@ -589,6 +672,32 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
                                                 WGPUIndexFormat_Uint32, 0,
                                                 mesh->index_buffer.size());
             wgpuRenderPassEncoderDrawIndexed(pass, mesh->index_count, 1, 0, 0, 0);
+        }
+
+        // Skybox: draw fullscreen triangle after all geometry
+        if (ibl_ready) {
+            WGPUBindGroupEntry sky_entries[3] = {};
+            sky_entries[0] = WGPU_BIND_GROUP_ENTRY_INIT;
+            sky_entries[0].binding = 0;
+            sky_entries[0].buffer = skybox_uniform_buf;
+            sky_entries[0].size = sizeof(SkyboxUniforms);
+            sky_entries[1] = WGPU_BIND_GROUP_ENTRY_INIT;
+            sky_entries[1].binding = 1;
+            sky_entries[1].textureView = ibl_prefiltered_view;
+            sky_entries[2] = WGPU_BIND_GROUP_ENTRY_INIT;
+            sky_entries[2].binding = 2;
+            sky_entries[2].sampler = ibl_samp;
+
+            WGPUBindGroupDescriptor sky_bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
+            sky_bg_desc.layout = skybox_bgl_handle;
+            sky_bg_desc.entryCount = 3;
+            sky_bg_desc.entries = sky_entries;
+            auto sky_bg = wgpuDeviceCreateBindGroup(dev, &sky_bg_desc);
+
+            wgpuRenderPassEncoderSetPipeline(pass, skybox_pipeline_handle);
+            wgpuRenderPassEncoderSetBindGroup(pass, 0, sky_bg, 0, nullptr);
+            wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
+            wgpuBindGroupRelease(sky_bg);
         }
 
         wgpuBindGroupRelease(shadow_bg);

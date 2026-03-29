@@ -417,6 +417,9 @@ void EditorApplication::on_ready() {
         "renderers/forward/generated/shaders/forward.wgsl", "renderers/forward/forward.slang",
         "renderers/forward/generated/shaders/forward.wgsl", editor_resources::get_resource);
     m_shader_loader.register_shader(
+        "renderers/forward/generated/shaders/skybox.wgsl", "renderers/forward/skybox.slang",
+        "renderers/forward/generated/shaders/skybox.wgsl", editor_resources::get_resource);
+    m_shader_loader.register_shader(
         "editor/generated/shaders/grid.wgsl", "editor/shaders/grid.slang",
         "editor/generated/shaders/grid.wgsl", editor_resources::get_resource);
     m_shader_loader.register_shader(

@@ -93,6 +93,8 @@ slangc:
     - input: "renderers/forward/forward.slang"
       output: "renderers/forward/generated/shaders/forward_no_debug.wgsl"
       defines: ["NO_DEBUG_TARGETS"]
+    - input: "renderers/forward/skybox.slang"
+      output: "renderers/forward/generated/shaders/skybox.wgsl"
     - input: "core/shaders/shadow.slang"
       output: "core/generated/shaders/shadow.wgsl"
       reflect: true
@@ -164,6 +166,7 @@ embed:
     - input:
         - "renderers/forward/generated/shaders/forward.wgsl"
         - "renderers/forward/generated/shaders/forward_no_debug.wgsl"
+        - "renderers/forward/generated/shaders/skybox.wgsl"
         - "core/generated/shaders/shadow.wgsl"
         - "editor/generated/shaders/picking.wgsl"
         - "editor/generated/shaders/grid.wgsl"

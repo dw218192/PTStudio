@@ -31,6 +31,7 @@ class RenderPipelineBuilder {
     auto cull_mode(WGPUCullMode mode) -> RenderPipelineBuilder&;
     auto front_face(WGPUFrontFace face) -> RenderPipelineBuilder&;
     auto blend_state(const WGPUBlendState& blend, uint32_t index = 0) -> RenderPipelineBuilder&;
+    auto write_mask(WGPUColorWriteMask mask, uint32_t index = 0) -> RenderPipelineBuilder&;
     auto depth_format(WGPUTextureFormat format) -> RenderPipelineBuilder&;
     auto depth_write(bool enabled) -> RenderPipelineBuilder&;
     auto depth_compare(WGPUCompareFunction func) -> RenderPipelineBuilder&;

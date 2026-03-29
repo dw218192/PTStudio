@@ -61,6 +61,11 @@ class ForwardPass final : public rendering::IRenderer {
         WGPUTextureView fallback_cube_view = nullptr;
         WGPUTexture fallback_2d_tex = nullptr;
         WGPUTextureView fallback_2d_view = nullptr;
+        // Skybox
+        webgpu::ShaderModule skybox_shader;
+        webgpu::RenderPipeline skybox_pipeline;
+        WGPUBindGroupLayout skybox_bgl = nullptr;
+        webgpu::Buffer skybox_uniform_buffer;
     };
 
     std::variant<std::monostate, Ready> m_state;

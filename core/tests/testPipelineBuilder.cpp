@@ -44,6 +44,33 @@ TEST_CASE("RenderPipelineBuilder - depth-only pipeline (no_fragment)") {
     CHECK(pipeline.handle() != nullptr);
 }
 
+TEST_CASE("RenderPipelineBuilder - write_mask on multiple color targets") {
+    TestFixture f;
+
+    auto shader_source = test_resources::get_resource("shaders/test/simple.wgsl");
+    REQUIRE(shader_source.has_value());
+    auto shader = f.device.create_shader_module_from_source(shader_source.value());
+
+    // Verify write_mask builder chain works and auto-expands color targets.
+    // Build as depth-only to avoid needing a fragment shader — write_mask
+    // configures state that would take effect if a fragment stage were present.
+    auto pipeline = pts::webgpu::RenderPipelineBuilder(f.device)
+                        .shader(shader)
+                        .vertex_entry("vertex_main")
+                        .color_format(WGPUTextureFormat_RGBA16Float, 0)
+                        .color_format(WGPUTextureFormat_RGBA8Unorm, 1)
+                        .write_mask(WGPUColorWriteMask_None, 1)
+                        .color_format(WGPUTextureFormat_RGBA8Unorm, 2)
+                        .write_mask(WGPUColorWriteMask_None, 2)
+                        .no_fragment()
+                        .depth_format(WGPUTextureFormat_Depth32Float)
+                        .depth_write(true)
+                        .depth_compare(WGPUCompareFunction_Less)
+                        .build();
+
+    CHECK(pipeline.handle() != nullptr);
+}
+
 TEST_CASE("RenderPipelineBuilder - normal pipeline with fragment is unaffected") {
     TestFixture f;
 
