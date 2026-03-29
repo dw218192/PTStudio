@@ -400,13 +400,14 @@ void EditorApplication::on_ready() {
         device, get_logging_manager().get_logger_shared("frame_graph"));
 
     // Load scene via unified load_stage()
+    discover_demo_scenes(m_demo_scene_paths, m_demo_scene_names);
+    INVARIANT_MSG(!m_demo_scene_paths.empty(), "No demo scenes found in assets/scenes/");
+
     if (!m_app_config.usd_path.empty()) {
         auto stage = pxr::UsdStage::Open(m_app_config.usd_path);
         INVARIANT_MSG(stage, "Failed to open USD stage from path");
         load_stage(stage, m_app_config.usd_path);
     } else {
-        discover_demo_scenes(m_demo_scene_paths, m_demo_scene_names);
-        INVARIANT_MSG(!m_demo_scene_paths.empty(), "No demo scenes found in assets/scenes/");
         auto stage = pxr::UsdStage::Open(m_demo_scene_paths[0]);
         INVARIANT_MSG(stage, "Failed to open default demo scene");
         load_stage(stage, m_demo_scene_names[0]);
@@ -1162,22 +1163,21 @@ auto EditorApplication::draw_scene_panel() noexcept -> void {
     ImGui::TextUnformatted(k_editor_tutorial_text);
     ImGui::Separator();
 
-    if (!m_demo_scene_paths.empty()) {
-        ImGui::SetNextItemWidth(160.0f);
-        auto count = static_cast<int>(m_demo_scene_paths.size());
-        auto* names = &m_demo_scene_names;
-        if (ImGui::Combo(
-                "##demo_scene", &m_demo_scene_index,
-                [](void* data, int idx) -> const char* {
-                    return (*static_cast<std::vector<std::string>*>(data))[idx].c_str();
-                },
-                names, count)) {
-            auto stage = pxr::UsdStage::Open(m_demo_scene_paths[m_demo_scene_index]);
-            INVARIANT_MSG(stage, "Failed to open demo scene");
-            load_stage(stage, m_demo_scene_names[m_demo_scene_index]);
-        }
-        ImGui::SameLine();
+    PRECONDITION_MSG(m_demo_scene_paths.size() > 0, "No demo scenes registered");
+    ImGui::SetNextItemWidth(160.0f);
+    auto count = static_cast<int>(m_demo_scene_paths.size());
+    auto* names = &m_demo_scene_names;
+    if (ImGui::Combo(
+            "##demo_scene", &m_demo_scene_index,
+            [](void* data, int idx) -> const char* {
+                return (*static_cast<std::vector<std::string>*>(data))[idx].c_str();
+            },
+            names, count)) {
+        auto stage = pxr::UsdStage::Open(m_demo_scene_paths[m_demo_scene_index]);
+        INVARIANT_MSG(stage, "Failed to open demo scene");
+        load_stage(stage, m_demo_scene_names[m_demo_scene_index]);
     }
+    ImGui::SameLine();
 
     if (ImGui::Button("Open Scene")) open_scene_dialog();
 
