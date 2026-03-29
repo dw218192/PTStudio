@@ -48,7 +48,7 @@ class IblResources {
     WGPUSampler sampler() const noexcept;
 
     static constexpr uint32_t k_env_size = 256;
-    static constexpr uint32_t k_irradiance_size = 32;
+    static constexpr uint32_t k_irradiance_size = 64;
     static constexpr uint32_t k_brdf_lut_size = 512;
     static constexpr uint32_t k_prefilter_mip_count = 6;
 

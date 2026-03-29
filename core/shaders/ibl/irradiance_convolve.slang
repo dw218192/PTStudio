@@ -24,7 +24,7 @@ void cs_main(uint3 tid : SV_DispatchThreadID) {
 
     float3 irradiance = float3(0, 0, 0);
 
-    static const uint SAMPLE_COUNT = 128;
+    static const uint SAMPLE_COUNT = 1024;
     for (uint i = 0; i < SAMPLE_COUNT; ++i) {
         float2 Xi = hammersley(i, SAMPLE_COUNT);
 

@@ -637,15 +637,6 @@ def Xform "Root"
         uniform token[] xformOpOrder = ["xformOp:translate"]
     }
 
-    def DistantLight "KeyLight"
-    {
-        float inputs:angle = 1
-        color3f inputs:color = (1, 0.95, 0.9)
-        float inputs:intensity = 1.5
-        float3 xformOp:rotateXYZ = (-45, 30, 0)
-        uniform token[] xformOpOrder = ["xformOp:rotateXYZ"]
-    }
-
     def DomeLight "FillLight"
     {
         color3f inputs:color = (1, 1, 1)
