@@ -30,6 +30,7 @@ TEST_CASE("IblResources starts unready") {
     IblResources ibl;
     CHECK_FALSE(ibl.is_ready());
     CHECK(ibl.prefiltered_env_view() == nullptr);
+    CHECK(ibl.env_cubemap_view() == nullptr);
     CHECK(ibl.irradiance_view() == nullptr);
     CHECK(ibl.brdf_lut_view() == nullptr);
     CHECK(ibl.sampler() == nullptr);
@@ -48,6 +49,7 @@ TEST_CASE("IblResources init creates BRDF LUT and sampler") {
     CHECK(ibl.brdf_lut_view() != nullptr);
     CHECK(ibl.sampler() != nullptr);
     CHECK(ibl.prefiltered_env_view() == nullptr);
+    CHECK(ibl.env_cubemap_view() == nullptr);
     CHECK(ibl.irradiance_view() == nullptr);
 }
 
@@ -61,6 +63,7 @@ TEST_CASE("IblResources set_uniform_environment transitions to ready") {
 
     CHECK(ibl.is_ready());
     CHECK(ibl.prefiltered_env_view() != nullptr);
+    CHECK(ibl.env_cubemap_view() != nullptr);
     CHECK(ibl.irradiance_view() != nullptr);
     CHECK(ibl.brdf_lut_view() != nullptr);
     CHECK(ibl.sampler() != nullptr);
@@ -87,7 +90,9 @@ TEST_CASE("IblResources set_environment with synthetic HDR data") {
 
     CHECK(ibl.is_ready());
     CHECK(ibl.prefiltered_env_view() != nullptr);
+    CHECK(ibl.env_cubemap_view() != nullptr);
     CHECK(ibl.irradiance_view() != nullptr);
+    CHECK(ibl.prefiltered_env_view() != ibl.env_cubemap_view());
 }
 
 TEST_CASE("IblResources set_uniform_environment can be called again") {
@@ -102,6 +107,7 @@ TEST_CASE("IblResources set_uniform_environment can be called again") {
     ibl.set_uniform_environment(device, device.queue(), 0.0f, 0.0f, 1.0f);
     CHECK(ibl.is_ready());
     CHECK(ibl.prefiltered_env_view() != nullptr);
+    CHECK(ibl.env_cubemap_view() != nullptr);
     CHECK(ibl.irradiance_view() != nullptr);
 }
 
@@ -117,6 +123,7 @@ TEST_CASE("IblResources move semantics") {
     IblResources moved = std::move(ibl);
     CHECK(moved.is_ready());
     CHECK(moved.prefiltered_env_view() != nullptr);
+    CHECK(moved.env_cubemap_view() != nullptr);
     CHECK(moved.irradiance_view() != nullptr);
     CHECK(moved.brdf_lut_view() != nullptr);
     CHECK(moved.sampler() != nullptr);

@@ -342,7 +342,7 @@ void PathTracerPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
         WGPUBindGroupEntry ibe[2] = {};
         ibe[0] = WGPU_BIND_GROUP_ENTRY_INIT;
         ibe[0].binding = 0;
-        ibe[0].textureView = ibl.prefiltered_env_view();
+        ibe[0].textureView = ibl.env_cubemap_view();
         ibe[1] = WGPU_BIND_GROUP_ENTRY_INIT;
         ibe[1].binding = 1;
         ibe[1].sampler = ibl.sampler();

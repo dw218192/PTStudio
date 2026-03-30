@@ -4,6 +4,7 @@ import ibl_sampling;
 struct PrefilterParams {
     uint size;
     float roughness;
+    uint env_size;
 };
 
 [[vk::binding(0, 0)]] ConstantBuffer<PrefilterParams> params;
@@ -24,6 +25,10 @@ void cs_main(uint3 tid : SV_DispatchThreadID) {
     float3 prefiltered = float3(0, 0, 0);
     float total_weight = 0.0;
 
+    float a = params.roughness * params.roughness;
+    float a2 = a * a;
+    float sa_texel = 4.0 * PI / (6.0 * float(params.env_size) * float(params.env_size));
+
     static const uint SAMPLE_COUNT = 512;
     for (uint i = 0; i < SAMPLE_COUNT; ++i) {
         float2 Xi = hammersley(i, SAMPLE_COUNT);
@@ -32,7 +37,14 @@ void cs_main(uint3 tid : SV_DispatchThreadID) {
 
         float NdotL = max(dot(N, L), 0.0);
         if (NdotL > 0.0) {
-            prefiltered += env_cubemap.SampleLevel(env_sampler, L, 0).rgb * NdotL;
+            float NdotH = max(dot(N, H), 0.0);
+            float VdotH = max(dot(V, H), 0.001);
+            float D = D_GGX(NdotH, a2);
+            float pdf = D * NdotH / (4.0 * VdotH);
+            float sa_sample = 1.0 / (float(SAMPLE_COUNT) * max(pdf, 0.001));
+            float mip = params.roughness == 0.0 ? 0.0 : 0.5 * log2(sa_sample / sa_texel);
+
+            prefiltered += env_cubemap.SampleLevel(env_sampler, L, max(mip, 0.0)).rgb * NdotL;
             total_weight += NdotL;
         }
     }

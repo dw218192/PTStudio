@@ -43,6 +43,7 @@ class IblResources {
     bool is_ready() const noexcept;
 
     WGPUTextureView prefiltered_env_view() const noexcept;
+    WGPUTextureView env_cubemap_view() const noexcept;
     WGPUTextureView irradiance_view() const noexcept;
     WGPUTextureView brdf_lut_view() const noexcept;
     WGPUSampler sampler() const noexcept;
@@ -51,6 +52,7 @@ class IblResources {
     static constexpr uint32_t k_irradiance_size = 64;
     static constexpr uint32_t k_brdf_lut_size = 512;
     static constexpr uint32_t k_prefilter_mip_count = 6;
+    static constexpr uint32_t k_env_mip_count = 9;  // log2(k_env_size) + 1
 
    private:
     void release_env();
@@ -59,26 +61,31 @@ class IblResources {
     void generate_brdf_lut(const webgpu::Device& device, WGPUQueue queue);
     void convert_equirect_to_cubemap(const webgpu::Device& device, WGPUQueue queue,
                                      WGPUTexture equirect);
+    void generate_env_mipmaps(const webgpu::Device& device, WGPUQueue queue);
     void convolve_irradiance(const webgpu::Device& device, WGPUQueue queue);
     void prefilter_specular(const webgpu::Device& device, WGPUQueue queue);
 
     // Textures
     WGPUTexture m_env_cubemap = nullptr;
+    WGPUTexture m_prefiltered = nullptr;
     WGPUTexture m_irradiance = nullptr;
     WGPUTexture m_brdf_lut = nullptr;
     WGPUTextureView m_env_cube_view = nullptr;
+    WGPUTextureView m_prefiltered_view = nullptr;
     WGPUTextureView m_irradiance_view = nullptr;
     WGPUTextureView m_brdf_lut_view = nullptr;
     WGPUSampler m_sampler = nullptr;
 
     // Compute pipelines
     std::optional<webgpu::ComputePipeline> m_equirect_to_cube_pipeline;
+    std::optional<webgpu::ComputePipeline> m_downsample_pipeline;
     std::optional<webgpu::ComputePipeline> m_irradiance_pipeline;
     std::optional<webgpu::ComputePipeline> m_prefilter_pipeline;
     std::optional<webgpu::ComputePipeline> m_brdf_lut_pipeline;
 
     // Bind group layouts
     WGPUBindGroupLayout m_equirect_bgl = nullptr;
+    WGPUBindGroupLayout m_downsample_bgl = nullptr;
     WGPUBindGroupLayout m_convolve_bgl = nullptr;
     WGPUBindGroupLayout m_brdf_lut_bgl = nullptr;
 
