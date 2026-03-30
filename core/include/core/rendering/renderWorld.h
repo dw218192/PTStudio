@@ -402,7 +402,7 @@ struct RenderWorld {
 
     /// Update IBL resources from the current dome light state.
     /// Inits BRDF LUT on first call, then loads HDR or sets uniform color.
-    void update_ibl(const webgpu::Device& device, WGPUQueue queue);
+    void update_ibl(const webgpu::Device& device, WGPUQueue queue, UpAxis up_axis = UpAxis::Y);
 
     IblResources& ibl_resources();
     const IblResources& ibl_resources() const;
@@ -497,6 +497,7 @@ struct RenderWorld {
     std::string m_ibl_env_path;                 // currently loaded HDR path (empty = uniform)
     uint32_t m_ibl_light_version = UINT32_MAX;  // light version when IBL was last updated
     glm::vec3 m_ibl_uniform_color{-1.0f};       // sentinel: never matches real color
+    UpAxis m_ibl_up_axis = UpAxis::Y;           // up axis when IBL was last converted
 };
 
 }  // namespace pts::rendering

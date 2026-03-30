@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/rendering/upAxis.h>
 #include <core/rendering/webgpu/pipeline.h>
 #include <core/rendering/webgpu/webgpu.h>
 
@@ -32,7 +33,7 @@ class IblResources {
     /// Set environment from equirectangular HDR pixel data (RGBA float32).
     /// Triggers equirect->cube, irradiance convolution, specular prefilter.
     void set_environment(const webgpu::Device& device, WGPUQueue queue, const float* hdr_rgba,
-                         uint32_t width, uint32_t height);
+                         uint32_t width, uint32_t height, UpAxis up_axis = UpAxis::Y);
 
     /// Set uniform color environment (no texture, just dome color * intensity).
     /// Creates 1x1 cubemaps filled with the color.
@@ -60,7 +61,7 @@ class IblResources {
 
     void generate_brdf_lut(const webgpu::Device& device, WGPUQueue queue);
     void convert_equirect_to_cubemap(const webgpu::Device& device, WGPUQueue queue,
-                                     WGPUTexture equirect);
+                                     WGPUTexture equirect, UpAxis up_axis);
     void generate_env_mipmaps(const webgpu::Device& device, WGPUQueue queue);
     void convolve_irradiance(const webgpu::Device& device, WGPUQueue queue);
     void prefilter_specular(const webgpu::Device& device, WGPUQueue queue);

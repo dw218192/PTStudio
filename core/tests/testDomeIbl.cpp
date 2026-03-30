@@ -134,6 +134,28 @@ TEST_CASE("update_ibl transitions from dome to no-dome (black)") {
     CHECK(world.ibl_resources().is_ready());
 }
 
+TEST_CASE("update_ibl with Z-up produces ready IBL") {
+    auto logger = make_logger();
+    auto device = pts::webgpu::Device::create(logger);
+
+    RenderWorld world;
+    {
+        auto scope = world.begin_sync();
+        auto idx = scope.alloc_light_slot();
+        auto w = scope.write_light(idx);
+        w->type = LightData::Type::Dome;
+        w->color = {1.0f, 1.0f, 1.0f};
+        w->intensity = 1.0f;
+    }
+
+    world.update_ibl(device, device.queue(), UpAxis::Z);
+
+    CHECK(world.ibl_resources().is_ready());
+    CHECK(world.ibl_resources().irradiance_view() != nullptr);
+    CHECK(world.ibl_resources().prefiltered_env_view() != nullptr);
+    CHECK(world.ibl_resources().env_cubemap_view() != nullptr);
+}
+
 TEST_CASE("clear resets IBL state") {
     auto logger = make_logger();
     auto device = pts::webgpu::Device::create(logger);

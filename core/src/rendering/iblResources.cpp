@@ -535,7 +535,8 @@ void IblResources::generate_brdf_lut(const webgpu::Device& device, WGPUQueue que
 // ---------------------------------------------------------------------------
 
 void IblResources::set_environment(const webgpu::Device& device, WGPUQueue queue,
-                                   const float* hdr_rgba, uint32_t width, uint32_t height) {
+                                   const float* hdr_rgba, uint32_t width, uint32_t height,
+                                   UpAxis up_axis) {
     PRECONDITION_MSG(m_initialized, "Call init() before set_environment()");
     PRECONDITION(hdr_rgba != nullptr);
     PRECONDITION(width > 0 && height > 0);
@@ -598,7 +599,7 @@ void IblResources::set_environment(const webgpu::Device& device, WGPUQueue queue
         create_cubemap_texture(dev, k_irradiance_size, 1, WGPUTextureFormat_RGBA16Float, irr_usage);
 
     // Run compute passes
-    convert_equirect_to_cubemap(device, queue, equirect);
+    convert_equirect_to_cubemap(device, queue, equirect, up_axis);
     generate_env_mipmaps(device, queue);
 
     // Copy mip 0 from env cubemap to prefiltered (roughness=0 = raw env)
@@ -726,13 +727,14 @@ void IblResources::set_uniform_environment(const webgpu::Device& device, WGPUQue
 // ---------------------------------------------------------------------------
 
 void IblResources::convert_equirect_to_cubemap(const webgpu::Device& device, WGPUQueue queue,
-                                               WGPUTexture equirect) {
+                                               WGPUTexture equirect, UpAxis up_axis) {
     auto dev = device.handle();
 
     struct alignas(16) Params {
         uint32_t size;
+        uint32_t up_axis;
     };
-    Params params{k_env_size};
+    Params params{k_env_size, static_cast<uint32_t>(up_axis)};
 
     auto uniform_buf = device.create_buffer(
         sizeof(params),
