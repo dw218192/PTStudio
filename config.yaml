@@ -231,6 +231,9 @@ package:
       dest: "deps/usd/"
     - src: "{workspace_root}/assets/scenes/*.usdz"
       dest: "assets/scenes/"
+  # Emscripten package omits conanbuild scripts — Conan .sh scripts use
+  # hardcoded absolute paths and can't be relocated.  Unit tests only need
+  # node (on CI PATH); smoke tests use the browser.
   mappings@emscripten:
     - src: "{build_dir}/bin/**/*"
       dest: "{build_type}/bin/"
