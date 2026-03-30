@@ -7,6 +7,7 @@
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/preparedSceneData.h>
 #include <core/rendering/renderWorld.h>
+#include <core/rendering/sceneLoader.h>
 #include <core/rendering/shaderLoader.h>
 #include <core/rendering/webgpu/bufferReadback.h>
 #include <core/rendering/webgpu/textureReadback.h>
@@ -19,6 +20,7 @@
 #include <pxr/usd/usd/stage.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 
+#include <boost/core/span.hpp>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -43,6 +45,7 @@ class ToneMappingPass;
 }  // namespace pts::editor
 
 namespace pts::editor {
+
 struct AppConfig {
     std::string capture_output;     // empty = no capture mode
     std::string usd_path;           // empty = embedded default
@@ -69,7 +72,7 @@ struct EditorApplication final : GpuApplication {
     ~EditorApplication() override;
 
     void register_args(CommandLine& cli) override;
-    void process_args(const CommandLine& cli) override;
+    [[nodiscard]] auto process_args(const CommandLine& cli) -> ErrorCode override;
 
    protected:
     void on_ready() override;
@@ -90,9 +93,14 @@ struct EditorApplication final : GpuApplication {
     auto wrap_mouse_pos() noexcept -> void;
 
     // Scene I/O
-    void load_scene_background(pxr::UsdStageRefPtr stage, std::string_view label);
+    void load_stage(pxr::UsdStageRefPtr stage, std::string_view label);
+    void activate_stage();
     void open_scene_dialog();
     void save_scene_dialog();
+
+    // Capture
+    void save_capture_png(boost::span<const uint8_t> pixels, uint32_t width, uint32_t height,
+                          std::string_view path);
 
     // imgui rendering
     auto draw_scene_panel() noexcept -> void;
@@ -111,6 +119,8 @@ struct EditorApplication final : GpuApplication {
     std::unique_ptr<InputComponent> m_input;
 
     AppConfig m_app_config;
+    rendering::StageSettings m_stage_settings;
+    bool m_init_complete{false};
 
     std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> m_console_log_sink;
 
@@ -226,6 +236,9 @@ struct EditorApplication final : GpuApplication {
     // Capture mode state
     int m_frame_count = 0;
     webgpu::TextureReadback m_capture_readback;
+    uint32_t m_capture_width = 0;
+    uint32_t m_capture_height = 0;
+    bool m_screenshot_pending{false};
 
     // Async scene loading
     std::unique_ptr<pts::OneShotTask<rendering::RenderWorld>> m_scene_load_task;

@@ -57,28 +57,30 @@ agent:
       never let exceptions escape. Use ABI-safe types only at DLL boundaries
       (fixed-width ints, POD structs, opaque handles — no std::string/vector).
       Prefer Rule of Zero, RAII, string_view/span for non-owning views.
+      Prefer returning values over storing state — e.g. init() returns an
+      error code rather than storing it as a member for the caller to query.
       Use #pragma once, include what you use, forward-declare in headers.
     reviewer: >
-      Watch for regressions: verify that changes don't break existing behavior
-      (run the full test suite, not just new tests). Flag any changes that are
-      unrelated to the ticket — scope creep, drive-by refactors, or formatting
-      changes outside touched functions should be called out and excluded.
+      Watch for regressions: run the full test suite, not just new tests.
+      Flag scope creep, drive-by refactors, or formatting outside touched functions.
       Diff against the base branch (not just HEAD) to catch accumulated drift.
+      Reject self-testing mock tests: tests that define local stubs of the system
+      under test and assert against those stubs are worthless. Every test must call
+      real production code. If that's not feasible, don't add the test.
 
 usdz:
   scenes:
     - input: "assets/scenes/primitives.usda"
       output: "assets/scenes/primitives.usdz"
-    - input: "assets/scenes/area_test.usda"
-      output: "assets/scenes/area_test.usdz"
-    - input: "assets/scenes/normal_map_test.usda"
-      output: "assets/scenes/normal_map_test.usdz"
+    - input: "assets/scenes/area_light_test.usda"
+      output: "assets/scenes/area_light_test.usdz"
     - input: "assets/scenes/kitchen/Kitchen_set.usd"
       output: "assets/scenes/kitchen_set.usdz"
 
 slangc:
   search_paths:
     - "core/shaders"
+    - "core/shaders/ibl"
   shaders:
     - input: "assets/shaders/test/*.slang"
       output: "assets/shaders/test/*.wgsl"
@@ -91,6 +93,8 @@ slangc:
     - input: "renderers/forward/forward.slang"
       output: "renderers/forward/generated/shaders/forward_no_debug.wgsl"
       defines: ["NO_DEBUG_TARGETS"]
+    - input: "renderers/forward/skybox.slang"
+      output: "renderers/forward/generated/shaders/skybox.wgsl"
     - input: "core/shaders/shadow.slang"
       output: "core/generated/shaders/shadow.wgsl"
       reflect: true
@@ -116,6 +120,16 @@ slangc:
       output: "editor/generated/shaders/pathtracer.wgsl"
     - input: "renderers/pathtracer/pt_blit.slang"
       output: "editor/generated/shaders/pt_blit.wgsl"
+    - input: "core/shaders/ibl/brdf_lut.slang"
+      output: "core/generated/shaders/brdf_lut.wgsl"
+    - input: "core/shaders/ibl/equirect_to_cube.slang"
+      output: "core/generated/shaders/equirect_to_cube.wgsl"
+    - input: "core/shaders/ibl/irradiance_convolve.slang"
+      output: "core/generated/shaders/irradiance_convolve.wgsl"
+    - input: "core/shaders/ibl/downsample_cube.slang"
+      output: "core/generated/shaders/downsample_cube.wgsl"
+    - input: "core/shaders/ibl/prefilter_env.slang"
+      output: "core/generated/shaders/prefilter_env.wgsl"
 
 shader_codegen:
   template: "core/templates/shader_metadata.h.j2"
@@ -154,6 +168,7 @@ embed:
     - input:
         - "renderers/forward/generated/shaders/forward.wgsl"
         - "renderers/forward/generated/shaders/forward_no_debug.wgsl"
+        - "renderers/forward/generated/shaders/skybox.wgsl"
         - "core/generated/shaders/shadow.wgsl"
         - "editor/generated/shaders/picking.wgsl"
         - "editor/generated/shaders/grid.wgsl"
@@ -166,6 +181,14 @@ embed:
         - "editor/icons/*.*"
       output: "editor/generated/embedded_resources.h"
       namespace: "editor_resources"
+    - input:
+        - "core/generated/shaders/brdf_lut.wgsl"
+        - "core/generated/shaders/downsample_cube.wgsl"
+        - "core/generated/shaders/equirect_to_cube.wgsl"
+        - "core/generated/shaders/irradiance_convolve.wgsl"
+        - "core/generated/shaders/prefilter_env.wgsl"
+      output: "core/generated/embedded_ibl_shaders.h"
+      namespace: "ibl_resources"
     - input:
         - "assets/shaders/test/simple.wgsl"
         - "assets/scenes/test_cube.usda"
@@ -208,8 +231,11 @@ package:
       dest: "deps/usd/"
     - src: "{workspace_root}/assets/scenes/*.usdz"
       dest: "assets/scenes/"
+  # Emscripten package omits conanbuild scripts — Conan .sh scripts use
+  # hardcoded absolute paths and can't be relocated.  Unit tests only need
+  # node (on CI PATH); smoke tests use the browser.
   mappings@emscripten:
     - src: "{build_dir}/bin/**/*"
       dest: "{build_type}/bin/"
-    - src: "{build_dir}/conanbuild*"
-      dest: "{build_type}/"
+    - src: "{workspace_root}/assets/scenes/*.usdz"
+      dest: "assets/scenes/"

@@ -1,15 +1,74 @@
 #pragma once
 
 #include <core/rendering/renderPass.h>
+#include <core/rendering/renderWorld.h>
 #include <core/rendering/webgpu/buffer.h>
+#include <core/rendering/webgpu/device.h>
 #include <core/rendering/webgpu/pipeline.h>
 #include <core/rendering/webgpu/shader.h>
 #include <core/rendering/webgpu/webgpu.h>
 
+#include <algorithm>
+#include <boost/core/span.hpp>
 #include <variant>
 #include <vector>
 
 namespace pts::rendering {
+
+// ── ShadowPassData ──────────────────────────────────────────────────────────
+// Cross-pass output of ShadowMapPass. Written here, read by renderers via
+// RenderWorld::pass_data_for(&ShadowPassData::k_key).
+
+struct ShadowPassData {
+    static inline const char k_key = 0;
+
+    webgpu::Buffer info_buffer;
+    uint32_t count = 0;
+
+    void upload(boost::span<const ShadowInfo> infos, const webgpu::Device& device,
+                WGPUQueue queue) {
+        constexpr std::size_t k_min_size = sizeof(ShadowInfo);
+        auto info_bytes =
+            std::max(k_min_size, static_cast<std::size_t>(infos.size()) * sizeof(ShadowInfo));
+        if (!info_buffer.is_valid() || info_buffer.size() < info_bytes) {
+            info_buffer = device.create_buffer(
+                info_bytes,
+                static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
+        }
+        if (!infos.empty()) {
+            wgpuQueueWriteBuffer(queue, info_buffer.handle(), 0, infos.data(),
+                                 infos.size() * sizeof(ShadowInfo));
+        }
+        uint32_t active = 0;
+        for (const auto& si : infos) {
+            if (si.has_shadow) ++active;
+        }
+        count = active;
+    }
+
+    static ShadowPassData& get_or_create(RenderWorld& world) {
+        auto& map = world.pass_data_for(&k_key);
+        auto it = map.find(0);
+        if (it == map.end()) {
+            it = map.emplace(0, RenderWorld::PassDataEntry{}).first;
+        }
+        auto& entry = it->second;
+        if (!entry.data) {
+            entry.data = RenderWorld::ErasedPtr(
+                new ShadowPassData{}, [](void* p) { delete static_cast<ShadowPassData*>(p); });
+        }
+        return *static_cast<ShadowPassData*>(entry.data.get());
+    }
+
+    static ShadowPassData* find(RenderWorld& world) {
+        auto& map = world.pass_data_for(&k_key);
+        auto it = map.find(0);
+        if (it == map.end() || !it->second.data) return nullptr;
+        return static_cast<ShadowPassData*>(it->second.data.get());
+    }
+};
+
+// ── ShadowMapPass ───────────────────────────────────────────────────────────
 
 inline constexpr uint32_t k_max_shadow_maps = 4;
 inline constexpr uint32_t k_default_shadow_resolution = 2048;

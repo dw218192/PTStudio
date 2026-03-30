@@ -44,6 +44,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
+      # Windows must finish before Emscripten starts (USDZ scene dependency).
+      # max-parallel: 1 ensures sequential execution in platform order.
+      max-parallel: 1
       matrix:
         platform: [windows-x64, emscripten]
         build_type: [Release]
@@ -97,8 +100,27 @@ jobs:
           restore-keys: |
             ${{ matrix.platform }}-conan-${{ hashFiles('conanfile.py') }}
 
+      # Windows prebuild generates USDZ scenes; upload them so the
+      # Emscripten build can embed them in WASM via --embed-file.
+      # usdz_pack is a native host tool that cannot cross-compile to WASM.
+      - name: Download USDZ scenes
+        if: matrix.platform == 'emscripten'
+        uses: actions/download-artifact@v4
+        with:
+          name: usdz-scenes
+          path: assets/scenes/
+
       - name: Build project
         run: ${{ matrix.repo }} build --platform ${{ matrix.platform }} --build-type ${{ matrix.build_type }}
+
+      - name: Upload USDZ scenes
+        if: matrix.platform == 'windows-x64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: usdz-scenes
+          path: assets/scenes/*.usdz
+          if-no-files-found: error
+          retention-days: 3
 
       - name: Package build artifacts
         run: ${{ matrix.repo }} package --platform ${{ matrix.platform }} --build-type ${{ matrix.build_type }}
@@ -158,14 +180,10 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: build-${{ matrix.platform }}-${{ matrix.build_type }}
-          path: _build/${{ matrix.platform }}/
-
-      - name: Generate USDZ scenes
-        if: matrix.platform == 'windows-x64'
-        run: ${{ matrix.repo }} usdz --build-type ${{ matrix.build_type }}
+          path: _package/${{ matrix.platform }}/
 
       - name: Run tests
-        run: ${{ matrix.repo }} test --platform ${{ matrix.platform }} --build-type ${{ matrix.build_type }}
+        run: ${{ matrix.repo }} test --platform ${{ matrix.platform }} --build-type ${{ matrix.build_type }} --from-package
 
       - name: Upload test results
         if: always()

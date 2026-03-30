@@ -50,6 +50,14 @@ if(NOT EMSCRIPTEN)
     set(testPipelineBuilder_source testPipelineBuilder.cpp)
     set(testPipelineBuilder_libs core)
 
+    list(APPEND TEST_NAMES testIblResources)
+    set(testIblResources_source testIblResources.cpp)
+    set(testIblResources_libs core)
+
+    list(APPEND TEST_NAMES testDomeIbl)
+    set(testDomeIbl_source testDomeIbl.cpp)
+    set(testDomeIbl_libs core)
+
     # Geometric adapter tests - sync() requires GPU for mesh upload
     list(APPEND TEST_NAMES testGeometricAdapters)
     set(testGeometricAdapters_source testGeometricAdapters.cpp)
@@ -103,6 +111,11 @@ set(testWorker_libs core)
 list(APPEND TEST_NAMES testLoadingOverlay)
 set(testLoadingOverlay_source testLoadingOverlay.cpp)
 set(testLoadingOverlay_libs core)
+
+# OrbitCamera - no GPU needed, tests orbit/position/view math
+list(APPEND TEST_NAMES testCamera)
+set(testCamera_source testCamera.cpp)
+set(testCamera_libs core)
 
 # BVH builder - no GPU needed, pure CPU algorithm
 list(APPEND TEST_NAMES testBvh)

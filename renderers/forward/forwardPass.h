@@ -53,6 +53,19 @@ class ForwardPass final : public rendering::IRenderer {
         // Shadow receiver resources (bind group 1)
         WGPUBindGroupLayout shadow_recv_bgl = nullptr;
         WGPUSampler shadow_sampler = nullptr;
+        // IBL resources (bind group 2)
+        WGPUBindGroupLayout ibl_bgl = nullptr;
+        WGPUSampler ibl_sampler = nullptr;
+        // 1x1 black fallback textures for when IBL is not yet ready
+        WGPUTexture fallback_cube_tex = nullptr;
+        WGPUTextureView fallback_cube_view = nullptr;
+        WGPUTexture fallback_2d_tex = nullptr;
+        WGPUTextureView fallback_2d_view = nullptr;
+        // Skybox
+        webgpu::ShaderModule skybox_shader;
+        webgpu::RenderPipeline skybox_pipeline;
+        WGPUBindGroupLayout skybox_bgl = nullptr;
+        webgpu::Buffer skybox_uniform_buffer;
     };
 
     std::variant<std::monostate, Ready> m_state;

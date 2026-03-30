@@ -38,12 +38,19 @@ class TestTool(RepoTool):
             default=None,
             help="Verbose test output",
         )(cmd)
+        cmd = click.option(
+            "--from-package",
+            is_flag=True,
+            default=None,
+            help="Run from packaged artifacts instead of build dir (CI)",
+        )(cmd)
         return cmd
 
     def default_args(self, tokens: dict[str, str]) -> dict[str, Any]:
         return {
             "config": None,
             "verbose": False,
+            "from_package": False,
         }
 
     def format_mcp_output(
@@ -76,6 +83,7 @@ class TestTool(RepoTool):
             "workspace_root": str(ctx.workspace_root),
             "build_dir": ctx.tokens["build_dir"],
             "conan_deps_root": ctx.tokens["conan_deps_root"],
+            "package_dir": ctx.tokens["package_dir"],
             "platform": platform_id,
             "build_type": build_type,
             "logs_root": ctx.tokens["logs_root"],
@@ -88,4 +96,5 @@ class TestTool(RepoTool):
                 logger.error(f"Cannot run {platform_id} binaries on this host")
             sys.exit(1)
 
-        sys.exit(_run_tests(context, bool(args.get("verbose"))))
+        sys.exit(_run_tests(context, bool(args.get("verbose")),
+                            from_package=bool(args.get("from_package"))))

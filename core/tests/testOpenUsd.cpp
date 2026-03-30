@@ -11,6 +11,7 @@
 #include <pxr/usd/usd/stage.h>
 #include <pxr/usd/usdGeom/cube.h>
 #include <pxr/usd/usdGeom/mesh.h>
+#include <pxr/usd/usdGeom/primvarsAPI.h>
 #include <pxr/usd/usdGeom/xform.h>
 #include <pxr/usd/usdGeom/xformable.h>
 #include <pxr/usd/usdShade/material.h>
@@ -395,7 +396,7 @@ TEST_CASE("Material extraction from UsdPreviewSurface") {
 
     REQUIRE(world.get_objects().size() == 1);
     REQUIRE(world.get_materials().size() == 1);
-    CHECK(world.get_objects()[0]->material_index == 0);
+    CHECK(world.get_objects()[0]->material_index == 1);
 
     auto& mat = world.get_materials()[0];
     CHECK(mat.diffuse_color.x == doctest::Approx(0.8f));
@@ -408,7 +409,7 @@ TEST_CASE("Material extraction from UsdPreviewSurface") {
     spdlog::drop("test_material");
 }
 
-TEST_CASE("Prim without material gets k_no_material") {
+TEST_CASE("Prim without material gets k_default_material") {
     auto stage = pxr::UsdStage::CreateInMemory();
     REQUIRE(stage);
 
@@ -426,7 +427,7 @@ TEST_CASE("Prim without material gets k_no_material") {
     world.upload_all_meshes(device);
 
     REQUIRE(world.get_objects().size() == 1);
-    CHECK(world.get_objects()[0]->material_index == pts::rendering::k_no_material);
+    CHECK(world.get_objects()[0]->material_index == pts::rendering::k_default_material);
     CHECK(world.get_materials().empty());
 
     spdlog::drop("test_no_material");
@@ -470,9 +471,141 @@ TEST_CASE("Shared material is deduplicated") {
     REQUIRE(world.get_objects().size() == 2);
     CHECK(world.get_materials().size() == 1);
     CHECK(world.get_objects()[0]->material_index == world.get_objects()[1]->material_index);
-    CHECK(world.get_objects()[0]->material_index == 0);
+    CHECK(world.get_objects()[0]->material_index == 1);
 
     spdlog::drop("test_dedup_material");
+}
+
+TEST_CASE("Default material is hidden from get_materials") {
+    pts::rendering::RenderWorld world;
+    CHECK(world.get_materials().empty());
+    world.clear();
+    CHECK(world.get_materials().empty());
+}
+
+TEST_CASE("Prim with displayColor creates material from displayColor") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    REQUIRE(stage);
+
+    pxr::UsdGeomXform::Define(stage, pxr::SdfPath("/Root"));
+    auto mesh = pxr::UsdGeomMesh::Define(stage, pxr::SdfPath("/Root/Mesh"));
+    pxr::VtVec3fArray points = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}};
+    mesh.GetPointsAttr().Set(points);
+    mesh.GetFaceVertexCountsAttr().Set(pxr::VtIntArray{3});
+    mesh.GetFaceVertexIndicesAttr().Set(pxr::VtIntArray{0, 1, 2});
+
+    // Set displayColor but no material binding
+    auto primvars = pxr::UsdGeomPrimvarsAPI(mesh.GetPrim());
+    auto color_pv =
+        primvars.CreatePrimvar(pxr::TfToken("displayColor"), pxr::SdfValueTypeNames->Color3fArray);
+    color_pv.Set(pxr::VtVec3fArray{{0.8f, 0.2f, 0.1f}});
+
+    auto logger = spdlog::stdout_color_mt("test_display_color_mat");
+    auto device = pts::webgpu::Device::create(logger);
+    pts::rendering::RenderWorld world;
+    pts::rendering::populate_from_stage(world, stage);
+    world.upload_all_meshes(device);
+
+    REQUIRE(world.get_objects().size() == 1);
+    REQUIRE(world.get_materials().size() == 1);
+    auto mat_idx = world.get_objects()[0]->material_index;
+    CHECK(mat_idx == 1);
+
+    auto& mat = world.get_materials()[0];
+    CHECK(mat.diffuse_color.x == doctest::Approx(0.8f));
+    CHECK(mat.diffuse_color.y == doctest::Approx(0.2f));
+    CHECK(mat.diffuse_color.z == doctest::Approx(0.1f));
+    CHECK(mat.metallic == doctest::Approx(0.0f));
+    CHECK(mat.roughness == doctest::Approx(0.5f));
+    CHECK(mat.diffuse_tex == UINT32_MAX);
+
+    spdlog::drop("test_display_color_mat");
+}
+
+TEST_CASE("Re-syncing displayColor prim reuses cached material") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    REQUIRE(stage);
+
+    pxr::UsdGeomXform::Define(stage, pxr::SdfPath("/Root"));
+    auto mesh = pxr::UsdGeomMesh::Define(stage, pxr::SdfPath("/Root/Mesh"));
+    pxr::VtVec3fArray points = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}};
+    mesh.GetPointsAttr().Set(points);
+    mesh.GetFaceVertexCountsAttr().Set(pxr::VtIntArray{3});
+    mesh.GetFaceVertexIndicesAttr().Set(pxr::VtIntArray{0, 1, 2});
+
+    auto primvars = pxr::UsdGeomPrimvarsAPI(mesh.GetPrim());
+    auto color_pv =
+        primvars.CreatePrimvar(pxr::TfToken("displayColor"), pxr::SdfValueTypeNames->Color3fArray);
+    color_pv.Set(pxr::VtVec3fArray{{0.8f, 0.2f, 0.1f}});
+
+    auto logger = spdlog::stdout_color_mt("test_display_resync");
+    auto device = pts::webgpu::Device::create(logger);
+    pts::rendering::RenderWorld world;
+    pts::rendering::populate_from_stage(world, stage);
+    world.upload_all_meshes(device);
+
+    REQUIRE(world.get_materials().size() == 1);
+    CHECK(world.get_materials()[0].diffuse_color.x == doctest::Approx(0.8f));
+
+    // Change displayColor and re-sync the prim
+    color_pv.Set(pxr::VtVec3fArray{{0.1f, 0.9f, 0.3f}});
+    {
+        auto scope = world.begin_sync();
+        pts::rendering::sync_prim(scope, stage, pxr::SdfPath("/Root/Mesh"));
+    }
+
+    // Material count should not grow — cached slot is reused
+    REQUIRE(world.get_materials().size() == 1);
+    CHECK(world.get_materials()[0].diffuse_color.x == doctest::Approx(0.1f));
+    CHECK(world.get_materials()[0].diffuse_color.y == doctest::Approx(0.9f));
+    CHECK(world.get_materials()[0].diffuse_color.z == doctest::Approx(0.3f));
+
+    spdlog::drop("test_display_resync");
+}
+
+TEST_CASE("Bound material takes precedence over displayColor") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    REQUIRE(stage);
+
+    pxr::UsdGeomXform::Define(stage, pxr::SdfPath("/Root"));
+    auto mesh = pxr::UsdGeomMesh::Define(stage, pxr::SdfPath("/Root/Mesh"));
+    pxr::VtVec3fArray points = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}};
+    mesh.GetPointsAttr().Set(points);
+    mesh.GetFaceVertexCountsAttr().Set(pxr::VtIntArray{3});
+    mesh.GetFaceVertexIndicesAttr().Set(pxr::VtIntArray{0, 1, 2});
+
+    // Set displayColor AND a bound material
+    auto primvars = pxr::UsdGeomPrimvarsAPI(mesh.GetPrim());
+    auto color_pv =
+        primvars.CreatePrimvar(pxr::TfToken("displayColor"), pxr::SdfValueTypeNames->Color3fArray);
+    color_pv.Set(pxr::VtVec3fArray{{1.0f, 0.0f, 0.0f}});
+
+    auto material = pxr::UsdShadeMaterial::Define(stage, pxr::SdfPath("/Root/Mat"));
+    auto shader = pxr::UsdShadeShader::Define(stage, pxr::SdfPath("/Root/Mat/Surface"));
+    shader.CreateIdAttr(pxr::VtValue(pxr::TfToken("UsdPreviewSurface")));
+    shader.CreateInput(pxr::TfToken("diffuseColor"), pxr::SdfValueTypeNames->Color3f)
+        .Set(pxr::GfVec3f(0.0f, 0.5f, 1.0f));
+    material.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(),
+                                                   pxr::TfToken("surface"));
+    pxr::UsdShadeMaterialBindingAPI::Apply(mesh.GetPrim()).Bind(material);
+
+    auto logger = spdlog::stdout_color_mt("test_mat_over_display");
+    auto device = pts::webgpu::Device::create(logger);
+    pts::rendering::RenderWorld world;
+    pts::rendering::populate_from_stage(world, stage);
+    world.upload_all_meshes(device);
+
+    REQUIRE(world.get_objects().size() == 1);
+    auto mat_idx = world.get_objects()[0]->material_index;
+    REQUIRE(mat_idx > pts::rendering::k_default_material);
+    REQUIRE(static_cast<std::size_t>(mat_idx - 1) < world.get_materials().size());
+    // Bound material wins — displayColor is ignored
+    auto& mat = world.get_materials()[mat_idx - 1];
+    CHECK(mat.diffuse_color.x == doctest::Approx(0.0f));
+    CHECK(mat.diffuse_color.y == doctest::Approx(0.5f));
+    CHECK(mat.diffuse_color.z == doctest::Approx(1.0f));
+
+    spdlog::drop("test_mat_over_display");
 }
 
 #endif  // !__EMSCRIPTEN__

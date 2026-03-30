@@ -212,8 +212,8 @@ int main(int argc, char* argv[]) {
 
     try {
         HelloApp app(logging_manager);
-        if (!app.init(argc, argv)) {
-            return 0;
+        if (auto exit_code = app.init(argc, argv)) {
+            return *exit_code;
         }
         app.run();
     } catch (const std::exception& e) {

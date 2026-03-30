@@ -147,6 +147,7 @@ PUBLIC
 	${CMAKE_CURRENT_SOURCE_DIR}/include
 PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}/include/core
+	${CMAKE_CURRENT_SOURCE_DIR}/generated
 )
 
 # Build unit tests if enabled

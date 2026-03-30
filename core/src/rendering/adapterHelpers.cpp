@@ -1,4 +1,5 @@
 #include <core/rendering/adapterHelpers.h>
+#include <core/rendering/adapters/adapterUtils.h>
 #include <core/rendering/renderWorld.h>
 #include <pxr/usd/ar/resolver.h>
 #include <pxr/usd/sdf/assetPath.h>
@@ -187,6 +188,31 @@ void sync_object(pxr::UsdPrim prim, SyncScope& scope, std::vector<Vertex>& verti
     auto sdf_path = prim.GetPath();
     auto transform = compute_world_transform(prim);
     auto material_index = resolve_material(prim, scope);
+
+    if (material_index == k_no_material) {
+        auto colors = read_display_color(prim);
+        if (!colors.empty()) {
+            // Use material cache with a synthetic key to avoid unbounded
+            // growth when the same prim is re-synced.
+            auto cache_key = "$displayColor:" + sdf_path.GetString();
+            auto& cache = scope.material_cache();
+            auto it = cache.find(cache_key);
+            if (it != cache.end()) {
+                material_index = it->second;
+                auto& mat = scope.materials()[material_index];
+                mat.diffuse_color = {colors[0][0], colors[0][1], colors[0][2]};
+            } else {
+                Material mat;
+                mat.diffuse_color = {colors[0][0], colors[0][1], colors[0][2]};
+                auto& materials = scope.materials();
+                material_index = static_cast<uint32_t>(materials.size());
+                materials.push_back(mat);
+                cache[cache_key] = material_index;
+            }
+        } else {
+            material_index = k_default_material;
+        }
+    }
 
     int existing = world.find_object_by_prim(sdf_path);
     if (existing >= 0) {
