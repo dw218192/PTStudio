@@ -115,7 +115,7 @@ TEST_CASE("ShadowMapPass add_to_frame_graph with no lights clears shadow data") 
     pass.add_to_frame_graph(fg, ctx);
 
     auto* sd = ShadowPassData::find(world);
-    CHECK(sd != nullptr);
+    REQUIRE(sd != nullptr);
     CHECK(sd->count == 0);
 }
 
@@ -284,7 +284,7 @@ TEST_CASE("ShadowMapPass skips non-distant lights") {
     pass.add_to_frame_graph(fg, ctx);
 
     auto* sd = ShadowPassData::find(world);
-    CHECK(sd != nullptr);
+    REQUIRE(sd != nullptr);
     CHECK(sd->count == 0);
 }
 

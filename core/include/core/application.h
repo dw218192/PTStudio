@@ -49,7 +49,7 @@ struct Application {
      * Derived classes should call the base version first and propagate errors.
      * Return ErrorCode::Ok on success, or an error code to abort.
      */
-    virtual auto process_args(const CommandLine& cli) -> ErrorCode;
+    [[nodiscard]] virtual auto process_args(const CommandLine& cli) -> ErrorCode;
 
     virtual void run();
 

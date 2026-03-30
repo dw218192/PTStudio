@@ -74,6 +74,7 @@ FsOut fs_main(float3 near_point : NEAR_POINT, float3 far_point : FAR_POINT) {
     if (u.up_axis == 2) {
         // Z-up: intersect Z=0 plane, sample XY coords
         denom = far_point.z - near_point.z;
+        if (abs(denom) < 1e-6) discard;
         t = -near_point.z / denom;
         world_pos = near_point + t * (far_point - near_point);
         coord = world_pos.xy;
@@ -81,6 +82,7 @@ FsOut fs_main(float3 near_point : NEAR_POINT, float3 far_point : FAR_POINT) {
     } else {
         // Y-up: intersect Y=0 plane, sample XZ coords
         denom = far_point.y - near_point.y;
+        if (abs(denom) < 1e-6) discard;
         t = -near_point.y / denom;
         world_pos = near_point + t * (far_point - near_point);
         coord = world_pos.xz;

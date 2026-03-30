@@ -20,6 +20,7 @@
 #include <pxr/usd/usd/stage.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 
+#include <boost/core/span.hpp>
 #include <cstdint>
 #include <memory>
 #include <string>

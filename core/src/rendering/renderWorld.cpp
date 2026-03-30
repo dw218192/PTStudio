@@ -915,7 +915,6 @@ void RenderWorld::update_ibl(const webgpu::Device& device, WGPUQueue queue, UpAx
 
     // Only re-evaluate when lights change
     if (m_ibl_light_version == m_light_version) return;
-    m_ibl_light_version = m_light_version;
 
     // Find first dome light
     const LightData* dome = nullptr;
@@ -934,6 +933,7 @@ void RenderWorld::update_ibl(const webgpu::Device& device, WGPUQueue queue, UpAx
         m_ibl.set_uniform_environment(device, queue, 0.0f, 0.0f, 0.0f);
         m_ibl_env_path.clear();
         m_ibl_uniform_color = glm::vec3(0.0f);
+        m_ibl_light_version = m_light_version;
         return;
     }
 
@@ -978,6 +978,8 @@ void RenderWorld::update_ibl(const webgpu::Device& device, WGPUQueue queue, UpAx
         m_ibl_env_path.clear();
         m_ibl_uniform_color = c;
     }
+
+    m_ibl_light_version = m_light_version;
 }
 
 }  // namespace pts::rendering

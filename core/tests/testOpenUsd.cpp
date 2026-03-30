@@ -556,6 +556,8 @@ TEST_CASE("Bound material takes precedence over displayColor") {
 
     REQUIRE(world.get_objects().size() == 1);
     auto mat_idx = world.get_objects()[0]->material_index;
+    REQUIRE(mat_idx > pts::rendering::k_default_material);
+    REQUIRE(static_cast<std::size_t>(mat_idx - 1) < world.get_materials().size());
     // Bound material wins — displayColor is ignored
     auto& mat = world.get_materials()[mat_idx - 1];
     CHECK(mat.diffuse_color.x == doctest::Approx(0.0f));

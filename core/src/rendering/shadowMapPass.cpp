@@ -184,7 +184,7 @@ void ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
         ++layer_index;
     }
 
-    // Upload shadow data via pass_data_for
+    // Upload shadow data via get_or_create
     ShadowPassData::get_or_create(ctx.world).upload(infos, ctx.device, ctx.queue);
 
     // Ensure texture array
