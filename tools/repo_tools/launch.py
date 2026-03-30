@@ -126,17 +126,14 @@ def _discover_executables(target_dir: Path, is_emscripten: bool = False) -> list
     return exe_paths
 
 
-def _resolve_runtime_deploy_dir(build_dir: Path, conan_deps_root: str | None = None) -> Path | None:
-    """Return the runtime_deploy directory if it exists.
+def _resolve_runtime_deploy_dir(conan_deps_root: str) -> Path | None:
+    """Return the runtime_deploy directory if it contains shared libraries.
 
     When Conan's ``runtime_deploy`` deployer is used, shared libraries are
     copied into the deployer-folder as a flat directory.  This can be added
     to PATH directly, without needing a conanrun script.
-
-    Uses *conan_deps_root* (from the ``{conan_deps_root}`` config token)
-    when available, otherwise falls back to ``build_dir/../deps``.
     """
-    deps_dir = Path(conan_deps_root) if conan_deps_root else build_dir.parent / "deps"
+    deps_dir = Path(conan_deps_root)
     if not deps_dir.exists():
         return None
     dll_ext = ".dll" if is_windows() else ".so"
@@ -431,9 +428,7 @@ def _run_executable(
     if not is_emscripten:
         env_script = _resolve_env_script(build_dir, is_emscripten=False)
         if not env_script:
-            runtime_dir = _resolve_runtime_deploy_dir(
-                build_dir, context.get("conan_deps_root")
-            )
+            runtime_dir = _resolve_runtime_deploy_dir(context["conan_deps_root"])
             if runtime_dir:
                 logger.debug(f"Using runtime_deploy: {runtime_dir}")
                 path_sep = ";" if is_windows() else ":"
@@ -476,7 +471,7 @@ def _can_run(context: dict[str, Any]) -> bool:
         return shutil.which("node") is not None
     if _resolve_env_script(build_dir, is_emscripten=False) is not None:
         return True
-    if _resolve_runtime_deploy_dir(build_dir, context.get("conan_deps_root")) is not None:
+    if _resolve_runtime_deploy_dir(context["conan_deps_root"]) is not None:
         return True
     # Inline check: can only run natively if target matches host
     return context["platform"] == detect_platform_identifier()
@@ -490,7 +485,12 @@ def _run_tests(context: dict[str, Any], verbose: bool, from_package: bool = Fals
         # so _run_executable finds env scripts in the package too.
         root_dir = Path(context["package_dir"]) / context["build_type"]
         scenes_dir = Path(context["package_dir"]) / "assets" / "scenes"
-        context = {**context, "build_dir": str(root_dir), "conan_deps_root": None}
+        pkg = Path(context["package_dir"])
+        context = {
+            **context,
+            "build_dir": str(root_dir),
+            "conan_deps_root": str(pkg / "deps"),
+        }
     else:
         # Local dev: build output + source-tree assets.
         root_dir = Path(context["build_dir"])
