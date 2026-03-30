@@ -234,5 +234,3 @@ package:
   mappings@emscripten:
     - src: "{build_dir}/bin/**/*"
       dest: "{build_type}/bin/"
-    - src: "{build_dir}/conanbuild*"
-      dest: "{build_type}/"
