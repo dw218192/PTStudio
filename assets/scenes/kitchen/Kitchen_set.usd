@@ -5350,7 +5350,7 @@ def Xform "Root"
     {
         color3f inputs:color = (1, 1, 1)
         float inputs:intensity = 1
-        asset inputs:texture:file = @../hdr/bryanston_park_sunrise_2k.hdr@
+        asset inputs:texture:file = @../../hdr/bryanston_park_sunrise_2k.hdr@
     }
 
     def Camera "Camera"
