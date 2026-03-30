@@ -490,7 +490,7 @@ def _run_tests(context: dict[str, Any], verbose: bool, from_package: bool = Fals
         # so _run_executable finds env scripts in the package too.
         root_dir = Path(context["package_dir"]) / context["build_type"]
         scenes_dir = Path(context["package_dir"]) / "assets" / "scenes"
-        context = {**context, "build_dir": str(root_dir)}
+        context = {**context, "build_dir": str(root_dir), "conan_deps_root": None}
     else:
         # Local dev: build output + source-tree assets.
         root_dir = Path(context["build_dir"])
