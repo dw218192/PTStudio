@@ -32,49 +32,53 @@ TEST_CASE("IblResources starts unready") {
     CHECK(ibl.prefiltered_env_view() == nullptr);
     CHECK(ibl.env_cubemap_view() == nullptr);
     CHECK(ibl.irradiance_view() == nullptr);
-    CHECK(ibl.brdf_lut_view() == nullptr);
-    CHECK(ibl.sampler() == nullptr);
+}
+
+TEST_CASE("IblPipelines starts unready") {
+    IblPipelines pipes;
+    CHECK_FALSE(pipes.is_ready());
+    CHECK(pipes.brdf_lut_view() == nullptr);
+    CHECK(pipes.sampler() == nullptr);
 }
 
 #ifndef __EMSCRIPTEN__
 
-TEST_CASE("IblResources init creates BRDF LUT and sampler") {
+TEST_CASE("IblPipelines init creates BRDF LUT and sampler") {
     auto logger = make_logger();
     auto device = pts::webgpu::Device::create(logger);
 
-    IblResources ibl;
-    ibl.init(device, device.queue());
+    IblPipelines pipes;
+    pipes.init(device, device.queue());
 
-    CHECK_FALSE(ibl.is_ready());
-    CHECK(ibl.brdf_lut_view() != nullptr);
-    CHECK(ibl.sampler() != nullptr);
-    CHECK(ibl.prefiltered_env_view() == nullptr);
-    CHECK(ibl.env_cubemap_view() == nullptr);
-    CHECK(ibl.irradiance_view() == nullptr);
+    CHECK(pipes.is_ready());
+    CHECK(pipes.brdf_lut_view() != nullptr);
+    CHECK(pipes.sampler() != nullptr);
 }
 
 TEST_CASE("IblResources set_uniform_environment transitions to ready") {
     auto logger = make_logger();
     auto device = pts::webgpu::Device::create(logger);
 
+    IblPipelines pipes;
+    pipes.init(device, device.queue());
+
     IblResources ibl;
-    ibl.init(device, device.queue());
     ibl.set_uniform_environment(device, device.queue(), 0.5f, 0.5f, 0.5f);
 
     CHECK(ibl.is_ready());
     CHECK(ibl.prefiltered_env_view() != nullptr);
     CHECK(ibl.env_cubemap_view() != nullptr);
     CHECK(ibl.irradiance_view() != nullptr);
-    CHECK(ibl.brdf_lut_view() != nullptr);
-    CHECK(ibl.sampler() != nullptr);
 }
 
 TEST_CASE("IblResources set_environment with synthetic HDR data") {
     auto logger = make_logger();
     auto device = pts::webgpu::Device::create(logger);
 
+    IblPipelines pipes;
+    pipes.init(device, device.queue());
+
     IblResources ibl;
-    ibl.init(device, device.queue());
 
     constexpr uint32_t w = 16;
     constexpr uint32_t h = 8;
@@ -86,7 +90,7 @@ TEST_CASE("IblResources set_environment with synthetic HDR data") {
         hdr[i * 4 + 3] = 1.0f;
     }
 
-    ibl.set_environment(device, device.queue(), hdr.data(), w, h);
+    ibl.set_environment(pipes, device, device.queue(), hdr.data(), w, h);
 
     CHECK(ibl.is_ready());
     CHECK(ibl.prefiltered_env_view() != nullptr);
@@ -100,7 +104,6 @@ TEST_CASE("IblResources set_uniform_environment can be called again") {
     auto device = pts::webgpu::Device::create(logger);
 
     IblResources ibl;
-    ibl.init(device, device.queue());
     ibl.set_uniform_environment(device, device.queue(), 1.0f, 0.0f, 0.0f);
     CHECK(ibl.is_ready());
 
@@ -116,7 +119,6 @@ TEST_CASE("IblResources move semantics") {
     auto device = pts::webgpu::Device::create(logger);
 
     IblResources ibl;
-    ibl.init(device, device.queue());
     ibl.set_uniform_environment(device, device.queue(), 0.3f, 0.3f, 0.3f);
     CHECK(ibl.is_ready());
 
@@ -125,8 +127,6 @@ TEST_CASE("IblResources move semantics") {
     CHECK(moved.prefiltered_env_view() != nullptr);
     CHECK(moved.env_cubemap_view() != nullptr);
     CHECK(moved.irradiance_view() != nullptr);
-    CHECK(moved.brdf_lut_view() != nullptr);
-    CHECK(moved.sampler() != nullptr);
 }
 
 #endif

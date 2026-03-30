@@ -566,6 +566,7 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     }
 
     auto& ibl = ctx.world.ibl_resources();
+    auto& ibl_pipes = ctx.world.ibl_pipelines();
     auto ibl_ready = ibl.is_ready();
 
     {
@@ -581,7 +582,7 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
             u.material_index = obj->material_index;
             u.light_count = light_count;
             u.ibl_dome_modulation = ibl_ready ? dome_mod : glm::vec3{0.0f};
-            u.ibl_mip_count = rendering::IblResources::k_prefilter_mip_count;
+            u.ibl_mip_count = rendering::k_prefilter_mip_count;
             wgpuQueueWriteBuffer(queue, uniform_buf, i * k_uniform_align, &u, sizeof(u));
         }
     }
@@ -592,7 +593,7 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     auto ibl_prefiltered_view = ibl_ready ? ibl.prefiltered_env_view() : ready.fallback_cube_view;
     auto ibl_env_cubemap_view = ibl_ready ? ibl.env_cubemap_view() : ready.fallback_cube_view;
     auto ibl_irradiance_view = ibl_ready ? ibl.irradiance_view() : ready.fallback_cube_view;
-    auto ibl_brdf_lut_view = ibl_ready ? ibl.brdf_lut_view() : ready.fallback_2d_view;
+    auto ibl_brdf_lut_view = ibl_ready ? ibl_pipes.brdf_lut_view() : ready.fallback_2d_view;
 
     // Upload skybox uniforms
     SkyboxUniforms sky_u{};

@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <functional>
 #include <glm/glm.hpp>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -406,6 +407,7 @@ struct RenderWorld {
 
     IblResources& ibl_resources();
     const IblResources& ibl_resources() const;
+    const IblPipelines& ibl_pipelines() const;
 
     /// Begin a batched sync operation. mesh_version is bumped when
     /// the returned scope guard is destroyed. sync_object/remove_prim
@@ -493,6 +495,7 @@ struct RenderWorld {
     std::unordered_map<const void*, PassDataMap> m_pass_data_cache;
 
     // IBL state
+    std::unique_ptr<IblPipelines> m_ibl_pipelines;
     IblResources m_ibl;
     std::string m_ibl_env_path;                 // currently loaded HDR path (empty = uniform)
     uint32_t m_ibl_light_version = UINT32_MAX;  // light version when IBL was last updated

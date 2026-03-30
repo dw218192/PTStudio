@@ -337,6 +337,7 @@ void PathTracerPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
 
     // IBL bind group (group 1): env cubemap + sampler
     auto& ibl = ctx.world.ibl_resources();
+    auto& ibl_pipes = ctx.world.ibl_pipelines();
     WGPUBindGroup ibl_bg = nullptr;
     if (ibl.is_ready()) {
         WGPUBindGroupEntry ibe[2] = {};
@@ -345,7 +346,7 @@ void PathTracerPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
         ibe[0].textureView = ibl.env_cubemap_view();
         ibe[1] = WGPU_BIND_GROUP_ENTRY_INIT;
         ibe[1].binding = 1;
-        ibe[1].sampler = ibl.sampler();
+        ibe[1].sampler = ibl_pipes.sampler();
 
         WGPUBindGroupDescriptor ibg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
         ibg_desc.layout = r.ibl_bgl;

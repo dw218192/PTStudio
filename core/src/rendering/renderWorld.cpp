@@ -898,12 +898,18 @@ const IblResources& RenderWorld::ibl_resources() const {
     return m_ibl;
 }
 
+const IblPipelines& RenderWorld::ibl_pipelines() const {
+    PRECONDITION(m_ibl_pipelines);
+    return *m_ibl_pipelines;
+}
+
 void RenderWorld::update_ibl(const webgpu::Device& device, WGPUQueue queue) {
     PTS_ZONE_SCOPED;
 
-    // Lazy-init BRDF LUT on first call
-    if (!m_ibl.brdf_lut_view()) {
-        m_ibl.init(device, queue);
+    // Lazy-init pipelines on first call
+    if (!m_ibl_pipelines) {
+        m_ibl_pipelines = std::make_unique<IblPipelines>();
+        m_ibl_pipelines->init(device, queue);
     }
 
     // Only re-evaluate when lights change
@@ -955,7 +961,7 @@ void RenderWorld::update_ibl(const webgpu::Device& device, WGPUQueue queue) {
             return;
         }
 
-        m_ibl.set_environment(device, queue, data, static_cast<uint32_t>(w),
+        m_ibl.set_environment(*m_ibl_pipelines, device, queue, data, static_cast<uint32_t>(w),
                               static_cast<uint32_t>(h));
         stbi_image_free(data);
 
