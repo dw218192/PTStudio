@@ -9,6 +9,7 @@
 #include <pxr/usd/ar/resolver.h>
 #include <pxr/usd/sdf/path.h>
 #include <pxr/usd/usd/stage.h>
+#include <spdlog/spdlog.h>
 #include <stb_image.h>
 #include <tbb/blocked_range.h>
 #include <tbb/parallel_for.h>
@@ -934,16 +935,25 @@ void RenderWorld::update_ibl(const webgpu::Device& device, WGPUQueue queue) {
         if (dome->env_texture_path == m_ibl_env_path) return;
 
         auto asset = pxr::ArGetResolver().OpenAsset(pxr::ArResolvedPath(dome->env_texture_path));
-        CHECK_MSG(asset != nullptr, "Failed to open HDR environment asset via USD resolver");
+        if (!asset) {
+            spdlog::warn("Failed to open HDR environment: {}", dome->env_texture_path);
+            return;
+        }
 
         auto buffer = asset->GetBuffer();
         auto size = asset->GetSize();
-        CHECK_MSG(buffer != nullptr, "ArAsset::GetBuffer() returned null for HDR environment");
+        if (!buffer) {
+            spdlog::warn("Empty HDR environment asset: {}", dome->env_texture_path);
+            return;
+        }
 
         int w = 0, h = 0, channels = 0;
         float* data = stbi_loadf_from_memory(reinterpret_cast<const stbi_uc*>(buffer.get()),
                                              static_cast<int>(size), &w, &h, &channels, 4);
-        CHECK_MSG(data != nullptr, "stbi_loadf_from_memory failed for HDR environment");
+        if (!data) {
+            spdlog::warn("Failed to decode HDR environment: {}", dome->env_texture_path);
+            return;
+        }
 
         m_ibl.set_environment(device, queue, data, static_cast<uint32_t>(w),
                               static_cast<uint32_t>(h));

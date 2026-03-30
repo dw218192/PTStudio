@@ -8,6 +8,7 @@
 #include <pxr/usd/usdLux/rectLight.h>
 #include <pxr/usd/usdLux/shadowAPI.h>
 #include <pxr/usd/usdLux/sphereLight.h>
+#include <spdlog/spdlog.h>
 
 namespace pts::rendering {
 
@@ -71,10 +72,13 @@ void LightAdapter::sync(pxr::UsdPrim prim, SyncScope& scope) {
         light.type = LightData::Type::Dome;
         pxr::UsdLuxDomeLight dome(prim);
         pxr::SdfAssetPath tex_path;
-        if (dome.GetTextureFileAttr().Get(&tex_path)) {
+        if (dome.GetTextureFileAttr().Get(&tex_path) && !tex_path.GetAssetPath().empty()) {
             auto resolved = tex_path.GetResolvedPath();
             if (!resolved.empty()) {
                 light.env_texture_path = resolved;
+            } else {
+                spdlog::warn("DomeLight '{}': texture '{}' could not be resolved",
+                             prim.GetPath().GetText(), tex_path.GetAssetPath());
             }
         }
     } else {
