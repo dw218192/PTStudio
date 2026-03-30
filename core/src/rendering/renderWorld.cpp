@@ -846,6 +846,7 @@ void RenderWorld::clear() {
     m_ibl_env_path.clear();
     m_ibl_light_version = UINT32_MAX;
     m_ibl_uniform_color = glm::vec3(-1.0f);
+    m_ibl_up_axis = UpAxis::Y;
 }
 
 // --- update_transforms ---
@@ -903,7 +904,7 @@ const IblPipelines& RenderWorld::ibl_pipelines() const {
     return *m_ibl_pipelines;
 }
 
-void RenderWorld::update_ibl(const webgpu::Device& device, WGPUQueue queue) {
+void RenderWorld::update_ibl(const webgpu::Device& device, WGPUQueue queue, UpAxis up_axis) {
     PTS_ZONE_SCOPED;
 
     // Lazy-init pipelines on first call
@@ -938,7 +939,7 @@ void RenderWorld::update_ibl(const webgpu::Device& device, WGPUQueue queue) {
 
     if (!dome->env_texture_path.empty()) {
         // HDR environment map
-        if (dome->env_texture_path == m_ibl_env_path) return;
+        if (dome->env_texture_path == m_ibl_env_path && up_axis == m_ibl_up_axis) return;
 
         auto asset = pxr::ArGetResolver().OpenAsset(pxr::ArResolvedPath(dome->env_texture_path));
         if (!asset) {
@@ -962,10 +963,11 @@ void RenderWorld::update_ibl(const webgpu::Device& device, WGPUQueue queue) {
         }
 
         m_ibl.set_environment(*m_ibl_pipelines, device, queue, data, static_cast<uint32_t>(w),
-                              static_cast<uint32_t>(h));
+                              static_cast<uint32_t>(h), up_axis);
         stbi_image_free(data);
 
         m_ibl_env_path = dome->env_texture_path;
+        m_ibl_up_axis = up_axis;
         m_ibl_uniform_color = glm::vec3(-1.0f);  // invalidate uniform sentinel
     } else {
         // Uniform color environment: dome color * intensity

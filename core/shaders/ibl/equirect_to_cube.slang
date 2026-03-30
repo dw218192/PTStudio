@@ -2,6 +2,7 @@ import ibl_sampling;
 
 struct EquirectParams {
     uint size;
+    uint up_axis;  // 1=Y, 2=Z
 };
 
 [[vk::binding(0, 0)]] ConstantBuffer<EquirectParams> params;
@@ -16,6 +17,9 @@ void cs_main(uint3 tid : SV_DispatchThreadID) {
 
     float2 uv = (float2(tid.xy) + 0.5) / float(params.size);
     float3 dir = cube_dir_from_face_uv(face, uv);
+    if (params.up_axis == 2) {
+        dir = float3(dir.x, dir.z, -dir.y);
+    }
     float2 eq_uv = equirect_uv_from_dir(dir);
 
     output_cube[int3(tid.xy, face)] = equirect_tex.SampleLevel(equirect_sampler, eq_uv, 0);

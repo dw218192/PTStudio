@@ -819,7 +819,7 @@ void EditorApplication::render(FrameContext& ctx) {
         pass_ctx.proj_matrix = view.proj_matrix;
         pass_ctx.camera_position = view.camera_position;
 
-        m_world.update_ibl(device, queue);
+        m_world.update_ibl(device, queue, m_stage_settings.up_axis);
 
         if (capture_mode) {
             // Capture mode: always synchronous for deterministic output
