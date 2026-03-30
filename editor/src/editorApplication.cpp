@@ -694,8 +694,15 @@ void EditorApplication::render(FrameContext& ctx) {
         // GPU upload on main thread
         world.upload_all_meshes(webgpu_context()->device());
 
-        // Swap world and stage, then call activate_stage() for shared ceremony
+        // Quiesce the prep worker — it captures m_world by reference, so
+        // swapping the world while a job is in flight is a data race.
+        m_prep_worker.reset();
         m_world = std::move(world);
+        m_prep_worker = std::make_unique<Worker<CpuPrepJob, rendering::PreparedSceneData>>(
+            [this](CpuPrepJob&&, TaskProgress&) -> rendering::PreparedSceneData {
+                return m_world.prepare_scene_data();
+            });
+        m_first_prep = true;
         m_active_camera_index = 0;
         m_stage = std::move(m_pending_stage);
         m_pending_stage.Reset();
@@ -966,7 +973,7 @@ void EditorApplication::render(FrameContext& ctx) {
         bool should_capture = false;
         if (capture_mode && m_frame_count >= m_app_config.capture_frames) {
             should_capture = true;
-        } else if (m_screenshot_pending) {
+        } else if (m_screenshot_pending && has_viewport) {
             m_screenshot_pending = false;
             should_capture = true;
         }
