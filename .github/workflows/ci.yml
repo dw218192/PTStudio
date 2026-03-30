@@ -158,14 +158,10 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: build-${{ matrix.platform }}-${{ matrix.build_type }}
-          path: _build/${{ matrix.platform }}/
-
-      - name: Generate USDZ scenes
-        if: matrix.platform == 'windows-x64'
-        run: ${{ matrix.repo }} usdz --build-type ${{ matrix.build_type }}
+          path: _package/${{ matrix.platform }}/
 
       - name: Run tests
-        run: ${{ matrix.repo }} test --platform ${{ matrix.platform }} --build-type ${{ matrix.build_type }}
+        run: ${{ matrix.repo }} test --platform ${{ matrix.platform }} --build-type ${{ matrix.build_type }} --from-package
 
       - name: Upload test results
         if: always()

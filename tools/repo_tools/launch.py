@@ -482,11 +482,21 @@ def _can_run(context: dict[str, Any]) -> bool:
     return context["platform"] == detect_platform_identifier()
 
 
-def _run_tests(context: dict[str, Any], verbose: bool) -> int:
+def _run_tests(context: dict[str, Any], verbose: bool, from_package: bool = False) -> int:
     """Run all test executables and return exit code."""
-    build_dir = Path(context["build_dir"])
     is_emscripten = context["platform"] == "emscripten"
-    test_dir = build_dir / "bin" / "tests"
+    if from_package:
+        # CI path: everything is in the package dir.  Override build_dir
+        # so _run_executable finds env scripts in the package too.
+        root_dir = Path(context["package_dir"]) / context["build_type"]
+        scenes_dir = Path(context["package_dir"]) / "assets" / "scenes"
+        context = {**context, "build_dir": str(root_dir)}
+    else:
+        # Local dev: build output + source-tree assets.
+        root_dir = Path(context["build_dir"])
+        scenes_dir = Path(context["workspace_root"]) / "assets" / "scenes"
+    bin_dir = root_dir / "bin"
+    test_dir = bin_dir / "tests"
     logs_dir = Path(context["logs_root"])
     logs_dir.mkdir(parents=True, exist_ok=True)
 
@@ -544,25 +554,10 @@ def _run_tests(context: dict[str, Any], verbose: bool) -> int:
     # On Emscripten: runs headlessly via Node.js; scenes are embedded in MEMFS,
     # so we pass relative paths and only validate exit code (no host-side PNG).
     if is_emscripten:
-        editor_exe = build_dir / "bin" / "editor.html"
+        editor_exe = bin_dir / "editor.html"
     else:
-        editor_exe = build_dir / "bin" / ("editor.exe" if is_windows() else "editor")
-    # Look for .usdz scenes in:
-    #  1. Source tree (local dev)
-    #  2. Package output dir (local after 'repo package')
-    #  3. CI download dir (_build/<platform>/ — parent of build_dir)
-    scenes: list[Path] = []
-    package_dir = Path(context["package_dir"])
-    for candidate_dir in [
-        Path(context["workspace_root"]) / "assets" / "scenes",
-        package_dir / "assets" / "scenes",
-        build_dir.parent / "assets" / "scenes",
-    ]:
-        if candidate_dir.is_dir():
-            scenes = sorted(candidate_dir.glob("*.usdz"))
-            if scenes:
-                break
-    scenes_dir = scenes[0].parent if scenes else Path(context["workspace_root"]) / "assets" / "scenes"
+        editor_exe = bin_dir / ("editor.exe" if is_windows() else "editor")
+    scenes: list[Path] = sorted(scenes_dir.glob("*.usdz")) if scenes_dir.is_dir() else []
     if not editor_exe.exists():
         logger.error("FAILED: smoke tests — editor executable not found")
         failed += 1
@@ -739,7 +734,6 @@ class LaunchTool(RepoTool):
             "workspace_root": str(root),
             "build_dir": ctx.tokens["build_dir"],
             "conan_deps_root": ctx.tokens["conan_deps_root"],
-            "package_dir": ctx.tokens["package_dir"],
             "platform": platform_id,
             "build_type": build_type,
             "logs_root": ctx.tokens["logs_root"],
