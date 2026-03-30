@@ -549,13 +549,11 @@ def _run_tests(context: dict[str, Any], verbose: bool) -> int:
         editor_exe = build_dir / "bin" / ("editor.exe" if is_windows() else "editor")
     # Look for .usdz scenes in the source tree (local builds) and in
     # the packaged artifacts (CI: downloaded to _build/<platform>/).
-    # Package layout puts scenes at <platform>/assets/scenes/ (one level
-    # above build_dir which includes the build type).
     scenes: list[Path] = []
+    package_dir = Path(context["package_dir"])
     for candidate_dir in [
         Path(context["workspace_root"]) / "assets" / "scenes",
-        build_dir / "assets" / "scenes",
-        build_dir.parent / "assets" / "scenes",
+        package_dir / "assets" / "scenes",
     ]:
         if candidate_dir.is_dir():
             scenes = sorted(candidate_dir.glob("*.usdz"))
@@ -738,6 +736,7 @@ class LaunchTool(RepoTool):
             "workspace_root": str(root),
             "build_dir": ctx.tokens["build_dir"],
             "conan_deps_root": ctx.tokens["conan_deps_root"],
+            "package_dir": ctx.tokens["package_dir"],
             "platform": platform_id,
             "build_type": build_type,
             "logs_root": ctx.tokens["logs_root"],
