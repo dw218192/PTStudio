@@ -549,10 +549,13 @@ def _run_tests(context: dict[str, Any], verbose: bool) -> int:
         editor_exe = build_dir / "bin" / ("editor.exe" if is_windows() else "editor")
     # Look for .usdz scenes in the source tree (local builds) and in
     # the packaged artifacts (CI: downloaded to _build/<platform>/).
+    # Package layout puts scenes at <platform>/assets/scenes/ (one level
+    # above build_dir which includes the build type).
     scenes: list[Path] = []
     for candidate_dir in [
         Path(context["workspace_root"]) / "assets" / "scenes",
         build_dir / "assets" / "scenes",
+        build_dir.parent / "assets" / "scenes",
     ]:
         if candidate_dir.is_dir():
             scenes = sorted(candidate_dir.glob("*.usdz"))
