@@ -522,6 +522,47 @@ TEST_CASE("Prim with displayColor creates material from displayColor") {
     spdlog::drop("test_display_color_mat");
 }
 
+TEST_CASE("Re-syncing displayColor prim reuses cached material") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    REQUIRE(stage);
+
+    pxr::UsdGeomXform::Define(stage, pxr::SdfPath("/Root"));
+    auto mesh = pxr::UsdGeomMesh::Define(stage, pxr::SdfPath("/Root/Mesh"));
+    pxr::VtVec3fArray points = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}};
+    mesh.GetPointsAttr().Set(points);
+    mesh.GetFaceVertexCountsAttr().Set(pxr::VtIntArray{3});
+    mesh.GetFaceVertexIndicesAttr().Set(pxr::VtIntArray{0, 1, 2});
+
+    auto primvars = pxr::UsdGeomPrimvarsAPI(mesh.GetPrim());
+    auto color_pv =
+        primvars.CreatePrimvar(pxr::TfToken("displayColor"), pxr::SdfValueTypeNames->Color3fArray);
+    color_pv.Set(pxr::VtVec3fArray{{0.8f, 0.2f, 0.1f}});
+
+    auto logger = spdlog::stdout_color_mt("test_display_resync");
+    auto device = pts::webgpu::Device::create(logger);
+    pts::rendering::RenderWorld world;
+    pts::rendering::populate_from_stage(world, stage);
+    world.upload_all_meshes(device);
+
+    REQUIRE(world.get_materials().size() == 1);
+    CHECK(world.get_materials()[0].diffuse_color.x == doctest::Approx(0.8f));
+
+    // Change displayColor and re-sync the prim
+    color_pv.Set(pxr::VtVec3fArray{{0.1f, 0.9f, 0.3f}});
+    {
+        auto scope = world.begin_sync();
+        pts::rendering::sync_prim(scope, stage, pxr::SdfPath("/Root/Mesh"));
+    }
+
+    // Material count should not grow — cached slot is reused
+    REQUIRE(world.get_materials().size() == 1);
+    CHECK(world.get_materials()[0].diffuse_color.x == doctest::Approx(0.1f));
+    CHECK(world.get_materials()[0].diffuse_color.y == doctest::Approx(0.9f));
+    CHECK(world.get_materials()[0].diffuse_color.z == doctest::Approx(0.3f));
+
+    spdlog::drop("test_display_resync");
+}
+
 TEST_CASE("Bound material takes precedence over displayColor") {
     auto stage = pxr::UsdStage::CreateInMemory();
     REQUIRE(stage);

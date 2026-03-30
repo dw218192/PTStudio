@@ -199,7 +199,7 @@ void sync_object(pxr::UsdPrim prim, SyncScope& scope, std::vector<Vertex>& verti
             auto it = cache.find(cache_key);
             if (it != cache.end()) {
                 material_index = it->second;
-                auto& mat = scope.materials()[material_index - 1];
+                auto& mat = scope.materials()[material_index];
                 mat.diffuse_color = {colors[0][0], colors[0][1], colors[0][2]};
             } else {
                 Material mat;

@@ -99,7 +99,8 @@ struct EditorApplication final : GpuApplication {
     void save_scene_dialog();
 
     // Capture
-    void save_capture_png(boost::span<const uint8_t> pixels, std::string_view path);
+    void save_capture_png(boost::span<const uint8_t> pixels, uint32_t width, uint32_t height,
+                          std::string_view path);
 
     // imgui rendering
     auto draw_scene_panel() noexcept -> void;
@@ -235,6 +236,8 @@ struct EditorApplication final : GpuApplication {
     // Capture mode state
     int m_frame_count = 0;
     webgpu::TextureReadback m_capture_readback;
+    uint32_t m_capture_width = 0;
+    uint32_t m_capture_height = 0;
     bool m_screenshot_pending{false};
 
     // Async scene loading

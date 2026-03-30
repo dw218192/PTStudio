@@ -607,7 +607,8 @@ void EditorApplication::update(float /*dt*/) {
     // synchronization with ImGui::NewFrame() and the FrameGraph.
 }
 
-void EditorApplication::save_capture_png(boost::span<const uint8_t> pixels, std::string_view path) {
+void EditorApplication::save_capture_png(boost::span<const uint8_t> pixels, uint32_t width,
+                                         uint32_t height, std::string_view path) {
 #ifdef __EMSCRIPTEN__
     if (!m_app_config.is_capture_mode()) {
         // Interactive browser screenshot: trigger download via DOM
@@ -634,7 +635,7 @@ void EditorApplication::save_capture_png(boost::span<const uint8_t> pixels, std:
                 a.click();
                 URL.revokeObjectURL(url);
             }, 'image/png');
-        }, m_viewport_width, m_viewport_height, pixels.data(), path.data());
+        }, width, height, pixels.data(), path.data());
         // clang-format on
         log(LogLevel::Info, "Screenshot download triggered: {}", path);
         return;
@@ -644,11 +645,11 @@ void EditorApplication::save_capture_png(boost::span<const uint8_t> pixels, std:
     if (!parent.empty()) {
         std::filesystem::create_directories(parent);
     }
-    int const ok = stbi_write_png(std::string(path).c_str(), static_cast<int>(m_viewport_width),
-                                  static_cast<int>(m_viewport_height), 4, pixels.data(),
-                                  static_cast<int>(m_viewport_width * 4));
+    int const ok =
+        stbi_write_png(std::string(path).c_str(), static_cast<int>(width), static_cast<int>(height),
+                       4, pixels.data(), static_cast<int>(width * 4));
     INVARIANT_MSG(ok, "stbi_write_png failed");
-    log(LogLevel::Info, "Captured {}x{} to {}", m_viewport_width, m_viewport_height, path);
+    log(LogLevel::Info, "Captured {}x{} to {}", width, height, path);
 }
 
 void EditorApplication::render(FrameContext& ctx) {
@@ -674,7 +675,7 @@ void EditorApplication::render(FrameContext& ctx) {
                 std::strftime(buf, sizeof(buf), "%Y%m%d_%H%M%S", std::localtime(&tt));
                 path = std::string("_captures/") + buf + ".png";
             }
-            save_capture_png(pixels, path);
+            save_capture_png(pixels, m_capture_width, m_capture_height, path);
             if (capture_mode) {
                 if (viewport()) {
                     viewport()->request_close();
@@ -979,8 +980,10 @@ void EditorApplication::render(FrameContext& ctx) {
                 ref = m_frame_graph->get_texture_ref(display_color_handle);
             }
             INVARIANT_MSG(ref, "Capture target texture not available");
-            m_capture_readback.request(ctx.encoder(), ref.texture(), m_viewport_width,
-                                       m_viewport_height, device.handle(), device.instance());
+            m_capture_width = m_viewport_width;
+            m_capture_height = m_viewport_height;
+            m_capture_readback.request(ctx.encoder(), ref.texture(), m_capture_width,
+                                       m_capture_height, device.handle(), device.instance());
         }
     }
 
