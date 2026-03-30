@@ -609,32 +609,36 @@ void EditorApplication::update(float /*dt*/) {
 
 void EditorApplication::save_capture_png(boost::span<const uint8_t> pixels, std::string_view path) {
 #ifdef __EMSCRIPTEN__
-    // clang-format off
-    EM_ASM({
-        var width = $0;
-        var height = $1;
-        var dataPtr = $2;
-        var size = width * height * 4;
-        var data = new Uint8Array(HEAPU8.buffer, dataPtr, size);
-        var canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        var ctx = canvas.getContext('2d');
-        var imageData = ctx.createImageData(width, height);
-        imageData.data.set(data);
-        ctx.putImageData(imageData, 0, 0);
-        canvas.toBlob(function(blob) {
-            var url = URL.createObjectURL(blob);
-            var a = document.createElement('a');
-            a.href = url;
-            a.download = UTF8ToString($3);
-            a.click();
-            URL.revokeObjectURL(url);
-        }, 'image/png');
-    }, m_viewport_width, m_viewport_height, pixels.data(), path.data());
-    // clang-format on
-    log(LogLevel::Info, "Screenshot download triggered: {}", path);
-#else
+    if (!m_app_config.is_capture_mode()) {
+        // Interactive browser screenshot: trigger download via DOM
+        // clang-format off
+        EM_ASM({
+            var width = $0;
+            var height = $1;
+            var dataPtr = $2;
+            var size = width * height * 4;
+            var data = new Uint8Array(HEAPU8.buffer, dataPtr, size);
+            var canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            var ctx = canvas.getContext('2d');
+            var imageData = ctx.createImageData(width, height);
+            imageData.data.set(data);
+            ctx.putImageData(imageData, 0, 0);
+            canvas.toBlob(function(blob) {
+                var url = URL.createObjectURL(blob);
+                var a = document.createElement('a');
+                a.href = url;
+                a.download = UTF8ToString($3);
+                a.click();
+                URL.revokeObjectURL(url);
+            }, 'image/png');
+        }, m_viewport_width, m_viewport_height, pixels.data(), path.data());
+        // clang-format on
+        log(LogLevel::Info, "Screenshot download triggered: {}", path);
+        return;
+    }
+#endif
     auto parent = std::filesystem::path(path).parent_path();
     if (!parent.empty()) {
         std::filesystem::create_directories(parent);
@@ -644,7 +648,6 @@ void EditorApplication::save_capture_png(boost::span<const uint8_t> pixels, std:
                                   static_cast<int>(m_viewport_width * 4));
     INVARIANT_MSG(ok, "stbi_write_png failed");
     log(LogLevel::Info, "Captured {}x{} to {}", m_viewport_width, m_viewport_height, path);
-#endif
 }
 
 void EditorApplication::render(FrameContext& ctx) {
@@ -674,9 +677,8 @@ void EditorApplication::render(FrameContext& ctx) {
             if (capture_mode) {
                 if (viewport()) {
                     viewport()->request_close();
-                } else {
-                    request_stop();
                 }
+                request_stop();
                 return;
             }
         }

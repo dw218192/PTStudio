@@ -12,10 +12,11 @@ import threading
 import time
 import webbrowser
 import zipfile
+import io
 from io import BytesIO
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
 from urllib.request import urlopen
 
 import click
@@ -217,6 +218,7 @@ class _WasmHandler(http.server.SimpleHTTPRequestHandler):
     # Set by _serve_emscripten before the server starts.
     page_exit_code: int | None = None
     server_ref: http.server.HTTPServer | None = None
+    capture_buffer: io.StringIO | None = None
 
     def end_headers(self) -> None:
         self.send_header("Cross-Origin-Opener-Policy", "same-origin")
@@ -255,11 +257,16 @@ class _WasmHandler(http.server.SimpleHTTPRequestHandler):
                 msg = data[i + 1:]
             except ValueError:
                 msg = data[5:]
-            stream = sys.stderr if data.startswith("^err^") else sys.stdout
-            stream.write(msg)
-            if not msg.endswith("\n"):
-                stream.write("\n")
-            stream.flush()
+            if _WasmHandler.capture_buffer is not None:
+                _WasmHandler.capture_buffer.write(msg)
+                if not msg.endswith("\n"):
+                    _WasmHandler.capture_buffer.write("\n")
+            else:
+                stream = sys.stderr if data.startswith("^err^") else sys.stdout
+                stream.write(msg)
+                if not msg.endswith("\n"):
+                    stream.write("\n")
+                stream.flush()
 
         self.send_response(200)
         self.end_headers()
@@ -274,12 +281,24 @@ class _WasmHandler(http.server.SimpleHTTPRequestHandler):
         pass
 
 
-def _serve_emscripten(html_path: Path) -> subprocess.CompletedProcess:
+def _serve_emscripten(
+    html_path: Path,
+    args: list[str] | None = None,
+    capture_output: bool = False,
+    timeout: float | None = None,
+    headless: bool = False,
+) -> subprocess.CompletedProcess:
     """Serve an Emscripten build and open a tracked browser process.
 
     Uses a built-in HTTP server with COOP/COEP headers and handles the
     ``--emrun`` POST protocol so stdout/stderr from the WASM page appear
     in the terminal.
+
+    Args:
+        args: CLI arguments forwarded to the WASM app via URL query params.
+        capture_output: Buffer stdout/stderr instead of printing.
+        timeout: Kill browser after this many seconds (None = wait forever).
+        headless: Launch Chromium with ``--headless=new`` (no visible window).
     """
     serve_dir = str(html_path.parent)
     port = 6931
@@ -293,11 +312,20 @@ def _serve_emscripten(html_path: Path) -> subprocess.CompletedProcess:
         return subprocess.CompletedProcess(args=[str(html_path)], returncode=1)
     _WasmHandler.page_exit_code = None
     _WasmHandler.server_ref = server
+    _WasmHandler.capture_buffer = io.StringIO() if capture_output else None
 
     server_thread = threading.Thread(target=server.serve_forever, daemon=True)
     server_thread.start()
 
+    # Emscripten's runtime parses window.location.search by splitting on '&'
+    # and URI-decoding each segment into Module.arguments (argv for main()).
     url = f"http://localhost:{port}/{html_path.name}"
+    if args:
+        # Emscripten decodes with decodeURI() which preserves RFC-2396
+        # reserved chars (%2F, %3D, etc.).  Use a broad safe set so only
+        # truly unsafe chars (space, &, #, ?) get encoded.
+        query = "&".join(quote(a, safe="/:=@!$'()*+,;-._~") for a in args)
+        url += f"?{query}"
     logger.info(f"Serving {serve_dir} at http://localhost:{port}/")
 
     # Launch browser with isolation flags for process tracking.
@@ -314,8 +342,12 @@ def _serve_emscripten(html_path: Path) -> subprocess.CompletedProcess:
         temp_profile = tempfile.mkdtemp(prefix="ptstudio_browser_")
         if "firefox" in browser_name:
             browser_args = ["-no-remote", "-profile", temp_profile, "-new-window"]
+            if headless:
+                browser_args.insert(0, "-headless")
         else:
             browser_args = [f"--user-data-dir={temp_profile}"] + browser_args
+            if headless:
+                browser_args.insert(0, "--headless=new")
 
         logger.info(f"Opening {url} in {browser_exe.name}")
         try:
@@ -330,11 +362,19 @@ def _serve_emscripten(html_path: Path) -> subprocess.CompletedProcess:
 
     # Wait until browser closes, page calls exit(), or Ctrl+C.
     exit_code = 0
+    deadline = (time.monotonic() + timeout) if timeout else None
     try:
         while server_thread.is_alive():
             if browser_proc is not None and browser_proc.poll() is not None:
                 logger.info("Browser closed, shutting down server")
                 server.shutdown()
+                break
+            if deadline and time.monotonic() >= deadline:
+                logger.warning("Smoke test timed out")
+                exit_code = 1
+                server.shutdown()
+                if browser_proc and browser_proc.poll() is None:
+                    browser_proc.terminate()
                 break
             time.sleep(0.5)
     except KeyboardInterrupt:
@@ -353,7 +393,12 @@ def _serve_emscripten(html_path: Path) -> subprocess.CompletedProcess:
     if _WasmHandler.page_exit_code is not None:
         exit_code = _WasmHandler.page_exit_code
 
-    return subprocess.CompletedProcess(args=[str(html_path)], returncode=exit_code)
+    stdout = _WasmHandler.capture_buffer.getvalue() if _WasmHandler.capture_buffer else None
+    _WasmHandler.capture_buffer = None
+
+    return subprocess.CompletedProcess(
+        args=[str(html_path)], returncode=exit_code, stdout=stdout,
+    )
 
 
 def _run_executable(
@@ -378,7 +423,7 @@ def _run_executable(
     if is_emscripten and not capture_output:
         html_path = exe_path.with_suffix(".html") if exe_path.suffix.lower() != ".html" else exe_path
         logger.info(f"Launching {html_path.name} in browser")
-        return _serve_emscripten(html_path)
+        return _serve_emscripten(html_path, args=args)
 
     # All other paths: use ShellCommand with env_script
     env_script: Path | None = None
@@ -496,84 +541,116 @@ def _run_tests(context: dict[str, Any], verbose: bool) -> int:
     # Smoke tests: launch the editor with --capture-and-quit for each built-in
     # demo scene. Exercises the full GPU pipeline (device, shaders, BVH,
     # rendering, readback) with real geometry.
-    # Skipped on Emscripten (no headless GPU adapter).
-    if not is_emscripten:
+    # On Emscripten: runs headlessly via Node.js; scenes are embedded in MEMFS,
+    # so we pass relative paths and only validate exit code (no host-side PNG).
+    if is_emscripten:
+        editor_exe = build_dir / "bin" / "editor.html"
+    else:
         editor_exe = build_dir / "bin" / ("editor.exe" if is_windows() else "editor")
-        # Look for .usdz scenes in the source tree (local builds) and in
-        # the packaged artifacts (CI: downloaded to _build/<platform>/).
-        scenes: list[Path] = []
-        for candidate_dir in [
-            Path(context["workspace_root"]) / "assets" / "scenes",
-            build_dir / "assets" / "scenes",
-        ]:
-            if candidate_dir.is_dir():
-                scenes = sorted(candidate_dir.glob("*.usdz"))
-                if scenes:
-                    break
-        scenes_dir = scenes[0].parent if scenes else Path(context["workspace_root"]) / "assets" / "scenes"
-        if not editor_exe.exists():
-            logger.error("FAILED: smoke tests — editor executable not found")
-            failed += 1
-            failed_tests.append("editorSmoke (missing editor)")
-        elif not scenes:
-            logger.error(
-                "FAILED: smoke tests — no .usdz scene files in "
-                f"{scenes_dir}. Run './repo build' to generate them."
-            )
-            failed += 1
-            failed_tests.append("editorSmoke (missing scenes)")
-        else:
-            with tempfile.TemporaryDirectory(prefix="pts_smoke_") as tmp_dir:
-                for scene_path in scenes:
-                    scene_name = scene_path.stem
-                    test_name = f"editorSmoke_{scene_name}"
-                    log_file = logs_dir / f"test_{test_name}.log"
-                    capture_path = Path(tmp_dir) / f"{scene_name}.png"
-                    with log_section(f"Test: {test_name}"):
-                        try:
+    # Look for .usdz scenes in the source tree (local builds) and in
+    # the packaged artifacts (CI: downloaded to _build/<platform>/).
+    scenes: list[Path] = []
+    for candidate_dir in [
+        Path(context["workspace_root"]) / "assets" / "scenes",
+        build_dir / "assets" / "scenes",
+    ]:
+        if candidate_dir.is_dir():
+            scenes = sorted(candidate_dir.glob("*.usdz"))
+            if scenes:
+                break
+    scenes_dir = scenes[0].parent if scenes else Path(context["workspace_root"]) / "assets" / "scenes"
+    if not editor_exe.exists():
+        logger.error("FAILED: smoke tests — editor executable not found")
+        failed += 1
+        failed_tests.append("editorSmoke (missing editor)")
+    elif not scenes:
+        logger.error(
+            "FAILED: smoke tests — no .usdz scene files in "
+            f"{scenes_dir}. Run './repo build' to generate them."
+        )
+        failed += 1
+        failed_tests.append("editorSmoke (missing scenes)")
+    else:
+        with tempfile.TemporaryDirectory(prefix="pts_smoke_") as tmp_dir:
+            for scene_path in scenes:
+                scene_name = scene_path.stem
+                test_name = f"editorSmoke_{scene_name}"
+                log_file = logs_dir / f"test_{test_name}.log"
+                capture_path = Path(tmp_dir) / f"{scene_name}.png"
+                # Emscripten scenes are embedded in MEMFS at their
+                # source-relative path; native uses absolute host paths.
+                if is_emscripten:
+                    usd_arg = f"assets/scenes/{scene_path.name}"
+                else:
+                    usd_arg = str(scene_path)
+                # On Emscripten the capture path must be on MEMFS, not
+                # a Windows host path.  /tmp exists in MEMFS by default.
+                if is_emscripten:
+                    em_capture = f"/tmp/{scene_name}.png"
+                    smoke_args = [
+                        f"--capture-and-quit={em_capture}",
+                        "--frames", "3",
+                        "--usd", usd_arg,
+                    ]
+                else:
+                    smoke_args = [
+                        f"--capture-and-quit={capture_path}",
+                        "--frames", "3",
+                        "--usd", usd_arg,
+                    ]
+                with log_section(f"Test: {test_name}"):
+                    try:
+                        if is_emscripten:
+                            # Browser-based: Node.js lacks navigator.gpu, so
+                            # run via _serve_emscripten with output capture,
+                            # headless browser, and a timeout.
+                            result = _serve_emscripten(
+                                editor_exe,
+                                args=smoke_args,
+                                capture_output=True,
+                                timeout=120,
+                                headless=True,
+                            )
+                        else:
                             result = _run_executable(
                                 editor_exe,
-                                [
-                                    f"--capture-and-quit={capture_path}",
-                                    "--frames", "3",
-                                    "--usd", str(scene_path),
-                                ],
+                                smoke_args,
                                 context,
                                 capture_output=True,
                             )
-                            with open(log_file, "w", encoding="utf-8", errors="replace") as f:
-                                f.write(f"Test: {test_name}\n")
-                                f.write(f"Scene: {scene_path}\n")
-                                f.write(f"Capture: {capture_path}\n")
-                                f.write(f"Exit code: {result.returncode}\n")
-                                f.write("=" * 70 + "\n")
-                                f.write(result.stdout or "")
+                        with open(log_file, "w", encoding="utf-8", errors="replace") as f:
+                            f.write(f"Test: {test_name}\n")
+                            f.write(f"Scene: {scene_path}\n")
+                            f.write(f"Capture: {capture_path}\n")
+                            f.write(f"Exit code: {result.returncode}\n")
+                            f.write("=" * 70 + "\n")
+                            f.write(result.stdout or "")
 
-                            if result.stdout:
-                                sys.stdout.write(result.stdout)
-                                if not result.stdout.endswith("\n"):
-                                    sys.stdout.write("\n")
+                        if result.stdout:
+                            sys.stdout.write(result.stdout)
+                            if not result.stdout.endswith("\n"):
+                                sys.stdout.write("\n")
 
-                            if result.returncode != 0:
-                                logger.error(
-                                    f"FAILED: {test_name} (exit code: {result.returncode})"
-                                )
-                                failed += 1
-                                failed_tests.append(test_name)
-                            elif not capture_path.exists():
-                                logger.error(f"FAILED: {test_name} (no capture produced)")
-                                failed += 1
-                                failed_tests.append(test_name)
-                            else:
-                                logger.info(f"PASSED: {test_name}")
-                                passed += 1
-
-                        except Exception as e:
-                            logger.error(f"FAILED: {test_name} (exception: {e})")
-                            with open(log_file, "w", encoding="utf-8", errors="replace") as f:
-                                f.write(f"Test: {test_name}\nException: {e}\n")
+                        if result.returncode != 0:
+                            logger.error(
+                                f"FAILED: {test_name} (exit code: {result.returncode})"
+                            )
                             failed += 1
                             failed_tests.append(test_name)
+                        elif not is_emscripten and not capture_path.exists():
+                            logger.error(f"FAILED: {test_name} (no capture produced)")
+                            failed += 1
+                            failed_tests.append(test_name)
+                        else:
+                            logger.info(f"PASSED: {test_name}")
+                            passed += 1
+
+                    except Exception as e:
+                        logger.error(f"FAILED: {test_name} (exception: {e})")
+                        with open(log_file, "w", encoding="utf-8", errors="replace") as f:
+                            f.write(f"Test: {test_name}\nException: {e}\n")
+                        failed += 1
+                        failed_tests.append(test_name)
 
     with log_section("Test summary"):
         logger.info(f"Total:  {passed + failed}")

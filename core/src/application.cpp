@@ -126,6 +126,7 @@ void Application::request_stop() noexcept {
     m_should_stop = true;
 #if defined(__EMSCRIPTEN__)
     emscripten_cancel_main_loop();
+    emscripten_force_exit(0);
 #endif
 }
 
