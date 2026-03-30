@@ -237,3 +237,5 @@ package:
   mappings@emscripten:
     - src: "{build_dir}/bin/**/*"
       dest: "{build_type}/bin/"
+    - src: "{workspace_root}/assets/scenes/*.usdz"
+      dest: "assets/scenes/"
