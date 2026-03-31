@@ -65,5 +65,5 @@ float3 cube_dir_from_face_uv(uint face, float2 uv) {
 float2 equirect_uv_from_dir(float3 dir) {
     float phi = atan2(dir.z, dir.x);
     float theta = asin(clamp(dir.y, -1.0, 1.0));
-    return float2(phi / (2.0 * PI) + 0.5, theta / PI + 0.5);
+    return float2(phi / (2.0 * PI) + 0.5, 0.5 - theta / PI);
 }
