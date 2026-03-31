@@ -249,14 +249,14 @@ void generate_rect_mesh(float width, float height, std::vector<Vertex>& out_vert
                         std::vector<uint32_t>& out_indices) {
     float hw = width * 0.5f;
     float hh = height * 0.5f;
-    // Quad centered at origin, facing -Z (normal = 0,0,1)
+    // Quad centered at origin, facing -Z (USD lights emit along -Z)
     out_vertices = {
-        {{-hw, -hh, 0.0f}, {0, 0, 1}, {1, 1, 1}, {0, 0}},
-        {{hw, -hh, 0.0f}, {0, 0, 1}, {1, 1, 1}, {1, 0}},
-        {{hw, hh, 0.0f}, {0, 0, 1}, {1, 1, 1}, {1, 1}},
-        {{-hw, hh, 0.0f}, {0, 0, 1}, {1, 1, 1}, {0, 1}},
+        {{-hw, -hh, 0.0f}, {0, 0, -1}, {1, 1, 1}, {0, 0}},
+        {{hw, -hh, 0.0f}, {0, 0, -1}, {1, 1, 1}, {1, 0}},
+        {{hw, hh, 0.0f}, {0, 0, -1}, {1, 1, 1}, {1, 1}},
+        {{-hw, hh, 0.0f}, {0, 0, -1}, {1, 1, 1}, {0, 1}},
     };
-    out_indices = {0, 1, 2, 0, 2, 3};
+    out_indices = {0, 2, 1, 0, 3, 2};
 }
 
 void generate_disk_mesh(float radius, std::vector<Vertex>& out_vertices,
@@ -264,8 +264,8 @@ void generate_disk_mesh(float radius, std::vector<Vertex>& out_vertices,
     static constexpr uint32_t k_segments = 48;
     static constexpr float k_pi = 3.14159265358979323846f;
 
-    // Center vertex
-    out_vertices.push_back({{0, 0, 0}, {0, 0, 1}, {1, 1, 1}, {0.5f, 0.5f}});
+    // Disk centered at origin, facing -Z (USD lights emit along -Z)
+    out_vertices.push_back({{0, 0, 0}, {0, 0, -1}, {1, 1, 1}, {0.5f, 0.5f}});
 
     for (uint32_t i = 0; i <= k_segments; ++i) {
         float theta = 2.0f * k_pi * static_cast<float>(i) / static_cast<float>(k_segments);
@@ -273,17 +273,17 @@ void generate_disk_mesh(float radius, std::vector<Vertex>& out_vertices,
         float cy = std::sin(theta);
         out_vertices.push_back({
             {radius * cx, radius * cy, 0.0f},
-            {0, 0, 1},
+            {0, 0, -1},
             {1, 1, 1},
             {cx * 0.5f + 0.5f, cy * 0.5f + 0.5f},
         });
     }
 
-    // Triangle fan
+    // Triangle fan (reversed winding for -Z facing)
     for (uint32_t i = 0; i < k_segments; ++i) {
         out_indices.push_back(0);
-        out_indices.push_back(i + 1);
         out_indices.push_back(i + 2);
+        out_indices.push_back(i + 1);
     }
 }
 

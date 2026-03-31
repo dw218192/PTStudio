@@ -27,11 +27,11 @@ TEST_CASE("generate_rect_mesh produces a quad") {
     CHECK(verts.size() == 4);
     CHECK(indices.size() == 6);
 
-    // All normals face +Z
+    // All normals face -Z (USD lights emit along -Z)
     for (auto& v : verts) {
         CHECK(v.normal[0] == doctest::Approx(0.0f));
         CHECK(v.normal[1] == doctest::Approx(0.0f));
-        CHECK(v.normal[2] == doctest::Approx(1.0f));
+        CHECK(v.normal[2] == doctest::Approx(-1.0f));
         // White color
         CHECK(v.color[0] == doctest::Approx(1.0f));
         CHECK(v.color[1] == doctest::Approx(1.0f));
@@ -78,9 +78,9 @@ TEST_CASE("generate_disk_mesh produces triangle fan") {
     CHECK(verts[0].position[1] == doctest::Approx(0.0f));
     CHECK(verts[0].position[2] == doctest::Approx(0.0f));
 
-    // All normals face +Z
+    // All normals face -Z (USD lights emit along -Z)
     for (auto& v : verts) {
-        CHECK(v.normal[2] == doctest::Approx(1.0f));
+        CHECK(v.normal[2] == doctest::Approx(-1.0f));
     }
 
     // Rim vertices at radius distance
