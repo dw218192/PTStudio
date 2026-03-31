@@ -17,8 +17,10 @@
 #include <pxr/usd/usdGeom/cone.h>
 #include <pxr/usd/usdGeom/cube.h>
 #include <pxr/usd/usdGeom/cylinder.h>
+#include <pxr/usd/usdGeom/imageable.h>
 #include <pxr/usd/usdGeom/primvarsAPI.h>
 #include <pxr/usd/usdGeom/sphere.h>
+#include <pxr/usd/usdGeom/tokens.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
 #include <cmath>
@@ -405,6 +407,59 @@ TEST_CASE("sync_prim with invalid path calls remove_prim") {
 
     CHECK(!f.world.get_objects()[0].active());
     CHECK(f.world.find_object_by_prim(pxr::SdfPath("/Cube")) == -1);
+}
+
+TEST_CASE("sync_object reads UsdGeomImageable visibility") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    auto visible_cube = pxr::UsdGeomCube::Define(stage, pxr::SdfPath("/Visible"));
+    auto hidden_cube = pxr::UsdGeomCube::Define(stage, pxr::SdfPath("/Hidden"));
+    pxr::UsdGeomImageable(hidden_cube).GetVisibilityAttr().Set(pxr::UsdGeomTokens->invisible);
+
+    TestFixture f("test_visibility");
+    pts::rendering::populate_from_stage(f.world, stage);
+
+    auto objects = f.world.get_objects();
+    REQUIRE(objects.size() == 2);
+
+    int vis_idx = f.world.find_object_by_prim(pxr::SdfPath("/Visible"));
+    int hid_idx = f.world.find_object_by_prim(pxr::SdfPath("/Hidden"));
+    REQUIRE(vis_idx >= 0);
+    REQUIRE(hid_idx >= 0);
+
+    CHECK(objects[static_cast<uint32_t>(vis_idx)]->visible == true);
+    CHECK(objects[static_cast<uint32_t>(hid_idx)]->visible == false);
+}
+
+TEST_CASE("visibility updates on re-sync") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    auto cube = pxr::UsdGeomCube::Define(stage, pxr::SdfPath("/Cube"));
+
+    TestFixture f("test_visibility_resync");
+    pts::rendering::populate_from_stage(f.world, stage);
+
+    auto objects = f.world.get_objects();
+    REQUIRE(objects.size() == 1);
+    CHECK(objects[0]->visible == true);
+
+    // Hide the cube and re-sync
+    pxr::UsdGeomImageable(cube).GetVisibilityAttr().Set(pxr::UsdGeomTokens->invisible);
+    {
+        auto scope = f.world.begin_sync();
+        pts::rendering::sync_prim(scope, stage, pxr::SdfPath("/Cube"));
+    }
+
+    objects = f.world.get_objects();
+    CHECK(objects[0]->visible == false);
+
+    // Make visible again via "inherited"
+    pxr::UsdGeomImageable(cube).GetVisibilityAttr().Set(pxr::UsdGeomTokens->inherited);
+    {
+        auto scope = f.world.begin_sync();
+        pts::rendering::sync_prim(scope, stage, pxr::SdfPath("/Cube"));
+    }
+
+    objects = f.world.get_objects();
+    CHECK(objects[0]->visible == true);
 }
 
 #endif  // !__EMSCRIPTEN__

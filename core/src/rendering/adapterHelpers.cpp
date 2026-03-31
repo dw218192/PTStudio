@@ -4,6 +4,8 @@
 #include <pxr/usd/ar/resolver.h>
 #include <pxr/usd/sdf/assetPath.h>
 #include <pxr/usd/usd/prim.h>
+#include <pxr/usd/usdGeom/imageable.h>
+#include <pxr/usd/usdGeom/tokens.h>
 #include <pxr/usd/usdGeom/xformable.h>
 #include <pxr/usd/usdShade/connectableAPI.h>
 #include <pxr/usd/usdShade/material.h>
@@ -189,6 +191,8 @@ void sync_object(pxr::UsdPrim prim, SyncScope& scope, std::vector<Vertex>& verti
     auto& world = scope.world();
     auto sdf_path = prim.GetPath();
     auto transform = compute_world_transform(prim);
+    auto vis = pxr::UsdGeomImageable(prim).ComputeVisibility();
+    bool visible = (vis != pxr::UsdGeomTokens->invisible);
     auto material_index = resolve_material(prim, scope);
 
     if (material_index == k_no_material) {
@@ -222,6 +226,7 @@ void sync_object(pxr::UsdPrim prim, SyncScope& scope, std::vector<Vertex>& verti
         auto mesh_index = w->mesh_index;
         w->transform = transform;
         w->material_index = material_index;
+        w->visible = visible;
         store_mesh(scope, vertices, indices, mesh_index);
     } else {
         auto mesh_slot = scope.alloc_mesh_slot();
@@ -232,6 +237,7 @@ void sync_object(pxr::UsdPrim prim, SyncScope& scope, std::vector<Vertex>& verti
             w->mesh_index = mesh_slot;
             w->transform = transform;
             w->material_index = material_index;
+            w->visible = visible;
         }
         scope.set_prim_path(obj_slot, PrimSlot::Kind::Object, sdf_path);
     }

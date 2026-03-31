@@ -388,6 +388,7 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
         PTS_ZONE_NAMED("picking uniform upload");
         for (uint32_t i = 0; i < object_count; ++i) {
             if (!objects[i].active()) continue;
+            if (!objects[i]->visible) continue;
             PickingUniforms u{};
             u.mvp = vp * objects[i]->transform;
             u.object_id = i;
@@ -445,6 +446,7 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
             wgpuRenderPassEncoderSetPipeline(pass, mesh_picking_pl);
             for (uint32_t i = 0; i < static_cast<uint32_t>(objs.size()); ++i) {
                 if (!objs[i].active()) continue;
+                if (!objs[i]->visible) continue;
                 uint32_t dyn_offset = i * EditorPass::k_uniform_align;
                 wgpuRenderPassEncoderSetBindGroup(pass, 0, picking_bg, 1, &dyn_offset);
                 const auto& mesh = meshes[objs[i]->mesh_index];

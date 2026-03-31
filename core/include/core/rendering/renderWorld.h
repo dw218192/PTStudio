@@ -208,6 +208,7 @@ struct ObjectData {
     uint32_t mesh_index = 0;
     uint32_t material_index{k_no_material};
     glm::mat4 transform{1.0f};
+    bool visible{true};
 };
 
 struct LightData {
