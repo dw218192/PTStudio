@@ -1081,6 +1081,7 @@ void EditorApplication::setup_docking_layout() {
     ImGui::DockBuilderDockWindow(k_console_win_name, down);
     ImGui::DockBuilderDockWindow(k_perf_win_name, down);
     ImGui::DockBuilderDockWindow("BRDF Lobe", down);
+    ImGui::DockBuilderDockWindow("Renderer", down);
 }
 
 auto EditorApplication::create_input_actions() noexcept -> void {
@@ -1562,82 +1563,6 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
             }
             ImGui::EndCombo();
         }
-        // Debug target dropdown
-        ImGui::SameLine();
-        ImGui::Text("Debug:");
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(140);
-        {
-            // Build flat list of debug target labels from all passes
-            std::vector<std::string> debug_labels;
-            debug_labels.emplace_back("Off");
-            for_each_pass([&](auto& pass) {
-                auto [names, count] = pass.effective_debug_target_names();
-                for (uint32_t i = 0; i < count; ++i) {
-                    debug_labels.emplace_back(std::string(pass.name()) + ": " + names[i]);
-                }
-            });
-            if (m_debug_target_selection >= static_cast<int>(debug_labels.size())) {
-                m_debug_target_selection = 0;
-            }
-            if (ImGui::BeginCombo("##debug", debug_labels[m_debug_target_selection].c_str())) {
-                m_viewport_combo_open = true;
-                for (int i = 0; i < static_cast<int>(debug_labels.size()); ++i) {
-                    bool selected = (i == m_debug_target_selection);
-                    if (ImGui::Selectable(debug_labels[i].c_str(), selected)) {
-                        m_debug_target_selection = i;
-                    }
-                }
-                ImGui::EndCombo();
-            }
-        }
-        // Camera dropdown
-        {
-            auto cameras = m_world.get_cameras();
-            // Collect active camera names
-            std::vector<std::pair<std::string, int>> cam_labels;
-            cam_labels.push_back({"Free Camera", 0});
-            for (uint32_t i = 0; i < cameras.size(); ++i) {
-                if (!cameras[i].active()) continue;
-                auto name = cameras[i].get_prim_path().GetName();
-                cam_labels.push_back({std::move(name), static_cast<int>(i + 1)});
-            }
-            if (cam_labels.size() > 1) {
-                ImGui::SameLine();
-                ImGui::Text("Camera:");
-                ImGui::SameLine();
-                ImGui::SetNextItemWidth(140);
-                // Find current label
-                std::string current_label = "Free Camera";
-                for (auto& [label, idx] : cam_labels) {
-                    if (idx == m_active_camera_index) {
-                        current_label = label;
-                        break;
-                    }
-                }
-                if (ImGui::BeginCombo("##camera", current_label.c_str())) {
-                    m_viewport_combo_open = true;
-                    for (auto& [label, idx] : cam_labels) {
-                        bool selected = (idx == m_active_camera_index);
-                        if (ImGui::Selectable(label.c_str(), selected)) {
-                            m_active_camera_index = idx;
-                        }
-                    }
-                    ImGui::EndCombo();
-                }
-            }
-        }
-        // Save current view as a scene camera
-        if (m_stage && m_active_camera_index == 0) {
-            ImGui::SameLine();
-            if (ImGui::SmallButton("Save View")) {
-                auto cam_path = find_unique_prim_path("Camera");
-                rendering::CameraAdapter::create_from_view(
-                    m_stage, cam_path, m_camera.view_matrix(),
-                    glm::radians(m_camera.fov_y_degrees()), m_camera.near_plane(),
-                    m_camera.far_plane());
-            }
-        }
         // Exposure control
         if (m_tonemapping_pass) {
             auto* tm = static_cast<ToneMappingPass*>(m_tonemapping_pass);
@@ -1653,9 +1578,66 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
         }
         ImGui::SameLine();
         ImGui::Checkbox("Grid", &m_editor_passes_enabled);
+        // "..." overflow menu
         ImGui::SameLine();
-        if (ImGui::SmallButton("Capture")) {
-            m_screenshot_pending = true;
+        if (ImGui::SmallButton("...")) {
+            ImGui::OpenPopup("##toolbar_more");
+        }
+        if (ImGui::BeginPopup("##toolbar_more")) {
+            // Debug Output submenu
+            if (ImGui::BeginMenu("Debug Output")) {
+                std::vector<std::string> debug_labels;
+                debug_labels.emplace_back("Off");
+                for_each_pass([&](auto& pass) {
+                    auto [names, count] = pass.effective_debug_target_names();
+                    for (uint32_t i = 0; i < count; ++i) {
+                        debug_labels.emplace_back(std::string(pass.name()) + ": " + names[i]);
+                    }
+                });
+                if (m_debug_target_selection >= static_cast<int>(debug_labels.size())) {
+                    m_debug_target_selection = 0;
+                }
+                for (int i = 0; i < static_cast<int>(debug_labels.size()); ++i) {
+                    bool selected = (i == m_debug_target_selection);
+                    if (ImGui::MenuItem(debug_labels[i].c_str(), nullptr, selected)) {
+                        m_debug_target_selection = i;
+                    }
+                }
+                ImGui::EndMenu();
+            }
+            // Camera submenu
+            if (ImGui::BeginMenu("Camera")) {
+                auto cameras = m_world.get_cameras();
+                std::vector<std::pair<std::string, int>> cam_labels;
+                cam_labels.push_back({"Free Camera", 0});
+                for (uint32_t i = 0; i < cameras.size(); ++i) {
+                    if (!cameras[i].active()) continue;
+                    auto name = cameras[i].get_prim_path().GetName();
+                    cam_labels.push_back({std::move(name), static_cast<int>(i + 1)});
+                }
+                for (auto& [label, idx] : cam_labels) {
+                    bool selected = (idx == m_active_camera_index);
+                    if (ImGui::MenuItem(label.c_str(), nullptr, selected)) {
+                        m_active_camera_index = idx;
+                    }
+                }
+                ImGui::EndMenu();
+            }
+            // Save View (only when free camera is active)
+            if (m_stage && m_active_camera_index == 0) {
+                if (ImGui::MenuItem("Save View")) {
+                    auto cam_path = find_unique_prim_path("Camera");
+                    rendering::CameraAdapter::create_from_view(
+                        m_stage, cam_path, m_camera.view_matrix(),
+                        glm::radians(m_camera.fov_y_degrees()), m_camera.near_plane(),
+                        m_camera.far_plane());
+                }
+            }
+            // Capture
+            if (ImGui::MenuItem("Capture")) {
+                m_screenshot_pending = true;
+            }
+            ImGui::EndPopup();
         }
         ImGui::EndMenuBar();
     }
