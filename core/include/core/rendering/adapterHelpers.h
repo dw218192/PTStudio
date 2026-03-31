@@ -41,4 +41,18 @@ void sync_light(pxr::UsdPrim prim, SyncScope& scope, const LightData& light);
 /// lookup/insert and field population via the SyncScope.
 void sync_camera(pxr::UsdPrim prim, SyncScope& scope, const CameraData& camera);
 
+// --- Proxy mesh geometry generators (exposed for testing) ---
+
+/// Generate a 2-triangle quad centered at origin, facing -Z.
+void generate_rect_mesh(float width, float height, std::vector<Vertex>& out_vertices,
+                        std::vector<uint32_t>& out_indices);
+
+/// Generate a triangle-fan disk centered at origin, facing -Z.
+void generate_disk_mesh(float radius, std::vector<Vertex>& out_vertices,
+                        std::vector<uint32_t>& out_indices);
+
+/// Generate a UV sphere centered at origin, normals pointing outward.
+void generate_sphere_mesh(float radius, std::vector<Vertex>& out_vertices,
+                          std::vector<uint32_t>& out_indices);
+
 }  // namespace pts::rendering

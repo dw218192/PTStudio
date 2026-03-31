@@ -65,6 +65,10 @@ void remove_prim(SyncScope& scope, const pxr::SdfPath& prim_path) {
     }
     int light_idx = world.find_light_by_prim(prim_path);
     if (light_idx >= 0) {
+        auto& light = scope.light(static_cast<uint32_t>(light_idx));
+        if (light->mesh_index != UINT32_MAX) {
+            scope.free_mesh_slot(light->mesh_index);
+        }
         scope.free_light_slot(static_cast<uint32_t>(light_idx));
         return;
     }

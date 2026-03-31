@@ -1,6 +1,8 @@
 #include <core/rendering/adapterHelpers.h>
 #include <core/rendering/adapters/lightAdapter.h>
 #include <core/rendering/renderWorld.h>
+#include <pxr/usd/usdGeom/imageable.h>
+#include <pxr/usd/usdGeom/tokens.h>
 #include <pxr/usd/usdLux/diskLight.h>
 #include <pxr/usd/usdLux/distantLight.h>
 #include <pxr/usd/usdLux/domeLight.h>
@@ -92,6 +94,10 @@ void LightAdapter::sync(pxr::UsdPrim prim, SyncScope& scope) {
         shadow_api.GetShadowEnableAttr().Get(&enable);
         light.casts_shadow = enable;
     }
+
+    // Visibility
+    auto vis = pxr::UsdGeomImageable(prim).ComputeVisibility();
+    light.visible = (vis != pxr::UsdGeomTokens->invisible);
 
     sync_light(prim, scope, light);
 }

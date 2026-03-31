@@ -223,6 +223,9 @@ void cs_main(uint3 did : SV_DispatchThreadID) {
         N = apply_normal_map(N, hit.tangent, hit.bitangent, mat, hit.uv,
                              scene_textures, scene_sampler, 0.0);
 
+        // Emissive contribution (light proxy meshes, emissive materials)
+        radiance += throughput * mat.emissive_color;
+
         // Direct lighting (NEE with shadow rays)
         float3 direct = float3(0.0);
         for (uint li = 0; li < u.light_count; li++) {

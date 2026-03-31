@@ -127,6 +127,8 @@ FsOut fs_main(float3 world_normal : NORMAL, float3 world_pos : WORLD_POS,
                                ibl_diff, ibl_spec, ibl_prefilt, ibl_brdf_scale);
     lit += ibl * u.ibl_dome_modulation;
 
+    lit += mat.emissive_color;
+
     FsOut o;
     o.color = float4(lit, 1.0);
 #ifndef NO_DEBUG_TARGETS

@@ -221,8 +221,11 @@ struct LightData {
     float radius{0.0f};
     float width{1.0f};
     float height{1.0f};
-    bool casts_shadow{true};       // from UsdLuxShadowAPI inputs:shadow:enable
-    std::string env_texture_path;  // resolved path to HDR environment map (dome lights only)
+    bool casts_shadow{true};          // from UsdLuxShadowAPI inputs:shadow:enable
+    std::string env_texture_path;     // resolved path to HDR environment map (dome lights only)
+    uint32_t mesh_index{UINT32_MAX};  // proxy mesh slot (UINT32_MAX = none)
+    uint32_t material_index{k_no_material};  // emissive material index
+    bool visible{true};                      // USD visibility for proxy mesh
 };
 
 /// Convert a LightData to a GPU-ready Light struct.

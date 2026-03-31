@@ -70,47 +70,6 @@ static void generate_circle(std::vector<glm::vec3>& out, glm::vec3 center, glm::
     }
 }
 
-/// Generate filled triangle-list geometry for the picking pass.
-static std::vector<glm::vec3> generate_light_pick_verts(const rendering::LightData& light) {
-    std::vector<glm::vec3> verts;
-    auto triangle_fan = [&](glm::vec3 center, glm::vec3 axis_a, glm::vec3 axis_b, float radius) {
-        for (uint32_t i = 0; i < k_circle_segments; ++i) {
-            float a0 = glm::two_pi<float>() * static_cast<float>(i) / k_circle_segments;
-            float a1 = glm::two_pi<float>() * static_cast<float>(i + 1) / k_circle_segments;
-            verts.push_back(center);
-            verts.push_back(center + (std::cos(a0) * axis_a + std::sin(a0) * axis_b) * radius);
-            verts.push_back(center + (std::cos(a1) * axis_a + std::sin(a1) * axis_b) * radius);
-        }
-    };
-    switch (light.type) {
-        case rendering::LightData::Type::Sphere: {
-            float r = std::max(light.radius, 0.1f);
-            verts.reserve(k_circle_segments * 3 * 3);
-            triangle_fan({0, 0, 0}, {1, 0, 0}, {0, 1, 0}, r);
-            triangle_fan({0, 0, 0}, {1, 0, 0}, {0, 0, 1}, r);
-            triangle_fan({0, 0, 0}, {0, 1, 0}, {0, 0, 1}, r);
-            break;
-        }
-        case rendering::LightData::Type::Rect: {
-            float hw = light.width * 0.5f;
-            float hh = light.height * 0.5f;
-            verts = {{-hw, -hh, 0}, {hw, -hh, 0}, {hw, hh, 0},
-                     {-hw, -hh, 0}, {hw, hh, 0},  {-hw, hh, 0}};
-            break;
-        }
-        case rendering::LightData::Type::Disk: {
-            float r = std::max(light.radius, 0.1f);
-            verts.reserve(k_circle_segments * 3);
-            triangle_fan({0, 0, 0}, {1, 0, 0}, {0, 1, 0}, r);
-            break;
-        }
-        case rendering::LightData::Type::Distant:
-        case rendering::LightData::Type::Dome:
-            break;
-    }
-    return verts;
-}
-
 /// Generate line-list wireframe geometry for the color overlay.
 static std::vector<glm::vec3> generate_light_verts(const rendering::LightData& light) {
     std::vector<glm::vec3> verts;
@@ -234,19 +193,6 @@ void EditorPass::do_setup(const webgpu::Device& device) {
                                 .vertex_layout<editor_picking_shader::VertexLayout>()
                                 .build();
 
-    // Picking pipeline variant for gizmo lines (LineList, no cull)
-    auto gizmo_picking_pipeline = webgpu::RenderPipelineBuilder(device)
-                                      .shader(picking_shader)
-                                      .color_format(WGPUTextureFormat_R32Uint)
-                                      .depth_format(WGPUTextureFormat_Depth24Plus)
-                                      .depth_write(true)
-                                      .depth_compare(WGPUCompareFunction_Less)
-                                      .cull_mode(WGPUCullMode_None)
-                                      .topology(WGPUPrimitiveTopology_TriangleList)
-                                      .pipeline_layout(picking_pl)
-                                      .vertex_layout<editor_gizmo_shader::VertexLayout>()
-                                      .build();
-
     wgpuPipelineLayoutRelease(picking_pl);
 
     // ── Gizmo color pipeline (wireframe overlay on scene_color) ────────
@@ -308,7 +254,6 @@ void EditorPass::do_setup(const webgpu::Device& device) {
 
         std::move(gizmo_shader),
         std::move(gizmo_color_pipeline),
-        std::move(gizmo_picking_pipeline),
         std::move(gizmo_uniform_buffer),
         gizmo_bg,
         gizmo_bgl,
@@ -390,8 +335,6 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
     struct GizmoDrawInfo {
         WGPUBuffer vertex_buffer;  // lines for color overlay
         uint32_t vertex_count;
-        WGPUBuffer pick_vertex_buffer;  // triangles for picking
-        uint32_t pick_vertex_count;
     };
     std::vector<GizmoDrawInfo> gizmo_draws;
     gizmo_draws.reserve(gizmo_count);
@@ -410,21 +353,13 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
         auto& mesh =
             get_or_create_pass_data<GizmoMesh>(rendering::PassDataKind::Light, li, ctx.world, [&] {
                 auto line_verts = generate_light_verts(lights[li].data());
-                auto pick_verts = generate_light_pick_verts(lights[li].data());
-                if (line_verts.empty() && pick_verts.empty()) return GizmoMesh{};
+                if (line_verts.empty()) return GizmoMesh{};
                 GizmoMesh m;
-                if (!line_verts.empty()) {
-                    m.vertex_buffer = make_vbuf(line_verts);
-                    m.vertex_count = static_cast<uint32_t>(line_verts.size());
-                }
-                if (!pick_verts.empty()) {
-                    m.pick_vertex_buffer = make_vbuf(pick_verts);
-                    m.pick_vertex_count = static_cast<uint32_t>(pick_verts.size());
-                }
+                m.vertex_buffer = make_vbuf(line_verts);
+                m.vertex_count = static_cast<uint32_t>(line_verts.size());
                 return m;
             });
-        gizmo_draws.push_back({mesh.vertex_buffer.handle(), mesh.vertex_count,
-                               mesh.pick_vertex_buffer.handle(), mesh.pick_vertex_count});
+        gizmo_draws.push_back({mesh.vertex_buffer.handle(), mesh.vertex_count});
     }
 
     // ── Texture descriptors ────────────────────────────────────────────
@@ -468,7 +403,13 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
         uint32_t li = gizmo_light_indices[slot];
         uint32_t picking_slot = object_count + slot;
 
-        // Scale gizmo to maintain minimum screen-space size
+        // Picking uses the light's raw transform (proxy mesh IS the physical extent)
+        PickingUniforms pu{};
+        pu.mvp = vp * lights[li]->transform;
+        pu.object_id = picking_slot;
+        wgpuQueueWriteBuffer(queue, picking_buf, picking_slot * k_uniform_align, &pu, sizeof(pu));
+
+        // Wireframe overlay uses distance-based scaling to stay visible at any distance
         glm::vec3 light_pos = glm::vec3(lights[li]->transform[3]);
         float dist = glm::length(light_pos - camera_pos);
         float light_radius = (lights[li]->type == rendering::LightData::Type::Rect)
@@ -477,11 +418,6 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
         float scale = gizmo_distance_scale(dist, light_radius, k_min_screen_radius);
         auto scaled_transform =
             lights[li]->transform * glm::scale(glm::mat4(1.0f), glm::vec3(scale));
-
-        PickingUniforms pu{};
-        pu.mvp = vp * scaled_transform;
-        pu.object_id = picking_slot;
-        wgpuQueueWriteBuffer(queue, picking_buf, picking_slot * k_uniform_align, &pu, sizeof(pu));
 
         bool is_selected = (ctx.selected_picking_id == picking_slot);
         GizmoUniforms gu{};
@@ -493,15 +429,15 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
 
     // ── Pass 1: Picking ────────────────────────────────────────────────
     auto mesh_picking_pl = ready.picking_pipeline.handle();
-    auto line_picking_pl = ready.gizmo_picking_pipeline.handle();
     auto picking_bg = ready.picking_bind_group;
     const auto& world = ctx.world;
     auto obj_count_cap = object_count;
+    auto gizmo_light_indices_cap = gizmo_light_indices;
 
     fg.add_pass("editor_picking")
         .color(picking_ids)
         .depth(picking_depth)
-        .execute([=, gizmo_draws = gizmo_draws, &world](WGPURenderPassEncoder pass) {
+        .execute([=, &world](WGPURenderPassEncoder pass) {
             auto objs = world.get_objects();
             auto meshes = world.get_meshes();
 
@@ -520,17 +456,22 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
                 wgpuRenderPassEncoderDrawIndexed(pass, mesh->index_count, 1, 0, 0, 0);
             }
 
-            // Light gizmo shapes (filled triangles for easier picking)
-            wgpuRenderPassEncoderSetPipeline(pass, line_picking_pl);
-            for (uint32_t slot = 0; slot < static_cast<uint32_t>(gizmo_draws.size()); ++slot) {
-                auto& draw = gizmo_draws[slot];
-                if (draw.pick_vertex_count == 0) continue;
+            // Light proxy meshes (same pipeline as mesh objects)
+            auto lts = world.get_lights();
+            for (uint32_t slot = 0; slot < static_cast<uint32_t>(gizmo_light_indices_cap.size());
+                 ++slot) {
+                uint32_t li = gizmo_light_indices_cap[slot];
+                if (lts[li]->mesh_index == UINT32_MAX) continue;
                 uint32_t picking_slot = obj_count_cap + slot;
                 uint32_t dyn_offset = picking_slot * EditorPass::k_uniform_align;
                 wgpuRenderPassEncoderSetBindGroup(pass, 0, picking_bg, 1, &dyn_offset);
-                wgpuRenderPassEncoderSetVertexBuffer(pass, 0, draw.pick_vertex_buffer, 0,
-                                                     draw.pick_vertex_count * sizeof(glm::vec3));
-                wgpuRenderPassEncoderDraw(pass, draw.pick_vertex_count, 1, 0, 0);
+                const auto& mesh = meshes[lts[li]->mesh_index];
+                wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh->position_buffer.handle(), 0,
+                                                     mesh->position_buffer.size());
+                wgpuRenderPassEncoderSetIndexBuffer(pass, mesh->index_buffer.handle(),
+                                                    WGPUIndexFormat_Uint32, 0,
+                                                    mesh->index_buffer.size());
+                wgpuRenderPassEncoderDrawIndexed(pass, mesh->index_count, 1, 0, 0, 0);
             }
         });
 

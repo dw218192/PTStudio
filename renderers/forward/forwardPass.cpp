@@ -471,9 +471,20 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
 
     auto objects = ctx.world.get_objects();
     auto object_count = static_cast<uint32_t>(objects.size());
+
+    // Count proxy lights (lights with active mesh proxies) for uniform buffer sizing
+    auto all_lights = ctx.world.get_lights();
+    uint32_t proxy_light_count = 0;
+    for (uint32_t li = 0; li < static_cast<uint32_t>(all_lights.size()); ++li) {
+        if (!all_lights[li].active()) continue;
+        if (all_lights[li]->mesh_index == UINT32_MAX) continue;
+        ++proxy_light_count;
+    }
+
+    uint32_t total_slots = object_count + proxy_light_count;
     bool bind_group_dirty = false;
-    if (object_count > 0) {
-        bind_group_dirty = ensure_capacity(ctx.device, object_count);
+    if (total_slots > 0) {
+        bind_group_dirty = ensure_capacity(ctx.device, total_slots);
     }
 
     // Detect RenderWorld buffer reallocation and rebuild bind group
@@ -587,6 +598,31 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
         }
     }
 
+    // Upload uniforms for proxy light meshes
+    {
+        PTS_ZONE_NAMED("forward proxy light uniform upload");
+        uint32_t proxy_slot = object_count;
+        for (uint32_t li = 0; li < static_cast<uint32_t>(all_lights.size()); ++li) {
+            if (!all_lights[li].active()) continue;
+            if (all_lights[li]->mesh_index == UINT32_MAX) continue;
+            if (!all_lights[li]->visible) {
+                ++proxy_slot;
+                continue;
+            }
+            ForwardUniforms u{};
+            u.mvp = proj_mat * view_mat * all_lights[li]->transform;
+            u.model = all_lights[li]->transform;
+            u.camera_pos = camera_pos;
+            u.time = elapsed_time;
+            u.material_index = all_lights[li]->material_index;
+            u.light_count = light_count;
+            u.ibl_dome_modulation = ibl_ready ? dome_mod : glm::vec3{0.0f};
+            u.ibl_mip_count = rendering::k_prefilter_mip_count;
+            wgpuQueueWriteBuffer(queue, uniform_buf, proxy_slot * k_uniform_align, &u, sizeof(u));
+            ++proxy_slot;
+        }
+    }
+
     // Capture IBL bind group resources (use fallback textures when IBL not ready)
     auto ibl_bgl = ready.ibl_bgl;
     auto ibl_samp = ready.ibl_sampler;
@@ -675,6 +711,30 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
                                                 WGPUIndexFormat_Uint32, 0,
                                                 mesh->index_buffer.size());
             wgpuRenderPassEncoderDrawIndexed(pass, mesh->index_count, 1, 0, 0, 0);
+        }
+
+        // Draw light proxy meshes
+        {
+            auto light_slots = world.get_lights();
+            uint32_t proxy_idx = object_count;
+            for (uint32_t li = 0; li < static_cast<uint32_t>(light_slots.size()); ++li) {
+                if (!light_slots[li].active()) continue;
+                if (light_slots[li]->mesh_index == UINT32_MAX) continue;
+                if (!light_slots[li]->visible) {
+                    ++proxy_idx;
+                    continue;
+                }
+                uint32_t dyn_offset = proxy_idx * k_uniform_align;
+                wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 1, &dyn_offset);
+                const auto& mesh = meshes[light_slots[li]->mesh_index];
+                wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh->vertex_buffer.handle(), 0,
+                                                     mesh->vertex_buffer.size());
+                wgpuRenderPassEncoderSetIndexBuffer(pass, mesh->index_buffer.handle(),
+                                                    WGPUIndexFormat_Uint32, 0,
+                                                    mesh->index_buffer.size());
+                wgpuRenderPassEncoderDrawIndexed(pass, mesh->index_count, 1, 0, 0, 0);
+                ++proxy_idx;
+            }
         }
 
         // Skybox: draw fullscreen triangle after all geometry
