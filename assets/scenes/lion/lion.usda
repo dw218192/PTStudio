@@ -80,6 +80,7 @@ def Xform "Root"
 
         over "env_light"
         {
+            float inputs:intensity = 0.3
             asset inputs:texture:file = @../../hdr/bryanston_park_sunrise_2k.hdr@
         }
     }
