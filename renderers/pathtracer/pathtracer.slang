@@ -50,7 +50,7 @@ struct PTUniforms {
 [[vk::binding(0, 1)]] TextureCube<float4> env_cubemap;
 [[vk::binding(1, 1)]] SamplerState env_sampler;
 
-static const float PT_EPS = 0.0001;
+static const float PT_EPS = 1e-7;
 
 // ── Ray-triangle intersection ───────────────────────────────────
 

@@ -62,7 +62,6 @@ uint32_t try_resolve_texture(pxr::UsdShadeInput input, SyncScope& scope,
     if (resolved.empty()) {
         return UINT32_MAX;
     }
-
     out_source_name = source_name;
     return scope.load_texture(resolved);
 }
