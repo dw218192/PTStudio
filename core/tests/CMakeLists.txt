@@ -46,6 +46,14 @@ if(NOT EMSCRIPTEN)
     set(testShadowMapPass_source testShadowMapPass.cpp)
     set(testShadowMapPass_libs core)
 
+    list(APPEND TEST_NAMES testGBufferPass)
+    set(testGBufferPass_source testGBufferPass.cpp)
+    set(testGBufferPass_libs core)
+
+    list(APPEND TEST_NAMES testSSAOPass)
+    set(testSSAOPass_source testSSAOPass.cpp)
+    set(testSSAOPass_libs core)
+
     list(APPEND TEST_NAMES testPipelineBuilder)
     set(testPipelineBuilder_source testPipelineBuilder.cpp)
     set(testPipelineBuilder_libs core)

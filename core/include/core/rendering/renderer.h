@@ -2,6 +2,7 @@
 
 #include <core/rendering/renderPass.h>
 
+#include <boost/core/span.hpp>
 #include <memory>
 #include <vector>
 
@@ -20,7 +21,6 @@ class IRenderer : public IRenderPass {
         return ref;
     }
 
-    /// Find a child pass by type. Returns nullptr if not found.
     template <typename T>
     T* get_pass() const {
         for (auto& c : m_children) {
@@ -29,11 +29,17 @@ class IRenderer : public IRenderPass {
         return nullptr;
     }
 
-    // Lifecycle overrides — forward to children, then self
+    /// Iterate all child passes with a callback.
+    template <typename Fn>
+    void for_each_subpass(Fn&& fn) {
+        for (auto& c : m_children) fn(*c);
+    }
+
+    // ── Lifecycle: auto-forwarded to all children ──
+
+    /// Frame graph: delegates entirely to the renderer. The renderer calls
+    /// child passes explicitly at the points it chooses.
     void add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) override {
-        for (auto& c : m_children) {
-            if (c->is_ready()) c->add_to_frame_graph(fg, ctx);
-        }
         do_add_to_frame_graph(fg, ctx);
     }
 
@@ -53,7 +59,6 @@ class IRenderer : public IRenderPass {
     }
 
    protected:
-    // do_setup forwards to children first, then calls do_renderer_setup
     void do_setup(const webgpu::Device& device) override {
         for (auto& c : m_children) c->setup(device);
         do_renderer_setup(device);

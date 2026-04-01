@@ -158,6 +158,15 @@ ResourceHandle FrameGraph::create(std::string name, TextureDesc desc) {
     return h;
 }
 
+std::optional<ResourceHandle> FrameGraph::find(const std::string& name) const {
+    for (uint32_t i = 0; i < m_resources.size(); ++i) {
+        if (m_resources[i].name == name) {
+            return ResourceHandle{i};
+        }
+    }
+    return std::nullopt;
+}
+
 ResourceHandle FrameGraph::find_or_create(std::string name, TextureDesc desc) {
     for (uint32_t i = 0; i < m_resources.size(); ++i) {
         if (m_resources[i].name == name) {

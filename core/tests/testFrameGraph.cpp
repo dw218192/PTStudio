@@ -98,7 +98,7 @@ TEST_CASE("FrameGraph - depth read-only") {
     pts::rendering::TextureDesc depth_desc;
     depth_desc.width = 64;
     depth_desc.height = 64;
-    depth_desc.format = WGPUTextureFormat_Depth24Plus;
+    depth_desc.format = WGPUTextureFormat_Depth32Float;
 
     auto color0 = f.graph.create("color0", color_desc);
     auto depth = f.graph.create("depth", depth_desc);
@@ -135,7 +135,7 @@ TEST_CASE("FrameGraph - backward dependency throws") {
     pts::rendering::TextureDesc depth_desc;
     depth_desc.width = 64;
     depth_desc.height = 64;
-    depth_desc.format = WGPUTextureFormat_Depth24Plus;
+    depth_desc.format = WGPUTextureFormat_Depth32Float;
 
     auto depth_res = f.graph.create("depth", depth_desc);
 
@@ -477,6 +477,32 @@ TEST_CASE("FrameGraph - find_or_create different names create different handles"
     auto h2 = f.graph.find_or_create("color_b", desc);
 
     CHECK(h1.index != h2.index);
+}
+
+TEST_CASE("FrameGraph - find returns nullopt for missing resource") {
+    TestFixture f;
+
+    f.graph.begin_frame();
+
+    auto result = f.graph.find("nonexistent");
+    CHECK(!result.has_value());
+}
+
+TEST_CASE("FrameGraph - find returns handle for existing resource") {
+    TestFixture f;
+
+    f.graph.begin_frame();
+
+    pts::rendering::TextureDesc desc;
+    desc.width = 64;
+    desc.height = 64;
+    desc.format = WGPUTextureFormat_BGRA8Unorm;
+
+    auto h1 = f.graph.find_or_create("color", desc);
+    auto found = f.graph.find("color");
+
+    REQUIRE(found.has_value());
+    CHECK(found->index == h1.index);
 }
 
 TEST_CASE("FrameGraph - picking texture CopySrc readback") {

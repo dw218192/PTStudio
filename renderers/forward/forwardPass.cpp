@@ -4,12 +4,14 @@
 #include <core/profiling.h>
 #include <core/rendering/camera.h>
 #include <core/rendering/frameGraph.h>
+#include <core/rendering/gbufferPass.h>
 #include <core/rendering/iblResources.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/rendererRegistry.h>
 #include <core/rendering/shaderLoader.h>
 #include <core/rendering/shadowMapPass.h>
+#include <core/rendering/ssaoPass.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
 #include <renderers/forward/generated/shader_metadata.h>
 
@@ -21,7 +23,9 @@ using namespace pts::editor;
 REGISTER_RENDERER("Forward", ForwardPass);
 
 ForwardPass::ForwardPass(const rendering::ShaderLoader& sl) : IRenderer(sl) {
+    add_pass<rendering::GBufferPass>(sl);
     add_pass<rendering::ShadowMapPass>(sl);
+    add_pass<rendering::SSAOPass>(sl);
 }
 
 struct ForwardUniforms {
@@ -346,9 +350,9 @@ void ForwardPass::do_renderer_setup(const webgpu::Device& device) {
     auto builder = webgpu::RenderPipelineBuilder(device)
                        .shader(shader)
                        .color_format(WGPUTextureFormat_RGBA16Float, 0)
-                       .depth_format(WGPUTextureFormat_Depth24Plus)
+                       .depth_format(WGPUTextureFormat_Depth32Float)
                        .depth_write(true)
-                       .depth_compare(WGPUCompareFunction_Less)
+                       .depth_compare(WGPUCompareFunction_LessEqual)
                        .cull_mode(WGPUCullMode_Back)
                        .pipeline_layout(pipeline_layout)
                        .vertex_layout<forward_shader::VertexLayout>();
@@ -398,7 +402,7 @@ void ForwardPass::do_renderer_setup(const webgpu::Device& device) {
     auto skybox_builder = webgpu::RenderPipelineBuilder(device)
                               .shader(skybox_shader)
                               .color_format(WGPUTextureFormat_RGBA16Float, 0)
-                              .depth_format(WGPUTextureFormat_Depth24Plus)
+                              .depth_format(WGPUTextureFormat_Depth32Float)
                               .depth_write(false)
                               .depth_compare(WGPUCompareFunction_LessEqual)
                               .cull_mode(WGPUCullMode_None)
@@ -467,6 +471,12 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     PTS_ZONE_SCOPED;
     PRECONDITION(is_ready());
 
+    // Pre-passes: G-buffer (depth + normals) and shadow maps
+    if (auto* gbuf = get_pass<rendering::GBufferPass>(); gbuf && gbuf->is_ready())
+        gbuf->add_to_frame_graph(fg, ctx);
+    if (auto* shadow = get_pass<rendering::ShadowMapPass>(); shadow && shadow->is_ready())
+        shadow->add_to_frame_graph(fg, ctx);
+
     auto& ready = std::get<Ready>(m_state);
 
     auto objects = ctx.world.get_objects();
@@ -523,7 +533,7 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     rendering::TextureDesc depth_desc;
     depth_desc.width = ctx.viewport_width;
     depth_desc.height = ctx.viewport_height;
-    depth_desc.format = WGPUTextureFormat_Depth24Plus;
+    depth_desc.format = WGPUTextureFormat_Depth32Float;
 
     auto color = fg.find_or_create("scene_color", color_desc);
     auto depth = fg.find_or_create("scene_depth", depth_desc);
@@ -535,6 +545,8 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     debug_desc.height = ctx.viewport_height;
     debug_desc.format = WGPUTextureFormat_RGBA8Unorm;
     debug_desc.clear_color = {0, 0, 0, 1};
+    debug_desc.usage =
+        static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_CopySrc);
 
     rendering::ResourceHandle debug_handles[k_debug_target_count];
     for (uint32_t i = 0; i < eff_debug_count; ++i) {
@@ -768,4 +780,8 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
         wgpuBindGroupRelease(shadow_bg);
         wgpuBindGroupRelease(ibl_bg);
     });
+
+    // Post-pass: SSAO
+    if (auto* ssao = get_pass<rendering::SSAOPass>(); ssao && ssao->is_ready())
+        ssao->add_to_frame_graph(fg, ctx);
 }

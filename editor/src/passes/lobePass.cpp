@@ -98,7 +98,7 @@ void LobePass::do_setup(const webgpu::Device& device) {
     auto pipeline = webgpu::RenderPipelineBuilder(device)
                         .shader(shader)
                         .color_format(WGPUTextureFormat_RGBA8Unorm)
-                        .depth_format(WGPUTextureFormat_Depth24Plus)
+                        .depth_format(WGPUTextureFormat_Depth32Float)
                         .depth_write(true)
                         .depth_compare(WGPUCompareFunction_Less)
                         .cull_mode(WGPUCullMode_None)
@@ -127,7 +127,7 @@ void LobePass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::Pa
     rendering::TextureDesc depth_desc;
     depth_desc.width = k_texture_size;
     depth_desc.height = k_texture_size;
-    depth_desc.format = WGPUTextureFormat_Depth24Plus;
+    depth_desc.format = WGPUTextureFormat_Depth32Float;
 
     auto color = fg.find_or_create("lobe_color", color_desc);
     auto depth = fg.find_or_create("lobe_depth", depth_desc);

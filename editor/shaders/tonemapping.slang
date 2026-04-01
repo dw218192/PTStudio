@@ -14,6 +14,12 @@ Texture2D<float4> hdr_input;
 [[vk::binding(2, 0)]]
 SamplerState linear_sampler;
 
+[[vk::binding(3, 0)]]
+Texture2D<float4> ssao_texture;
+
+[[vk::binding(4, 0)]]
+SamplerState ssao_sampler;
+
 struct VsOut {
     float4 position : SV_Position;
     float2 uv : TEXCOORD;
@@ -55,6 +61,10 @@ float3 linear_to_srgb(float3 c) {
 [shader("fragment")]
 float4 fs_main(float2 uv : TEXCOORD) : SV_Target0 {
     float3 hdr = hdr_input.Sample(linear_sampler, uv).rgb;
+
+    // Apply SSAO (multiply ambient occlusion before tone mapping)
+    float ao = ssao_texture.Sample(ssao_sampler, uv).r;
+    hdr *= ao;
 
     // Apply exposure
     hdr *= exp2(u.exposure);

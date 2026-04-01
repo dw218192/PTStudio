@@ -150,12 +150,12 @@ auto IRenderPass::load_pass_shader(std::string_view resource_key) const -> std::
 
 void IRenderer::draw_imgui() {
     if (!ImGui::CollapsingHeader(name().data(), ImGuiTreeNodeFlags_DefaultOpen)) return;
-    for (auto& c : m_children) {
-        if (ImGui::TreeNodeEx(c->name().data(), ImGuiTreeNodeFlags_DefaultOpen)) {
-            c->draw_imgui();
+    for_each_subpass([](auto& c) {
+        if (ImGui::TreeNodeEx(c.name().data(), ImGuiTreeNodeFlags_DefaultOpen)) {
+            c.draw_imgui();
             ImGui::TreePop();
         }
-    }
+    });
     do_draw_imgui();
 }
 
