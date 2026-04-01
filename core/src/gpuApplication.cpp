@@ -105,7 +105,7 @@ void GpuApplication::ensure_depth_buffer(uint32_t w, uint32_t h) {
 
     WGPUTextureDescriptor tex_desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
     tex_desc.size = {w, h, 1};
-    tex_desc.format = WGPUTextureFormat_Depth24Plus;
+    tex_desc.format = WGPUTextureFormat_Depth32Float;
     tex_desc.usage = WGPUTextureUsage_RenderAttachment;
     tex_desc.mipLevelCount = 1;
     tex_desc.sampleCount = 1;
@@ -113,7 +113,7 @@ void GpuApplication::ensure_depth_buffer(uint32_t w, uint32_t h) {
     m_depth_texture = wgpuDeviceCreateTexture(device.handle(), &tex_desc);
 
     WGPUTextureViewDescriptor view_desc = WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT;
-    view_desc.format = WGPUTextureFormat_Depth24Plus;
+    view_desc.format = WGPUTextureFormat_Depth32Float;
     view_desc.dimension = WGPUTextureViewDimension_2D;
     view_desc.mipLevelCount = 1;
     view_desc.arrayLayerCount = 1;

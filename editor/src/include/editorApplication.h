@@ -150,10 +150,13 @@ struct EditorApplication final : GpuApplication {
     bool m_editor_passes_enabled = true;
     rendering::ShaderLoader m_shader_loader;
 
-    /// Iterate all active passes (renderer + editor) in execution order.
+    /// Iterate all active passes (renderer + subpasses + editor) in execution order.
     template <typename Fn>
     void for_each_pass(Fn&& fn) {
-        if (m_renderer_pass) fn(*m_renderer_pass);
+        if (m_renderer_pass) {
+            fn(*m_renderer_pass);
+            m_renderer_pass->for_each_subpass(fn);
+        }
         for (auto& p : m_editor_passes) {
             // ToneMappingPass always runs; others respect the toggle
             if (!m_editor_passes_enabled && p.get() != m_tonemapping_pass) continue;

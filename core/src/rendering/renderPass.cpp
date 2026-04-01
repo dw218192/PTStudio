@@ -157,6 +157,12 @@ void IRenderer::draw_imgui() {
         }
     }
     do_draw_imgui();
+    for (auto& c : m_post_children) {
+        if (ImGui::TreeNodeEx(c->name().data(), ImGuiTreeNodeFlags_DefaultOpen)) {
+            c->draw_imgui();
+            ImGui::TreePop();
+        }
+    }
 }
 
 }  // namespace pts::rendering

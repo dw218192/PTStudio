@@ -469,6 +469,19 @@ void EditorApplication::on_ready() {
         "core/generated/shaders/shadow.wgsl", "core/shaders/shadow.slang",
         "core/generated/shaders/shadow.wgsl", editor_resources::get_resource, {"vs_main"});
 
+    // Register gbuffer shader for hot-reload
+    m_shader_loader.register_shader(
+        "core/generated/shaders/gbuffer.wgsl", "core/shaders/gbuffer.slang",
+        "core/generated/shaders/gbuffer.wgsl", editor_resources::get_resource);
+
+    // Register SSAO shaders for hot-reload
+    m_shader_loader.register_shader("core/generated/shaders/ssao.wgsl", "core/shaders/ssao.slang",
+                                    "core/generated/shaders/ssao.wgsl",
+                                    editor_resources::get_resource);
+    m_shader_loader.register_shader(
+        "core/generated/shaders/ssao_blur.wgsl", "core/shaders/ssao_blur.slang",
+        "core/generated/shaders/ssao_blur.wgsl", editor_resources::get_resource);
+
     // Create editor passes (always-on, independent of renderer choice)
     {
         auto& dev = webgpu_context()->device();
@@ -895,30 +908,24 @@ void EditorApplication::render(FrameContext& ctx) {
         display_color_handle = m_frame_graph->find_or_create("tone_mapped_color", ldr_desc);
     }
 
-    // Declare reads on all debug target textures so frame graph tracks them
+    // Declare reads on all debug target textures so frame graph tracks them.
+    // Debug targets are created by the passes themselves — we just look them up.
     std::vector<rendering::ResourceHandle> debug_target_handles;
     if (has_viewport) {
-        rendering::TextureDesc debug_desc;
-        debug_desc.width = m_viewport_width;
-        debug_desc.height = m_viewport_height;
-        debug_desc.format = WGPUTextureFormat_RGBA8Unorm;
-        debug_desc.clear_color = {0, 0, 0, 1};
-        debug_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment |
-                                                         WGPUTextureUsage_CopySrc);
-
-        // In capture mode, only collect debug targets from the renderer pass
         auto collect_debug_targets = [&](auto& pass) {
             auto [names, count] = pass.effective_debug_target_names();
             for (uint32_t i = 0; i < count; ++i) {
-                auto h =
-                    m_frame_graph->find_or_create(std::string("debug_") + names[i], debug_desc);
-                if (h.is_valid()) {
-                    debug_target_handles.push_back(h);
+                auto h = m_frame_graph->find(std::string("debug_") + names[i]);
+                if (h) {
+                    debug_target_handles.push_back(*h);
                 }
             }
         };
         if (capture_mode) {
-            if (m_renderer_pass) collect_debug_targets(*m_renderer_pass);
+            if (m_renderer_pass) {
+                collect_debug_targets(*m_renderer_pass);
+                m_renderer_pass->for_each_subpass(collect_debug_targets);
+            }
         } else {
             for_each_pass(collect_debug_targets);
         }

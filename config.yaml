@@ -98,6 +98,15 @@ slangc:
     - input: "core/shaders/shadow.slang"
       output: "core/generated/shaders/shadow.wgsl"
       reflect: true
+    - input: "core/shaders/gbuffer.slang"
+      output: "core/generated/shaders/gbuffer.wgsl"
+      reflect: true
+    - input: "core/shaders/ssao.slang"
+      output: "core/generated/shaders/ssao.wgsl"
+      reflect: true
+    - input: "core/shaders/ssao_blur.slang"
+      output: "core/generated/shaders/ssao_blur.wgsl"
+      reflect: true
     - input: "editor/shaders/picking.slang"
       output: "editor/generated/shaders/picking.wgsl"
       reflect: true
@@ -143,6 +152,15 @@ shader_codegen:
     - reflect: "core/generated/shaders/shadow.reflect.json"
       output: "core/generated/shadow_shader_metadata.h"
       namespace: "shadow_shader"
+    - reflect: "core/generated/shaders/gbuffer.reflect.json"
+      output: "core/generated/gbuffer_shader_metadata.h"
+      namespace: "gbuffer_shader"
+    - reflect: "core/generated/shaders/ssao.reflect.json"
+      output: "core/generated/ssao_shader_metadata.h"
+      namespace: "ssao_shader"
+    - reflect: "core/generated/shaders/ssao_blur.reflect.json"
+      output: "core/generated/ssao_blur_shader_metadata.h"
+      namespace: "ssao_blur_shader"
     - reflect: "editor/generated/shaders/picking.reflect.json"
       output: "editor/generated/picking_shader_metadata.h"
       namespace: "editor_picking_shader"
@@ -170,6 +188,9 @@ embed:
         - "renderers/forward/generated/shaders/forward_no_debug.wgsl"
         - "renderers/forward/generated/shaders/skybox.wgsl"
         - "core/generated/shaders/shadow.wgsl"
+        - "core/generated/shaders/gbuffer.wgsl"
+        - "core/generated/shaders/ssao.wgsl"
+        - "core/generated/shaders/ssao_blur.wgsl"
         - "editor/generated/shaders/picking.wgsl"
         - "editor/generated/shaders/grid.wgsl"
         - "editor/generated/shaders/wireframe.wgsl"

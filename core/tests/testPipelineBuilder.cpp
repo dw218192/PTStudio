@@ -86,7 +86,7 @@ TEST_CASE("RenderPipelineBuilder - normal pipeline with fragment is unaffected")
     auto builder = pts::webgpu::RenderPipelineBuilder(f.device)
                        .shader(shader)
                        .color_format(WGPUTextureFormat_BGRA8Unorm)
-                       .depth_format(WGPUTextureFormat_Depth24Plus)
+                       .depth_format(WGPUTextureFormat_Depth32Float)
                        .depth_write(true)
                        .depth_compare(WGPUCompareFunction_Less);
 

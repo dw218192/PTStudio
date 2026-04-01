@@ -4,6 +4,7 @@
 #include <core/rendering/webgpu/buffer.h>
 #include <core/rendering/webgpu/pipeline.h>
 #include <core/rendering/webgpu/shader.h>
+#include <core/rendering/webgpu/texture.h>
 #include <core/rendering/webgpu/webgpu.h>
 
 #include <cstdint>
@@ -44,6 +45,10 @@ class ToneMappingPass final : public rendering::IRenderPass {
         webgpu::Buffer uniform_buffer;
         WGPUBindGroupLayout bind_group_layout = nullptr;
         WGPUSampler sampler = nullptr;
+        // 1x1 white fallback for when SSAO is unavailable (AO = 1.0)
+        webgpu::Texture ssao_fallback_texture;
+        WGPUTextureView ssao_fallback_view = nullptr;
+        WGPUSampler ssao_sampler = nullptr;
     };
 
     std::variant<std::monostate, Ready> m_state;
