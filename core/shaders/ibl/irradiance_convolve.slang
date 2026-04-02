@@ -1,9 +1,13 @@
+// Cosine-weighted irradiance convolution for diffuse IBL.
+// Dispatched once per face with a single-layer output view (see equirect_to_cube.slang).
 import brdf;
 import ibl_sampling;
 
 struct IrradianceParams {
     uint size;
     uint env_size;
+    uint face;  // cubemap face index (0-5), set per dispatch
+    uint _pad;
 };
 
 [[vk::binding(0, 0)]] ConstantBuffer<IrradianceParams> params;
@@ -13,11 +17,10 @@ struct IrradianceParams {
 
 [numthreads(8, 8, 1)]
 void cs_main(uint3 tid : SV_DispatchThreadID) {
-    uint face = tid.z;
-    if (tid.x >= params.size || tid.y >= params.size || face >= 6) return;
+    if (tid.x >= params.size || tid.y >= params.size) return;
 
     float2 uv = (float2(tid.xy) + 0.5) / float(params.size);
-    float3 N = cube_dir_from_face_uv(face, uv);
+    float3 N = cube_dir_from_face_uv(params.face, uv);
 
     float3 up = abs(N.y) < 0.999 ? float3(0, 1, 0) : float3(1, 0, 0);
     float3 right = normalize(cross(up, N));
@@ -47,5 +50,5 @@ void cs_main(uint3 tid : SV_DispatchThreadID) {
 
     // Cosine-weighted: integral = PI * (1/N) * sum(L)
     irradiance = PI * irradiance / float(SAMPLE_COUNT);
-    output_irradiance[int3(tid.xy, face)] = float4(irradiance, 1.0);
+    output_irradiance[int3(tid.xy, 0)] = float4(irradiance, 1.0);
 }
