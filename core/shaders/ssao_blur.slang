@@ -48,5 +48,5 @@ float4 fs_main(float2 uv : TEXCOORD) : SV_Target0 {
     }
 
     float ao = (total_weight > 0.0) ? (result / total_weight) : 1.0;
-    return float4(ao, 0.0, 0.0, 0.0);
+    return float4(ao, ao, ao, 1.0);
 }

@@ -297,7 +297,7 @@ void SSAOPass::do_setup(const webgpu::Device& device) {
 
     auto blur_pipeline = webgpu::RenderPipelineBuilder(device)
                              .shader(blur_shader)
-                             .color_format(WGPUTextureFormat_R8Unorm)
+                             .color_format(WGPUTextureFormat_RGBA8Unorm)
                              .cull_mode(WGPUCullMode_None)
                              .pipeline_layout(blur_pl)
                              .build();
@@ -350,6 +350,7 @@ void SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
     auto ssao_raw_handle = fg.find_or_create("ssao_raw", r8_desc);
 
     TextureDesc ao_debug_desc = r8_desc;
+    ao_debug_desc.format = WGPUTextureFormat_RGBA8Unorm;
     ao_debug_desc.usage =
         static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_CopySrc);
     auto ssao_handle = fg.find_or_create("debug_AO", ao_debug_desc);
