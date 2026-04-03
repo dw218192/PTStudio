@@ -176,10 +176,10 @@ void MeshAdapter::sync(pxr::UsdPrim prim, SyncScope& scope) {
             if (!uvs.empty()) {
                 if (uvs.size() == face_vertex_indices.size()) {
                     v.uv[0] = uvs[fv_offset + j][0];
-                    v.uv[1] = uvs[fv_offset + j][1];
+                    v.uv[1] = 1.0f - uvs[fv_offset + j][1];
                 } else if (uvs.size() == points.size()) {
                     v.uv[0] = uvs[pt_idx][0];
-                    v.uv[1] = uvs[pt_idx][1];
+                    v.uv[1] = 1.0f - uvs[pt_idx][1];
                 }
             }
 
