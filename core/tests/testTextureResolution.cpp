@@ -48,9 +48,7 @@ void remove_test_texture(const std::string& path) {
 
 /// Build a minimal USD stage with a mesh, material, and UsdUVTexture nodes.
 /// texture_path: absolute path to an image file for the diffuse texture.
-/// metallic_output: output name for metallic texture (e.g. "r", "g", "b").
-pxr::UsdStageRefPtr create_textured_stage(const std::string& texture_path,
-                                          const std::string& metallic_output = "r") {
+pxr::UsdStageRefPtr create_textured_stage(const std::string& texture_path) {
     auto stage = pxr::UsdStage::CreateInMemory();
 
     pxr::UsdGeomXform::Define(stage, pxr::SdfPath("/Root"));
@@ -72,6 +70,7 @@ pxr::UsdStageRefPtr create_textured_stage(const std::string& texture_path,
     surface.CreateInput(pxr::TfToken("metallic"), pxr::SdfValueTypeNames->Float).Set(0.9f);
     surface.CreateInput(pxr::TfToken("roughness"), pxr::SdfValueTypeNames->Float).Set(0.3f);
     surface.CreateInput(pxr::TfToken("opacity"), pxr::SdfValueTypeNames->Float).Set(0.7f);
+    surface.CreateInput(pxr::TfToken("ior"), pxr::SdfValueTypeNames->Float).Set(1.45f);
     surface.CreateInput(pxr::TfToken("emissiveColor"), pxr::SdfValueTypeNames->Color3f)
         .Set(pxr::GfVec3f(0.1f, 0.2f, 0.3f));
 
@@ -91,11 +90,11 @@ pxr::UsdStageRefPtr create_textured_stage(const std::string& texture_path,
     orm_tex.CreateIdAttr(pxr::VtValue(pxr::TfToken("UsdUVTexture")));
     orm_tex.CreateInput(pxr::TfToken("file"), pxr::SdfValueTypeNames->Asset)
         .Set(pxr::SdfAssetPath(texture_path));
-    orm_tex.CreateOutput(pxr::TfToken(metallic_output), pxr::SdfValueTypeNames->Float);
+    orm_tex.CreateOutput(pxr::TfToken("r"), pxr::SdfValueTypeNames->Float);
 
-    // Connect metallic → OrmTex.<channel>
+    // Connect metallic → OrmTex.r
     surface.GetInput(pxr::TfToken("metallic"))
-        .ConnectToSource(orm_tex.ConnectableAPI(), pxr::TfToken(metallic_output));
+        .ConnectToSource(orm_tex.ConnectableAPI(), pxr::TfToken("r"));
 
     // Connect roughness → OrmTex.g
     orm_tex.CreateOutput(pxr::TfToken("g"), pxr::SdfValueTypeNames->Float);
@@ -175,13 +174,13 @@ TEST_CASE("read_preview_surface reads scalar values") {
     CHECK(mat.roughness_tex == UINT32_MAX);
     CHECK(mat.emissive_tex == UINT32_MAX);
     CHECK(mat.opacity_tex == UINT32_MAX);
-    CHECK(mat.tex_channels == 0);
+    CHECK(mat.ior == doctest::Approx(1.5f));
 }
 
 TEST_CASE("read_preview_surface walks texture connections") {
     auto tex_path = create_test_texture("pts_test_diffuse.ppm");
 
-    auto stage = create_textured_stage(tex_path, "b");
+    auto stage = create_textured_stage(tex_path);
     auto surface = pxr::UsdShadeShader::Get(stage, pxr::SdfPath("/Root/Mat/Surface"));
     REQUIRE(bool(surface));
 
@@ -206,43 +205,31 @@ TEST_CASE("read_preview_surface walks texture connections") {
     remove_test_texture(tex_path);
 }
 
-TEST_CASE("tex_channels packs channel selection for scalar inputs") {
-    auto tex_path = create_test_texture("pts_test_channels.ppm");
-
-    // metallic=b(2), roughness=g(1), opacity=a(3)
-    auto stage = create_textured_stage(tex_path, "b");
-    auto surface = pxr::UsdShadeShader::Get(stage, pxr::SdfPath("/Root/Mat/Surface"));
-    REQUIRE(bool(surface));
+TEST_CASE("read_preview_surface reads ior from UsdPreviewSurface") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    auto material = pxr::UsdShadeMaterial::Define(stage, pxr::SdfPath("/Mat"));
+    auto surface = pxr::UsdShadeShader::Define(stage, pxr::SdfPath("/Mat/Surface"));
+    surface.CreateIdAttr(pxr::VtValue(pxr::TfToken("UsdPreviewSurface")));
+    surface.CreateInput(pxr::TfToken("ior"), pxr::SdfValueTypeNames->Float).Set(1.45f);
 
     pts::rendering::RenderWorld world;
     auto scope = world.begin_sync();
     auto mat = pts::rendering::read_preview_surface(surface, scope);
 
-    // Channel packing: metallic_ch | (roughness_ch << 2) | (opacity_ch << 4)
-    // metallic="b" → 2, roughness="g" → 1, opacity="a" → 3
-    uint32_t expected = 2 | (1 << 2) | (3 << 4);
-    CHECK(mat.tex_channels == expected);
-
-    remove_test_texture(tex_path);
+    CHECK(mat.ior == doctest::Approx(1.45f));
 }
 
-TEST_CASE("tex_channels default channel for rgb output is 0") {
-    auto tex_path = create_test_texture("pts_test_rgb_default.ppm");
-
-    // Use "r" for metallic — channel should be 0
-    auto stage = create_textured_stage(tex_path, "r");
-    auto surface = pxr::UsdShadeShader::Get(stage, pxr::SdfPath("/Root/Mat/Surface"));
-    REQUIRE(bool(surface));
+TEST_CASE("read_preview_surface defaults ior to 1.5 when not specified") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    auto material = pxr::UsdShadeMaterial::Define(stage, pxr::SdfPath("/Mat"));
+    auto surface = pxr::UsdShadeShader::Define(stage, pxr::SdfPath("/Mat/Surface"));
+    surface.CreateIdAttr(pxr::VtValue(pxr::TfToken("UsdPreviewSurface")));
 
     pts::rendering::RenderWorld world;
     auto scope = world.begin_sync();
     auto mat = pts::rendering::read_preview_surface(surface, scope);
 
-    // metallic="r" → 0, roughness="g" → 1, opacity="a" → 3
-    uint32_t expected = 0 | (1 << 2) | (3 << 4);
-    CHECK(mat.tex_channels == expected);
-
-    remove_test_texture(tex_path);
+    CHECK(mat.ior == doctest::Approx(1.5f));
 }
 
 TEST_CASE("read_preview_surface with unresolvable texture keeps UINT32_MAX") {
@@ -341,7 +328,7 @@ TEST_CASE("load_texture resolves filesystem paths via ArResolver") {
 
 TEST_CASE("Full pipeline: textured material through populate_from_stage") {
     auto tex_path = create_test_texture("pts_test_pipeline.ppm");
-    auto stage = create_textured_stage(tex_path, "g");
+    auto stage = create_textured_stage(tex_path);
 
     pts::rendering::RenderWorld world;
     pts::rendering::populate_from_stage(world, stage);
@@ -354,10 +341,7 @@ TEST_CASE("Full pipeline: textured material through populate_from_stage") {
     CHECK(mat.metallic_tex != UINT32_MAX);
     CHECK(mat.normal_tex != UINT32_MAX);
     CHECK(mat.emissive_tex != UINT32_MAX);
-
-    // metallic="g" → 1, roughness="g" → 1, opacity="a" → 3
-    uint32_t expected_channels = 1 | (1 << 2) | (3 << 4);
-    CHECK(mat.tex_channels == expected_channels);
+    CHECK(mat.ior == doctest::Approx(1.45f));
 
     remove_test_texture(tex_path);
 }

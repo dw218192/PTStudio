@@ -43,7 +43,7 @@ struct Material {
     uint32_t roughness_tex{UINT32_MAX};
     uint32_t emissive_tex{UINT32_MAX};
     uint32_t opacity_tex{UINT32_MAX};
-    uint32_t tex_channels{0};
+    float ior{1.5f};
 };
 static_assert(sizeof(Material) == 64, "Material must be 64 bytes for GPU alignment");
 

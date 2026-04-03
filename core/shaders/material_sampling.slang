@@ -10,6 +10,7 @@ public struct MaterialSample {
     public float3 base_color;
     public float metallic;
     public float roughness;
+    public float opacity;
 };
 
 /// Read material properties and sample textures (LOD-explicit version for compute shaders).
@@ -21,6 +22,7 @@ public MaterialSample sample_material_lod(
     s.base_color = mat.diffuse_color;
     s.metallic = mat.metallic;
     s.roughness = mat.roughness;
+    s.opacity = mat.opacity;
 
     if (has_texture(mat.diffuse_tex)) {
         float4 tc = textures.SampleLevel(samp, float3(uv, float(mat.diffuse_tex)), lod);
@@ -28,13 +30,15 @@ public MaterialSample sample_material_lod(
     }
 
     if (has_texture(mat.metallic_tex)) {
-        uint ch = mat.tex_channels & 0x3;
-        s.metallic = textures.SampleLevel(samp, float3(uv, float(mat.metallic_tex)), lod)[ch];
+        s.metallic = textures.SampleLevel(samp, float3(uv, float(mat.metallic_tex)), lod)[0];
     }
 
     if (has_texture(mat.roughness_tex)) {
-        uint ch = (mat.tex_channels >> 2) & 0x3;
-        s.roughness = textures.SampleLevel(samp, float3(uv, float(mat.roughness_tex)), lod)[ch];
+        s.roughness = textures.SampleLevel(samp, float3(uv, float(mat.roughness_tex)), lod)[0];
+    }
+
+    if (has_texture(mat.opacity_tex)) {
+        s.opacity = textures.SampleLevel(samp, float3(uv, float(mat.opacity_tex)), lod)[0];
     }
 
     return s;
@@ -49,6 +53,7 @@ public MaterialSample sample_material(
     s.base_color = mat.diffuse_color;
     s.metallic = mat.metallic;
     s.roughness = mat.roughness;
+    s.opacity = mat.opacity;
 
     if (has_texture(mat.diffuse_tex)) {
         float4 tc = textures.Sample(samp, float3(uv, float(mat.diffuse_tex)));
@@ -56,13 +61,15 @@ public MaterialSample sample_material(
     }
 
     if (has_texture(mat.metallic_tex)) {
-        uint ch = mat.tex_channels & 0x3;
-        s.metallic = textures.Sample(samp, float3(uv, float(mat.metallic_tex)))[ch];
+        s.metallic = textures.Sample(samp, float3(uv, float(mat.metallic_tex)))[0];
     }
 
     if (has_texture(mat.roughness_tex)) {
-        uint ch = (mat.tex_channels >> 2) & 0x3;
-        s.roughness = textures.Sample(samp, float3(uv, float(mat.roughness_tex)))[ch];
+        s.roughness = textures.Sample(samp, float3(uv, float(mat.roughness_tex)))[0];
+    }
+
+    if (has_texture(mat.opacity_tex)) {
+        s.opacity = textures.Sample(samp, float3(uv, float(mat.opacity_tex)))[0];
     }
 
     return s;

@@ -38,6 +38,7 @@ TEST_CASE("Material SSBO round-trip via storage buffer") {
     materials[0].emissive_color = {1.0f, 0.5f, 0.0f};
     materials[0].roughness = 0.3f;
     materials[0].opacity = 0.7f;
+    materials[0].ior = 1.45f;
     materials[0].diffuse_tex = 42;
 
     materials[1].diffuse_color = {0.1f, 0.9f, 0.2f};
@@ -51,6 +52,7 @@ TEST_CASE("Material SSBO round-trip via storage buffer") {
     materials[2].emissive_color = {0.3f, 0.3f, 0.3f};
     materials[2].roughness = 0.5f;
     materials[2].opacity = 0.5f;
+    materials[2].ior = 2.4f;
     materials[2].emissive_tex = 7;
 
     auto buf_size = materials.size() * sizeof(pts::rendering::Material);
@@ -131,7 +133,7 @@ TEST_CASE("Material SSBO round-trip via storage buffer") {
         CHECK(readback[i].roughness_tex == materials[i].roughness_tex);
         CHECK(readback[i].emissive_tex == materials[i].emissive_tex);
         CHECK(readback[i].opacity_tex == materials[i].opacity_tex);
-        CHECK(readback[i].tex_channels == materials[i].tex_channels);
+        CHECK(readback[i].ior == doctest::Approx(materials[i].ior));
     }
 
     wgpuBufferRelease(staging);
@@ -297,7 +299,7 @@ TEST_CASE("Material default texture indices are UINT32_MAX") {
     CHECK(mat.roughness_tex == UINT32_MAX);
     CHECK(mat.emissive_tex == UINT32_MAX);
     CHECK(mat.opacity_tex == UINT32_MAX);
-    CHECK(mat.tex_channels == 0);
+    CHECK(mat.ior == doctest::Approx(1.5f));
 }
 
 TEST_CASE("clear resets GPU buffer state") {
