@@ -74,21 +74,29 @@ class IRenderPass {
         return true;
     }
 
-    /// Debug target names declared by this pass. Each name corresponds to an
-    /// MRT color attachment (SV_Target1..N) that the shader writes every frame.
-    /// Returns {pointer to static array, count}. Default: no debug targets.
-    [[nodiscard]] virtual auto debug_target_names() const noexcept
-        -> std::pair<const char* const*, uint32_t> {
+    /// A debug-viewable texture produced by this pass.
+    struct DebugTarget {
+        const char* label;          ///< UI display name (e.g. "Direct Diffuse")
+        const char* resource_name;  ///< Frame graph resource name (e.g. "scene_normals")
+    };
+
+    /// Debug targets declared by this pass. Returns {pointer to static array, count}.
+    /// Stripped to {nullptr, 0} when PTS_DEBUG_VIEWS is not defined.
+    [[nodiscard]] virtual auto debug_targets() const noexcept
+        -> std::pair<const DebugTarget*, uint32_t> {
         return {nullptr, 0};
     }
 
-    /// Debug targets gated by device limits. Returns the same names array but
-    /// with count capped to what the device can actually support. Only valid
-    /// after setup() has been called.
-    [[nodiscard]] auto effective_debug_target_names() const noexcept
-        -> std::pair<const char* const*, uint32_t> {
-        auto [names, count] = debug_target_names();
-        return {names, std::min(count, m_allowed_debug_count)};
+    /// Debug targets gated by device limits and build config. Returns empty
+    /// when PTS_DEBUG_VIEWS is not defined, stripping all debug target overhead.
+    [[nodiscard]] auto effective_debug_targets() const noexcept
+        -> std::pair<const DebugTarget*, uint32_t> {
+#ifndef PTS_DEBUG_VIEWS
+        return {nullptr, 0};
+#else
+        auto [targets, count] = debug_targets();
+        return {targets, std::min(count, m_allowed_debug_count)};
+#endif
     }
 
     [[nodiscard]] auto get_shader_loader() const noexcept -> const ShaderLoader& {

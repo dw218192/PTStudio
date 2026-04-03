@@ -32,8 +32,8 @@ class SSAOPass final : public IRenderPass {
         return "ssao";
     }
     [[nodiscard]] auto is_ready() const noexcept -> bool override;
-    [[nodiscard]] auto debug_target_names() const noexcept
-        -> std::pair<const char* const*, uint32_t> override;
+    [[nodiscard]] auto debug_targets() const noexcept
+        -> std::pair<const DebugTarget*, uint32_t> override;
 
     void do_setup(const webgpu::Device& device) override;
     void add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) override;

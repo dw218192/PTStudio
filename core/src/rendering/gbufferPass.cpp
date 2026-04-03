@@ -33,10 +33,12 @@ auto GBufferPass::is_ready() const noexcept -> bool {
     return std::holds_alternative<Ready>(m_state);
 }
 
-static constexpr const char* k_debug_names[] = {"Normals"};
+static constexpr IRenderPass::DebugTarget k_debug_targets[] = {
+    {"Normals", "scene_normals"},
+};
 
-auto GBufferPass::debug_target_names() const noexcept -> std::pair<const char* const*, uint32_t> {
-    return {k_debug_names, 1};
+auto GBufferPass::debug_targets() const noexcept -> std::pair<const DebugTarget*, uint32_t> {
+    return {k_debug_targets, 1};
 }
 
 void GBufferPass::do_setup(const webgpu::Device& device) {
@@ -172,9 +174,7 @@ void GBufferPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
 
     auto depth = fg.find_or_create("scene_depth", depth_desc);
 
-    normals_desc.usage =
-        static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_CopySrc);
-    auto normals = fg.find_or_create("debug_Normals", normals_desc);
+    auto normals = fg.find_or_create("scene_normals", normals_desc);
 
     auto* pipeline_handle = ready.pipeline.handle();
     auto bind_group = ready.bind_group;

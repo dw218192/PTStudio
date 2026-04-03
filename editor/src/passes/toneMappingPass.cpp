@@ -178,8 +178,8 @@ void ToneMappingPass::add_to_frame_graph(rendering::FrameGraph& fg,
     ldr_desc.clear_color = {0, 0, 0, 1};
     auto ldr_handle = fg.find_or_create("tone_mapped_color", ldr_desc);
 
-    // Check if SSAOPass produced the "debug_AO" resource this frame
-    auto ssao_found = fg.find("debug_AO");
+    // Check if SSAOPass produced the "ssao" resource this frame
+    auto ssao_found = fg.find("ssao");
 
     // Upload uniforms
     ToneMappingUniforms uniforms{};

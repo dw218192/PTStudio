@@ -527,9 +527,9 @@ void EditorApplication::on_ready() {
         int global_index = 1;  // 1-based (0 = "Off")
         bool found = false;
         for_each_pass_recursive([&](auto& pass) {
-            auto [names, count] = pass.effective_debug_target_names();
+            auto [targets, count] = pass.effective_debug_targets();
             for (uint32_t i = 0; i < count; ++i) {
-                if (names[i] == m_app_config.debug_output_name) {
+                if (targets[i].label == m_app_config.debug_output_name) {
                     m_debug_target_selection = global_index;
                     found = true;
                     return;
@@ -913,9 +913,9 @@ void EditorApplication::render(FrameContext& ctx) {
     std::vector<rendering::ResourceHandle> debug_target_handles;
     if (has_viewport) {
         auto collect_debug_targets = [&](auto& pass) {
-            auto [names, count] = pass.effective_debug_target_names();
+            auto [targets, count] = pass.effective_debug_targets();
             for (uint32_t i = 0; i < count; ++i) {
-                auto h = m_frame_graph->find(std::string("debug_") + names[i]);
+                auto h = m_frame_graph->find(targets[i].resource_name);
                 if (h) {
                     debug_target_handles.push_back(*h);
                 }
@@ -1596,9 +1596,10 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
                 std::vector<std::string> debug_labels;
                 debug_labels.emplace_back("Off");
                 for_each_pass_recursive([&](auto& pass) {
-                    auto [names, count] = pass.effective_debug_target_names();
+                    auto [targets, count] = pass.effective_debug_targets();
                     for (uint32_t i = 0; i < count; ++i) {
-                        debug_labels.emplace_back(std::string(pass.name()) + ": " + names[i]);
+                        debug_labels.emplace_back(std::string(pass.name()) + ": " +
+                                                  targets[i].label);
                     }
                 });
                 if (m_debug_target_selection >= static_cast<int>(debug_labels.size())) {

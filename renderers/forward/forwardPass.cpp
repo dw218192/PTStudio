@@ -122,12 +122,13 @@ ForwardPass::~ForwardPass() {
     }
 }
 
-static constexpr const char* k_debug_target_names[] = {
-    "Direct Diffuse", "Direct Specular", "IBL Diffuse",
-    "IBL Specular",   "Prefiltered Env", "BRDF LUT",
+static constexpr rendering::IRenderPass::DebugTarget k_debug_targets[] = {
+    {"Direct Diffuse", "debug_Direct Diffuse"},   {"Direct Specular", "debug_Direct Specular"},
+    {"IBL Diffuse", "debug_IBL Diffuse"},         {"IBL Specular", "debug_IBL Specular"},
+    {"Prefiltered Env", "debug_Prefiltered Env"}, {"BRDF LUT", "debug_BRDF LUT"},
 };
 static constexpr uint32_t k_debug_target_count =
-    static_cast<uint32_t>(sizeof(k_debug_target_names) / sizeof(k_debug_target_names[0]));
+    static_cast<uint32_t>(sizeof(k_debug_targets) / sizeof(k_debug_targets[0]));
 
 auto ForwardPass::name() const noexcept -> std::string_view {
     return "forward";
@@ -137,8 +138,8 @@ auto ForwardPass::is_ready() const noexcept -> bool {
     return std::holds_alternative<Ready>(m_state);
 }
 
-auto ForwardPass::debug_target_names() const noexcept -> std::pair<const char* const*, uint32_t> {
-    return {k_debug_target_names, k_debug_target_count};
+auto ForwardPass::debug_targets() const noexcept -> std::pair<const DebugTarget*, uint32_t> {
+    return {k_debug_targets, k_debug_target_count};
 }
 
 void ForwardPass::do_renderer_setup(const webgpu::Device& device) {
@@ -157,7 +158,7 @@ void ForwardPass::do_renderer_setup(const webgpu::Device& device) {
         if (ready->skybox_bgl) wgpuBindGroupLayoutRelease(ready->skybox_bgl);
     }
 
-    auto [dbg_names_setup, dbg_count_setup] = effective_debug_target_names();
+    auto [dbg_targets_setup, dbg_count_setup] = effective_debug_targets();
     auto shader_src = load_pass_shader("renderers/forward/generated/shaders/forward.wgsl");
     auto shader = device.create_shader_module_from_source(shader_src);
 
@@ -538,7 +539,7 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     auto color = fg.find_or_create("scene_color", color_desc);
     auto depth = fg.find_or_create("scene_depth", depth_desc);
 
-    auto [eff_debug_names, eff_debug_count] = effective_debug_target_names();
+    auto [eff_debug_targets, eff_debug_count] = effective_debug_targets();
 
     rendering::TextureDesc debug_desc;
     debug_desc.width = ctx.viewport_width;
@@ -550,8 +551,7 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
 
     rendering::ResourceHandle debug_handles[k_debug_target_count];
     for (uint32_t i = 0; i < eff_debug_count; ++i) {
-        debug_handles[i] =
-            fg.find_or_create(std::string("debug_") + eff_debug_names[i], debug_desc);
+        debug_handles[i] = fg.find_or_create(eff_debug_targets[i].resource_name, debug_desc);
     }
 
     auto queue = ctx.queue;
