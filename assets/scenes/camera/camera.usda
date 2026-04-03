@@ -7,8 +7,8 @@
                 double radius = 500
             }
             dictionary Perspective = {
-                double3 position = (0.6408739122223839, 0.6408739122223839, 0.6408739122223839)
-                double3 target = (-2.220446049250313e-16, -2.220446049250313e-16, -2.220446049250313e-16)
+                double3 position = (0.6205359579699089, 0.688307636760359, 0.7199829755054761)
+                double3 target = (-0.02859286218881618, 0.039178816601633915, 0.07085415534675099)
             }
             dictionary Right = {
                 double3 position = (-500, 0, 0)
@@ -74,6 +74,34 @@ def Scope "Geom"
         float3 xformOp:scale = (1, 1, 1)
         double3 xformOp:translate = (0, 0, 0)
         uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale", "xformOp:rotateX:unitsResolve"]
+
+        over "_materials"
+        {
+            over "Camera_01_lens_body"
+            {
+                over "Principled_BSDF"
+                {
+                    normal3f inputs:normal.connect = </Geom/Camera_01_2k/_materials/Camera_01_lens_body/Image_Texture_003.outputs:rgb>
+                }
+            }
+
+            over "Camera_01_lens"
+            {
+                over "Principled_BSDF"
+                {
+                    float inputs:opacity = 0 (
+                        customData = {
+                            float default = 1
+                            dictionary range = {
+                                float max = 1
+                                float min = 0
+                            }
+                        }
+                        hidden = false
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -82,6 +110,7 @@ def Xform "Root"
     def DomeLight "DomeLight"
     {
         float inputs:intensity = 1
+        asset inputs:texture:file = @../../hdr/bryanston_park_sunrise_2k.hdr@
     }
 
     def Camera "Camera"
