@@ -82,7 +82,7 @@ float4 fs_main(float2 uv : TEXCOORD) : SV_Target0 {
         float3 actual_pos  = reconstruct_view_pos(sample_uv, sample_depth);
 
         // Occlusion test with range check
-        float range_check = smoothstep(0.0, 1.0, u.radius / max(abs(frag_pos.z - actual_pos.z), 1e-6));
+        float range_check = 1.0 - smoothstep(0.0, u.radius, abs(frag_pos.z - actual_pos.z));
         occlusion += (actual_pos.z >= sample_pos.z + u.bias ? 1.0 : 0.0) * range_check;
     }
 
