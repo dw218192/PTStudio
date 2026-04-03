@@ -185,20 +185,44 @@ void store_mesh(SyncScope& scope, const std::vector<Vertex>& vertices,
     w->index_count = static_cast<uint32_t>(indices.size());
 }
 
+void sync_object(pxr::UsdPrim geom_prim, const pxr::SdfPath& obj_path, uint32_t material_index,
+                 SyncScope& scope, std::vector<Vertex>& vertices, std::vector<uint32_t>& indices) {
+    auto& world = scope.world();
+    auto transform = compute_world_transform(geom_prim);
+    auto vis = pxr::UsdGeomImageable(geom_prim).ComputeVisibility();
+    bool visible = (vis != pxr::UsdGeomTokens->invisible);
+
+    int existing = world.find_object_by_prim(obj_path);
+    if (existing >= 0) {
+        auto w = scope.write_object(static_cast<uint32_t>(existing));
+        auto mesh_index = w->mesh_index;
+        w->transform = transform;
+        w->material_index = material_index;
+        w->visible = visible;
+        store_mesh(scope, vertices, indices, mesh_index);
+    } else {
+        auto mesh_slot = scope.alloc_mesh_slot();
+        auto obj_slot = scope.alloc_object_slot();
+        store_mesh(scope, vertices, indices, mesh_slot);
+        {
+            auto w = scope.write_object(obj_slot);
+            w->mesh_index = mesh_slot;
+            w->transform = transform;
+            w->material_index = material_index;
+            w->visible = visible;
+        }
+        scope.set_prim_path(obj_slot, PrimSlot::Kind::Object, obj_path);
+    }
+}
+
 void sync_object(pxr::UsdPrim prim, SyncScope& scope, std::vector<Vertex>& vertices,
                  std::vector<uint32_t>& indices) {
-    auto& world = scope.world();
-    auto sdf_path = prim.GetPath();
-    auto transform = compute_world_transform(prim);
-    auto vis = pxr::UsdGeomImageable(prim).ComputeVisibility();
-    bool visible = (vis != pxr::UsdGeomTokens->invisible);
     auto material_index = resolve_material(prim, scope);
 
     if (material_index == k_no_material) {
+        auto sdf_path = prim.GetPath();
         auto colors = read_display_color(prim);
         if (!colors.empty()) {
-            // Use material cache with a synthetic key to avoid unbounded
-            // growth when the same prim is re-synced.
             auto cache_key = "$displayColor:" + sdf_path.GetString();
             auto& cache = scope.material_cache();
             auto it = cache.find(cache_key);
@@ -219,27 +243,7 @@ void sync_object(pxr::UsdPrim prim, SyncScope& scope, std::vector<Vertex>& verti
         }
     }
 
-    int existing = world.find_object_by_prim(sdf_path);
-    if (existing >= 0) {
-        auto w = scope.write_object(static_cast<uint32_t>(existing));
-        auto mesh_index = w->mesh_index;
-        w->transform = transform;
-        w->material_index = material_index;
-        w->visible = visible;
-        store_mesh(scope, vertices, indices, mesh_index);
-    } else {
-        auto mesh_slot = scope.alloc_mesh_slot();
-        auto obj_slot = scope.alloc_object_slot();
-        store_mesh(scope, vertices, indices, mesh_slot);
-        {
-            auto w = scope.write_object(obj_slot);
-            w->mesh_index = mesh_slot;
-            w->transform = transform;
-            w->material_index = material_index;
-            w->visible = visible;
-        }
-        scope.set_prim_path(obj_slot, PrimSlot::Kind::Object, sdf_path);
-    }
+    sync_object(prim, prim.GetPath(), material_index, scope, vertices, indices);
 }
 
 // --- Proxy mesh geometry generators ---

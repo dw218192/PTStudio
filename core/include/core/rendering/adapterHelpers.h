@@ -30,6 +30,11 @@ void store_mesh(SyncScope& scope, const std::vector<Vertex>& vertices,
 void sync_object(pxr::UsdPrim prim, SyncScope& scope, std::vector<Vertex>& vertices,
                  std::vector<uint32_t>& indices);
 
+/// Overload for subset objects: uses geom_prim for transform/visibility,
+/// obj_path for slot identity, and the caller-provided material_index.
+void sync_object(pxr::UsdPrim geom_prim, const pxr::SdfPath& obj_path, uint32_t material_index,
+                 SyncScope& scope, std::vector<Vertex>& vertices, std::vector<uint32_t>& indices);
+
 struct LightData;
 struct CameraData;
 
