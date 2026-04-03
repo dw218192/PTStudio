@@ -134,3 +134,31 @@ struct CookTorranceGGX : IBRDF {
         return kD * base_color / PI;
     }
 };
+
+// ---------------------------------------------------------------------------
+// Dielectric Fresnel & refraction
+// ---------------------------------------------------------------------------
+
+/// Exact dielectric Fresnel reflectance (unpolarized).
+/// eta = eta_i / eta_t. Returns 1.0 for total internal reflection.
+float fresnel_dielectric(float cos_i, float eta) {
+    cos_i = clamp(cos_i, 0.0, 1.0);
+    float sin2_t = eta * eta * (1.0 - cos_i * cos_i);
+    if (sin2_t >= 1.0) return 1.0;  // total internal reflection
+    float cos_t = sqrt(1.0 - sin2_t);
+    float rs = (eta * cos_i - cos_t) / (eta * cos_i + cos_t);
+    float rp = (cos_i - eta * cos_t) / (cos_i + eta * cos_t);
+    return 0.5 * (rs * rs + rp * rp);
+}
+
+/// Snell's law refraction. wi points away from surface (same side as N).
+/// Returns refracted direction wt pointing into the surface.
+/// Returns false for total internal reflection.
+bool refract_direction(float3 wi, float3 N, float eta, out float3 wt) {
+    float cos_i = dot(wi, N);
+    float sin2_t = eta * eta * (1.0 - cos_i * cos_i);
+    if (sin2_t >= 1.0) { wt = float3(0.0); return false; }
+    float cos_t = sqrt(1.0 - sin2_t);
+    wt = -eta * wi + (eta * cos_i - cos_t) * N;
+    return true;
+}

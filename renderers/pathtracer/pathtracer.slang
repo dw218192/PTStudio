@@ -60,6 +60,10 @@ float3 offset_ray(float3 p, float3 n) {
     return p + n * offset_epsilon(p);
 }
 
+float3 offset_ray_transmit(float3 p, float3 n) {
+    return p - n * offset_epsilon(p);
+}
+
 // ── Ray-triangle intersection ───────────────────────────────────
 
 struct HitRecord {
@@ -191,7 +195,7 @@ HitRecord trace_scene(float3 ro, float3 rd) {
 void cs_main(uint3 did : SV_DispatchThreadID) {
     if (did.x >= u.width || did.y >= u.height) return;
 
-    static const uint MAX_BOUNCES = 5;
+    static const uint MAX_BOUNCES = 8;
     uint pixel_index = did.y * u.width + did.x;
 
     Rng rng = Rng::create(pixel_index * 1973u + u.frame_index * 2069168927u);
@@ -208,6 +212,7 @@ void cs_main(uint3 did : SV_DispatchThreadID) {
     float3 throughput = float3(1.0);
     float3 radiance = float3(0.0);
     CookTorranceGGX brdf;
+    bool inside_medium = false;
 
     for (uint bounce = 0; bounce < MAX_BOUNCES; bounce++) {
         HitRecord hit = trace_scene(ray_origin, ray_dir);
@@ -220,7 +225,8 @@ void cs_main(uint3 did : SV_DispatchThreadID) {
 
         float3 N = hit.normal;
         float3 V = -ray_dir;
-        if (dot(N, V) < 0.0) N = -N;
+        bool front_face = dot(N, V) > 0.0;
+        float3 Ng = front_face ? N : -N;
 
         // Material
         Material mat = materials[hit.material_index];
@@ -228,8 +234,39 @@ void cs_main(uint3 did : SV_DispatchThreadID) {
         float3 base_color = sm.base_color;
         float metallic = sm.metallic;
         float roughness = sm.roughness;
-        N = apply_normal_map(N, hit.tangent, hit.bitangent, mat, hit.uv,
-                             scene_textures, scene_sampler, 0.0);
+
+        // Transmissive branch (delta BSDF — skip NEE and Russian roulette)
+        bool is_transmissive = (sm.opacity < 1.0) && (sm.metallic < 0.5);
+        if (is_transmissive) {
+            float eta_i = front_face ? 1.0 : mat.ior;
+            float eta_t = front_face ? mat.ior : 1.0;
+            float eta = eta_i / eta_t;
+            float Fr = fresnel_dielectric(dot(V, Ng), eta);
+
+            if (rng.next() < Fr) {
+                // Reflect
+                ray_origin = offset_ray(hit.position, Ng);
+                ray_dir = reflect(-V, Ng);
+            } else {
+                // Refract
+                float3 wt;
+                if (!refract_direction(V, Ng, eta, wt)) {
+                    // TIR fallback — reflect
+                    ray_origin = offset_ray(hit.position, Ng);
+                    ray_dir = reflect(-V, Ng);
+                } else {
+                    ray_origin = offset_ray_transmit(hit.position, Ng);
+                    ray_dir = wt;
+                    inside_medium = !inside_medium;
+                    throughput *= base_color * (eta_t / eta_i) * (eta_t / eta_i);
+                }
+            }
+            continue;
+        }
+
+        // Opaque branch: apply normal map
+        Ng = apply_normal_map(Ng, hit.tangent, hit.bitangent, mat, hit.uv,
+                              scene_textures, scene_sampler, 0.0);
 
         // Emissive contribution (light proxy meshes, emissive materials)
         radiance += throughput * mat.emissive_color;
@@ -244,18 +281,18 @@ void cs_main(uint3 did : SV_DispatchThreadID) {
             if (!ls.valid || ls.pdf < 1e-4) continue;
 
             float3 wi = normalize(ls.position - hit.position);
-            float NdotL = dot(N, wi);
+            float NdotL = dot(Ng, wi);
             if (NdotL <= 0.0) continue;
 
             // Shadow ray
             float dist_to_light = length(ls.position - hit.position);
-            HitRecord shadow_hit = trace_scene(offset_ray(hit.position, N), wi);
+            HitRecord shadow_hit = trace_scene(offset_ray(hit.position, Ng), wi);
             if (shadow_hit.hit) {
                 float shadow_dist = length(shadow_hit.position - hit.position);
                 if (shadow_dist < dist_to_light - offset_epsilon(hit.position)) continue;
             }
 
-            ShadingGeometry g = ShadingGeometry::from_world(N, wi, V, roughness);
+            ShadingGeometry g = ShadingGeometry::from_world(Ng, wi, V, roughness);
             float3 f = brdf.eval(g, base_color, metallic);
             direct += f * ls.radiance * NdotL / ls.pdf;
         }
@@ -269,7 +306,7 @@ void cs_main(uint3 did : SV_DispatchThreadID) {
         }
 
         // Sample BRDF for next bounce
-        TangentFrame frame = TangentFrame::build(N);
+        TangentFrame frame = TangentFrame::build(Ng);
         float3 wo_local = frame.to_local(V);
         float3 wi_local = sample_brdf(rng, wo_local, roughness);
         float pdf = pdf_brdf(wi_local, wo_local, roughness);
@@ -283,7 +320,7 @@ void cs_main(uint3 did : SV_DispatchThreadID) {
         if (max_comp > 10.0) bounce_weight *= 10.0 / max_comp;
         throughput *= bounce_weight;
 
-        ray_origin = offset_ray(hit.position, N);
+        ray_origin = offset_ray(hit.position, Ng);
         ray_dir = frame.to_world(wi_local);
     }
 

@@ -74,6 +74,8 @@ usdz:
       output: "assets/scenes/primitives.usdz"
     - input: "assets/scenes/area_light_test.usda"
       output: "assets/scenes/area_light_test.usdz"
+    - input: "assets/scenes/glass_test.usda"
+      output: "assets/scenes/glass_test.usdz"
     - input: "assets/scenes/kitchen/Kitchen_set.usd"
       output: "assets/scenes/kitchen_set.usdz"
 
