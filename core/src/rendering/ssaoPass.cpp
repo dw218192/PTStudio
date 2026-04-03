@@ -346,7 +346,7 @@ void SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
     r8_desc.clear_color = {1, 1, 1, 1};
 
     auto depth_handle = fg.find_or_create("scene_depth", depth_desc);
-    auto normals_handle = fg.find_or_create("scene_normals", normals_desc);
+    auto normals_handle = fg.find_or_create("debug_Normals", normals_desc);
     auto ssao_raw_handle = fg.find_or_create("ssao_raw", r8_desc);
 
     TextureDesc ao_debug_desc = r8_desc;
