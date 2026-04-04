@@ -112,6 +112,8 @@ jobs:
 
       - name: Build project
         run: ${{ matrix.repo }} build --platform ${{ matrix.platform }} --build-type ${{ matrix.build_type }}
+        env:
+          PTSTUDIO_GPU_BACKEND: ${{ matrix.platform == 'windows-x64' && 'D3D12' || '' }}
 
       - name: Upload USDZ scenes
         if: matrix.platform == 'windows-x64'
@@ -184,6 +186,8 @@ jobs:
 
       - name: Run tests
         run: ${{ matrix.repo }} test --platform ${{ matrix.platform }} --build-type ${{ matrix.build_type }} --from-package
+        env:
+          PTSTUDIO_GPU_BACKEND: ${{ matrix.platform == 'windows-x64' && 'D3D12' || '' }}
 
       - name: Upload test results
         if: always()
