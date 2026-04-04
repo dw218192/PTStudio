@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 def main() -> None:
-    root = Path(__file__).resolve().parents[3]  # .claude/skills/rotate-branch -> repo root
+    root = Path(__file__).resolve().parents[4]  # .claude/skills/rotate-branch/scripts -> repo root
     worktrees_dir = root / "_agent" / "worktrees"
 
     # Prune any worktrees git still tracks but whose directories are gone
