@@ -2,7 +2,6 @@
 
 #include <core/rendering/renderPass.h>
 
-#include <boost/core/span.hpp>
 #include <memory>
 #include <vector>
 

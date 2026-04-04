@@ -30,15 +30,18 @@ public MaterialSample sample_material_lod(
     }
 
     if (has_texture(mat.metallic_tex)) {
-        s.metallic = textures.SampleLevel(samp, float3(uv, float(mat.metallic_tex)), lod)[0];
+        uint ch = mat.tex_channels & 0x3;
+        s.metallic = textures.SampleLevel(samp, float3(uv, float(mat.metallic_tex)), lod)[ch];
     }
 
     if (has_texture(mat.roughness_tex)) {
-        s.roughness = textures.SampleLevel(samp, float3(uv, float(mat.roughness_tex)), lod)[0];
+        uint ch = (mat.tex_channels >> 2) & 0x3;
+        s.roughness = textures.SampleLevel(samp, float3(uv, float(mat.roughness_tex)), lod)[ch];
     }
 
     if (has_texture(mat.opacity_tex)) {
-        s.opacity = textures.SampleLevel(samp, float3(uv, float(mat.opacity_tex)), lod)[0];
+        uint ch = (mat.tex_channels >> 4) & 0x3;
+        s.opacity = textures.SampleLevel(samp, float3(uv, float(mat.opacity_tex)), lod)[ch];
     }
 
     return s;
@@ -61,15 +64,18 @@ public MaterialSample sample_material(
     }
 
     if (has_texture(mat.metallic_tex)) {
-        s.metallic = textures.Sample(samp, float3(uv, float(mat.metallic_tex)))[0];
+        uint ch = mat.tex_channels & 0x3;
+        s.metallic = textures.Sample(samp, float3(uv, float(mat.metallic_tex)))[ch];
     }
 
     if (has_texture(mat.roughness_tex)) {
-        s.roughness = textures.Sample(samp, float3(uv, float(mat.roughness_tex)))[0];
+        uint ch = (mat.tex_channels >> 2) & 0x3;
+        s.roughness = textures.Sample(samp, float3(uv, float(mat.roughness_tex)))[ch];
     }
 
     if (has_texture(mat.opacity_tex)) {
-        s.opacity = textures.Sample(samp, float3(uv, float(mat.opacity_tex)))[0];
+        uint ch = (mat.tex_channels >> 4) & 0x3;
+        s.opacity = textures.Sample(samp, float3(uv, float(mat.opacity_tex)))[ch];
     }
 
     return s;

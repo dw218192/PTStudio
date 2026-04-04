@@ -26,8 +26,9 @@ VsOut vs_main(uint vertex_id : SV_VertexID) {
 [shader("fragment")]
 float4 fs_main(float2 uv : TEXCOORD) : SV_Target0 {
     float center_depth = depth_tex.SampleLevel(depth_sampler, uv, 0).x;
-    float result = 0.0;
-    float total_weight = 0.0;
+    float center_ao = ssao_tex.SampleLevel(linear_sampler, uv, 0).r;
+    float result = center_ao;
+    float total_weight = 1.0;
 
     // 4x4 bilateral blur
     for (int y = -2; y <= 1; ++y) {

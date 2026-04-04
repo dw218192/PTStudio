@@ -100,7 +100,7 @@ class IblResources {
 
     WGPUTextureView prefiltered_env_view() const noexcept;
     WGPUTextureView env_cubemap_view() const noexcept;
-    WGPUTexture env_cubemap_texture() const noexcept {
+    [[nodiscard]] WGPUTexture env_cubemap_texture() const noexcept {
         return m_env_cubemap;
     }
     WGPUTextureView irradiance_view() const noexcept;

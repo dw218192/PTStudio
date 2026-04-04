@@ -32,8 +32,10 @@ class GBufferPass final : public IRenderPass {
     [[nodiscard]] auto debug_targets() const noexcept
         -> std::pair<const DebugTarget*, uint32_t> override;
 
-    void do_setup(const webgpu::Device& device) override;
     void add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) override;
+
+   protected:
+    void do_setup(const webgpu::Device& device) override;
 
    private:
     static constexpr uint32_t k_uniform_align = 256;

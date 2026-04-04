@@ -236,7 +236,7 @@ void MeshAdapter::sync(pxr::UsdPrim prim, SyncScope& scope) {
         std::unordered_set<int> face_set;
         face_set.reserve(face_indices.size());
         for (int fi : face_indices) {
-            PRECONDITION(fi >= 0 && static_cast<size_t>(fi) < face_vertex_counts.size());
+            if (fi < 0 || static_cast<size_t>(fi) >= face_vertex_counts.size()) continue;
             face_covered[static_cast<size_t>(fi)] = true;
             face_set.insert(fi);
         }

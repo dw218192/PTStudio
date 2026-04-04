@@ -264,9 +264,9 @@ void cs_main(uint3 did : SV_DispatchThreadID) {
             continue;
         }
 
-        // Opaque branch: apply normal map
-        Ng = apply_normal_map(Ng, hit.tangent, hit.bitangent, mat, hit.uv,
-                              scene_textures, scene_sampler, 0.0);
+        // Opaque branch: apply normal map (keep Ng for ray offsets)
+        float3 Ns = apply_normal_map(Ng, hit.tangent, hit.bitangent, mat, hit.uv,
+                                     scene_textures, scene_sampler, 0.0);
 
         // Emissive contribution (light proxy meshes, emissive materials)
         radiance += throughput * mat.emissive_color;
@@ -281,10 +281,10 @@ void cs_main(uint3 did : SV_DispatchThreadID) {
             if (!ls.valid || ls.pdf < 1e-4) continue;
 
             float3 wi = normalize(ls.position - hit.position);
-            float NdotL = dot(Ng, wi);
+            float NdotL = dot(Ns, wi);
             if (NdotL <= 0.0) continue;
 
-            // Shadow ray
+            // Shadow ray (offset along geometric normal)
             float dist_to_light = length(ls.position - hit.position);
             HitRecord shadow_hit = trace_scene(offset_ray(hit.position, Ng), wi);
             if (shadow_hit.hit) {
@@ -292,7 +292,7 @@ void cs_main(uint3 did : SV_DispatchThreadID) {
                 if (shadow_dist < dist_to_light - offset_epsilon(hit.position)) continue;
             }
 
-            ShadingGeometry g = ShadingGeometry::from_world(Ng, wi, V, roughness);
+            ShadingGeometry g = ShadingGeometry::from_world(Ns, wi, V, roughness);
             float3 f = brdf.eval(g, base_color, metallic);
             direct += f * ls.radiance * NdotL / ls.pdf;
         }
@@ -305,8 +305,8 @@ void cs_main(uint3 did : SV_DispatchThreadID) {
             throughput /= survival;
         }
 
-        // Sample BRDF for next bounce
-        TangentFrame frame = TangentFrame::build(Ng);
+        // Sample BRDF for next bounce (shading normal for BRDF, geometric for offset)
+        TangentFrame frame = TangentFrame::build(Ns);
         float3 wo_local = frame.to_local(V);
         float3 wi_local = sample_brdf(rng, wo_local, roughness);
         float pdf = pdf_brdf(wi_local, wo_local, roughness);

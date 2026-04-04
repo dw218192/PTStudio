@@ -74,8 +74,10 @@ float4 fs_main(float2 uv : TEXCOORD) : SV_Target0 {
 
         // Project sample to screen UV
         float4 offset = mul(u.projection, float4(sample_pos, 1.0));
+        if (offset.w <= 0.0) continue;
         offset.xyz /= offset.w;
         float2 sample_uv = float2(offset.x * 0.5 + 0.5, 0.5 - offset.y * 0.5);
+        if (any(sample_uv < 0.0) || any(sample_uv > 1.0)) continue;
 
         // Sample actual depth at projected position
         float sample_depth = depth_tex.SampleLevel(depth_sampler, sample_uv, 0).x;

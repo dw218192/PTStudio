@@ -18,9 +18,23 @@ namespace pts::rendering {
 
 namespace {
 
+uint32_t channel_from_output_name(const pxr::TfToken& name) {
+    static const pxr::TfToken k_r("r"), k_R("R");
+    static const pxr::TfToken k_g("g"), k_G("G");
+    static const pxr::TfToken k_b("b"), k_B("B");
+    static const pxr::TfToken k_a("a"), k_A("A");
+    if (name == k_r || name == k_R) return 0;
+    if (name == k_g || name == k_G) return 1;
+    if (name == k_b || name == k_B) return 2;
+    if (name == k_a || name == k_A) return 3;
+    return 0;
+}
+
 /// Try to resolve a texture connection on a UsdShadeInput.
 /// Returns texture layer index (UINT32_MAX if no texture connected or load failed).
-uint32_t try_resolve_texture(pxr::UsdShadeInput input, SyncScope& scope) {
+/// Sets out_source_name to the output name of the UsdUVTexture (for channel selection).
+uint32_t try_resolve_texture(pxr::UsdShadeInput input, SyncScope& scope,
+                             pxr::TfToken& out_source_name) {
     pxr::UsdShadeConnectableAPI source;
     pxr::TfToken source_name;
     pxr::UsdShadeAttributeType source_type;
@@ -48,6 +62,7 @@ uint32_t try_resolve_texture(pxr::UsdShadeInput input, SyncScope& scope) {
     if (resolved.empty()) {
         return UINT32_MAX;
     }
+    out_source_name = source_name;
     return scope.load_texture(resolved);
 }
 
@@ -69,29 +84,45 @@ Material read_preview_surface(pxr::UsdShadeShader surface, SyncScope& scope) {
     if (auto input = surface.GetInput(pxr::TfToken("diffuseColor"))) {
         pxr::GfVec3f color;
         if (input.Get(&color)) mat.diffuse_color = {color[0], color[1], color[2]};
-        auto tex = try_resolve_texture(input, scope);
+        pxr::TfToken source_name;
+        auto tex = try_resolve_texture(input, scope, source_name);
         if (tex != UINT32_MAX) mat.diffuse_tex = tex;
     }
 
     // --- metallic ---
+    uint32_t metallic_ch = 0;
     if (auto input = surface.GetInput(pxr::TfToken("metallic"))) {
         input.Get(&mat.metallic);
-        auto tex = try_resolve_texture(input, scope);
-        if (tex != UINT32_MAX) mat.metallic_tex = tex;
+        pxr::TfToken source_name;
+        auto tex = try_resolve_texture(input, scope, source_name);
+        if (tex != UINT32_MAX) {
+            mat.metallic_tex = tex;
+            metallic_ch = channel_from_output_name(source_name);
+        }
     }
 
     // --- roughness ---
+    uint32_t roughness_ch = 0;
     if (auto input = surface.GetInput(pxr::TfToken("roughness"))) {
         input.Get(&mat.roughness);
-        auto tex = try_resolve_texture(input, scope);
-        if (tex != UINT32_MAX) mat.roughness_tex = tex;
+        pxr::TfToken source_name;
+        auto tex = try_resolve_texture(input, scope, source_name);
+        if (tex != UINT32_MAX) {
+            mat.roughness_tex = tex;
+            roughness_ch = channel_from_output_name(source_name);
+        }
     }
 
     // --- opacity ---
+    uint32_t opacity_ch = 0;
     if (auto input = surface.GetInput(pxr::TfToken("opacity"))) {
         input.Get(&mat.opacity);
-        auto tex = try_resolve_texture(input, scope);
-        if (tex != UINT32_MAX) mat.opacity_tex = tex;
+        pxr::TfToken source_name;
+        auto tex = try_resolve_texture(input, scope, source_name);
+        if (tex != UINT32_MAX) {
+            mat.opacity_tex = tex;
+            opacity_ch = channel_from_output_name(source_name);
+        }
     }
 
     // --- ior ---
@@ -106,7 +137,8 @@ Material read_preview_surface(pxr::UsdShadeShader surface, SyncScope& scope) {
 
     // --- normal ---
     if (auto input = surface.GetInput(pxr::TfToken("normal"))) {
-        auto tex = try_resolve_texture(input, scope);
+        pxr::TfToken source_name;
+        auto tex = try_resolve_texture(input, scope, source_name);
         if (tex != UINT32_MAX) mat.normal_tex = tex;
     }
 
@@ -114,10 +146,12 @@ Material read_preview_surface(pxr::UsdShadeShader surface, SyncScope& scope) {
     if (auto input = surface.GetInput(pxr::TfToken("emissiveColor"))) {
         pxr::GfVec3f color;
         if (input.Get(&color)) mat.emissive_color = {color[0], color[1], color[2]};
-        auto tex = try_resolve_texture(input, scope);
+        pxr::TfToken source_name;
+        auto tex = try_resolve_texture(input, scope, source_name);
         if (tex != UINT32_MAX) mat.emissive_tex = tex;
     }
 
+    mat.tex_channels = metallic_ch | (roughness_ch << 2) | (opacity_ch << 4);
     return mat;
 }
 
@@ -224,6 +258,8 @@ void sync_object(pxr::UsdPrim prim, SyncScope& scope, std::vector<Vertex>& verti
 
 // --- Proxy mesh geometry generators ---
 
+static constexpr float k_pi = 3.14159265358979323846f;
+
 void generate_rect_mesh(float width, float height, std::vector<Vertex>& out_vertices,
                         std::vector<uint32_t>& out_indices) {
     float hw = width * 0.5f;
@@ -241,8 +277,6 @@ void generate_rect_mesh(float width, float height, std::vector<Vertex>& out_vert
 void generate_disk_mesh(float radius, std::vector<Vertex>& out_vertices,
                         std::vector<uint32_t>& out_indices) {
     static constexpr uint32_t k_segments = 48;
-    static constexpr float k_pi = 3.14159265358979323846f;
-
     // Disk centered at origin, facing -Z (USD lights emit along -Z)
     out_vertices.push_back({{0, 0, 0}, {0, 0, -1}, {1, 1, 1}, {0.5f, 0.5f}});
 
@@ -270,7 +304,6 @@ void generate_sphere_mesh(float radius, std::vector<Vertex>& out_vertices,
                           std::vector<uint32_t>& out_indices) {
     static constexpr uint32_t k_lon = 16;
     static constexpr uint32_t k_lat = 8;
-    static constexpr float k_pi = 3.14159265358979323846f;
 
     for (uint32_t lat = 0; lat <= k_lat; ++lat) {
         float phi = k_pi * static_cast<float>(lat) / static_cast<float>(k_lat);

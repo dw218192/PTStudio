@@ -654,7 +654,9 @@ def _run_tests(context: dict[str, Any], verbose: bool, from_package: bool = Fals
             # Path tracer smoke tests: run glass scenes with the Path Trace
             # renderer to exercise the refraction/transmission code path.
             pt_scenes = [s for s in scenes if "glass" in s.stem]
-            if pt_scenes and not is_emscripten:
+            if not pt_scenes:
+                raise RuntimeError("No glass scenes found for path tracer smoke tests")
+            if not is_emscripten:
                 for scene_path in pt_scenes:
                     scene_name = scene_path.stem
                     test_name = f"ptSmoke_{scene_name}"

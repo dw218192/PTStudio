@@ -2,7 +2,6 @@
 
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 
@@ -28,9 +27,9 @@ def main() -> None:
         branch = f"worktree-{name}"
 
         # Try git worktree remove first (handles registered worktrees)
-        subprocess.run(
+        wt_result = subprocess.run(
             ["git", "worktree", "remove", "--force", str(wt)],
-            cwd=root, capture_output=True,
+            cwd=root, capture_output=True, check=False,
         )
 
         # Delete the directory if it still exists (unregistered leftovers)
@@ -40,10 +39,11 @@ def main() -> None:
         # Delete the branch if it exists
         subprocess.run(
             ["git", "branch", "-D", branch],
-            cwd=root, capture_output=True,
+            cwd=root, capture_output=True, check=False,
         )
 
-        cleaned += 1
+        if wt_result.returncode == 0 or not wt.exists():
+            cleaned += 1
 
     # Remove the worktrees dir itself if empty
     if worktrees_dir.exists() and not any(worktrees_dir.iterdir()):
