@@ -17,33 +17,6 @@ static auto make_argv(const char* const (&args)[N]) -> std::array<char*, N> {
     return out;
 }
 
-TEST_CASE("CommandLine - Default construction") {
-    pts::CommandLine cli;
-    // Verify parse succeeds with no registered options and minimal argv
-    const char* args[] = {"app"};
-    auto argv = make_argv(args);
-    CHECK(cli.parse(1, argv.data()) == true);
-}
-
-TEST_CASE("CommandLine - Defaults before parse") {
-    pts::CommandLine cli;
-    cli.add_string("level", "log level");
-    cli.add_flag("verbose", "verbose output");
-
-    SUBCASE("get_string returns default") {
-        CHECK(cli.get_string("level", "info") == "info");
-    }
-
-    SUBCASE("get_flag returns false") {
-        CHECK(cli.get_flag("verbose") == false);
-    }
-
-    SUBCASE("has returns false") {
-        CHECK(cli.has("level") == false);
-        CHECK(cli.has("verbose") == false);
-    }
-}
-
 TEST_CASE("CommandLine - Parse --help returns false") {
     pts::CommandLine cli;
     const char* args[] = {"app", "--help"};

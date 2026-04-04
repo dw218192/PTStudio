@@ -9,12 +9,6 @@
 
 // ── TaskProgress ─────────────────────────────────────────────────────────────
 
-TEST_CASE("TaskProgress - default state") {
-    pts::TaskProgress progress;
-    CHECK(progress.progress() == doctest::Approx(0.0f));
-    CHECK(progress.status().empty());
-}
-
 TEST_CASE("TaskProgress - set and read progress") {
     pts::TaskProgress progress;
     progress.set_progress(0.5f);

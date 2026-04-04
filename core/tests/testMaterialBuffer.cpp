@@ -39,6 +39,7 @@ TEST_CASE("Material SSBO round-trip via storage buffer") {
     materials[0].roughness = 0.3f;
     materials[0].opacity = 0.7f;
     materials[0].ior = 1.45f;
+    materials[0].opacity_threshold = 0.5f;
     materials[0].diffuse_tex = 42;
 
     materials[1].diffuse_color = {0.1f, 0.9f, 0.2f};
@@ -134,6 +135,7 @@ TEST_CASE("Material SSBO round-trip via storage buffer") {
         CHECK(readback[i].emissive_tex == materials[i].emissive_tex);
         CHECK(readback[i].opacity_tex == materials[i].opacity_tex);
         CHECK(readback[i].ior == doctest::Approx(materials[i].ior));
+        CHECK(readback[i].opacity_threshold == doctest::Approx(materials[i].opacity_threshold));
     }
 
     wgpuBufferRelease(staging);
@@ -287,20 +289,7 @@ TEST_CASE("prepare_gpu_buffers creates placeholder texture array when no texture
     CHECK(world.texture_sampler() != nullptr);
 }
 
-TEST_CASE("Material struct is 64 bytes") {
-    CHECK(sizeof(pts::rendering::Material) == 64);
-}
 
-TEST_CASE("Material default texture indices are UINT32_MAX") {
-    pts::rendering::Material mat{};
-    CHECK(mat.diffuse_tex == UINT32_MAX);
-    CHECK(mat.normal_tex == UINT32_MAX);
-    CHECK(mat.metallic_tex == UINT32_MAX);
-    CHECK(mat.roughness_tex == UINT32_MAX);
-    CHECK(mat.emissive_tex == UINT32_MAX);
-    CHECK(mat.opacity_tex == UINT32_MAX);
-    CHECK(mat.ior == doctest::Approx(1.5f));
-}
 
 TEST_CASE("clear resets GPU buffer state") {
     auto logger = create_test_logger();
@@ -442,22 +431,5 @@ TEST_CASE("prepare_scene_data produces geometry for mesh+object") {
     CHECK(data.gpu_instances[0].material_index == 0);
 }
 
-TEST_CASE("PreparedSceneData default-constructs with all flags clean") {
-    pts::rendering::PreparedSceneData data;
-    CHECK_FALSE(data.materials_dirty);
-    CHECK_FALSE(data.lights_dirty);
-    CHECK_FALSE(data.geometry_dirty);
-    CHECK_FALSE(data.textures_dirty);
-    CHECK(data.tlas_node_count == 0);
-    CHECK(data.instance_count == 0);
-    CHECK(data.texture_size == 0);
-    CHECK(data.materials.empty());
-    CHECK(data.gpu_lights.empty());
-    CHECK(data.partial_light_updates.empty());
-    CHECK(data.all_nodes.empty());
-    CHECK(data.all_tris.empty());
-    CHECK(data.gpu_instances.empty());
-    CHECK(data.texture_layers.empty());
-}
 
 #endif  // !__EMSCRIPTEN__

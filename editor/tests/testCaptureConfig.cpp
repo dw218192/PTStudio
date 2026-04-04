@@ -30,29 +30,6 @@ static auto make_argv(const char* const (&args)[N]) -> std::array<char*, N> {
     return out;
 }
 
-TEST_CASE("AppConfig - is_capture_mode") {
-    SUBCASE("default is not capture mode") {
-        test::AppConfig cfg;
-        CHECK_FALSE(cfg.is_capture_mode());
-    }
-
-    SUBCASE("non-empty capture_output enables capture mode") {
-        test::AppConfig cfg;
-        cfg.capture_output = "output.png";
-        CHECK(cfg.is_capture_mode());
-    }
-}
-
-TEST_CASE("AppConfig - default values") {
-    test::AppConfig cfg;
-    CHECK(cfg.capture_output.empty());
-    CHECK(cfg.usd_path.empty());
-    CHECK(cfg.usd_override_path.empty());
-    CHECK(cfg.capture_frames == 1);
-    CHECK(cfg.renderer_name.empty());
-    CHECK(cfg.debug_output_name.empty());
-}
-
 TEST_CASE("Capture CLI flags registration and parsing") {
     pts::CommandLine cli;
     cli.add_string("capture-and-quit", "Render, capture viewport to PNG, then quit", std::nullopt,

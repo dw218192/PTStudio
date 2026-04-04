@@ -138,17 +138,6 @@ TEST_CASE("clear resets everything") {
     CHECK(world.get_materials().empty());
 }
 
-TEST_CASE("active flag defaults to true on alloc") {
-    RenderWorld world;
-    auto scope = world.begin_sync();
-
-    auto o = scope.alloc_object_slot();
-    CHECK(world.get_objects()[o].active() == true);
-
-    auto l = scope.alloc_light_slot();
-    CHECK(world.get_lights()[l].active() == true);
-}
-
 TEST_CASE("active flag is false after free, true after re-alloc") {
     RenderWorld world;
     auto scope = world.begin_sync();
@@ -367,6 +356,3 @@ TEST_CASE("to_light sphere light has zero right/up") {
     CHECK(l.direction_or_pos == glm::vec3(1.0f, 2.0f, 3.0f));
 }
 
-TEST_CASE("Light struct is 64 bytes") {
-    CHECK(sizeof(Light) == 64);
-}

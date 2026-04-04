@@ -67,6 +67,9 @@ agent:
       Reject self-testing mock tests: tests that define local stubs of the system
       under test and assert against those stubs are worthless. Every test must call
       real production code. If that's not feasible, don't add the test.
+      Reject vacuous tests: tests that only assert default member initializers,
+      sizeof() (use static_assert in headers instead), or trivial constructor
+      behavior. A test must exercise a non-trivial code path to justify its existence.
 
 usdz:
   scenes:
