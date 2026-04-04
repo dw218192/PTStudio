@@ -21,7 +21,7 @@ Examples: `/triage-ci` (3 turns, auto PR), `/triage-ci 5` (5 turns),
 
 ```
 for turn in 1..max_turns:
-    1. Wait for CI
+    1. Wait for CI (background — user can work while waiting)
     2. Check results — if green, report success and stop
     3. Triage failures
     4. Apply fixes, build and test locally
@@ -45,12 +45,19 @@ Get the latest run:
 gh run list --branch <branch> --limit 1
 ```
 
-If in progress, wait:
+If the run is already completed, skip to step 2.
+
+If still in progress, use `run_in_background: true` on the Bash tool to
+watch without blocking the conversation:
+
 ```bash
 gh run watch <run-id> --exit-status
 ```
 
-Report: "Turn <N>/<max>: CI run <id> is in progress, waiting..."
+This lets the user continue working. When the background task completes,
+a notification arrives — pick up from step 2 at that point. Tell the
+user: "CI run <id> is in progress. I'm watching in the background —
+you'll be notified when it finishes. Feel free to keep working."
 
 ### 2. Check results
 
@@ -114,3 +121,6 @@ Then loop back to step 1 for the next turn.
 - Always build and test locally before pushing a fix to avoid churn.
 - INFRA failures that are purely transient (network blip, runner OOM)
   can be retried without code changes: `gh run rerun <run-id> --failed`.
+- Do NOT use `sleep` for polling — the hook blocks it. Use
+  `run_in_background: true` on `gh run watch` and wait for the
+  notification instead.
