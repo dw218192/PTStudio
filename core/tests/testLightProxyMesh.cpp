@@ -264,8 +264,7 @@ TEST_CASE("sync_light re-sync updates geometry and material in place") {
     auto mesh_w = scope.write_mesh(mesh_idx);
     REQUIRE(!mesh_w->cpu_vertices.empty());
     float max_x = 0.0f;
-    for (const auto& v : mesh_w->cpu_vertices)
-        max_x = std::max(max_x, std::abs(v.position[0]));
+    for (const auto& v : mesh_w->cpu_vertices) max_x = std::max(max_x, std::abs(v.position[0]));
     CHECK(max_x == doctest::Approx(2.0f));  // half of new width (4.0)
 }
 
