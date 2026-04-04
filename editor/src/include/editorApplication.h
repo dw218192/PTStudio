@@ -7,6 +7,7 @@
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/preparedSceneData.h>
 #include <core/rendering/renderWorld.h>
+#include <core/rendering/renderer.h>
 #include <core/rendering/sceneLoader.h>
 #include <core/rendering/shaderLoader.h>
 #include <core/rendering/webgpu/bufferReadback.h>
@@ -36,7 +37,6 @@ class InputComponent;
 
 namespace pts::rendering {
 class IRenderPass;
-class IRenderer;
 }  // namespace pts::rendering
 namespace pts::editor {
 class EditorPass;
