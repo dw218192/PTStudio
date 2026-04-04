@@ -355,4 +355,3 @@ TEST_CASE("to_light sphere light has zero right/up") {
     CHECK(l.radius == doctest::Approx(1.5f));
     CHECK(l.direction_or_pos == glm::vec3(1.0f, 2.0f, 3.0f));
 }
-

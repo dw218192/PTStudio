@@ -289,8 +289,6 @@ TEST_CASE("prepare_gpu_buffers creates placeholder texture array when no texture
     CHECK(world.texture_sampler() != nullptr);
 }
 
-
-
 TEST_CASE("clear resets GPU buffer state") {
     auto logger = create_test_logger();
     auto device = pts::webgpu::Device::create(logger);
@@ -430,6 +428,5 @@ TEST_CASE("prepare_scene_data produces geometry for mesh+object") {
     REQUIRE(data.gpu_instances.size() == 1);
     CHECK(data.gpu_instances[0].material_index == 0);
 }
-
 
 #endif  // !__EMSCRIPTEN__
