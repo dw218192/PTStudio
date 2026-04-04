@@ -91,6 +91,11 @@ list(APPEND TEST_NAMES testRenderWorldSlotMap)
 set(testRenderWorldSlotMap_source testRenderWorldSlotMap.cpp)
 set(testRenderWorldSlotMap_libs core)
 
+# Light proxy mesh generation - works on all platforms (no GPU needed)
+list(APPEND TEST_NAMES testLightProxyMesh)
+set(testLightProxyMesh_source testLightProxyMesh.cpp)
+set(testLightProxyMesh_libs core)
+
 # RendererRegistry - works on all platforms (no GPU needed)
 list(APPEND TEST_NAMES testRendererRegistry)
 set(testRendererRegistry_source testRendererRegistry.cpp)

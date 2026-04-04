@@ -13,7 +13,11 @@ public struct Material {
     public uint roughness_tex;
     public uint emissive_tex;
     public uint opacity_tex;
+    public float ior;
+    public float opacity_threshold;
     public uint tex_channels;
+    public uint _pad0;
+    public uint _pad1;
 };
 
 /// Returns true if P is on the emitting (front) side of a directional area light.

@@ -401,6 +401,7 @@ PreparedSceneData RenderWorld::prepare_scene_data() {
         std::vector<uint32_t> dirty_meshes;
         for (const auto& obj : objects) {
             if (!obj.active()) continue;
+            if (!obj->visible) continue;
             uint32_t mesh_idx = obj->mesh_index;
             const auto& mesh = meshes_span[mesh_idx];
             if (!mesh.active() || mesh->cpu_vertices.empty() || mesh->cpu_indices.empty()) continue;
@@ -444,6 +445,7 @@ PreparedSceneData RenderWorld::prepare_scene_data() {
 
             for (const auto& obj : objects) {
                 if (!obj.active()) continue;
+                if (!obj->visible) continue;
                 uint32_t mesh_idx = obj->mesh_index;
                 const auto& mesh = meshes_span[mesh_idx];
                 if (!mesh.active() || mesh->cpu_vertices.empty() || mesh->cpu_indices.empty())

@@ -67,6 +67,9 @@ agent:
       Reject self-testing mock tests: tests that define local stubs of the system
       under test and assert against those stubs are worthless. Every test must call
       real production code. If that's not feasible, don't add the test.
+      Reject vacuous tests: tests that only assert default member initializers,
+      sizeof() (use static_assert in headers instead), or trivial constructor
+      behavior. A test must exercise a non-trivial code path to justify its existence.
 
 usdz:
   scenes:
@@ -74,6 +77,16 @@ usdz:
       output: "assets/scenes/primitives.usdz"
     - input: "assets/scenes/area_light_test.usda"
       output: "assets/scenes/area_light_test.usdz"
+    - input: "assets/scenes/glass_test.usda"
+      output: "assets/scenes/glass_test.usdz"
+    - input: "assets/scenes/brdf_test.usda"
+      output: "assets/scenes/brdf_test.usdz"
+    - input: "assets/scenes/shadow_test.usda"
+      output: "assets/scenes/shadow_test.usdz"
+    - input: "assets/scenes/test_cube.usda"
+      output: "assets/scenes/test_cube.usdz"
+    - input: "assets/scenes/camera/camera.usda"
+      output: "assets/scenes/camera.usdz"
     - input: "assets/scenes/kitchen/Kitchen_set.usd"
       output: "assets/scenes/kitchen_set.usdz"
 
@@ -97,6 +110,15 @@ slangc:
       output: "renderers/forward/generated/shaders/skybox.wgsl"
     - input: "core/shaders/shadow.slang"
       output: "core/generated/shaders/shadow.wgsl"
+      reflect: true
+    - input: "core/shaders/gbuffer.slang"
+      output: "core/generated/shaders/gbuffer.wgsl"
+      reflect: true
+    - input: "core/shaders/ssao.slang"
+      output: "core/generated/shaders/ssao.wgsl"
+      reflect: true
+    - input: "core/shaders/ssao_blur.slang"
+      output: "core/generated/shaders/ssao_blur.wgsl"
       reflect: true
     - input: "editor/shaders/picking.slang"
       output: "editor/generated/shaders/picking.wgsl"
@@ -143,6 +165,15 @@ shader_codegen:
     - reflect: "core/generated/shaders/shadow.reflect.json"
       output: "core/generated/shadow_shader_metadata.h"
       namespace: "shadow_shader"
+    - reflect: "core/generated/shaders/gbuffer.reflect.json"
+      output: "core/generated/gbuffer_shader_metadata.h"
+      namespace: "gbuffer_shader"
+    - reflect: "core/generated/shaders/ssao.reflect.json"
+      output: "core/generated/ssao_shader_metadata.h"
+      namespace: "ssao_shader"
+    - reflect: "core/generated/shaders/ssao_blur.reflect.json"
+      output: "core/generated/ssao_blur_shader_metadata.h"
+      namespace: "ssao_blur_shader"
     - reflect: "editor/generated/shaders/picking.reflect.json"
       output: "editor/generated/picking_shader_metadata.h"
       namespace: "editor_picking_shader"
@@ -170,6 +201,9 @@ embed:
         - "renderers/forward/generated/shaders/forward_no_debug.wgsl"
         - "renderers/forward/generated/shaders/skybox.wgsl"
         - "core/generated/shaders/shadow.wgsl"
+        - "core/generated/shaders/gbuffer.wgsl"
+        - "core/generated/shaders/ssao.wgsl"
+        - "core/generated/shaders/ssao_blur.wgsl"
         - "editor/generated/shaders/picking.wgsl"
         - "editor/generated/shaders/grid.wgsl"
         - "editor/generated/shaders/wireframe.wgsl"

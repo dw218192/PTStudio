@@ -651,6 +651,66 @@ def _run_tests(context: dict[str, Any], verbose: bool, from_package: bool = Fals
                         failed += 1
                         failed_tests.append(test_name)
 
+            # Path tracer smoke tests: run glass scenes with the Path Trace
+            # renderer to exercise the refraction/transmission code path.
+            pt_scenes = [s for s in scenes if "glass" in s.stem]
+            if not pt_scenes:
+                raise RuntimeError("No glass scenes found for path tracer smoke tests")
+            if not is_emscripten:
+                for scene_path in pt_scenes:
+                    scene_name = scene_path.stem
+                    test_name = f"ptSmoke_{scene_name}"
+                    log_file = logs_dir / f"test_{test_name}.log"
+                    capture_path = Path(tmp_dir) / f"pt_{scene_name}.png"
+                    smoke_args = [
+                        f"--capture-and-quit={capture_path}",
+                        "--frames", "5",
+                        "--usd", str(scene_path),
+                        "--renderer", "Path Trace",
+                    ]
+                    with log_section(f"Test: {test_name}"):
+                        try:
+                            result = _run_executable(
+                                editor_exe,
+                                smoke_args,
+                                context,
+                                capture_output=True,
+                            )
+                            with open(log_file, "w", encoding="utf-8", errors="replace") as f:
+                                f.write(f"Test: {test_name}\n")
+                                f.write(f"Scene: {scene_path}\n")
+                                f.write(f"Renderer: Path Trace\n")
+                                f.write(f"Capture: {capture_path}\n")
+                                f.write(f"Exit code: {result.returncode}\n")
+                                f.write("=" * 70 + "\n")
+                                f.write(result.stdout or "")
+
+                            if result.stdout:
+                                sys.stdout.write(result.stdout)
+                                if not result.stdout.endswith("\n"):
+                                    sys.stdout.write("\n")
+
+                            if result.returncode != 0:
+                                logger.error(
+                                    f"FAILED: {test_name} (exit code: {result.returncode})"
+                                )
+                                failed += 1
+                                failed_tests.append(test_name)
+                            elif not capture_path.exists():
+                                logger.error(f"FAILED: {test_name} (no capture produced)")
+                                failed += 1
+                                failed_tests.append(test_name)
+                            else:
+                                logger.info(f"PASSED: {test_name}")
+                                passed += 1
+
+                        except Exception as e:
+                            logger.error(f"FAILED: {test_name} (exception: {e})")
+                            with open(log_file, "w", encoding="utf-8", errors="replace") as f:
+                                f.write(f"Test: {test_name}\nException: {e}\n")
+                            failed += 1
+                            failed_tests.append(test_name)
+
     with log_section("Test summary"):
         logger.info(f"Total:  {passed + failed}")
         logger.info(f"Passed: {passed}")

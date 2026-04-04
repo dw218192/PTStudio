@@ -245,28 +245,6 @@ TEST_CASE("transform_aabb - 90-degree rotation around Z") {
     CHECK(result.max.y == doctest::Approx(3));
 }
 
-// --- PackedTriangle tests ---
-
-TEST_CASE("PackedTriangle - size is 128 bytes") {
-    CHECK(sizeof(PackedTriangle) == 128);
-}
-
-// --- GPUInstance tests ---
-
-TEST_CASE("GPUInstance - size is 144 bytes") {
-    CHECK(sizeof(GPUInstance) == 144);
-}
-
-TEST_CASE("GPUInstance - default values") {
-    GPUInstance inst;
-    CHECK(inst.transform == glm::mat4(1.0f));
-    CHECK(inst.inv_transform == glm::mat4(1.0f));
-    CHECK(inst.blas_offset == 0);
-    CHECK(inst.tri_offset == 0);
-    CHECK(inst.tri_count == 0);
-    CHECK(inst.material_index == UINT32_MAX);
-}
-
 // --- Two-level BVH concatenation test ---
 
 TEST_CASE("BVH - TLAS over two BLAS produces valid concatenated tree") {

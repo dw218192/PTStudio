@@ -110,6 +110,7 @@ class FrameGraph {
 
     ResourceHandle create(std::string name, TextureDesc desc);
     ResourceHandle find_or_create(std::string name, TextureDesc desc);
+    [[nodiscard]] std::optional<ResourceHandle> find(const std::string& name) const;
 
     PassBuilder add_pass(std::string name);
 

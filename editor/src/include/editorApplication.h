@@ -7,6 +7,7 @@
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/preparedSceneData.h>
 #include <core/rendering/renderWorld.h>
+#include <core/rendering/renderer.h>
 #include <core/rendering/sceneLoader.h>
 #include <core/rendering/shaderLoader.h>
 #include <core/rendering/webgpu/bufferReadback.h>
@@ -36,7 +37,6 @@ class InputComponent;
 
 namespace pts::rendering {
 class IRenderPass;
-class IRenderer;
 }  // namespace pts::rendering
 namespace pts::editor {
 class EditorPass;
@@ -150,12 +150,26 @@ struct EditorApplication final : GpuApplication {
     bool m_editor_passes_enabled = true;
     rendering::ShaderLoader m_shader_loader;
 
-    /// Iterate all active passes (renderer + editor) in execution order.
+    /// Iterate top-level passes (renderer + editor) for lifecycle calls.
+    /// The renderer's own draw_imgui/on_shaders_reloaded already forward to children.
     template <typename Fn>
     void for_each_pass(Fn&& fn) {
         if (m_renderer_pass) fn(*m_renderer_pass);
         for (auto& p : m_editor_passes) {
-            // ToneMappingPass always runs; others respect the toggle
+            if (!m_editor_passes_enabled && p.get() != m_tonemapping_pass) continue;
+            fn(*p);
+        }
+    }
+
+    /// Iterate all passes including renderer subpasses. Use for discovery
+    /// (debug target collection, perf overlay) where every pass must be visible.
+    template <typename Fn>
+    void for_each_pass_recursive(Fn&& fn) {
+        if (m_renderer_pass) {
+            fn(*m_renderer_pass);
+            m_renderer_pass->for_each_subpass(fn);
+        }
+        for (auto& p : m_editor_passes) {
             if (!m_editor_passes_enabled && p.get() != m_tonemapping_pass) continue;
             fn(*p);
         }

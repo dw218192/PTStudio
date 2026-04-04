@@ -3,6 +3,7 @@
 #include <core/rendering/adapters/cubeAdapter.h>
 #include <core/rendering/adapters/cylinderAdapter.h>
 #include <core/rendering/adapters/lightAdapter.h>
+#include <core/rendering/adapters/meshAdapter.h>
 #include <core/rendering/adapters/registry.h>
 #include <core/rendering/adapters/sphereAdapter.h>
 #include <core/rendering/renderWorld.h>
@@ -17,8 +18,14 @@
 #include <pxr/usd/usdGeom/cone.h>
 #include <pxr/usd/usdGeom/cube.h>
 #include <pxr/usd/usdGeom/cylinder.h>
+#include <pxr/usd/usdGeom/imageable.h>
+#include <pxr/usd/usdGeom/mesh.h>
 #include <pxr/usd/usdGeom/primvarsAPI.h>
 #include <pxr/usd/usdGeom/sphere.h>
+#include <pxr/usd/usdGeom/subset.h>
+#include <pxr/usd/usdGeom/tokens.h>
+#include <pxr/usd/usdShade/material.h>
+#include <pxr/usd/usdShade/materialBindingAPI.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
 #include <cmath>
@@ -38,6 +45,18 @@ TEST_CASE("Adapters do not cross-match prim types") {
     CHECK(!pts::rendering::CylinderAdapter::instance().can_adapt(cube.GetPrim()));
     CHECK(!pts::rendering::ConeAdapter::instance().can_adapt(cube.GetPrim()));
     CHECK(!pts::rendering::CapsuleAdapter::instance().can_adapt(cube.GetPrim()));
+}
+
+TEST_CASE("MeshAdapter can_adapt recognizes GeomSubset prims") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    auto mesh = pxr::UsdGeomMesh::Define(stage, pxr::SdfPath("/Mesh"));
+    auto subset = pxr::UsdGeomSubset::Define(stage, pxr::SdfPath("/Mesh/Subset"));
+    auto cube = pxr::UsdGeomCube::Define(stage, pxr::SdfPath("/Cube"));
+
+    auto& adapter = pts::rendering::MeshAdapter::instance();
+    CHECK(adapter.can_adapt(mesh.GetPrim()));
+    CHECK(adapter.can_adapt(subset.GetPrim()));
+    CHECK(!adapter.can_adapt(cube.GetPrim()));
 }
 
 TEST_CASE("populate_from_stage with progress builds RenderWorld") {
@@ -405,6 +424,191 @@ TEST_CASE("sync_prim with invalid path calls remove_prim") {
 
     CHECK(!f.world.get_objects()[0].active());
     CHECK(f.world.find_object_by_prim(pxr::SdfPath("/Cube")) == -1);
+}
+
+TEST_CASE("sync_object reads UsdGeomImageable visibility") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    auto visible_cube = pxr::UsdGeomCube::Define(stage, pxr::SdfPath("/Visible"));
+    auto hidden_cube = pxr::UsdGeomCube::Define(stage, pxr::SdfPath("/Hidden"));
+    pxr::UsdGeomImageable(hidden_cube).GetVisibilityAttr().Set(pxr::UsdGeomTokens->invisible);
+
+    TestFixture f("test_visibility");
+    pts::rendering::populate_from_stage(f.world, stage);
+
+    auto objects = f.world.get_objects();
+    REQUIRE(objects.size() == 2);
+
+    int vis_idx = f.world.find_object_by_prim(pxr::SdfPath("/Visible"));
+    int hid_idx = f.world.find_object_by_prim(pxr::SdfPath("/Hidden"));
+    REQUIRE(vis_idx >= 0);
+    REQUIRE(hid_idx >= 0);
+
+    CHECK(objects[static_cast<uint32_t>(vis_idx)]->visible == true);
+    CHECK(objects[static_cast<uint32_t>(hid_idx)]->visible == false);
+}
+
+TEST_CASE("visibility updates on re-sync") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    auto cube = pxr::UsdGeomCube::Define(stage, pxr::SdfPath("/Cube"));
+
+    TestFixture f("test_visibility_resync");
+    pts::rendering::populate_from_stage(f.world, stage);
+
+    auto objects = f.world.get_objects();
+    REQUIRE(objects.size() == 1);
+    CHECK(objects[0]->visible == true);
+
+    // Hide the cube and re-sync
+    pxr::UsdGeomImageable(cube).GetVisibilityAttr().Set(pxr::UsdGeomTokens->invisible);
+    {
+        auto scope = f.world.begin_sync();
+        pts::rendering::sync_prim(scope, stage, pxr::SdfPath("/Cube"));
+    }
+
+    objects = f.world.get_objects();
+    CHECK(objects[0]->visible == false);
+
+    // Make visible again via "inherited"
+    pxr::UsdGeomImageable(cube).GetVisibilityAttr().Set(pxr::UsdGeomTokens->inherited);
+    {
+        auto scope = f.world.begin_sync();
+        pts::rendering::sync_prim(scope, stage, pxr::SdfPath("/Cube"));
+    }
+
+    objects = f.world.get_objects();
+    CHECK(objects[0]->visible == true);
+}
+
+// --- GeomSubset material binding tests ---
+
+namespace {
+
+/// Helper: create a quad mesh with 4 triangular faces at /Mesh.
+/// Layout: 4 triangles sharing a center vertex (fan around {0,0,0}).
+///   face 0: v0-v1-v4, face 1: v1-v2-v4, face 2: v2-v3-v4, face 3: v3-v0-v4
+pxr::UsdGeomMesh define_quad_fan_mesh(const pxr::UsdStageRefPtr& stage) {
+    auto mesh = pxr::UsdGeomMesh::Define(stage, pxr::SdfPath("/Mesh"));
+    mesh.GetPointsAttr().Set(
+        pxr::VtVec3fArray{{-1, -1, 0}, {1, -1, 0}, {1, 1, 0}, {-1, 1, 0}, {0, 0, 0}});
+    mesh.GetFaceVertexCountsAttr().Set(pxr::VtIntArray{3, 3, 3, 3});
+    mesh.GetFaceVertexIndicesAttr().Set(pxr::VtIntArray{0, 1, 4, 1, 2, 4, 2, 3, 4, 3, 0, 4});
+    return mesh;
+}
+
+size_t count_active_objects(const pts::rendering::RenderWorld& world) {
+    size_t n = 0;
+    for (const auto& obj : world.get_objects())
+        if (obj.active()) ++n;
+    return n;
+}
+
+}  // namespace
+
+TEST_CASE("GeomSubset materialBind creates per-subset objects") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    auto mesh = define_quad_fan_mesh(stage);
+
+    // Two subsets, each covering 2 faces — full coverage, no remainder.
+    auto sub_a = pxr::UsdGeomSubset::Define(stage, pxr::SdfPath("/Mesh/SubA"));
+    sub_a.GetFamilyNameAttr().Set(pxr::TfToken("materialBind"));
+    sub_a.GetElementTypeAttr().Set(pxr::TfToken("face"));
+    sub_a.GetIndicesAttr().Set(pxr::VtIntArray{0, 1});
+
+    auto sub_b = pxr::UsdGeomSubset::Define(stage, pxr::SdfPath("/Mesh/SubB"));
+    sub_b.GetFamilyNameAttr().Set(pxr::TfToken("materialBind"));
+    sub_b.GetElementTypeAttr().Set(pxr::TfToken("face"));
+    sub_b.GetIndicesAttr().Set(pxr::VtIntArray{2, 3});
+
+    // Bind distinct materials to each subset.
+    auto mat_a = pxr::UsdShadeMaterial::Define(stage, pxr::SdfPath("/MatA"));
+    auto mat_b = pxr::UsdShadeMaterial::Define(stage, pxr::SdfPath("/MatB"));
+    pxr::UsdShadeMaterialBindingAPI::Apply(sub_a.GetPrim()).Bind(mat_a);
+    pxr::UsdShadeMaterialBindingAPI::Apply(sub_b.GetPrim()).Bind(mat_b);
+
+    pts::rendering::RenderWorld world;
+    pts::rendering::populate_from_stage(world, stage);
+
+    CHECK(count_active_objects(world) == 2);
+    CHECK(world.find_object_by_prim(pxr::SdfPath("/Mesh/SubA")) >= 0);
+    CHECK(world.find_object_by_prim(pxr::SdfPath("/Mesh/SubB")) >= 0);
+
+    // Each subset has 2 faces → 2 triangles → 6 indices.
+    auto meshes = world.get_meshes();
+    auto objects = world.get_objects();
+    for (const auto& obj : objects) {
+        if (!obj.active()) continue;
+        CHECK(meshes[obj->mesh_index]->index_count == 6);
+    }
+
+    // Materials should be distinct.
+    int ia = world.find_object_by_prim(pxr::SdfPath("/Mesh/SubA"));
+    int ib = world.find_object_by_prim(pxr::SdfPath("/Mesh/SubB"));
+    CHECK(objects[static_cast<uint32_t>(ia)]->material_index !=
+          objects[static_cast<uint32_t>(ib)]->material_index);
+}
+
+TEST_CASE("GeomSubset with remainder emits mesh-level object for uncovered faces") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    auto mesh = define_quad_fan_mesh(stage);
+
+    // One subset covering faces 0,1 — faces 2,3 are remainder.
+    auto sub = pxr::UsdGeomSubset::Define(stage, pxr::SdfPath("/Mesh/Sub"));
+    sub.GetFamilyNameAttr().Set(pxr::TfToken("materialBind"));
+    sub.GetElementTypeAttr().Set(pxr::TfToken("face"));
+    sub.GetIndicesAttr().Set(pxr::VtIntArray{0, 1});
+
+    auto mat = pxr::UsdShadeMaterial::Define(stage, pxr::SdfPath("/Mat"));
+    pxr::UsdShadeMaterialBindingAPI::Apply(sub.GetPrim()).Bind(mat);
+
+    pts::rendering::RenderWorld world;
+    pts::rendering::populate_from_stage(world, stage);
+
+    // 1 subset object + 1 remainder object.
+    CHECK(count_active_objects(world) == 2);
+    CHECK(world.find_object_by_prim(pxr::SdfPath("/Mesh/Sub")) >= 0);
+    CHECK(world.find_object_by_prim(pxr::SdfPath("/Mesh")) >= 0);
+
+    auto meshes = world.get_meshes();
+    auto objects = world.get_objects();
+
+    int sub_idx = world.find_object_by_prim(pxr::SdfPath("/Mesh/Sub"));
+    int rem_idx = world.find_object_by_prim(pxr::SdfPath("/Mesh"));
+    CHECK(meshes[objects[static_cast<uint32_t>(sub_idx)]->mesh_index]->index_count == 6);
+    CHECK(meshes[objects[static_cast<uint32_t>(rem_idx)]->mesh_index]->index_count == 6);
+}
+
+TEST_CASE("Mesh without GeomSubsets creates single object (no regression)") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    define_quad_fan_mesh(stage);
+
+    pts::rendering::RenderWorld world;
+    pts::rendering::populate_from_stage(world, stage);
+
+    CHECK(count_active_objects(world) == 1);
+    CHECK(world.find_object_by_prim(pxr::SdfPath("/Mesh")) >= 0);
+
+    auto objects = world.get_objects();
+    auto meshes = world.get_meshes();
+    // 4 faces × 1 tri each = 4 triangles = 12 indices.
+    CHECK(meshes[objects[0]->mesh_index]->index_count == 12);
+}
+
+TEST_CASE("Non-materialBind subsets are ignored (mesh treated as whole)") {
+    auto stage = pxr::UsdStage::CreateInMemory();
+    auto mesh = define_quad_fan_mesh(stage);
+
+    // Subset with a different family — should be ignored.
+    auto sub = pxr::UsdGeomSubset::Define(stage, pxr::SdfPath("/Mesh/Sub"));
+    sub.GetFamilyNameAttr().Set(pxr::TfToken("someOtherFamily"));
+    sub.GetElementTypeAttr().Set(pxr::TfToken("face"));
+    sub.GetIndicesAttr().Set(pxr::VtIntArray{0, 1});
+
+    pts::rendering::RenderWorld world;
+    pts::rendering::populate_from_stage(world, stage);
+
+    // No materialBind subsets → single whole-mesh object.
+    CHECK(count_active_objects(world) == 1);
+    CHECK(world.find_object_by_prim(pxr::SdfPath("/Mesh")) >= 0);
 }
 
 #endif  // !__EMSCRIPTEN__

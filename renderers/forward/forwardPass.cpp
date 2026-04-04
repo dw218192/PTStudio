@@ -4,12 +4,14 @@
 #include <core/profiling.h>
 #include <core/rendering/camera.h>
 #include <core/rendering/frameGraph.h>
+#include <core/rendering/gbufferPass.h>
 #include <core/rendering/iblResources.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/rendererRegistry.h>
 #include <core/rendering/shaderLoader.h>
 #include <core/rendering/shadowMapPass.h>
+#include <core/rendering/ssaoPass.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
 #include <renderers/forward/generated/shader_metadata.h>
 
@@ -21,7 +23,9 @@ using namespace pts::editor;
 REGISTER_RENDERER("Forward", ForwardPass);
 
 ForwardPass::ForwardPass(const rendering::ShaderLoader& sl) : IRenderer(sl) {
+    add_pass<rendering::GBufferPass>(sl);
     add_pass<rendering::ShadowMapPass>(sl);
+    add_pass<rendering::SSAOPass>(sl);
 }
 
 struct ForwardUniforms {
@@ -118,12 +122,13 @@ ForwardPass::~ForwardPass() {
     }
 }
 
-static constexpr const char* k_debug_target_names[] = {
-    "Direct Diffuse", "Direct Specular", "IBL Diffuse",
-    "IBL Specular",   "Prefiltered Env", "BRDF LUT",
+static constexpr rendering::IRenderPass::DebugTarget k_debug_targets[] = {
+    {"Direct Diffuse", "debug_Direct Diffuse"},   {"Direct Specular", "debug_Direct Specular"},
+    {"IBL Diffuse", "debug_IBL Diffuse"},         {"IBL Specular", "debug_IBL Specular"},
+    {"Prefiltered Env", "debug_Prefiltered Env"}, {"BRDF LUT", "debug_BRDF LUT"},
 };
 static constexpr uint32_t k_debug_target_count =
-    static_cast<uint32_t>(sizeof(k_debug_target_names) / sizeof(k_debug_target_names[0]));
+    static_cast<uint32_t>(sizeof(k_debug_targets) / sizeof(k_debug_targets[0]));
 
 auto ForwardPass::name() const noexcept -> std::string_view {
     return "forward";
@@ -133,8 +138,8 @@ auto ForwardPass::is_ready() const noexcept -> bool {
     return std::holds_alternative<Ready>(m_state);
 }
 
-auto ForwardPass::debug_target_names() const noexcept -> std::pair<const char* const*, uint32_t> {
-    return {k_debug_target_names, k_debug_target_count};
+auto ForwardPass::debug_targets() const noexcept -> std::pair<const DebugTarget*, uint32_t> {
+    return {k_debug_targets, k_debug_target_count};
 }
 
 void ForwardPass::do_renderer_setup(const webgpu::Device& device) {
@@ -153,7 +158,7 @@ void ForwardPass::do_renderer_setup(const webgpu::Device& device) {
         if (ready->skybox_bgl) wgpuBindGroupLayoutRelease(ready->skybox_bgl);
     }
 
-    auto [dbg_names_setup, dbg_count_setup] = effective_debug_target_names();
+    auto [dbg_targets_setup, dbg_count_setup] = effective_debug_targets();
     auto shader_src = load_pass_shader("renderers/forward/generated/shaders/forward.wgsl");
     auto shader = device.create_shader_module_from_source(shader_src);
 
@@ -346,9 +351,9 @@ void ForwardPass::do_renderer_setup(const webgpu::Device& device) {
     auto builder = webgpu::RenderPipelineBuilder(device)
                        .shader(shader)
                        .color_format(WGPUTextureFormat_RGBA16Float, 0)
-                       .depth_format(WGPUTextureFormat_Depth24Plus)
+                       .depth_format(WGPUTextureFormat_Depth32Float)
                        .depth_write(true)
-                       .depth_compare(WGPUCompareFunction_Less)
+                       .depth_compare(WGPUCompareFunction_LessEqual)
                        .cull_mode(WGPUCullMode_Back)
                        .pipeline_layout(pipeline_layout)
                        .vertex_layout<forward_shader::VertexLayout>();
@@ -398,7 +403,7 @@ void ForwardPass::do_renderer_setup(const webgpu::Device& device) {
     auto skybox_builder = webgpu::RenderPipelineBuilder(device)
                               .shader(skybox_shader)
                               .color_format(WGPUTextureFormat_RGBA16Float, 0)
-                              .depth_format(WGPUTextureFormat_Depth24Plus)
+                              .depth_format(WGPUTextureFormat_Depth32Float)
                               .depth_write(false)
                               .depth_compare(WGPUCompareFunction_LessEqual)
                               .cull_mode(WGPUCullMode_None)
@@ -467,13 +472,30 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     PTS_ZONE_SCOPED;
     PRECONDITION(is_ready());
 
+    // Pre-passes: G-buffer (depth + normals) and shadow maps
+    if (auto* gbuf = get_pass<rendering::GBufferPass>(); gbuf && gbuf->is_ready())
+        gbuf->add_to_frame_graph(fg, ctx);
+    if (auto* shadow = get_pass<rendering::ShadowMapPass>(); shadow && shadow->is_ready())
+        shadow->add_to_frame_graph(fg, ctx);
+
     auto& ready = std::get<Ready>(m_state);
 
     auto objects = ctx.world.get_objects();
     auto object_count = static_cast<uint32_t>(objects.size());
+
+    // Count proxy lights (lights with active mesh proxies) for uniform buffer sizing
+    auto all_lights = ctx.world.get_lights();
+    uint32_t proxy_light_count = 0;
+    for (uint32_t li = 0; li < static_cast<uint32_t>(all_lights.size()); ++li) {
+        if (!all_lights[li].active()) continue;
+        if (all_lights[li]->mesh_index == UINT32_MAX) continue;
+        ++proxy_light_count;
+    }
+
+    uint32_t total_slots = object_count + proxy_light_count;
     bool bind_group_dirty = false;
-    if (object_count > 0) {
-        bind_group_dirty = ensure_capacity(ctx.device, object_count);
+    if (total_slots > 0) {
+        bind_group_dirty = ensure_capacity(ctx.device, total_slots);
     }
 
     // Detect RenderWorld buffer reallocation and rebuild bind group
@@ -512,23 +534,24 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     rendering::TextureDesc depth_desc;
     depth_desc.width = ctx.viewport_width;
     depth_desc.height = ctx.viewport_height;
-    depth_desc.format = WGPUTextureFormat_Depth24Plus;
+    depth_desc.format = WGPUTextureFormat_Depth32Float;
 
     auto color = fg.find_or_create("scene_color", color_desc);
     auto depth = fg.find_or_create("scene_depth", depth_desc);
 
-    auto [eff_debug_names, eff_debug_count] = effective_debug_target_names();
+    auto [eff_debug_targets, eff_debug_count] = effective_debug_targets();
 
     rendering::TextureDesc debug_desc;
     debug_desc.width = ctx.viewport_width;
     debug_desc.height = ctx.viewport_height;
     debug_desc.format = WGPUTextureFormat_RGBA8Unorm;
     debug_desc.clear_color = {0, 0, 0, 1};
+    debug_desc.usage =
+        static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_CopySrc);
 
     rendering::ResourceHandle debug_handles[k_debug_target_count];
     for (uint32_t i = 0; i < eff_debug_count; ++i) {
-        debug_handles[i] =
-            fg.find_or_create(std::string("debug_") + eff_debug_names[i], debug_desc);
+        debug_handles[i] = fg.find_or_create(eff_debug_targets[i].resource_name, debug_desc);
     }
 
     auto queue = ctx.queue;
@@ -573,6 +596,7 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
         PTS_ZONE_NAMED("forward uniform upload");
         for (uint32_t i = 0; i < object_count; ++i) {
             if (!objects[i].active()) continue;
+            if (!objects[i]->visible) continue;
             const auto& obj = objects[i];
             ForwardUniforms u{};
             u.mvp = proj_mat * view_mat * obj->transform;
@@ -584,6 +608,31 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
             u.ibl_dome_modulation = ibl_ready ? dome_mod : glm::vec3{0.0f};
             u.ibl_mip_count = rendering::k_prefilter_mip_count;
             wgpuQueueWriteBuffer(queue, uniform_buf, i * k_uniform_align, &u, sizeof(u));
+        }
+    }
+
+    // Upload uniforms for proxy light meshes
+    {
+        PTS_ZONE_NAMED("forward proxy light uniform upload");
+        uint32_t proxy_slot = object_count;
+        for (uint32_t li = 0; li < static_cast<uint32_t>(all_lights.size()); ++li) {
+            if (!all_lights[li].active()) continue;
+            if (all_lights[li]->mesh_index == UINT32_MAX) continue;
+            if (!all_lights[li]->visible) {
+                ++proxy_slot;
+                continue;
+            }
+            ForwardUniforms u{};
+            u.mvp = proj_mat * view_mat * all_lights[li]->transform;
+            u.model = all_lights[li]->transform;
+            u.camera_pos = camera_pos;
+            u.time = elapsed_time;
+            u.material_index = all_lights[li]->material_index;
+            u.light_count = light_count;
+            u.ibl_dome_modulation = ibl_ready ? dome_mod : glm::vec3{0.0f};
+            u.ibl_mip_count = rendering::k_prefilter_mip_count;
+            wgpuQueueWriteBuffer(queue, uniform_buf, proxy_slot * k_uniform_align, &u, sizeof(u));
+            ++proxy_slot;
         }
     }
 
@@ -666,6 +715,7 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
 
         for (uint32_t i = 0; i < static_cast<uint32_t>(objs.size()); ++i) {
             if (!objs[i].active()) continue;
+            if (!objs[i]->visible) continue;
             uint32_t dyn_offset = i * k_uniform_align;
             wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 1, &dyn_offset);
             const auto& mesh = meshes[objs[i]->mesh_index];
@@ -675,6 +725,30 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
                                                 WGPUIndexFormat_Uint32, 0,
                                                 mesh->index_buffer.size());
             wgpuRenderPassEncoderDrawIndexed(pass, mesh->index_count, 1, 0, 0, 0);
+        }
+
+        // Draw light proxy meshes
+        {
+            auto light_slots = world.get_lights();
+            uint32_t proxy_idx = object_count;
+            for (uint32_t li = 0; li < static_cast<uint32_t>(light_slots.size()); ++li) {
+                if (!light_slots[li].active()) continue;
+                if (light_slots[li]->mesh_index == UINT32_MAX) continue;
+                if (!light_slots[li]->visible) {
+                    ++proxy_idx;
+                    continue;
+                }
+                uint32_t dyn_offset = proxy_idx * k_uniform_align;
+                wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 1, &dyn_offset);
+                const auto& mesh = meshes[light_slots[li]->mesh_index];
+                wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh->vertex_buffer.handle(), 0,
+                                                     mesh->vertex_buffer.size());
+                wgpuRenderPassEncoderSetIndexBuffer(pass, mesh->index_buffer.handle(),
+                                                    WGPUIndexFormat_Uint32, 0,
+                                                    mesh->index_buffer.size());
+                wgpuRenderPassEncoderDrawIndexed(pass, mesh->index_count, 1, 0, 0, 0);
+                ++proxy_idx;
+            }
         }
 
         // Skybox: draw fullscreen triangle after all geometry
@@ -706,4 +780,8 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
         wgpuBindGroupRelease(shadow_bg);
         wgpuBindGroupRelease(ibl_bg);
     });
+
+    // Post-pass: SSAO
+    if (auto* ssao = get_pass<rendering::SSAOPass>(); ssao && ssao->is_ready())
+        ssao->add_to_frame_graph(fg, ctx);
 }

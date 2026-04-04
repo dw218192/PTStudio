@@ -21,13 +21,7 @@ If dirty, stop and ask the user to commit or stash.
 Remove all agent worktrees and their branches left over from ticket work.
 
 ```bash
-git worktree prune
-```
-
-For each worktree under `_agent/worktrees/`:
-```bash
-git worktree remove --force <path>
-git branch -D <worktree-branch>
+./repo python .claude/skills/rotate-branch/scripts/cleanup_worktrees.py
 ```
 
 ### 3. Switch to develop and pull

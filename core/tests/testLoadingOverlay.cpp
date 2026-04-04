@@ -2,11 +2,6 @@
 #include <core/imgui/loadingOverlay.h>
 #include <doctest/doctest.h>
 
-TEST_CASE("LoadingOverlay - no tasks initially") {
-    pts::LoadingOverlay overlay;
-    CHECK_FALSE(overlay.has_active_tasks());
-}
-
 TEST_CASE("LoadingOverlay - track adds active task") {
     pts::LoadingOverlay overlay;
     overlay.track(

@@ -59,8 +59,6 @@ class EditorPass final : public rendering::IRenderPass {
     struct GizmoMesh {
         webgpu::Buffer vertex_buffer;  // line-list for color overlay
         uint32_t vertex_count = 0;
-        webgpu::Buffer pick_vertex_buffer;  // triangle-list for picking
-        uint32_t pick_vertex_count = 0;
     };
 
     struct Ready {
@@ -72,10 +70,9 @@ class EditorPass final : public rendering::IRenderPass {
         WGPUBindGroupLayout picking_bind_group_layout = nullptr;
         uint32_t picking_capacity = 0;
 
-        // Gizmo pipelines (color + picking for light shapes)
+        // Gizmo pipeline (wireframe color overlay for light shapes)
         webgpu::ShaderModule gizmo_shader;
-        webgpu::RenderPipeline gizmo_color_pipeline;    // scene_color, LineList, blend
-        webgpu::RenderPipeline gizmo_picking_pipeline;  // picking_ids, LineList
+        webgpu::RenderPipeline gizmo_color_pipeline;  // scene_color, LineList, blend
         webgpu::Buffer gizmo_uniform_buffer;
         WGPUBindGroup gizmo_bind_group = nullptr;
         WGPUBindGroupLayout gizmo_bind_group_layout = nullptr;

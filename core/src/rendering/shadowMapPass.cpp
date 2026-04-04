@@ -252,6 +252,7 @@ void ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
             PTS_ZONE_NAMED("shadow uniform upload");
             for (uint32_t oi = 0; oi < total_slots; ++oi) {
                 if (!objects[oi].active()) continue;
+                if (!objects[oi]->visible) continue;
                 glm::mat4 light_mvp = light_vp * objects[oi]->transform;
                 uint64_t offset =
                     (static_cast<uint64_t>(layer) * total_slots + oi) * k_uniform_align;
@@ -269,6 +270,7 @@ void ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
                 wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
                 for (uint32_t i = 0; i < static_cast<uint32_t>(objs.size()); ++i) {
                     if (!objs[i].active()) continue;
+                    if (!objs[i]->visible) continue;
                     uint32_t dyn_offset = static_cast<uint32_t>(
                         (static_cast<uint64_t>(layer_val) * objs.size() + i) * k_uniform_align);
                     wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 1, &dyn_offset);

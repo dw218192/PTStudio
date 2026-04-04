@@ -86,6 +86,21 @@ WGPUTextureView create_cube_view(WGPUTexture tex, WGPUTextureFormat format, uint
     return view;
 }
 
+// Create a 2DArray view of a single layer at a specific mip level.
+WGPUTextureView create_single_layer_view(WGPUTexture tex, WGPUTextureFormat format, uint32_t mip,
+                                         uint32_t layer) {
+    WGPUTextureViewDescriptor vd = WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT;
+    vd.format = format;
+    vd.dimension = WGPUTextureViewDimension_2DArray;
+    vd.baseMipLevel = mip;
+    vd.mipLevelCount = 1;
+    vd.baseArrayLayer = layer;
+    vd.arrayLayerCount = 1;
+    auto view = wgpuTextureCreateView(tex, &vd);
+    CHECK_MSG(view, "Failed to create single layer texture view");
+    return view;
+}
+
 // Create a 2DArray view of a specific mip level (all 6 layers).
 WGPUTextureView create_mip_array_view(WGPUTexture tex, WGPUTextureFormat format, uint32_t mip) {
     WGPUTextureViewDescriptor vd = WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT;
@@ -729,61 +744,72 @@ void IblResources::convert_equirect_to_cubemap(const IblPipelines& pipelines,
                                                WGPUTexture equirect, UpAxis up_axis) {
     auto dev = device.handle();
 
+    // Dispatch one face at a time with a single-layer output view.
+    // Writing to multiple array layers via textureStore in a single dispatch
+    // silently drops writes to layers > 0 on some D3D12 backends (Dawn/Tint
+    // WGSL→HLSL codegen issue with mixed u32/i32 textureStore coordinates).
     struct alignas(16) Params {
         uint32_t size;
         uint32_t up_axis;
+        uint32_t face;
+        uint32_t _pad;
     };
-    Params params{k_env_size, static_cast<uint32_t>(up_axis)};
 
     auto uniform_buf = device.create_buffer(
-        sizeof(params),
+        sizeof(Params),
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
-    wgpuQueueWriteBuffer(queue, uniform_buf.handle(), 0, &params, sizeof(params));
-
     auto equirect_view = create_2d_view(equirect, WGPUTextureFormat_RGBA16Float);
-    auto output_view = create_mip_array_view(m_env_cubemap, WGPUTextureFormat_RGBA16Float, 0);
 
-    WGPUBindGroupEntry entries[4] = {};
-    entries[0] = WGPU_BIND_GROUP_ENTRY_INIT;
-    entries[0].binding = 0;
-    entries[0].buffer = uniform_buf.handle();
-    entries[0].offset = 0;
-    entries[0].size = sizeof(params);
+    for (uint32_t face = 0; face < 6; ++face) {
+        Params params{k_env_size, static_cast<uint32_t>(up_axis), face, 0};
+        wgpuQueueWriteBuffer(queue, uniform_buf.handle(), 0, &params, sizeof(params));
 
-    entries[1] = WGPU_BIND_GROUP_ENTRY_INIT;
-    entries[1].binding = 1;
-    entries[1].textureView = equirect_view;
+        auto output_view =
+            create_single_layer_view(m_env_cubemap, WGPUTextureFormat_RGBA16Float, 0, face);
 
-    entries[2] = WGPU_BIND_GROUP_ENTRY_INIT;
-    entries[2].binding = 2;
-    entries[2].sampler = pipelines.sampler();
+        WGPUBindGroupEntry entries[4] = {};
+        entries[0] = WGPU_BIND_GROUP_ENTRY_INIT;
+        entries[0].binding = 0;
+        entries[0].buffer = uniform_buf.handle();
+        entries[0].offset = 0;
+        entries[0].size = sizeof(Params);
 
-    entries[3] = WGPU_BIND_GROUP_ENTRY_INIT;
-    entries[3].binding = 3;
-    entries[3].textureView = output_view;
+        entries[1] = WGPU_BIND_GROUP_ENTRY_INIT;
+        entries[1].binding = 1;
+        entries[1].textureView = equirect_view;
 
-    WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-    bg_desc.layout = pipelines.equirect_bgl();
-    bg_desc.entryCount = 4;
-    bg_desc.entries = entries;
-    auto bg = wgpuDeviceCreateBindGroup(dev, &bg_desc);
-    CHECK_MSG(bg, "Failed to create equirect bind group");
+        entries[2] = WGPU_BIND_GROUP_ENTRY_INIT;
+        entries[2].binding = 2;
+        entries[2].sampler = pipelines.sampler();
 
-    auto encoder = wgpuDeviceCreateCommandEncoder(dev, nullptr);
-    auto pass = wgpuCommandEncoderBeginComputePass(encoder, nullptr);
-    wgpuComputePassEncoderSetPipeline(pass, pipelines.equirect_to_cube_pipeline());
-    wgpuComputePassEncoderSetBindGroup(pass, 0, bg, 0, nullptr);
-    wgpuComputePassEncoderDispatchWorkgroups(pass, div_ceil(k_env_size, 8), div_ceil(k_env_size, 8),
-                                             6);
-    wgpuComputePassEncoderEnd(pass);
-    wgpuComputePassEncoderRelease(pass);
+        entries[3] = WGPU_BIND_GROUP_ENTRY_INIT;
+        entries[3].binding = 3;
+        entries[3].textureView = output_view;
 
-    auto cmd = wgpuCommandEncoderFinish(encoder, nullptr);
-    wgpuQueueSubmit(queue, 1, &cmd);
-    wgpuCommandBufferRelease(cmd);
-    wgpuCommandEncoderRelease(encoder);
-    wgpuBindGroupRelease(bg);
-    wgpuTextureViewRelease(output_view);
+        WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
+        bg_desc.layout = pipelines.equirect_bgl();
+        bg_desc.entryCount = 4;
+        bg_desc.entries = entries;
+        auto bg = wgpuDeviceCreateBindGroup(dev, &bg_desc);
+        CHECK_MSG(bg, "Failed to create equirect bind group");
+
+        auto encoder = wgpuDeviceCreateCommandEncoder(dev, nullptr);
+        auto pass = wgpuCommandEncoderBeginComputePass(encoder, nullptr);
+        wgpuComputePassEncoderSetPipeline(pass, pipelines.equirect_to_cube_pipeline());
+        wgpuComputePassEncoderSetBindGroup(pass, 0, bg, 0, nullptr);
+        wgpuComputePassEncoderDispatchWorkgroups(pass, div_ceil(k_env_size, 8),
+                                                 div_ceil(k_env_size, 8), 1);
+        wgpuComputePassEncoderEnd(pass);
+        wgpuComputePassEncoderRelease(pass);
+
+        auto cmd = wgpuCommandEncoderFinish(encoder, nullptr);
+        wgpuQueueSubmit(queue, 1, &cmd);
+        wgpuCommandBufferRelease(cmd);
+        wgpuCommandEncoderRelease(encoder);
+        wgpuBindGroupRelease(bg);
+        wgpuTextureViewRelease(output_view);
+    }
+
     wgpuTextureViewRelease(equirect_view);
 }
 
@@ -797,59 +823,65 @@ void IblResources::generate_env_mipmaps(const IblPipelines& pipelines, const web
 
     struct alignas(16) Params {
         uint32_t output_size;
+        uint32_t face;
+        uint32_t _pad[2];
     };
+
+    auto uniform_buf = device.create_buffer(
+        sizeof(Params),
+        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
 
     for (uint32_t mip = 1; mip < k_env_mip_count; ++mip) {
         uint32_t output_size = k_env_size >> mip;
-        Params params{output_size};
 
-        auto uniform_buf = device.create_buffer(
-            sizeof(params),
-            static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
-        wgpuQueueWriteBuffer(queue, uniform_buf.handle(), 0, &params, sizeof(params));
+        for (uint32_t face = 0; face < 6; ++face) {
+            Params params{output_size, face, {0, 0}};
+            wgpuQueueWriteBuffer(queue, uniform_buf.handle(), 0, &params, sizeof(params));
 
-        auto input_view =
-            create_mip_array_view(m_env_cubemap, WGPUTextureFormat_RGBA16Float, mip - 1);
-        auto output_view = create_mip_array_view(m_env_cubemap, WGPUTextureFormat_RGBA16Float, mip);
+            auto input_view =
+                create_mip_array_view(m_env_cubemap, WGPUTextureFormat_RGBA16Float, mip - 1);
+            auto output_view =
+                create_single_layer_view(m_env_cubemap, WGPUTextureFormat_RGBA16Float, mip, face);
 
-        WGPUBindGroupEntry entries[3] = {};
-        entries[0] = WGPU_BIND_GROUP_ENTRY_INIT;
-        entries[0].binding = 0;
-        entries[0].buffer = uniform_buf.handle();
-        entries[0].offset = 0;
-        entries[0].size = sizeof(params);
+            WGPUBindGroupEntry entries[3] = {};
+            entries[0] = WGPU_BIND_GROUP_ENTRY_INIT;
+            entries[0].binding = 0;
+            entries[0].buffer = uniform_buf.handle();
+            entries[0].offset = 0;
+            entries[0].size = sizeof(Params);
 
-        entries[1] = WGPU_BIND_GROUP_ENTRY_INIT;
-        entries[1].binding = 1;
-        entries[1].textureView = input_view;
+            entries[1] = WGPU_BIND_GROUP_ENTRY_INIT;
+            entries[1].binding = 1;
+            entries[1].textureView = input_view;
 
-        entries[2] = WGPU_BIND_GROUP_ENTRY_INIT;
-        entries[2].binding = 2;
-        entries[2].textureView = output_view;
+            entries[2] = WGPU_BIND_GROUP_ENTRY_INIT;
+            entries[2].binding = 2;
+            entries[2].textureView = output_view;
 
-        WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-        bg_desc.layout = pipelines.downsample_bgl();
-        bg_desc.entryCount = 3;
-        bg_desc.entries = entries;
-        auto bg = wgpuDeviceCreateBindGroup(dev, &bg_desc);
-        CHECK_MSG(bg, "Failed to create downsample bind group");
+            WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
+            bg_desc.layout = pipelines.downsample_bgl();
+            bg_desc.entryCount = 3;
+            bg_desc.entries = entries;
+            auto bg = wgpuDeviceCreateBindGroup(dev, &bg_desc);
+            CHECK_MSG(bg, "Failed to create downsample bind group");
 
-        auto encoder = wgpuDeviceCreateCommandEncoder(dev, nullptr);
-        auto pass = wgpuCommandEncoderBeginComputePass(encoder, nullptr);
-        wgpuComputePassEncoderSetPipeline(pass, pipelines.downsample_pipeline());
-        wgpuComputePassEncoderSetBindGroup(pass, 0, bg, 0, nullptr);
-        wgpuComputePassEncoderDispatchWorkgroups(pass, div_ceil(output_size, 8),
-                                                 div_ceil(output_size, 8), 6);
-        wgpuComputePassEncoderEnd(pass);
-        wgpuComputePassEncoderRelease(pass);
+            auto encoder = wgpuDeviceCreateCommandEncoder(dev, nullptr);
+            auto pass = wgpuCommandEncoderBeginComputePass(encoder, nullptr);
+            wgpuComputePassEncoderSetPipeline(pass, pipelines.downsample_pipeline());
+            wgpuComputePassEncoderSetBindGroup(pass, 0, bg, 0, nullptr);
+            wgpuComputePassEncoderDispatchWorkgroups(pass, div_ceil(output_size, 8),
+                                                     div_ceil(output_size, 8), 1);
+            wgpuComputePassEncoderEnd(pass);
+            wgpuComputePassEncoderRelease(pass);
 
-        auto cmd = wgpuCommandEncoderFinish(encoder, nullptr);
-        wgpuQueueSubmit(queue, 1, &cmd);
-        wgpuCommandBufferRelease(cmd);
-        wgpuCommandEncoderRelease(encoder);
-        wgpuBindGroupRelease(bg);
-        wgpuTextureViewRelease(output_view);
-        wgpuTextureViewRelease(input_view);
+            auto cmd = wgpuCommandEncoderFinish(encoder, nullptr);
+            wgpuQueueSubmit(queue, 1, &cmd);
+            wgpuCommandBufferRelease(cmd);
+            wgpuCommandEncoderRelease(encoder);
+            wgpuBindGroupRelease(bg);
+            wgpuTextureViewRelease(output_view);
+            wgpuTextureViewRelease(input_view);
+        }
     }
 }
 
@@ -864,60 +896,67 @@ void IblResources::convolve_irradiance(const IblPipelines& pipelines, const webg
     struct alignas(16) Params {
         uint32_t size;
         uint32_t env_size;
+        uint32_t face;
+        uint32_t _pad;
     };
-    Params params{k_irradiance_size, k_env_size};
 
     auto uniform_buf = device.create_buffer(
-        sizeof(params),
+        sizeof(Params),
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
-    wgpuQueueWriteBuffer(queue, uniform_buf.handle(), 0, &params, sizeof(params));
 
-    // Read from env cubemap with full mip chain for mip-biased sampling
     auto input_view =
         create_cube_view(m_env_cubemap, WGPUTextureFormat_RGBA16Float, k_env_mip_count);
-    auto output_view = create_mip_array_view(m_irradiance, WGPUTextureFormat_RGBA16Float, 0);
 
-    WGPUBindGroupEntry entries[4] = {};
-    entries[0] = WGPU_BIND_GROUP_ENTRY_INIT;
-    entries[0].binding = 0;
-    entries[0].buffer = uniform_buf.handle();
-    entries[0].offset = 0;
-    entries[0].size = sizeof(params);
+    for (uint32_t face = 0; face < 6; ++face) {
+        Params params{k_irradiance_size, k_env_size, face, 0};
+        wgpuQueueWriteBuffer(queue, uniform_buf.handle(), 0, &params, sizeof(params));
 
-    entries[1] = WGPU_BIND_GROUP_ENTRY_INIT;
-    entries[1].binding = 1;
-    entries[1].textureView = input_view;
+        auto output_view =
+            create_single_layer_view(m_irradiance, WGPUTextureFormat_RGBA16Float, 0, face);
 
-    entries[2] = WGPU_BIND_GROUP_ENTRY_INIT;
-    entries[2].binding = 2;
-    entries[2].sampler = pipelines.sampler();
+        WGPUBindGroupEntry entries[4] = {};
+        entries[0] = WGPU_BIND_GROUP_ENTRY_INIT;
+        entries[0].binding = 0;
+        entries[0].buffer = uniform_buf.handle();
+        entries[0].offset = 0;
+        entries[0].size = sizeof(Params);
 
-    entries[3] = WGPU_BIND_GROUP_ENTRY_INIT;
-    entries[3].binding = 3;
-    entries[3].textureView = output_view;
+        entries[1] = WGPU_BIND_GROUP_ENTRY_INIT;
+        entries[1].binding = 1;
+        entries[1].textureView = input_view;
 
-    WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-    bg_desc.layout = pipelines.convolve_bgl();
-    bg_desc.entryCount = 4;
-    bg_desc.entries = entries;
-    auto bg = wgpuDeviceCreateBindGroup(dev, &bg_desc);
-    CHECK_MSG(bg, "Failed to create irradiance bind group");
+        entries[2] = WGPU_BIND_GROUP_ENTRY_INIT;
+        entries[2].binding = 2;
+        entries[2].sampler = pipelines.sampler();
 
-    auto encoder = wgpuDeviceCreateCommandEncoder(dev, nullptr);
-    auto pass = wgpuCommandEncoderBeginComputePass(encoder, nullptr);
-    wgpuComputePassEncoderSetPipeline(pass, pipelines.irradiance_pipeline());
-    wgpuComputePassEncoderSetBindGroup(pass, 0, bg, 0, nullptr);
-    wgpuComputePassEncoderDispatchWorkgroups(pass, div_ceil(k_irradiance_size, 8),
-                                             div_ceil(k_irradiance_size, 8), 6);
-    wgpuComputePassEncoderEnd(pass);
-    wgpuComputePassEncoderRelease(pass);
+        entries[3] = WGPU_BIND_GROUP_ENTRY_INIT;
+        entries[3].binding = 3;
+        entries[3].textureView = output_view;
 
-    auto cmd = wgpuCommandEncoderFinish(encoder, nullptr);
-    wgpuQueueSubmit(queue, 1, &cmd);
-    wgpuCommandBufferRelease(cmd);
-    wgpuCommandEncoderRelease(encoder);
-    wgpuBindGroupRelease(bg);
-    wgpuTextureViewRelease(output_view);
+        WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
+        bg_desc.layout = pipelines.convolve_bgl();
+        bg_desc.entryCount = 4;
+        bg_desc.entries = entries;
+        auto bg = wgpuDeviceCreateBindGroup(dev, &bg_desc);
+        CHECK_MSG(bg, "Failed to create irradiance bind group");
+
+        auto encoder = wgpuDeviceCreateCommandEncoder(dev, nullptr);
+        auto pass = wgpuCommandEncoderBeginComputePass(encoder, nullptr);
+        wgpuComputePassEncoderSetPipeline(pass, pipelines.irradiance_pipeline());
+        wgpuComputePassEncoderSetBindGroup(pass, 0, bg, 0, nullptr);
+        wgpuComputePassEncoderDispatchWorkgroups(pass, div_ceil(k_irradiance_size, 8),
+                                                 div_ceil(k_irradiance_size, 8), 1);
+        wgpuComputePassEncoderEnd(pass);
+        wgpuComputePassEncoderRelease(pass);
+
+        auto cmd = wgpuCommandEncoderFinish(encoder, nullptr);
+        wgpuQueueSubmit(queue, 1, &cmd);
+        wgpuCommandBufferRelease(cmd);
+        wgpuCommandEncoderRelease(encoder);
+        wgpuBindGroupRelease(bg);
+        wgpuTextureViewRelease(output_view);
+    }
+
     wgpuTextureViewRelease(input_view);
 }
 
@@ -937,62 +976,66 @@ void IblResources::prefilter_specular(const IblPipelines& pipelines, const webgp
         uint32_t size;
         float roughness;
         uint32_t env_size;
+        uint32_t face;
     };
+
+    auto uniform_buf = device.create_buffer(
+        sizeof(Params),
+        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
 
     for (uint32_t mip = 1; mip < k_prefilter_mip_count; ++mip) {
         uint32_t mip_size = k_env_size >> mip;
         float roughness = static_cast<float>(mip) / static_cast<float>(k_prefilter_mip_count - 1);
 
-        Params params{mip_size, roughness, k_env_size};
+        for (uint32_t face = 0; face < 6; ++face) {
+            Params params{mip_size, roughness, k_env_size, face};
+            wgpuQueueWriteBuffer(queue, uniform_buf.handle(), 0, &params, sizeof(params));
 
-        auto uniform_buf = device.create_buffer(
-            sizeof(params),
-            static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
-        wgpuQueueWriteBuffer(queue, uniform_buf.handle(), 0, &params, sizeof(params));
+            auto output_view =
+                create_single_layer_view(m_prefiltered, WGPUTextureFormat_RGBA16Float, mip, face);
 
-        auto output_view = create_mip_array_view(m_prefiltered, WGPUTextureFormat_RGBA16Float, mip);
+            WGPUBindGroupEntry entries[4] = {};
+            entries[0] = WGPU_BIND_GROUP_ENTRY_INIT;
+            entries[0].binding = 0;
+            entries[0].buffer = uniform_buf.handle();
+            entries[0].offset = 0;
+            entries[0].size = sizeof(Params);
 
-        WGPUBindGroupEntry entries[4] = {};
-        entries[0] = WGPU_BIND_GROUP_ENTRY_INIT;
-        entries[0].binding = 0;
-        entries[0].buffer = uniform_buf.handle();
-        entries[0].offset = 0;
-        entries[0].size = sizeof(params);
+            entries[1] = WGPU_BIND_GROUP_ENTRY_INIT;
+            entries[1].binding = 1;
+            entries[1].textureView = input_view;
 
-        entries[1] = WGPU_BIND_GROUP_ENTRY_INIT;
-        entries[1].binding = 1;
-        entries[1].textureView = input_view;
+            entries[2] = WGPU_BIND_GROUP_ENTRY_INIT;
+            entries[2].binding = 2;
+            entries[2].sampler = pipelines.sampler();
 
-        entries[2] = WGPU_BIND_GROUP_ENTRY_INIT;
-        entries[2].binding = 2;
-        entries[2].sampler = pipelines.sampler();
+            entries[3] = WGPU_BIND_GROUP_ENTRY_INIT;
+            entries[3].binding = 3;
+            entries[3].textureView = output_view;
 
-        entries[3] = WGPU_BIND_GROUP_ENTRY_INIT;
-        entries[3].binding = 3;
-        entries[3].textureView = output_view;
+            WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
+            bg_desc.layout = pipelines.convolve_bgl();
+            bg_desc.entryCount = 4;
+            bg_desc.entries = entries;
+            auto bg = wgpuDeviceCreateBindGroup(dev, &bg_desc);
+            CHECK_MSG(bg, "Failed to create prefilter bind group");
 
-        WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-        bg_desc.layout = pipelines.convolve_bgl();
-        bg_desc.entryCount = 4;
-        bg_desc.entries = entries;
-        auto bg = wgpuDeviceCreateBindGroup(dev, &bg_desc);
-        CHECK_MSG(bg, "Failed to create prefilter bind group");
+            auto encoder = wgpuDeviceCreateCommandEncoder(dev, nullptr);
+            auto pass = wgpuCommandEncoderBeginComputePass(encoder, nullptr);
+            wgpuComputePassEncoderSetPipeline(pass, pipelines.prefilter_pipeline());
+            wgpuComputePassEncoderSetBindGroup(pass, 0, bg, 0, nullptr);
+            wgpuComputePassEncoderDispatchWorkgroups(pass, div_ceil(mip_size, 8),
+                                                     div_ceil(mip_size, 8), 1);
+            wgpuComputePassEncoderEnd(pass);
+            wgpuComputePassEncoderRelease(pass);
 
-        auto encoder = wgpuDeviceCreateCommandEncoder(dev, nullptr);
-        auto pass = wgpuCommandEncoderBeginComputePass(encoder, nullptr);
-        wgpuComputePassEncoderSetPipeline(pass, pipelines.prefilter_pipeline());
-        wgpuComputePassEncoderSetBindGroup(pass, 0, bg, 0, nullptr);
-        wgpuComputePassEncoderDispatchWorkgroups(pass, div_ceil(mip_size, 8), div_ceil(mip_size, 8),
-                                                 6);
-        wgpuComputePassEncoderEnd(pass);
-        wgpuComputePassEncoderRelease(pass);
-
-        auto cmd = wgpuCommandEncoderFinish(encoder, nullptr);
-        wgpuQueueSubmit(queue, 1, &cmd);
-        wgpuCommandBufferRelease(cmd);
-        wgpuCommandEncoderRelease(encoder);
-        wgpuBindGroupRelease(bg);
-        wgpuTextureViewRelease(output_view);
+            auto cmd = wgpuCommandEncoderFinish(encoder, nullptr);
+            wgpuQueueSubmit(queue, 1, &cmd);
+            wgpuCommandBufferRelease(cmd);
+            wgpuCommandEncoderRelease(encoder);
+            wgpuBindGroupRelease(bg);
+            wgpuTextureViewRelease(output_view);
+        }
     }
 
     wgpuTextureViewRelease(input_view);

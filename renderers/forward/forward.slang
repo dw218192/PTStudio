@@ -103,6 +103,10 @@ FsOut fs_main(float3 world_normal : NORMAL, float3 world_pos : WORLD_POS,
 
     Material mat = materials[u.material_index];
     MaterialSample sm = sample_material(mat, uv, scene_textures, scene_sampler);
+
+    if (mat.opacity_threshold > 0.0 && sm.opacity < mat.opacity_threshold)
+        discard;
+
     float3 albedo = sm.base_color;
     float mat_metallic = sm.metallic;
     float mat_roughness = sm.roughness;
@@ -126,6 +130,8 @@ FsOut fs_main(float3 world_normal : NORMAL, float3 world_pos : WORLD_POS,
                                N, V, albedo, mat_metallic, mat_roughness, u.ibl_mip_count,
                                ibl_diff, ibl_spec, ibl_prefilt, ibl_brdf_scale);
     lit += ibl * u.ibl_dome_modulation;
+
+    lit += mat.emissive_color;
 
     FsOut o;
     o.color = float4(lit, 1.0);

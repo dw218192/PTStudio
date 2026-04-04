@@ -1,3 +1,5 @@
+// GGX specular prefilter for split-sum IBL.
+// Dispatched once per face with a single-layer output view (see equirect_to_cube.slang).
 import brdf;
 import ibl_sampling;
 
@@ -5,6 +7,7 @@ struct PrefilterParams {
     uint size;
     float roughness;
     uint env_size;
+    uint face;  // cubemap face index (0-5), set per dispatch
 };
 
 [[vk::binding(0, 0)]] ConstantBuffer<PrefilterParams> params;
@@ -14,11 +17,10 @@ struct PrefilterParams {
 
 [numthreads(8, 8, 1)]
 void cs_main(uint3 tid : SV_DispatchThreadID) {
-    uint face = tid.z;
-    if (tid.x >= params.size || tid.y >= params.size || face >= 6) return;
+    if (tid.x >= params.size || tid.y >= params.size) return;
 
     float2 uv = (float2(tid.xy) + 0.5) / float(params.size);
-    float3 N = cube_dir_from_face_uv(face, uv);
+    float3 N = cube_dir_from_face_uv(params.face, uv);
     float3 R = N;
     float3 V = R;
 
@@ -50,5 +52,5 @@ void cs_main(uint3 tid : SV_DispatchThreadID) {
     }
 
     prefiltered /= max(total_weight, 0.001);
-    output_prefiltered[int3(tid.xy, face)] = float4(prefiltered, 1.0);
+    output_prefiltered[int3(tid.xy, 0)] = float4(prefiltered, 1.0);
 }

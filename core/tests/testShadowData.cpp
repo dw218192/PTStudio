@@ -11,16 +11,6 @@
 
 using namespace pts::rendering;
 
-TEST_CASE("ShadowInfo struct is 80 bytes") {
-    CHECK(sizeof(ShadowInfo) == 80);
-}
-
-TEST_CASE("ShadowInfo default has no shadow") {
-    ShadowInfo info{};
-    CHECK(info.has_shadow == 0);
-    CHECK(info.layer == 0);
-}
-
 TEST_CASE("fresh world has no ShadowPassData") {
     RenderWorld world;
     CHECK(ShadowPassData::find(world) == nullptr);

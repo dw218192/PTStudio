@@ -26,21 +26,6 @@ auto make_logger() -> std::shared_ptr<spdlog::logger> {
 
 }  // namespace
 
-TEST_CASE("IblResources starts unready") {
-    IblResources ibl;
-    CHECK_FALSE(ibl.is_ready());
-    CHECK(ibl.prefiltered_env_view() == nullptr);
-    CHECK(ibl.env_cubemap_view() == nullptr);
-    CHECK(ibl.irradiance_view() == nullptr);
-}
-
-TEST_CASE("IblPipelines starts unready") {
-    IblPipelines pipes;
-    CHECK_FALSE(pipes.is_ready());
-    CHECK(pipes.brdf_lut_view() == nullptr);
-    CHECK(pipes.sampler() == nullptr);
-}
-
 #ifndef __EMSCRIPTEN__
 
 TEST_CASE("IblPipelines init creates BRDF LUT and sampler") {

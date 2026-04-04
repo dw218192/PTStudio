@@ -30,7 +30,7 @@ namespace pts::rendering {
 static constexpr uint32_t k_no_material = UINT32_MAX;
 static constexpr uint32_t k_default_material = 0;
 
-/// 64-byte GPU struct
+/// 80-byte GPU struct
 struct Material {
     glm::vec3 diffuse_color{1.0f, 1.0f, 1.0f};
     float metallic{0.0f};
@@ -43,9 +43,12 @@ struct Material {
     uint32_t roughness_tex{UINT32_MAX};
     uint32_t emissive_tex{UINT32_MAX};
     uint32_t opacity_tex{UINT32_MAX};
+    float ior{1.5f};
+    float opacity_threshold{0.0f};
     uint32_t tex_channels{0};
+    uint32_t _pad[2]{};
 };
-static_assert(sizeof(Material) == 64, "Material must be 64 bytes for GPU alignment");
+static_assert(sizeof(Material) == 80, "Material must be 80 bytes for GPU alignment");
 
 /// 64-byte GPU struct
 struct Light {
@@ -208,6 +211,7 @@ struct ObjectData {
     uint32_t mesh_index = 0;
     uint32_t material_index{k_no_material};
     glm::mat4 transform{1.0f};
+    bool visible{true};
 };
 
 struct LightData {
@@ -221,8 +225,11 @@ struct LightData {
     float radius{0.0f};
     float width{1.0f};
     float height{1.0f};
-    bool casts_shadow{true};       // from UsdLuxShadowAPI inputs:shadow:enable
-    std::string env_texture_path;  // resolved path to HDR environment map (dome lights only)
+    bool casts_shadow{true};          // from UsdLuxShadowAPI inputs:shadow:enable
+    std::string env_texture_path;     // resolved path to HDR environment map (dome lights only)
+    uint32_t mesh_index{UINT32_MAX};  // proxy mesh slot (UINT32_MAX = none)
+    uint32_t material_index{k_no_material};  // emissive material index
+    bool visible{true};                      // USD visibility for proxy mesh
 };
 
 /// Convert a LightData to a GPU-ready Light struct.
