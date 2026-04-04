@@ -103,6 +103,10 @@ FsOut fs_main(float3 world_normal : NORMAL, float3 world_pos : WORLD_POS,
 
     Material mat = materials[u.material_index];
     MaterialSample sm = sample_material(mat, uv, scene_textures, scene_sampler);
+
+    if (mat.opacity_threshold > 0.0 && sm.opacity < mat.opacity_threshold)
+        discard;
+
     float3 albedo = sm.base_color;
     float mat_metallic = sm.metallic;
     float mat_roughness = sm.roughness;

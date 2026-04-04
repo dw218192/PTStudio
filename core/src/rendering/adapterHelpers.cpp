@@ -99,6 +99,11 @@ Material read_preview_surface(pxr::UsdShadeShader surface, SyncScope& scope) {
         input.Get(&mat.ior);
     }
 
+    // --- opacityThreshold ---
+    if (auto input = surface.GetInput(pxr::TfToken("opacityThreshold"))) {
+        input.Get(&mat.opacity_threshold);
+    }
+
     // --- normal ---
     if (auto input = surface.GetInput(pxr::TfToken("normal"))) {
         auto tex = try_resolve_texture(input, scope);
