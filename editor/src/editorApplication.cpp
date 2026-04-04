@@ -1586,7 +1586,7 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
             m_renderer_pass->draw_viewport_controls();
         }
         ImGui::SameLine();
-        ImGui::Checkbox("Grid", &m_editor_passes_enabled);
+        ImGui::Checkbox("Gizmos", &m_editor_passes_enabled);
         // "..." overflow menu
         ImGui::SameLine();
         if (ImGui::SmallButton("...")) {

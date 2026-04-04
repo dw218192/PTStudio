@@ -32,7 +32,6 @@ class ForwardPass final : public rendering::IRenderer {
     void do_renderer_setup(const webgpu::Device& device) override;
     void do_add_to_frame_graph(rendering::FrameGraph& fg,
                                const rendering::PassContext& ctx) override;
-
     static constexpr uint32_t k_uniform_align = 256;
 
    private:

@@ -6,6 +6,7 @@
 #include <core/rendering/shaderLoader.h>
 #include <core/rendering/shadowMapPass.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
+#include <imgui.h>
 
 #include <algorithm>
 #include <cmath>
@@ -117,12 +118,14 @@ void ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
     // Count shadow-casting distant lights
     auto lights = ctx.world.get_lights();
     uint32_t shadow_count = 0;
-    for (uint32_t li = 0; li < static_cast<uint32_t>(lights.size()); ++li) {
-        if (!lights[li].active()) continue;
-        if (lights[li]->type != LightData::Type::Distant) continue;
-        if (!lights[li]->casts_shadow) continue;
-        ++shadow_count;
-        if (shadow_count >= k_max_shadow_maps) break;
+    if (m_enabled) {
+        for (uint32_t li = 0; li < static_cast<uint32_t>(lights.size()); ++li) {
+            if (!lights[li].active()) continue;
+            if (lights[li]->type != LightData::Type::Distant) continue;
+            if (!lights[li]->casts_shadow) continue;
+            ++shadow_count;
+            if (shadow_count >= k_max_shadow_maps) break;
+        }
     }
 
     // Always ensure a valid texture (at least 1 layer) for downstream bind groups
@@ -338,6 +341,10 @@ void ShadowMapPass::release_shadow_texture() {
         m_shadow_texture = nullptr;
     }
     m_current_layer_count = 0;
+}
+
+void ShadowMapPass::draw_imgui() {
+    ImGui::Checkbox("Enabled", &m_enabled);
 }
 
 }  // namespace pts::rendering
