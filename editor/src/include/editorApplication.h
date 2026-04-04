@@ -205,6 +205,7 @@ struct EditorApplication final : GpuApplication {
 
     // Selection & gizmo
     pxr::SdfPath m_selected_prim;
+    bool m_scroll_to_selected{false};
     pxr::SdfPath m_xform_normalized_prim;  // last prim whose xform was normalized for gizmo
     pxr::SdfPath m_lobe_bound_prim;        // tracks which prim's material is loaded in lobe viewer
     enum class GizmoOp { Translate, Rotate, Scale };

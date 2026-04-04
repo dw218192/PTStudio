@@ -1011,6 +1011,7 @@ void EditorApplication::render(FrameContext& ctx) {
             const auto& path = m_editor_pass->resolve_picking_id(*picked_id);
             if (!path.IsEmpty()) {
                 m_selected_prim = path;
+                m_scroll_to_selected = true;
             }
         }
     }
@@ -1489,9 +1490,10 @@ void EditorApplication::draw_prim_tree(const pxr::UsdPrim& prim) {
         std::string label = type_name.empty() ? name : name + " (" + type_name + ")";
         node_open = ImGui::TreeNodeEx(path.GetText(), flags, "%s", label.c_str());
 
-        // Auto-scroll to the selected prim in the tree
-        if (is_selected) {
+        // Auto-scroll to the selected prim once (when selection changes via picking)
+        if (is_selected && m_scroll_to_selected) {
             ImGui::ScrollToItem();
+            m_scroll_to_selected = false;
         }
 
         // Double-click to rename
@@ -1813,6 +1815,21 @@ auto EditorApplication::on_mouse_enter_scene_viewport() noexcept -> void {
 }
 
 auto EditorApplication::handle_input(InputEvent const& event) noexcept -> void {
+    // Picking works regardless of camera mode
+    if (event.input.input_type == InputType::MOUSE &&
+        event.input.key_or_button == ImGuiMouseButton_Left &&
+        event.input.action_type == ActionType::PRESS && !ImGuizmo::IsOver() &&
+        !m_viewport_combo_open) {
+        auto local_x = event.mouse_pos.x - m_viewport_x;
+        auto local_y = event.mouse_pos.y - m_viewport_y;
+        if (local_x >= 0 && local_y >= 0 && local_x < static_cast<float>(m_viewport_width) &&
+            local_y < static_cast<float>(m_viewport_height)) {
+            m_pick_x = static_cast<uint32_t>(local_x);
+            m_pick_y = static_cast<uint32_t>(local_y);
+            m_pick_requested = true;
+        }
+    }
+
     if (m_active_camera_index != 0) return;  // scene camera active — no orbit input
 
     bool rmb_held = ImGui::IsMouseDown(ImGuiMouseButton_Right);
@@ -1884,22 +1901,6 @@ auto EditorApplication::handle_input(InputEvent const& event) noexcept -> void {
     }
 
     if (event.input.input_type == InputType::MOUSE) {
-        // Left-click: pick object under cursor
-        // Skip when a viewport combo dropdown is open — its popup overlaps the viewport
-        // content area, and clicks on dropdown items would trigger spurious picks.
-        if (event.input.key_or_button == ImGuiMouseButton_Left &&
-            event.input.action_type == ActionType::PRESS && !ImGuizmo::IsOver() &&
-            !m_viewport_combo_open) {
-            auto local_x = event.mouse_pos.x - m_viewport_x;
-            auto local_y = event.mouse_pos.y - m_viewport_y;
-            if (local_x >= 0 && local_y >= 0 && local_x < static_cast<float>(m_viewport_width) &&
-                local_y < static_cast<float>(m_viewport_height)) {
-                m_pick_x = static_cast<uint32_t>(local_x);
-                m_pick_y = static_cast<uint32_t>(local_y);
-                m_pick_requested = true;
-            }
-        }
-
         // Right-click: orbit camera on drag, context menu on click
         if (event.input.key_or_button == ImGuiMouseButton_Right) {
             if (event.input.action_type == ActionType::PRESS) {
@@ -1915,18 +1916,24 @@ auto EditorApplication::handle_input(InputEvent const& event) noexcept -> void {
                 }
             } else if (event.input.action_type == ActionType::RELEASE && !m_rmb_dragged) {
                 // Right-click without drag: open viewport context menu
-                // Unproject click to 3D at a reasonable depth (camera target distance)
+                // Intersect click ray with the ground plane (up_axis = 0)
                 float aspect = static_cast<float>(m_viewport_width) /
                                std::max(1.0f, static_cast<float>(m_viewport_height));
                 auto local_x = m_rmb_press_pos.x - m_viewport_x;
                 auto local_y = m_rmb_press_pos.y - m_viewport_y;
                 float ndc_x = (local_x / static_cast<float>(m_viewport_width)) * 2.0f - 1.0f;
                 float ndc_y = 1.0f - (local_y / static_cast<float>(m_viewport_height)) * 2.0f;
-                float ndc_z = 0.95f;  // near the far end but not at it
                 auto inv_vp =
                     glm::inverse(m_camera.projection_matrix(aspect) * m_camera.view_matrix());
-                glm::vec4 world_h = inv_vp * glm::vec4(ndc_x, ndc_y, ndc_z, 1.0f);
-                m_context_menu_world_pos = glm::vec3(world_h) / world_h.w;
+                glm::vec4 near_h = inv_vp * glm::vec4(ndc_x, ndc_y, 0.0f, 1.0f);
+                glm::vec4 far_h = inv_vp * glm::vec4(ndc_x, ndc_y, 1.0f, 1.0f);
+                glm::vec3 near_pt = glm::vec3(near_h) / near_h.w;
+                glm::vec3 far_pt = glm::vec3(far_h) / far_h.w;
+                glm::vec3 ray_dir = far_pt - near_pt;
+                // Y-up: intersect with y=0 plane; fall back to fixed distance
+                float t = (std::abs(ray_dir.y) > 1e-6f) ? (-near_pt.y / ray_dir.y) : -1.0f;
+                if (t < 0.0f) t = m_camera.distance() / glm::length(ray_dir);
+                m_context_menu_world_pos = near_pt + ray_dir * t;
                 m_open_viewport_context = true;
             }
         }
