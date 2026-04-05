@@ -45,7 +45,6 @@ class PathTracerPass final : public rendering::IRenderer {
 
         webgpu::ShaderModule blit_shader;
         webgpu::RenderPipeline blit_pipeline;
-        webgpu::Buffer blit_uniform_buffer;
         WGPUBindGroupLayout blit_bgl = nullptr;
     };
 

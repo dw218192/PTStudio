@@ -792,7 +792,7 @@ void EditorApplication::render(FrameContext& ctx) {
         ImGui::End();
 
         // Collect all passes for perf overlay
-        std::vector<rendering::IRenderPass*> all_passes;
+        std::vector<rendering::IPass*> all_passes;
         for_each_pass_recursive([&](auto& pass) { all_passes.push_back(&pass); });
         m_perf_overlay.draw(get_delta_time(), m_world, *m_frame_graph, all_passes,
                             rendering::RendererRegistry::entries()[m_active_config_index].name,
@@ -1689,7 +1689,7 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
             if (m_renderer_pass && m_viewport_width > 0 && m_viewport_height > 0) {
                 auto view = compute_active_view(static_cast<float>(m_viewport_width) /
                                                 static_cast<float>(m_viewport_height));
-                rendering::IRenderPass::ViewportOverlayParams overlay_params{
+                rendering::IPass::ViewportOverlayParams overlay_params{
                     view.proj_matrix * view.view_matrix, m_viewport_x, m_viewport_y,
                     static_cast<float>(m_viewport_width), static_cast<float>(m_viewport_height)};
                 m_renderer_pass->draw_viewport_overlay(overlay_params);

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/rendering/frameGraph.h>
 #include <core/rendering/renderPass.h>
 
 #include <memory>
@@ -7,9 +8,9 @@
 
 namespace pts::rendering {
 
-class IRenderer : public IRenderPass {
+class IRenderer : public ITopLevelPass {
    public:
-    using IRenderPass::IRenderPass;
+    using ITopLevelPass::ITopLevelPass;
     ~IRenderer() override = default;
 
     template <typename T, typename... Args>
@@ -44,7 +45,7 @@ class IRenderer : public IRenderPass {
 
     void on_shaders_reloaded(const webgpu::Device& device) override {
         for (auto& c : m_children) c->on_shaders_reloaded(device);
-        IRenderPass::on_shaders_reloaded(device);
+        ITopLevelPass::on_shaders_reloaded(device);
     }
 
     void draw_imgui() override;
@@ -57,6 +58,13 @@ class IRenderer : public IRenderPass {
         for (auto& c : m_children) c->update_texture_refs(fg);
     }
 
+    ResourceHandle color_output() const {
+        return m_color;
+    }
+    ResourceHandle depth_output() const {
+        return m_depth;
+    }
+
    protected:
     void do_setup(const webgpu::Device& device) override {
         for (auto& c : m_children) c->setup(device);
@@ -67,8 +75,11 @@ class IRenderer : public IRenderPass {
     virtual void do_add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) = 0;
     virtual void do_draw_imgui() {};
 
+    ResourceHandle m_color;
+    ResourceHandle m_depth;
+
    private:
-    std::vector<std::unique_ptr<IRenderPass>> m_children;
+    std::vector<std::unique_ptr<IPass>> m_children;
 };
 
 }  // namespace pts::rendering

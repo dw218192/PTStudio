@@ -42,9 +42,9 @@ struct AnotherFakePass final : IRenderer {
     }
 };
 
-/// A minimal IRenderPass child (not a renderer — has no children of its own).
-struct FakeChild final : IRenderPass {
-    using IRenderPass::IRenderPass;
+/// A minimal IPass child (not a renderer — has no children of its own).
+struct FakeChild final : IPass {
+    using IPass::IPass;
     auto name() const noexcept -> std::string_view override {
         return "fake_child";
     }
@@ -54,16 +54,12 @@ struct FakeChild final : IRenderPass {
     void do_setup(const pts::webgpu::Device& /*device*/) override {
         ++setup_count;
     }
-    void add_to_frame_graph(FrameGraph& /*fg*/, const PassContext& /*ctx*/) override {
-        ++frame_graph_count;
-    }
     void draw_imgui() override {
         ++imgui_count;
     }
 
     bool ready = true;
     int setup_count = 0;
-    int frame_graph_count = 0;
     int imgui_count = 0;
 };
 

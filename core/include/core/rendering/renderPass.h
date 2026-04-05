@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/diagnostics.h>
+#include <core/rendering/frameGraph.h>
 #include <core/rendering/renderWorld.h>
 
 #include <boost/container/flat_map.hpp>
@@ -18,7 +19,6 @@ class Device;
 
 namespace rendering {
 
-class FrameGraph;
 class ShaderLoader;
 struct PassContext;
 
@@ -26,11 +26,11 @@ struct PassContext;
 /// version field is used for automatic invalidation.
 enum class PassDataKind : uint8_t { Mesh, Light, Material };
 
-class IRenderPass {
+class IPass {
    public:
-    explicit IRenderPass(const ShaderLoader& shader_loader) : m_shader_loader(&shader_loader) {
+    explicit IPass(const ShaderLoader& shader_loader) : m_shader_loader(&shader_loader) {
     }
-    virtual ~IRenderPass() = default;
+    virtual ~IPass() = default;
 
     [[nodiscard]] virtual auto name() const noexcept -> std::string_view = 0;
     [[nodiscard]] virtual auto is_ready() const noexcept -> bool = 0;
@@ -40,8 +40,6 @@ class IRenderPass {
         compute_allowed_debug_targets(device);
         do_setup(device);
     }
-
-    virtual void add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) = 0;
 
     /// Called when shaders have been hot-reloaded. Default re-runs setup().
     virtual void on_shaders_reloaded(const webgpu::Device& device) {
@@ -113,6 +111,22 @@ class IRenderPass {
 
    protected:
     virtual void do_setup(const webgpu::Device& device) = 0;
+
+    /// Frame graph resource helpers — auto-namespace by pass name.
+    TextureHandle create_texture(FrameGraph& fg, TextureDesc desc, const char* label = nullptr) {
+        return fg.find_or_create(this, desc, label);
+    }
+    BufferHandle create_buffer(FrameGraph& fg, BufferDesc desc, const char* label = nullptr) {
+        return fg.find_or_create_buffer(this, desc, label);
+    }
+    BufferHandle import_buffer(FrameGraph& fg, WGPUBuffer buf, std::size_t size,
+                               const char* label = nullptr) {
+        return fg.import_buffer(this, buf, size, label);
+    }
+    BindGroupHandle create_bind_group(FrameGraph& fg, BindGroupDesc desc,
+                                      const char* label = nullptr) {
+        return fg.find_or_create_bind_group(this, std::move(desc), label);
+    }
 
     /// Lazily create or return per-entity pass data, cached in the world.
     /// Version is read from the entity (Mesh::generation or Light::generation).
@@ -207,6 +221,15 @@ class IRenderPass {
     static uint64_t make_category_key(PassDataKind kind) {
         return (static_cast<uint64_t>(kind) << 32) | UINT32_MAX;
     }
+};
+
+/// Top-level pass interface for passes called generically by the editor
+/// via add_to_frame_graph(fg, ctx). Sub-passes use non-virtual typed
+/// add_to_frame_graph methods with structured Inputs/Outputs instead.
+class ITopLevelPass : public IPass {
+   public:
+    using IPass::IPass;
+    virtual void add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) = 0;
 };
 
 }  // namespace rendering

@@ -15,8 +15,8 @@ static ShaderLoader make_test_shader_loader() {
 static auto s_test_sl = make_test_shader_loader();
 
 /// Concrete pass that exposes get_or_create_pass_data for testing.
-struct TestPass final : IRenderPass {
-    using IRenderPass::IRenderPass;
+struct TestPass final : IPass {
+    using IPass::IPass;
     auto name() const noexcept -> std::string_view override {
         return "test";
     }
@@ -25,11 +25,9 @@ struct TestPass final : IRenderPass {
     }
     void do_setup(const webgpu::Device& /*device*/) override {
     }
-    void add_to_frame_graph(FrameGraph& /*fg*/, const PassContext& /*ctx*/) override {
-    }
 
     // Expose protected members for testing.
-    using IRenderPass::get_or_create_pass_data;
+    using IPass::get_or_create_pass_data;
 };
 
 }  // namespace

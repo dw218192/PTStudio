@@ -15,13 +15,11 @@
 
 namespace pts::rendering {
 
-ShadowMapPass::ShadowMapPass(const ShaderLoader& sl) : IRenderPass(sl) {
+ShadowMapPass::ShadowMapPass(const ShaderLoader& sl) : IPass(sl) {
 }
 
 ShadowMapPass::~ShadowMapPass() {
-    release_shadow_texture();
     if (auto* ready = std::get_if<Ready>(&m_state)) {
-        if (ready->bind_group) wgpuBindGroupRelease(ready->bind_group);
         if (ready->bgl) wgpuBindGroupLayoutRelease(ready->bgl);
     }
 }
@@ -30,14 +28,9 @@ auto ShadowMapPass::is_ready() const noexcept -> bool {
     return std::holds_alternative<Ready>(m_state);
 }
 
-WGPUTextureView ShadowMapPass::shadow_array_view() const {
-    return m_shadow_array_view;
-}
-
 void ShadowMapPass::do_setup(const webgpu::Device& device) {
     // Release existing state for re-entry (hot-reload)
     if (auto* ready = std::get_if<Ready>(&m_state)) {
-        if (ready->bind_group) wgpuBindGroupRelease(ready->bind_group);
         if (ready->bgl) wgpuBindGroupLayoutRelease(ready->bgl);
     }
 
@@ -86,31 +79,14 @@ void ShadowMapPass::do_setup(const webgpu::Device& device) {
 
     wgpuPipelineLayoutRelease(pipeline_layout);
 
-    uint32_t initial_capacity = 64;
-    auto uniform_buf = device.create_buffer(
-        k_uniform_align * initial_capacity,
-        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
-
-    // Create bind group
-    WGPUBindGroupEntry bg_entry = WGPU_BIND_GROUP_ENTRY_INIT;
-    bg_entry.binding = 0;
-    bg_entry.buffer = uniform_buf.handle();
-    bg_entry.offset = 0;
-    bg_entry.size = 64;  // one mat4
-
-    WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-    bg_desc.layout = bgl;
-    bg_desc.entryCount = 1;
-    bg_desc.entries = &bg_entry;
-    auto bind_group = wgpuDeviceCreateBindGroup(device.handle(), &bg_desc);
-
     m_state = Ready{
-        std::move(shader), std::move(pipeline), std::move(uniform_buf), bgl,
-        bind_group,        initial_capacity,
+        std::move(shader),
+        std::move(pipeline),
+        bgl,
     };
 }
 
-void ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
+ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
     PTS_ZONE_SCOPED;
     PRECONDITION(is_ready());
     auto& ready = std::get<Ready>(m_state);
@@ -128,14 +104,41 @@ void ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
         }
     }
 
-    // Always ensure a valid texture (at least 1 layer) for downstream bind groups
-    ensure_shadow_texture(ctx.device, std::max(shadow_count, 1u));
+    // Always ensure at least 1 layer for downstream bind groups
+    uint32_t layer_count = std::max(shadow_count, 1u);
+
+    // Register shadow texture array with frame graph
+    TextureDesc shadow_tex_desc;
+    shadow_tex_desc.width = m_resolution;
+    shadow_tex_desc.height = m_resolution;
+    shadow_tex_desc.array_layers = layer_count;
+    shadow_tex_desc.format = WGPUTextureFormat_Depth32Float;
+    shadow_tex_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment |
+                                                          WGPUTextureUsage_TextureBinding);
+    shadow_tex_desc.force_array_view = true;
+    auto shadow_array = create_texture(fg, shadow_tex_desc, "shadow_depth_array");
+
+    // Register shadow info buffer (one ShadowInfo per light, minimum 1)
+    auto info_count = std::max(uint32_t(1), static_cast<uint32_t>(lights.size()));
+    uint64_t info_bytes = static_cast<uint64_t>(info_count) * sizeof(ShadowInfo);
+    BufferDesc info_buf_desc;
+    info_buf_desc.size = info_bytes;
+    info_buf_desc.usage =
+        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
+    auto shadow_info_buf = create_buffer(fg, info_buf_desc, "shadow_info");
 
     if (shadow_count == 0) {
-        // Write all-inactive ShadowInfo entries so the buffer is valid
-        std::vector<ShadowInfo> empty(std::max(1u, static_cast<uint32_t>(lights.size())));
-        ShadowPassData::get_or_create(ctx.world).upload(empty, ctx.device, ctx.queue);
-        return;
+        // Upload all-inactive ShadowInfo entries
+        auto queue = ctx.queue;
+        auto empty_infos = std::vector<ShadowInfo>(info_count);
+        fg.add_pass("shadow_info_upload")
+            .execute([queue, shadow_info_buf, infos = std::move(empty_infos),
+                      &fg](WGPUComputePassEncoder) {
+                auto buf = fg.get_buffer_ref(shadow_info_buf).handle();
+                wgpuQueueWriteBuffer(queue, buf, 0, infos.data(),
+                                     infos.size() * sizeof(ShadowInfo));
+            });
+        return {shadow_array, shadow_info_buf};
     }
 
     // Scene AABB from TLAS root (built by RenderWorld::prepare_gpu_buffers)
@@ -144,6 +147,7 @@ void ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
     auto aabb_max = scene_bounds.max;
 
     auto objects = ctx.world.get_objects();
+    uint32_t total_slots = static_cast<uint32_t>(objects.size());
 
     // Build one ShadowInfo per light (matching light buffer order)
     std::vector<ShadowInfo> infos(lights.size());
@@ -186,97 +190,83 @@ void ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
         infos[li].layer = layer_index;
         ++layer_index;
     }
+    INVARIANT(layer_index == shadow_count);
 
-    // Upload shadow data via get_or_create
-    ShadowPassData::get_or_create(ctx.world).upload(infos, ctx.device, ctx.queue);
+    // Register per-object uniform buffer
+    uint64_t uniform_needed =
+        std::max(uint64_t(1), static_cast<uint64_t>(layer_index) * total_slots) * k_uniform_align;
+    BufferDesc uniform_buf_desc;
+    uniform_buf_desc.size = uniform_needed;
+    uniform_buf_desc.usage =
+        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
+    auto uniform_buf_handle = create_buffer(fg, uniform_buf_desc, "uniforms");
 
-    // Ensure texture array
-    ensure_shadow_texture(ctx.device, layer_index);
+    // Register bind group
+    BindGroupEntry bg_entry{};
+    bg_entry.binding = 0;
+    bg_entry.buffer = uniform_buf_handle;
+    bg_entry.buffer_size = 64;  // one mat4
 
-    // Count active objects
-    uint32_t active_object_count = 0;
-    for (uint32_t oi = 0; oi < static_cast<uint32_t>(objects.size()); ++oi) {
-        if (objects[oi].active()) ++active_object_count;
-    }
+    BindGroupDesc bg_desc;
+    bg_desc.layout = ready.bgl;
+    bg_desc.entries = {bg_entry};
+    auto bg_handle = create_bind_group(fg, std::move(bg_desc), "bg0");
 
-    // Resize uniform buffer if needed: layers * total_slots * k_uniform_align
-    uint32_t total_slots = static_cast<uint32_t>(objects.size());
-    uint64_t needed_size = static_cast<uint64_t>(layer_index) * total_slots * k_uniform_align;
-    if (needed_size > 0 &&
-        needed_size > static_cast<uint64_t>(ready.object_capacity) * k_uniform_align) {
-        uint32_t new_capacity = ready.object_capacity;
-        uint32_t needed_capacity =
-            static_cast<uint32_t>(static_cast<uint64_t>(layer_index) * total_slots);
-        while (new_capacity < needed_capacity) {
-            new_capacity *= 2;
-        }
-
-        ready.per_object_uniform_buf = ctx.device.create_buffer(
-            static_cast<uint64_t>(new_capacity) * k_uniform_align,
-            static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
-        ready.object_capacity = new_capacity;
-
-        // Recreate bind group
-        if (ready.bind_group) wgpuBindGroupRelease(ready.bind_group);
-
-        WGPUBindGroupEntry bg_entry = WGPU_BIND_GROUP_ENTRY_INIT;
-        bg_entry.binding = 0;
-        bg_entry.buffer = ready.per_object_uniform_buf.handle();
-        bg_entry.offset = 0;
-        bg_entry.size = 64;
-
-        WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-        bg_desc.layout = ready.bgl;
-        bg_desc.entryCount = 1;
-        bg_desc.entries = &bg_entry;
-        ready.bind_group = wgpuDeviceCreateBindGroup(ctx.device.handle(), &bg_desc);
-    }
-
-    // Build layer → light index mapping
-    std::vector<uint32_t> layer_to_light;
-    layer_to_light.reserve(layer_index);
+    // Build layer → light index mapping and extract per-layer view-projection matrices
+    std::vector<glm::mat4> layer_vps;
+    layer_vps.reserve(layer_index);
     for (uint32_t li = 0; li < static_cast<uint32_t>(lights.size()); ++li) {
-        if (infos[li].has_shadow) layer_to_light.push_back(li);
+        if (infos[li].has_shadow) layer_vps.push_back(infos[li].light_vp);
     }
-    INVARIANT(layer_to_light.size() == layer_index);
+    INVARIANT(layer_vps.size() == layer_index);
 
-    // For each shadow layer, upload uniforms and add a frame graph pass
     auto* pipeline_handle = ready.pipeline.handle();
-    auto bind_group = ready.bind_group;
-    auto uniform_buf = ready.per_object_uniform_buf.handle();
+    auto queue = ctx.queue;
     const auto& world = ctx.world;
 
+    // Upload shadow info in a dedicated pass before per-layer rendering
+    fg.add_pass("shadow_info_upload")
+        .execute([queue, shadow_info_buf, infos = std::move(infos), &fg](WGPUComputePassEncoder) {
+            auto info_buf = fg.get_buffer_ref(shadow_info_buf).handle();
+            wgpuQueueWriteBuffer(queue, info_buf, 0, infos.data(),
+                                 infos.size() * sizeof(ShadowInfo));
+        });
+
+    // Render each shadow layer
     for (uint32_t layer = 0; layer < layer_index; ++layer) {
-        const auto& light_vp = infos[layer_to_light[layer]].light_vp;
+        auto light_vp = layer_vps[layer];
 
-        // Write per-object uniforms for this layer
-        // Interleaved: buffer[layer * total_slots + obj_index]
-        {
-            PTS_ZONE_NAMED("shadow uniform upload");
-            for (uint32_t oi = 0; oi < total_slots; ++oi) {
-                if (!objects[oi].active()) continue;
-                if (!objects[oi]->visible) continue;
-                glm::mat4 light_mvp = light_vp * objects[oi]->transform;
-                uint64_t offset =
-                    (static_cast<uint64_t>(layer) * total_slots + oi) * k_uniform_align;
-                wgpuQueueWriteBuffer(ctx.queue, uniform_buf, offset, &light_mvp, sizeof(glm::mat4));
-            }
-        }
-
-        // Emit frame graph pass
-        auto layer_val = layer;
         fg.add_pass("shadow_depth_" + std::to_string(layer))
-            .depth(m_shadow_layer_views[layer], 1.0f)
-            .execute([=, &world](WGPURenderPassEncoder pass) {
+            .depth(shadow_array, layer)
+            .execute([=, &fg, &world](WGPURenderPassEncoder pass) {
+                auto uniform_buf = fg.get_buffer_ref(uniform_buf_handle).handle();
+                auto bg = fg.get_bind_group_ref(bg_handle).handle();
+
+                // Upload per-object uniforms for this layer
                 auto objs = world.get_objects();
                 auto mesh_slots = world.get_meshes();
+                uint32_t slots = static_cast<uint32_t>(objs.size());
+                {
+                    PTS_ZONE_NAMED("shadow uniform upload");
+                    for (uint32_t oi = 0; oi < slots; ++oi) {
+                        if (!objs[oi].active()) continue;
+                        if (!objs[oi]->visible) continue;
+                        glm::mat4 light_mvp = light_vp * objs[oi]->transform;
+                        uint64_t offset =
+                            (static_cast<uint64_t>(layer) * slots + oi) * k_uniform_align;
+                        wgpuQueueWriteBuffer(queue, uniform_buf, offset, &light_mvp,
+                                             sizeof(glm::mat4));
+                    }
+                }
+
+                // Draw
                 wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
-                for (uint32_t i = 0; i < static_cast<uint32_t>(objs.size()); ++i) {
+                for (uint32_t i = 0; i < slots; ++i) {
                     if (!objs[i].active()) continue;
                     if (!objs[i]->visible) continue;
                     uint32_t dyn_offset = static_cast<uint32_t>(
-                        (static_cast<uint64_t>(layer_val) * objs.size() + i) * k_uniform_align);
-                    wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 1, &dyn_offset);
+                        (static_cast<uint64_t>(layer) * slots + i) * k_uniform_align);
+                    wgpuRenderPassEncoderSetBindGroup(pass, 0, bg, 1, &dyn_offset);
                     const auto& mesh = mesh_slots[objs[i]->mesh_index];
                     wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh->position_buffer.handle(), 0,
                                                          mesh->position_buffer.size());
@@ -287,60 +277,8 @@ void ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
                 }
             });
     }
-}
 
-void ShadowMapPass::ensure_shadow_texture(const webgpu::Device& device, uint32_t layer_count) {
-    PRECONDITION(layer_count > 0);
-    if (layer_count == m_current_layer_count && m_shadow_texture) return;
-    release_shadow_texture();
-
-    WGPUTextureDescriptor desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
-    desc.size = {m_resolution, m_resolution, layer_count};
-    desc.format = WGPUTextureFormat_Depth32Float;
-    desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment |
-                                               WGPUTextureUsage_TextureBinding);
-    desc.mipLevelCount = 1;
-    desc.sampleCount = 1;
-    desc.dimension = WGPUTextureDimension_2D;
-    m_shadow_texture = wgpuDeviceCreateTexture(device.handle(), &desc);
-
-    // Full array view for sampling in shaders
-    WGPUTextureViewDescriptor view_desc = WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT;
-    view_desc.format = WGPUTextureFormat_Depth32Float;
-    view_desc.dimension = WGPUTextureViewDimension_2DArray;
-    view_desc.arrayLayerCount = layer_count;
-    view_desc.mipLevelCount = 1;
-    m_shadow_array_view = wgpuTextureCreateView(m_shadow_texture, &view_desc);
-
-    // Per-layer views for rendering
-    m_shadow_layer_views.resize(layer_count);
-    for (uint32_t i = 0; i < layer_count; ++i) {
-        WGPUTextureViewDescriptor lv = WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT;
-        lv.format = WGPUTextureFormat_Depth32Float;
-        lv.dimension = WGPUTextureViewDimension_2D;
-        lv.baseArrayLayer = i;
-        lv.arrayLayerCount = 1;
-        lv.mipLevelCount = 1;
-        m_shadow_layer_views[i] = wgpuTextureCreateView(m_shadow_texture, &lv);
-    }
-    m_current_layer_count = layer_count;
-}
-
-void ShadowMapPass::release_shadow_texture() {
-    for (auto view : m_shadow_layer_views) {
-        if (view) wgpuTextureViewRelease(view);
-    }
-    m_shadow_layer_views.clear();
-    if (m_shadow_array_view) {
-        wgpuTextureViewRelease(m_shadow_array_view);
-        m_shadow_array_view = nullptr;
-    }
-    if (m_shadow_texture) {
-        wgpuTextureDestroy(m_shadow_texture);
-        wgpuTextureRelease(m_shadow_texture);
-        m_shadow_texture = nullptr;
-    }
-    m_current_layer_count = 0;
+    return {shadow_array, shadow_info_buf};
 }
 
 void ShadowMapPass::draw_imgui() {

@@ -428,7 +428,7 @@ struct RenderWorld {
     void clear();
 
     // Category version counters — bumped by SyncScope when any slot in that
-    // category changes.  Used internally by IRenderPass::get_or_create_pass_data
+    // category changes.  Used internally by IPass::get_or_create_pass_data
     // and prepare_gpu_buffers.  Prefer the pass_data API over reading these
     // directly in renderer code.
     uint32_t get_mesh_version() const;

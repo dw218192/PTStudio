@@ -1,7 +1,6 @@
 #pragma once
 
 #include <core/rendering/renderPass.h>
-#include <core/rendering/webgpu/buffer.h>
 #include <core/rendering/webgpu/pipeline.h>
 #include <core/rendering/webgpu/shader.h>
 #include <core/rendering/webgpu/texture.h>
@@ -13,9 +12,9 @@
 
 namespace pts::editor {
 
-class ToneMappingPass final : public rendering::IRenderPass {
+class ToneMappingPass final : public rendering::ITopLevelPass {
    public:
-    using IRenderPass::IRenderPass;
+    using ITopLevelPass::ITopLevelPass;
     ~ToneMappingPass() override;
 
     ToneMappingPass(const ToneMappingPass&) = delete;
@@ -42,7 +41,6 @@ class ToneMappingPass final : public rendering::IRenderPass {
     struct Ready {
         webgpu::ShaderModule shader;
         webgpu::RenderPipeline pipeline;
-        webgpu::Buffer uniform_buffer;
         WGPUBindGroupLayout bind_group_layout = nullptr;
         WGPUSampler sampler = nullptr;
         // 1x1 white fallback for when SSAO is unavailable (AO = 1.0)

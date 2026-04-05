@@ -1,7 +1,6 @@
 #pragma once
 
 #include <core/rendering/renderer.h>
-#include <core/rendering/webgpu/buffer.h>
 #include <core/rendering/webgpu/pipeline.h>
 #include <core/rendering/webgpu/shader.h>
 #include <core/rendering/webgpu/webgpu.h>
@@ -32,15 +31,10 @@ class WireframePass final : public rendering::IRenderer {
     static constexpr uint32_t k_uniform_align = 256;
 
    private:
-    void ensure_capacity(const webgpu::Device& device, uint32_t object_count);
-
     struct Ready {
         webgpu::ShaderModule shader;
         webgpu::RenderPipeline pipeline;
-        webgpu::Buffer uniform_buffer;
-        WGPUBindGroup bind_group = nullptr;
         WGPUBindGroupLayout bind_group_layout = nullptr;
-        uint32_t capacity = 0;
     };
 
     std::variant<std::monostate, Ready> m_state;

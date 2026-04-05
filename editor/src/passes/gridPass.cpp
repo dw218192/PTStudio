@@ -31,9 +31,6 @@ static_assert(sizeof(GridUniforms) == 160, "GridUniforms must match shader std14
 
 GridPass::~GridPass() {
     if (auto* ready = std::get_if<Ready>(&m_state)) {
-        if (ready->bind_group) {
-            wgpuBindGroupRelease(ready->bind_group);
-        }
         if (ready->bind_group_layout) {
             wgpuBindGroupLayoutRelease(ready->bind_group_layout);
         }
@@ -49,36 +46,16 @@ auto GridPass::is_ready() const noexcept -> bool {
 }
 
 void GridPass::do_setup(const webgpu::Device& device) {
-    // Capture old state for deferred release (after new state is built)
-    WGPUBindGroup old_bind_group = nullptr;
     WGPUBindGroupLayout old_layout = nullptr;
     if (auto* ready = std::get_if<Ready>(&m_state)) {
-        old_bind_group = ready->bind_group;
         old_layout = ready->bind_group_layout;
-        ready->bind_group = nullptr;
         ready->bind_group_layout = nullptr;
     }
 
     auto shader_src = get_shader_loader().load("editor/generated/shaders/grid.wgsl");
     auto shader = device.create_shader_module_from_source(shader_src);
 
-    auto uniform_buffer = device.create_buffer(
-        sizeof(GridUniforms),
-        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
-
     auto bind_group_layout = editor_grid_shader::create_bind_group_layout_0(device.handle());
-
-    WGPUBindGroupEntry bg_entry = WGPU_BIND_GROUP_ENTRY_INIT;
-    bg_entry.binding = 0;
-    bg_entry.buffer = uniform_buffer.handle();
-    bg_entry.offset = 0;
-    bg_entry.size = sizeof(GridUniforms);
-
-    WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-    bg_desc.layout = bind_group_layout;
-    bg_desc.entryCount = 1;
-    bg_desc.entries = &bg_entry;
-    auto bind_group = wgpuDeviceCreateBindGroup(device.handle(), &bg_desc);
 
     WGPUPipelineLayoutDescriptor pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
     pl_desc.bindGroupLayoutCount = 1;
@@ -108,12 +85,11 @@ void GridPass::do_setup(const webgpu::Device& device) {
     wgpuPipelineLayoutRelease(pipeline_layout);
 
     m_state = Ready{
-        std::move(shader), std::move(pipeline), std::move(uniform_buffer),
-        bind_group,        bind_group_layout,
+        std::move(shader),
+        std::move(pipeline),
+        bind_group_layout,
     };
 
-    // Release old resources after new state is built
-    if (old_bind_group) wgpuBindGroupRelease(old_bind_group);
     if (old_layout) wgpuBindGroupLayoutRelease(old_layout);
 }
 
@@ -121,6 +97,24 @@ void GridPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::Pa
     PTS_ZONE_SCOPED;
     PRECONDITION(is_ready());
     auto& ready = std::get<Ready>(m_state);
+
+    // Register uniform buffer with frame graph
+    rendering::BufferDesc buf_desc;
+    buf_desc.size = sizeof(GridUniforms);
+    buf_desc.usage =
+        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
+    auto uniform_buf_handle = create_buffer(fg, buf_desc, "uniforms");
+
+    // Register bind group with frame graph
+    rendering::BindGroupEntry entry{};
+    entry.binding = 0;
+    entry.buffer = uniform_buf_handle;
+    entry.buffer_size = sizeof(GridUniforms);
+
+    rendering::BindGroupDesc bg_desc;
+    bg_desc.layout = ready.bind_group_layout;
+    bg_desc.entries = {entry};
+    auto bg_handle = create_bind_group(fg, std::move(bg_desc), "bg0");
 
     rendering::TextureDesc color_desc;
     color_desc.width = ctx.viewport_width;
@@ -145,25 +139,26 @@ void GridPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::Pa
     auto meters_per_unit = ctx.meters_per_unit;
     auto up_axis = ctx.up_axis;
     auto* pipeline_handle = ready.pipeline.handle();
-    auto uniform_buf = ready.uniform_buffer.handle();
-    auto bind_group = ready.bind_group;
 
     auto vp_mat = proj_mat * view_mat;
     auto inv_vp_mat = glm::inverse(vp_mat);
 
-    fg.add_pass("grid").color(color).depth_readonly(depth).execute([=](WGPURenderPassEncoder pass) {
-        GridUniforms gu;
-        gu.inv_vp = inv_vp_mat;
-        gu.vp = vp_mat;
-        gu.camera_pos = cam_pos;
-        gu.near_plane = near_plane;
-        gu.far_plane = far_plane;
-        gu.meters_per_unit = meters_per_unit;
-        gu.up_axis = static_cast<int32_t>(up_axis);
-        gu._pad = 0.0f;
-        wgpuQueueWriteBuffer(queue, uniform_buf, 0, &gu, sizeof(gu));
-        wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
-        wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 0, nullptr);
-        wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
-    });
+    fg.add_pass("grid").color(color).depth_readonly(depth).execute(
+        [=, &fg](WGPURenderPassEncoder pass) {
+            auto uniform_buf = fg.get_buffer_ref(uniform_buf_handle).handle();
+            auto bind_group = fg.get_bind_group_ref(bg_handle).handle();
+            GridUniforms gu;
+            gu.inv_vp = inv_vp_mat;
+            gu.vp = vp_mat;
+            gu.camera_pos = cam_pos;
+            gu.near_plane = near_plane;
+            gu.far_plane = far_plane;
+            gu.meters_per_unit = meters_per_unit;
+            gu.up_axis = static_cast<int32_t>(up_axis);
+            gu._pad = 0.0f;
+            wgpuQueueWriteBuffer(queue, uniform_buf, 0, &gu, sizeof(gu));
+            wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
+            wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 0, nullptr);
+            wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
+        });
 }

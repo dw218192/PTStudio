@@ -46,10 +46,6 @@ void ToneMappingPass::do_setup(const webgpu::Device& device) {
     auto shader_src = get_shader_loader().load("editor/generated/shaders/tonemapping.wgsl");
     auto shader = device.create_shader_module_from_source(shader_src);
 
-    auto uniform_buffer = device.create_buffer(
-        sizeof(ToneMappingUniforms),
-        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
-
     // Bind group layout: uniform + hdr texture + hdr sampler + ssao texture + ssao sampler
     WGPUBindGroupLayoutEntry entries[5] = {};
 
@@ -147,14 +143,8 @@ void ToneMappingPass::do_setup(const webgpu::Device& device) {
     INVARIANT_MSG(fb_view, "Failed to create SSAO fallback texture view");
 
     m_state = Ready{
-        std::move(shader),
-        std::move(pipeline),
-        std::move(uniform_buffer),
-        bind_group_layout,
-        sampler,
-        webgpu::Texture(fb_raw),
-        fb_view,
-        ssao_sampler,
+        std::move(shader), std::move(pipeline), bind_group_layout, sampler, webgpu::Texture(fb_raw),
+        fb_view,           ssao_sampler,
     };
 }
 
@@ -181,75 +171,58 @@ void ToneMappingPass::add_to_frame_graph(rendering::FrameGraph& fg,
     // Check if SSAOPass produced the "ssao" resource this frame
     auto ssao_found = fg.find("ssao");
 
-    // Upload uniforms
-    ToneMappingUniforms uniforms{};
-    uniforms.exposure = m_exposure;
-    uniforms.mode = m_mode;
-    wgpuQueueWriteBuffer(ctx.queue, ready.uniform_buffer.handle(), 0, &uniforms, sizeof(uniforms));
+    // Register uniform buffer
+    rendering::BufferDesc buf_desc;
+    buf_desc.size = sizeof(ToneMappingUniforms);
+    buf_desc.usage =
+        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
+    auto uniform_buf_handle = create_buffer(fg, buf_desc, "uniforms");
+
+    // Register bind group (5 entries)
+    rendering::BindGroupDesc bg_desc;
+    bg_desc.layout = ready.bind_group_layout;
+    bg_desc.entries.resize(5);
+    bg_desc.entries[0].binding = 0;
+    bg_desc.entries[0].buffer = uniform_buf_handle;
+    bg_desc.entries[0].buffer_size = sizeof(ToneMappingUniforms);
+    bg_desc.entries[1].binding = 1;
+    bg_desc.entries[1].texture = hdr_handle;
+    bg_desc.entries[2].binding = 2;
+    bg_desc.entries[2].sampler = ready.sampler;
+    if (ssao_found) {
+        bg_desc.entries[3].binding = 3;
+        bg_desc.entries[3].texture = *ssao_found;
+    } else {
+        bg_desc.entries[3].binding = 3;
+        bg_desc.entries[3].external_view = ready.ssao_fallback_view;
+    }
+    bg_desc.entries[4].binding = 4;
+    bg_desc.entries[4].sampler = ready.ssao_sampler;
+    auto bg_handle = create_bind_group(fg, std::move(bg_desc), "bg0");
 
     auto* pipeline_handle = ready.pipeline.handle();
-    auto uniform_buf = ready.uniform_buffer.handle();
-    auto bgl = ready.bind_group_layout;
-    auto sampler = ready.sampler;
-    auto ssao_sampler = ready.ssao_sampler;
-    auto ssao_fallback_view = ready.ssao_fallback_view;
-    auto dev = ctx.device.handle();
+    auto queue = ctx.queue;
+    auto exposure = m_exposure;
+    auto mode = m_mode;
 
     auto builder = fg.add_pass("tonemapping");
     builder.read(hdr_handle);
     builder.color(ldr_handle);
-
-    // Only read the frame graph ssao resource if SSAOPass produced it
-    auto ssao_handle = ssao_found.value_or(rendering::ResourceHandle{});
     if (ssao_found) {
         builder.read(*ssao_found);
     }
 
     builder.execute([=, &fg](WGPURenderPassEncoder pass) {
-        auto hdr_ref = fg.get_texture_ref(hdr_handle);
-        if (!hdr_ref) return;
+        auto uniform_buf = fg.get_buffer_ref(uniform_buf_handle).handle();
+        auto bind_group = fg.get_bind_group_ref(bg_handle).handle();
 
-        // Use frame graph ssao texture if available, otherwise 1x1 white fallback
-        WGPUTextureView ssao_view = ssao_fallback_view;
-        if (ssao_handle.is_valid()) {
-            auto ssao_ref = fg.get_texture_ref(ssao_handle);
-            if (ssao_ref) {
-                ssao_view = ssao_ref.view();
-            }
-        }
-
-        WGPUBindGroupEntry bg_entries[5] = {};
-        bg_entries[0] = WGPU_BIND_GROUP_ENTRY_INIT;
-        bg_entries[0].binding = 0;
-        bg_entries[0].buffer = uniform_buf;
-        bg_entries[0].size = sizeof(ToneMappingUniforms);
-
-        bg_entries[1] = WGPU_BIND_GROUP_ENTRY_INIT;
-        bg_entries[1].binding = 1;
-        bg_entries[1].textureView = hdr_ref.view();
-
-        bg_entries[2] = WGPU_BIND_GROUP_ENTRY_INIT;
-        bg_entries[2].binding = 2;
-        bg_entries[2].sampler = sampler;
-
-        bg_entries[3] = WGPU_BIND_GROUP_ENTRY_INIT;
-        bg_entries[3].binding = 3;
-        bg_entries[3].textureView = ssao_view;
-
-        bg_entries[4] = WGPU_BIND_GROUP_ENTRY_INIT;
-        bg_entries[4].binding = 4;
-        bg_entries[4].sampler = ssao_sampler;
-
-        WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-        bg_desc.layout = bgl;
-        bg_desc.entryCount = 5;
-        bg_desc.entries = bg_entries;
-        auto bind_group = wgpuDeviceCreateBindGroup(dev, &bg_desc);
+        ToneMappingUniforms uniforms{};
+        uniforms.exposure = exposure;
+        uniforms.mode = mode;
+        wgpuQueueWriteBuffer(queue, uniform_buf, 0, &uniforms, sizeof(uniforms));
 
         wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
         wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 0, nullptr);
-        wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);  // fullscreen triangle
-
-        wgpuBindGroupRelease(bind_group);
+        wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
     });
 }

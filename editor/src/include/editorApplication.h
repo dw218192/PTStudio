@@ -36,7 +36,8 @@ class InputComponent;
 }  // namespace pts
 
 namespace pts::rendering {
-class IRenderPass;
+class IPass;
+class ITopLevelPass;
 }  // namespace pts::rendering
 namespace pts::editor {
 class EditorPass;
@@ -141,17 +142,17 @@ struct EditorApplication final : GpuApplication {
     bool m_first_prep{true};
 
     std::unique_ptr<rendering::IRenderer> m_renderer_pass;
-    std::vector<std::unique_ptr<rendering::IRenderPass>> m_editor_passes;
+    std::vector<std::unique_ptr<rendering::ITopLevelPass>> m_editor_passes;
     EditorPass* m_editor_pass = nullptr;  // non-owning, points into m_editor_passes
     LobePass* m_lobe_pass = nullptr;      // non-owning, points into m_editor_passes
-    rendering::IRenderPass* m_tonemapping_pass =
+    rendering::ITopLevelPass* m_tonemapping_pass =
         nullptr;  // non-owning, points into m_editor_passes
     size_t m_active_config_index = 0;
     bool m_editor_passes_enabled = true;
     rendering::ShaderLoader m_shader_loader;
 
-    /// Iterate top-level passes (renderer + editor) for lifecycle calls.
-    /// The renderer's own draw_imgui/on_shaders_reloaded already forward to children.
+    /// Iterate top-level passes (renderer + editor) for lifecycle and
+    /// frame graph calls. Sub-passes are wired internally by their parent renderer.
     template <typename Fn>
     void for_each_pass(Fn&& fn) {
         if (m_renderer_pass) fn(*m_renderer_pass);

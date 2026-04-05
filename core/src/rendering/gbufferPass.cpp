@@ -19,12 +19,11 @@ struct GBufferObjectUniforms {
 static_assert(sizeof(GBufferObjectUniforms) == 128,
               "GBufferObjectUniforms must match shader std140 layout");
 
-GBufferPass::GBufferPass(const ShaderLoader& sl) : IRenderPass(sl) {
+GBufferPass::GBufferPass(const ShaderLoader& sl) : IPass(sl) {
 }
 
 GBufferPass::~GBufferPass() {
     if (auto* ready = std::get_if<Ready>(&m_state)) {
-        if (ready->bind_group) wgpuBindGroupRelease(ready->bind_group);
         if (ready->bgl) wgpuBindGroupLayoutRelease(ready->bgl);
     }
 }
@@ -33,7 +32,7 @@ auto GBufferPass::is_ready() const noexcept -> bool {
     return std::holds_alternative<Ready>(m_state);
 }
 
-static constexpr IRenderPass::DebugTarget k_debug_targets[] = {
+static constexpr IPass::DebugTarget k_debug_targets[] = {
     {"Normals", "scene_normals"},
 };
 
@@ -44,7 +43,6 @@ auto GBufferPass::debug_targets() const noexcept -> std::pair<const DebugTarget*
 void GBufferPass::do_setup(const webgpu::Device& device) {
     // Release existing state for re-entry (hot-reload)
     if (auto* ready = std::get_if<Ready>(&m_state)) {
-        if (ready->bind_group) wgpuBindGroupRelease(ready->bind_group);
         if (ready->bgl) wgpuBindGroupLayoutRelease(ready->bgl);
     }
 
@@ -83,31 +81,14 @@ void GBufferPass::do_setup(const webgpu::Device& device) {
 
     wgpuPipelineLayoutRelease(pipeline_layout);
 
-    uint32_t initial_capacity = 64;
-    auto uniform_buf = device.create_buffer(
-        k_uniform_align * initial_capacity,
-        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
-
-    // Create bind group
-    WGPUBindGroupEntry bg_entry = WGPU_BIND_GROUP_ENTRY_INIT;
-    bg_entry.binding = 0;
-    bg_entry.buffer = uniform_buf.handle();
-    bg_entry.offset = 0;
-    bg_entry.size = sizeof(GBufferObjectUniforms);
-
-    WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-    bg_desc.layout = bgl;
-    bg_desc.entryCount = 1;
-    bg_desc.entries = &bg_entry;
-    auto bind_group = wgpuDeviceCreateBindGroup(device.handle(), &bg_desc);
-
     m_state = Ready{
-        std::move(shader), std::move(pipeline), std::move(uniform_buf), bgl,
-        bind_group,        initial_capacity,
+        std::move(shader),
+        std::move(pipeline),
+        bgl,
     };
 }
 
-void GBufferPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
+GBufferPass::Outputs GBufferPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
     PTS_ZONE_SCOPED;
     PRECONDITION(is_ready());
     auto& ready = std::get<Ready>(m_state);
@@ -115,52 +96,27 @@ void GBufferPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
     auto objects = ctx.world.get_objects();
     auto total_slots = static_cast<uint32_t>(objects.size());
 
-    // Resize uniform buffer if needed
-    if (total_slots > 0 && total_slots > ready.object_capacity) {
-        uint32_t new_capacity = ready.object_capacity;
-        while (new_capacity < total_slots) {
-            new_capacity *= 2;
-        }
+    // Register per-object uniform buffer with frame graph
+    uint64_t needed_size =
+        std::max(uint64_t(1), static_cast<uint64_t>(total_slots)) * k_uniform_align;
+    BufferDesc buf_desc;
+    buf_desc.size = needed_size;
+    buf_desc.usage =
+        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
+    auto uniform_buf_handle = create_buffer(fg, buf_desc, "uniforms");
 
-        ready.per_object_uniform_buf = ctx.device.create_buffer(
-            static_cast<uint64_t>(new_capacity) * k_uniform_align,
-            static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
-        ready.object_capacity = new_capacity;
+    // Register bind group with frame graph
+    BindGroupEntry entry{};
+    entry.binding = 0;
+    entry.buffer = uniform_buf_handle;
+    entry.buffer_size = sizeof(GBufferObjectUniforms);
 
-        // Recreate bind group
-        if (ready.bind_group) wgpuBindGroupRelease(ready.bind_group);
+    BindGroupDesc bg_desc;
+    bg_desc.layout = ready.bgl;
+    bg_desc.entries = {entry};
+    auto bg_handle = create_bind_group(fg, std::move(bg_desc), "bg0");
 
-        WGPUBindGroupEntry bg_entry = WGPU_BIND_GROUP_ENTRY_INIT;
-        bg_entry.binding = 0;
-        bg_entry.buffer = ready.per_object_uniform_buf.handle();
-        bg_entry.offset = 0;
-        bg_entry.size = sizeof(GBufferObjectUniforms);
-
-        WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-        bg_desc.layout = ready.bgl;
-        bg_desc.entryCount = 1;
-        bg_desc.entries = &bg_entry;
-        ready.bind_group = wgpuDeviceCreateBindGroup(ctx.device.handle(), &bg_desc);
-    }
-
-    // Upload per-object uniforms
-    auto view_mat = ctx.view_matrix;
-    auto proj_mat = ctx.proj_matrix;
-    auto uniform_buf = ready.per_object_uniform_buf.handle();
-
-    {
-        PTS_ZONE_NAMED("gbuffer uniform upload");
-        for (uint32_t i = 0; i < total_slots; ++i) {
-            if (!objects[i].active()) continue;
-            if (!objects[i]->visible) continue;
-            GBufferObjectUniforms u{};
-            u.mvp = proj_mat * view_mat * objects[i]->transform;
-            u.model_view = view_mat * objects[i]->transform;
-            wgpuQueueWriteBuffer(ctx.queue, uniform_buf, i * k_uniform_align, &u, sizeof(u));
-        }
-    }
-
-    // Create/find frame graph resources
+    // Create/find frame graph texture resources
     TextureDesc depth_desc;
     depth_desc.width = ctx.viewport_width;
     depth_desc.height = ctx.viewport_height;
@@ -173,24 +129,40 @@ void GBufferPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
     normals_desc.clear_color = {0, 0, 0, 0};
 
     auto depth = fg.find_or_create("scene_depth", depth_desc);
-
     auto normals = fg.find_or_create("scene_normals", normals_desc);
 
     auto* pipeline_handle = ready.pipeline.handle();
-    auto bind_group = ready.bind_group;
+    auto view_mat = ctx.view_matrix;
+    auto proj_mat = ctx.proj_matrix;
+    auto queue = ctx.queue;
     const auto& world = ctx.world;
 
     fg.add_pass("gbuffer").color(normals).depth(depth).execute(
-        [=, &world](WGPURenderPassEncoder pass) {
+        [=, &fg, &world](WGPURenderPassEncoder pass) {
             auto objs = world.get_objects();
             auto meshes = world.get_meshes();
+            auto buf = fg.get_buffer_ref(uniform_buf_handle).handle();
+            auto bg = fg.get_bind_group_ref(bg_handle).handle();
+
+            // Upload per-object uniforms
+            {
+                PTS_ZONE_NAMED("gbuffer uniform upload");
+                for (uint32_t i = 0; i < static_cast<uint32_t>(objs.size()); ++i) {
+                    if (!objs[i].active()) continue;
+                    if (!objs[i]->visible) continue;
+                    GBufferObjectUniforms u{};
+                    u.mvp = proj_mat * view_mat * objs[i]->transform;
+                    u.model_view = view_mat * objs[i]->transform;
+                    wgpuQueueWriteBuffer(queue, buf, i * k_uniform_align, &u, sizeof(u));
+                }
+            }
 
             wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
             for (uint32_t i = 0; i < static_cast<uint32_t>(objs.size()); ++i) {
                 if (!objs[i].active()) continue;
                 if (!objs[i]->visible) continue;
                 uint32_t dyn_offset = i * k_uniform_align;
-                wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 1, &dyn_offset);
+                wgpuRenderPassEncoderSetBindGroup(pass, 0, bg, 1, &dyn_offset);
                 const auto& mesh = meshes[objs[i]->mesh_index];
                 wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh->vertex_buffer.handle(), 0,
                                                      mesh->vertex_buffer.size());
@@ -200,6 +172,8 @@ void GBufferPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
                 wgpuRenderPassEncoderDrawIndexed(pass, mesh->index_count, 1, 0, 0, 0);
             }
         });
+
+    return {depth, normals};
 }
 
 }  // namespace pts::rendering

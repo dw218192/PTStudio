@@ -2,7 +2,6 @@
 
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/renderPass.h>
-#include <core/rendering/webgpu/buffer.h>
 #include <core/rendering/webgpu/pipeline.h>
 #include <core/rendering/webgpu/shader.h>
 #include <core/rendering/webgpu/webgpu.h>
@@ -13,9 +12,9 @@
 
 namespace pts::editor {
 
-class LobePass final : public rendering::IRenderPass {
+class LobePass final : public rendering::ITopLevelPass {
    public:
-    using IRenderPass::IRenderPass;
+    using ITopLevelPass::ITopLevelPass;
     ~LobePass() override;
 
     LobePass(const LobePass&) = delete;
@@ -57,8 +56,6 @@ class LobePass final : public rendering::IRenderPass {
     struct Ready {
         webgpu::ShaderModule shader;
         webgpu::RenderPipeline pipeline;
-        webgpu::Buffer uniform_buffer;
-        WGPUBindGroup bind_group = nullptr;
         WGPUBindGroupLayout bind_group_layout = nullptr;
     };
 

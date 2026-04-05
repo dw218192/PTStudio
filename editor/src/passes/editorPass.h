@@ -1,7 +1,6 @@
 #pragma once
 
 #include <core/rendering/renderPass.h>
-#include <core/rendering/webgpu/buffer.h>
 #include <core/rendering/webgpu/pipeline.h>
 #include <core/rendering/webgpu/shader.h>
 #include <core/rendering/webgpu/webgpu.h>
@@ -27,9 +26,9 @@ inline float gizmo_distance_scale(float camera_distance, float world_radius,
 /// Submits two frame graph passes:
 ///   "editor_picking" — renders mesh objects + light shapes to picking_ids
 ///   "editor_gizmos"  — renders light wireframe shapes to scene_color
-class EditorPass final : public rendering::IRenderPass {
+class EditorPass final : public rendering::ITopLevelPass {
    public:
-    using IRenderPass::IRenderPass;
+    using ITopLevelPass::ITopLevelPass;
     ~EditorPass() override;
 
     EditorPass(const EditorPass&) = delete;
@@ -53,9 +52,6 @@ class EditorPass final : public rendering::IRenderPass {
     static constexpr uint32_t k_uniform_align = 256;
 
    private:
-    void ensure_picking_capacity(const webgpu::Device& device, uint32_t count);
-    void ensure_gizmo_capacity(const webgpu::Device& device, uint32_t count);
-
     struct GizmoMesh {
         webgpu::Buffer vertex_buffer;  // line-list for color overlay
         uint32_t vertex_count = 0;
@@ -65,18 +61,12 @@ class EditorPass final : public rendering::IRenderPass {
         // Mesh picking pipeline (reuses picking shader)
         webgpu::ShaderModule picking_shader;
         webgpu::RenderPipeline picking_pipeline;
-        webgpu::Buffer picking_uniform_buffer;
-        WGPUBindGroup picking_bind_group = nullptr;
         WGPUBindGroupLayout picking_bind_group_layout = nullptr;
-        uint32_t picking_capacity = 0;
 
         // Gizmo pipeline (wireframe color overlay for light shapes)
         webgpu::ShaderModule gizmo_shader;
         webgpu::RenderPipeline gizmo_color_pipeline;  // scene_color, LineList, blend
-        webgpu::Buffer gizmo_uniform_buffer;
-        WGPUBindGroup gizmo_bind_group = nullptr;
         WGPUBindGroupLayout gizmo_bind_group_layout = nullptr;
-        uint32_t gizmo_capacity = 0;
     };
 
     std::variant<std::monostate, Ready> m_state;

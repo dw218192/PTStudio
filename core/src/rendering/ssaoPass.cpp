@@ -76,7 +76,7 @@ void generate_noise_data(uint8_t* out) {
 
 }  // namespace
 
-SSAOPass::SSAOPass(const ShaderLoader& sl) : IRenderPass(sl) {
+SSAOPass::SSAOPass(const ShaderLoader& sl) : IPass(sl) {
 }
 
 SSAOPass::~SSAOPass() {
@@ -98,7 +98,7 @@ auto SSAOPass::is_ready() const noexcept -> bool {
     return std::holds_alternative<Ready>(m_state);
 }
 
-static constexpr IRenderPass::DebugTarget k_debug_targets[] = {
+static constexpr IPass::DebugTarget k_debug_targets[] = {
     {"AO", "ssao"},
 };
 
@@ -114,15 +114,6 @@ void SSAOPass::do_setup(const webgpu::Device& device) {
 
     auto blur_src = get_shader_loader().load("core/generated/shaders/ssao_blur.wgsl");
     auto blur_shader = device.create_shader_module_from_source(blur_src);
-
-    // ── Uniform buffers ──
-    auto gen_uniforms = device.create_buffer(
-        sizeof(SSAOUniforms),
-        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
-
-    auto blur_uniforms = device.create_buffer(
-        sizeof(SSAOBlurUniforms),
-        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
 
     // ── Kernel buffer ──
     std::array<glm::vec4, k_max_kernel_size> kernel_data{};
@@ -309,11 +300,9 @@ void SSAOPass::do_setup(const webgpu::Device& device) {
         std::move(gen_shader),
         std::move(gen_pipeline),
         gen_bgl,
-        std::move(gen_uniforms),
         std::move(blur_shader),
         std::move(blur_pipeline),
         blur_bgl,
-        std::move(blur_uniforms),
         webgpu::Texture(noise_raw),
         noise_view,
         depth_sampler,
@@ -323,72 +312,94 @@ void SSAOPass::do_setup(const webgpu::Device& device) {
     };
 }
 
-void SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
+SSAOPass::Outputs SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx,
+                                               const Inputs& in) {
     PTS_ZONE_SCOPED;
-    if (!m_enabled) return;
+    if (!m_enabled) return {};
     PRECONDITION(is_ready());
     auto& ready = std::get<Ready>(m_state);
 
     // ── Frame graph resources ──
-    TextureDesc depth_desc;
-    depth_desc.width = ctx.viewport_width;
-    depth_desc.height = ctx.viewport_height;
-    depth_desc.format = WGPUTextureFormat_Depth32Float;
-
-    TextureDesc normals_desc;
-    normals_desc.width = ctx.viewport_width;
-    normals_desc.height = ctx.viewport_height;
-    normals_desc.format = WGPUTextureFormat_RG16Float;
-    normals_desc.clear_color = {0, 0, 0, 0};
-
     TextureDesc r8_desc;
     r8_desc.width = ctx.viewport_width;
     r8_desc.height = ctx.viewport_height;
     r8_desc.format = WGPUTextureFormat_R8Unorm;
     r8_desc.clear_color = {1, 1, 1, 1};
 
-    auto depth_handle = fg.find_or_create("scene_depth", depth_desc);
-    auto normals_handle = fg.find_or_create("scene_normals", normals_desc);
-    auto ssao_raw_handle = fg.find_or_create("ssao_raw", r8_desc);
+    auto depth_handle = in.depth;
+    auto normals_handle = in.normals;
+    auto ssao_raw_handle = create_texture(fg, r8_desc, "ssao_raw");
 
     TextureDesc ao_desc = r8_desc;
     ao_desc.format = WGPUTextureFormat_RGBA8Unorm;
     auto ssao_handle = fg.find_or_create("ssao", ao_desc);
 
-    // ── Upload AO gen uniforms ──
-    SSAOUniforms uniforms{};
-    uniforms.projection = ctx.proj_matrix;
-    uniforms.inv_projection = glm::inverse(ctx.proj_matrix);
-    uniforms.viewport_size = {
-        static_cast<float>(ctx.viewport_width),
-        static_cast<float>(ctx.viewport_height),
-    };
-    uniforms.radius = m_radius;
-    uniforms.bias = m_bias;
-    uniforms.intensity = m_intensity;
-    uniforms.sample_count = m_sample_count;
-    wgpuQueueWriteBuffer(ctx.queue, ready.gen_uniforms.handle(), 0, &uniforms, sizeof(uniforms));
+    // Register uniform buffers with frame graph
+    BufferDesc gen_buf_desc;
+    gen_buf_desc.size = sizeof(SSAOUniforms);
+    gen_buf_desc.usage =
+        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
+    auto gen_uniform_buf_handle = create_buffer(fg, gen_buf_desc, "gen_uniforms");
 
-    // ── Upload blur uniforms ──
-    SSAOBlurUniforms blur_u{};
-    blur_u.texel_size = {1.0f / static_cast<float>(ctx.viewport_width),
-                         1.0f / static_cast<float>(ctx.viewport_height)};
-    wgpuQueueWriteBuffer(ctx.queue, ready.blur_uniforms.handle(), 0, &blur_u, sizeof(blur_u));
+    BufferDesc blur_buf_desc;
+    blur_buf_desc.size = sizeof(SSAOBlurUniforms);
+    blur_buf_desc.usage =
+        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
+    auto blur_uniform_buf_handle = create_buffer(fg, blur_buf_desc, "blur_uniforms");
 
-    // Capture handles for lambdas
-    auto* gen_pipeline = ready.gen_pipeline.handle();
-    auto gen_bgl = ready.gen_bgl;
-    auto gen_uniform_buf = ready.gen_uniforms.handle();
+    // Register AO gen bind group (8 entries)
     auto kernel_buf = ready.kernel_buffer.handle();
-    auto noise_view = ready.noise_view;
-    auto depth_sampler = ready.depth_sampler;
-    auto linear_sampler = ready.linear_sampler;
-    auto noise_sampler = ready.noise_sampler;
-    auto dev = ctx.device.handle();
+    BindGroupDesc gen_bg_desc;
+    gen_bg_desc.layout = ready.gen_bgl;
+    gen_bg_desc.entries.resize(8);
+    gen_bg_desc.entries[0].binding = 0;
+    gen_bg_desc.entries[0].buffer = gen_uniform_buf_handle;
+    gen_bg_desc.entries[0].buffer_size = sizeof(SSAOUniforms);
+    gen_bg_desc.entries[1].binding = 1;
+    gen_bg_desc.entries[1].texture = depth_handle;
+    gen_bg_desc.entries[2].binding = 2;
+    gen_bg_desc.entries[2].texture = normals_handle;
+    gen_bg_desc.entries[3].binding = 3;
+    gen_bg_desc.entries[3].external_view = ready.noise_view;
+    gen_bg_desc.entries[4].binding = 4;
+    gen_bg_desc.entries[4].sampler = ready.depth_sampler;
+    gen_bg_desc.entries[5].binding = 5;
+    gen_bg_desc.entries[5].sampler = ready.linear_sampler;
+    gen_bg_desc.entries[6].binding = 6;
+    gen_bg_desc.entries[6].sampler = ready.noise_sampler;
+    gen_bg_desc.entries[7].binding = 7;
+    gen_bg_desc.entries[7].external_buffer = kernel_buf;
+    gen_bg_desc.entries[7].external_buffer_size = sizeof(glm::vec4) * k_max_kernel_size;
+    auto gen_bg_handle = create_bind_group(fg, std::move(gen_bg_desc), "gen_bg");
 
+    // Register blur bind group (5 entries)
+    BindGroupDesc blur_bg_desc;
+    blur_bg_desc.layout = ready.blur_bgl;
+    blur_bg_desc.entries.resize(5);
+    blur_bg_desc.entries[0].binding = 0;
+    blur_bg_desc.entries[0].buffer = blur_uniform_buf_handle;
+    blur_bg_desc.entries[0].buffer_size = sizeof(SSAOBlurUniforms);
+    blur_bg_desc.entries[1].binding = 1;
+    blur_bg_desc.entries[1].texture = ssao_raw_handle;
+    blur_bg_desc.entries[2].binding = 2;
+    blur_bg_desc.entries[2].texture = depth_handle;
+    blur_bg_desc.entries[3].binding = 3;
+    blur_bg_desc.entries[3].sampler = ready.linear_sampler;
+    blur_bg_desc.entries[4].binding = 4;
+    blur_bg_desc.entries[4].sampler = ready.depth_sampler;
+    auto blur_bg_handle = create_bind_group(fg, std::move(blur_bg_desc), "blur_bg");
+
+    // Capture scalars for lambdas
+    auto* gen_pipeline = ready.gen_pipeline.handle();
     auto* blur_pipeline = ready.blur_pipeline.handle();
-    auto blur_bgl = ready.blur_bgl;
-    auto blur_uniform_buf = ready.blur_uniforms.handle();
+    auto queue = ctx.queue;
+    auto proj_matrix = ctx.proj_matrix;
+    auto viewport_width = ctx.viewport_width;
+    auto viewport_height = ctx.viewport_height;
+    auto radius = m_radius;
+    auto bias = m_bias;
+    auto intensity = m_intensity;
+    auto sample_count = m_sample_count;
 
     // ── Pass 1: AO Generation ──
     fg.add_pass("ssao_gen")
@@ -396,57 +407,25 @@ void SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
         .read(normals_handle)
         .color(ssao_raw_handle)
         .execute([=, &fg](WGPURenderPassEncoder pass) {
-            auto depth_ref = fg.get_texture_ref(depth_handle);
-            auto normals_ref = fg.get_texture_ref(normals_handle);
-            if (!depth_ref || !normals_ref) return;
+            auto gen_uniform_buf = fg.get_buffer_ref(gen_uniform_buf_handle).handle();
+            auto gen_bg = fg.get_bind_group_ref(gen_bg_handle).handle();
 
-            WGPUBindGroupEntry entries[8] = {};
-
-            entries[0] = WGPU_BIND_GROUP_ENTRY_INIT;
-            entries[0].binding = 0;
-            entries[0].buffer = gen_uniform_buf;
-            entries[0].size = sizeof(SSAOUniforms);
-
-            entries[1] = WGPU_BIND_GROUP_ENTRY_INIT;
-            entries[1].binding = 1;
-            entries[1].textureView = depth_ref.view();
-
-            entries[2] = WGPU_BIND_GROUP_ENTRY_INIT;
-            entries[2].binding = 2;
-            entries[2].textureView = normals_ref.view();
-
-            entries[3] = WGPU_BIND_GROUP_ENTRY_INIT;
-            entries[3].binding = 3;
-            entries[3].textureView = noise_view;
-
-            entries[4] = WGPU_BIND_GROUP_ENTRY_INIT;
-            entries[4].binding = 4;
-            entries[4].sampler = depth_sampler;
-
-            entries[5] = WGPU_BIND_GROUP_ENTRY_INIT;
-            entries[5].binding = 5;
-            entries[5].sampler = linear_sampler;
-
-            entries[6] = WGPU_BIND_GROUP_ENTRY_INIT;
-            entries[6].binding = 6;
-            entries[6].sampler = noise_sampler;
-
-            entries[7] = WGPU_BIND_GROUP_ENTRY_INIT;
-            entries[7].binding = 7;
-            entries[7].buffer = kernel_buf;
-            entries[7].size = sizeof(glm::vec4) * k_max_kernel_size;
-
-            WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-            bg_desc.layout = gen_bgl;
-            bg_desc.entryCount = 8;
-            bg_desc.entries = entries;
-            auto bg = wgpuDeviceCreateBindGroup(dev, &bg_desc);
+            SSAOUniforms uniforms{};
+            uniforms.projection = proj_matrix;
+            uniforms.inv_projection = glm::inverse(proj_matrix);
+            uniforms.viewport_size = {
+                static_cast<float>(viewport_width),
+                static_cast<float>(viewport_height),
+            };
+            uniforms.radius = radius;
+            uniforms.bias = bias;
+            uniforms.intensity = intensity;
+            uniforms.sample_count = sample_count;
+            wgpuQueueWriteBuffer(queue, gen_uniform_buf, 0, &uniforms, sizeof(uniforms));
 
             wgpuRenderPassEncoderSetPipeline(pass, gen_pipeline);
-            wgpuRenderPassEncoderSetBindGroup(pass, 0, bg, 0, nullptr);
+            wgpuRenderPassEncoderSetBindGroup(pass, 0, gen_bg, 0, nullptr);
             wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
-
-            wgpuBindGroupRelease(bg);
         });
 
     // ── Pass 2: Bilateral Blur ──
@@ -455,45 +434,20 @@ void SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
         .read(depth_handle)
         .color(ssao_handle)
         .execute([=, &fg](WGPURenderPassEncoder pass) {
-            auto ssao_raw_ref = fg.get_texture_ref(ssao_raw_handle);
-            auto depth_ref = fg.get_texture_ref(depth_handle);
-            if (!ssao_raw_ref || !depth_ref) return;
+            auto blur_uniform_buf = fg.get_buffer_ref(blur_uniform_buf_handle).handle();
+            auto blur_bg = fg.get_bind_group_ref(blur_bg_handle).handle();
 
-            WGPUBindGroupEntry entries[5] = {};
-
-            entries[0] = WGPU_BIND_GROUP_ENTRY_INIT;
-            entries[0].binding = 0;
-            entries[0].buffer = blur_uniform_buf;
-            entries[0].size = sizeof(SSAOBlurUniforms);
-
-            entries[1] = WGPU_BIND_GROUP_ENTRY_INIT;
-            entries[1].binding = 1;
-            entries[1].textureView = ssao_raw_ref.view();
-
-            entries[2] = WGPU_BIND_GROUP_ENTRY_INIT;
-            entries[2].binding = 2;
-            entries[2].textureView = depth_ref.view();
-
-            entries[3] = WGPU_BIND_GROUP_ENTRY_INIT;
-            entries[3].binding = 3;
-            entries[3].sampler = linear_sampler;
-
-            entries[4] = WGPU_BIND_GROUP_ENTRY_INIT;
-            entries[4].binding = 4;
-            entries[4].sampler = depth_sampler;
-
-            WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-            bg_desc.layout = blur_bgl;
-            bg_desc.entryCount = 5;
-            bg_desc.entries = entries;
-            auto bg = wgpuDeviceCreateBindGroup(dev, &bg_desc);
+            SSAOBlurUniforms blur_u{};
+            blur_u.texel_size = {1.0f / static_cast<float>(viewport_width),
+                                 1.0f / static_cast<float>(viewport_height)};
+            wgpuQueueWriteBuffer(queue, blur_uniform_buf, 0, &blur_u, sizeof(blur_u));
 
             wgpuRenderPassEncoderSetPipeline(pass, blur_pipeline);
-            wgpuRenderPassEncoderSetBindGroup(pass, 0, bg, 0, nullptr);
+            wgpuRenderPassEncoderSetBindGroup(pass, 0, blur_bg, 0, nullptr);
             wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
-
-            wgpuBindGroupRelease(bg);
         });
+
+    return {ssao_handle};
 }
 
 void SSAOPass::draw_imgui() {

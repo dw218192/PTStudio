@@ -1,20 +1,18 @@
 #pragma once
 
 #include <core/rendering/renderPass.h>
-#include <core/rendering/webgpu/buffer.h>
 #include <core/rendering/webgpu/pipeline.h>
 #include <core/rendering/webgpu/shader.h>
 #include <core/rendering/webgpu/webgpu.h>
 
-#include <optional>
 #include <string_view>
 #include <variant>
 
 namespace pts::editor {
 
-class GridPass final : public rendering::IRenderPass {
+class GridPass final : public rendering::ITopLevelPass {
    public:
-    using IRenderPass::IRenderPass;
+    using ITopLevelPass::ITopLevelPass;
     ~GridPass() override;
 
     GridPass(const GridPass&) = delete;
@@ -32,8 +30,6 @@ class GridPass final : public rendering::IRenderPass {
     struct Ready {
         webgpu::ShaderModule shader;
         webgpu::RenderPipeline pipeline;
-        webgpu::Buffer uniform_buffer;
-        WGPUBindGroup bind_group = nullptr;
         WGPUBindGroupLayout bind_group_layout = nullptr;
     };
 
