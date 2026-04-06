@@ -856,7 +856,7 @@ void EditorApplication::render(FrameContext& ctx) {
             if (m_prep_worker->has_result()) {
                 auto prepared = m_prep_worker->take_result();
                 INVARIANT(prepared.has_value());
-                m_world.upload_prepared_data(device, queue, *prepared);
+                m_world.upload_prepared_data(device, queue, std::move(*prepared));
             }
             m_prep_worker->submit(CpuPrepJob{});
         }
@@ -904,10 +904,7 @@ void EditorApplication::render(FrameContext& ctx) {
             }
         };
         if (capture_mode) {
-            if (m_renderer_pass) {
-                collect_debug_targets(*m_renderer_pass);
-                m_renderer_pass->for_each_subpass(collect_debug_targets);
-            }
+            if (m_renderer_pass) collect_debug_targets(*m_renderer_pass);
         } else {
             for_each_pass(collect_debug_targets);
         }

@@ -425,7 +425,6 @@ void ToneMappingPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx)
 }
 
 void ToneMappingPass::draw_imgui() {
-    ImGui::SeparatorText("Tone Mapping");
     int mode_int = static_cast<int>(m_mode);
     const char* mode_names[] = {"ACES Filmic", "Reinhard"};
     if (ImGui::Combo("Mode", &mode_int, mode_names, 2)) {

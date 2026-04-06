@@ -83,7 +83,8 @@ auto ForwardPass::is_ready() const noexcept -> bool {
     return std::holds_alternative<Ready>(m_state);
 }
 
-auto ForwardPass::debug_targets() const noexcept -> std::pair<const DebugTarget*, uint32_t> {
+auto ForwardPass::renderer_debug_targets() const noexcept
+    -> std::pair<const DebugTarget*, uint32_t> {
     return {k_debug_targets, k_debug_target_count};
 }
 

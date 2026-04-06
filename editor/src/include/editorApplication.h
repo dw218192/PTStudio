@@ -150,12 +150,12 @@ struct EditorApplication final : GpuApplication {
 
     /// Iterate all passes for lifecycle (setup, imgui, hot-reload, debug targets).
     /// Never used for frame graph recording.
+    /// Iterate all top-level passes. Renderers manage their own children —
+    /// debug targets, imgui, hot-reload, and texture refs are all forwarded
+    /// internally. No sub-pass iteration needed here.
     template <typename Fn>
     void for_each_pass(Fn&& fn) {
-        if (m_renderer_pass) {
-            fn(*m_renderer_pass);
-            m_renderer_pass->for_each_subpass(fn);
-        }
+        if (m_renderer_pass) fn(*m_renderer_pass);
         if (m_grid_pass) fn(*m_grid_pass);
         if (m_editor_pass) fn(*m_editor_pass);
         if (m_lobe_pass) fn(*m_lobe_pass);

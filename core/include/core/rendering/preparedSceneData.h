@@ -29,6 +29,7 @@ struct PreparedSceneData {
     std::vector<BVHNode> all_nodes;
     std::vector<PackedTriangle> all_tris;
     std::vector<GPUInstance> gpu_instances;
+    BVH tlas;  // built on worker, swapped to m_tlas on main thread
     uint32_t tlas_node_count = 0;
     uint32_t instance_count = 0;
     bool geometry_dirty = false;

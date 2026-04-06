@@ -362,7 +362,7 @@ struct RenderWorld {
 
     /// GPU-only: upload a PreparedSceneData snapshot to GPU buffers.
     void upload_prepared_data(const webgpu::Device& device, WGPUQueue queue,
-                              const PreparedSceneData& data);
+                              PreparedSceneData data);
 
     void prepare_gpu_buffers(const webgpu::Device& device, WGPUQueue queue);
     const webgpu::Buffer& light_buffer() const;

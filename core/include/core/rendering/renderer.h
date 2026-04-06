@@ -48,16 +48,9 @@ class IRenderer : public IPass {
         return nullptr;
     }
 
-    /// Iterate all child passes with a callback.
-    template <typename Fn>
-    void for_each_subpass(Fn&& fn) {
-        for (auto& c : m_children) fn(*c);
-    }
-
     // ── Lifecycle: auto-forwarded to all children ──
 
     void on_shaders_reloaded(const webgpu::Device& device) override;
-
     void draw_imgui() override;
 
     void draw_viewport_overlay(const ViewportOverlayParams& params) override {
@@ -66,6 +59,12 @@ class IRenderer : public IPass {
 
     void update_texture_refs(FrameGraph& fg) override {
         for (auto& c : m_children) c->update_texture_refs(fg);
+    }
+
+    /// Aggregated debug targets: this renderer's own + all children's.
+    [[nodiscard]] auto debug_targets() const noexcept
+        -> std::pair<const DebugTarget*, uint32_t> override {
+        return {m_all_debug_targets.data(), static_cast<uint32_t>(m_all_debug_targets.size())};
     }
 
    protected:
@@ -81,9 +80,19 @@ class IRenderer : public IPass {
     virtual HdrOutputs do_add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) = 0;
     virtual void do_draw_imgui() {};
 
+    /// Renderer's own debug targets (not children's). Override instead of debug_targets().
+    [[nodiscard]] virtual auto renderer_debug_targets() const noexcept
+        -> std::pair<const DebugTarget*, uint32_t> {
+        return {nullptr, 0};
+    }
+
    private:
+    void collect_debug_targets();
+
     std::unique_ptr<ToneMappingPass> m_tonemapping;
+    bool m_tonemapping_enabled = true;
     std::vector<std::unique_ptr<IPass>> m_children;
+    std::vector<DebugTarget> m_all_debug_targets;
 };
 
 }  // namespace pts::rendering

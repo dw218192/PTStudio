@@ -11,6 +11,10 @@
 #include <memory>
 #include <string_view>
 
+namespace spdlog {
+class logger;
+}
+
 namespace pts {
 
 namespace webgpu {
@@ -28,18 +32,16 @@ enum class PassDataKind : uint8_t { Mesh, Light, Material };
 
 class IPass {
    public:
-    explicit IPass(const ShaderLoader& shader_loader) : m_shader_loader(&shader_loader) {
-    }
+    explicit IPass(const ShaderLoader& shader_loader);
     virtual ~IPass() = default;
 
     [[nodiscard]] virtual auto name() const noexcept -> std::string_view = 0;
     [[nodiscard]] virtual auto is_ready() const noexcept -> bool = 0;
 
-    /// Initialize the pass. Computes allowed debug targets, then calls do_setup().
-    void setup(const webgpu::Device& device) {
-        compute_allowed_debug_targets(device);
-        do_setup(device);
-    }
+    /// Initialize the pass. Creates a named logger via LoggingManager (same
+    /// sinks/pattern as the rest of the application), computes allowed debug
+    /// targets, then calls do_setup().
+    void setup(const webgpu::Device& device);
 
     /// Called when shaders have been hot-reloaded. Default re-runs setup().
     virtual void on_shaders_reloaded(const webgpu::Device& device) {
@@ -99,6 +101,10 @@ class IPass {
 
     [[nodiscard]] auto get_shader_loader() const noexcept -> const ShaderLoader& {
         return *m_shader_loader;
+    }
+
+    [[nodiscard]] auto logger() const noexcept -> spdlog::logger& {
+        return *m_logger;
     }
 
     /// Load the pass shader, automatically selecting the no-debug-targets
@@ -186,6 +192,7 @@ class IPass {
 
    private:
     const ShaderLoader* m_shader_loader;
+    std::shared_ptr<spdlog::logger> m_logger;
     uint32_t m_allowed_debug_count = UINT32_MAX;
 
     void compute_allowed_debug_targets(const webgpu::Device& device);

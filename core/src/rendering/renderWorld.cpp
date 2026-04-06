@@ -460,12 +460,13 @@ PreparedSceneData RenderWorld::prepare_scene_data() {
 
             auto inst_count = static_cast<uint32_t>(instances.size());
 
-            // Build TLAS from world-space AABBs
+            // Build TLAS from world-space AABBs into PreparedSceneData
+            // (not m_tlas — that's read by the render thread)
             {
                 PTS_ZONE_NAMED("TLAS build");
-                m_tlas.build(world_aabbs, inst_count);
+                data.tlas.build(world_aabbs, inst_count);
             }
-            uint32_t tlas_nc = m_tlas.node_count();
+            uint32_t tlas_nc = data.tlas.node_count();
 
             // Build per-mesh offset table (unique meshes only)
             struct MeshOffset {
@@ -502,11 +503,11 @@ PreparedSceneData RenderWorld::prepare_scene_data() {
             }
 
             // Reorder instances by TLAS tri_indices
-            if (!m_tlas.tri_indices().empty() && inst_count > 0) {
-                INVARIANT(m_tlas.tri_indices().size() == inst_count);
+            if (!data.tlas.tri_indices().empty() && inst_count > 0) {
+                INVARIANT(data.tlas.tri_indices().size() == inst_count);
                 std::vector<GPUInstance> reordered(inst_count);
                 for (uint32_t i = 0; i < inst_count; ++i) {
-                    reordered[i] = gpu_instances[m_tlas.tri_indices()[i]];
+                    reordered[i] = gpu_instances[data.tlas.tri_indices()[i]];
                 }
                 gpu_instances = std::move(reordered);
             }
@@ -517,7 +518,7 @@ PreparedSceneData RenderWorld::prepare_scene_data() {
             for (uint32_t mi : unique_meshes) {
                 blas_entries.push_back({&m_blas_cache[mi].bvh, mesh_offsets[mi].tri_offset});
             }
-            data.all_nodes = m_tlas.concatenate_nodes(blas_entries);
+            data.all_nodes = data.tlas.concatenate_nodes(blas_entries);
 
             // Concatenate triangles
             data.all_tris.reserve(running_tri_offset);
@@ -550,7 +551,7 @@ PreparedSceneData RenderWorld::prepare_scene_data() {
 }
 
 void RenderWorld::upload_prepared_data(const webgpu::Device& device, WGPUQueue queue,
-                                       const PreparedSceneData& data) {
+                                       PreparedSceneData data) {
     PTS_ZONE_SCOPED;
 
     // --- Materials ---
@@ -631,6 +632,7 @@ void RenderWorld::upload_prepared_data(const webgpu::Device& device, WGPUQueue q
                                  data.gpu_instances.size() * sizeof(GPUInstance));
         }
 
+        m_tlas = std::move(data.tlas);
         m_tlas_node_count = data.tlas_node_count;
         m_instance_count = data.instance_count;
     }
@@ -727,7 +729,7 @@ void RenderWorld::upload_prepared_data(const webgpu::Device& device, WGPUQueue q
 
 void RenderWorld::prepare_gpu_buffers(const webgpu::Device& device, WGPUQueue queue) {
     auto prepared = prepare_scene_data();
-    upload_prepared_data(device, queue, prepared);
+    upload_prepared_data(device, queue, std::move(prepared));
 }
 
 AABB RenderWorld::scene_bounds() const {

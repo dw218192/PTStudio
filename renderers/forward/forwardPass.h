@@ -25,7 +25,7 @@ class ForwardPass final : public rendering::IRenderer {
 
     [[nodiscard]] auto name() const noexcept -> std::string_view override;
     [[nodiscard]] auto is_ready() const noexcept -> bool override;
-    [[nodiscard]] auto debug_targets() const noexcept
+    [[nodiscard]] auto renderer_debug_targets() const noexcept
         -> std::pair<const DebugTarget*, uint32_t> override;
 
     void do_renderer_setup(const webgpu::Device& device) override;

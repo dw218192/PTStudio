@@ -102,6 +102,28 @@ uint32_t color_attachment_bytes_per_sample(WGPUTextureFormat scene_format,
 
 }  // namespace
 
+IPass::IPass(const ShaderLoader& shader_loader) : m_shader_loader(&shader_loader) {
+}
+
+void IPass::setup(const webgpu::Device& device) {
+    // Create a per-pass logger sharing the ShaderLoader's sinks and level.
+    // This mirrors LoggingManager::get_logger_shared — same sinks/pattern —
+    // without requiring IPass to hold a LoggingManager reference.
+    if (!m_logger) {
+        auto pass_name = std::string{name()};
+        m_logger = spdlog::get(pass_name);
+        if (!m_logger) {
+            auto& parent = *m_shader_loader->logger();
+            m_logger = std::make_shared<spdlog::logger>(pass_name, parent.sinks().begin(),
+                                                        parent.sinks().end());
+            m_logger->set_level(parent.level());
+            spdlog::register_logger(m_logger);
+        }
+    }
+    compute_allowed_debug_targets(device);
+    do_setup(device);
+}
+
 void IPass::compute_allowed_debug_targets(const webgpu::Device& device) {
     auto [targets, desired] = debug_targets();
     if (desired == 0) {
@@ -158,6 +180,23 @@ void IRenderer::do_setup(const webgpu::Device& device) {
     }
     m_tonemapping->setup(device);
     do_renderer_setup(device);
+    collect_debug_targets();
+}
+
+void IRenderer::collect_debug_targets() {
+    m_all_debug_targets.clear();
+    // Renderer's own targets (from derived class override of renderer_debug_targets)
+    auto [own, own_count] = renderer_debug_targets();
+    for (uint32_t i = 0; i < own_count; ++i) {
+        m_all_debug_targets.push_back(own[i]);
+    }
+    // Children's targets
+    for (auto& c : m_children) {
+        auto [targets, count] = c->effective_debug_targets();
+        for (uint32_t i = 0; i < count; ++i) {
+            m_all_debug_targets.push_back(targets[i]);
+        }
+    }
 }
 
 void IRenderer::on_shaders_reloaded(const webgpu::Device& device) {
@@ -173,7 +212,7 @@ IRenderer::Outputs IRenderer::add_to_frame_graph(FrameGraph& fg, const PassConte
     // Run tone mapping on HDR color → LDR display-ready
     INVARIANT(m_tonemapping);
     TextureHandle display_color = hdr.color;
-    if (m_tonemapping->is_ready()) {
+    if (m_tonemapping_enabled && m_tonemapping->is_ready()) {
         m_tonemapping->set_inputs({hdr.color, hdr.depth});
         m_tonemapping->add_to_frame_graph(fg, ctx);
         display_color = m_tonemapping->ldr_output();
@@ -211,7 +250,11 @@ void IRenderer::draw_imgui() {
         }
     }
     do_draw_imgui();
-    if (m_tonemapping) m_tonemapping->draw_imgui();
+    if (m_tonemapping && ImGui::TreeNodeEx("Tone Mapping", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Checkbox("Enabled", &m_tonemapping_enabled);
+        if (m_tonemapping_enabled) m_tonemapping->draw_imgui();
+        ImGui::TreePop();
+    }
 }
 
 }  // namespace pts::rendering
