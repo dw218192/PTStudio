@@ -37,12 +37,11 @@ class InputComponent;
 
 namespace pts::rendering {
 class IPass;
-class ITopLevelPass;
 }  // namespace pts::rendering
 namespace pts::editor {
 class EditorPass;
+class GridPass;
 class LobePass;
-class ToneMappingPass;
 }  // namespace pts::editor
 
 namespace pts::editor {
@@ -90,8 +89,8 @@ struct EditorApplication final : GpuApplication {
 
     void setup_docking_layout();
     void create_renderer(size_t index);
-    auto create_input_actions() noexcept -> void;
-    auto wrap_mouse_pos() noexcept -> void;
+    void create_input_actions() noexcept;
+    void wrap_mouse_pos() noexcept;
 
     // Scene I/O
     void load_stage(pxr::UsdStageRefPtr stage, std::string_view label);
@@ -104,16 +103,16 @@ struct EditorApplication final : GpuApplication {
                           std::string_view path);
 
     // imgui rendering
-    auto draw_scene_panel() noexcept -> void;
-    auto draw_inspector_panel() noexcept -> void;
+    void draw_scene_panel() noexcept;
+    void draw_inspector_panel() noexcept;
     void draw_prim_tree(const pxr::UsdPrim& prim);
-    auto draw_scene_viewport() noexcept -> void;
-    auto draw_console_panel() noexcept -> void;
+    void draw_scene_viewport() noexcept;
+    void draw_console_panel() noexcept;
     // events
-    auto on_mouse_leave_scene_viewport() noexcept -> void;
-    auto on_mouse_enter_scene_viewport() noexcept -> void;
+    void on_mouse_leave_scene_viewport() noexcept;
+    void on_mouse_enter_scene_viewport() noexcept;
 
-    auto handle_input(InputEvent const& event) noexcept -> void;
+    void handle_input(InputEvent const& event) noexcept;
 
     // Components
     std::unique_ptr<ImGuiComponent> m_imgui;
@@ -142,38 +141,24 @@ struct EditorApplication final : GpuApplication {
     bool m_first_prep{true};
 
     std::unique_ptr<rendering::IRenderer> m_renderer_pass;
-    std::vector<std::unique_ptr<rendering::ITopLevelPass>> m_editor_passes;
-    EditorPass* m_editor_pass = nullptr;  // non-owning, points into m_editor_passes
-    LobePass* m_lobe_pass = nullptr;      // non-owning, points into m_editor_passes
-    rendering::ITopLevelPass* m_tonemapping_pass =
-        nullptr;  // non-owning, points into m_editor_passes
+    std::unique_ptr<GridPass> m_grid_pass;
+    std::unique_ptr<EditorPass> m_editor_pass;
+    std::unique_ptr<LobePass> m_lobe_pass;
     size_t m_active_config_index = 0;
     bool m_editor_passes_enabled = true;
     rendering::ShaderLoader m_shader_loader;
 
-    /// Iterate top-level passes (renderer + editor) for lifecycle and
-    /// frame graph calls. Sub-passes are wired internally by their parent renderer.
+    /// Iterate all passes for lifecycle (setup, imgui, hot-reload, debug targets).
+    /// Never used for frame graph recording.
     template <typename Fn>
     void for_each_pass(Fn&& fn) {
-        if (m_renderer_pass) fn(*m_renderer_pass);
-        for (auto& p : m_editor_passes) {
-            if (!m_editor_passes_enabled && p.get() != m_tonemapping_pass) continue;
-            fn(*p);
-        }
-    }
-
-    /// Iterate all passes including renderer subpasses. Use for discovery
-    /// (debug target collection, perf overlay) where every pass must be visible.
-    template <typename Fn>
-    void for_each_pass_recursive(Fn&& fn) {
         if (m_renderer_pass) {
             fn(*m_renderer_pass);
             m_renderer_pass->for_each_subpass(fn);
         }
-        for (auto& p : m_editor_passes) {
-            if (!m_editor_passes_enabled && p.get() != m_tonemapping_pass) continue;
-            fn(*p);
-        }
+        if (m_grid_pass) fn(*m_grid_pass);
+        if (m_editor_pass) fn(*m_editor_pass);
+        if (m_lobe_pass) fn(*m_lobe_pass);
     }
 
     // USD stage + change tracking

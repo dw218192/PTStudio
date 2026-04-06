@@ -24,7 +24,8 @@ struct FakePass final : IRenderer {
     }
     void do_renderer_setup(const pts::webgpu::Device& /*device*/) override {
     }
-    void do_add_to_frame_graph(FrameGraph& /*fg*/, const PassContext& /*ctx*/) override {
+    HdrOutputs do_add_to_frame_graph(FrameGraph& /*fg*/, const PassContext& /*ctx*/) override {
+        return {};
     }
 };
 
@@ -38,7 +39,8 @@ struct AnotherFakePass final : IRenderer {
     }
     void do_renderer_setup(const pts::webgpu::Device& /*device*/) override {
     }
-    void do_add_to_frame_graph(FrameGraph& /*fg*/, const PassContext& /*ctx*/) override {
+    HdrOutputs do_add_to_frame_graph(FrameGraph& /*fg*/, const PassContext& /*ctx*/) override {
+        return {};
     }
 };
 

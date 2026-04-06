@@ -93,9 +93,12 @@ void GridPass::do_setup(const webgpu::Device& device) {
     if (old_layout) wgpuBindGroupLayoutRelease(old_layout);
 }
 
-void GridPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::PassContext& ctx) {
+void GridPass::render(rendering::FrameGraph& fg, const rendering::PassContext& ctx,
+                      rendering::TextureHandle color, rendering::TextureHandle depth) {
     PTS_ZONE_SCOPED;
     PRECONDITION(is_ready());
+    PRECONDITION(color.is_valid());
+    PRECONDITION(depth.is_valid());
     auto& ready = std::get<Ready>(m_state);
 
     // Register uniform buffer with frame graph
@@ -115,20 +118,6 @@ void GridPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::Pa
     bg_desc.layout = ready.bind_group_layout;
     bg_desc.entries = {entry};
     auto bg_handle = create_bind_group(fg, std::move(bg_desc), "bg0");
-
-    rendering::TextureDesc color_desc;
-    color_desc.width = ctx.viewport_width;
-    color_desc.height = ctx.viewport_height;
-    color_desc.format = WGPUTextureFormat_RGBA16Float;
-    color_desc.clear_color = {0.15, 0.15, 0.18, 1.0};
-
-    rendering::TextureDesc depth_desc;
-    depth_desc.width = ctx.viewport_width;
-    depth_desc.height = ctx.viewport_height;
-    depth_desc.format = WGPUTextureFormat_Depth32Float;
-
-    auto color = fg.find_or_create("scene_color", color_desc);
-    auto depth = fg.find_or_create("scene_depth", depth_desc);
 
     auto queue = ctx.queue;
     auto view_mat = ctx.view_matrix;

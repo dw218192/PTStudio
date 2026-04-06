@@ -7,14 +7,15 @@
 #include <core/rendering/webgpu/webgpu.h>
 
 #include <cstdint>
+#include <optional>
 #include <string_view>
 #include <variant>
 
-namespace pts::editor {
+namespace pts::rendering {
 
-class ToneMappingPass final : public rendering::ITopLevelPass {
+class ToneMappingPass final : public IPass {
    public:
-    using ITopLevelPass::ITopLevelPass;
+    using IPass::IPass;
     ~ToneMappingPass() override;
 
     ToneMappingPass(const ToneMappingPass&) = delete;
@@ -28,19 +29,35 @@ class ToneMappingPass final : public rendering::ITopLevelPass {
         return true;
     }
 
+    struct Inputs {
+        TextureHandle hdr_color;
+        std::optional<TextureHandle> depth;  // for auto-exposure sky masking
+    };
+    void set_inputs(const Inputs& in) {
+        m_inputs = in;
+    }
+
+    /// LDR tone-mapped output. Valid after add_to_frame_graph.
+    TextureHandle ldr_output() const {
+        return m_ldr_output;
+    }
+
     void do_setup(const webgpu::Device& device) override;
-    void add_to_frame_graph(rendering::FrameGraph& fg, const rendering::PassContext& ctx) override;
+    void add_to_frame_graph(FrameGraph& fg, const PassContext& ctx);
     void draw_imgui() override;
 
     static constexpr uint32_t k_uniform_align = 256;
 
-    // Parameters (controlled from editor UI)
+    // Parameters (controlled from renderer UI)
     float m_exposure = 0.0f;  // EV bias (additive on top of auto-exposure when enabled)
     uint32_t m_mode = 0;      // 0 = ACES, 1 = Reinhard
     bool m_auto_exposure = true;
     float m_adaptation_speed = 2.0f;
 
    private:
+    Inputs m_inputs;
+    TextureHandle m_ldr_output;
+
     struct Ready {
         // Tone mapping render pipeline
         webgpu::ShaderModule shader;
@@ -66,4 +83,4 @@ class ToneMappingPass final : public rendering::ITopLevelPass {
     float m_prev_time = 0.0f;
 };
 
-}  // namespace pts::editor
+}  // namespace pts::rendering

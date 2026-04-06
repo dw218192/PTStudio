@@ -60,7 +60,6 @@
 #include "passes/editorPass.h"
 #include "passes/gridPass.h"
 #include "passes/lobePass.h"
-#include "passes/toneMappingPass.h"
 
 using namespace pts;
 using namespace pts::editor;
@@ -130,7 +129,9 @@ EditorApplication::~EditorApplication() {
     m_pending_stage.Reset();
     revoke_stage_listener();
     m_renderer_pass.reset();
-    m_editor_passes.clear();
+    m_grid_pass.reset();
+    m_editor_pass.reset();
+    m_lobe_pass.reset();
     m_world.clear();
     m_stage.Reset();
     m_input.reset();
@@ -488,20 +489,12 @@ void EditorApplication::on_ready() {
     // Create editor passes (always-on, independent of renderer choice)
     {
         auto& dev = webgpu_context()->device();
-        m_editor_passes.push_back(std::make_unique<GridPass>(m_shader_loader));
-        m_editor_passes.push_back(std::make_unique<EditorPass>(m_shader_loader));
-        m_editor_passes.push_back(std::make_unique<LobePass>(m_shader_loader));
-        m_lobe_pass = static_cast<LobePass*>(m_editor_passes.back().get());
-        m_editor_passes.push_back(std::make_unique<ToneMappingPass>(m_shader_loader));
-        m_tonemapping_pass = m_editor_passes.back().get();
-        for (auto& p : m_editor_passes) {
-            p->setup(dev);
-        }
-        for (auto& p : m_editor_passes) {
-            if (auto* ep = dynamic_cast<EditorPass*>(p.get())) {
-                m_editor_pass = ep;
-            }
-        }
+        m_grid_pass = std::make_unique<GridPass>(m_shader_loader);
+        m_grid_pass->setup(dev);
+        m_editor_pass = std::make_unique<EditorPass>(m_shader_loader);
+        m_editor_pass->setup(dev);
+        m_lobe_pass = std::make_unique<LobePass>(m_shader_loader);
+        m_lobe_pass->setup(dev);
     }
 
     // Set up renderer pass — optionally select by name
@@ -529,7 +522,7 @@ void EditorApplication::on_ready() {
     if (!m_app_config.debug_output_name.empty()) {
         int global_index = 1;  // 1-based (0 = "Off")
         bool found = false;
-        for_each_pass_recursive([&](auto& pass) {
+        for_each_pass([&](auto& pass) {
             auto [targets, count] = pass.effective_debug_targets();
             for (uint32_t i = 0; i < count; ++i) {
                 if (targets[i].label == m_app_config.debug_output_name) {
@@ -728,7 +721,9 @@ void EditorApplication::render(FrameContext& ctx) {
         // already destroyed when m_world was replaced above)
         create_renderer(m_active_config_index);
         auto& dev = webgpu_context()->device();
-        for (auto& p : m_editor_passes) p->setup(dev);
+        if (m_grid_pass) m_grid_pass->setup(dev);
+        if (m_editor_pass) m_editor_pass->setup(dev);
+        if (m_lobe_pass) m_lobe_pass->setup(dev);
 
         log(LogLevel::Info, "Loaded scene ({} objects)", m_world.get_objects().size());
     }
@@ -796,7 +791,7 @@ void EditorApplication::render(FrameContext& ctx) {
 
         // Collect all passes for perf overlay
         std::vector<rendering::IPass*> all_passes;
-        for_each_pass_recursive([&](auto& pass) { all_passes.push_back(&pass); });
+        for_each_pass([&](auto& pass) { all_passes.push_back(&pass); });
         m_perf_overlay.draw(get_delta_time(), m_world, *m_frame_graph, all_passes,
                             rendering::RendererRegistry::entries()[m_active_config_index].name,
                             m_viewport_width, m_viewport_height);
@@ -812,7 +807,6 @@ void EditorApplication::render(FrameContext& ctx) {
 
     bool has_viewport = m_viewport_width > 0 && m_viewport_height > 0;
 
-    rendering::ResourceHandle scene_color_handle;
     rendering::ResourceHandle display_color_handle;  // tone-mapped output for ImGui display
     rendering::ResourceHandle gizmo_overlay_handle;
 
@@ -868,47 +862,32 @@ void EditorApplication::render(FrameContext& ctx) {
         }
     }
 
-    // In capture mode, add renderer + tone mapping only (skip editor passes)
+    // 1. Renderer produces display-ready color (includes tone mapping)
+    rendering::ResourceHandle scene_color_handle;
+    std::optional<rendering::ResourceHandle> scene_depth_handle;
     {
         PTS_ZONE_NAMED("add_to_frame_graph");
-        if (capture_mode) {
-            if (m_renderer_pass && m_renderer_pass->is_ready() &&
-                !(m_renderer_pass->requires_viewport() && !has_viewport)) {
-                m_renderer_pass->add_to_frame_graph(*m_frame_graph, pass_ctx);
-            }
-            if (m_tonemapping_pass && m_tonemapping_pass->is_ready()) {
-                m_tonemapping_pass->add_to_frame_graph(*m_frame_graph, pass_ctx);
-            }
-        } else {
-            for_each_pass([&](auto& pass) {
-                if (!pass.is_ready()) return;
-                if (pass.requires_viewport() && !has_viewport) return;
-                pass.add_to_frame_graph(*m_frame_graph, pass_ctx);
-            });
+        if (m_renderer_pass && m_renderer_pass->is_ready() &&
+            !(m_renderer_pass->requires_viewport() && !has_viewport)) {
+            auto out = m_renderer_pass->add_to_frame_graph(*m_frame_graph, pass_ctx);
+            display_color_handle = out.color;
+            scene_color_handle = out.hdr_color;
+            scene_depth_handle = out.depth;
         }
-    }
 
-    if (has_viewport) {
-        // Look up scene_color (HDR) and tone_mapped_color (LDR) resources
-        rendering::TextureDesc hdr_desc;
-        hdr_desc.width = m_viewport_width;
-        hdr_desc.height = m_viewport_height;
-        hdr_desc.format = WGPUTextureFormat_RGBA16Float;
-        hdr_desc.clear_color = {0.15, 0.15, 0.18, 1.0};
-        if (capture_mode) {
-            hdr_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment |
-                                                           WGPUTextureUsage_CopySrc);
+        // 2. Editor overlays (called explicitly, not through virtual)
+        if (!capture_mode && has_viewport && m_editor_passes_enabled && scene_depth_handle) {
+            if (m_grid_pass && m_grid_pass->is_ready())
+                m_grid_pass->render(*m_frame_graph, pass_ctx, scene_color_handle,
+                                    *scene_depth_handle);
+            if (m_editor_pass && m_editor_pass->is_ready())
+                m_editor_pass->render(*m_frame_graph, pass_ctx, scene_color_handle,
+                                      *scene_depth_handle);
         }
-        scene_color_handle = m_frame_graph->find_or_create("scene_color", hdr_desc);
-
-        rendering::TextureDesc ldr_desc;
-        ldr_desc.width = m_viewport_width;
-        ldr_desc.height = m_viewport_height;
-        ldr_desc.format = WGPUTextureFormat_RGBA8Unorm;
-        ldr_desc.clear_color = {0, 0, 0, 1};
-        ldr_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment |
-                                                       WGPUTextureUsage_CopySrc);
-        display_color_handle = m_frame_graph->find_or_create("tone_mapped_color", ldr_desc);
+        if (!capture_mode) {
+            if (m_lobe_pass && m_lobe_pass->is_ready())
+                m_lobe_pass->render(*m_frame_graph, pass_ctx);
+        }
     }
 
     // Declare reads on all debug target textures so frame graph tracks them.
@@ -930,7 +909,7 @@ void EditorApplication::render(FrameContext& ctx) {
                 m_renderer_pass->for_each_subpass(collect_debug_targets);
             }
         } else {
-            for_each_pass_recursive(collect_debug_targets);
+            for_each_pass(collect_debug_targets);
         }
     }
 
@@ -987,7 +966,7 @@ void EditorApplication::render(FrameContext& ctx) {
             m_screenshot_pending = false;
             should_capture = true;
         }
-        if (should_capture && !m_capture_readback.is_pending()) {
+        if (should_capture && !m_capture_readback.is_pending() && display_color_handle.is_valid()) {
             rendering::TextureRef ref;
             if (m_debug_target_selection > 0 &&
                 static_cast<size_t>(m_debug_target_selection - 1) < debug_target_handles.size()) {
@@ -1041,7 +1020,7 @@ void EditorApplication::render(FrameContext& ctx) {
 
     if (!capture_mode) {
         // Store scene color ref for next frame's ImGui::Image
-        if (has_viewport && scene_color_handle.is_valid()) {
+        if (has_viewport && display_color_handle.is_valid()) {
             m_scene_color_ref = m_frame_graph->get_texture_ref(display_color_handle);
         }
 
@@ -1576,13 +1555,13 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
             ImGui::EndCombo();
         }
         // Exposure control
-        if (m_tonemapping_pass) {
-            auto* tm = static_cast<ToneMappingPass*>(m_tonemapping_pass);
+        if (m_renderer_pass) {
             ImGui::SameLine();
             ImGui::Text("EV:");
             ImGui::SameLine();
             ImGui::SetNextItemWidth(80);
-            ImGui::DragFloat("##exposure", &tm->m_exposure, 0.05f, -5.0f, 5.0f, "%.1f");
+            ImGui::DragFloat("##exposure", &m_renderer_pass->exposure(), 0.05f, -5.0f, 5.0f,
+                             "%.1f");
         }
         // Renderer-specific controls
         if (m_renderer_pass) {
@@ -1600,7 +1579,7 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
             if (ImGui::BeginMenu("Debug Output")) {
                 std::vector<std::string> debug_labels;
                 debug_labels.emplace_back("Off");
-                for_each_pass_recursive([&](auto& pass) {
+                for_each_pass([&](auto& pass) {
                     auto [targets, count] = pass.effective_debug_targets();
                     for (uint32_t i = 0; i < count; ++i) {
                         debug_labels.emplace_back(std::string(pass.name()) + ": " +

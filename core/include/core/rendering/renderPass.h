@@ -223,14 +223,5 @@ class IPass {
     }
 };
 
-/// Top-level pass interface for passes called generically by the editor
-/// via add_to_frame_graph(fg, ctx). Sub-passes use non-virtual typed
-/// add_to_frame_graph methods with structured Inputs/Outputs instead.
-class ITopLevelPass : public IPass {
-   public:
-    using IPass::IPass;
-    virtual void add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) = 0;
-};
-
 }  // namespace rendering
 }  // namespace pts

@@ -25,8 +25,8 @@ class WireframePass final : public rendering::IRenderer {
     [[nodiscard]] auto is_ready() const noexcept -> bool override;
 
     void do_renderer_setup(const webgpu::Device& device) override;
-    void do_add_to_frame_graph(rendering::FrameGraph& fg,
-                               const rendering::PassContext& ctx) override;
+    HdrOutputs do_add_to_frame_graph(rendering::FrameGraph& fg,
+                                     const rendering::PassContext& ctx) override;
 
     static constexpr uint32_t k_uniform_align = 256;
 

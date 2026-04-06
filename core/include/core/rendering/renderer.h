@@ -2,16 +2,35 @@
 
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/renderPass.h>
+#include <core/rendering/toneMappingPass.h>
 
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace pts::rendering {
 
-class IRenderer : public ITopLevelPass {
+class IRenderer : public IPass {
    public:
-    using ITopLevelPass::ITopLevelPass;
-    ~IRenderer() override = default;
+    using IPass::IPass;
+    ~IRenderer() override;
+
+    struct Outputs {
+        TextureHandle color;                 // tone-mapped LDR, display-ready
+        TextureHandle hdr_color;             // raw HDR scene color (for editor overlays)
+        std::optional<TextureHandle> depth;  // compute-only renderers may not produce
+    };
+
+    /// Public entry point (non-virtual, NVI).
+    /// Calls do_add_to_frame_graph → gets HDR scene color + depth,
+    /// then runs tone mapping → LDR display-ready color.
+    Outputs add_to_frame_graph(FrameGraph& fg, const PassContext& ctx);
+
+    // Exposure controls (delegated to ToneMappingPass)
+    float& exposure();
+    uint32_t& tone_map_mode();
+    bool& auto_exposure();
+    float& adaptation_speed();
 
     template <typename T, typename... Args>
     T& add_pass(Args&&... args) {
@@ -37,16 +56,7 @@ class IRenderer : public ITopLevelPass {
 
     // ── Lifecycle: auto-forwarded to all children ──
 
-    /// Frame graph: delegates entirely to the renderer. The renderer calls
-    /// child passes explicitly at the points it chooses.
-    void add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) override {
-        do_add_to_frame_graph(fg, ctx);
-    }
-
-    void on_shaders_reloaded(const webgpu::Device& device) override {
-        for (auto& c : m_children) c->on_shaders_reloaded(device);
-        ITopLevelPass::on_shaders_reloaded(device);
-    }
+    void on_shaders_reloaded(const webgpu::Device& device) override;
 
     void draw_imgui() override;
 
@@ -58,27 +68,21 @@ class IRenderer : public ITopLevelPass {
         for (auto& c : m_children) c->update_texture_refs(fg);
     }
 
-    ResourceHandle color_output() const {
-        return m_color;
-    }
-    ResourceHandle depth_output() const {
-        return m_depth;
-    }
-
    protected:
-    void do_setup(const webgpu::Device& device) override {
-        for (auto& c : m_children) c->setup(device);
-        do_renderer_setup(device);
-    }
+    /// What do_add_to_frame_graph returns — HDR color before tone mapping.
+    struct HdrOutputs {
+        TextureHandle color;                 // HDR scene color
+        std::optional<TextureHandle> depth;  // compute-only renderers may not produce
+    };
+
+    void do_setup(const webgpu::Device& device) override;
 
     virtual void do_renderer_setup(const webgpu::Device& device) = 0;
-    virtual void do_add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) = 0;
+    virtual HdrOutputs do_add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) = 0;
     virtual void do_draw_imgui() {};
 
-    ResourceHandle m_color;
-    ResourceHandle m_depth;
-
    private:
+    std::unique_ptr<ToneMappingPass> m_tonemapping;
     std::vector<std::unique_ptr<IPass>> m_children;
 };
 

@@ -111,7 +111,7 @@ TEST_CASE("ShadowMapPass add_to_frame_graph with no lights returns valid handles
                     glm::mat4(1), glm::mat4(1),   glm::vec3(0), 0.0f,  0};
 
     fg.begin_frame();
-    auto out = pass.add_to_frame_graph(fg, ctx);
+    auto out = pass.add_to_frame_graph(fg, ctx, {});
 
     CHECK(out.shadow_array.is_valid());
     CHECK(out.shadow_info.is_valid());
@@ -174,7 +174,7 @@ TEST_CASE("ShadowMapPass add_to_frame_graph with distant light produces valid ou
                     glm::mat4(1), glm::mat4(1),   glm::vec3(0), 0.0f,  0};
 
     fg.begin_frame();
-    auto out = pass.add_to_frame_graph(fg, ctx);
+    auto out = pass.add_to_frame_graph(fg, ctx, {});
 
     CHECK(out.shadow_array.is_valid());
     CHECK(out.shadow_info.is_valid());
@@ -243,7 +243,7 @@ TEST_CASE("ShadowMapPass caps shadow count at k_max_shadow_maps") {
                     glm::mat4(1), glm::mat4(1),   glm::vec3(0), 0.0f,  0};
 
     fg.begin_frame();
-    auto out = pass.add_to_frame_graph(fg, ctx);
+    auto out = pass.add_to_frame_graph(fg, ctx, {});
 
     CHECK(out.shadow_array.is_valid());
     CHECK(out.shadow_info.is_valid());
@@ -287,7 +287,7 @@ TEST_CASE("ShadowMapPass skips non-distant lights") {
                     glm::mat4(1), glm::mat4(1),   glm::vec3(0), 0.0f,  0};
 
     fg.begin_frame();
-    auto out = pass.add_to_frame_graph(fg, ctx);
+    auto out = pass.add_to_frame_graph(fg, ctx, {});
 
     CHECK(out.shadow_array.is_valid());
     CHECK(out.shadow_info.is_valid());

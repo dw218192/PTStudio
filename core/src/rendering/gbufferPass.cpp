@@ -88,7 +88,8 @@ void GBufferPass::do_setup(const webgpu::Device& device) {
     };
 }
 
-GBufferPass::Outputs GBufferPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
+GBufferPass::Outputs GBufferPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx,
+                                                     const Inputs&) {
     PTS_ZONE_SCOPED;
     PRECONDITION(is_ready());
     auto& ready = std::get<Ready>(m_state);
@@ -128,8 +129,8 @@ GBufferPass::Outputs GBufferPass::add_to_frame_graph(FrameGraph& fg, const PassC
     normals_desc.format = WGPUTextureFormat_RG16Float;
     normals_desc.clear_color = {0, 0, 0, 0};
 
-    auto depth = fg.find_or_create("scene_depth", depth_desc);
-    auto normals = fg.find_or_create("scene_normals", normals_desc);
+    auto depth = create_texture(fg, depth_desc, "depth");
+    auto normals = create_texture(fg, normals_desc, "normals");
 
     auto* pipeline_handle = ready.pipeline.handle();
     auto view_mat = ctx.view_matrix;

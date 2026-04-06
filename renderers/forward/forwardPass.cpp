@@ -377,19 +377,19 @@ void ForwardPass::do_renderer_setup(const webgpu::Device& device) {
     };
 }
 
-void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
-                                        const rendering::PassContext& ctx) {
+ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
+                                                           const rendering::PassContext& ctx) {
     PTS_ZONE_SCOPED;
     PRECONDITION(is_ready());
 
     // Pre-passes: G-buffer (depth + normals) and shadow maps
     rendering::GBufferPass::Outputs gbuf_out;
     if (auto* gbuf = get_pass<rendering::GBufferPass>(); gbuf && gbuf->is_ready())
-        gbuf_out = gbuf->add_to_frame_graph(fg, ctx);
+        gbuf_out = gbuf->add_to_frame_graph(fg, ctx, {});
 
     rendering::ShadowMapPass::Outputs shadow_out{};
     if (auto* shadow = get_pass<rendering::ShadowMapPass>(); shadow && shadow->is_ready())
-        shadow_out = shadow->add_to_frame_graph(fg, ctx);
+        shadow_out = shadow->add_to_frame_graph(fg, ctx, {});
 
     auto& ready = std::get<Ready>(m_state);
 
@@ -488,8 +488,9 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     depth_desc.height = ctx.viewport_height;
     depth_desc.format = WGPUTextureFormat_Depth32Float;
 
-    auto color = fg.find_or_create("scene_color", color_desc);
-    auto depth = fg.find_or_create("scene_depth", depth_desc);
+    auto color = create_texture(fg, color_desc, "color");
+    auto depth =
+        gbuf_out.depth.is_valid() ? gbuf_out.depth : create_texture(fg, depth_desc, "depth");
 
     auto [eff_debug_targets, eff_debug_count] = effective_debug_targets();
 
@@ -707,6 +708,5 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     if (auto* ssao = get_pass<rendering::SSAOPass>(); ssao && ssao->is_ready())
         ssao->add_to_frame_graph(fg, ctx, {gbuf_out.depth, gbuf_out.normals});
 
-    m_color = color;
-    m_depth = depth;
+    return {color, depth};
 }

@@ -109,9 +109,9 @@ inline std::vector<glm::vec3> generate_light_verts(const rendering::LightData& l
 /// Submits two frame graph passes:
 ///   "editor_picking" — renders mesh objects + light shapes to picking_ids
 ///   "editor_gizmos"  — renders light wireframe shapes to scene_color
-class EditorPass final : public rendering::ITopLevelPass {
+class EditorPass final : public rendering::IPass {
    public:
-    using ITopLevelPass::ITopLevelPass;
+    using IPass::IPass;
     ~EditorPass() override;
 
     EditorPass(const EditorPass&) = delete;
@@ -123,7 +123,8 @@ class EditorPass final : public rendering::ITopLevelPass {
     [[nodiscard]] auto is_ready() const noexcept -> bool override;
 
     void do_setup(const webgpu::Device& device) override;
-    void add_to_frame_graph(rendering::FrameGraph& fg, const rendering::PassContext& ctx) override;
+    void render(rendering::FrameGraph& fg, const rendering::PassContext& ctx,
+                rendering::TextureHandle color, rendering::TextureHandle depth);
 
     /// Resolve a picking ID to its prim path. Returns empty path if invalid.
     /// Valid after add_to_frame_graph has run for the current frame.

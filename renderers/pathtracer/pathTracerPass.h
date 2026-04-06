@@ -29,8 +29,8 @@ class PathTracerPass final : public rendering::IRenderer {
     void do_renderer_setup(const webgpu::Device& device) override;
     void do_draw_imgui() override;
     void draw_viewport_overlay(const ViewportOverlayParams& params) override;
-    void do_add_to_frame_graph(rendering::FrameGraph& fg,
-                               const rendering::PassContext& ctx) override;
+    HdrOutputs do_add_to_frame_graph(rendering::FrameGraph& fg,
+                                     const rendering::PassContext& ctx) override;
     void draw_viewport_controls() override;
 
    private:

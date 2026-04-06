@@ -100,8 +100,8 @@ void WireframePass::do_renderer_setup(const webgpu::Device& device) {
     if (old_layout) wgpuBindGroupLayoutRelease(old_layout);
 }
 
-void WireframePass::do_add_to_frame_graph(rendering::FrameGraph& fg,
-                                          const rendering::PassContext& ctx) {
+WireframePass::HdrOutputs WireframePass::do_add_to_frame_graph(rendering::FrameGraph& fg,
+                                                               const rendering::PassContext& ctx) {
     PTS_ZONE_SCOPED;
     PRECONDITION(is_ready());
     auto& ready = std::get<Ready>(m_state);
@@ -141,8 +141,8 @@ void WireframePass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     depth_desc.height = ctx.viewport_height;
     depth_desc.format = WGPUTextureFormat_Depth32Float;
 
-    auto color = fg.find_or_create("scene_color", color_desc);
-    auto depth = fg.find_or_create("scene_depth", depth_desc);
+    auto color = create_texture(fg, color_desc, "color");
+    auto depth = create_texture(fg, depth_desc, "depth");
 
     auto queue = ctx.queue;
     auto view_mat = ctx.view_matrix;
@@ -208,4 +208,6 @@ void WireframePass::do_add_to_frame_graph(rendering::FrameGraph& fg,
                 wgpuRenderPassEncoderDrawIndexed(pass, wf.index_count, 1, 0, 0, 0);
             }
         });
+
+    return {color, depth};
 }

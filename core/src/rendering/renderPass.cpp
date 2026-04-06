@@ -1,6 +1,7 @@
 #include <core/rendering/renderPass.h>
 #include <core/rendering/renderer.h>
 #include <core/rendering/shaderLoader.h>
+#include <core/rendering/toneMappingPass.h>
 #include <core/rendering/webgpu/device.h>
 #include <imgui.h>
 #include <spdlog/spdlog.h>
@@ -148,6 +149,59 @@ auto IPass::load_pass_shader(std::string_view resource_key) const -> std::string
     return m_shader_loader->load_variant(resource_key, defines, variant_key);
 }
 
+IRenderer::~IRenderer() = default;
+
+void IRenderer::do_setup(const webgpu::Device& device) {
+    for (auto& c : m_children) c->setup(device);
+    if (!m_tonemapping) {
+        m_tonemapping = std::make_unique<ToneMappingPass>(get_shader_loader());
+    }
+    m_tonemapping->setup(device);
+    do_renderer_setup(device);
+}
+
+void IRenderer::on_shaders_reloaded(const webgpu::Device& device) {
+    for (auto& c : m_children) c->on_shaders_reloaded(device);
+    if (m_tonemapping) m_tonemapping->on_shaders_reloaded(device);
+    IPass::on_shaders_reloaded(device);
+}
+
+IRenderer::Outputs IRenderer::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
+    auto hdr = do_add_to_frame_graph(fg, ctx);
+    INVARIANT_MSG(hdr.color.is_valid(), "Renderer must produce a color output");
+
+    // Run tone mapping on HDR color → LDR display-ready
+    INVARIANT(m_tonemapping);
+    TextureHandle display_color = hdr.color;
+    if (m_tonemapping->is_ready()) {
+        m_tonemapping->set_inputs({hdr.color, hdr.depth});
+        m_tonemapping->add_to_frame_graph(fg, ctx);
+        display_color = m_tonemapping->ldr_output();
+    }
+
+    return {display_color, hdr.color, hdr.depth};
+}
+
+float& IRenderer::exposure() {
+    INVARIANT(m_tonemapping);
+    return m_tonemapping->m_exposure;
+}
+
+uint32_t& IRenderer::tone_map_mode() {
+    INVARIANT(m_tonemapping);
+    return m_tonemapping->m_mode;
+}
+
+bool& IRenderer::auto_exposure() {
+    INVARIANT(m_tonemapping);
+    return m_tonemapping->m_auto_exposure;
+}
+
+float& IRenderer::adaptation_speed() {
+    INVARIANT(m_tonemapping);
+    return m_tonemapping->m_adaptation_speed;
+}
+
 void IRenderer::draw_imgui() {
     if (!ImGui::CollapsingHeader(name().data(), ImGuiTreeNodeFlags_DefaultOpen)) return;
     for (auto& c : m_children) {
@@ -157,6 +211,7 @@ void IRenderer::draw_imgui() {
         }
     }
     do_draw_imgui();
+    if (m_tonemapping) m_tonemapping->draw_imgui();
 }
 
 }  // namespace pts::rendering

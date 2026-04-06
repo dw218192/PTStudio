@@ -216,8 +216,8 @@ void PathTracerPass::ensure_pixel_buffers(const webgpu::Device& device, uint32_t
     m_frame_count = 0;
 }
 
-void PathTracerPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
-                                           const rendering::PassContext& ctx) {
+PathTracerPass::HdrOutputs PathTracerPass::do_add_to_frame_graph(
+    rendering::FrameGraph& fg, const rendering::PassContext& ctx) {
     PTS_ZONE_SCOPED;
     PRECONDITION(is_ready());
     auto& r = std::get<Ready>(m_state);
@@ -366,7 +366,7 @@ void PathTracerPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     color_desc.height = ctx.viewport_height;
     color_desc.format = WGPUTextureFormat_RGBA16Float;
     color_desc.clear_color = {0.15, 0.15, 0.18, 1.0};
-    auto color = fg.find_or_create("scene_color", color_desc);
+    auto color = create_texture(fg, color_desc, "color");
 
     // Import the pass-owned output buffer so the FG can track pointer changes
     auto output_buf_handle =
@@ -405,6 +405,8 @@ void PathTracerPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
         wgpuRenderPassEncoderSetBindGroup(pass, 0, blit_bg, 0, nullptr);
         wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
     });
+
+    return {color, {}};
 }
 
 void PathTracerPass::draw_viewport_controls() {

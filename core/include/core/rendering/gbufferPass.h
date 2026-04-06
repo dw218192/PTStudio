@@ -32,11 +32,12 @@ class GBufferPass final : public IPass {
     [[nodiscard]] auto debug_targets() const noexcept
         -> std::pair<const DebugTarget*, uint32_t> override;
 
+    struct Inputs {};
     struct Outputs {
         ResourceHandle depth;
         ResourceHandle normals;
     };
-    Outputs add_to_frame_graph(FrameGraph& fg, const PassContext& ctx);
+    Outputs add_to_frame_graph(FrameGraph& fg, const PassContext& ctx, const Inputs&);
 
    protected:
     void do_setup(const webgpu::Device& device) override;

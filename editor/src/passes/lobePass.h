@@ -12,9 +12,9 @@
 
 namespace pts::editor {
 
-class LobePass final : public rendering::ITopLevelPass {
+class LobePass final : public rendering::IPass {
    public:
-    using ITopLevelPass::ITopLevelPass;
+    using IPass::IPass;
     ~LobePass() override;
 
     LobePass(const LobePass&) = delete;
@@ -29,7 +29,7 @@ class LobePass final : public rendering::ITopLevelPass {
     }
 
     void do_setup(const webgpu::Device& device) override;
-    void add_to_frame_graph(rendering::FrameGraph& fg, const rendering::PassContext& ctx) override;
+    void render(rendering::FrameGraph& fg, const rendering::PassContext& ctx);
     void draw_imgui() override;
     void update_texture_refs(rendering::FrameGraph& fg) override;
 

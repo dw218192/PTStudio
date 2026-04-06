@@ -36,11 +36,12 @@ class ShadowMapPass final : public IPass {
     void do_setup(const webgpu::Device& device) override;
     void draw_imgui() override;
 
+    struct Inputs {};
     struct Outputs {
         TextureHandle shadow_array;
         BufferHandle shadow_info;
     };
-    Outputs add_to_frame_graph(FrameGraph& fg, const PassContext& ctx);
+    Outputs add_to_frame_graph(FrameGraph& fg, const PassContext& ctx, const Inputs&);
 
     [[nodiscard]] bool enabled() const {
         return m_enabled;

@@ -1,15 +1,14 @@
-#include "toneMappingPass.h"
-
 #include <core/diagnostics.h>
 #include <core/profiling.h>
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/shaderLoader.h>
+#include <core/rendering/toneMappingPass.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
 #include <imgui.h>
 
 using namespace pts;
-using namespace pts::editor;
+using namespace pts::rendering;
 
 struct ToneMappingUniforms {
     float exposure;
@@ -254,8 +253,7 @@ void ToneMappingPass::do_setup(const webgpu::Device& device) {
     };
 }
 
-void ToneMappingPass::add_to_frame_graph(rendering::FrameGraph& fg,
-                                         const rendering::PassContext& ctx) {
+void ToneMappingPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
     PTS_ZONE_SCOPED;
     PRECONDITION(is_ready());
     auto& ready = std::get<Ready>(m_state);
@@ -269,25 +267,25 @@ void ToneMappingPass::add_to_frame_graph(rendering::FrameGraph& fg,
     bool needs_reset = m_auto_exposure && !m_prev_auto_exposure;
     m_prev_auto_exposure = m_auto_exposure;
 
-    // Read HDR scene_color, write LDR tone_mapped_color
-    rendering::TextureDesc hdr_desc;
-    hdr_desc.width = ctx.viewport_width;
-    hdr_desc.height = ctx.viewport_height;
-    hdr_desc.format = WGPUTextureFormat_RGBA16Float;
-    auto hdr_handle = fg.find_or_create("scene_color", hdr_desc);
+    // Read HDR input, write LDR tone_mapped_color
+    PRECONDITION(m_inputs.hdr_color.is_valid());
+    auto hdr_handle = m_inputs.hdr_color;
 
-    rendering::TextureDesc ldr_desc;
+    TextureDesc ldr_desc;
     ldr_desc.width = ctx.viewport_width;
     ldr_desc.height = ctx.viewport_height;
     ldr_desc.format = WGPUTextureFormat_RGBA8Unorm;
     ldr_desc.clear_color = {0, 0, 0, 1};
-    auto ldr_handle = fg.find_or_create("tone_mapped_color", ldr_desc);
+    ldr_desc.usage =
+        static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_CopySrc);
+    auto ldr_handle = create_texture(fg, ldr_desc, "ldr_output");
+    m_ldr_output = ldr_handle;
 
     // Check if SSAOPass produced the "ssao" resource this frame
     auto ssao_found = fg.find("ssao");
 
     // Exposure result buffer (persistent across frames)
-    rendering::BufferDesc result_buf_desc;
+    BufferDesc result_buf_desc;
     result_buf_desc.size = sizeof(ExposureResult);
     result_buf_desc.usage =
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
@@ -295,17 +293,17 @@ void ToneMappingPass::add_to_frame_graph(rendering::FrameGraph& fg,
 
     // --- Luminance compute pass (only when auto-exposure is on) ---
     if (m_auto_exposure) {
-        rendering::BufferDesc lum_params_desc;
+        BufferDesc lum_params_desc;
         lum_params_desc.size = sizeof(LuminanceParams);
         lum_params_desc.usage =
             static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
         auto lum_params_handle = create_buffer(fg, lum_params_desc, "lum_params");
 
-        // Find scene_depth for sky masking (optional — path tracer may not have it)
-        auto depth_handle = fg.find("scene_depth");
+        // Depth for sky masking (optional — path tracer may not have it)
+        auto depth_handle = m_inputs.depth;
         bool has_depth = depth_handle.has_value();
 
-        rendering::BindGroupDesc lum_bg_desc;
+        BindGroupDesc lum_bg_desc;
         lum_bg_desc.layout = ready.luminance_bgl;
         lum_bg_desc.entries.resize(5);
         lum_bg_desc.entries[0].binding = 0;
@@ -334,7 +332,9 @@ void ToneMappingPass::add_to_frame_graph(rendering::FrameGraph& fg,
 
         auto lum_builder = fg.add_pass("luminance");
         lum_builder.read(hdr_handle);
-        lum_builder.read(*depth_handle);
+        if (has_depth) {
+            lum_builder.read(*depth_handle);
+        }
 
         lum_builder.execute([=, &fg](WGPUComputePassEncoder enc) {
             auto result_buf = fg.get_buffer_ref(result_buf_handle).handle();
@@ -364,14 +364,14 @@ void ToneMappingPass::add_to_frame_graph(rendering::FrameGraph& fg,
     // --- Tone mapping render pass ---
 
     // Register uniform buffer
-    rendering::BufferDesc buf_desc;
+    BufferDesc buf_desc;
     buf_desc.size = sizeof(ToneMappingUniforms);
     buf_desc.usage =
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
     auto uniform_buf_handle = create_buffer(fg, buf_desc, "uniforms");
 
     // Register bind group (6 entries)
-    rendering::BindGroupDesc bg_desc;
+    BindGroupDesc bg_desc;
     bg_desc.layout = ready.bind_group_layout;
     bg_desc.entries.resize(6);
     bg_desc.entries[0].binding = 0;

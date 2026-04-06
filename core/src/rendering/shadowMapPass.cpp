@@ -94,7 +94,8 @@ void ShadowMapPass::do_setup(const webgpu::Device& device) {
     };
 }
 
-ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
+ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx,
+                                                         const Inputs&) {
     PTS_ZONE_SCOPED;
     PRECONDITION(is_ready());
     auto& ready = std::get<Ready>(m_state);

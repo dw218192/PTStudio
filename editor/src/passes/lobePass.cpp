@@ -92,7 +92,7 @@ void LobePass::do_setup(const webgpu::Device& device) {
     };
 }
 
-void LobePass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::PassContext& ctx) {
+void LobePass::render(rendering::FrameGraph& fg, const rendering::PassContext& ctx) {
     PTS_ZONE_SCOPED;
     PRECONDITION(is_ready());
     auto& ready = std::get<Ready>(m_state);
