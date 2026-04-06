@@ -138,6 +138,8 @@ slangc:
     - input: "editor/shaders/tonemapping.slang"
       output: "editor/generated/shaders/tonemapping.wgsl"
       reflect: true
+    - input: "editor/shaders/luminance.slang"
+      output: "editor/generated/shaders/luminance.wgsl"
     - input: "renderers/pathtracer/pathtracer.slang"
       output: "editor/generated/shaders/pathtracer.wgsl"
     - input: "renderers/pathtracer/pt_blit.slang"
@@ -210,6 +212,7 @@ embed:
         - "editor/generated/shaders/gizmo.wgsl"
         - "editor/generated/shaders/lobe.wgsl"
         - "editor/generated/shaders/tonemapping.wgsl"
+        - "editor/generated/shaders/luminance.wgsl"
         - "editor/generated/shaders/pathtracer.wgsl"
         - "editor/generated/shaders/pt_blit.wgsl"
         - "editor/icons/*.*"

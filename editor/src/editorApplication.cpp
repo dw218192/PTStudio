@@ -458,6 +458,9 @@ void EditorApplication::on_ready() {
         "editor/generated/shaders/tonemapping.wgsl", "editor/shaders/tonemapping.slang",
         "editor/generated/shaders/tonemapping.wgsl", editor_resources::get_resource);
     m_shader_loader.register_shader(
+        "editor/generated/shaders/luminance.wgsl", "editor/shaders/luminance.slang",
+        "editor/generated/shaders/luminance.wgsl", editor_resources::get_resource, {"cs_main"});
+    m_shader_loader.register_shader(
         "editor/generated/shaders/pathtracer.wgsl", "editor/shaders/pathtracer.slang",
         "editor/generated/shaders/pathtracer.wgsl", editor_resources::get_resource, {"cs_main"});
     m_shader_loader.register_shader(

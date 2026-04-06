@@ -39,66 +39,6 @@ static_assert(sizeof(GizmoUniforms) == 80);
 static_assert(EditorPass::k_uniform_align >= sizeof(PickingUniforms));
 static_assert(EditorPass::k_uniform_align >= sizeof(GizmoUniforms));
 
-// ── Gizmo geometry generation ──────────────────────────────────────────
-
-static constexpr uint32_t k_circle_segments = 48;
-
-static void generate_circle(std::vector<glm::vec3>& out, glm::vec3 center, glm::vec3 axis_a,
-                            glm::vec3 axis_b, float radius) {
-    for (uint32_t i = 0; i < k_circle_segments; ++i) {
-        float a0 = glm::two_pi<float>() * static_cast<float>(i) / k_circle_segments;
-        float a1 = glm::two_pi<float>() * static_cast<float>(i + 1) / k_circle_segments;
-        out.push_back(center + (std::cos(a0) * axis_a + std::sin(a0) * axis_b) * radius);
-        out.push_back(center + (std::cos(a1) * axis_a + std::sin(a1) * axis_b) * radius);
-    }
-}
-
-/// Generate line-list wireframe geometry for the color overlay.
-static std::vector<glm::vec3> generate_light_verts(const rendering::LightData& light) {
-    std::vector<glm::vec3> verts;
-    switch (light.type) {
-        case rendering::LightData::Type::Sphere: {
-            float r = std::max(light.radius, 0.1f);
-            verts.reserve(k_circle_segments * 2 * 3);
-            generate_circle(verts, {0, 0, 0}, {1, 0, 0}, {0, 1, 0}, r);
-            generate_circle(verts, {0, 0, 0}, {1, 0, 0}, {0, 0, 1}, r);
-            generate_circle(verts, {0, 0, 0}, {0, 1, 0}, {0, 0, 1}, r);
-            break;
-        }
-        case rendering::LightData::Type::Rect: {
-            float hw = light.width * 0.5f;
-            float hh = light.height * 0.5f;
-            float arrow = std::min(hw, hh) * 0.7f;
-            verts = {{-hw, -hh, 0},
-                     {hw, -hh, 0},
-                     {hw, -hh, 0},
-                     {hw, hh, 0},
-                     {hw, hh, 0},
-                     {-hw, hh, 0},
-                     {-hw, hh, 0},
-                     {-hw, -hh, 0},
-                     // Direction arrow along -Z (emission direction)
-                     {0, 0, 0},
-                     {0, 0, -arrow}};
-            break;
-        }
-        case rendering::LightData::Type::Disk: {
-            float r = std::max(light.radius, 0.1f);
-            float arrow = r * 0.7f;
-            verts.reserve(k_circle_segments * 2 + 2);
-            generate_circle(verts, {0, 0, 0}, {1, 0, 0}, {0, 1, 0}, r);
-            // Direction arrow along -Z (emission direction)
-            verts.push_back({0, 0, 0});
-            verts.push_back({0, 0, -arrow});
-            break;
-        }
-        case rendering::LightData::Type::Distant:
-        case rendering::LightData::Type::Dome:
-            break;
-    }
-    return verts;
-}
-
 // ── EditorPass implementation ──────────────────────────────────────────
 
 EditorPass::~EditorPass() {
@@ -160,6 +100,19 @@ void EditorPass::do_setup(const webgpu::Device& device) {
                                 .vertex_layout<editor_picking_shader::VertexLayout>()
                                 .build();
 
+    // Line-list picking pipeline for wireframe-only lights (e.g. Distant)
+    auto picking_line_pipeline = webgpu::RenderPipelineBuilder(device)
+                                     .shader(picking_shader)
+                                     .color_format(WGPUTextureFormat_R32Uint)
+                                     .depth_format(WGPUTextureFormat_Depth32Float)
+                                     .depth_write(true)
+                                     .depth_compare(WGPUCompareFunction_Less)
+                                     .cull_mode(WGPUCullMode_None)
+                                     .topology(WGPUPrimitiveTopology_LineList)
+                                     .pipeline_layout(picking_pl)
+                                     .vertex_layout<editor_picking_shader::VertexLayout>()
+                                     .build();
+
     wgpuPipelineLayoutRelease(picking_pl);
 
     // ── Gizmo color pipeline (wireframe overlay on scene_color) ────────
@@ -205,9 +158,14 @@ void EditorPass::do_setup(const webgpu::Device& device) {
     wgpuPipelineLayoutRelease(gizmo_pl);
 
     m_state = Ready{
-        std::move(picking_shader), std::move(picking_pipeline),     picking_bgl,
+        std::move(picking_shader),
+        std::move(picking_pipeline),
+        std::move(picking_line_pipeline),
+        picking_bgl,
 
-        std::move(gizmo_shader),   std::move(gizmo_color_pipeline), gizmo_bgl,
+        std::move(gizmo_shader),
+        std::move(gizmo_color_pipeline),
+        gizmo_bgl,
     };
 
     if (old_picking_bgl) wgpuBindGroupLayoutRelease(old_picking_bgl);
@@ -224,13 +182,11 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
     auto object_count = static_cast<uint32_t>(objects.size());
     auto light_count = static_cast<uint32_t>(lights.size());
 
-    // Collect active lights that have volume (Distant/Dome are unpickable)
+    // Collect active lights eligible for gizmo rendering (Dome excluded)
     std::vector<uint32_t> gizmo_light_indices;
     for (uint32_t i = 0; i < light_count; ++i) {
         if (!lights[i].active()) continue;
-        if (lights[i]->type == rendering::LightData::Type::Distant ||
-            lights[i]->type == rendering::LightData::Type::Dome)
-            continue;
+        if (lights[i]->type == rendering::LightData::Type::Dome) continue;
         gizmo_light_indices.push_back(i);
     }
     auto gizmo_count = static_cast<uint32_t>(gizmo_light_indices.size());
@@ -337,9 +293,11 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
     auto vp = ctx.proj_matrix * ctx.view_matrix;
     auto camera_pos = ctx.camera_position;
     auto selected_picking_id = ctx.selected_picking_id;
+    constexpr float k_min_screen_radius = 0.05f;
 
     // ── Pass 1: Picking ────────────────────────────────────────────────
     auto mesh_picking_pl = ready.picking_pipeline.handle();
+    auto line_picking_pl = ready.picking_line_pipeline.handle();
     const auto& world = ctx.world;
     auto obj_count_cap = object_count;
     auto gizmo_light_indices_cap = gizmo_light_indices;
@@ -371,8 +329,17 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
                  ++slot) {
                 uint32_t li = gizmo_light_indices_cap[slot];
                 uint32_t picking_slot = obj_count_cap + slot;
+                auto transform = lts[li]->transform;
+                // Wireframe-only lights need scaled transform to match gizmo visual
+                if (lts[li]->mesh_index == UINT32_MAX) {
+                    glm::vec3 pos = glm::vec3(transform[3]);
+                    float dist = glm::length(pos - camera_pos);
+                    float r = (lts[li]->type == rendering::LightData::Type::Distant) ? 0.5f : 0.1f;
+                    float scale = gizmo_distance_scale(dist, r, k_min_screen_radius);
+                    transform = transform * glm::scale(glm::mat4(1.0f), glm::vec3(scale));
+                }
                 PickingUniforms pu{};
-                pu.mvp = vp * lts[li]->transform;
+                pu.mvp = vp * transform;
                 pu.object_id = picking_slot;
                 wgpuQueueWriteBuffer(queue, picking_buf, picking_slot * k_uniform_align, &pu,
                                      sizeof(pu));
@@ -410,6 +377,22 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
                                                     mesh->index_buffer.size());
                 wgpuRenderPassEncoderDrawIndexed(pass, mesh->index_count, 1, 0, 0, 0);
             }
+
+            // Wireframe-only light picking (e.g. Distant) via line-list pipeline
+            wgpuRenderPassEncoderSetPipeline(pass, line_picking_pl);
+            for (uint32_t slot = 0; slot < static_cast<uint32_t>(gizmo_light_indices_cap.size());
+                 ++slot) {
+                uint32_t li = gizmo_light_indices_cap[slot];
+                if (lts[li]->mesh_index != UINT32_MAX) continue;
+                auto& draw = gizmo_draws[slot];
+                if (draw.vertex_count == 0) continue;
+                uint32_t picking_slot = obj_count_cap + slot;
+                uint32_t dyn_offset = picking_slot * EditorPass::k_uniform_align;
+                wgpuRenderPassEncoderSetBindGroup(pass, 0, picking_bg, 1, &dyn_offset);
+                wgpuRenderPassEncoderSetVertexBuffer(pass, 0, draw.vertex_buffer, 0,
+                                                     draw.vertex_count * sizeof(glm::vec3));
+                wgpuRenderPassEncoderDraw(pass, draw.vertex_count, 1, 0, 0);
+            }
         });
 
     // ── Pass 2: Gizmo color overlay (own transparent texture, composited by editor) ──
@@ -422,7 +405,6 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
     auto gizmo_overlay = fg.find_or_create("editor_gizmo_overlay", gizmo_desc);
 
     auto gizmo_color_pl = ready.gizmo_color_pipeline.handle();
-    constexpr float k_min_screen_radius = 0.05f;
 
     fg.add_pass("editor_gizmos")
         .color(gizmo_overlay)
@@ -439,9 +421,13 @@ void EditorPass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::
                     uint32_t picking_slot = obj_count_cap + slot;
                     glm::vec3 light_pos = glm::vec3(lts[li]->transform[3]);
                     float dist = glm::length(light_pos - camera_pos);
-                    float light_radius = (lts[li]->type == rendering::LightData::Type::Rect)
-                                             ? std::max(lts[li]->width, lts[li]->height) * 0.5f
-                                             : lts[li]->radius;
+                    float light_radius;
+                    if (lts[li]->type == rendering::LightData::Type::Rect)
+                        light_radius = std::max(lts[li]->width, lts[li]->height) * 0.5f;
+                    else if (lts[li]->type == rendering::LightData::Type::Distant)
+                        light_radius = 0.5f;
+                    else
+                        light_radius = lts[li]->radius;
                     float scale = gizmo_distance_scale(dist, light_radius, k_min_screen_radius);
                     auto scaled_transform =
                         lts[li]->transform * glm::scale(glm::mat4(1.0f), glm::vec3(scale));

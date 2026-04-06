@@ -37,17 +37,25 @@ void ShadowMapPass::do_setup(const webgpu::Device& device) {
     auto shader_src = get_shader_loader().load("core/generated/shaders/shadow.wgsl");
     auto shader = device.create_shader_module_from_source(shader_src);
 
-    // BGL: binding 0 = uniform (dynamic), one mat4 (64 bytes)
-    WGPUBindGroupLayoutEntry bgl_entry = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    bgl_entry.binding = 0;
-    bgl_entry.visibility = WGPUShaderStage_Vertex;
-    bgl_entry.buffer.type = WGPUBufferBindingType_Uniform;
-    bgl_entry.buffer.hasDynamicOffset = true;
-    bgl_entry.buffer.minBindingSize = 64;  // one mat4
+    // BGL: binding 0 = model matrix (dynamic), binding 1 = light VP (dynamic)
+    WGPUBindGroupLayoutEntry bgl_entries[2] = {};
+    bgl_entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    bgl_entries[0].binding = 0;
+    bgl_entries[0].visibility = WGPUShaderStage_Vertex;
+    bgl_entries[0].buffer.type = WGPUBufferBindingType_Uniform;
+    bgl_entries[0].buffer.hasDynamicOffset = true;
+    bgl_entries[0].buffer.minBindingSize = 64;  // one mat4 (model)
+
+    bgl_entries[1] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    bgl_entries[1].binding = 1;
+    bgl_entries[1].visibility = WGPUShaderStage_Vertex;
+    bgl_entries[1].buffer.type = WGPUBufferBindingType_Uniform;
+    bgl_entries[1].buffer.hasDynamicOffset = true;
+    bgl_entries[1].buffer.minBindingSize = 64;  // one mat4 (light VP)
 
     WGPUBindGroupLayoutDescriptor bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    bgl_desc.entryCount = 1;
-    bgl_desc.entries = &bgl_entry;
+    bgl_desc.entryCount = 2;
+    bgl_desc.entries = bgl_entries;
     auto bgl = wgpuDeviceCreateBindGroupLayout(device.handle(), &bgl_desc);
 
     WGPUPipelineLayoutDescriptor pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
@@ -192,27 +200,40 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
     }
     INVARIANT(layer_index == shadow_count);
 
-    // Register per-object uniform buffer
-    uint64_t uniform_needed =
-        std::max(uint64_t(1), static_cast<uint64_t>(layer_index) * total_slots) * k_uniform_align;
-    BufferDesc uniform_buf_desc;
-    uniform_buf_desc.size = uniform_needed;
-    uniform_buf_desc.usage =
+    // Model buffer: one model matrix per object (shared across all layers)
+    uint64_t model_buf_size =
+        std::max(uint64_t(1), static_cast<uint64_t>(total_slots)) * k_uniform_align;
+    BufferDesc model_buf_desc;
+    model_buf_desc.size = model_buf_size;
+    model_buf_desc.usage =
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
-    auto uniform_buf_handle = create_buffer(fg, uniform_buf_desc, "uniforms");
+    auto model_buf_handle = create_buffer(fg, model_buf_desc, "models");
 
-    // Register bind group
-    BindGroupEntry bg_entry{};
-    bg_entry.binding = 0;
-    bg_entry.buffer = uniform_buf_handle;
-    bg_entry.buffer_size = 64;  // one mat4
+    // Light VP buffer: one VP matrix per shadow layer
+    uint64_t vp_buf_size =
+        std::max(uint64_t(1), static_cast<uint64_t>(layer_index)) * k_uniform_align;
+    BufferDesc vp_buf_desc;
+    vp_buf_desc.size = vp_buf_size;
+    vp_buf_desc.usage =
+        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
+    auto vp_buf_handle = create_buffer(fg, vp_buf_desc, "light_vps");
+
+    // Bind group: binding 0 = model (dynamic), binding 1 = light VP (dynamic)
+    BindGroupEntry bg_entries[2] = {};
+    bg_entries[0].binding = 0;
+    bg_entries[0].buffer = model_buf_handle;
+    bg_entries[0].buffer_size = 64;
+
+    bg_entries[1].binding = 1;
+    bg_entries[1].buffer = vp_buf_handle;
+    bg_entries[1].buffer_size = 64;
 
     BindGroupDesc bg_desc;
     bg_desc.layout = ready.bgl;
-    bg_desc.entries = {bg_entry};
+    bg_desc.entries.assign(std::begin(bg_entries), std::end(bg_entries));
     auto bg_handle = create_bind_group(fg, std::move(bg_desc), "bg0");
 
-    // Build layer → light index mapping and extract per-layer view-projection matrices
+    // Extract per-layer view-projection matrices
     std::vector<glm::mat4> layer_vps;
     layer_vps.reserve(layer_index);
     for (uint32_t li = 0; li < static_cast<uint32_t>(lights.size()); ++li) {
@@ -224,49 +245,52 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
     auto queue = ctx.queue;
     const auto& world = ctx.world;
 
-    // Upload shadow info in a dedicated pass before per-layer rendering
-    fg.add_pass("shadow_info_upload")
-        .execute([queue, shadow_info_buf, infos = std::move(infos), &fg](WGPUComputePassEncoder) {
+    // Upload shadow info + model matrices + light VPs in a single compute pass
+    fg.add_pass("shadow_upload")
+        .execute([queue, shadow_info_buf, model_buf_handle, vp_buf_handle, layer_index,
+                  infos = std::move(infos), layer_vps = std::move(layer_vps), &fg,
+                  &world](WGPUComputePassEncoder) {
+            // Shadow info buffer
             auto info_buf = fg.get_buffer_ref(shadow_info_buf).handle();
             wgpuQueueWriteBuffer(queue, info_buf, 0, infos.data(),
                                  infos.size() * sizeof(ShadowInfo));
+
+            // Model matrices (uploaded once, shared across all layers)
+            auto model_buf = fg.get_buffer_ref(model_buf_handle).handle();
+            auto objs = world.get_objects();
+            for (uint32_t oi = 0; oi < static_cast<uint32_t>(objs.size()); ++oi) {
+                if (!objs[oi].active()) continue;
+                if (!objs[oi]->visible) continue;
+                wgpuQueueWriteBuffer(queue, model_buf, oi * k_uniform_align, &objs[oi]->transform,
+                                     sizeof(glm::mat4));
+            }
+
+            // Light VP matrices
+            auto vp_buf = fg.get_buffer_ref(vp_buf_handle).handle();
+            for (uint32_t l = 0; l < layer_index; ++l) {
+                wgpuQueueWriteBuffer(queue, vp_buf, l * k_uniform_align, &layer_vps[l],
+                                     sizeof(glm::mat4));
+            }
         });
 
     // Render each shadow layer
     for (uint32_t layer = 0; layer < layer_index; ++layer) {
-        auto light_vp = layer_vps[layer];
-
         fg.add_pass("shadow_depth_" + std::to_string(layer))
             .depth(shadow_array, layer)
             .execute([=, &fg, &world](WGPURenderPassEncoder pass) {
-                auto uniform_buf = fg.get_buffer_ref(uniform_buf_handle).handle();
                 auto bg = fg.get_bind_group_ref(bg_handle).handle();
-
-                // Upload per-object uniforms for this layer
                 auto objs = world.get_objects();
                 auto mesh_slots = world.get_meshes();
                 uint32_t slots = static_cast<uint32_t>(objs.size());
-                {
-                    PTS_ZONE_NAMED("shadow uniform upload");
-                    for (uint32_t oi = 0; oi < slots; ++oi) {
-                        if (!objs[oi].active()) continue;
-                        if (!objs[oi]->visible) continue;
-                        glm::mat4 light_mvp = light_vp * objs[oi]->transform;
-                        uint64_t offset =
-                            (static_cast<uint64_t>(layer) * slots + oi) * k_uniform_align;
-                        wgpuQueueWriteBuffer(queue, uniform_buf, offset, &light_mvp,
-                                             sizeof(glm::mat4));
-                    }
-                }
 
-                // Draw
+                uint32_t vp_offset = layer * k_uniform_align;
                 wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
                 for (uint32_t i = 0; i < slots; ++i) {
                     if (!objs[i].active()) continue;
                     if (!objs[i]->visible) continue;
-                    uint32_t dyn_offset = static_cast<uint32_t>(
-                        (static_cast<uint64_t>(layer) * slots + i) * k_uniform_align);
-                    wgpuRenderPassEncoderSetBindGroup(pass, 0, bg, 1, &dyn_offset);
+                    uint32_t model_offset = i * k_uniform_align;
+                    uint32_t dyn_offsets[2] = {model_offset, vp_offset};
+                    wgpuRenderPassEncoderSetBindGroup(pass, 0, bg, 2, dyn_offsets);
                     const auto& mesh = mesh_slots[objs[i]->mesh_index];
                     wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh->position_buffer.handle(), 0,
                                                          mesh->position_buffer.size());

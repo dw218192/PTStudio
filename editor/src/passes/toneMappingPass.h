@@ -30,15 +30,19 @@ class ToneMappingPass final : public rendering::ITopLevelPass {
 
     void do_setup(const webgpu::Device& device) override;
     void add_to_frame_graph(rendering::FrameGraph& fg, const rendering::PassContext& ctx) override;
+    void draw_imgui() override;
 
     static constexpr uint32_t k_uniform_align = 256;
 
     // Parameters (controlled from editor UI)
-    float m_exposure = 0.0f;  // EV
+    float m_exposure = 0.0f;  // EV bias (additive on top of auto-exposure when enabled)
     uint32_t m_mode = 0;      // 0 = ACES, 1 = Reinhard
+    bool m_auto_exposure = true;
+    float m_adaptation_speed = 2.0f;
 
    private:
     struct Ready {
+        // Tone mapping render pipeline
         webgpu::ShaderModule shader;
         webgpu::RenderPipeline pipeline;
         WGPUBindGroupLayout bind_group_layout = nullptr;
@@ -47,9 +51,19 @@ class ToneMappingPass final : public rendering::ITopLevelPass {
         webgpu::Texture ssao_fallback_texture;
         WGPUTextureView ssao_fallback_view = nullptr;
         WGPUSampler ssao_sampler = nullptr;
+
+        // Luminance compute pipeline
+        webgpu::ShaderModule luminance_shader;
+        webgpu::ComputePipeline luminance_pipeline;
+        WGPUBindGroupLayout luminance_bgl = nullptr;
+        // 1x1 depth fallback (value 0.0 = not sky) for when scene_depth unavailable
+        WGPUTexture depth_fallback_tex = nullptr;
+        WGPUTextureView depth_fallback_view = nullptr;
     };
 
     std::variant<std::monostate, Ready> m_state;
+    bool m_prev_auto_exposure = false;
+    float m_prev_time = 0.0f;
 };
 
 }  // namespace pts::editor

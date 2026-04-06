@@ -1,7 +1,7 @@
 #usda 1.0
 (
     defaultPrim = "Root"
-    metersPerUnit = 1.0
+    metersPerUnit = 1
     upAxis = "Y"
 )
 
@@ -12,6 +12,7 @@ def Xform "Root"
         def Material "Gray"
         {
             token outputs:surface.connect = </Root/Materials/Gray/Shader.outputs:surface>
+
             def Shader "Shader"
             {
                 uniform token info:id = "UsdPreviewSurface"
@@ -25,6 +26,7 @@ def Xform "Root"
         def Material "Red"
         {
             token outputs:surface.connect = </Root/Materials/Red/Shader.outputs:surface>
+
             def Shader "Shader"
             {
                 uniform token info:id = "UsdPreviewSurface"
@@ -38,6 +40,7 @@ def Xform "Root"
         def Material "Blue"
         {
             token outputs:surface.connect = </Root/Materials/Blue/Shader.outputs:surface>
+
             def Shader "Shader"
             {
                 uniform token info:id = "UsdPreviewSurface"
@@ -51,6 +54,7 @@ def Xform "Root"
         def Material "Green"
         {
             token outputs:surface.connect = </Root/Materials/Green/Shader.outputs:surface>
+
             def Shader "Shader"
             {
                 uniform token info:id = "UsdPreviewSurface"
@@ -62,95 +66,104 @@ def Xform "Root"
         }
     }
 
-    # Ground plane: large quad at Y=0, extends -5 to 5 on XZ
     def Mesh "Ground" (
         prepend apiSchemas = ["MaterialBindingAPI"]
     )
     {
-        token orientation = "rightHanded"
-        point3f[] points = [(-5, 0, -5), (5, 0, -5), (5, 0, 5), (-5, 0, 5)]
         int[] faceVertexCounts = [4]
         int[] faceVertexIndices = [0, 3, 2, 1]
-        normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)]
-        token subdivisionScheme = "none"
         rel material:binding = </Root/Materials/Gray>
+        normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)]
+        token orientation = "rightHanded"
+        point3f[] points = [(-5, 0, -5), (5, 0, -5), (5, 0, 5), (-5, 0, 5)]
+        token subdivisionScheme = "none"
     }
 
-    # Cube at (0, 0.5, 0), size 1 — sits on ground plane
     def Cube "Cube" (
         prepend apiSchemas = ["MaterialBindingAPI"]
     )
     {
+        rel material:binding = </Root/Materials/Red>
         double size = 1
         double3 xformOp:translate = (0, 0.5, 0)
         uniform token[] xformOpOrder = ["xformOp:translate"]
-        rel material:binding = </Root/Materials/Red>
     }
 
-    # Sphere at (-2, 1.0, 1), radius 0.5
     def Sphere "Sphere" (
         prepend apiSchemas = ["MaterialBindingAPI"]
     )
     {
-        double radius = 0.5
-        double3 xformOp:translate = (-2, 1.0, 1)
-        uniform token[] xformOpOrder = ["xformOp:translate"]
         rel material:binding = </Root/Materials/Blue>
+        double radius = 0.5
+        double3 xformOp:translate = (-2, 1, 1)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
     }
 
-    # Cylinder at (1.5, 0.75, -1), height 1.5 — sits on ground plane
     def Cylinder "Cylinder" (
         prepend apiSchemas = ["MaterialBindingAPI"]
     )
     {
         token axis = "Y"
         double height = 1.5
+        rel material:binding = </Root/Materials/Green>
         double radius = 0.4
         double3 xformOp:translate = (1.5, 0.75, -1)
         uniform token[] xformOpOrder = ["xformOp:translate"]
-        rel material:binding = </Root/Materials/Green>
     }
 
-    # Distant light 1 (main sun): direction ~(0.5, -1.0, 0.3), intensity 3.0, warm white
     def DistantLight "MainSun"
     {
-        float inputs:intensity = 3.0
-        color3f inputs:color = (1, 0.95, 0.85)
         float inputs:angle = 0.53
+        color3f inputs:color = (1, 0.95, 0.85)
+        float inputs:intensity = 50000
         float3 xformOp:rotateXYZ = (-60, -120, 0)
-        uniform token[] xformOpOrder = ["xformOp:rotateXYZ"]
+        matrix4d xformOp:transform = ( (-0.5, 0, 0.8660253882408142, 0), (0.75, 0.5, 0.4330126941204071, 0), (-0.4330126941204071, 0.8660253882408142, -0.25, 0), (0, 5.531754016876221, 0, 1) )
+        uniform token[] xformOpOrder = ["xformOp:transform"]
     }
 
-    # Distant light 2 (secondary): direction ~(-0.3, -1.0, -0.5), intensity 1.5, cool white
     def DistantLight "FillSun"
     {
-        float inputs:intensity = 1.5
-        color3f inputs:color = (0.85, 0.9, 1)
         float inputs:angle = 0.53
+        color3f inputs:color = (0.85, 0.9, 1)
+        float inputs:intensity = 50000
         float3 xformOp:rotateXYZ = (-60, 30, 0)
-        uniform token[] xformOpOrder = ["xformOp:rotateXYZ"]
+        matrix4d xformOp:transform = ( (0.8660253882408142, 0, -0.5, 0), (-0.4330126941204071, 0.5, -0.75, 0), (0.25, 0.8660253882408142, 0.4330126941204071, 0), (0, 5.175130367279053, 0, 1) )
+        uniform token[] xformOpOrder = ["xformOp:transform"]
     }
 
-    # Dome light: low intensity ambient fill
     def DomeLight "AmbientFill"
     {
-        float inputs:intensity = 0.3
         color3f inputs:color = (0.9, 0.92, 1)
+        float inputs:intensity = 0.3
+        matrix4d xformOp:transform = ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1) )
+        uniform token[] xformOpOrder = ["xformOp:transform"]
     }
 
-    # Camera at (3, 4, 5) looking at origin
     def Camera "ShadowCam"
     {
         float2 clippingRange = (0.1, 100)
         float focalLength = 35
         float horizontalAperture = 36
         float verticalAperture = 24
-        matrix4d xformOp:transform = (
-            (0.85749, 0, -0.51450, 0),
-            (-0.29104, 0.82440, -0.48507, 0),
-            (0.42426, 0.56569, 0.70711, 0),
-            (3, 4, 5, 1)
-        )
+        matrix4d xformOp:transform = ( (0.85749, 0, -0.5145, 0), (-0.29104, 0.8244, -0.48507, 0), (0.42426, 0.56569, 0.70711, 0), (3, 4, 5, 1) )
+        uniform token[] xformOpOrder = ["xformOp:transform"]
+    }
+
+    def DistantLight "DistantLight"
+    {
+        float inputs:intensity = 50000
+        matrix4d xformOp:transform = ( (0.33341044187545776, 0, -0.9427817463874817, 0), (-0.7747346758842468, 0.5698425769805908, -0.27398115396499634, 0), (0.5372380614280701, 0.821753978729248, 0.1899915188550949, 0), (1.6580281257629395, 5.08758020401001, 0.15053600072860718, 1) )
+        uniform token[] xformOpOrder = ["xformOp:transform"]
+    }
+
+    def Camera "Camera"
+    {
+        float2 clippingRange = (0.01, 2000)
+        float focalLength = 20.78461
+        float horizontalAperture = 36
+        float verticalAperture = 24
+        matrix4d xformOp:transform = ( (0.9927712082862854, 3.725290298461914e-9, -0.12002246081829071, -0), (-0.08421951532363892, 0.7124745845794678, -0.6966254711151123, 0), (0.08551295101642609, 0.7016978859901428, 0.707324206829071, -0), (1.014491081237793, 8.324660301208496, 8.391408920288086, 1) )
         uniform token[] xformOpOrder = ["xformOp:transform"]
     }
 }
+

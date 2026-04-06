@@ -1,6 +1,13 @@
 struct Uniforms {
     float exposure;
     uint mode;   // 0 = ACES, 1 = Reinhard
+    uint auto_exposure_enabled;
+    uint _pad1;
+};
+
+struct ExposureResult {
+    float auto_exposure;
+    uint frame_count;
     uint _pad0;
     uint _pad1;
 };
@@ -19,6 +26,9 @@ Texture2D<float4> ssao_texture;
 
 [[vk::binding(4, 0)]]
 SamplerState ssao_sampler;
+
+[[vk::binding(5, 0)]]
+StructuredBuffer<ExposureResult> exposure_result;
 
 struct VsOut {
     float4 position : SV_Position;
@@ -66,8 +76,12 @@ float4 fs_main(float2 uv : TEXCOORD) : SV_Target0 {
     float ao = ssao_texture.Sample(ssao_sampler, uv).r;
     hdr *= ao;
 
-    // Apply exposure
-    hdr *= exp2(u.exposure);
+    // Apply exposure: auto-exposure + manual bias
+    float final_exposure = u.exposure;
+    if (u.auto_exposure_enabled != 0u) {
+        final_exposure += exposure_result[0].auto_exposure;
+    }
+    hdr *= exp2(final_exposure);
 
     // Tone map
     float3 mapped;
