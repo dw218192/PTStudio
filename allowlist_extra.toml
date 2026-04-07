@@ -16,6 +16,10 @@ patterns = [
 ]
 
 [[allow]]
+name = "image_convert"
+commands = ["ffmpeg"]
+
+[[allow]]
 name = "framework_contrib"
 override_deny = true
 commands = ["cmd.exe", "bash"]
