@@ -566,20 +566,23 @@ PreparedSceneData RenderWorld::prepare_scene_data() {
         // Step 1: Collect dirty meshes and pre-populate BLAS cache entries (serial)
         PTS_ZONE_NAMED("BLAS build");
         std::vector<uint32_t> dirty_meshes;
-        for (const auto& obj : objects) {
-            if (!obj.active()) continue;
-            if (!obj->visible) continue;
-            uint32_t mesh_idx = obj->mesh_index;
+        auto check_mesh_dirty = [&](uint32_t mesh_idx) {
             const auto& mesh = meshes_span[mesh_idx];
-            if (!mesh.active() || mesh->cpu_vertices.empty() || mesh->cpu_indices.empty()) continue;
-
-            // Pre-populate cache entry (must happen before parallel_for)
+            if (!mesh.active() || mesh->cpu_vertices.empty() || mesh->cpu_indices.empty()) return;
             auto& blas = m_blas_cache[mesh_idx];
-            if (blas.generation == mesh.generation()) continue;
+            if (blas.generation == mesh.generation()) return;
             if (std::find(dirty_meshes.begin(), dirty_meshes.end(), mesh_idx) ==
                 dirty_meshes.end()) {
                 dirty_meshes.push_back(mesh_idx);
             }
+        };
+        for (const auto& obj : objects) {
+            if (!obj.active() || !obj->visible) continue;
+            check_mesh_dirty(obj->mesh_index);
+        }
+        for (const auto& slot : get_lights()) {
+            if (!slot.active() || !slot->visible || slot->mesh_index == UINT32_MAX) continue;
+            check_mesh_dirty(slot->mesh_index);
         }
 
         // Build BLAS in parallel (each mesh is independent)
@@ -623,6 +626,25 @@ PreparedSceneData RenderWorld::prepare_scene_data() {
                 AABB local_aabb = AABB::from_min_max(mesh->local_aabb_min, mesh->local_aabb_max);
                 world_aabbs.push_back(transform_aabb(local_aabb, obj->transform));
                 instances.push_back({mesh_idx, obj->material_index, obj->transform});
+            }
+
+            // Include light proxy meshes in the BVH so the path tracer
+            // can hit emitter geometry (area lights, sphere lights, etc.)
+            auto lights_span = get_lights();
+            for (const auto& slot : lights_span) {
+                if (!slot.active()) continue;
+                if (!slot->visible) continue;
+                if (slot->mesh_index == UINT32_MAX) continue;
+                uint32_t mesh_idx = slot->mesh_index;
+                const auto& mesh = meshes_span[mesh_idx];
+                if (!mesh.active() || mesh->cpu_vertices.empty() || mesh->cpu_indices.empty())
+                    continue;
+
+                INVARIANT(m_blas_cache.count(mesh_idx) > 0);
+
+                AABB local_aabb = AABB::from_min_max(mesh->local_aabb_min, mesh->local_aabb_max);
+                world_aabbs.push_back(transform_aabb(local_aabb, slot->transform));
+                instances.push_back({mesh_idx, slot->material_index, slot->transform});
             }
 
             auto inst_count = static_cast<uint32_t>(instances.size());
