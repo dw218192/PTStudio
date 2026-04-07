@@ -1,4 +1,5 @@
 #include <core/diagnostics.h>
+#include <core/rendering/halfFloat.h>
 #include <core/rendering/iblResources.h>
 #include <core/rendering/webgpu/device.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
@@ -15,28 +16,6 @@
 namespace pts::rendering {
 
 namespace {
-
-uint16_t float_to_half(float f) {
-    uint32_t bits;
-    std::memcpy(&bits, &f, sizeof(bits));
-
-    uint32_t sign = (bits >> 16) & 0x8000;
-    int32_t exponent = ((bits >> 23) & 0xFF) - 127 + 15;
-    uint32_t mantissa = bits & 0x7FFFFF;
-
-    if (exponent <= 0) {
-        if (exponent < -10) return static_cast<uint16_t>(sign);
-        mantissa = (mantissa | 0x800000) >> (1 - exponent);
-        return static_cast<uint16_t>(sign | (mantissa >> 13));
-    }
-    if (exponent == 0xFF - 127 + 15) {
-        if (mantissa == 0) return static_cast<uint16_t>(sign | 0x7C00);
-        return static_cast<uint16_t>(sign | 0x7C00 | (mantissa >> 13));
-    }
-    if (exponent > 30) return static_cast<uint16_t>(sign | 0x7C00);
-
-    return static_cast<uint16_t>(sign | (exponent << 10) | (mantissa >> 13));
-}
 
 std::string load_shader(std::string_view key) {
     auto src = ibl_resources::get_resource(key);

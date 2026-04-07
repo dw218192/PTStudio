@@ -36,7 +36,7 @@ struct PreparedSceneData {
 
     // Textures — non-owning pixel pointers, stable during frame
     struct TextureLayer {
-        const uint8_t* pixels;
+        const uint16_t* pixels;  // RGBA16Float (half-precision)
         uint32_t width;
         uint32_t height;
     };

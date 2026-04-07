@@ -485,7 +485,7 @@ struct RenderWorld {
 
     // Texture array state
     struct ImageData {
-        std::vector<uint8_t> pixels;
+        std::vector<uint16_t> pixels;  // RGBA16Float (half-precision)
         uint32_t width;
         uint32_t height;
     };

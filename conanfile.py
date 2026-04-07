@@ -59,6 +59,12 @@ class PTStudioConan(ConanFile):
         self.requires("imgui/1.92.5-docking")
         self.requires("imguizmo/1.92")
         self.requires("stb/[>=0]")
+        # OpenEXR 3.4+ pulls in openjph → libtiff → xz_utils, which uses
+        # autotools and fails to cross-compile on Windows for Emscripten.
+        if self.settings.os == "Emscripten":
+            self.requires("openexr/[>=3.1 <3.4]")
+        else:
+            self.requires("openexr/[>=3.1 <4]")
 
     def build_requirements(self):
         if self.settings.os == "Emscripten":

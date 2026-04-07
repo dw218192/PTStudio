@@ -1,3 +1,7 @@
+#include <ImfChannelList.h>
+#include <ImfFrameBuffer.h>
+#include <ImfHeader.h>
+#include <ImfOutputFile.h>
 #include <core/rendering/adapterHelpers.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/sceneLoader.h>
@@ -44,6 +48,34 @@ std::string create_test_texture(const std::string& filename) {
 
 void remove_test_texture(const std::string& path) {
     std::remove(path.c_str());
+}
+
+std::string create_test_exr(const std::string& filename) {
+#ifdef _WIN32
+    const char* tmp = std::getenv("TEMP");
+    if (!tmp) tmp = std::getenv("TMP");
+    if (!tmp) tmp = ".";
+#else
+    const char* tmp = "/tmp";
+#endif
+    std::string path = std::string(tmp) + "/" + filename;
+    // 2x2 RGBA float pixels: red, green, blue, white
+    float pixels[16] = {1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1, 1, 1, 1, 1};
+    Imf::Header header(2, 2);
+    header.channels().insert("R", Imf::Channel(Imf::FLOAT));
+    header.channels().insert("G", Imf::Channel(Imf::FLOAT));
+    header.channels().insert("B", Imf::Channel(Imf::FLOAT));
+    header.channels().insert("A", Imf::Channel(Imf::FLOAT));
+    Imf::OutputFile file(path.c_str(), header);
+    Imf::FrameBuffer fb;
+    size_t xs = 4 * sizeof(float), ys = 2 * xs;
+    fb.insert("R", Imf::Slice(Imf::FLOAT, reinterpret_cast<char*>(&pixels[0]), xs, ys));
+    fb.insert("G", Imf::Slice(Imf::FLOAT, reinterpret_cast<char*>(&pixels[1]), xs, ys));
+    fb.insert("B", Imf::Slice(Imf::FLOAT, reinterpret_cast<char*>(&pixels[2]), xs, ys));
+    fb.insert("A", Imf::Slice(Imf::FLOAT, reinterpret_cast<char*>(&pixels[3]), xs, ys));
+    file.setFrameBuffer(fb);
+    file.writePixels(2);
+    return path;
 }
 
 /// Build a minimal USD stage with a mesh, material, and UsdUVTexture nodes.
@@ -320,6 +352,22 @@ TEST_CASE("load_texture resolves filesystem paths via ArResolver") {
     CHECK(scope.load_texture("/nonexistent/image.png") == UINT32_MAX);
 
     remove_test_texture(tex_path);
+}
+
+TEST_CASE("load_texture handles EXR files") {
+    auto exr_path = create_test_exr("pts_test_load.exr");
+
+    pts::rendering::RenderWorld world;
+    auto scope = world.begin_sync();
+
+    auto idx = scope.load_texture(exr_path);
+    CHECK(idx != UINT32_MAX);
+    CHECK(idx == 0);
+
+    // Deduplication: same path returns same index
+    CHECK(scope.load_texture(exr_path) == idx);
+
+    remove_test_texture(exr_path);
 }
 
 // --- GPU-dependent tests ---
