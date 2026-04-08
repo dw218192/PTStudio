@@ -565,7 +565,7 @@ void FrameGraph::allocate_textures() {
         cached->view = view;
         cached->desc = res.desc;
         cached->used_this_frame = true;
-        cached->version = prev_version + 1;
+        cached->version = next_version();
 
         // Create per-layer views for array textures
         if (use_array_view) {
@@ -599,19 +599,14 @@ void FrameGraph::allocate_buffers() {
                 continue;
             }
 
-            // Different pointer or new entry — bump version
-            uint64_t prev_version = 0;
-            if (it != m_buffer_cache.end()) {
-                prev_version = it->second->version;
-            }
-
+            // Different pointer or new entry
             auto cached = boost::intrusive_ptr<detail::CachedBuffer>(new detail::CachedBuffer());
             cached->buffer = res.external_buffer;
             cached->desc.size = res.external_size;
             cached->desc.usage = WGPUBufferUsage_None;
             cached->owned = false;
             cached->used_this_frame = true;
-            cached->version = prev_version + 1;
+            cached->version = next_version();
             m_buffer_cache[res.name] = cached;
 
             m_logger->debug("FrameGraph: imported buffer '{}' (size={})", res.name,
@@ -626,10 +621,8 @@ void FrameGraph::allocate_buffers() {
                 continue;
             }
 
-            // Need new buffer — capture previous version before evicting
-            uint64_t prev_version = 0;
+            // Need new buffer
             if (it != m_buffer_cache.end()) {
-                prev_version = it->second->version;
                 m_buffer_cache.erase(it);
             }
 
@@ -644,7 +637,7 @@ void FrameGraph::allocate_buffers() {
             cached->desc = res.desc;
             cached->owned = true;
             cached->used_this_frame = true;
-            cached->version = prev_version + 1;
+            cached->version = next_version();
             m_buffer_cache[res.name] = cached;
 
             m_logger->debug("FrameGraph: created buffer '{}' (size={})", res.name, res.desc.size);
@@ -656,7 +649,10 @@ void FrameGraph::allocate_bind_groups() {
     for (auto& res : m_bg_resources) {
         auto& desc = res.desc;
 
-        // 1. Resolve current version for each entry
+        // 1. Build a fingerprint for the bind group's current inputs.
+        //    Managed resources use their globally-unique version from the
+        //    cache.  External resources (views, buffers, samplers) use
+        //    their pointer identity so that any change is detected.
         std::vector<uint64_t> current_versions;
         current_versions.reserve(desc.entries.size());
         for (auto& entry : desc.entries) {
@@ -676,8 +672,13 @@ void FrameGraph::allocate_bind_groups() {
                 INVARIANT_MSG(it != m_texture_cache.end(),
                               "allocate_bind_groups: texture not in cache");
                 current_versions.push_back(it->second->version);
+            } else if (entry.external_view) {
+                current_versions.push_back(reinterpret_cast<uintptr_t>(entry.external_view));
+            } else if (entry.external_buffer) {
+                current_versions.push_back(reinterpret_cast<uintptr_t>(entry.external_buffer));
+            } else if (entry.sampler) {
+                current_versions.push_back(reinterpret_cast<uintptr_t>(entry.sampler));
             } else {
-                // external_view, external_buffer, sampler — no version tracking
                 current_versions.push_back(0);
             }
         }
@@ -691,9 +692,7 @@ void FrameGraph::allocate_bind_groups() {
         }
 
         // 3. Versions differ or new entry — rebuild
-        uint64_t prev_version = 0;
         if (cache_it != m_bg_cache.end()) {
-            prev_version = cache_it->second->version;
             m_logger->debug("FrameGraph: rebuilding bind group '{}' (input versions changed)",
                             res.name);
         }
@@ -741,7 +740,7 @@ void FrameGraph::allocate_bind_groups() {
         cached->bind_group = bg;
         cached->input_versions_snapshot = std::move(current_versions);
         cached->used_this_frame = true;
-        cached->version = prev_version + 1;
+        cached->version = next_version();
         m_bg_cache[res.name] = cached;
 
         m_logger->debug("FrameGraph: created bind group '{}' (v{})", res.name, cached->version);

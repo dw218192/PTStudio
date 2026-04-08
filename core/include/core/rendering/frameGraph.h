@@ -340,6 +340,13 @@ class FrameGraph {
 
     enum class ResourceKind { Texture, Buffer, BindGroup };
     std::string make_pass_key(const IPass* pass, const char* label, ResourceKind kind);
+
+    /// Monotonic counter — every new or recreated cached resource gets the
+    /// next value, so no two distinct GPU resources ever share a version.
+    uint64_t m_next_version = 1;
+    uint64_t next_version() {
+        return m_next_version++;
+    }
 };
 
 }  // namespace pts::rendering

@@ -609,6 +609,8 @@ void EditorApplication::create_renderer(size_t index) {
     m_editor_passes_enabled = entries[index].editor_passes;
     m_debug_target_selection = 0;
     m_active_debug_ref = {};
+    m_scene_color_ref = {};
+    m_gizmo_overlay_ref = {};
 }
 
 void EditorApplication::update(float /*dt*/) {
