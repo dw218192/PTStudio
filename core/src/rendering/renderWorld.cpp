@@ -276,21 +276,17 @@ int RenderWorld::find_camera_by_prim(const pxr::SdfPath& path) const {
 
 namespace {
 
-bool has_extension(const std::string& path, const char* ext, size_t len) {
-    auto dot = path.rfind('.');
-    if (dot == std::string::npos || path.size() - dot - 1 != len) return false;
-    for (size_t i = 0; i < len; ++i) {
-        char c = path[dot + 1 + i];
+std::string get_asset_extension(const std::string& path) {
+    auto ext = pxr::ArGetResolver().GetExtension(path);
+    for (auto& c : ext)
         if (c >= 'A' && c <= 'Z') c += 32;
-        if (c != ext[i]) return false;
-    }
-    return true;
+    return ext;
 }
 bool has_exr_extension(const std::string& path) {
-    return has_extension(path, "exr", 3);
+    return get_asset_extension(path) == "exr";
 }
 bool has_hdr_extension(const std::string& path) {
-    return has_extension(path, "hdr", 3);
+    return get_asset_extension(path) == "hdr";
 }
 
 class MemoryIStream : public Imf::IStream {
