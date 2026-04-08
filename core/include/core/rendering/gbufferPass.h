@@ -1,7 +1,7 @@
 #pragma once
 
+#include <core/rendering/frameGraph.h>
 #include <core/rendering/renderPass.h>
-#include <core/rendering/webgpu/buffer.h>
 #include <core/rendering/webgpu/pipeline.h>
 #include <core/rendering/webgpu/shader.h>
 #include <core/rendering/webgpu/webgpu.h>
@@ -15,7 +15,7 @@ class ShaderLoader;
 
 /// Renders view-space normals and depth as a geometry pre-pass.
 /// Added as a child pass of any renderer via add_pass<GBufferPass>(sl).
-class GBufferPass final : public IRenderPass {
+class GBufferPass final : public IPass {
    public:
     explicit GBufferPass(const ShaderLoader& sl);
     ~GBufferPass() override;
@@ -32,7 +32,12 @@ class GBufferPass final : public IRenderPass {
     [[nodiscard]] auto debug_targets() const noexcept
         -> std::pair<const DebugTarget*, uint32_t> override;
 
-    void add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) override;
+    struct Inputs {};
+    struct Outputs {
+        ResourceHandle depth;
+        ResourceHandle normals;
+    };
+    Outputs add_to_frame_graph(FrameGraph& fg, const PassContext& ctx, const Inputs&);
 
    protected:
     void do_setup(const webgpu::Device& device) override;
@@ -43,10 +48,7 @@ class GBufferPass final : public IRenderPass {
     struct Ready {
         webgpu::ShaderModule shader;
         webgpu::RenderPipeline pipeline;
-        webgpu::Buffer per_object_uniform_buf;
         WGPUBindGroupLayout bgl = nullptr;
-        WGPUBindGroup bind_group = nullptr;
-        uint32_t object_capacity = 0;
     };
     std::variant<std::monostate, Ready> m_state;
 };

@@ -105,12 +105,6 @@ def Xform "Root"
         uniform token[] xformOpOrder = ["xformOp:transform"]
     }
 
-    def Capsule "Capsule"
-    {
-        matrix4d xformOp:transform = ( (1.4499999284744263, 0, 0, 0), (0, 1.4499999284744263, 0, 0), (0, 0, 1.4499999284744263, 0), (0.01164737343788147, 0.6844912767410278, 2.273528575897217, 1) )
-        uniform token[] xformOpOrder = ["xformOp:transform"]
-    }
-
     def Camera "Camera_1"
     {
         float2 clippingRange = (0.1, 1000)
@@ -118,6 +112,24 @@ def Xform "Root"
         float horizontalAperture = 36
         float verticalAperture = 24
         matrix4d xformOp:transform = ( (-0.9802578687667847, -0, -0.19772298634052277, 0), (-0.08352162688970566, 0.9064013361930847, 0.41407790780067444, 0), (0.1792164146900177, 0.4224173128604889, -0.888507068157196, -0), (0.3710533082485199, 2.613258123397827, -1.7912518978118896, 1) )
+        uniform token[] xformOpOrder = ["xformOp:transform"]
+    }
+
+    def "treasure_chest_2k" (
+        prepend references = @../models/treasure_chest/treasure_chest_2k.usdc@
+    )
+    {
+        matrix4d xformOp:transform = ( (2, 0, 0, 0), (0, -8.742277657347586e-8, -2, 0), (0, 2, -8.742277657347586e-8, 0), (-1.5735167264938354, -0.000006509742888738401, 1.4944231510162354, 1) )
+        uniform token[] xformOpOrder = ["xformOp:transform"]
+    }
+
+    def Camera "Camera_2"
+    {
+        float2 clippingRange = (0.01, 2000)
+        float focalLength = 20.78461
+        float horizontalAperture = 36
+        float verticalAperture = 24
+        matrix4d xformOp:transform = ( (-0.8309236764907837, -0, 0.5563863515853882, -0), (0.2934468388557434, 0.8496073484420776, 0.4382420778274536, 0), (-0.4727099537849426, 0.5274155139923096, -0.705958902835846, 0), (-4.250411033630371, 3.229863405227661, -0.32273444533348083, 1) )
         uniform token[] xformOpOrder = ["xformOp:transform"]
     }
 }

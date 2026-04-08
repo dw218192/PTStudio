@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/rendering/frameGraph.h>
 #include <core/rendering/renderPass.h>
 #include <core/rendering/webgpu/buffer.h>
 #include <core/rendering/webgpu/pipeline.h>
@@ -15,10 +16,10 @@ namespace pts::rendering {
 class ShaderLoader;
 
 /// Screen-space ambient occlusion pass.
-/// Reads scene_depth (Depth32Float) and scene_normals (RG16Float) from the
-/// frame graph, writes ssao (R8Unorm) via two sub-passes: AO generation
+/// Reads scene_depth (Depth32Float) and scene_normals (RG16Float),
+/// writes ssao (R8Unorm) via two sub-passes: AO generation
 /// and bilateral blur.
-class SSAOPass final : public IRenderPass {
+class SSAOPass final : public IPass {
    public:
     explicit SSAOPass(const ShaderLoader& sl);
     ~SSAOPass() override;
@@ -35,8 +36,16 @@ class SSAOPass final : public IRenderPass {
     [[nodiscard]] auto debug_targets() const noexcept
         -> std::pair<const DebugTarget*, uint32_t> override;
 
+    struct Inputs {
+        ResourceHandle depth;
+        ResourceHandle normals;
+    };
+    struct Outputs {
+        ResourceHandle ssao;
+    };
+
     void do_setup(const webgpu::Device& device) override;
-    void add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) override;
+    Outputs add_to_frame_graph(FrameGraph& fg, const PassContext& ctx, const Inputs& in);
     void draw_imgui() override;
 
     // Tunable parameters (exposed via ImGui)
@@ -54,13 +63,11 @@ class SSAOPass final : public IRenderPass {
         webgpu::ShaderModule gen_shader;
         webgpu::RenderPipeline gen_pipeline;
         WGPUBindGroupLayout gen_bgl = nullptr;
-        webgpu::Buffer gen_uniforms;
 
         // Blur
         webgpu::ShaderModule blur_shader;
         webgpu::RenderPipeline blur_pipeline;
         WGPUBindGroupLayout blur_bgl = nullptr;
-        webgpu::Buffer blur_uniforms;
 
         // Noise texture (4x4 RGBA8Unorm)
         webgpu::Texture noise_texture;

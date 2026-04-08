@@ -160,10 +160,6 @@ void PathTracerPass::do_renderer_setup(const webgpu::Device& device) {
     auto blit_src = get_shader_loader().load("editor/generated/shaders/pt_blit.wgsl");
     auto blit_shader = device.create_shader_module_from_source(blit_src);
 
-    auto blit_uniform_buffer = device.create_buffer(
-        sizeof(BlitUniforms),
-        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
-
     WGPUBindGroupLayoutEntry be[2] = {};
     be[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
     be[0].binding = 0;
@@ -202,7 +198,6 @@ void PathTracerPass::do_renderer_setup(const webgpu::Device& device) {
         ibl_bgl,
         std::move(blit_shader),
         std::move(blit_pipeline),
-        std::move(blit_uniform_buffer),
         blit_bgl,
     };
 }
@@ -221,8 +216,8 @@ void PathTracerPass::ensure_pixel_buffers(const webgpu::Device& device, uint32_t
     m_frame_count = 0;
 }
 
-void PathTracerPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
-                                           const rendering::PassContext& ctx) {
+PathTracerPass::HdrOutputs PathTracerPass::do_add_to_frame_graph(
+    rendering::FrameGraph& fg, const rendering::PassContext& ctx) {
     PTS_ZONE_SCOPED;
     PRECONDITION(is_ready());
     auto& r = std::get<Ready>(m_state);
@@ -277,11 +272,6 @@ void PathTracerPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     uniforms.tlas_node_count = ctx.world.tlas_node_count();
     uniforms.dome_modulation = dome_mod;
     wgpuQueueWriteBuffer(ctx.queue, r.uniform_buffer.handle(), 0, &uniforms, sizeof(uniforms));
-
-    BlitUniforms bu{};
-    bu.width = ctx.viewport_width;
-    bu.height = ctx.viewport_height;
-    wgpuQueueWriteBuffer(ctx.queue, r.blit_uniform_buffer.handle(), 0, &bu, sizeof(bu));
 
     // Capture handles for lambdas
     auto& mat_buf = ctx.world.material_buffer();
@@ -376,31 +366,47 @@ void PathTracerPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     color_desc.height = ctx.viewport_height;
     color_desc.format = WGPUTextureFormat_RGBA16Float;
     color_desc.clear_color = {0.15, 0.15, 0.18, 1.0};
-    auto color = fg.find_or_create("scene_color", color_desc);
+    auto color = create_texture(fg, color_desc, "color");
 
-    WGPUBindGroupEntry bbe[2] = {};
-    bbe[0] = WGPU_BIND_GROUP_ENTRY_INIT;
-    bbe[0].binding = 0;
-    bbe[0].buffer = r.blit_uniform_buffer.handle();
-    bbe[0].size = sizeof(BlitUniforms);
-    bbe[1] = WGPU_BIND_GROUP_ENTRY_INIT;
-    bbe[1].binding = 1;
-    bbe[1].buffer = m_output_buffer.handle();
-    bbe[1].size = m_output_buffer.size();
+    // Import the pass-owned output buffer so the FG can track pointer changes
+    auto output_buf_handle =
+        import_buffer(fg, m_output_buffer.handle(), m_output_buffer.size(), "output");
 
-    WGPUBindGroupDescriptor bbg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-    bbg_desc.layout = r.blit_bgl;
-    bbg_desc.entryCount = 2;
-    bbg_desc.entries = bbe;
-    auto blit_bg = wgpuDeviceCreateBindGroup(dev, &bbg_desc);
+    // Register blit uniform buffer with frame graph
+    rendering::BufferDesc blit_buf_desc{};
+    blit_buf_desc.size = sizeof(BlitUniforms);
+    blit_buf_desc.usage =
+        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
+    auto blit_uniform_buf_handle = create_buffer(fg, blit_buf_desc, "blit_uniforms");
+
+    // Register blit bind group
+    rendering::BindGroupDesc blit_bg_desc{};
+    blit_bg_desc.layout = r.blit_bgl;
+    blit_bg_desc.entries.resize(2);
+    blit_bg_desc.entries[0].binding = 0;
+    blit_bg_desc.entries[0].buffer = blit_uniform_buf_handle;
+    blit_bg_desc.entries[0].buffer_size = sizeof(BlitUniforms);
+    blit_bg_desc.entries[1].binding = 1;
+    blit_bg_desc.entries[1].buffer = output_buf_handle;
+    auto blit_bg_handle = create_bind_group(fg, std::move(blit_bg_desc), "blit_bg");
 
     auto* bp = r.blit_pipeline.handle();
-    fg.add_pass("pathtracer_blit").color(color).execute([=](WGPURenderPassEncoder pass) {
+    auto queue = ctx.queue;
+    fg.add_pass("pathtracer_blit").color(color).execute([=, &fg](WGPURenderPassEncoder pass) {
+        auto blit_uniform_buf = fg.get_buffer_ref(blit_uniform_buf_handle).handle();
+        auto blit_bg = fg.get_bind_group_ref(blit_bg_handle).handle();
+
+        BlitUniforms bu{};
+        bu.width = width;
+        bu.height = height;
+        wgpuQueueWriteBuffer(queue, blit_uniform_buf, 0, &bu, sizeof(bu));
+
         wgpuRenderPassEncoderSetPipeline(pass, bp);
         wgpuRenderPassEncoderSetBindGroup(pass, 0, blit_bg, 0, nullptr);
         wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
-        wgpuBindGroupRelease(blit_bg);
     });
+
+    return {color, {}};
 }
 
 void PathTracerPass::draw_viewport_controls() {

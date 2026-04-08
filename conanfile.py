@@ -59,6 +59,10 @@ class PTStudioConan(ConanFile):
         self.requires("imgui/1.92.5-docking")
         self.requires("imguizmo/1.92")
         self.requires("stb/[>=0]")
+        # OpenEXR <3.4: 3.4+ adds openjph (JPEG2000) which drags in libtiff,
+        # libjpeg, libdeflate, xz_utils — unnecessary deps that also break
+        # Emscripten cross-compile and invalidate Conan binary caches on CI.
+        self.requires("openexr/[>=3.1 <3.4]")
 
     def build_requirements(self):
         if self.settings.os == "Emscripten":

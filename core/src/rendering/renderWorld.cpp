@@ -1,6 +1,13 @@
+#include <Iex.h>
+#include <ImfChannelList.h>
+#include <ImfFrameBuffer.h>
+#include <ImfHeader.h>
+#include <ImfIO.h>
+#include <ImfInputFile.h>
 #include <core/diagnostics.h>
 #include <core/profiling.h>
 #include <core/rendering/adapterHelpers.h>
+#include <core/rendering/halfFloat.h>
 #include <core/rendering/preparedSceneData.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/webgpu/device.h>
@@ -16,6 +23,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <limits>
@@ -267,8 +275,149 @@ int RenderWorld::find_camera_by_prim(const pxr::SdfPath& path) const {
 // --- Texture loading ---
 
 namespace {
-void resize_rgba8(const uint8_t* src, uint32_t src_w, uint32_t src_h, uint8_t* dst, uint32_t dst_w,
-                  uint32_t dst_h) {
+
+std::string get_asset_extension(const std::string& path) {
+    auto ext = pxr::ArGetResolver().GetExtension(path);
+    for (auto& c : ext)
+        if (c >= 'A' && c <= 'Z') c += 32;
+    return ext;
+}
+bool has_exr_extension(const std::string& path) {
+    return get_asset_extension(path) == "exr";
+}
+bool has_hdr_extension(const std::string& path) {
+    return get_asset_extension(path) == "hdr";
+}
+
+class MemoryIStream : public Imf::IStream {
+   public:
+    MemoryIStream(const char* name, const unsigned char* data, size_t size)
+        : Imf::IStream(name), m_data(data), m_size(size), m_pos(0) {
+    }
+
+    bool isMemoryMapped() const override {
+        return true;
+    }
+
+    bool read(char c[], int n) override {
+        if (m_pos + n > m_size) throw Iex::InputExc("Unexpected end of EXR data");
+        std::memcpy(c, m_data + m_pos, n);
+        m_pos += n;
+        return m_pos < m_size;
+    }
+
+    char* readMemoryMapped(int n) override {
+        if (m_pos + n > m_size) throw Iex::InputExc("Read past end of EXR buffer");
+        char* ptr = const_cast<char*>(reinterpret_cast<const char*>(m_data + m_pos));
+        m_pos += n;
+        return ptr;
+    }
+
+    uint64_t tellg() override {
+        return m_pos;
+    }
+    void seekg(uint64_t pos) override {
+        m_pos = static_cast<size_t>(pos);
+    }
+
+   private:
+    const unsigned char* m_data;
+    size_t m_size;
+    size_t m_pos;
+};
+
+float* load_image_float(const unsigned char* buf, size_t size, const std::string& path, int* w,
+                        int* h) {
+    if (has_exr_extension(path)) {
+        try {
+            MemoryIStream stream(path.c_str(), buf, size);
+            Imf::InputFile file(stream);
+            const auto& header = file.header();
+            auto dw = header.dataWindow();
+            int width = dw.max.x - dw.min.x + 1;
+            int height = dw.max.y - dw.min.y + 1;
+            if (width <= 0 || height <= 0) return nullptr;
+            *w = width;
+            *h = height;
+
+            size_t pixel_count = static_cast<size_t>(width) * height;
+            auto* out = static_cast<float*>(std::malloc(pixel_count * 4 * sizeof(float)));
+            POSTCONDITION(out);
+
+            // Pre-fill alpha to 1.0
+            for (size_t i = 0; i < pixel_count; ++i) out[i * 4 + 3] = 1.0f;
+
+            const auto& channels = header.channels();
+            Imf::FrameBuffer fb;
+            size_t x_stride = 4 * sizeof(float);
+            size_t y_stride = static_cast<size_t>(width) * x_stride;
+            char* base = reinterpret_cast<char*>(out) - dw.min.x * static_cast<int64_t>(x_stride) -
+                         dw.min.y * static_cast<int64_t>(y_stride);
+
+            struct ChanMap {
+                const char* name;
+                int offset;
+                double fill;
+            };
+            ChanMap maps[] = {{"R", 0, 0.0}, {"G", 1, 0.0}, {"B", 2, 0.0}, {"A", 3, 1.0}};
+            for (auto& m : maps) {
+                fb.insert(m.name, Imf::Slice(Imf::FLOAT, base + m.offset * sizeof(float), x_stride,
+                                             y_stride, 1, 1, m.fill));
+            }
+
+            // Luminance-only fallback
+            if (!channels.findChannel("R") && channels.findChannel("Y")) {
+                fb.insert("Y", Imf::Slice(Imf::FLOAT, base, x_stride, y_stride));
+                file.setFrameBuffer(fb);
+                file.readPixels(dw.min.y, dw.max.y);
+                for (size_t i = 0; i < pixel_count; ++i) {
+                    out[i * 4 + 1] = out[i * 4];
+                    out[i * 4 + 2] = out[i * 4];
+                }
+                return out;
+            }
+
+            file.setFrameBuffer(fb);
+            file.readPixels(dw.min.y, dw.max.y);
+            return out;
+        } catch (const std::exception& e) {
+            spdlog::warn("EXR decode failed '{}': {}", path, e.what());
+            return nullptr;
+        }
+    }
+    // HDR files: use stbi_loadf for true floating-point decode (linear).
+    if (has_hdr_extension(path)) {
+        int channels = 0;
+        float* data = stbi_loadf_from_memory(reinterpret_cast<const stbi_uc*>(buf),
+                                             static_cast<int>(size), w, h, &channels, 4);
+        if (!data) return nullptr;
+        size_t count = static_cast<size_t>(*w) * static_cast<size_t>(*h) * 4;
+        auto* out = static_cast<float*>(std::malloc(count * sizeof(float)));
+        POSTCONDITION(out);
+        std::memcpy(out, data, count * sizeof(float));
+        stbi_image_free(data);
+        return out;
+    }
+    // LDR formats (PNG, JPG, etc.): use stbi_load (uint8) and normalize to
+    // [0,1] without gamma conversion. stbi_loadf would apply sRGB→linear
+    // (pow 2.2), causing double-linearization when the shader also applies it.
+    int channels = 0;
+    auto* bytes = stbi_load_from_memory(reinterpret_cast<const stbi_uc*>(buf),
+                                        static_cast<int>(size), w, h, &channels, 4);
+    if (!bytes) return nullptr;
+    size_t count = static_cast<size_t>(*w) * static_cast<size_t>(*h) * 4;
+    auto* out = static_cast<float*>(std::malloc(count * sizeof(float)));
+    POSTCONDITION(out);
+    constexpr float inv = 1.0f / 255.0f;
+    for (size_t i = 0; i < count; ++i) {
+        out[i] = static_cast<float>(bytes[i]) * inv;
+    }
+    stbi_image_free(bytes);
+    return out;
+}
+
+void resize_rgba_float(const float* src, uint32_t src_w, uint32_t src_h, float* dst, uint32_t dst_w,
+                       uint32_t dst_h) {
     for (uint32_t y = 0; y < dst_h; ++y) {
         float v = static_cast<float>(y) * static_cast<float>(src_h) / static_cast<float>(dst_h);
         auto y0 = static_cast<uint32_t>(v);
@@ -284,14 +433,13 @@ void resize_rgba8(const uint8_t* src, uint32_t src_w, uint32_t src_h, uint8_t* d
                 float p10 = src[(y0 * src_w + x1) * 4 + c];
                 float p01 = src[(y1 * src_w + x0) * 4 + c];
                 float p11 = src[(y1 * src_w + x1) * 4 + c];
-                float val = p00 * (1 - fx) * (1 - fy) + p10 * fx * (1 - fy) + p01 * (1 - fx) * fy +
-                            p11 * fx * fy;
-                dst[(y * dst_w + x) * 4 + c] =
-                    static_cast<uint8_t>(std::min(std::max(val, 0.0f), 255.0f));
+                dst[(y * dst_w + x) * 4 + c] = p00 * (1 - fx) * (1 - fy) + p10 * fx * (1 - fy) +
+                                               p01 * (1 - fx) * fy + p11 * fx * fy;
             }
         }
     }
 }
+
 }  // namespace
 
 uint32_t SyncScope::load_texture(const std::string& resolved_path) {
@@ -299,32 +447,51 @@ uint32_t SyncScope::load_texture(const std::string& resolved_path) {
     if (it != m_world.m_texture_cache.end()) return it->second;
 
     auto asset = pxr::ArGetResolver().OpenAsset(pxr::ArResolvedPath(resolved_path));
-    if (!asset) return UINT32_MAX;
+    if (!asset) {
+        spdlog::warn("Failed to open texture asset: {}", resolved_path);
+        m_world.m_texture_cache[resolved_path] = UINT32_MAX;
+        return UINT32_MAX;
+    }
 
     auto buffer = asset->GetBuffer();
     auto size = asset->GetSize();
     CHECK_MSG(buffer != nullptr, "ArAsset::GetBuffer() returned null for opened asset");
 
-    int w = 0, h = 0, channels = 0;
-    auto* data = stbi_load_from_memory(reinterpret_cast<const stbi_uc*>(buffer.get()),
-                                       static_cast<int>(size), &w, &h, &channels, 4);
-    if (!data) return UINT32_MAX;
+    int w = 0, h = 0;
+    float* fdata = load_image_float(reinterpret_cast<const unsigned char*>(buffer.get()),
+                                    static_cast<size_t>(size), resolved_path, &w, &h);
+    if (!fdata) {
+        spdlog::warn("Failed to decode texture: {}", resolved_path);
+        m_world.m_texture_cache[resolved_path] = UINT32_MAX;
+        return UINT32_MAX;
+    }
 
     auto index = static_cast<uint32_t>(m_world.m_texture_images.size());
     auto tex_size = m_world.m_texture_size;
 
-    RenderWorld::ImageData img;
-    if (static_cast<uint32_t>(w) == tex_size && static_cast<uint32_t>(h) == tex_size) {
-        img.pixels.assign(data, data + tex_size * tex_size * 4);
-    } else {
-        img.pixels.resize(tex_size * tex_size * 4);
-        resize_rgba8(data, static_cast<uint32_t>(w), static_cast<uint32_t>(h), img.pixels.data(),
-                     tex_size, tex_size);
+    float* resized = nullptr;
+    float* src = fdata;
+    if (static_cast<uint32_t>(w) != tex_size || static_cast<uint32_t>(h) != tex_size) {
+        resized = static_cast<float*>(
+            std::malloc(static_cast<size_t>(tex_size) * tex_size * 4 * sizeof(float)));
+        POSTCONDITION(resized);
+        resize_rgba_float(fdata, static_cast<uint32_t>(w), static_cast<uint32_t>(h), resized,
+                          tex_size, tex_size);
+        src = resized;
     }
-    stbi_image_free(data);
 
+    size_t pixel_count = static_cast<size_t>(tex_size) * tex_size * 4;
+    RenderWorld::ImageData img;
+    img.pixels.resize(pixel_count);
+    for (size_t i = 0; i < pixel_count; ++i) {
+        img.pixels[i] = float_to_half(src[i]);
+    }
     img.width = tex_size;
     img.height = tex_size;
+
+    std::free(resized);
+    std::free(fdata);
+
     m_world.m_texture_images.push_back(std::move(img));
     m_world.m_texture_cache[resolved_path] = index;
     ++m_world.m_texture_version;
@@ -391,6 +558,27 @@ PreparedSceneData RenderWorld::prepare_scene_data() {
         }
     }
 
+    // --- Stamp light_index on proxy materials ---
+    if (data.lights_dirty) {
+        if (!data.materials_dirty) {
+            data.materials = m_materials;
+            data.materials_dirty = true;
+        }
+        for (auto& mat : data.materials) mat.light_index = UINT32_MAX;
+        uint32_t gpu_idx = 0;
+        for (const auto& slot : lights) {
+            if (!slot.active()) {
+                continue;
+            }
+            auto mat_idx = slot.data().material_index;
+            if (mat_idx != k_no_material &&
+                mat_idx < static_cast<uint32_t>(data.materials.size())) {
+                data.materials[mat_idx].light_index = gpu_idx;
+            }
+            ++gpu_idx;
+        }
+    }
+
     // --- Two-level BVH (BLAS per mesh, TLAS over instances) ---
     {
         auto objects = get_objects();
@@ -399,20 +587,23 @@ PreparedSceneData RenderWorld::prepare_scene_data() {
         // Step 1: Collect dirty meshes and pre-populate BLAS cache entries (serial)
         PTS_ZONE_NAMED("BLAS build");
         std::vector<uint32_t> dirty_meshes;
-        for (const auto& obj : objects) {
-            if (!obj.active()) continue;
-            if (!obj->visible) continue;
-            uint32_t mesh_idx = obj->mesh_index;
+        auto check_mesh_dirty = [&](uint32_t mesh_idx) {
             const auto& mesh = meshes_span[mesh_idx];
-            if (!mesh.active() || mesh->cpu_vertices.empty() || mesh->cpu_indices.empty()) continue;
-
-            // Pre-populate cache entry (must happen before parallel_for)
+            if (!mesh.active() || mesh->cpu_vertices.empty() || mesh->cpu_indices.empty()) return;
             auto& blas = m_blas_cache[mesh_idx];
-            if (blas.generation == mesh.generation()) continue;
+            if (blas.generation == mesh.generation()) return;
             if (std::find(dirty_meshes.begin(), dirty_meshes.end(), mesh_idx) ==
                 dirty_meshes.end()) {
                 dirty_meshes.push_back(mesh_idx);
             }
+        };
+        for (const auto& obj : objects) {
+            if (!obj.active() || !obj->visible) continue;
+            check_mesh_dirty(obj->mesh_index);
+        }
+        for (const auto& slot : get_lights()) {
+            if (!slot.active() || !slot->visible || slot->mesh_index == UINT32_MAX) continue;
+            check_mesh_dirty(slot->mesh_index);
         }
 
         // Build BLAS in parallel (each mesh is independent)
@@ -458,14 +649,34 @@ PreparedSceneData RenderWorld::prepare_scene_data() {
                 instances.push_back({mesh_idx, obj->material_index, obj->transform});
             }
 
+            // Include light proxy meshes in the BVH so the path tracer
+            // can hit emitter geometry (area lights, sphere lights, etc.)
+            auto lights_span = get_lights();
+            for (const auto& slot : lights_span) {
+                if (!slot.active()) continue;
+                if (!slot->visible) continue;
+                if (slot->mesh_index == UINT32_MAX) continue;
+                uint32_t mesh_idx = slot->mesh_index;
+                const auto& mesh = meshes_span[mesh_idx];
+                if (!mesh.active() || mesh->cpu_vertices.empty() || mesh->cpu_indices.empty())
+                    continue;
+
+                INVARIANT(m_blas_cache.count(mesh_idx) > 0);
+
+                AABB local_aabb = AABB::from_min_max(mesh->local_aabb_min, mesh->local_aabb_max);
+                world_aabbs.push_back(transform_aabb(local_aabb, slot->transform));
+                instances.push_back({mesh_idx, slot->material_index, slot->transform});
+            }
+
             auto inst_count = static_cast<uint32_t>(instances.size());
 
-            // Build TLAS from world-space AABBs
+            // Build TLAS from world-space AABBs into PreparedSceneData
+            // (not m_tlas — that's read by the render thread)
             {
                 PTS_ZONE_NAMED("TLAS build");
-                m_tlas.build(world_aabbs, inst_count);
+                data.tlas.build(world_aabbs, inst_count);
             }
-            uint32_t tlas_nc = m_tlas.node_count();
+            uint32_t tlas_nc = data.tlas.node_count();
 
             // Build per-mesh offset table (unique meshes only)
             struct MeshOffset {
@@ -502,11 +713,11 @@ PreparedSceneData RenderWorld::prepare_scene_data() {
             }
 
             // Reorder instances by TLAS tri_indices
-            if (!m_tlas.tri_indices().empty() && inst_count > 0) {
-                INVARIANT(m_tlas.tri_indices().size() == inst_count);
+            if (!data.tlas.tri_indices().empty() && inst_count > 0) {
+                INVARIANT(data.tlas.tri_indices().size() == inst_count);
                 std::vector<GPUInstance> reordered(inst_count);
                 for (uint32_t i = 0; i < inst_count; ++i) {
-                    reordered[i] = gpu_instances[m_tlas.tri_indices()[i]];
+                    reordered[i] = gpu_instances[data.tlas.tri_indices()[i]];
                 }
                 gpu_instances = std::move(reordered);
             }
@@ -517,7 +728,7 @@ PreparedSceneData RenderWorld::prepare_scene_data() {
             for (uint32_t mi : unique_meshes) {
                 blas_entries.push_back({&m_blas_cache[mi].bvh, mesh_offsets[mi].tri_offset});
             }
-            data.all_nodes = m_tlas.concatenate_nodes(blas_entries);
+            data.all_nodes = data.tlas.concatenate_nodes(blas_entries);
 
             // Concatenate triangles
             data.all_tris.reserve(running_tri_offset);
@@ -550,7 +761,7 @@ PreparedSceneData RenderWorld::prepare_scene_data() {
 }
 
 void RenderWorld::upload_prepared_data(const webgpu::Device& device, WGPUQueue queue,
-                                       const PreparedSceneData& data) {
+                                       PreparedSceneData data) {
     PTS_ZONE_SCOPED;
 
     // --- Materials ---
@@ -631,6 +842,7 @@ void RenderWorld::upload_prepared_data(const webgpu::Device& device, WGPUQueue q
                                  data.gpu_instances.size() * sizeof(GPUInstance));
         }
 
+        m_tlas = std::move(data.tlas);
         m_tlas_node_count = data.tlas_node_count;
         m_instance_count = data.instance_count;
     }
@@ -663,14 +875,14 @@ void RenderWorld::upload_prepared_data(const webgpu::Device& device, WGPUQueue q
                                                        WGPUTextureUsage_CopyDst);
         tex_desc.dimension = WGPUTextureDimension_2D;
         tex_desc.size = {tex_w, tex_h, layer_count};
-        tex_desc.format = WGPUTextureFormat_RGBA8Unorm;
+        tex_desc.format = WGPUTextureFormat_RGBA16Float;
         tex_desc.mipLevelCount = 1;
         m_texture_array = wgpuDeviceCreateTexture(device.handle(), &tex_desc);
         POSTCONDITION(m_texture_array);
 
         if (data.texture_layers.empty()) {
-            // 1x1 white placeholder
-            uint8_t white[] = {255, 255, 255, 255};
+            // 1x1 white placeholder (half-float 1.0 = 0x3C00)
+            uint16_t white[] = {0x3C00, 0x3C00, 0x3C00, 0x3C00};
             WGPUTexelCopyTextureInfo dst = {};
             dst.texture = m_texture_array;
             dst.mipLevel = 0;
@@ -678,12 +890,12 @@ void RenderWorld::upload_prepared_data(const webgpu::Device& device, WGPUQueue q
             dst.aspect = WGPUTextureAspect_All;
             WGPUTexelCopyBufferLayout layout = {};
             layout.offset = 0;
-            layout.bytesPerRow = 4;
+            layout.bytesPerRow = 4 * sizeof(uint16_t);
             layout.rowsPerImage = 1;
             WGPUExtent3D extent = {1, 1, 1};
             wgpuQueueWriteTexture(queue, &dst, white, sizeof(white), &layout, &extent);
         } else {
-            uint32_t bytes_per_row = tex_w * 4;
+            uint32_t bytes_per_row = tex_w * 4 * sizeof(uint16_t);
             for (uint32_t i = 0; i < static_cast<uint32_t>(data.texture_layers.size()); ++i) {
                 const auto& layer = data.texture_layers[i];
                 WGPUTexelCopyTextureInfo dst = {};
@@ -696,14 +908,15 @@ void RenderWorld::upload_prepared_data(const webgpu::Device& device, WGPUQueue q
                 layout.bytesPerRow = bytes_per_row;
                 layout.rowsPerImage = tex_h;
                 WGPUExtent3D extent = {tex_w, tex_h, 1};
-                wgpuQueueWriteTexture(queue, &dst, layer.pixels,
-                                      static_cast<std::size_t>(tex_w) * tex_h * 4, &layout,
-                                      &extent);
+                wgpuQueueWriteTexture(
+                    queue, &dst, layer.pixels,
+                    static_cast<std::size_t>(tex_w) * tex_h * 4 * sizeof(uint16_t), &layout,
+                    &extent);
             }
         }
 
         WGPUTextureViewDescriptor view_desc = WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT;
-        view_desc.format = WGPUTextureFormat_RGBA8Unorm;
+        view_desc.format = WGPUTextureFormat_RGBA16Float;
         view_desc.dimension = WGPUTextureViewDimension_2DArray;
         view_desc.baseMipLevel = 0;
         view_desc.mipLevelCount = 1;
@@ -727,7 +940,7 @@ void RenderWorld::upload_prepared_data(const webgpu::Device& device, WGPUQueue q
 
 void RenderWorld::prepare_gpu_buffers(const webgpu::Device& device, WGPUQueue queue) {
     auto prepared = prepare_scene_data();
-    upload_prepared_data(device, queue, prepared);
+    upload_prepared_data(device, queue, std::move(prepared));
 }
 
 AABB RenderWorld::scene_bounds() const {
@@ -956,9 +1169,9 @@ void RenderWorld::update_ibl(const webgpu::Device& device, WGPUQueue queue, UpAx
             return;
         }
 
-        int w = 0, h = 0, channels = 0;
-        float* data = stbi_loadf_from_memory(reinterpret_cast<const stbi_uc*>(buffer.get()),
-                                             static_cast<int>(size), &w, &h, &channels, 4);
+        int w = 0, h = 0;
+        float* data = load_image_float(reinterpret_cast<const unsigned char*>(buffer.get()),
+                                       static_cast<size_t>(size), dome->env_texture_path, &w, &h);
         if (!data) {
             spdlog::warn("Failed to decode HDR environment: {}", dome->env_texture_path);
             return;
@@ -966,7 +1179,7 @@ void RenderWorld::update_ibl(const webgpu::Device& device, WGPUQueue queue, UpAx
 
         m_ibl.set_environment(*m_ibl_pipelines, device, queue, data, static_cast<uint32_t>(w),
                               static_cast<uint32_t>(h), up_axis);
-        stbi_image_free(data);
+        std::free(data);
 
         m_ibl_env_path = dome->env_texture_path;
         m_ibl_up_axis = up_axis;

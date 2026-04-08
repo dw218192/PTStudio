@@ -52,63 +52,8 @@ struct SkyboxUniforms {
 };
 static_assert(sizeof(SkyboxUniforms) == 96, "SkyboxUniforms must match shader std140 layout");
 
-static WGPUBindGroup create_bind_group(WGPUDevice device, WGPUBindGroupLayout layout,
-                                       WGPUBuffer uniform_buf, WGPUBuffer material_buf,
-                                       std::size_t material_buf_size, WGPUBuffer light_buf,
-                                       std::size_t light_buf_size, WGPUTextureView ltc_mat_view,
-                                       WGPUTextureView ltc_amp_view, WGPUSampler ltc_sampler,
-                                       WGPUTextureView scene_tex_view,
-                                       WGPUSampler scene_tex_sampler) {
-    WGPUBindGroupEntry entries[8] = {};
-
-    entries[0] = WGPU_BIND_GROUP_ENTRY_INIT;
-    entries[0].binding = 0;
-    entries[0].buffer = uniform_buf;
-    entries[0].offset = 0;
-    entries[0].size = sizeof(ForwardUniforms);
-
-    entries[1] = WGPU_BIND_GROUP_ENTRY_INIT;
-    entries[1].binding = 1;
-    entries[1].buffer = material_buf;
-    entries[1].offset = 0;
-    entries[1].size = material_buf_size;
-
-    entries[2] = WGPU_BIND_GROUP_ENTRY_INIT;
-    entries[2].binding = 2;
-    entries[2].buffer = light_buf;
-    entries[2].offset = 0;
-    entries[2].size = light_buf_size;
-
-    entries[3] = WGPU_BIND_GROUP_ENTRY_INIT;
-    entries[3].binding = 3;
-    entries[3].textureView = ltc_mat_view;
-
-    entries[4] = WGPU_BIND_GROUP_ENTRY_INIT;
-    entries[4].binding = 4;
-    entries[4].textureView = ltc_amp_view;
-
-    entries[5] = WGPU_BIND_GROUP_ENTRY_INIT;
-    entries[5].binding = 5;
-    entries[5].sampler = ltc_sampler;
-
-    entries[6] = WGPU_BIND_GROUP_ENTRY_INIT;
-    entries[6].binding = 6;
-    entries[6].textureView = scene_tex_view;
-
-    entries[7] = WGPU_BIND_GROUP_ENTRY_INIT;
-    entries[7].binding = 7;
-    entries[7].sampler = scene_tex_sampler;
-
-    WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-    bg_desc.layout = layout;
-    bg_desc.entryCount = 8;
-    bg_desc.entries = entries;
-    return wgpuDeviceCreateBindGroup(device, &bg_desc);
-}
-
 ForwardPass::~ForwardPass() {
     if (auto* ready = std::get_if<Ready>(&m_state)) {
-        if (ready->bind_group) wgpuBindGroupRelease(ready->bind_group);
         if (ready->bind_group_layout) wgpuBindGroupLayoutRelease(ready->bind_group_layout);
         if (ready->shadow_recv_bgl) wgpuBindGroupLayoutRelease(ready->shadow_recv_bgl);
         if (ready->shadow_sampler) wgpuSamplerRelease(ready->shadow_sampler);
@@ -122,7 +67,7 @@ ForwardPass::~ForwardPass() {
     }
 }
 
-static constexpr rendering::IRenderPass::DebugTarget k_debug_targets[] = {
+static constexpr rendering::IPass::DebugTarget k_debug_targets[] = {
     {"Direct Diffuse", "debug_Direct Diffuse"},   {"Direct Specular", "debug_Direct Specular"},
     {"IBL Diffuse", "debug_IBL Diffuse"},         {"IBL Specular", "debug_IBL Specular"},
     {"Prefiltered Env", "debug_Prefiltered Env"}, {"BRDF LUT", "debug_BRDF LUT"},
@@ -138,14 +83,14 @@ auto ForwardPass::is_ready() const noexcept -> bool {
     return std::holds_alternative<Ready>(m_state);
 }
 
-auto ForwardPass::debug_targets() const noexcept -> std::pair<const DebugTarget*, uint32_t> {
+auto ForwardPass::renderer_debug_targets() const noexcept
+    -> std::pair<const DebugTarget*, uint32_t> {
     return {k_debug_targets, k_debug_target_count};
 }
 
 void ForwardPass::do_renderer_setup(const webgpu::Device& device) {
     // Release existing state for re-entry (hot-reload)
     if (auto* ready = std::get_if<Ready>(&m_state)) {
-        if (ready->bind_group) wgpuBindGroupRelease(ready->bind_group);
         if (ready->bind_group_layout) wgpuBindGroupLayoutRelease(ready->bind_group_layout);
         if (ready->shadow_recv_bgl) wgpuBindGroupLayoutRelease(ready->shadow_recv_bgl);
         if (ready->shadow_sampler) wgpuSamplerRelease(ready->shadow_sampler);
@@ -161,11 +106,6 @@ void ForwardPass::do_renderer_setup(const webgpu::Device& device) {
     auto [dbg_targets_setup, dbg_count_setup] = effective_debug_targets();
     auto shader_src = load_pass_shader("renderers/forward/generated/shaders/forward.wgsl");
     auto shader = device.create_shader_module_from_source(shader_src);
-
-    uint32_t initial_capacity = 64;
-    auto uniform_buffer = device.create_buffer(
-        k_uniform_align * initial_capacity,
-        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
 
     // Create bind group 0 layout: binding 0 = uniform (dynamic), 1 = storage (materials),
     // 2 = storage (lights), 3 = texture (LTC mat), 4 = texture (LTC amp), 5 = sampler (LTC),
@@ -416,24 +356,13 @@ void ForwardPass::do_renderer_setup(const webgpu::Device& device) {
 
     wgpuPipelineLayoutRelease(skybox_pl);
 
-    auto skybox_uniform_buffer = device.create_buffer(
-        sizeof(SkyboxUniforms),
-        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
-
     rendering::LtcTextures ltc;
     ltc.init(device);
 
     m_state = Ready{
         std::move(shader),
         std::move(pipeline),
-        std::move(uniform_buffer),
-        nullptr,
         bind_group_layout,
-        initial_capacity,
-        nullptr,
-        nullptr,
-        nullptr,
-        nullptr,
         std::move(ltc),
         shadow_recv_bgl,
         shadow_sampler,
@@ -446,37 +375,22 @@ void ForwardPass::do_renderer_setup(const webgpu::Device& device) {
         std::move(skybox_shader),
         std::move(skybox_pipeline),
         skybox_bgl,
-        std::move(skybox_uniform_buffer),
     };
 }
 
-bool ForwardPass::ensure_capacity(const webgpu::Device& device, uint32_t object_count) {
-    auto& ready = std::get<Ready>(m_state);
-    if (object_count <= ready.capacity) return false;
-
-    uint32_t new_capacity = ready.capacity;
-    while (new_capacity < object_count) {
-        new_capacity *= 2;
-    }
-
-    ready.uniform_buffer = device.create_buffer(
-        k_uniform_align * new_capacity,
-        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
-
-    ready.capacity = new_capacity;
-    return true;
-}
-
-void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
-                                        const rendering::PassContext& ctx) {
+ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
+                                                           const rendering::PassContext& ctx) {
     PTS_ZONE_SCOPED;
     PRECONDITION(is_ready());
 
     // Pre-passes: G-buffer (depth + normals) and shadow maps
+    rendering::GBufferPass::Outputs gbuf_out;
     if (auto* gbuf = get_pass<rendering::GBufferPass>(); gbuf && gbuf->is_ready())
-        gbuf->add_to_frame_graph(fg, ctx);
+        gbuf_out = gbuf->add_to_frame_graph(fg, ctx, {});
+
+    rendering::ShadowMapPass::Outputs shadow_out{};
     if (auto* shadow = get_pass<rendering::ShadowMapPass>(); shadow && shadow->is_ready())
-        shadow->add_to_frame_graph(fg, ctx);
+        shadow_out = shadow->add_to_frame_graph(fg, ctx, {});
 
     auto& ready = std::get<Ready>(m_state);
 
@@ -493,37 +407,76 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     }
 
     uint32_t total_slots = object_count + proxy_light_count;
-    bool bind_group_dirty = false;
-    if (total_slots > 0) {
-        bind_group_dirty = ensure_capacity(ctx.device, total_slots);
-    }
 
-    // Detect RenderWorld buffer reallocation and rebuild bind group
+    // Import external buffers from RenderWorld
     auto& light_buf = ctx.world.light_buffer();
     auto& mat_buf = ctx.world.material_buffer();
     auto light_count = ctx.world.gpu_light_count();
+    auto light_buf_handle = import_buffer(fg, light_buf.handle(), light_buf.size(), "world_lights");
+    auto mat_buf_handle = import_buffer(fg, mat_buf.handle(), mat_buf.size(), "world_materials");
 
     auto scene_tex_view = ctx.world.texture_array_view();
     auto scene_tex_sampler = ctx.world.texture_sampler();
 
-    if (ready.bind_group == nullptr || bind_group_dirty ||
-        light_buf.handle() != ready.cached_light_buf ||
-        mat_buf.handle() != ready.cached_material_buf ||
-        scene_tex_view != ready.cached_texture_view ||
-        scene_tex_sampler != ready.cached_texture_sampler) {
-        if (ready.bind_group) {
-            wgpuBindGroupRelease(ready.bind_group);
-        }
-        ready.bind_group = create_bind_group(
-            ctx.device.handle(), ready.bind_group_layout, ready.uniform_buffer.handle(),
-            mat_buf.handle(), mat_buf.size(), light_buf.handle(), light_buf.size(),
-            ready.ltc_textures.mat_view(), ready.ltc_textures.amp_view(),
-            ready.ltc_textures.sampler(), scene_tex_view, scene_tex_sampler);
-        ready.cached_light_buf = light_buf.handle();
-        ready.cached_material_buf = mat_buf.handle();
-        ready.cached_texture_view = scene_tex_view;
-        ready.cached_texture_sampler = scene_tex_sampler;
-    }
+    // Managed uniform buffer
+    uint64_t uniform_needed =
+        std::max(uint64_t(1), static_cast<uint64_t>(total_slots)) * k_uniform_align;
+    rendering::BufferDesc uniform_buf_desc;
+    uniform_buf_desc.size = uniform_needed;
+    uniform_buf_desc.usage =
+        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
+    auto uniform_buf_handle = create_buffer(fg, uniform_buf_desc, "uniforms");
+
+    // Bind group 0: materials, lights, uniforms, LTC, scene textures
+    rendering::BindGroupEntry bg0_entries[8] = {};
+    bg0_entries[0].binding = 0;
+    bg0_entries[0].buffer = uniform_buf_handle;
+    bg0_entries[0].buffer_size = sizeof(ForwardUniforms);
+
+    bg0_entries[1].binding = 1;
+    bg0_entries[1].buffer = mat_buf_handle;
+
+    bg0_entries[2].binding = 2;
+    bg0_entries[2].buffer = light_buf_handle;
+
+    bg0_entries[3].binding = 3;
+    bg0_entries[3].external_view = ready.ltc_textures.mat_view();
+
+    bg0_entries[4].binding = 4;
+    bg0_entries[4].external_view = ready.ltc_textures.amp_view();
+
+    bg0_entries[5].binding = 5;
+    bg0_entries[5].sampler = ready.ltc_textures.sampler();
+
+    bg0_entries[6].binding = 6;
+    bg0_entries[6].external_view = scene_tex_view;
+
+    bg0_entries[7].binding = 7;
+    bg0_entries[7].sampler = scene_tex_sampler;
+
+    rendering::BindGroupDesc bg0_desc;
+    bg0_desc.layout = ready.bind_group_layout;
+    bg0_desc.entries.assign(std::begin(bg0_entries), std::end(bg0_entries));
+    auto bg0_handle = create_bind_group(fg, std::move(bg0_desc), "bg0");
+
+    // Bind group 1: shadow
+    PRECONDITION(shadow_out.shadow_array.is_valid());
+    PRECONDITION(shadow_out.shadow_info.is_valid());
+
+    rendering::BindGroupEntry bg1_entries[3] = {};
+    bg1_entries[0].binding = 0;
+    bg1_entries[0].buffer = shadow_out.shadow_info;
+
+    bg1_entries[1].binding = 1;
+    bg1_entries[1].texture = shadow_out.shadow_array;
+
+    bg1_entries[2].binding = 2;
+    bg1_entries[2].sampler = ready.shadow_sampler;
+
+    rendering::BindGroupDesc bg1_desc;
+    bg1_desc.layout = ready.shadow_recv_bgl;
+    bg1_desc.entries.assign(std::begin(bg1_entries), std::end(bg1_entries));
+    auto bg1_handle = create_bind_group(fg, std::move(bg1_desc), "shadow_bg");
 
     rendering::TextureDesc color_desc;
     color_desc.width = ctx.viewport_width;
@@ -536,8 +489,9 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     depth_desc.height = ctx.viewport_height;
     depth_desc.format = WGPUTextureFormat_Depth32Float;
 
-    auto color = fg.find_or_create("scene_color", color_desc);
-    auto depth = fg.find_or_create("scene_depth", depth_desc);
+    auto color = create_texture(fg, color_desc, "color");
+    auto depth =
+        gbuf_out.depth.is_valid() ? gbuf_out.depth : create_texture(fg, depth_desc, "depth");
 
     auto [eff_debug_targets, eff_debug_count] = effective_debug_targets();
 
@@ -553,26 +507,6 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     for (uint32_t i = 0; i < eff_debug_count; ++i) {
         debug_handles[i] = fg.find_or_create(eff_debug_targets[i].resource_name, debug_desc);
     }
-
-    auto queue = ctx.queue;
-    auto view_mat = ctx.view_matrix;
-    auto proj_mat = ctx.proj_matrix;
-    auto elapsed_time = ctx.time;
-    auto camera_pos = ctx.camera_position;
-    auto* pipeline_handle = ready.pipeline.handle();
-    auto uniform_buf = ready.uniform_buffer.handle();
-    auto bind_group = ready.bind_group;
-    const auto& world = ctx.world;
-
-    // Capture shadow resources for the execute lambda
-    auto dev = ctx.device.handle();
-    auto shadow_recv_bgl = ready.shadow_recv_bgl;
-    auto shadow_samp = ready.shadow_sampler;
-    auto shadow_array_view = get_pass<rendering::ShadowMapPass>()->shadow_array_view();
-    auto& sd = rendering::ShadowPassData::get_or_create(ctx.world);
-    PRECONDITION(sd.info_buffer.is_valid());
-    auto shadow_info_handle = sd.info_buffer.handle();
-    auto shadow_info_size = sd.info_buffer.size();
 
     // Compute dome modulation: for HDR domes the cubemap has raw HDR values
     // and needs color*intensity applied; for uniform domes the cubemap already
@@ -592,132 +526,143 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     auto& ibl_pipes = ctx.world.ibl_pipelines();
     auto ibl_ready = ibl.is_ready();
 
-    {
-        PTS_ZONE_NAMED("forward uniform upload");
-        for (uint32_t i = 0; i < object_count; ++i) {
-            if (!objects[i].active()) continue;
-            if (!objects[i]->visible) continue;
-            const auto& obj = objects[i];
-            ForwardUniforms u{};
-            u.mvp = proj_mat * view_mat * obj->transform;
-            u.model = obj->transform;
-            u.camera_pos = camera_pos;
-            u.time = elapsed_time;
-            u.material_index = obj->material_index;
-            u.light_count = light_count;
-            u.ibl_dome_modulation = ibl_ready ? dome_mod : glm::vec3{0.0f};
-            u.ibl_mip_count = rendering::k_prefilter_mip_count;
-            wgpuQueueWriteBuffer(queue, uniform_buf, i * k_uniform_align, &u, sizeof(u));
-        }
-    }
-
-    // Upload uniforms for proxy light meshes
-    {
-        PTS_ZONE_NAMED("forward proxy light uniform upload");
-        uint32_t proxy_slot = object_count;
-        for (uint32_t li = 0; li < static_cast<uint32_t>(all_lights.size()); ++li) {
-            if (!all_lights[li].active()) continue;
-            if (all_lights[li]->mesh_index == UINT32_MAX) continue;
-            if (!all_lights[li]->visible) {
-                ++proxy_slot;
-                continue;
-            }
-            ForwardUniforms u{};
-            u.mvp = proj_mat * view_mat * all_lights[li]->transform;
-            u.model = all_lights[li]->transform;
-            u.camera_pos = camera_pos;
-            u.time = elapsed_time;
-            u.material_index = all_lights[li]->material_index;
-            u.light_count = light_count;
-            u.ibl_dome_modulation = ibl_ready ? dome_mod : glm::vec3{0.0f};
-            u.ibl_mip_count = rendering::k_prefilter_mip_count;
-            wgpuQueueWriteBuffer(queue, uniform_buf, proxy_slot * k_uniform_align, &u, sizeof(u));
-            ++proxy_slot;
-        }
-    }
-
-    // Capture IBL bind group resources (use fallback textures when IBL not ready)
-    auto ibl_bgl = ready.ibl_bgl;
-    auto ibl_samp = ready.ibl_sampler;
+    // IBL bind group resources (use fallback textures when IBL not ready)
     auto ibl_prefiltered_view = ibl_ready ? ibl.prefiltered_env_view() : ready.fallback_cube_view;
     auto ibl_env_cubemap_view = ibl_ready ? ibl.env_cubemap_view() : ready.fallback_cube_view;
     auto ibl_irradiance_view = ibl_ready ? ibl.irradiance_view() : ready.fallback_cube_view;
     auto ibl_brdf_lut_view = ibl_ready ? ibl_pipes.brdf_lut_view() : ready.fallback_2d_view;
 
-    // Upload skybox uniforms
-    SkyboxUniforms sky_u{};
-    sky_u.inv_vp = glm::inverse(proj_mat * view_mat);
-    sky_u.camera_pos = camera_pos;
-    sky_u.dome_modulation = ibl_ready ? dome_mod : glm::vec3{0.0f};
-    wgpuQueueWriteBuffer(queue, ready.skybox_uniform_buffer.handle(), 0, &sky_u, sizeof(sky_u));
+    // Bind group 2: IBL
+    rendering::BindGroupEntry bg2_entries[4] = {};
+    bg2_entries[0].binding = 0;
+    bg2_entries[0].external_view = ibl_prefiltered_view;
 
-    // Capture skybox resources for the lambda
+    bg2_entries[1].binding = 1;
+    bg2_entries[1].external_view = ibl_irradiance_view;
+
+    bg2_entries[2].binding = 2;
+    bg2_entries[2].external_view = ibl_brdf_lut_view;
+
+    bg2_entries[3].binding = 3;
+    bg2_entries[3].sampler = ready.ibl_sampler;
+
+    rendering::BindGroupDesc bg2_desc;
+    bg2_desc.layout = ready.ibl_bgl;
+    bg2_desc.entries.assign(std::begin(bg2_entries), std::end(bg2_entries));
+    auto bg2_handle = create_bind_group(fg, std::move(bg2_desc), "ibl_bg");
+
+    // Skybox uniform buffer + bind group
+    rendering::BufferDesc skybox_buf_desc;
+    skybox_buf_desc.size = sizeof(SkyboxUniforms);
+    skybox_buf_desc.usage =
+        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
+    auto skybox_uniform_buf_handle = create_buffer(fg, skybox_buf_desc, "skybox_uniforms");
+
+    rendering::BindGroupEntry sky_bg_entries[3] = {};
+    sky_bg_entries[0].binding = 0;
+    sky_bg_entries[0].buffer = skybox_uniform_buf_handle;
+    sky_bg_entries[0].buffer_size = sizeof(SkyboxUniforms);
+
+    sky_bg_entries[1].binding = 1;
+    sky_bg_entries[1].external_view = ibl_env_cubemap_view;
+
+    sky_bg_entries[2].binding = 2;
+    sky_bg_entries[2].sampler = ready.ibl_sampler;
+
+    rendering::BindGroupDesc skybox_bg_desc;
+    skybox_bg_desc.layout = ready.skybox_bgl;
+    skybox_bg_desc.entries.assign(std::begin(sky_bg_entries), std::end(sky_bg_entries));
+    auto skybox_bg_handle = create_bind_group(fg, std::move(skybox_bg_desc), "skybox_bg");
+
+    // Capture values for the execute lambda
+    auto queue = ctx.queue;
+    auto view_mat = ctx.view_matrix;
+    auto proj_mat = ctx.proj_matrix;
+    auto elapsed_time = ctx.time;
+    auto camera_pos = ctx.camera_position;
+    auto* pipeline_handle = ready.pipeline.handle();
     auto skybox_pipeline_handle = ready.skybox_pipeline.handle();
-    auto skybox_bgl_handle = ready.skybox_bgl;
-    auto skybox_uniform_buf = ready.skybox_uniform_buffer.handle();
+    const auto& world = ctx.world;
 
-    auto pass_builder = fg.add_pass("forward").color(color);
+    auto pass_builder = fg.add_pass("forward").color(color).read(shadow_out.shadow_array);
     for (uint32_t i = 0; i < eff_debug_count; ++i) {
         pass_builder.color(debug_handles[i]);
     }
-    pass_builder.depth(depth).execute([=, &world](WGPURenderPassEncoder pass) {
+    pass_builder.depth(depth).execute([=, &fg, &world](WGPURenderPassEncoder pass) {
         auto objs = world.get_objects();
         auto meshes = world.get_meshes();
 
-        // Shadow bind group (group 1) — created per-frame
-        WGPUBindGroupEntry shadow_bg_entries[3] = {};
-        shadow_bg_entries[0] = WGPU_BIND_GROUP_ENTRY_INIT;
-        shadow_bg_entries[0].binding = 0;
-        shadow_bg_entries[0].buffer = shadow_info_handle;
-        shadow_bg_entries[0].size = shadow_info_size;
+        auto uniform_buf = fg.get_buffer_ref(uniform_buf_handle).handle();
+        auto bg0 = fg.get_bind_group_ref(bg0_handle).handle();
+        auto bg1 = fg.get_bind_group_ref(bg1_handle).handle();
+        auto bg2 = fg.get_bind_group_ref(bg2_handle).handle();
 
-        shadow_bg_entries[1] = WGPU_BIND_GROUP_ENTRY_INIT;
-        shadow_bg_entries[1].binding = 1;
-        shadow_bg_entries[1].textureView = shadow_array_view;
+        // Upload per-object uniforms
+        {
+            PTS_ZONE_NAMED("forward uniform upload");
+            for (uint32_t i = 0; i < static_cast<uint32_t>(objs.size()); ++i) {
+                if (!objs[i].active()) continue;
+                if (!objs[i]->visible) continue;
+                const auto& obj = objs[i];
+                ForwardUniforms u{};
+                u.mvp = proj_mat * view_mat * obj->transform;
+                u.model = obj->transform;
+                u.camera_pos = camera_pos;
+                u.time = elapsed_time;
+                u.material_index = obj->material_index;
+                u.light_count = light_count;
+                u.ibl_dome_modulation = ibl_ready ? dome_mod : glm::vec3{0.0f};
+                u.ibl_mip_count = rendering::k_prefilter_mip_count;
+                wgpuQueueWriteBuffer(queue, uniform_buf, i * k_uniform_align, &u, sizeof(u));
+            }
+        }
 
-        shadow_bg_entries[2] = WGPU_BIND_GROUP_ENTRY_INIT;
-        shadow_bg_entries[2].binding = 2;
-        shadow_bg_entries[2].sampler = shadow_samp;
+        // Upload uniforms for proxy light meshes
+        {
+            PTS_ZONE_NAMED("forward proxy light uniform upload");
+            auto light_slots = world.get_lights();
+            uint32_t proxy_slot = object_count;
+            for (uint32_t li = 0; li < static_cast<uint32_t>(light_slots.size()); ++li) {
+                if (!light_slots[li].active()) continue;
+                if (light_slots[li]->mesh_index == UINT32_MAX) continue;
+                if (!light_slots[li]->visible) {
+                    ++proxy_slot;
+                    continue;
+                }
+                ForwardUniforms u{};
+                u.mvp = proj_mat * view_mat * light_slots[li]->transform;
+                u.model = light_slots[li]->transform;
+                u.camera_pos = camera_pos;
+                u.time = elapsed_time;
+                u.material_index = light_slots[li]->material_index;
+                u.light_count = light_count;
+                u.ibl_dome_modulation = ibl_ready ? dome_mod : glm::vec3{0.0f};
+                u.ibl_mip_count = rendering::k_prefilter_mip_count;
+                wgpuQueueWriteBuffer(queue, uniform_buf, proxy_slot * k_uniform_align, &u,
+                                     sizeof(u));
+                ++proxy_slot;
+            }
+        }
 
-        WGPUBindGroupDescriptor shadow_bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-        shadow_bg_desc.layout = shadow_recv_bgl;
-        shadow_bg_desc.entryCount = 3;
-        shadow_bg_desc.entries = shadow_bg_entries;
-        auto shadow_bg = wgpuDeviceCreateBindGroup(dev, &shadow_bg_desc);
-
-        // IBL bind group (group 2) — created per-frame
-        WGPUBindGroupEntry ibl_bg_entries[4] = {};
-        ibl_bg_entries[0] = WGPU_BIND_GROUP_ENTRY_INIT;
-        ibl_bg_entries[0].binding = 0;
-        ibl_bg_entries[0].textureView = ibl_prefiltered_view;
-
-        ibl_bg_entries[1] = WGPU_BIND_GROUP_ENTRY_INIT;
-        ibl_bg_entries[1].binding = 1;
-        ibl_bg_entries[1].textureView = ibl_irradiance_view;
-
-        ibl_bg_entries[2] = WGPU_BIND_GROUP_ENTRY_INIT;
-        ibl_bg_entries[2].binding = 2;
-        ibl_bg_entries[2].textureView = ibl_brdf_lut_view;
-
-        ibl_bg_entries[3] = WGPU_BIND_GROUP_ENTRY_INIT;
-        ibl_bg_entries[3].binding = 3;
-        ibl_bg_entries[3].sampler = ibl_samp;
-
-        WGPUBindGroupDescriptor ibl_bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-        ibl_bg_desc.layout = ibl_bgl;
-        ibl_bg_desc.entryCount = 4;
-        ibl_bg_desc.entries = ibl_bg_entries;
-        auto ibl_bg = wgpuDeviceCreateBindGroup(dev, &ibl_bg_desc);
+        // Upload skybox uniforms
+        {
+            auto skybox_buf = fg.get_buffer_ref(skybox_uniform_buf_handle).handle();
+            SkyboxUniforms sky_u{};
+            sky_u.inv_vp = glm::inverse(proj_mat * view_mat);
+            sky_u.camera_pos = camera_pos;
+            sky_u.dome_modulation = ibl_ready ? dome_mod : glm::vec3{0.0f};
+            wgpuQueueWriteBuffer(queue, skybox_buf, 0, &sky_u, sizeof(sky_u));
+        }
 
         wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
-        wgpuRenderPassEncoderSetBindGroup(pass, 1, shadow_bg, 0, nullptr);
-        wgpuRenderPassEncoderSetBindGroup(pass, 2, ibl_bg, 0, nullptr);
+        wgpuRenderPassEncoderSetBindGroup(pass, 1, bg1, 0, nullptr);
+        wgpuRenderPassEncoderSetBindGroup(pass, 2, bg2, 0, nullptr);
 
         for (uint32_t i = 0; i < static_cast<uint32_t>(objs.size()); ++i) {
             if (!objs[i].active()) continue;
             if (!objs[i]->visible) continue;
             uint32_t dyn_offset = i * k_uniform_align;
-            wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 1, &dyn_offset);
+            wgpuRenderPassEncoderSetBindGroup(pass, 0, bg0, 1, &dyn_offset);
             const auto& mesh = meshes[objs[i]->mesh_index];
             wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh->vertex_buffer.handle(), 0,
                                                  mesh->vertex_buffer.size());
@@ -739,7 +684,7 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
                     continue;
                 }
                 uint32_t dyn_offset = proxy_idx * k_uniform_align;
-                wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 1, &dyn_offset);
+                wgpuRenderPassEncoderSetBindGroup(pass, 0, bg0, 1, &dyn_offset);
                 const auto& mesh = meshes[light_slots[li]->mesh_index];
                 wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh->vertex_buffer.handle(), 0,
                                                      mesh->vertex_buffer.size());
@@ -753,35 +698,19 @@ void ForwardPass::do_add_to_frame_graph(rendering::FrameGraph& fg,
 
         // Skybox: draw fullscreen triangle after all geometry
         if (ibl_ready) {
-            WGPUBindGroupEntry sky_entries[3] = {};
-            sky_entries[0] = WGPU_BIND_GROUP_ENTRY_INIT;
-            sky_entries[0].binding = 0;
-            sky_entries[0].buffer = skybox_uniform_buf;
-            sky_entries[0].size = sizeof(SkyboxUniforms);
-            sky_entries[1] = WGPU_BIND_GROUP_ENTRY_INIT;
-            sky_entries[1].binding = 1;
-            sky_entries[1].textureView = ibl_env_cubemap_view;
-            sky_entries[2] = WGPU_BIND_GROUP_ENTRY_INIT;
-            sky_entries[2].binding = 2;
-            sky_entries[2].sampler = ibl_samp;
-
-            WGPUBindGroupDescriptor sky_bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-            sky_bg_desc.layout = skybox_bgl_handle;
-            sky_bg_desc.entryCount = 3;
-            sky_bg_desc.entries = sky_entries;
-            auto sky_bg = wgpuDeviceCreateBindGroup(dev, &sky_bg_desc);
-
+            auto skybox_bg = fg.get_bind_group_ref(skybox_bg_handle).handle();
             wgpuRenderPassEncoderSetPipeline(pass, skybox_pipeline_handle);
-            wgpuRenderPassEncoderSetBindGroup(pass, 0, sky_bg, 0, nullptr);
+            wgpuRenderPassEncoderSetBindGroup(pass, 0, skybox_bg, 0, nullptr);
             wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
-            wgpuBindGroupRelease(sky_bg);
         }
-
-        wgpuBindGroupRelease(shadow_bg);
-        wgpuBindGroupRelease(ibl_bg);
     });
 
     // Post-pass: SSAO
-    if (auto* ssao = get_pass<rendering::SSAOPass>(); ssao && ssao->is_ready())
-        ssao->add_to_frame_graph(fg, ctx);
+    std::optional<rendering::TextureHandle> ssao_handle;
+    if (auto* ssao = get_pass<rendering::SSAOPass>(); ssao && ssao->is_ready()) {
+        auto ssao_out = ssao->add_to_frame_graph(fg, ctx, {gbuf_out.depth, gbuf_out.normals});
+        if (ssao_out.ssao.is_valid()) ssao_handle = rendering::TextureHandle{ssao_out.ssao.index};
+    }
+
+    return {color, rendering::TextureHandle{depth}, ssao_handle};
 }

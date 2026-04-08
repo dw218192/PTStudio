@@ -13,6 +13,11 @@ struct AABB {
     glm::vec3 min{std::numeric_limits<float>::max()};
     glm::vec3 max{std::numeric_limits<float>::lowest()};
 
+    /// True if at least one point has been added (min <= max on all axes).
+    [[nodiscard]] bool is_valid() const {
+        return min.x <= max.x && min.y <= max.y && min.z <= max.z;
+    }
+
     /// Expand to include a point.
     void expand(const glm::vec3& p) {
         min = glm::min(min, p);

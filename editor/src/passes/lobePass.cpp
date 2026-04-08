@@ -32,9 +32,6 @@ static_assert(LobePass::k_uniform_align >= sizeof(LobeUniforms),
 
 LobePass::~LobePass() {
     if (auto* ready = std::get_if<Ready>(&m_state)) {
-        if (ready->bind_group) {
-            wgpuBindGroupRelease(ready->bind_group);
-        }
         if (ready->bind_group_layout) {
             wgpuBindGroupLayoutRelease(ready->bind_group_layout);
         }
@@ -50,19 +47,12 @@ auto LobePass::is_ready() const noexcept -> bool {
 }
 
 void LobePass::do_setup(const webgpu::Device& device) {
-    // Release existing state for re-entry (hot-reload)
     if (auto* ready = std::get_if<Ready>(&m_state)) {
-        if (ready->bind_group) wgpuBindGroupRelease(ready->bind_group);
         if (ready->bind_group_layout) wgpuBindGroupLayoutRelease(ready->bind_group_layout);
     }
 
     auto shader_src = get_shader_loader().load("editor/generated/shaders/lobe.wgsl");
     auto shader = device.create_shader_module_from_source(shader_src);
-
-    // Uniform buffer holds 2 aligned copies (specular + diffuse)
-    auto uniform_buffer = device.create_buffer(
-        k_uniform_align * 2,
-        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
 
     // Create bind group layout with dynamic offset for dual draw
     WGPUBindGroupLayoutEntry bgl_entry = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
@@ -77,18 +67,6 @@ void LobePass::do_setup(const webgpu::Device& device) {
     bgl_desc.entryCount = 1;
     bgl_desc.entries = &bgl_entry;
     auto bind_group_layout = wgpuDeviceCreateBindGroupLayout(device.handle(), &bgl_desc);
-
-    WGPUBindGroupEntry bg_entry = WGPU_BIND_GROUP_ENTRY_INIT;
-    bg_entry.binding = 0;
-    bg_entry.buffer = uniform_buffer.handle();
-    bg_entry.offset = 0;
-    bg_entry.size = sizeof(LobeUniforms);
-
-    WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-    bg_desc.layout = bind_group_layout;
-    bg_desc.entryCount = 1;
-    bg_desc.entries = &bg_entry;
-    auto bind_group = wgpuDeviceCreateBindGroup(device.handle(), &bg_desc);
 
     WGPUPipelineLayoutDescriptor pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
     pl_desc.bindGroupLayoutCount = 1;
@@ -108,15 +86,34 @@ void LobePass::do_setup(const webgpu::Device& device) {
     wgpuPipelineLayoutRelease(pipeline_layout);
 
     m_state = Ready{
-        std::move(shader), std::move(pipeline), std::move(uniform_buffer),
-        bind_group,        bind_group_layout,
+        std::move(shader),
+        std::move(pipeline),
+        bind_group_layout,
     };
 }
 
-void LobePass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::PassContext& ctx) {
+void LobePass::render(rendering::FrameGraph& fg, const rendering::PassContext& ctx) {
     PTS_ZONE_SCOPED;
     PRECONDITION(is_ready());
     auto& ready = std::get<Ready>(m_state);
+
+    // Register uniform buffer (2 aligned slots: specular + diffuse)
+    rendering::BufferDesc buf_desc{};
+    buf_desc.size = k_uniform_align * 2;
+    buf_desc.usage =
+        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
+    auto uniform_buf_handle = create_buffer(fg, buf_desc, "uniforms");
+
+    // Register bind group
+    rendering::BindGroupEntry entry{};
+    entry.binding = 0;
+    entry.buffer = uniform_buf_handle;
+    entry.buffer_size = sizeof(LobeUniforms);
+
+    rendering::BindGroupDesc bg_desc{};
+    bg_desc.layout = ready.bind_group_layout;
+    bg_desc.entries = {entry};
+    auto bg_handle = create_bind_group(fg, std::move(bg_desc), "bg0");
 
     rendering::TextureDesc color_desc;
     color_desc.width = k_texture_size;
@@ -130,7 +127,7 @@ void LobePass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::Pa
     depth_desc.format = WGPUTextureFormat_Depth32Float;
 
     auto color = fg.find_or_create("lobe_color", color_desc);
-    auto depth = fg.find_or_create("lobe_depth", depth_desc);
+    auto depth = create_texture(fg, depth_desc, "depth");
     m_lobe_color_handle = color;
 
     // Fixed camera looking at origin
@@ -149,32 +146,33 @@ void LobePass::add_to_frame_graph(rendering::FrameGraph& fg, const rendering::Pa
 
     auto queue = ctx.queue;
     auto* pipeline_handle = ready.pipeline.handle();
-    auto uniform_buf = ready.uniform_buffer.handle();
-    auto bind_group = ready.bind_group;
     auto roughness = m_roughness;
     auto metallic = m_metallic;
     auto scale = m_scale;
     auto show_specular = m_show_specular;
     auto show_diffuse = m_show_diffuse;
 
-    // Upload both uniform slots before the render pass
-    LobeUniforms lu_spec{};
-    lu_spec.mvp = mvp;
-    lu_spec.light_dir = light_dir;
-    lu_spec.roughness = roughness;
-    lu_spec.metallic = metallic;
-    lu_spec.scale = scale;
-    lu_spec.grid_cols = k_grid_cols;
-    lu_spec.grid_rows = k_grid_rows;
-    lu_spec.mode = 0;
+    fg.add_pass("lobe").color(color).depth(depth).execute([=, &fg](WGPURenderPassEncoder pass) {
+        auto uniform_buf = fg.get_buffer_ref(uniform_buf_handle).handle();
+        auto bind_group = fg.get_bind_group_ref(bg_handle).handle();
 
-    LobeUniforms lu_diff = lu_spec;
-    lu_diff.mode = 1;
+        // Upload both uniform slots
+        LobeUniforms lu_spec{};
+        lu_spec.mvp = mvp;
+        lu_spec.light_dir = light_dir;
+        lu_spec.roughness = roughness;
+        lu_spec.metallic = metallic;
+        lu_spec.scale = scale;
+        lu_spec.grid_cols = k_grid_cols;
+        lu_spec.grid_rows = k_grid_rows;
+        lu_spec.mode = 0;
 
-    wgpuQueueWriteBuffer(queue, uniform_buf, 0, &lu_spec, sizeof(lu_spec));
-    wgpuQueueWriteBuffer(queue, uniform_buf, k_uniform_align, &lu_diff, sizeof(lu_diff));
+        LobeUniforms lu_diff = lu_spec;
+        lu_diff.mode = 1;
 
-    fg.add_pass("lobe").color(color).depth(depth).execute([=](WGPURenderPassEncoder pass) {
+        wgpuQueueWriteBuffer(queue, uniform_buf, 0, &lu_spec, sizeof(lu_spec));
+        wgpuQueueWriteBuffer(queue, uniform_buf, k_uniform_align, &lu_diff, sizeof(lu_diff));
+
         uint32_t vertex_count = (k_grid_cols - 1) * (k_grid_rows - 1) * 6;
         wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
 

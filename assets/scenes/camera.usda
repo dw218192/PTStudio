@@ -66,7 +66,7 @@ def Scope "Geom"
     }
 
     def "Camera_01_2k" (
-        prepend references = @./Camera_01_2k.usdc@
+        prepend references = @../models/camera/Camera_01_2k.usdc@
     )
     {
         double xformOp:rotateX:unitsResolve = -90
@@ -109,8 +109,8 @@ def Xform "Root"
 {
     def DomeLight "DomeLight"
     {
-        float inputs:intensity = 1
-        asset inputs:texture:file = @../../hdr/bryanston_park_sunrise_2k.hdr@
+        float inputs:intensity = 2
+        asset inputs:texture:file = @../hdr/bryanston_park_sunrise_2k.hdr@
     }
 
     def Camera "Camera"

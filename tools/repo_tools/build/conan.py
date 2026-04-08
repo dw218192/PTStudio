@@ -17,7 +17,8 @@ from repo_tools.core import ShellCommand, find_venv_executable, logger
 
 def ensure_conan_profile() -> None:
     """Ensure Conan profiles exist, run detect if needed."""
-    profile_dir = Path.home() / ".conan2" / "profiles"
+    conan_home = Path(os.environ.get("CONAN_HOME", Path.home() / ".conan2"))
+    profile_dir = conan_home / "profiles"
 
     if not profile_dir.exists() or not any(profile_dir.iterdir()):
         logger.info("No Conan profiles found. Running 'conan profile detect'...")

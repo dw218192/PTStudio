@@ -46,7 +46,8 @@ struct Material {
     float ior{1.5f};
     float opacity_threshold{0.0f};
     uint32_t tex_channels{0};
-    uint32_t _pad[2]{};
+    uint32_t light_index{UINT32_MAX};  // GPU light index for proxy meshes (UINT32_MAX = none)
+    uint32_t _pad{};
 };
 static_assert(sizeof(Material) == 80, "Material must be 80 bytes for GPU alignment");
 
@@ -362,7 +363,7 @@ struct RenderWorld {
 
     /// GPU-only: upload a PreparedSceneData snapshot to GPU buffers.
     void upload_prepared_data(const webgpu::Device& device, WGPUQueue queue,
-                              const PreparedSceneData& data);
+                              PreparedSceneData data);
 
     void prepare_gpu_buffers(const webgpu::Device& device, WGPUQueue queue);
     const webgpu::Buffer& light_buffer() const;
@@ -428,7 +429,7 @@ struct RenderWorld {
     void clear();
 
     // Category version counters — bumped by SyncScope when any slot in that
-    // category changes.  Used internally by IRenderPass::get_or_create_pass_data
+    // category changes.  Used internally by IPass::get_or_create_pass_data
     // and prepare_gpu_buffers.  Prefer the pass_data API over reading these
     // directly in renderer code.
     uint32_t get_mesh_version() const;
@@ -485,7 +486,7 @@ struct RenderWorld {
 
     // Texture array state
     struct ImageData {
-        std::vector<uint8_t> pixels;
+        std::vector<uint16_t> pixels;  // RGBA16Float (half-precision)
         uint32_t width;
         uint32_t height;
     };

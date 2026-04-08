@@ -33,26 +33,8 @@ static_assert(sizeof(WireframeUniforms) == 64, "WireframeUniforms must match sha
 static_assert(WireframePass::k_uniform_align >= sizeof(WireframeUniforms),
               "Alignment must be >= uniform struct size");
 
-static WGPUBindGroup create_bind_group(WGPUDevice device, WGPUBindGroupLayout layout,
-                                       WGPUBuffer uniform_buf) {
-    WGPUBindGroupEntry entry = WGPU_BIND_GROUP_ENTRY_INIT;
-    entry.binding = 0;
-    entry.buffer = uniform_buf;
-    entry.offset = 0;
-    entry.size = sizeof(WireframeUniforms);
-
-    WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-    bg_desc.layout = layout;
-    bg_desc.entryCount = 1;
-    bg_desc.entries = &entry;
-    return wgpuDeviceCreateBindGroup(device, &bg_desc);
-}
-
 WireframePass::~WireframePass() {
     if (auto* ready = std::get_if<Ready>(&m_state)) {
-        if (ready->bind_group) {
-            wgpuBindGroupRelease(ready->bind_group);
-        }
         if (ready->bind_group_layout) {
             wgpuBindGroupLayoutRelease(ready->bind_group_layout);
         }
@@ -68,23 +50,14 @@ auto WireframePass::is_ready() const noexcept -> bool {
 }
 
 void WireframePass::do_renderer_setup(const webgpu::Device& device) {
-    // Capture old state for deferred release (after new state is built)
-    WGPUBindGroup old_bind_group = nullptr;
     WGPUBindGroupLayout old_layout = nullptr;
     if (auto* ready = std::get_if<Ready>(&m_state)) {
-        old_bind_group = ready->bind_group;
         old_layout = ready->bind_group_layout;
-        ready->bind_group = nullptr;
         ready->bind_group_layout = nullptr;
     }
 
     auto shader_src = get_shader_loader().load("editor/generated/shaders/wireframe.wgsl");
     auto shader = device.create_shader_module_from_source(shader_src);
-
-    uint32_t initial_capacity = 64;
-    auto uniform_buffer = device.create_buffer(
-        k_uniform_align * initial_capacity,
-        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
 
     WGPUBindGroupLayoutEntry bgl_entry = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
     bgl_entry.binding = 0;
@@ -98,9 +71,6 @@ void WireframePass::do_renderer_setup(const webgpu::Device& device) {
     bgl_desc.entryCount = 1;
     bgl_desc.entries = &bgl_entry;
     auto bind_group_layout = wgpuDeviceCreateBindGroupLayout(device.handle(), &bgl_desc);
-
-    auto bind_group =
-        create_bind_group(device.handle(), bind_group_layout, uniform_buffer.handle());
 
     WGPUPipelineLayoutDescriptor pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
     pl_desc.bindGroupLayoutCount = 1;
@@ -122,38 +92,16 @@ void WireframePass::do_renderer_setup(const webgpu::Device& device) {
     wgpuPipelineLayoutRelease(pipeline_layout);
 
     m_state = Ready{
-        std::move(shader), std::move(pipeline), std::move(uniform_buffer),
-        bind_group,        bind_group_layout,   initial_capacity,
+        std::move(shader),
+        std::move(pipeline),
+        bind_group_layout,
     };
 
-    if (old_bind_group) wgpuBindGroupRelease(old_bind_group);
     if (old_layout) wgpuBindGroupLayoutRelease(old_layout);
 }
 
-void WireframePass::ensure_capacity(const webgpu::Device& device, uint32_t object_count) {
-    auto& ready = std::get<Ready>(m_state);
-    if (object_count <= ready.capacity) return;
-
-    uint32_t new_capacity = ready.capacity;
-    while (new_capacity < object_count) {
-        new_capacity *= 2;
-    }
-
-    ready.uniform_buffer = device.create_buffer(
-        k_uniform_align * new_capacity,
-        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
-
-    if (ready.bind_group) {
-        wgpuBindGroupRelease(ready.bind_group);
-    }
-
-    ready.bind_group =
-        create_bind_group(device.handle(), ready.bind_group_layout, ready.uniform_buffer.handle());
-    ready.capacity = new_capacity;
-}
-
-void WireframePass::do_add_to_frame_graph(rendering::FrameGraph& fg,
-                                          const rendering::PassContext& ctx) {
+WireframePass::HdrOutputs WireframePass::do_add_to_frame_graph(rendering::FrameGraph& fg,
+                                                               const rendering::PassContext& ctx) {
     PTS_ZONE_SCOPED;
     PRECONDITION(is_ready());
     auto& ready = std::get<Ready>(m_state);
@@ -161,9 +109,26 @@ void WireframePass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     auto objects = ctx.world.get_objects();
     auto meshes = ctx.world.get_meshes();
     auto object_count = static_cast<uint32_t>(objects.size());
-    if (object_count > 0) {
-        ensure_capacity(ctx.device, object_count);
-    }
+
+    // Register per-object uniform buffer with frame graph
+    uint64_t needed_size =
+        std::max(uint64_t(1), static_cast<uint64_t>(object_count)) * k_uniform_align;
+    rendering::BufferDesc buf_desc;
+    buf_desc.size = needed_size;
+    buf_desc.usage =
+        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
+    auto uniform_buf_handle = create_buffer(fg, buf_desc, "uniforms");
+
+    // Register bind group
+    rendering::BindGroupEntry entry{};
+    entry.binding = 0;
+    entry.buffer = uniform_buf_handle;
+    entry.buffer_size = sizeof(WireframeUniforms);
+
+    rendering::BindGroupDesc bg_desc;
+    bg_desc.layout = ready.bind_group_layout;
+    bg_desc.entries = {entry};
+    auto bg_handle = create_bind_group(fg, std::move(bg_desc), "bg0");
 
     rendering::TextureDesc color_desc;
     color_desc.width = ctx.viewport_width;
@@ -176,20 +141,17 @@ void WireframePass::do_add_to_frame_graph(rendering::FrameGraph& fg,
     depth_desc.height = ctx.viewport_height;
     depth_desc.format = WGPUTextureFormat_Depth32Float;
 
-    auto color = fg.find_or_create("scene_color", color_desc);
-    auto depth = fg.find_or_create("scene_depth", depth_desc);
+    auto color = create_texture(fg, color_desc, "color");
+    auto depth = create_texture(fg, depth_desc, "depth");
 
     auto queue = ctx.queue;
     auto view_mat = ctx.view_matrix;
     auto proj_mat = ctx.proj_matrix;
     auto* pipeline_handle = ready.pipeline.handle();
-    auto uniform_buf = ready.uniform_buffer.handle();
-    auto bind_group = ready.bind_group;
     const auto& world = ctx.world;
 
     {
         PTS_ZONE_NAMED("wireframe mesh cache");
-        // Lazily build wireframe index buffers via the per-pass mesh cache.
         for (uint32_t i = 0; i < object_count; ++i) {
             if (!objects[i].active()) continue;
             if (!objects[i]->visible) continue;
@@ -209,24 +171,26 @@ void WireframePass::do_add_to_frame_graph(rendering::FrameGraph& fg,
         }
     }
 
-    {
-        PTS_ZONE_NAMED("wireframe uniform upload");
-        for (uint32_t i = 0; i < object_count; ++i) {
-            if (!objects[i].active()) continue;
-            if (!objects[i]->visible) continue;
-            const auto& obj = objects[i];
-            WireframeUniforms u{};
-            u.mvp = proj_mat * view_mat * obj->transform;
-            wgpuQueueWriteBuffer(queue, uniform_buf, i * k_uniform_align, &u, sizeof(u));
-        }
-    }
-
     fg.add_pass("wireframe")
         .color(color)
         .depth(depth)
-        .execute([=, &world](WGPURenderPassEncoder pass) {
+        .execute([=, &fg, &world](WGPURenderPassEncoder pass) {
             auto objs = world.get_objects();
             auto mshs = world.get_meshes();
+            auto uniform_buf = fg.get_buffer_ref(uniform_buf_handle).handle();
+            auto bind_group = fg.get_bind_group_ref(bg_handle).handle();
+
+            {
+                PTS_ZONE_NAMED("wireframe uniform upload");
+                for (uint32_t i = 0; i < static_cast<uint32_t>(objs.size()); ++i) {
+                    if (!objs[i].active()) continue;
+                    if (!objs[i]->visible) continue;
+                    WireframeUniforms u{};
+                    u.mvp = proj_mat * view_mat * objs[i]->transform;
+                    wgpuQueueWriteBuffer(queue, uniform_buf, i * k_uniform_align, &u, sizeof(u));
+                }
+            }
+
             wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
             for (uint32_t i = 0; i < static_cast<uint32_t>(objs.size()); ++i) {
                 if (!objs[i].active()) continue;
@@ -244,4 +208,6 @@ void WireframePass::do_add_to_frame_graph(rendering::FrameGraph& fg,
                 wgpuRenderPassEncoderDrawIndexed(pass, wf.index_count, 1, 0, 0, 0);
             }
         });
+
+    return {color, depth};
 }

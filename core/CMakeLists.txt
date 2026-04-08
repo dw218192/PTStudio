@@ -107,6 +107,7 @@ target_link_libraries(${lib_name}
 PRIVATE
 	$<BUILD_INTERFACE:developer_flags>
 	stb::stb
+	OpenEXR::OpenEXR
 PUBLIC
 	openusd::usd_usd
 	glm::glm

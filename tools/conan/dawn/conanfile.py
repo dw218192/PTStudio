@@ -37,8 +37,8 @@ class DawnConan(ConanFile):
         deps.generate()
 
     def build(self) -> None:
-        # DAWN_FETCH_DEPENDENCIES=True lets CMake handle dependency fetching
-        # via FetchContent — no need to run fetch_dawn_dependencies.py manually.
+        # Dawn's code generator uses jinja2.BaseLoader, removed in 3.1.5.
+        self.run("pip install \"jinja2<3.1.5\" --quiet")
         cmake = CMake(self)
         cmake.configure()
         cmake.build()

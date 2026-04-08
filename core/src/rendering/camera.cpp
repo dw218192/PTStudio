@@ -39,10 +39,10 @@ void OrbitCamera::set_up_axis(UpAxis axis) {
 
 void OrbitCamera::apply_meters_per_unit(float meters_per_unit) {
     float s = 1.0f / meters_per_unit;  // scene units per meter
-    m_near = 0.1f * s;
-    m_far = 1000.0f * s;
-    m_min_distance = 0.1f * s;
-    m_max_distance = 500.0f * s;
+    m_near = 0.01f * s;
+    m_far = 2000.0f * s;
+    m_min_distance = 0.01f * s;
+    m_max_distance = 1000.0f * s;
     m_move_speed = 5.0f * s;
     m_distance = std::clamp(m_distance, m_min_distance, m_max_distance);
 }

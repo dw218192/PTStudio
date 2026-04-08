@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/diagnostics.h>
+#include <core/rendering/frameGraph.h>
 #include <core/rendering/renderWorld.h>
 
 #include <boost/container/flat_map.hpp>
@@ -10,6 +11,10 @@
 #include <memory>
 #include <string_view>
 
+namespace spdlog {
+class logger;
+}
+
 namespace pts {
 
 namespace webgpu {
@@ -18,7 +23,6 @@ class Device;
 
 namespace rendering {
 
-class FrameGraph;
 class ShaderLoader;
 struct PassContext;
 
@@ -26,22 +30,18 @@ struct PassContext;
 /// version field is used for automatic invalidation.
 enum class PassDataKind : uint8_t { Mesh, Light, Material };
 
-class IRenderPass {
+class IPass {
    public:
-    explicit IRenderPass(const ShaderLoader& shader_loader) : m_shader_loader(&shader_loader) {
-    }
-    virtual ~IRenderPass() = default;
+    explicit IPass(const ShaderLoader& shader_loader);
+    virtual ~IPass() = default;
 
     [[nodiscard]] virtual auto name() const noexcept -> std::string_view = 0;
     [[nodiscard]] virtual auto is_ready() const noexcept -> bool = 0;
 
-    /// Initialize the pass. Computes allowed debug targets, then calls do_setup().
-    void setup(const webgpu::Device& device) {
-        compute_allowed_debug_targets(device);
-        do_setup(device);
-    }
-
-    virtual void add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) = 0;
+    /// Initialize the pass. Creates a named logger via LoggingManager (same
+    /// sinks/pattern as the rest of the application), computes allowed debug
+    /// targets, then calls do_setup().
+    void setup(const webgpu::Device& device);
 
     /// Called when shaders have been hot-reloaded. Default re-runs setup().
     virtual void on_shaders_reloaded(const webgpu::Device& device) {
@@ -103,6 +103,10 @@ class IRenderPass {
         return *m_shader_loader;
     }
 
+    [[nodiscard]] auto logger() const noexcept -> spdlog::logger& {
+        return *m_logger;
+    }
+
     /// Load the pass shader, automatically selecting the no-debug-targets
     /// variant when the device limit requires it. Shaders that declare debug
     /// MRT outputs must guard them with `#ifndef NO_DEBUG_TARGETS`.
@@ -113,6 +117,22 @@ class IRenderPass {
 
    protected:
     virtual void do_setup(const webgpu::Device& device) = 0;
+
+    /// Frame graph resource helpers — auto-namespace by pass name.
+    TextureHandle create_texture(FrameGraph& fg, TextureDesc desc, const char* label = nullptr) {
+        return fg.find_or_create(this, desc, label);
+    }
+    BufferHandle create_buffer(FrameGraph& fg, BufferDesc desc, const char* label = nullptr) {
+        return fg.find_or_create_buffer(this, desc, label);
+    }
+    BufferHandle import_buffer(FrameGraph& fg, WGPUBuffer buf, std::size_t size,
+                               const char* label = nullptr) {
+        return fg.import_buffer(this, buf, size, label);
+    }
+    BindGroupHandle create_bind_group(FrameGraph& fg, BindGroupDesc desc,
+                                      const char* label = nullptr) {
+        return fg.find_or_create_bind_group(this, std::move(desc), label);
+    }
 
     /// Lazily create or return per-entity pass data, cached in the world.
     /// Version is read from the entity (Mesh::generation or Light::generation).
@@ -172,6 +192,7 @@ class IRenderPass {
 
    private:
     const ShaderLoader* m_shader_loader;
+    std::shared_ptr<spdlog::logger> m_logger;
     uint32_t m_allowed_debug_count = UINT32_MAX;
 
     void compute_allowed_debug_targets(const webgpu::Device& device);

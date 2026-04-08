@@ -29,8 +29,8 @@ class PathTracerPass final : public rendering::IRenderer {
     void do_renderer_setup(const webgpu::Device& device) override;
     void do_draw_imgui() override;
     void draw_viewport_overlay(const ViewportOverlayParams& params) override;
-    void do_add_to_frame_graph(rendering::FrameGraph& fg,
-                               const rendering::PassContext& ctx) override;
+    HdrOutputs do_add_to_frame_graph(rendering::FrameGraph& fg,
+                                     const rendering::PassContext& ctx) override;
     void draw_viewport_controls() override;
 
    private:
@@ -45,7 +45,6 @@ class PathTracerPass final : public rendering::IRenderer {
 
         webgpu::ShaderModule blit_shader;
         webgpu::RenderPipeline blit_pipeline;
-        webgpu::Buffer blit_uniform_buffer;
         WGPUBindGroupLayout blit_bgl = nullptr;
     };
 

@@ -228,6 +228,10 @@ ShaderLoader::~ShaderLoader() = default;
 ShaderLoader::ShaderLoader(ShaderLoader&&) noexcept = default;
 ShaderLoader& ShaderLoader::operator=(ShaderLoader&&) noexcept = default;
 
+auto ShaderLoader::logger() const -> const std::shared_ptr<spdlog::logger>& {
+    return m_impl->logger;
+}
+
 void ShaderLoader::register_shader(std::string_view resource_key, std::string_view slang_source,
                                    std::string_view wgsl_output, EmbeddedGetter embedded_getter,
                                    std::vector<std::string> entry_points) {

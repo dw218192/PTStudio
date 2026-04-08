@@ -1,4 +1,5 @@
 #include <core/rendering/frameGraph.h>
+#include <core/rendering/renderPass.h>
 #include <core/rendering/webgpu/device.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
@@ -620,6 +621,871 @@ TEST_CASE("FrameGraph - usage auto-inference from read()") {
     auto encoder = f.create_encoder();
     f.graph.execute(encoder);
     f.submit(encoder);
+}
+
+// --- Buffer tests ---
+
+TEST_CASE("FrameGraph - create buffer, verify handle and ref") {
+    TestFixture f;
+
+    f.graph.begin_frame();
+
+    pts::rendering::BufferDesc desc;
+    desc.size = 1024;
+    desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+
+    auto h = f.graph.find_or_create_buffer("my_buffer", desc);
+    CHECK(h.is_valid());
+
+    f.graph.compile();
+
+    auto ref = f.graph.get_buffer_ref(h);
+    CHECK(static_cast<bool>(ref));
+    CHECK(ref.handle() != nullptr);
+    CHECK(ref.size() == 1024);
+}
+
+TEST_CASE("FrameGraph - find_or_create_buffer returns same handle on second call") {
+    TestFixture f;
+
+    f.graph.begin_frame();
+
+    pts::rendering::BufferDesc desc;
+    desc.size = 1024;
+    desc.usage = WGPUBufferUsage_Storage;
+
+    auto h1 = f.graph.find_or_create_buffer("buf", desc);
+    auto h2 = f.graph.find_or_create_buffer("buf", desc);
+    CHECK(h1.index == h2.index);
+}
+
+TEST_CASE("FrameGraph - find_or_create_buffer larger size triggers realloc + version bump") {
+    TestFixture f;
+
+    pts::rendering::BufferDesc desc;
+    desc.size = 512;
+    desc.usage = WGPUBufferUsage_Storage;
+
+    // Frame 1 — small buffer
+    f.graph.begin_frame();
+    auto h1 = f.graph.find_or_create_buffer("buf", desc);
+    f.graph.compile();
+    auto ref1 = f.graph.get_buffer_ref(h1);
+    CHECK(ref1.handle() != nullptr);
+    auto v1 = ref1.size();
+    CHECK(v1 == 512);
+
+    // Frame 2 — larger size triggers reallocation
+    desc.size = 2048;
+    f.graph.begin_frame();
+    auto h2 = f.graph.find_or_create_buffer("buf", desc);
+    f.graph.compile();
+    auto ref2 = f.graph.get_buffer_ref(h2);
+    CHECK(ref2.handle() != nullptr);
+    CHECK(ref2.size() == 2048);
+}
+
+TEST_CASE("FrameGraph - import_buffer same pointer reuses (same version)") {
+    TestFixture f;
+
+    // Create an external buffer to import
+    WGPUBufferDescriptor buf_desc = WGPU_BUFFER_DESCRIPTOR_INIT;
+    buf_desc.size = 256;
+    buf_desc.usage = WGPUBufferUsage_Uniform;
+    auto ext_buf = wgpuDeviceCreateBuffer(f.device.handle(), &buf_desc);
+    REQUIRE(ext_buf != nullptr);
+
+    // Frame 1 — import
+    f.graph.begin_frame();
+    auto h1 = f.graph.import_buffer("imported", ext_buf, 256);
+    f.graph.compile();
+    CHECK(f.graph.cached_buffer_count() == 1);
+
+    // Frame 2 — same pointer, should reuse
+    f.graph.begin_frame();
+    auto h2 = f.graph.import_buffer("imported", ext_buf, 256);
+    f.graph.compile();
+    CHECK(f.graph.cached_buffer_count() == 1);
+    auto ref = f.graph.get_buffer_ref(h2);
+    CHECK(ref.handle() == ext_buf);
+
+    wgpuBufferDestroy(ext_buf);
+    wgpuBufferRelease(ext_buf);
+}
+
+TEST_CASE("FrameGraph - import_buffer different pointer bumps version") {
+    TestFixture f;
+
+    WGPUBufferDescriptor buf_desc = WGPU_BUFFER_DESCRIPTOR_INIT;
+    buf_desc.size = 256;
+    buf_desc.usage = WGPUBufferUsage_Uniform;
+    auto ext_buf1 = wgpuDeviceCreateBuffer(f.device.handle(), &buf_desc);
+    auto ext_buf2 = wgpuDeviceCreateBuffer(f.device.handle(), &buf_desc);
+    REQUIRE(ext_buf1 != nullptr);
+    REQUIRE(ext_buf2 != nullptr);
+
+    // Frame 1 — import buf1
+    f.graph.begin_frame();
+    f.graph.import_buffer("imported", ext_buf1, 256);
+    f.graph.compile();
+
+    // Frame 2 — import buf2 (different pointer)
+    f.graph.begin_frame();
+    auto h2 = f.graph.import_buffer("imported", ext_buf2, 256);
+    f.graph.compile();
+    auto ref = f.graph.get_buffer_ref(h2);
+    CHECK(ref.handle() == ext_buf2);
+
+    wgpuBufferDestroy(ext_buf1);
+    wgpuBufferRelease(ext_buf1);
+    wgpuBufferDestroy(ext_buf2);
+    wgpuBufferRelease(ext_buf2);
+}
+
+TEST_CASE("FrameGraph - buffer eviction when not used next frame") {
+    TestFixture f;
+
+    pts::rendering::BufferDesc desc;
+    desc.size = 512;
+    desc.usage = WGPUBufferUsage_Storage;
+
+    // Frame 1 — create buffer
+    f.graph.begin_frame();
+    f.graph.find_or_create_buffer("buf_a", desc);
+    f.graph.find_or_create_buffer("buf_b", desc);
+    f.graph.compile();
+    CHECK(f.graph.cached_buffer_count() == 2);
+
+    // Frame 2 — only use buf_a, buf_b should be evicted
+    f.graph.begin_frame();
+    f.graph.find_or_create_buffer("buf_a", desc);
+    f.graph.compile();
+    CHECK(f.graph.cached_buffer_count() == 1);
+}
+
+TEST_CASE("FrameGraph - find_buffer") {
+    TestFixture f;
+
+    f.graph.begin_frame();
+
+    CHECK(!f.graph.find_buffer("nonexistent").has_value());
+
+    pts::rendering::BufferDesc desc;
+    desc.size = 128;
+    desc.usage = WGPUBufferUsage_Uniform;
+
+    auto h = f.graph.find_or_create_buffer("my_buf", desc);
+    auto found = f.graph.find_buffer("my_buf");
+    REQUIRE(found.has_value());
+    CHECK(found->index == h.index);
+}
+
+TEST_CASE("FrameGraph - cached_buffer_count") {
+    TestFixture f;
+
+    f.graph.begin_frame();
+    CHECK(f.graph.cached_buffer_count() == 0);
+
+    pts::rendering::BufferDesc desc;
+    desc.size = 64;
+    desc.usage = WGPUBufferUsage_Storage;
+
+    f.graph.find_or_create_buffer("a", desc);
+    f.graph.find_or_create_buffer("b", desc);
+    f.graph.compile();
+    CHECK(f.graph.cached_buffer_count() == 2);
+}
+
+// --- Array texture tests ---
+
+TEST_CASE("FrameGraph - array texture creates N+1 views") {
+    TestFixture f;
+
+    f.graph.begin_frame();
+
+    pts::rendering::TextureDesc desc;
+    desc.width = 64;
+    desc.height = 64;
+    desc.array_layers = 4;
+    desc.format = WGPUTextureFormat_Depth32Float;
+
+    auto h = f.graph.create("shadow_array", desc);
+    f.graph.add_pass("shadow0").depth(h, 0).execute([](WGPURenderPassEncoder) {});
+
+    f.graph.compile();
+
+    auto ref = f.graph.get_texture_ref(h);
+    CHECK(ref.view() != nullptr);
+    CHECK(ref.layer_count() == 4);
+    for (uint32_t i = 0; i < 4; ++i) {
+        CHECK(ref.layer_view(i) != nullptr);
+    }
+}
+
+TEST_CASE("FrameGraph - layer_view returns distinct per-layer views") {
+    TestFixture f;
+
+    f.graph.begin_frame();
+
+    pts::rendering::TextureDesc desc;
+    desc.width = 64;
+    desc.height = 64;
+    desc.array_layers = 4;
+    desc.format = WGPUTextureFormat_Depth32Float;
+
+    auto h = f.graph.create("shadow_array", desc);
+    f.graph.add_pass("shadow0").depth(h, 0).execute([](WGPURenderPassEncoder) {});
+
+    f.graph.compile();
+
+    auto ref = f.graph.get_texture_ref(h);
+    // Each layer view should be distinct from the array view and from each other
+    for (uint32_t i = 0; i < 4; ++i) {
+        CHECK(ref.layer_view(i) != ref.view());
+        for (uint32_t j = i + 1; j < 4; ++j) {
+            CHECK(ref.layer_view(i) != ref.layer_view(j));
+        }
+    }
+}
+
+TEST_CASE("FrameGraph - descs_match returns false when array_layers differs") {
+    TestFixture f;
+
+    pts::rendering::TextureDesc desc;
+    desc.width = 64;
+    desc.height = 64;
+    desc.format = WGPUTextureFormat_Depth32Float;
+    desc.array_layers = 4;
+
+    // Frame 1 — create with 4 layers
+    f.graph.begin_frame();
+    auto h1 = f.graph.create("shadow", desc);
+    f.graph.add_pass("pass").depth(h1, 0).execute([](WGPURenderPassEncoder) {});
+    f.graph.compile();
+    auto ref1 = f.graph.get_texture_ref(h1);
+    CHECK(ref1.layer_count() == 4);
+
+    // Frame 2 — change to 2 layers, should NOT reuse the cached texture
+    desc.array_layers = 2;
+    f.graph.begin_frame();
+    auto h2 = f.graph.create("shadow", desc);
+    f.graph.add_pass("pass").depth(h2, 0).execute([](WGPURenderPassEncoder) {});
+    f.graph.compile();
+    auto ref2 = f.graph.get_texture_ref(h2);
+    CHECK(ref2.layer_count() == 2);
+}
+
+TEST_CASE("FrameGraph - depth attachment with layer index executes") {
+    TestFixture f;
+
+    f.graph.begin_frame();
+
+    pts::rendering::TextureDesc color_desc;
+    color_desc.width = 64;
+    color_desc.height = 64;
+    color_desc.format = WGPUTextureFormat_BGRA8Unorm;
+
+    pts::rendering::TextureDesc depth_desc;
+    depth_desc.width = 64;
+    depth_desc.height = 64;
+    depth_desc.array_layers = 4;
+    depth_desc.format = WGPUTextureFormat_Depth32Float;
+
+    auto color = f.graph.create("color", color_desc);
+    auto depth = f.graph.create("shadow_array", depth_desc);
+
+    bool executed = false;
+    f.graph.add_pass("shadow_pass")
+        .color(color)
+        .depth(depth, 2)
+        .execute([&](WGPURenderPassEncoder) { executed = true; });
+
+    f.graph.compile();
+
+    auto encoder = f.create_encoder();
+    f.graph.execute(encoder);
+    f.submit(encoder);
+
+    CHECK(executed);
+}
+
+TEST_CASE("FrameGraph - color attachment with layer index executes") {
+    TestFixture f;
+
+    f.graph.begin_frame();
+
+    pts::rendering::TextureDesc desc;
+    desc.width = 64;
+    desc.height = 64;
+    desc.array_layers = 2;
+    desc.format = WGPUTextureFormat_BGRA8Unorm;
+
+    auto tex = f.graph.create("color_array", desc);
+
+    bool executed = false;
+    f.graph.add_pass("layer_pass").color(tex, 1).execute([&](WGPURenderPassEncoder) {
+        executed = true;
+    });
+
+    f.graph.compile();
+
+    auto encoder = f.create_encoder();
+    f.graph.execute(encoder);
+    f.submit(encoder);
+
+    CHECK(executed);
+}
+
+TEST_CASE("FrameGraph - array texture cache reuse across frames") {
+    TestFixture f;
+
+    pts::rendering::TextureDesc desc;
+    desc.width = 64;
+    desc.height = 64;
+    desc.array_layers = 4;
+    desc.format = WGPUTextureFormat_Depth32Float;
+
+    // Frame 1
+    f.graph.begin_frame();
+    auto h1 = f.graph.create("shadow_array", desc);
+    f.graph.add_pass("pass").depth(h1, 0).execute([](WGPURenderPassEncoder) {});
+    f.graph.compile();
+    auto view1 = f.graph.get_texture_ref(h1).view();
+
+    // Frame 2 — same desc, should reuse
+    f.graph.begin_frame();
+    auto h2 = f.graph.create("shadow_array", desc);
+    f.graph.add_pass("pass").depth(h2, 0).execute([](WGPURenderPassEncoder) {});
+    f.graph.compile();
+    auto view2 = f.graph.get_texture_ref(h2).view();
+
+    CHECK(view1 == view2);
+}
+
+TEST_CASE("FrameGraph - non-array texture has no layer views") {
+    TestFixture f;
+
+    f.graph.begin_frame();
+
+    pts::rendering::TextureDesc desc;
+    desc.width = 64;
+    desc.height = 64;
+    desc.format = WGPUTextureFormat_BGRA8Unorm;
+
+    auto h = f.graph.create("color", desc);
+    f.graph.add_pass("pass").color(h).execute([](WGPURenderPassEncoder) {});
+
+    f.graph.compile();
+
+    auto ref = f.graph.get_texture_ref(h);
+    CHECK(ref.view() != nullptr);
+    CHECK(ref.layer_count() == 0);
+}
+
+// --- Bind group tests ---
+
+namespace {
+
+struct BindGroupFixture : TestFixture {
+    WGPUBindGroupLayout create_buffer_layout() {
+        WGPUBindGroupLayoutEntry entry = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+        entry.binding = 0;
+        entry.visibility = WGPUShaderStage_Fragment;
+        entry.buffer.type = WGPUBufferBindingType_Uniform;
+        entry.buffer.minBindingSize = 0;
+
+        WGPUBindGroupLayoutDescriptor bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
+        bgl_desc.entryCount = 1;
+        bgl_desc.entries = &entry;
+        auto layout = wgpuDeviceCreateBindGroupLayout(device.handle(), &bgl_desc);
+        REQUIRE(layout != nullptr);
+        return layout;
+    }
+
+    WGPUBindGroupLayout create_texture_layout() {
+        WGPUBindGroupLayoutEntry entry = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+        entry.binding = 0;
+        entry.visibility = WGPUShaderStage_Fragment;
+        entry.texture.sampleType = WGPUTextureSampleType_Float;
+        entry.texture.viewDimension = WGPUTextureViewDimension_2D;
+
+        WGPUBindGroupLayoutDescriptor bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
+        bgl_desc.entryCount = 1;
+        bgl_desc.entries = &entry;
+        auto layout = wgpuDeviceCreateBindGroupLayout(device.handle(), &bgl_desc);
+        REQUIRE(layout != nullptr);
+        return layout;
+    }
+};
+
+}  // namespace
+
+TEST_CASE("FrameGraph - bind group with buffer input") {
+    BindGroupFixture f;
+    auto layout = f.create_buffer_layout();
+
+    f.graph.begin_frame();
+
+    pts::rendering::BufferDesc buf_desc;
+    buf_desc.size = 256;
+    buf_desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+    auto buf_h = f.graph.find_or_create_buffer("ubo", buf_desc);
+
+    pts::rendering::BindGroupEntry entry;
+    entry.binding = 0;
+    entry.buffer = buf_h;
+
+    pts::rendering::BindGroupDesc bg_desc;
+    bg_desc.layout = layout;
+    bg_desc.entries = {entry};
+
+    auto bg_h = f.graph.find_or_create_bind_group("my_bg", bg_desc);
+    CHECK(bg_h.is_valid());
+
+    f.graph.compile();
+
+    auto ref = f.graph.get_bind_group_ref(bg_h);
+    CHECK(static_cast<bool>(ref));
+    CHECK(ref.handle() != nullptr);
+
+    wgpuBindGroupLayoutRelease(layout);
+}
+
+TEST_CASE("FrameGraph - bind group version invalidation on buffer change") {
+    BindGroupFixture f;
+    auto layout = f.create_buffer_layout();
+
+    WGPUBufferDescriptor ext_desc = WGPU_BUFFER_DESCRIPTOR_INIT;
+    ext_desc.size = 256;
+    ext_desc.usage = WGPUBufferUsage_Uniform;
+    auto ext_buf1 = wgpuDeviceCreateBuffer(f.device.handle(), &ext_desc);
+    auto ext_buf2 = wgpuDeviceCreateBuffer(f.device.handle(), &ext_desc);
+    REQUIRE(ext_buf1 != nullptr);
+    REQUIRE(ext_buf2 != nullptr);
+
+    // Frame 1 — import buf1, create bind group
+    f.graph.begin_frame();
+    auto buf_h = f.graph.import_buffer("ubo", ext_buf1, 256);
+
+    pts::rendering::BindGroupEntry entry;
+    entry.binding = 0;
+    entry.buffer = buf_h;
+
+    pts::rendering::BindGroupDesc bg_desc;
+    bg_desc.layout = layout;
+    bg_desc.entries = {entry};
+
+    auto bg_h = f.graph.find_or_create_bind_group("my_bg", bg_desc);
+    f.graph.compile();
+    auto ref1 = f.graph.get_bind_group_ref(bg_h);
+    CHECK(ref1.handle() != nullptr);
+
+    // Frame 2 — import DIFFERENT buffer pointer → version bump → bind group rebuilds
+    f.graph.begin_frame();
+    auto buf_h2 = f.graph.import_buffer("ubo", ext_buf2, 256);
+
+    pts::rendering::BindGroupEntry entry2;
+    entry2.binding = 0;
+    entry2.buffer = buf_h2;
+
+    pts::rendering::BindGroupDesc bg_desc2;
+    bg_desc2.layout = layout;
+    bg_desc2.entries = {entry2};
+
+    auto bg_h2 = f.graph.find_or_create_bind_group("my_bg", bg_desc2);
+    f.graph.compile();
+    auto ref2 = f.graph.get_bind_group_ref(bg_h2);
+    CHECK(ref2.handle() != nullptr);
+
+    // The bind group was rebuilt (different WGPUBindGroup handle)
+    CHECK(ref1.handle() != ref2.handle());
+
+    wgpuBufferDestroy(ext_buf1);
+    wgpuBufferRelease(ext_buf1);
+    wgpuBufferDestroy(ext_buf2);
+    wgpuBufferRelease(ext_buf2);
+    wgpuBindGroupLayoutRelease(layout);
+}
+
+TEST_CASE("FrameGraph - bind group cache reuse when inputs stable") {
+    BindGroupFixture f;
+    auto layout = f.create_buffer_layout();
+
+    // Frame 1
+    f.graph.begin_frame();
+
+    pts::rendering::BufferDesc buf_desc;
+    buf_desc.size = 256;
+    buf_desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+    auto buf_h = f.graph.find_or_create_buffer("ubo", buf_desc);
+
+    pts::rendering::BindGroupEntry entry;
+    entry.binding = 0;
+    entry.buffer = buf_h;
+
+    pts::rendering::BindGroupDesc bg_desc;
+    bg_desc.layout = layout;
+    bg_desc.entries = {entry};
+
+    f.graph.find_or_create_bind_group("my_bg", bg_desc);
+    f.graph.compile();
+    auto ref1 = f.graph.get_bind_group_ref(f.graph.find_bind_group("my_bg").value());
+    CHECK(ref1.handle() != nullptr);
+
+    // Frame 2 — same buffer desc, same bind group desc → should reuse
+    f.graph.begin_frame();
+    auto buf_h2 = f.graph.find_or_create_buffer("ubo", buf_desc);
+
+    pts::rendering::BindGroupEntry entry2;
+    entry2.binding = 0;
+    entry2.buffer = buf_h2;
+
+    pts::rendering::BindGroupDesc bg_desc2;
+    bg_desc2.layout = layout;
+    bg_desc2.entries = {entry2};
+
+    f.graph.find_or_create_bind_group("my_bg", bg_desc2);
+    f.graph.compile();
+    auto ref2 = f.graph.get_bind_group_ref(f.graph.find_bind_group("my_bg").value());
+
+    // Same underlying WGPUBindGroup should be reused
+    CHECK(ref1.handle() == ref2.handle());
+
+    wgpuBindGroupLayoutRelease(layout);
+}
+
+TEST_CASE("FrameGraph - bind group eviction") {
+    BindGroupFixture f;
+    auto layout = f.create_buffer_layout();
+
+    pts::rendering::BufferDesc buf_desc;
+    buf_desc.size = 256;
+    buf_desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+
+    // Frame 1 — create two bind groups
+    f.graph.begin_frame();
+    auto buf_a = f.graph.find_or_create_buffer("ubo_a", buf_desc);
+    auto buf_b = f.graph.find_or_create_buffer("ubo_b", buf_desc);
+
+    pts::rendering::BindGroupEntry entry_a;
+    entry_a.binding = 0;
+    entry_a.buffer = buf_a;
+    pts::rendering::BindGroupDesc desc_a;
+    desc_a.layout = layout;
+    desc_a.entries = {entry_a};
+    f.graph.find_or_create_bind_group("bg_a", desc_a);
+
+    pts::rendering::BindGroupEntry entry_b;
+    entry_b.binding = 0;
+    entry_b.buffer = buf_b;
+    pts::rendering::BindGroupDesc desc_b;
+    desc_b.layout = layout;
+    desc_b.entries = {entry_b};
+    f.graph.find_or_create_bind_group("bg_b", desc_b);
+
+    f.graph.compile();
+    CHECK(f.graph.cached_bind_group_count() == 2);
+
+    // Frame 2 — only use bg_a, bg_b should be evicted
+    f.graph.begin_frame();
+    auto buf_a2 = f.graph.find_or_create_buffer("ubo_a", buf_desc);
+
+    pts::rendering::BindGroupEntry entry_a2;
+    entry_a2.binding = 0;
+    entry_a2.buffer = buf_a2;
+    pts::rendering::BindGroupDesc desc_a2;
+    desc_a2.layout = layout;
+    desc_a2.entries = {entry_a2};
+    f.graph.find_or_create_bind_group("bg_a", desc_a2);
+
+    f.graph.compile();
+    CHECK(f.graph.cached_bind_group_count() == 1);
+
+    wgpuBindGroupLayoutRelease(layout);
+}
+
+TEST_CASE("FrameGraph - bind group with texture input") {
+    BindGroupFixture f;
+    auto layout = f.create_texture_layout();
+
+    pts::rendering::TextureDesc tex_desc;
+    tex_desc.width = 64;
+    tex_desc.height = 64;
+    tex_desc.format = WGPUTextureFormat_RGBA8Unorm;
+    tex_desc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_RenderAttachment;
+
+    // Frame 1 — create texture and bind group referencing it
+    f.graph.begin_frame();
+    auto tex_h = f.graph.create("my_tex", tex_desc);
+    f.graph.add_pass("writer").color(tex_h).execute([](WGPURenderPassEncoder) {});
+
+    pts::rendering::BindGroupEntry entry;
+    entry.binding = 0;
+    entry.texture = tex_h;
+
+    pts::rendering::BindGroupDesc bg_desc;
+    bg_desc.layout = layout;
+    bg_desc.entries = {entry};
+
+    auto bg_h = f.graph.find_or_create_bind_group("tex_bg", bg_desc);
+    f.graph.compile();
+    auto ref1 = f.graph.get_bind_group_ref(bg_h);
+    CHECK(ref1.handle() != nullptr);
+
+    // Frame 2 — same texture desc → bind group reused
+    f.graph.begin_frame();
+    auto tex_h2 = f.graph.create("my_tex", tex_desc);
+    f.graph.add_pass("writer").color(tex_h2).execute([](WGPURenderPassEncoder) {});
+
+    pts::rendering::BindGroupEntry entry2;
+    entry2.binding = 0;
+    entry2.texture = tex_h2;
+
+    pts::rendering::BindGroupDesc bg_desc2;
+    bg_desc2.layout = layout;
+    bg_desc2.entries = {entry2};
+
+    f.graph.find_or_create_bind_group("tex_bg", bg_desc2);
+    f.graph.compile();
+    auto ref2 = f.graph.get_bind_group_ref(f.graph.find_bind_group("tex_bg").value());
+    CHECK(ref2.handle() != nullptr);
+    CHECK(ref1.handle() == ref2.handle());
+
+    // Frame 3 — resize texture → version bump → bind group rebuilds
+    tex_desc.width = 128;
+    tex_desc.height = 128;
+
+    f.graph.begin_frame();
+    auto tex_h3 = f.graph.create("my_tex", tex_desc);
+    f.graph.add_pass("writer").color(tex_h3).execute([](WGPURenderPassEncoder) {});
+
+    pts::rendering::BindGroupEntry entry3;
+    entry3.binding = 0;
+    entry3.texture = tex_h3;
+
+    pts::rendering::BindGroupDesc bg_desc3;
+    bg_desc3.layout = layout;
+    bg_desc3.entries = {entry3};
+
+    f.graph.find_or_create_bind_group("tex_bg", bg_desc3);
+    f.graph.compile();
+    auto ref3 = f.graph.get_bind_group_ref(f.graph.find_bind_group("tex_bg").value());
+    CHECK(ref3.handle() != nullptr);
+    CHECK(ref1.handle() != ref3.handle());
+
+    wgpuBindGroupLayoutRelease(layout);
+}
+
+TEST_CASE("FrameGraph - find_bind_group returns nullopt for missing") {
+    TestFixture f;
+    f.graph.begin_frame();
+    CHECK(!f.graph.find_bind_group("nonexistent").has_value());
+}
+
+TEST_CASE("FrameGraph - cached_bind_group_count") {
+    BindGroupFixture f;
+    auto layout = f.create_buffer_layout();
+
+    f.graph.begin_frame();
+    CHECK(f.graph.cached_bind_group_count() == 0);
+
+    pts::rendering::BufferDesc buf_desc;
+    buf_desc.size = 64;
+    buf_desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+    auto buf = f.graph.find_or_create_buffer("buf", buf_desc);
+
+    pts::rendering::BindGroupEntry entry;
+    entry.binding = 0;
+    entry.buffer = buf;
+
+    pts::rendering::BindGroupDesc bg_desc;
+    bg_desc.layout = layout;
+    bg_desc.entries = {entry};
+
+    f.graph.find_or_create_bind_group("bg", bg_desc);
+    f.graph.compile();
+    CHECK(f.graph.cached_bind_group_count() == 1);
+
+    wgpuBindGroupLayoutRelease(layout);
+}
+
+// --- IPass*-based auto-naming tests ---
+
+#include <core/rendering/shaderLoader.h>
+
+namespace {
+
+struct TestPass : pts::rendering::IPass {
+    std::string m_name;
+    explicit TestPass(const char* name, const pts::rendering::ShaderLoader& sl)
+        : IPass(sl), m_name(name) {
+    }
+    auto name() const noexcept -> std::string_view override {
+        return m_name;
+    }
+    auto is_ready() const noexcept -> bool override {
+        return true;
+    }
+
+   protected:
+    void do_setup(const pts::webgpu::Device&) override {
+    }
+};
+
+struct PassFixture : TestFixture {
+    pts::rendering::ShaderLoader sl{logger};
+    TestPass pass_a{"alpha", sl};
+    TestPass pass_b{"beta", sl};
+};
+
+}  // namespace
+
+TEST_CASE("FrameGraph - IPass auto-naming creates namespaced keys") {
+    PassFixture f;
+
+    f.graph.begin_frame();
+
+    pts::rendering::BufferDesc desc;
+    desc.size = 256;
+    desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+
+    // Same label from different passes → different resources
+    auto h1 = f.graph.find_or_create_buffer(&f.pass_a, desc, "uniforms");
+    auto h2 = f.graph.find_or_create_buffer(&f.pass_b, desc, "uniforms");
+
+    CHECK(h1.is_valid());
+    CHECK(h2.is_valid());
+    CHECK(h1.index != h2.index);
+
+    // Verify they resolve to different cache entries
+    f.graph.compile();
+    CHECK(f.graph.cached_buffer_count() == 2);
+}
+
+TEST_CASE("FrameGraph - IPass auto-naming same pass returns same handle") {
+    PassFixture f;
+
+    f.graph.begin_frame();
+
+    pts::rendering::BufferDesc desc;
+    desc.size = 128;
+    desc.usage = WGPUBufferUsage_Uniform;
+
+    auto h1 = f.graph.find_or_create_buffer(&f.pass_a, desc, "uniforms");
+    auto h2 = f.graph.find_or_create_buffer(&f.pass_a, desc, "uniforms");
+
+    CHECK(h1.index == h2.index);
+}
+
+TEST_CASE("FrameGraph - IPass auto-naming counter generates unique keys") {
+    PassFixture f;
+
+    f.graph.begin_frame();
+
+    pts::rendering::BufferDesc desc;
+    desc.size = 64;
+    desc.usage = WGPUBufferUsage_Storage;
+
+    // No label → auto-generated keys: alpha/buffer_0, alpha/buffer_1
+    auto h1 = f.graph.find_or_create_buffer(&f.pass_a, desc);
+    auto h2 = f.graph.find_or_create_buffer(&f.pass_a, desc);
+
+    CHECK(h1.is_valid());
+    CHECK(h2.is_valid());
+    CHECK(h1.index != h2.index);
+
+    f.graph.compile();
+    CHECK(f.graph.cached_buffer_count() == 2);
+}
+
+TEST_CASE("FrameGraph - IPass auto-naming counters reset each frame") {
+    PassFixture f;
+
+    pts::rendering::BufferDesc desc;
+    desc.size = 64;
+    desc.usage = WGPUBufferUsage_Storage;
+
+    // Frame 1
+    f.graph.begin_frame();
+    f.graph.find_or_create_buffer(&f.pass_a, desc);
+    f.graph.compile();
+    CHECK(f.graph.cached_buffer_count() == 1);
+
+    // Frame 2 — counter resets, same key generated → cache reuse
+    f.graph.begin_frame();
+    f.graph.find_or_create_buffer(&f.pass_a, desc);
+    f.graph.compile();
+    CHECK(f.graph.cached_buffer_count() == 1);
+}
+
+TEST_CASE("FrameGraph - IPass find_or_create texture") {
+    PassFixture f;
+
+    f.graph.begin_frame();
+
+    pts::rendering::TextureDesc desc;
+    desc.width = 64;
+    desc.height = 64;
+    desc.format = WGPUTextureFormat_BGRA8Unorm;
+
+    auto h1 = f.graph.find_or_create(&f.pass_a, desc, "color");
+    auto h2 = f.graph.find_or_create(&f.pass_b, desc, "color");
+
+    CHECK(h1.is_valid());
+    CHECK(h2.is_valid());
+    CHECK(h1.index != h2.index);
+}
+
+TEST_CASE("FrameGraph - IPass import_buffer namespaced") {
+    PassFixture f;
+
+    WGPUBufferDescriptor buf_desc = WGPU_BUFFER_DESCRIPTOR_INIT;
+    buf_desc.size = 256;
+    buf_desc.usage = WGPUBufferUsage_Uniform;
+    auto ext_buf = wgpuDeviceCreateBuffer(f.device.handle(), &buf_desc);
+    REQUIRE(ext_buf != nullptr);
+
+    f.graph.begin_frame();
+    auto h = f.graph.import_buffer(&f.pass_a, ext_buf, 256, "external");
+    CHECK(h.is_valid());
+
+    f.graph.compile();
+    auto ref = f.graph.get_buffer_ref(h);
+    CHECK(ref.handle() == ext_buf);
+
+    wgpuBufferDestroy(ext_buf);
+    wgpuBufferRelease(ext_buf);
+}
+
+TEST_CASE("FrameGraph - IPass find_or_create_bind_group namespaced") {
+    BindGroupFixture f;
+    pts::rendering::ShaderLoader sl{f.logger};
+    TestPass pass{"test_pass", sl};
+    auto layout = f.create_buffer_layout();
+
+    f.graph.begin_frame();
+
+    pts::rendering::BufferDesc buf_desc;
+    buf_desc.size = 256;
+    buf_desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+    auto buf_h = f.graph.find_or_create_buffer(&pass, buf_desc, "ubo");
+
+    pts::rendering::BindGroupEntry entry;
+    entry.binding = 0;
+    entry.buffer = buf_h;
+
+    pts::rendering::BindGroupDesc bg_desc;
+    bg_desc.layout = layout;
+    bg_desc.entries = {entry};
+
+    auto bg_h = f.graph.find_or_create_bind_group(&pass, std::move(bg_desc), "bg0");
+    CHECK(bg_h.is_valid());
+
+    f.graph.compile();
+    auto ref = f.graph.get_bind_group_ref(bg_h);
+    CHECK(ref.handle() != nullptr);
+
+    wgpuBindGroupLayoutRelease(layout);
 }
 
 PTS_TEST_MAIN()

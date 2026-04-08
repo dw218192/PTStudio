@@ -66,6 +66,9 @@ class ShaderLoader {
     /// True if a background compilation is in progress.
     bool is_reloading() const;
 
+    /// The logger used by this shader loader.
+    [[nodiscard]] auto logger() const -> const std::shared_ptr<spdlog::logger>&;
+
     /// If background compilation finished, update in-memory WGSL cache from results.
     /// Returns list of changed resource keys, or empty if not done yet / nothing changed.
     std::vector<std::string> try_finish_reload();

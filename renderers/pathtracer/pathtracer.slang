@@ -109,81 +109,85 @@ HitRecord trace_scene(float3 ro, float3 rd) {
         if (!ray_aabb(ro, rd, tlas_node.aabb_min, tlas_node.aabb_max, t_best))
             continue;
 
-        if (tlas_node.count > 0) {
-            // TLAS leaf — iterate instances
-            for (uint i = 0; i < tlas_node.count; i++) {
-                Instance inst = instances[tlas_node.left_first + i];
-
-                // Transform ray to local space (don't normalize — preserves t)
-                float3 local_ro = mul(inst.inv_transform, float4(ro, 1.0)).xyz;
-                float3 local_rd = mul(inst.inv_transform, float4(rd, 0.0)).xyz;
-
-                // BLAS traversal (local space)
-                uint blas_stack[32];
-                int blas_sp = 0;
-                blas_stack[blas_sp++] = inst.blas_offset;
-
-                while (blas_sp > 0) {
-                    BVHNode blas_node = bvh_nodes[blas_stack[--blas_sp]];
-                    if (!ray_aabb(local_ro, local_rd,
-                                  blas_node.aabb_min, blas_node.aabb_max, t_best))
-                        continue;
-
-                    if (blas_node.count > 0) {
-                        // BLAS leaf — test triangles
-                        for (uint j = 0; j < blas_node.count; j++) {
-                            PackedTriangle tri =
-                                triangles[inst.tri_offset + blas_node.left_first + j];
-                            float bu, bv;
-                            float t = intersect_triangle(local_ro, local_rd, tri, bu, bv);
-                            if (t > 0.0 && t < t_best) {
-                                t_best = t;
-                                best.hit = true;
-                                float3 local_hit = local_ro + local_rd * t;
-                                best.position =
-                                    mul(inst.transform, float4(local_hit, 1.0)).xyz;
-                                float3 local_normal = normalize(
-                                    tri.n0 * (1.0 - bu - bv) + tri.n1 * bu + tri.n2 * bv);
-                                float3x3 normal_mat =
-                                    transpose(float3x3(inst.inv_transform));
-                                best.normal =
-                                    normalize(mul(normal_mat, local_normal));
-                                best.uv = tri.uv0 * (1.0 - bu - bv)
-                                        + tri.uv1 * bu + tri.uv2 * bv;
-                                best.material_index = inst.material_index;
-
-                                // Tangent frame from triangle UVs
-                                float3 dp1 = tri.v1 - tri.v0;
-                                float3 dp2 = tri.v2 - tri.v0;
-                                float2 duv1 = tri.uv1 - tri.uv0;
-                                float2 duv2 = tri.uv2 - tri.uv0;
-                                float uv_det = duv1.x * duv2.y - duv1.y * duv2.x;
-                                if (abs(uv_det) > 1e-8) {
-                                    float inv_det = 1.0 / uv_det;
-                                    float3 local_T = (dp1 * duv2.y - dp2 * duv1.y) * inv_det;
-                                    float3 local_B = (dp2 * duv1.x - dp1 * duv2.x) * inv_det;
-                                    float3x3 M = float3x3(inst.transform);
-                                    best.tangent = normalize(mul(M, local_T));
-                                    best.bitangent = normalize(mul(M, local_B));
-                                } else {
-                                    TangentFrame tf = TangentFrame::build(best.normal);
-                                    best.tangent = tf.T;
-                                    best.bitangent = tf.B;
-                                }
-                            }
-                        }
-                    } else {
-                        // BLAS interior — push children
-                        blas_stack[blas_sp++] = blas_node.left_first;
-                        blas_stack[blas_sp++] = blas_node.left_first + 1;
-                    }
-                }
-            }
-        } else {
+        if (tlas_node.count <= 0) 
+        {
             // TLAS interior — push children
             tlas_stack[tlas_sp++] = tlas_node.left_first;
             tlas_stack[tlas_sp++] = tlas_node.left_first + 1;
+            continue;
         }
+
+        // TLAS leaf — iterate instances
+        for (uint i = 0; i < tlas_node.count; i++) {
+            Instance inst = instances[tlas_node.left_first + i];
+
+            // Transform ray to local space (don't normalize — preserves t)
+            float3 local_ro = mul(inst.inv_transform, float4(ro, 1.0)).xyz;
+            float3 local_rd = mul(inst.inv_transform, float4(rd, 0.0)).xyz;
+
+            // BLAS traversal (local space)
+            uint blas_stack[32];
+            int blas_sp = 0;
+            blas_stack[blas_sp++] = inst.blas_offset;
+
+            while (blas_sp > 0) {
+                BVHNode blas_node = bvh_nodes[blas_stack[--blas_sp]];
+                if (!ray_aabb(local_ro, local_rd,
+                                blas_node.aabb_min, blas_node.aabb_max, t_best))
+                    continue;
+
+                if (blas_node.count <= 0) {
+                    // BLAS interior — push children
+                    blas_stack[blas_sp++] = blas_node.left_first;
+                    blas_stack[blas_sp++] = blas_node.left_first + 1;
+                    continue;
+                }
+
+                // BLAS leaf — test triangles
+                for (uint j = 0; j < blas_node.count; j++) {
+                    PackedTriangle tri =
+                            triangles[inst.tri_offset + blas_node.left_first + j];
+                    float bu, bv;
+                    float t = intersect_triangle(local_ro, local_rd, tri, bu, bv);
+                    if (t > 0.0 && t < t_best) {
+                        t_best = t;
+                        best.hit = true;
+                        float3 local_hit = local_ro + local_rd * t;
+                        best.position =
+                                mul(inst.transform, float4(local_hit, 1.0)).xyz;
+                        float3 local_normal = normalize(
+                                tri.n0 * (1.0 - bu - bv) + tri.n1 * bu + tri.n2 * bv);
+                        float3x3 normal_mat =
+                                transpose(float3x3(inst.inv_transform));
+                        best.normal =
+                                normalize(mul(normal_mat, local_normal));
+                        best.uv = tri.uv0 * (1.0 - bu - bv)
+                                    + tri.uv1 * bu + tri.uv2 * bv;
+                        best.material_index = inst.material_index;
+
+                        // Tangent frame from triangle UVs
+                        float3 dp1 = tri.v1 - tri.v0;
+                        float3 dp2 = tri.v2 - tri.v0;
+                        float2 duv1 = tri.uv1 - tri.uv0;
+                        float2 duv2 = tri.uv2 - tri.uv0;
+                        float uv_det = duv1.x * duv2.y - duv1.y * duv2.x;
+                        if (abs(uv_det) > 1e-8) {
+                            float inv_det = 1.0 / uv_det;
+                            float3 local_T = (dp1 * duv2.y - dp2 * duv1.y) * inv_det;
+                            float3 local_B = (dp2 * duv1.x - dp1 * duv2.x) * inv_det;
+                            float3x3 M = float3x3(inst.transform);
+                            best.tangent = normalize(mul(M, local_T));
+                            best.bitangent = normalize(mul(M, local_B));
+                        } else {
+                            TangentFrame tf = TangentFrame::build(best.normal);
+                            best.tangent = tf.T;
+                            best.bitangent = tf.B;
+                        }
+                    }
+                }
+            }
+        }
+        
     }
     return best;
 }
@@ -268,8 +272,11 @@ void cs_main(uint3 did : SV_DispatchThreadID) {
         float3 Ns = apply_normal_map(Ng, hit.tangent, hit.bitangent, mat, hit.uv,
                                      scene_textures, scene_sampler, 0.0);
 
-        // Emissive contribution (light proxy meshes, emissive materials)
-        radiance += throughput * mat.emissive_color;
+        // Emissive contribution: skip analytic light proxies after bounce 0
+        // to avoid double-counting with NEE (which samples them directly).
+        // Bounce 0 keeps emissive so camera-visible lights are rendered.
+        if (bounce == 0 || mat.light_index == 0xFFFFFFFF)
+            radiance += throughput * mat.emissive_color;
 
         // Direct lighting (NEE with shadow rays)
         float3 direct = float3(0.0);

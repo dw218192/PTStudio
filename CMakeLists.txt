@@ -141,6 +141,7 @@ endif()
 find_package(imgui REQUIRED)
 find_package(imguizmo REQUIRED)
 find_package(stb REQUIRED)
+find_package(OpenEXR REQUIRED)
 
 
 # Emscripten configuration - centralized flags for all targets

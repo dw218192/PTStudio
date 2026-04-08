@@ -71,7 +71,6 @@ TEST_CASE("ShadowMapPass starts in unready state") {
     ShaderLoader loader(logger);
     ShadowMapPass pass(loader);
     CHECK_FALSE(pass.is_ready());
-    CHECK(pass.shadow_array_view() == nullptr);
 }
 
 // --- GPU tests ---
@@ -93,7 +92,7 @@ TEST_CASE("ShadowMapPass setup transitions to ready") {
     CHECK(pass.is_ready());
 }
 
-TEST_CASE("ShadowMapPass add_to_frame_graph with no lights clears shadow data") {
+TEST_CASE("ShadowMapPass add_to_frame_graph with no lights returns valid handles") {
     auto logger = make_logger();
     auto device = pts::webgpu::Device::create(logger);
 
@@ -112,14 +111,13 @@ TEST_CASE("ShadowMapPass add_to_frame_graph with no lights clears shadow data") 
                     glm::mat4(1), glm::mat4(1),   glm::vec3(0), 0.0f,  0};
 
     fg.begin_frame();
-    pass.add_to_frame_graph(fg, ctx);
+    auto out = pass.add_to_frame_graph(fg, ctx, {});
 
-    auto* sd = ShadowPassData::find(world);
-    REQUIRE(sd != nullptr);
-    CHECK(sd->count == 0);
+    CHECK(out.shadow_array.is_valid());
+    CHECK(out.shadow_info.is_valid());
 }
 
-TEST_CASE("ShadowMapPass add_to_frame_graph with distant light produces shadow data") {
+TEST_CASE("ShadowMapPass add_to_frame_graph with distant light produces valid outputs") {
     auto logger = make_logger();
     auto device = pts::webgpu::Device::create(logger);
 
@@ -176,13 +174,17 @@ TEST_CASE("ShadowMapPass add_to_frame_graph with distant light produces shadow d
                     glm::mat4(1), glm::mat4(1),   glm::vec3(0), 0.0f,  0};
 
     fg.begin_frame();
-    pass.add_to_frame_graph(fg, ctx);
+    auto out = pass.add_to_frame_graph(fg, ctx, {});
 
-    auto* sd = ShadowPassData::find(world);
-    REQUIRE(sd != nullptr);
-    CHECK(sd->count == 1);
-    CHECK(pass.shadow_array_view() != nullptr);
-    CHECK(sd->info_buffer.is_valid());
+    CHECK(out.shadow_array.is_valid());
+    CHECK(out.shadow_info.is_valid());
+
+    // Compile and execute to verify resources are properly allocated
+    fg.compile();
+    auto shadow_tex = fg.get_texture_ref(out.shadow_array);
+    CHECK(shadow_tex.view() != nullptr);
+    auto shadow_info = fg.get_buffer_ref(out.shadow_info);
+    CHECK(shadow_info.handle() != nullptr);
 }
 
 TEST_CASE("ShadowMapPass caps shadow count at k_max_shadow_maps") {
@@ -241,11 +243,15 @@ TEST_CASE("ShadowMapPass caps shadow count at k_max_shadow_maps") {
                     glm::mat4(1), glm::mat4(1),   glm::vec3(0), 0.0f,  0};
 
     fg.begin_frame();
-    pass.add_to_frame_graph(fg, ctx);
+    auto out = pass.add_to_frame_graph(fg, ctx, {});
 
-    auto* sd = ShadowPassData::find(world);
-    REQUIRE(sd != nullptr);
-    CHECK(sd->count == k_max_shadow_maps);
+    CHECK(out.shadow_array.is_valid());
+    CHECK(out.shadow_info.is_valid());
+
+    // Compile to verify the shadow texture array has the right layer count
+    fg.compile();
+    auto shadow_tex = fg.get_texture_ref(out.shadow_array);
+    CHECK(shadow_tex.layer_count() == k_max_shadow_maps);
 }
 
 TEST_CASE("ShadowMapPass skips non-distant lights") {
@@ -281,11 +287,15 @@ TEST_CASE("ShadowMapPass skips non-distant lights") {
                     glm::mat4(1), glm::mat4(1),   glm::vec3(0), 0.0f,  0};
 
     fg.begin_frame();
-    pass.add_to_frame_graph(fg, ctx);
+    auto out = pass.add_to_frame_graph(fg, ctx, {});
 
-    auto* sd = ShadowPassData::find(world);
-    REQUIRE(sd != nullptr);
-    CHECK(sd->count == 0);
+    CHECK(out.shadow_array.is_valid());
+    CHECK(out.shadow_info.is_valid());
+
+    // Non-distant lights produce a 1-layer fallback array texture
+    fg.compile();
+    auto shadow_tex = fg.get_texture_ref(out.shadow_array);
+    CHECK(shadow_tex.layer_count() == 1);
 }
 
 #endif  // !__EMSCRIPTEN__
