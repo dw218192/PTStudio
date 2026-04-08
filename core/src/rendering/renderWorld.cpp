@@ -365,10 +365,8 @@ float* load_image_float(const unsigned char* buf, size_t size, const std::string
             };
             ChanMap maps[] = {{"R", 0, 0.0}, {"G", 1, 0.0}, {"B", 2, 0.0}, {"A", 3, 1.0}};
             for (auto& m : maps) {
-                if (channels.findChannel(m.name)) {
-                    fb.insert(m.name, Imf::Slice(Imf::FLOAT, base + m.offset * sizeof(float),
-                                                 x_stride, y_stride, 1, 1, m.fill));
-                }
+                fb.insert(m.name, Imf::Slice(Imf::FLOAT, base + m.offset * sizeof(float), x_stride,
+                                             y_stride, 1, 1, m.fill));
             }
 
             // Luminance-only fallback
@@ -394,8 +392,14 @@ float* load_image_float(const unsigned char* buf, size_t size, const std::string
     // HDR files: use stbi_loadf for true floating-point decode (linear).
     if (has_hdr_extension(path)) {
         int channels = 0;
-        float* out = stbi_loadf_from_memory(reinterpret_cast<const stbi_uc*>(buf),
-                                            static_cast<int>(size), w, h, &channels, 4);
+        float* data = stbi_loadf_from_memory(reinterpret_cast<const stbi_uc*>(buf),
+                                             static_cast<int>(size), w, h, &channels, 4);
+        if (!data) return nullptr;
+        size_t count = static_cast<size_t>(*w) * static_cast<size_t>(*h) * 4;
+        auto* out = static_cast<float*>(std::malloc(count * sizeof(float)));
+        POSTCONDITION(out);
+        std::memcpy(out, data, count * sizeof(float));
+        stbi_image_free(data);
         return out;
     }
     // LDR formats (PNG, JPG, etc.): use stbi_load (uint8) and normalize to
@@ -553,6 +557,27 @@ PreparedSceneData RenderWorld::prepare_scene_data() {
                 lights[i].generation() != m_cached_light_generations[i]) {
                 data.partial_light_updates.push_back({gpu_idx, to_light(lights[i].data())});
                 m_cached_light_generations[i] = lights[i].generation();
+            }
+            ++gpu_idx;
+        }
+    }
+
+    // --- Stamp light_index on proxy materials ---
+    if (data.lights_dirty) {
+        if (!data.materials_dirty) {
+            data.materials = m_materials;
+            data.materials_dirty = true;
+        }
+        for (auto& mat : data.materials) mat.light_index = UINT32_MAX;
+        uint32_t gpu_idx = 0;
+        for (const auto& slot : lights) {
+            if (!slot.active()) {
+                continue;
+            }
+            auto mat_idx = slot.data().material_index;
+            if (mat_idx != k_no_material &&
+                mat_idx < static_cast<uint32_t>(data.materials.size())) {
+                data.materials[mat_idx].light_index = gpu_idx;
             }
             ++gpu_idx;
         }

@@ -706,8 +706,11 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
     });
 
     // Post-pass: SSAO
-    if (auto* ssao = get_pass<rendering::SSAOPass>(); ssao && ssao->is_ready())
-        ssao->add_to_frame_graph(fg, ctx, {gbuf_out.depth, gbuf_out.normals});
+    std::optional<rendering::TextureHandle> ssao_handle;
+    if (auto* ssao = get_pass<rendering::SSAOPass>(); ssao && ssao->is_ready()) {
+        auto ssao_out = ssao->add_to_frame_graph(fg, ctx, {gbuf_out.depth, gbuf_out.normals});
+        if (ssao_out.ssao.is_valid()) ssao_handle = rendering::TextureHandle{ssao_out.ssao.index};
+    }
 
-    return {color, depth};
+    return {color, rendering::TextureHandle{depth}, ssao_handle};
 }

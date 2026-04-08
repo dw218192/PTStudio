@@ -172,8 +172,7 @@ void EditorPass::do_setup(const webgpu::Device& device) {
     if (old_gizmo_bgl) wgpuBindGroupLayoutRelease(old_gizmo_bgl);
 }
 
-void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext& ctx,
-                        rendering::TextureHandle /*color*/, rendering::TextureHandle /*depth*/) {
+void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext& ctx) {
     PTS_ZONE_SCOPED;
     PRECONDITION(is_ready());
     auto& ready = std::get<Ready>(m_state);

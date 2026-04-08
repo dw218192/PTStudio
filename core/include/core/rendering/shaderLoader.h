@@ -11,10 +11,6 @@ namespace spdlog {
 class logger;
 }
 
-namespace pts {
-class LoggingManager;
-}
-
 namespace pts::rendering {
 
 /// Function pointer matching the generated get_resource() signature.

@@ -213,7 +213,7 @@ IRenderer::Outputs IRenderer::add_to_frame_graph(FrameGraph& fg, const PassConte
     INVARIANT(m_tonemapping);
     TextureHandle display_color = hdr.color;
     if (m_tonemapping_enabled && m_tonemapping->is_ready()) {
-        m_tonemapping->set_inputs({hdr.color, hdr.depth});
+        m_tonemapping->set_inputs({hdr.color, hdr.depth, hdr.ssao});
         m_tonemapping->add_to_frame_graph(fg, ctx);
         display_color = m_tonemapping->ldr_output();
     }

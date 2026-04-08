@@ -16,8 +16,8 @@ public struct Material {
     public float ior;
     public float opacity_threshold;
     public uint tex_channels;
+    public uint light_index;  // GPU light index for proxy meshes (0xFFFFFFFF = none)
     public uint _pad0;
-    public uint _pad1;
 };
 
 /// Returns true if P is on the emitting (front) side of a directional area light.

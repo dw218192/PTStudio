@@ -32,13 +32,14 @@ class ToneMappingPass final : public IPass {
     struct Inputs {
         TextureHandle hdr_color;
         std::optional<TextureHandle> depth;  // for auto-exposure sky masking
+        std::optional<TextureHandle> ssao;   // ambient occlusion (from SSAOPass)
     };
     void set_inputs(const Inputs& in) {
         m_inputs = in;
     }
 
     /// LDR tone-mapped output. Valid after add_to_frame_graph.
-    TextureHandle ldr_output() const {
+    [[nodiscard]] TextureHandle ldr_output() const {
         return m_ldr_output;
     }
 

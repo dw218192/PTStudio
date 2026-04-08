@@ -332,7 +332,7 @@ SSAOPass::Outputs SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext
 
     TextureDesc ao_desc = r8_desc;
     ao_desc.format = WGPUTextureFormat_RGBA8Unorm;
-    auto ssao_handle = fg.find_or_create("ssao", ao_desc);
+    auto ssao_handle = create_texture(fg, ao_desc, "ssao");
 
     // Register uniform buffers with frame graph
     BufferDesc gen_buf_desc;

@@ -272,8 +272,11 @@ void cs_main(uint3 did : SV_DispatchThreadID) {
         float3 Ns = apply_normal_map(Ng, hit.tangent, hit.bitangent, mat, hit.uv,
                                      scene_textures, scene_sampler, 0.0);
 
-        // Emissive contribution (light proxy meshes, emissive materials)
-        radiance += throughput * mat.emissive_color;
+        // Emissive contribution: skip analytic light proxies after bounce 0
+        // to avoid double-counting with NEE (which samples them directly).
+        // Bounce 0 keeps emissive so camera-visible lights are rendered.
+        if (bounce == 0 || mat.light_index == 0xFFFFFFFF)
+            radiance += throughput * mat.emissive_color;
 
         // Direct lighting (NEE with shadow rays)
         float3 direct = float3(0.0);

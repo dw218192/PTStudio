@@ -62,7 +62,7 @@ void OrbitCamera::pan(float dx, float dy) {
 
 void OrbitCamera::zoom(float delta) {
     m_distance *= (1.0f - delta * k_zoom_speed);
-    m_distance = std::max(m_distance, m_near);
+    m_distance = std::clamp(m_distance, m_min_distance, m_max_distance);
 }
 
 void OrbitCamera::move(float forward, float right_amount, float up_amount, float dt) {

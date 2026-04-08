@@ -14,6 +14,7 @@
 #include <pxr/usd/usdShade/shader.h>
 
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <string>
 

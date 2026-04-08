@@ -1,5 +1,6 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #define NOMINMAX
+#include <core/rendering/halfFloat.h>
 #include <core/rendering/webgpu/device.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
 #include <doctest/doctest.h>
@@ -58,20 +59,9 @@ auto create_uniform_hdr_texture(const pts::webgpu::Device& device, uint32_t w, u
     desc.dimension = WGPUTextureDimension_2D;
     auto tex = wgpuDeviceCreateTexture(device.handle(), &desc);
 
-    // Convert float to float16 (IEEE 754 half)
-    auto to_f16 = [](float f) -> uint16_t {
-        uint32_t bits;
-        std::memcpy(&bits, &f, 4);
-        uint32_t sign = (bits >> 31) & 1;
-        int32_t exp = static_cast<int32_t>((bits >> 23) & 0xFF) - 127;
-        uint32_t mantissa = bits & 0x7FFFFF;
-        if (exp > 15) return static_cast<uint16_t>((sign << 15) | 0x7C00);
-        if (exp < -14) return static_cast<uint16_t>(sign << 15);
-        return static_cast<uint16_t>((sign << 15) | ((exp + 15) << 10) | (mantissa >> 13));
-    };
-
     std::vector<uint16_t> pixels(w * h * 4);
-    uint16_t hr = to_f16(r), hg = to_f16(g), hb = to_f16(b), ha = to_f16(1.0f);
+    uint16_t hr = pts::rendering::float_to_half(r), hg = pts::rendering::float_to_half(g),
+             hb = pts::rendering::float_to_half(b), ha = pts::rendering::float_to_half(1.0f);
     for (uint32_t i = 0; i < w * h; ++i) {
         pixels[i * 4 + 0] = hr;
         pixels[i * 4 + 1] = hg;

@@ -116,7 +116,6 @@ def Xform "Root"
         float inputs:angle = 0.53
         color3f inputs:color = (1, 0.95, 0.85)
         float inputs:intensity = 50000
-        float3 xformOp:rotateXYZ = (-60, -120, 0)
         matrix4d xformOp:transform = ( (-0.5, 0, 0.8660253882408142, 0), (0.75, 0.5, 0.4330126941204071, 0), (-0.4330126941204071, 0.8660253882408142, -0.25, 0), (0, 5.531754016876221, 0, 1) )
         uniform token[] xformOpOrder = ["xformOp:transform"]
     }
@@ -126,7 +125,6 @@ def Xform "Root"
         float inputs:angle = 0.53
         color3f inputs:color = (0.85, 0.9, 1)
         float inputs:intensity = 50000
-        float3 xformOp:rotateXYZ = (-60, 30, 0)
         matrix4d xformOp:transform = ( (0.8660253882408142, 0, -0.5, 0), (-0.4330126941204071, 0.5, -0.75, 0), (0.25, 0.8660253882408142, 0.4330126941204071, 0), (0, 5.175130367279053, 0, 1) )
         uniform token[] xformOpOrder = ["xformOp:transform"]
     }

@@ -881,8 +881,7 @@ void EditorApplication::render(FrameContext& ctx) {
                 m_grid_pass->render(*m_frame_graph, pass_ctx, scene_color_handle,
                                     *scene_depth_handle);
             if (m_editor_pass && m_editor_pass->is_ready())
-                m_editor_pass->render(*m_frame_graph, pass_ctx, scene_color_handle,
-                                      *scene_depth_handle);
+                m_editor_pass->render(*m_frame_graph, pass_ctx);
         }
         if (!capture_mode) {
             if (m_lobe_pass && m_lobe_pass->is_ready())

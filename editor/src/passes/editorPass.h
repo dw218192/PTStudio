@@ -123,8 +123,7 @@ class EditorPass final : public rendering::IPass {
     [[nodiscard]] auto is_ready() const noexcept -> bool override;
 
     void do_setup(const webgpu::Device& device) override;
-    void render(rendering::FrameGraph& fg, const rendering::PassContext& ctx,
-                rendering::TextureHandle color, rendering::TextureHandle depth);
+    void render(rendering::FrameGraph& fg, const rendering::PassContext& ctx);
 
     /// Resolve a picking ID to its prim path. Returns empty path if invalid.
     /// Valid after add_to_frame_graph has run for the current frame.

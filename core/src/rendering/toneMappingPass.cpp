@@ -281,15 +281,15 @@ void ToneMappingPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx)
     auto ldr_handle = create_texture(fg, ldr_desc, "ldr_output");
     m_ldr_output = ldr_handle;
 
-    // Check if SSAOPass produced the "ssao" resource this frame
-    auto ssao_found = fg.find("ssao");
+    // SSAO from pass inputs (threaded by renderer, not global lookup)
+    auto ssao_found = m_inputs.ssao;
 
-    // Exposure result buffer (persistent across frames)
-    BufferDesc result_buf_desc;
+    // Exposure result buffer (persistent across frames, pass-scoped key)
+    BufferDesc result_buf_desc{};
     result_buf_desc.size = sizeof(ExposureResult);
     result_buf_desc.usage =
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
-    auto result_buf_handle = fg.find_or_create_buffer("auto_exposure_result", result_buf_desc);
+    auto result_buf_handle = create_buffer(fg, result_buf_desc, "auto_exposure_result");
 
     // --- Luminance compute pass (only when auto-exposure is on) ---
     if (m_auto_exposure) {

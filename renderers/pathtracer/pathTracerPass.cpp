@@ -373,14 +373,14 @@ PathTracerPass::HdrOutputs PathTracerPass::do_add_to_frame_graph(
         import_buffer(fg, m_output_buffer.handle(), m_output_buffer.size(), "output");
 
     // Register blit uniform buffer with frame graph
-    rendering::BufferDesc blit_buf_desc;
+    rendering::BufferDesc blit_buf_desc{};
     blit_buf_desc.size = sizeof(BlitUniforms);
     blit_buf_desc.usage =
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
     auto blit_uniform_buf_handle = create_buffer(fg, blit_buf_desc, "blit_uniforms");
 
     // Register blit bind group
-    rendering::BindGroupDesc blit_bg_desc;
+    rendering::BindGroupDesc blit_bg_desc{};
     blit_bg_desc.layout = r.blit_bgl;
     blit_bg_desc.entries.resize(2);
     blit_bg_desc.entries[0].binding = 0;

@@ -72,6 +72,7 @@ class IRenderer : public IPass {
     struct HdrOutputs {
         TextureHandle color;                 // HDR scene color
         std::optional<TextureHandle> depth;  // compute-only renderers may not produce
+        std::optional<TextureHandle> ssao;   // ambient occlusion (if available)
     };
 
     void do_setup(const webgpu::Device& device) override;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 
@@ -20,8 +21,8 @@ inline uint16_t float_to_half(float f) {
         return static_cast<uint16_t>(sign | (mantissa >> 13));
     }
     if (exponent == 0xFF - 127 + 15) {
-        if (mantissa == 0) return static_cast<uint16_t>(sign | 0x7C00);  // inf
-        return static_cast<uint16_t>(sign | 0x7C00 | (mantissa >> 13));  // nan
+        if (mantissa == 0) return static_cast<uint16_t>(sign | 0x7C00);              // inf
+        return static_cast<uint16_t>(sign | 0x7C00 | std::max(mantissa >> 13, 1u));  // nan
     }
     if (exponent > 30) return static_cast<uint16_t>(sign | 0x7C00);  // overflow → inf
 

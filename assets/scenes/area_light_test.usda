@@ -119,11 +119,7 @@ def Xform "Root"
         prepend references = @../models/treasure_chest/treasure_chest_2k.usdc@
     )
     {
-        double xformOp:rotateX:unitsResolve = -90
-        float3 xformOp:rotateXYZ = (0, 0, 0)
-        float3 xformOp:scale = (1, 1, 1)
         matrix4d xformOp:transform = ( (2, 0, 0, 0), (0, -8.742277657347586e-8, -2, 0), (0, 2, -8.742277657347586e-8, 0), (-1.5735167264938354, -0.000006509742888738401, 1.4944231510162354, 1) )
-        double3 xformOp:translate = (-1.5965667262006769, 2.2204460492503135e-15, -2.281035146539002)
         uniform token[] xformOpOrder = ["xformOp:transform"]
     }
 

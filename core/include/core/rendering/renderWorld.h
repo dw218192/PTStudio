@@ -46,7 +46,8 @@ struct Material {
     float ior{1.5f};
     float opacity_threshold{0.0f};
     uint32_t tex_channels{0};
-    uint32_t _pad[2]{};
+    uint32_t light_index{UINT32_MAX};  // GPU light index for proxy meshes (UINT32_MAX = none)
+    uint32_t _pad{};
 };
 static_assert(sizeof(Material) == 80, "Material must be 80 bytes for GPU alignment");
 

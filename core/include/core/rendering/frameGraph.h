@@ -162,7 +162,7 @@ class BufferRef : public ResourceRef<detail::CachedBuffer> {
     WGPUBuffer handle() const {
         return m_cached ? m_cached->buffer : nullptr;
     }
-    std::size_t size() const {
+    uint64_t size() const {
         return m_cached ? m_cached->desc.size : 0;
     }
 };
@@ -338,7 +338,8 @@ class FrameGraph {
     };
     std::unordered_map<std::string_view, PassCounters> m_pass_counters;
 
-    std::string make_pass_key(const IPass* pass, const char* label, const char* type_prefix);
+    enum class ResourceKind { Texture, Buffer, BindGroup };
+    std::string make_pass_key(const IPass* pass, const char* label, ResourceKind kind);
 };
 
 }  // namespace pts::rendering

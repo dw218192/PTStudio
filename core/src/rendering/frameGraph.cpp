@@ -5,7 +5,6 @@
 #include <core/rendering/webgpu/device.h>
 #include <spdlog/spdlog.h>
 
-#include <cstring>
 #include <stdexcept>
 
 namespace pts::rendering {
@@ -346,8 +345,7 @@ PassBuilder FrameGraph::add_pass(std::string name) {
     return PassBuilder(*this, static_cast<uint32_t>(m_passes.size() - 1));
 }
 
-std::string FrameGraph::make_pass_key(const IPass* pass, const char* label,
-                                      const char* type_prefix) {
+std::string FrameGraph::make_pass_key(const IPass* pass, const char* label, ResourceKind kind) {
     PRECONDITION_MSG(pass != nullptr, "make_pass_key: pass must not be null");
     auto pass_name = pass->name();
     if (label) {
@@ -360,39 +358,49 @@ std::string FrameGraph::make_pass_key(const IPass* pass, const char* label,
     }
     auto& counters = m_pass_counters[pass_name];
     uint32_t n;
-    if (std::strcmp(type_prefix, "texture") == 0)
-        n = counters.texture++;
-    else if (std::strcmp(type_prefix, "buffer") == 0)
-        n = counters.buffer++;
-    else
-        n = counters.bind_group++;
+    std::string_view kind_name;
+    switch (kind) {
+        case ResourceKind::Texture:
+            n = counters.texture++;
+            kind_name = "texture";
+            break;
+        case ResourceKind::Buffer:
+            n = counters.buffer++;
+            kind_name = "buffer";
+            break;
+        case ResourceKind::BindGroup:
+            n = counters.bind_group++;
+            kind_name = "bind_group";
+            break;
+    }
     std::string key;
-    key.reserve(pass_name.size() + 1 + std::char_traits<char>::length(type_prefix) + 4);
+    key.reserve(pass_name.size() + 1 + kind_name.size() + 4);
     key.append(pass_name);
     key.push_back('/');
-    key.append(type_prefix);
+    key.append(kind_name);
     key.push_back('_');
     key.append(std::to_string(n));
     return key;
 }
 
 ResourceHandle FrameGraph::find_or_create(const IPass* pass, TextureDesc desc, const char* label) {
-    return find_or_create(make_pass_key(pass, label, "texture"), desc);
+    return find_or_create(make_pass_key(pass, label, ResourceKind::Texture), desc);
 }
 
 BufferHandle FrameGraph::find_or_create_buffer(const IPass* pass, BufferDesc desc,
                                                const char* label) {
-    return find_or_create_buffer(make_pass_key(pass, label, "buffer"), desc);
+    return find_or_create_buffer(make_pass_key(pass, label, ResourceKind::Buffer), desc);
 }
 
 BufferHandle FrameGraph::import_buffer(const IPass* pass, WGPUBuffer buf, std::size_t size,
                                        const char* label) {
-    return import_buffer(make_pass_key(pass, label, "buffer"), buf, size);
+    return import_buffer(make_pass_key(pass, label, ResourceKind::Buffer), buf, size);
 }
 
 BindGroupHandle FrameGraph::find_or_create_bind_group(const IPass* pass, BindGroupDesc desc,
                                                       const char* label) {
-    return find_or_create_bind_group(make_pass_key(pass, label, "bind_group"), std::move(desc));
+    return find_or_create_bind_group(make_pass_key(pass, label, ResourceKind::BindGroup),
+                                     std::move(desc));
 }
 
 void FrameGraph::begin_frame() {
@@ -612,8 +620,8 @@ void FrameGraph::allocate_buffers() {
             // Managed buffer
             auto it = m_buffer_cache.find(res.name);
             if (it != m_buffer_cache.end() && it->second->desc.size >= res.desc.size &&
-                it->second->desc.usage == res.desc.usage) {
-                // Sufficient size and matching usage — reuse
+                (it->second->desc.usage & res.desc.usage) == res.desc.usage) {
+                // Sufficient size and superset usage — reuse
                 it->second->used_this_frame = true;
                 continue;
             }
