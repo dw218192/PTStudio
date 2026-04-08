@@ -382,12 +382,10 @@ PathTracerPass::HdrOutputs PathTracerPass::do_add_to_frame_graph(
     // Register blit bind group
     rendering::BindGroupDesc blit_bg_desc{};
     blit_bg_desc.layout = r.blit_bgl;
-    blit_bg_desc.entries.resize(2);
-    blit_bg_desc.entries[0].binding = 0;
-    blit_bg_desc.entries[0].buffer = blit_uniform_buf_handle;
-    blit_bg_desc.entries[0].buffer_size = sizeof(BlitUniforms);
-    blit_bg_desc.entries[1].binding = 1;
-    blit_bg_desc.entries[1].buffer = output_buf_handle;
+    blit_bg_desc.entries = {
+        {0, rendering::ManagedBufferBinding{blit_uniform_buf_handle, 0, sizeof(BlitUniforms)}},
+        {1, rendering::ManagedBufferBinding{output_buf_handle}},
+    };
     auto blit_bg_handle = create_bind_group(fg, std::move(blit_bg_desc), "blit_bg");
 
     auto* bp = r.blit_pipeline.handle();

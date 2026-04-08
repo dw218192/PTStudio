@@ -107,14 +107,10 @@ GBufferPass::Outputs GBufferPass::add_to_frame_graph(FrameGraph& fg, const PassC
     auto uniform_buf_handle = create_buffer(fg, buf_desc, "uniforms");
 
     // Register bind group with frame graph
-    BindGroupEntry entry{};
-    entry.binding = 0;
-    entry.buffer = uniform_buf_handle;
-    entry.buffer_size = sizeof(GBufferObjectUniforms);
-
     BindGroupDesc bg_desc;
     bg_desc.layout = ready.bgl;
-    bg_desc.entries = {entry};
+    bg_desc.entries = {
+        {0, ManagedBufferBinding{uniform_buf_handle, 0, sizeof(GBufferObjectUniforms)}}};
     auto bg_handle = create_bind_group(fg, std::move(bg_desc), "bg0");
 
     // Create/find frame graph texture resources

@@ -212,14 +212,10 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
     auto picking_buf_handle = create_buffer(fg, picking_buf_desc, "picking_uniforms");
 
-    rendering::BindGroupEntry picking_entry{};
-    picking_entry.binding = 0;
-    picking_entry.buffer = picking_buf_handle;
-    picking_entry.buffer_size = sizeof(PickingUniforms);
-
     rendering::BindGroupDesc picking_bg_desc;
     picking_bg_desc.layout = ready.picking_bind_group_layout;
-    picking_bg_desc.entries = {picking_entry};
+    picking_bg_desc.entries = {
+        {0, rendering::ManagedBufferBinding{picking_buf_handle, 0, sizeof(PickingUniforms)}}};
     auto picking_bg_handle = create_bind_group(fg, std::move(picking_bg_desc), "picking_bg0");
 
     // Register gizmo uniform buffer with frame graph
@@ -231,14 +227,10 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
     auto gizmo_buf_handle = create_buffer(fg, gizmo_buf_desc, "gizmo_uniforms");
 
-    rendering::BindGroupEntry gizmo_entry{};
-    gizmo_entry.binding = 0;
-    gizmo_entry.buffer = gizmo_buf_handle;
-    gizmo_entry.buffer_size = sizeof(GizmoUniforms);
-
     rendering::BindGroupDesc gizmo_bg_desc;
     gizmo_bg_desc.layout = ready.gizmo_bind_group_layout;
-    gizmo_bg_desc.entries = {gizmo_entry};
+    gizmo_bg_desc.entries = {
+        {0, rendering::ManagedBufferBinding{gizmo_buf_handle, 0, sizeof(GizmoUniforms)}}};
     auto gizmo_bg_handle = create_bind_group(fg, std::move(gizmo_bg_desc), "gizmo_bg0");
 
     // ── Create/cache gizmo meshes and collect handles ──────────────────

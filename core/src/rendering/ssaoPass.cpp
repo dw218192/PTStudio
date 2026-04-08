@@ -351,42 +351,28 @@ SSAOPass::Outputs SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext
     auto kernel_buf = ready.kernel_buffer.handle();
     BindGroupDesc gen_bg_desc;
     gen_bg_desc.layout = ready.gen_bgl;
-    gen_bg_desc.entries.resize(8);
-    gen_bg_desc.entries[0].binding = 0;
-    gen_bg_desc.entries[0].buffer = gen_uniform_buf_handle;
-    gen_bg_desc.entries[0].buffer_size = sizeof(SSAOUniforms);
-    gen_bg_desc.entries[1].binding = 1;
-    gen_bg_desc.entries[1].texture = depth_handle;
-    gen_bg_desc.entries[2].binding = 2;
-    gen_bg_desc.entries[2].texture = normals_handle;
-    gen_bg_desc.entries[3].binding = 3;
-    gen_bg_desc.entries[3].external_view = ready.noise_view;
-    gen_bg_desc.entries[4].binding = 4;
-    gen_bg_desc.entries[4].sampler = ready.depth_sampler;
-    gen_bg_desc.entries[5].binding = 5;
-    gen_bg_desc.entries[5].sampler = ready.linear_sampler;
-    gen_bg_desc.entries[6].binding = 6;
-    gen_bg_desc.entries[6].sampler = ready.noise_sampler;
-    gen_bg_desc.entries[7].binding = 7;
-    gen_bg_desc.entries[7].external_buffer = kernel_buf;
-    gen_bg_desc.entries[7].external_buffer_size = sizeof(glm::vec4) * k_max_kernel_size;
+    gen_bg_desc.entries = {
+        {0, ManagedBufferBinding{gen_uniform_buf_handle, 0, sizeof(SSAOUniforms)}},
+        {1, ManagedTextureBinding{depth_handle}},
+        {2, ManagedTextureBinding{normals_handle}},
+        {3, ExternalViewBinding{ready.noise_view}},
+        {4, SamplerBinding{ready.depth_sampler}},
+        {5, SamplerBinding{ready.linear_sampler}},
+        {6, SamplerBinding{ready.noise_sampler}},
+        {7, ExternalBufferBinding{kernel_buf, 0, sizeof(glm::vec4) * k_max_kernel_size}},
+    };
     auto gen_bg_handle = create_bind_group(fg, std::move(gen_bg_desc), "gen_bg");
 
     // Register blur bind group (5 entries)
     BindGroupDesc blur_bg_desc;
     blur_bg_desc.layout = ready.blur_bgl;
-    blur_bg_desc.entries.resize(5);
-    blur_bg_desc.entries[0].binding = 0;
-    blur_bg_desc.entries[0].buffer = blur_uniform_buf_handle;
-    blur_bg_desc.entries[0].buffer_size = sizeof(SSAOBlurUniforms);
-    blur_bg_desc.entries[1].binding = 1;
-    blur_bg_desc.entries[1].texture = ssao_raw_handle;
-    blur_bg_desc.entries[2].binding = 2;
-    blur_bg_desc.entries[2].texture = depth_handle;
-    blur_bg_desc.entries[3].binding = 3;
-    blur_bg_desc.entries[3].sampler = ready.linear_sampler;
-    blur_bg_desc.entries[4].binding = 4;
-    blur_bg_desc.entries[4].sampler = ready.depth_sampler;
+    blur_bg_desc.entries = {
+        {0, ManagedBufferBinding{blur_uniform_buf_handle, 0, sizeof(SSAOBlurUniforms)}},
+        {1, ManagedTextureBinding{ssao_raw_handle}},
+        {2, ManagedTextureBinding{depth_handle}},
+        {3, SamplerBinding{ready.linear_sampler}},
+        {4, SamplerBinding{ready.depth_sampler}},
+    };
     auto blur_bg_handle = create_bind_group(fg, std::move(blur_bg_desc), "blur_bg");
 
     // Capture scalars for lambdas

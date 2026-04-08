@@ -305,23 +305,14 @@ void ToneMappingPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx)
 
         BindGroupDesc lum_bg_desc;
         lum_bg_desc.layout = ready.luminance_bgl;
-        lum_bg_desc.entries.resize(5);
-        lum_bg_desc.entries[0].binding = 0;
-        lum_bg_desc.entries[0].texture = hdr_handle;
-        lum_bg_desc.entries[1].binding = 1;
-        lum_bg_desc.entries[1].sampler = ready.sampler;
-        lum_bg_desc.entries[2].binding = 2;
-        lum_bg_desc.entries[2].buffer = result_buf_handle;
-        lum_bg_desc.entries[2].buffer_size = sizeof(ExposureResult);
-        lum_bg_desc.entries[3].binding = 3;
-        lum_bg_desc.entries[3].buffer = lum_params_handle;
-        lum_bg_desc.entries[3].buffer_size = sizeof(LuminanceParams);
-        lum_bg_desc.entries[4].binding = 4;
-        if (has_depth) {
-            lum_bg_desc.entries[4].texture = *depth_handle;
-        } else {
-            lum_bg_desc.entries[4].external_view = ready.depth_fallback_view;
-        }
+        lum_bg_desc.entries = {
+            {0, ManagedTextureBinding{hdr_handle}},
+            {1, SamplerBinding{ready.sampler}},
+            {2, ManagedBufferBinding{result_buf_handle, 0, sizeof(ExposureResult)}},
+            {3, ManagedBufferBinding{lum_params_handle, 0, sizeof(LuminanceParams)}},
+            {4, has_depth ? BindingResource{ManagedTextureBinding{*depth_handle}}
+                          : BindingResource{ExternalViewBinding{ready.depth_fallback_view}}},
+        };
         auto lum_bg_handle = create_bind_group(fg, std::move(lum_bg_desc), "lum_bg");
 
         auto* lum_pipeline = ready.luminance_pipeline.handle();
@@ -373,26 +364,15 @@ void ToneMappingPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx)
     // Register bind group (6 entries)
     BindGroupDesc bg_desc;
     bg_desc.layout = ready.bind_group_layout;
-    bg_desc.entries.resize(6);
-    bg_desc.entries[0].binding = 0;
-    bg_desc.entries[0].buffer = uniform_buf_handle;
-    bg_desc.entries[0].buffer_size = sizeof(ToneMappingUniforms);
-    bg_desc.entries[1].binding = 1;
-    bg_desc.entries[1].texture = hdr_handle;
-    bg_desc.entries[2].binding = 2;
-    bg_desc.entries[2].sampler = ready.sampler;
-    if (ssao_found) {
-        bg_desc.entries[3].binding = 3;
-        bg_desc.entries[3].texture = *ssao_found;
-    } else {
-        bg_desc.entries[3].binding = 3;
-        bg_desc.entries[3].external_view = ready.ssao_fallback_view;
-    }
-    bg_desc.entries[4].binding = 4;
-    bg_desc.entries[4].sampler = ready.ssao_sampler;
-    bg_desc.entries[5].binding = 5;
-    bg_desc.entries[5].buffer = result_buf_handle;
-    bg_desc.entries[5].buffer_size = sizeof(ExposureResult);
+    bg_desc.entries = {
+        {0, ManagedBufferBinding{uniform_buf_handle, 0, sizeof(ToneMappingUniforms)}},
+        {1, ManagedTextureBinding{hdr_handle}},
+        {2, SamplerBinding{ready.sampler}},
+        {3, ssao_found ? BindingResource{ManagedTextureBinding{*ssao_found}}
+                       : BindingResource{ExternalViewBinding{ready.ssao_fallback_view}}},
+        {4, SamplerBinding{ready.ssao_sampler}},
+        {5, ManagedBufferBinding{result_buf_handle, 0, sizeof(ExposureResult)}},
+    };
     auto bg_handle = create_bind_group(fg, std::move(bg_desc), "bg0");
 
     auto* pipeline_handle = ready.pipeline.handle();

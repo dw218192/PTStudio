@@ -11,6 +11,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <variant>
 #include <vector>
 
 namespace spdlog {
@@ -58,18 +59,37 @@ struct BufferHandle {
     }
 };
 
+struct ManagedBufferBinding {
+    BufferHandle handle;
+    uint64_t offset = 0;
+    uint64_t size = 0;  // 0 = whole buffer
+};
+
+struct ManagedTextureBinding {
+    TextureHandle handle;
+    uint32_t layer = UINT32_MAX;
+};
+
+struct ExternalViewBinding {
+    WGPUTextureView view;
+};
+
+struct ExternalBufferBinding {
+    WGPUBuffer buffer;
+    uint64_t offset = 0;
+    uint64_t size = 0;
+};
+
+struct SamplerBinding {
+    WGPUSampler sampler;
+};
+
+using BindingResource = std::variant<ManagedBufferBinding, ManagedTextureBinding,
+                                     ExternalViewBinding, ExternalBufferBinding, SamplerBinding>;
+
 struct BindGroupEntry {
     uint32_t binding = 0;
-    // Exactly one of these is set per entry:
-    BufferHandle buffer;
-    uint64_t buffer_offset = 0;
-    uint64_t buffer_size = 0;  // 0 = whole buffer
-    TextureHandle texture;
-    uint32_t texture_layer = UINT32_MAX;  // specific layer if != UINT32_MAX (for ticket 4)
-    WGPUSampler sampler = nullptr;
-    WGPUTextureView external_view = nullptr;
-    WGPUBuffer external_buffer = nullptr;
-    uint64_t external_buffer_size = 0;
+    BindingResource resource;
 };
 
 struct BindGroupDesc {

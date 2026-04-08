@@ -656,31 +656,34 @@ void FrameGraph::allocate_bind_groups() {
         std::vector<uint64_t> current_versions;
         current_versions.reserve(desc.entries.size());
         for (auto& entry : desc.entries) {
-            if (entry.buffer.is_valid()) {
-                INVARIANT_MSG(entry.buffer.index < m_buffer_resources.size(),
-                              "allocate_bind_groups: buffer handle out of range");
-                auto& buf_name = m_buffer_resources[entry.buffer.index].name;
-                auto it = m_buffer_cache.find(buf_name);
-                INVARIANT_MSG(it != m_buffer_cache.end(),
-                              "allocate_bind_groups: buffer not in cache");
-                current_versions.push_back(it->second->version);
-            } else if (entry.texture.is_valid()) {
-                INVARIANT_MSG(entry.texture.index < m_resources.size(),
-                              "allocate_bind_groups: texture handle out of range");
-                auto& tex_name = m_resources[entry.texture.index].name;
-                auto it = m_texture_cache.find(tex_name);
-                INVARIANT_MSG(it != m_texture_cache.end(),
-                              "allocate_bind_groups: texture not in cache");
-                current_versions.push_back(it->second->version);
-            } else if (entry.external_view) {
-                current_versions.push_back(reinterpret_cast<uintptr_t>(entry.external_view));
-            } else if (entry.external_buffer) {
-                current_versions.push_back(reinterpret_cast<uintptr_t>(entry.external_buffer));
-            } else if (entry.sampler) {
-                current_versions.push_back(reinterpret_cast<uintptr_t>(entry.sampler));
-            } else {
-                current_versions.push_back(0);
-            }
+            current_versions.push_back(std::visit(
+                [&](auto& b) -> uint64_t {
+                    using T = std::decay_t<decltype(b)>;
+                    if constexpr (std::is_same_v<T, ManagedBufferBinding>) {
+                        INVARIANT_MSG(b.handle.index < m_buffer_resources.size(),
+                                      "allocate_bind_groups: buffer handle out of range");
+                        auto& buf_name = m_buffer_resources[b.handle.index].name;
+                        auto it = m_buffer_cache.find(buf_name);
+                        INVARIANT_MSG(it != m_buffer_cache.end(),
+                                      "allocate_bind_groups: buffer not in cache");
+                        return it->second->version;
+                    } else if constexpr (std::is_same_v<T, ManagedTextureBinding>) {
+                        INVARIANT_MSG(b.handle.index < m_resources.size(),
+                                      "allocate_bind_groups: texture handle out of range");
+                        auto& tex_name = m_resources[b.handle.index].name;
+                        auto it = m_texture_cache.find(tex_name);
+                        INVARIANT_MSG(it != m_texture_cache.end(),
+                                      "allocate_bind_groups: texture not in cache");
+                        return it->second->version;
+                    } else if constexpr (std::is_same_v<T, ExternalViewBinding>) {
+                        return static_cast<uint64_t>(reinterpret_cast<uintptr_t>(b.view));
+                    } else if constexpr (std::is_same_v<T, ExternalBufferBinding>) {
+                        return static_cast<uint64_t>(reinterpret_cast<uintptr_t>(b.buffer));
+                    } else if constexpr (std::is_same_v<T, SamplerBinding>) {
+                        return static_cast<uint64_t>(reinterpret_cast<uintptr_t>(b.sampler));
+                    }
+                },
+                entry.resource));
         }
 
         // 2. Check cache for version match
@@ -704,27 +707,36 @@ void FrameGraph::allocate_bind_groups() {
             WGPUBindGroupEntry e = WGPU_BIND_GROUP_ENTRY_INIT;
             e.binding = entry.binding;
 
-            if (entry.buffer.is_valid()) {
-                auto& buf_name = m_buffer_resources[entry.buffer.index].name;
-                auto& cached_buf = m_buffer_cache.at(buf_name);
-                e.buffer = cached_buf->buffer;
-                e.offset = entry.buffer_offset;
-                e.size = entry.buffer_size > 0 ? entry.buffer_size : cached_buf->desc.size;
-            } else if (entry.texture.is_valid()) {
-                PRECONDITION_MSG(entry.texture_layer == UINT32_MAX,
-                                 "allocate_bind_groups: texture_layer not yet supported");
-                auto& tex_name = m_resources[entry.texture.index].name;
-                auto& cached_tex = m_texture_cache.at(tex_name);
-                e.textureView = cached_tex->view;
-            } else if (entry.sampler) {
-                e.sampler = entry.sampler;
-            } else if (entry.external_view) {
-                e.textureView = entry.external_view;
-            } else if (entry.external_buffer) {
-                e.buffer = entry.external_buffer;
-                e.offset = entry.buffer_offset;
-                e.size = entry.external_buffer_size;
-            }
+            std::visit(
+                [&](auto& b) {
+                    using T = std::decay_t<decltype(b)>;
+                    if constexpr (std::is_same_v<T, ManagedBufferBinding>) {
+                        auto& buf_name = m_buffer_resources[b.handle.index].name;
+                        auto& cached_buf = m_buffer_cache.at(buf_name);
+                        e.buffer = cached_buf->buffer;
+                        e.offset = b.offset;
+                        e.size = b.size > 0 ? b.size : cached_buf->desc.size;
+                    } else if constexpr (std::is_same_v<T, ManagedTextureBinding>) {
+                        auto& tex_name = m_resources[b.handle.index].name;
+                        auto& cached_tex = m_texture_cache.at(tex_name);
+                        if (b.layer != UINT32_MAX) {
+                            INVARIANT_MSG(b.layer < cached_tex->layer_views.size(),
+                                          "allocate_bind_groups: texture layer out of range");
+                            e.textureView = cached_tex->layer_views[b.layer];
+                        } else {
+                            e.textureView = cached_tex->view;
+                        }
+                    } else if constexpr (std::is_same_v<T, ExternalViewBinding>) {
+                        e.textureView = b.view;
+                    } else if constexpr (std::is_same_v<T, ExternalBufferBinding>) {
+                        e.buffer = b.buffer;
+                        e.offset = b.offset;
+                        e.size = b.size;
+                    } else if constexpr (std::is_same_v<T, SamplerBinding>) {
+                        e.sampler = b.sampler;
+                    }
+                },
+                entry.resource);
 
             wgpu_entries.push_back(e);
         }

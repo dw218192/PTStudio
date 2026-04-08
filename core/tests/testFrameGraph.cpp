@@ -1031,13 +1031,9 @@ TEST_CASE("FrameGraph - bind group with buffer input") {
     buf_desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
     auto buf_h = f.graph.find_or_create_buffer("ubo", buf_desc);
 
-    pts::rendering::BindGroupEntry entry;
-    entry.binding = 0;
-    entry.buffer = buf_h;
-
     pts::rendering::BindGroupDesc bg_desc;
     bg_desc.layout = layout;
-    bg_desc.entries = {entry};
+    bg_desc.entries = {{0, pts::rendering::ManagedBufferBinding{buf_h}}};
 
     auto bg_h = f.graph.find_or_create_bind_group("my_bg", bg_desc);
     CHECK(bg_h.is_valid());
@@ -1067,13 +1063,9 @@ TEST_CASE("FrameGraph - bind group version invalidation on buffer change") {
     f.graph.begin_frame();
     auto buf_h = f.graph.import_buffer("ubo", ext_buf1, 256);
 
-    pts::rendering::BindGroupEntry entry;
-    entry.binding = 0;
-    entry.buffer = buf_h;
-
     pts::rendering::BindGroupDesc bg_desc;
     bg_desc.layout = layout;
-    bg_desc.entries = {entry};
+    bg_desc.entries = {{0, pts::rendering::ManagedBufferBinding{buf_h}}};
 
     auto bg_h = f.graph.find_or_create_bind_group("my_bg", bg_desc);
     f.graph.compile();
@@ -1084,13 +1076,9 @@ TEST_CASE("FrameGraph - bind group version invalidation on buffer change") {
     f.graph.begin_frame();
     auto buf_h2 = f.graph.import_buffer("ubo", ext_buf2, 256);
 
-    pts::rendering::BindGroupEntry entry2;
-    entry2.binding = 0;
-    entry2.buffer = buf_h2;
-
     pts::rendering::BindGroupDesc bg_desc2;
     bg_desc2.layout = layout;
-    bg_desc2.entries = {entry2};
+    bg_desc2.entries = {{0, pts::rendering::ManagedBufferBinding{buf_h2}}};
 
     auto bg_h2 = f.graph.find_or_create_bind_group("my_bg", bg_desc2);
     f.graph.compile();
@@ -1119,13 +1107,9 @@ TEST_CASE("FrameGraph - bind group cache reuse when inputs stable") {
     buf_desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
     auto buf_h = f.graph.find_or_create_buffer("ubo", buf_desc);
 
-    pts::rendering::BindGroupEntry entry;
-    entry.binding = 0;
-    entry.buffer = buf_h;
-
     pts::rendering::BindGroupDesc bg_desc;
     bg_desc.layout = layout;
-    bg_desc.entries = {entry};
+    bg_desc.entries = {{0, pts::rendering::ManagedBufferBinding{buf_h}}};
 
     f.graph.find_or_create_bind_group("my_bg", bg_desc);
     f.graph.compile();
@@ -1136,13 +1120,9 @@ TEST_CASE("FrameGraph - bind group cache reuse when inputs stable") {
     f.graph.begin_frame();
     auto buf_h2 = f.graph.find_or_create_buffer("ubo", buf_desc);
 
-    pts::rendering::BindGroupEntry entry2;
-    entry2.binding = 0;
-    entry2.buffer = buf_h2;
-
     pts::rendering::BindGroupDesc bg_desc2;
     bg_desc2.layout = layout;
-    bg_desc2.entries = {entry2};
+    bg_desc2.entries = {{0, pts::rendering::ManagedBufferBinding{buf_h2}}};
 
     f.graph.find_or_create_bind_group("my_bg", bg_desc2);
     f.graph.compile();
@@ -1167,20 +1147,14 @@ TEST_CASE("FrameGraph - bind group eviction") {
     auto buf_a = f.graph.find_or_create_buffer("ubo_a", buf_desc);
     auto buf_b = f.graph.find_or_create_buffer("ubo_b", buf_desc);
 
-    pts::rendering::BindGroupEntry entry_a;
-    entry_a.binding = 0;
-    entry_a.buffer = buf_a;
     pts::rendering::BindGroupDesc desc_a;
     desc_a.layout = layout;
-    desc_a.entries = {entry_a};
+    desc_a.entries = {{0, pts::rendering::ManagedBufferBinding{buf_a}}};
     f.graph.find_or_create_bind_group("bg_a", desc_a);
 
-    pts::rendering::BindGroupEntry entry_b;
-    entry_b.binding = 0;
-    entry_b.buffer = buf_b;
     pts::rendering::BindGroupDesc desc_b;
     desc_b.layout = layout;
-    desc_b.entries = {entry_b};
+    desc_b.entries = {{0, pts::rendering::ManagedBufferBinding{buf_b}}};
     f.graph.find_or_create_bind_group("bg_b", desc_b);
 
     f.graph.compile();
@@ -1190,12 +1164,9 @@ TEST_CASE("FrameGraph - bind group eviction") {
     f.graph.begin_frame();
     auto buf_a2 = f.graph.find_or_create_buffer("ubo_a", buf_desc);
 
-    pts::rendering::BindGroupEntry entry_a2;
-    entry_a2.binding = 0;
-    entry_a2.buffer = buf_a2;
     pts::rendering::BindGroupDesc desc_a2;
     desc_a2.layout = layout;
-    desc_a2.entries = {entry_a2};
+    desc_a2.entries = {{0, pts::rendering::ManagedBufferBinding{buf_a2}}};
     f.graph.find_or_create_bind_group("bg_a", desc_a2);
 
     f.graph.compile();
@@ -1219,13 +1190,9 @@ TEST_CASE("FrameGraph - bind group with texture input") {
     auto tex_h = f.graph.create("my_tex", tex_desc);
     f.graph.add_pass("writer").color(tex_h).execute([](WGPURenderPassEncoder) {});
 
-    pts::rendering::BindGroupEntry entry;
-    entry.binding = 0;
-    entry.texture = tex_h;
-
     pts::rendering::BindGroupDesc bg_desc;
     bg_desc.layout = layout;
-    bg_desc.entries = {entry};
+    bg_desc.entries = {{0, pts::rendering::ManagedTextureBinding{tex_h}}};
 
     auto bg_h = f.graph.find_or_create_bind_group("tex_bg", bg_desc);
     f.graph.compile();
@@ -1237,13 +1204,9 @@ TEST_CASE("FrameGraph - bind group with texture input") {
     auto tex_h2 = f.graph.create("my_tex", tex_desc);
     f.graph.add_pass("writer").color(tex_h2).execute([](WGPURenderPassEncoder) {});
 
-    pts::rendering::BindGroupEntry entry2;
-    entry2.binding = 0;
-    entry2.texture = tex_h2;
-
     pts::rendering::BindGroupDesc bg_desc2;
     bg_desc2.layout = layout;
-    bg_desc2.entries = {entry2};
+    bg_desc2.entries = {{0, pts::rendering::ManagedTextureBinding{tex_h2}}};
 
     f.graph.find_or_create_bind_group("tex_bg", bg_desc2);
     f.graph.compile();
@@ -1259,13 +1222,9 @@ TEST_CASE("FrameGraph - bind group with texture input") {
     auto tex_h3 = f.graph.create("my_tex", tex_desc);
     f.graph.add_pass("writer").color(tex_h3).execute([](WGPURenderPassEncoder) {});
 
-    pts::rendering::BindGroupEntry entry3;
-    entry3.binding = 0;
-    entry3.texture = tex_h3;
-
     pts::rendering::BindGroupDesc bg_desc3;
     bg_desc3.layout = layout;
-    bg_desc3.entries = {entry3};
+    bg_desc3.entries = {{0, pts::rendering::ManagedTextureBinding{tex_h3}}};
 
     f.graph.find_or_create_bind_group("tex_bg", bg_desc3);
     f.graph.compile();
@@ -1294,18 +1253,167 @@ TEST_CASE("FrameGraph - cached_bind_group_count") {
     buf_desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
     auto buf = f.graph.find_or_create_buffer("buf", buf_desc);
 
-    pts::rendering::BindGroupEntry entry;
-    entry.binding = 0;
-    entry.buffer = buf;
-
     pts::rendering::BindGroupDesc bg_desc;
     bg_desc.layout = layout;
-    bg_desc.entries = {entry};
+    bg_desc.entries = {{0, pts::rendering::ManagedBufferBinding{buf}}};
 
     f.graph.find_or_create_bind_group("bg", bg_desc);
     f.graph.compile();
     CHECK(f.graph.cached_bind_group_count() == 1);
 
+    wgpuBindGroupLayoutRelease(layout);
+}
+
+TEST_CASE("FrameGraph - bind group rebuilds when texture name changes across frames") {
+    BindGroupFixture f;
+    auto layout = f.create_texture_layout();
+
+    pts::rendering::TextureDesc tex_desc;
+    tex_desc.width = 64;
+    tex_desc.height = 64;
+    tex_desc.format = WGPUTextureFormat_RGBA8Unorm;
+    tex_desc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_RenderAttachment;
+
+    // Frame 1: create "pass_a/color" texture and bind group
+    f.graph.begin_frame();
+    auto tex_h1 = f.graph.find_or_create("pass_a/color", tex_desc);
+    f.graph.add_pass("writer_a").color(tex_h1).execute([](WGPURenderPassEncoder) {});
+
+    pts::rendering::BindGroupDesc bg_desc1;
+    bg_desc1.layout = layout;
+    bg_desc1.entries = {{0, pts::rendering::ManagedTextureBinding{tex_h1}}};
+    f.graph.find_or_create_bind_group("tex_bg", bg_desc1);
+    f.graph.compile();
+    auto ref1 = f.graph.get_bind_group_ref(f.graph.find_bind_group("tex_bg").value());
+    CHECK(ref1.handle() != nullptr);
+
+    // Frame 2: create "pass_b/color" (same desc, different name) and bind group
+    f.graph.begin_frame();
+    auto tex_h2 = f.graph.find_or_create("pass_b/color", tex_desc);
+    f.graph.add_pass("writer_b").color(tex_h2).execute([](WGPURenderPassEncoder) {});
+
+    pts::rendering::BindGroupDesc bg_desc2;
+    bg_desc2.layout = layout;
+    bg_desc2.entries = {{0, pts::rendering::ManagedTextureBinding{tex_h2}}};
+    f.graph.find_or_create_bind_group("tex_bg", bg_desc2);
+    f.graph.compile();
+    auto ref2 = f.graph.get_bind_group_ref(f.graph.find_bind_group("tex_bg").value());
+    CHECK(ref2.handle() != nullptr);
+
+    // Must rebuild — different texture name means different version
+    CHECK(ref1.handle() != ref2.handle());
+
+    wgpuBindGroupLayoutRelease(layout);
+}
+
+TEST_CASE("FrameGraph - bind group rebuilds when external view changes") {
+    BindGroupFixture f;
+    auto layout = f.create_texture_layout();
+
+    // Create two WGPUTextures → two WGPUTextureViews
+    WGPUTextureDescriptor tex_desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
+    tex_desc.size = {64, 64, 1};
+    tex_desc.format = WGPUTextureFormat_RGBA8Unorm;
+    tex_desc.usage = WGPUTextureUsage_TextureBinding;
+    tex_desc.mipLevelCount = 1;
+    tex_desc.sampleCount = 1;
+    tex_desc.dimension = WGPUTextureDimension_2D;
+    auto tex_a = wgpuDeviceCreateTexture(f.device.handle(), &tex_desc);
+    auto tex_b = wgpuDeviceCreateTexture(f.device.handle(), &tex_desc);
+    REQUIRE(tex_a != nullptr);
+    REQUIRE(tex_b != nullptr);
+
+    WGPUTextureViewDescriptor view_desc = WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT;
+    view_desc.format = WGPUTextureFormat_RGBA8Unorm;
+    view_desc.dimension = WGPUTextureViewDimension_2D;
+    view_desc.mipLevelCount = 1;
+    view_desc.arrayLayerCount = 1;
+    auto view_a = wgpuTextureCreateView(tex_a, &view_desc);
+    auto view_b = wgpuTextureCreateView(tex_b, &view_desc);
+    REQUIRE(view_a != nullptr);
+    REQUIRE(view_b != nullptr);
+
+    // Frame 1: bind group with view_a
+    f.graph.begin_frame();
+    pts::rendering::BindGroupDesc bg_desc1;
+    bg_desc1.layout = layout;
+    bg_desc1.entries = {{0, pts::rendering::ExternalViewBinding{view_a}}};
+    f.graph.find_or_create_bind_group("ext_bg", bg_desc1);
+    f.graph.compile();
+    auto ref1 = f.graph.get_bind_group_ref(f.graph.find_bind_group("ext_bg").value());
+    CHECK(ref1.handle() != nullptr);
+
+    // Frame 2: bind group with view_b
+    f.graph.begin_frame();
+    pts::rendering::BindGroupDesc bg_desc2;
+    bg_desc2.layout = layout;
+    bg_desc2.entries = {{0, pts::rendering::ExternalViewBinding{view_b}}};
+    f.graph.find_or_create_bind_group("ext_bg", bg_desc2);
+    f.graph.compile();
+    auto ref2 = f.graph.get_bind_group_ref(f.graph.find_bind_group("ext_bg").value());
+    CHECK(ref2.handle() != nullptr);
+
+    CHECK(ref1.handle() != ref2.handle());
+
+    wgpuTextureViewRelease(view_a);
+    wgpuTextureViewRelease(view_b);
+    wgpuTextureDestroy(tex_a);
+    wgpuTextureRelease(tex_a);
+    wgpuTextureDestroy(tex_b);
+    wgpuTextureRelease(tex_b);
+    wgpuBindGroupLayoutRelease(layout);
+}
+
+TEST_CASE("FrameGraph - bind group rebuilds when sampler changes") {
+    BindGroupFixture f;
+
+    // Create a sampler-only bind group layout
+    WGPUBindGroupLayoutEntry entry = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    entry.binding = 0;
+    entry.visibility = WGPUShaderStage_Fragment;
+    entry.sampler.type = WGPUSamplerBindingType_Filtering;
+
+    WGPUBindGroupLayoutDescriptor bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
+    bgl_desc.entryCount = 1;
+    bgl_desc.entries = &entry;
+    auto layout = wgpuDeviceCreateBindGroupLayout(f.device.handle(), &bgl_desc);
+    REQUIRE(layout != nullptr);
+
+    // Create two samplers
+    WGPUSamplerDescriptor sampler_desc = WGPU_SAMPLER_DESCRIPTOR_INIT;
+    sampler_desc.magFilter = WGPUFilterMode_Linear;
+    sampler_desc.minFilter = WGPUFilterMode_Linear;
+    auto sampler_a = wgpuDeviceCreateSampler(f.device.handle(), &sampler_desc);
+    sampler_desc.magFilter = WGPUFilterMode_Nearest;
+    sampler_desc.minFilter = WGPUFilterMode_Nearest;
+    auto sampler_b = wgpuDeviceCreateSampler(f.device.handle(), &sampler_desc);
+    REQUIRE(sampler_a != nullptr);
+    REQUIRE(sampler_b != nullptr);
+
+    // Frame 1: bind group with sampler_a
+    f.graph.begin_frame();
+    pts::rendering::BindGroupDesc bg_desc1;
+    bg_desc1.layout = layout;
+    bg_desc1.entries = {{0, pts::rendering::SamplerBinding{sampler_a}}};
+    f.graph.find_or_create_bind_group("samp_bg", bg_desc1);
+    f.graph.compile();
+    auto ref1 = f.graph.get_bind_group_ref(f.graph.find_bind_group("samp_bg").value());
+    CHECK(ref1.handle() != nullptr);
+
+    // Frame 2: bind group with sampler_b
+    f.graph.begin_frame();
+    pts::rendering::BindGroupDesc bg_desc2;
+    bg_desc2.layout = layout;
+    bg_desc2.entries = {{0, pts::rendering::SamplerBinding{sampler_b}}};
+    f.graph.find_or_create_bind_group("samp_bg", bg_desc2);
+    f.graph.compile();
+    auto ref2 = f.graph.get_bind_group_ref(f.graph.find_bind_group("samp_bg").value());
+    CHECK(ref2.handle() != nullptr);
+
+    CHECK(ref1.handle() != ref2.handle());
+
+    wgpuSamplerRelease(sampler_a);
+    wgpuSamplerRelease(sampler_b);
     wgpuBindGroupLayoutRelease(layout);
 }
 
@@ -1470,13 +1578,9 @@ TEST_CASE("FrameGraph - IPass find_or_create_bind_group namespaced") {
     buf_desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
     auto buf_h = f.graph.find_or_create_buffer(&pass, buf_desc, "ubo");
 
-    pts::rendering::BindGroupEntry entry;
-    entry.binding = 0;
-    entry.buffer = buf_h;
-
     pts::rendering::BindGroupDesc bg_desc;
     bg_desc.layout = layout;
-    bg_desc.entries = {entry};
+    bg_desc.entries = {{0, pts::rendering::ManagedBufferBinding{buf_h}}};
 
     auto bg_h = f.graph.find_or_create_bind_group(&pass, std::move(bg_desc), "bg0");
     CHECK(bg_h.is_valid());

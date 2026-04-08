@@ -120,14 +120,10 @@ WireframePass::HdrOutputs WireframePass::do_add_to_frame_graph(rendering::FrameG
     auto uniform_buf_handle = create_buffer(fg, buf_desc, "uniforms");
 
     // Register bind group
-    rendering::BindGroupEntry entry{};
-    entry.binding = 0;
-    entry.buffer = uniform_buf_handle;
-    entry.buffer_size = sizeof(WireframeUniforms);
-
     rendering::BindGroupDesc bg_desc;
     bg_desc.layout = ready.bind_group_layout;
-    bg_desc.entries = {entry};
+    bg_desc.entries = {
+        {0, rendering::ManagedBufferBinding{uniform_buf_handle, 0, sizeof(WireframeUniforms)}}};
     auto bg_handle = create_bind_group(fg, std::move(bg_desc), "bg0");
 
     rendering::TextureDesc color_desc;

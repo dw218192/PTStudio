@@ -220,18 +220,12 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
     auto vp_buf_handle = create_buffer(fg, vp_buf_desc, "light_vps");
 
     // Bind group: binding 0 = model (dynamic), binding 1 = light VP (dynamic)
-    BindGroupEntry bg_entries[2] = {};
-    bg_entries[0].binding = 0;
-    bg_entries[0].buffer = model_buf_handle;
-    bg_entries[0].buffer_size = 64;
-
-    bg_entries[1].binding = 1;
-    bg_entries[1].buffer = vp_buf_handle;
-    bg_entries[1].buffer_size = 64;
-
     BindGroupDesc bg_desc;
     bg_desc.layout = ready.bgl;
-    bg_desc.entries.assign(std::begin(bg_entries), std::end(bg_entries));
+    bg_desc.entries = {
+        {0, ManagedBufferBinding{model_buf_handle, 0, 64}},
+        {1, ManagedBufferBinding{vp_buf_handle, 0, 64}},
+    };
     auto bg_handle = create_bind_group(fg, std::move(bg_desc), "bg0");
 
     // Extract per-layer view-projection matrices

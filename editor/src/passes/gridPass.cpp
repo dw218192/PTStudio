@@ -109,14 +109,10 @@ void GridPass::render(rendering::FrameGraph& fg, const rendering::PassContext& c
     auto uniform_buf_handle = create_buffer(fg, buf_desc, "uniforms");
 
     // Register bind group with frame graph
-    rendering::BindGroupEntry entry{};
-    entry.binding = 0;
-    entry.buffer = uniform_buf_handle;
-    entry.buffer_size = sizeof(GridUniforms);
-
     rendering::BindGroupDesc bg_desc{};
     bg_desc.layout = ready.bind_group_layout;
-    bg_desc.entries = {entry};
+    bg_desc.entries = {
+        {0, rendering::ManagedBufferBinding{uniform_buf_handle, 0, sizeof(GridUniforms)}}};
     auto bg_handle = create_bind_group(fg, std::move(bg_desc), "bg0");
 
     auto queue = ctx.queue;

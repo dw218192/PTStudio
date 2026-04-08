@@ -428,54 +428,31 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
     auto uniform_buf_handle = create_buffer(fg, uniform_buf_desc, "uniforms");
 
     // Bind group 0: materials, lights, uniforms, LTC, scene textures
-    rendering::BindGroupEntry bg0_entries[8] = {};
-    bg0_entries[0].binding = 0;
-    bg0_entries[0].buffer = uniform_buf_handle;
-    bg0_entries[0].buffer_size = sizeof(ForwardUniforms);
-
-    bg0_entries[1].binding = 1;
-    bg0_entries[1].buffer = mat_buf_handle;
-
-    bg0_entries[2].binding = 2;
-    bg0_entries[2].buffer = light_buf_handle;
-
-    bg0_entries[3].binding = 3;
-    bg0_entries[3].external_view = ready.ltc_textures.mat_view();
-
-    bg0_entries[4].binding = 4;
-    bg0_entries[4].external_view = ready.ltc_textures.amp_view();
-
-    bg0_entries[5].binding = 5;
-    bg0_entries[5].sampler = ready.ltc_textures.sampler();
-
-    bg0_entries[6].binding = 6;
-    bg0_entries[6].external_view = scene_tex_view;
-
-    bg0_entries[7].binding = 7;
-    bg0_entries[7].sampler = scene_tex_sampler;
-
     rendering::BindGroupDesc bg0_desc;
     bg0_desc.layout = ready.bind_group_layout;
-    bg0_desc.entries.assign(std::begin(bg0_entries), std::end(bg0_entries));
+    bg0_desc.entries = {
+        {0, rendering::ManagedBufferBinding{uniform_buf_handle, 0, sizeof(ForwardUniforms)}},
+        {1, rendering::ManagedBufferBinding{mat_buf_handle}},
+        {2, rendering::ManagedBufferBinding{light_buf_handle}},
+        {3, rendering::ExternalViewBinding{ready.ltc_textures.mat_view()}},
+        {4, rendering::ExternalViewBinding{ready.ltc_textures.amp_view()}},
+        {5, rendering::SamplerBinding{ready.ltc_textures.sampler()}},
+        {6, rendering::ExternalViewBinding{scene_tex_view}},
+        {7, rendering::SamplerBinding{scene_tex_sampler}},
+    };
     auto bg0_handle = create_bind_group(fg, std::move(bg0_desc), "bg0");
 
     // Bind group 1: shadow
     PRECONDITION(shadow_out.shadow_array.is_valid());
     PRECONDITION(shadow_out.shadow_info.is_valid());
 
-    rendering::BindGroupEntry bg1_entries[3] = {};
-    bg1_entries[0].binding = 0;
-    bg1_entries[0].buffer = shadow_out.shadow_info;
-
-    bg1_entries[1].binding = 1;
-    bg1_entries[1].texture = shadow_out.shadow_array;
-
-    bg1_entries[2].binding = 2;
-    bg1_entries[2].sampler = ready.shadow_sampler;
-
     rendering::BindGroupDesc bg1_desc;
     bg1_desc.layout = ready.shadow_recv_bgl;
-    bg1_desc.entries.assign(std::begin(bg1_entries), std::end(bg1_entries));
+    bg1_desc.entries = {
+        {0, rendering::ManagedBufferBinding{shadow_out.shadow_info}},
+        {1, rendering::ManagedTextureBinding{shadow_out.shadow_array}},
+        {2, rendering::SamplerBinding{ready.shadow_sampler}},
+    };
     auto bg1_handle = create_bind_group(fg, std::move(bg1_desc), "shadow_bg");
 
     rendering::TextureDesc color_desc;
@@ -533,22 +510,14 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
     auto ibl_brdf_lut_view = ibl_ready ? ibl_pipes.brdf_lut_view() : ready.fallback_2d_view;
 
     // Bind group 2: IBL
-    rendering::BindGroupEntry bg2_entries[4] = {};
-    bg2_entries[0].binding = 0;
-    bg2_entries[0].external_view = ibl_prefiltered_view;
-
-    bg2_entries[1].binding = 1;
-    bg2_entries[1].external_view = ibl_irradiance_view;
-
-    bg2_entries[2].binding = 2;
-    bg2_entries[2].external_view = ibl_brdf_lut_view;
-
-    bg2_entries[3].binding = 3;
-    bg2_entries[3].sampler = ready.ibl_sampler;
-
     rendering::BindGroupDesc bg2_desc;
     bg2_desc.layout = ready.ibl_bgl;
-    bg2_desc.entries.assign(std::begin(bg2_entries), std::end(bg2_entries));
+    bg2_desc.entries = {
+        {0, rendering::ExternalViewBinding{ibl_prefiltered_view}},
+        {1, rendering::ExternalViewBinding{ibl_irradiance_view}},
+        {2, rendering::ExternalViewBinding{ibl_brdf_lut_view}},
+        {3, rendering::SamplerBinding{ready.ibl_sampler}},
+    };
     auto bg2_handle = create_bind_group(fg, std::move(bg2_desc), "ibl_bg");
 
     // Skybox uniform buffer + bind group
@@ -558,20 +527,13 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
     auto skybox_uniform_buf_handle = create_buffer(fg, skybox_buf_desc, "skybox_uniforms");
 
-    rendering::BindGroupEntry sky_bg_entries[3] = {};
-    sky_bg_entries[0].binding = 0;
-    sky_bg_entries[0].buffer = skybox_uniform_buf_handle;
-    sky_bg_entries[0].buffer_size = sizeof(SkyboxUniforms);
-
-    sky_bg_entries[1].binding = 1;
-    sky_bg_entries[1].external_view = ibl_env_cubemap_view;
-
-    sky_bg_entries[2].binding = 2;
-    sky_bg_entries[2].sampler = ready.ibl_sampler;
-
     rendering::BindGroupDesc skybox_bg_desc;
     skybox_bg_desc.layout = ready.skybox_bgl;
-    skybox_bg_desc.entries.assign(std::begin(sky_bg_entries), std::end(sky_bg_entries));
+    skybox_bg_desc.entries = {
+        {0, rendering::ManagedBufferBinding{skybox_uniform_buf_handle, 0, sizeof(SkyboxUniforms)}},
+        {1, rendering::ExternalViewBinding{ibl_env_cubemap_view}},
+        {2, rendering::SamplerBinding{ready.ibl_sampler}},
+    };
     auto skybox_bg_handle = create_bind_group(fg, std::move(skybox_bg_desc), "skybox_bg");
 
     // Capture values for the execute lambda
