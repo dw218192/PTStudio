@@ -14,6 +14,11 @@
 #include <variant>
 #include <vector>
 
+// Forward declare FallbackPool
+namespace pts::rendering {
+class FallbackPool;
+}
+
 namespace spdlog {
 class logger;
 }
@@ -87,17 +92,17 @@ struct SamplerBinding {
 using BindingResource = std::variant<ManagedBufferBinding, ManagedTextureBinding,
                                      ExternalViewBinding, ExternalBufferBinding, SamplerBinding>;
 
-struct BindGroupEntry {
+struct DescriptorEntry {
     uint32_t binding = 0;
     BindingResource resource;
 };
 
-struct BindGroupDesc {
+struct DescriptorDesc {
     WGPUBindGroupLayout layout = nullptr;
-    std::vector<BindGroupEntry> entries;
+    std::vector<DescriptorEntry> entries;
 };
 
-struct BindGroupHandle {
+struct DescriptorHandle {
     uint32_t index = UINT32_MAX;
     [[nodiscard]] bool is_valid() const {
         return index != UINT32_MAX;
@@ -135,14 +140,14 @@ struct CachedBuffer : CachedResource<CachedBuffer> {
     CachedBuffer& operator=(const CachedBuffer&) = delete;
 };
 
-struct CachedBindGroup : CachedResource<CachedBindGroup> {
+struct CachedDescriptor : CachedResource<CachedDescriptor> {
     WGPUBindGroup bind_group = nullptr;
     std::vector<uint64_t> input_versions_snapshot;
 
-    ~CachedBindGroup();
-    CachedBindGroup() = default;
-    CachedBindGroup(const CachedBindGroup&) = delete;
-    CachedBindGroup& operator=(const CachedBindGroup&) = delete;
+    ~CachedDescriptor();
+    CachedDescriptor() = default;
+    CachedDescriptor(const CachedDescriptor&) = delete;
+    CachedDescriptor& operator=(const CachedDescriptor&) = delete;
 };
 
 }  // namespace detail
@@ -187,7 +192,7 @@ class BufferRef : public ResourceRef<detail::CachedBuffer> {
     }
 };
 
-class BindGroupRef : public ResourceRef<detail::CachedBindGroup> {
+class DescriptorRef : public ResourceRef<detail::CachedDescriptor> {
    public:
     WGPUBindGroup handle() const {
         return m_cached ? m_cached->bind_group : nullptr;
@@ -199,8 +204,9 @@ enum class PassType { Render, Compute };
 using ExecuteRenderFn = std::function<void(WGPURenderPassEncoder)>;
 using ExecuteComputeFn = std::function<void(WGPUComputePassEncoder)>;
 
-// Keep backward-compatible alias
-using ExecuteFn = ExecuteRenderFn;
+/// Tag type to mark a descriptor slot as dynamic (not auto-set).
+struct Dynamic {};
+inline constexpr Dynamic dynamic_descriptor{};
 
 class PassBuilder {
    public:
@@ -214,6 +220,14 @@ class PassBuilder {
     PassBuilder& present();
     PassBuilder& read(ResourceHandle h);
     PassBuilder& storage_write(ResourceHandle h);
+
+    /// Declare a descriptor (bind group) for this pass at the given group index.
+    /// Static descriptors are auto-set before the execute callback.
+    PassBuilder& descriptor(uint32_t index, DescriptorHandle handle);
+    /// Declare a dynamic descriptor — resolved but NOT auto-set. The execute
+    /// lambda must call setBindGroup manually (e.g. for per-draw offsets).
+    PassBuilder& descriptor(uint32_t index, DescriptorHandle handle, Dynamic);
+
     void execute(ExecuteRenderFn fn);
     void execute(ExecuteComputeFn fn);
 
@@ -223,6 +237,26 @@ class PassBuilder {
 
     FrameGraph& m_graph;
     uint32_t m_pass_index;
+};
+
+class DescriptorBuilder {
+   public:
+    DescriptorBuilder& buffer(uint32_t binding, BufferHandle h, uint64_t offset = 0,
+                              uint64_t size = 0);
+    DescriptorBuilder& texture(uint32_t binding, TextureHandle h, uint32_t layer = UINT32_MAX);
+    DescriptorBuilder& external_view(uint32_t binding, WGPUTextureView view);
+    DescriptorBuilder& external_buffer(uint32_t binding, WGPUBuffer buf, uint64_t offset = 0,
+                                       uint64_t size = 0);
+    DescriptorBuilder& sampler(uint32_t binding, WGPUSampler sampler);
+    DescriptorHandle build();
+
+   private:
+    friend class FrameGraph;
+    DescriptorBuilder(FrameGraph& fg, std::string name, WGPUBindGroupLayout layout);
+
+    FrameGraph& m_fg;
+    std::string m_name;
+    DescriptorDesc m_desc;
 };
 
 class FrameGraph {
@@ -242,9 +276,15 @@ class FrameGraph {
     BufferHandle import_buffer(std::string name, WGPUBuffer buf, std::size_t size);
     [[nodiscard]] std::optional<BufferHandle> find_buffer(const std::string& name) const;
 
-    BindGroupHandle find_or_create_bind_group(std::string name, BindGroupDesc desc);
-    [[nodiscard]] std::optional<BindGroupHandle> find_bind_group(const std::string& name) const;
-    [[nodiscard]] BindGroupRef get_bind_group_ref(BindGroupHandle h) const;
+    DescriptorHandle find_or_create_descriptor(std::string name, DescriptorDesc desc);
+    [[nodiscard]] std::optional<DescriptorHandle> find_descriptor(const std::string& name) const;
+    [[nodiscard]] DescriptorRef get_descriptor_ref(DescriptorHandle h) const;
+
+    /// Fluent descriptor builder (string-keyed).
+    DescriptorBuilder descriptor(std::string name, WGPUBindGroupLayout layout);
+    /// Fluent descriptor builder (pass-keyed, auto-namespaced).
+    DescriptorBuilder descriptor(const IPass* pass, WGPUBindGroupLayout layout,
+                                 const char* label = nullptr);
 
     // --- Pass-based API (auto-namespaced by pass name) ---
     ResourceHandle find_or_create(const IPass* pass, TextureDesc desc, const char* label = nullptr);
@@ -252,8 +292,8 @@ class FrameGraph {
                                        const char* label = nullptr);
     BufferHandle import_buffer(const IPass* pass, WGPUBuffer buf, std::size_t size,
                                const char* label = nullptr);
-    BindGroupHandle find_or_create_bind_group(const IPass* pass, BindGroupDesc desc,
-                                              const char* label = nullptr);
+    DescriptorHandle find_or_create_descriptor(const IPass* pass, DescriptorDesc desc,
+                                               const char* label = nullptr);
 
     PassBuilder add_pass(std::string name);
 
@@ -263,14 +303,17 @@ class FrameGraph {
 
     [[nodiscard]] TextureRef get_texture_ref(ResourceHandle h) const;
     [[nodiscard]] BufferRef get_buffer_ref(BufferHandle h) const;
+    /// Shared pool of 1x1 fallback textures and zero buffers.
+    [[nodiscard]] FallbackPool& fallback_pool();
+
     [[nodiscard]] size_t cached_texture_count() const {
         return m_texture_cache.size();
     }
     [[nodiscard]] size_t cached_buffer_count() const {
         return m_buffer_cache.size();
     }
-    [[nodiscard]] size_t cached_bind_group_count() const {
-        return m_bg_cache.size();
+    [[nodiscard]] size_t cached_descriptor_count() const {
+        return m_descriptor_cache.size();
     }
 
    private:
@@ -304,6 +347,12 @@ class FrameGraph {
         bool is_write = false;
     };
 
+    struct DescriptorSlot {
+        uint32_t index = 0;
+        DescriptorHandle handle;
+        bool is_dynamic = false;
+    };
+
     struct Pass {
         std::string name;
         uint32_t index = 0;
@@ -313,6 +362,7 @@ class FrameGraph {
         bool has_depth = false;
         bool is_present = false;
         std::vector<ResourceHandle> reads;
+        std::vector<DescriptorSlot> descriptor_slots;
         ExecuteRenderFn render_fn;
         ExecuteComputeFn compute_fn;
 
@@ -324,11 +374,12 @@ class FrameGraph {
 
     void allocate_textures();
     void allocate_buffers();
-    void allocate_bind_groups();
+    void allocate_descriptors();
     void evict_unused();
 
     const webgpu::Device& m_device;
     std::shared_ptr<spdlog::logger> m_logger;
+    std::unique_ptr<FallbackPool> m_fallback_pool;
 
     std::vector<Resource> m_resources;
     std::vector<Pass> m_passes;
@@ -343,22 +394,23 @@ class FrameGraph {
     std::vector<BufferResource> m_buffer_resources;
     std::unordered_map<std::string, boost::intrusive_ptr<detail::CachedBuffer>> m_buffer_cache;
 
-    struct BindGroupResource {
+    struct DescriptorResource {
         std::string name;
-        BindGroupDesc desc;
+        DescriptorDesc desc;
     };
-    std::vector<BindGroupResource> m_bg_resources;
-    std::unordered_map<std::string, boost::intrusive_ptr<detail::CachedBindGroup>> m_bg_cache;
+    std::vector<DescriptorResource> m_descriptor_resources;
+    std::unordered_map<std::string, boost::intrusive_ptr<detail::CachedDescriptor>>
+        m_descriptor_cache;
 
     // Per-pass auto-naming counters, reset each begin_frame()
     struct PassCounters {
         uint32_t texture = 0;
         uint32_t buffer = 0;
-        uint32_t bind_group = 0;
+        uint32_t descriptor = 0;
     };
     std::unordered_map<std::string_view, PassCounters> m_pass_counters;
 
-    enum class ResourceKind { Texture, Buffer, BindGroup };
+    enum class ResourceKind { Texture, Buffer, Descriptor };
     std::string make_pass_key(const IPass* pass, const char* label, ResourceKind kind);
 
     /// Monotonic counter — every new or recreated cached resource gets the

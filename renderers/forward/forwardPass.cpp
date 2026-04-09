@@ -7,6 +7,7 @@
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/gbufferPass.h>
 #include <core/rendering/iblResources.h>
+#include <core/rendering/outputLayout.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/rendererRegistry.h>
@@ -20,6 +21,7 @@
 
 using namespace pts;
 using namespace pts::editor;
+using namespace pts::rendering;
 
 REGISTER_RENDERER("Forward", ForwardPass);
 
@@ -56,20 +58,14 @@ static_assert(sizeof(SkyboxUniforms) == 96, "SkyboxUniforms must match shader st
 
 ForwardPass::~ForwardPass() {
     if (auto* ready = std::get_if<Ready>(&m_state)) {
-        if (ready->bind_group_layout) wgpuBindGroupLayoutRelease(ready->bind_group_layout);
-        if (ready->shadow_recv_bgl) wgpuBindGroupLayoutRelease(ready->shadow_recv_bgl);
-        if (ready->shadow_sampler) wgpuSamplerRelease(ready->shadow_sampler);
-        if (ready->ibl_bgl) wgpuBindGroupLayoutRelease(ready->ibl_bgl);
+        if (ready->descriptor_layout) wgpuBindGroupLayoutRelease(ready->descriptor_layout);
+        if (ready->ibl_desc_layout) wgpuBindGroupLayoutRelease(ready->ibl_desc_layout);
         if (ready->ibl_sampler) wgpuSamplerRelease(ready->ibl_sampler);
         if (ready->fallback_cube_view) wgpuTextureViewRelease(ready->fallback_cube_view);
         if (ready->fallback_cube_tex) wgpuTextureRelease(ready->fallback_cube_tex);
         if (ready->fallback_2d_view) wgpuTextureViewRelease(ready->fallback_2d_view);
         if (ready->fallback_2d_tex) wgpuTextureRelease(ready->fallback_2d_tex);
-        if (ready->cs_bgl) wgpuBindGroupLayoutRelease(ready->cs_bgl);
-        if (ready->cs_sampler) wgpuSamplerRelease(ready->cs_sampler);
-        if (ready->fallback_cs_view) wgpuTextureViewRelease(ready->fallback_cs_view);
-        if (ready->fallback_cs_tex) wgpuTextureRelease(ready->fallback_cs_tex);
-        if (ready->skybox_bgl) wgpuBindGroupLayoutRelease(ready->skybox_bgl);
+        if (ready->skybox_desc_layout) wgpuBindGroupLayoutRelease(ready->skybox_desc_layout);
     }
 }
 
@@ -97,158 +93,52 @@ auto ForwardPass::renderer_debug_targets() const noexcept
 void ForwardPass::do_renderer_setup(const webgpu::Device& device) {
     // Release existing state for re-entry (hot-reload)
     if (auto* ready = std::get_if<Ready>(&m_state)) {
-        if (ready->bind_group_layout) wgpuBindGroupLayoutRelease(ready->bind_group_layout);
-        if (ready->shadow_recv_bgl) wgpuBindGroupLayoutRelease(ready->shadow_recv_bgl);
-        if (ready->shadow_sampler) wgpuSamplerRelease(ready->shadow_sampler);
-        if (ready->ibl_bgl) wgpuBindGroupLayoutRelease(ready->ibl_bgl);
+        if (ready->descriptor_layout) wgpuBindGroupLayoutRelease(ready->descriptor_layout);
+        if (ready->ibl_desc_layout) wgpuBindGroupLayoutRelease(ready->ibl_desc_layout);
         if (ready->ibl_sampler) wgpuSamplerRelease(ready->ibl_sampler);
         if (ready->fallback_cube_view) wgpuTextureViewRelease(ready->fallback_cube_view);
         if (ready->fallback_cube_tex) wgpuTextureRelease(ready->fallback_cube_tex);
         if (ready->fallback_2d_view) wgpuTextureViewRelease(ready->fallback_2d_view);
         if (ready->fallback_2d_tex) wgpuTextureRelease(ready->fallback_2d_tex);
-        if (ready->cs_bgl) wgpuBindGroupLayoutRelease(ready->cs_bgl);
-        if (ready->cs_sampler) wgpuSamplerRelease(ready->cs_sampler);
-        if (ready->fallback_cs_view) wgpuTextureViewRelease(ready->fallback_cs_view);
-        if (ready->fallback_cs_tex) wgpuTextureRelease(ready->fallback_cs_tex);
-        if (ready->skybox_bgl) wgpuBindGroupLayoutRelease(ready->skybox_bgl);
+        if (ready->skybox_desc_layout) wgpuBindGroupLayoutRelease(ready->skybox_desc_layout);
     }
+
+    auto* shadow = get_pass<rendering::ShadowMapPass>();
+    auto* cs = get_pass<rendering::ContactShadowPass>();
+    PRECONDITION_MSG(shadow && shadow->is_ready(),
+                     "ShadowMapPass must be ready before ForwardPass");
+    PRECONDITION_MSG(cs && cs->is_ready(), "ContactShadowPass must be ready before ForwardPass");
 
     auto [dbg_targets_setup, dbg_count_setup] = effective_debug_targets();
     auto shader_src = load_pass_shader("renderers/forward/generated/shaders/forward.wgsl");
     auto shader = device.create_shader_module_from_source(shader_src);
 
-    // Create bind group 0 layout: binding 0 = uniform (dynamic), 1 = storage (materials),
-    // 2 = storage (lights), 3 = texture (LTC mat), 4 = texture (LTC amp), 5 = sampler (LTC),
-    // 6 = texture array (scene textures), 7 = sampler (scene textures)
-    WGPUBindGroupLayoutEntry entries[8] = {};
+    // Create descriptor 0 layout via OutputSlot API
+    auto bg0_internal = create_output_layout(
+        device,
+        {OutputSlot::uniform(sizeof(ForwardUniforms))
+             .dynamic()
+             .visibility(
+                 static_cast<WGPUShaderStage>(WGPUShaderStage_Vertex | WGPUShaderStage_Fragment)),
+         OutputSlot::storage(), OutputSlot::storage(),
+         OutputSlot::texture(WGPUTextureFormat_RGBA32Float),
+         OutputSlot::texture(WGPUTextureFormat_RG32Float),
+         OutputSlot::sampler(WGPUSamplerBindingType_Filtering),
+         OutputSlot::texture(WGPUTextureFormat_RGBA8Unorm, WGPUTextureViewDimension_2DArray),
+         OutputSlot::sampler(WGPUSamplerBindingType_Filtering)});
+    auto descriptor_layout = bg0_internal.layout;
+    bg0_internal.layout = nullptr;
+    bg0_internal.release();
 
-    entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    entries[0].binding = 0;
-    entries[0].visibility =
-        static_cast<WGPUShaderStage>(WGPUShaderStage_Vertex | WGPUShaderStage_Fragment);
-    entries[0].buffer.type = WGPUBufferBindingType_Uniform;
-    entries[0].buffer.hasDynamicOffset = true;
-    entries[0].buffer.minBindingSize = sizeof(ForwardUniforms);
-
-    entries[1] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    entries[1].binding = 1;
-    entries[1].visibility = WGPUShaderStage_Fragment;
-    entries[1].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-    entries[1].buffer.minBindingSize = 0;
-
-    entries[2] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    entries[2].binding = 2;
-    entries[2].visibility = WGPUShaderStage_Fragment;
-    entries[2].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-    entries[2].buffer.minBindingSize = 0;
-
-    entries[3] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    entries[3].binding = 3;
-    entries[3].visibility = WGPUShaderStage_Fragment;
-    entries[3].texture.sampleType = WGPUTextureSampleType_Float;
-    entries[3].texture.viewDimension = WGPUTextureViewDimension_2D;
-    entries[3].texture.multisampled = false;
-
-    entries[4] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    entries[4].binding = 4;
-    entries[4].visibility = WGPUShaderStage_Fragment;
-    entries[4].texture.sampleType = WGPUTextureSampleType_Float;
-    entries[4].texture.viewDimension = WGPUTextureViewDimension_2D;
-    entries[4].texture.multisampled = false;
-
-    entries[5] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    entries[5].binding = 5;
-    entries[5].visibility = WGPUShaderStage_Fragment;
-    entries[5].sampler.type = WGPUSamplerBindingType_Filtering;
-
-    entries[6] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    entries[6].binding = 6;
-    entries[6].visibility = WGPUShaderStage_Fragment;
-    entries[6].texture.sampleType = WGPUTextureSampleType_Float;
-    entries[6].texture.viewDimension = WGPUTextureViewDimension_2DArray;
-    entries[6].texture.multisampled = false;
-
-    entries[7] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    entries[7].binding = 7;
-    entries[7].visibility = WGPUShaderStage_Fragment;
-    entries[7].sampler.type = WGPUSamplerBindingType_Filtering;
-
-    WGPUBindGroupLayoutDescriptor bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    bgl_desc.entryCount = 8;
-    bgl_desc.entries = entries;
-    auto bind_group_layout = wgpuDeviceCreateBindGroupLayout(device.handle(), &bgl_desc);
-
-    // --- Shadow receiver bind group layout (group 1) ---
-    WGPUBindGroupLayoutEntry shadow_entries[3] = {};
-
-    // binding 0: ShadowInfo storage buffer (read-only, one per light)
-    shadow_entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    shadow_entries[0].binding = 0;
-    shadow_entries[0].visibility = WGPUShaderStage_Fragment;
-    shadow_entries[0].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-    shadow_entries[0].buffer.minBindingSize = 80;  // sizeof(ShadowInfo)
-
-    // binding 1: shadow depth texture array
-    shadow_entries[1] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    shadow_entries[1].binding = 1;
-    shadow_entries[1].visibility = WGPUShaderStage_Fragment;
-    shadow_entries[1].texture.sampleType = WGPUTextureSampleType_UnfilterableFloat;
-    shadow_entries[1].texture.viewDimension = WGPUTextureViewDimension_2DArray;
-
-    // binding 2: sampler
-    shadow_entries[2] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    shadow_entries[2].binding = 2;
-    shadow_entries[2].visibility = WGPUShaderStage_Fragment;
-    shadow_entries[2].sampler.type = WGPUSamplerBindingType_NonFiltering;
-
-    WGPUBindGroupLayoutDescriptor shadow_bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    shadow_bgl_desc.entryCount = 3;
-    shadow_bgl_desc.entries = shadow_entries;
-    auto shadow_recv_bgl = wgpuDeviceCreateBindGroupLayout(device.handle(), &shadow_bgl_desc);
-
-    // --- Comparison sampler ---
-    WGPUSamplerDescriptor sampler_desc = WGPU_SAMPLER_DESCRIPTOR_INIT;
-    sampler_desc.magFilter = WGPUFilterMode_Nearest;
-    sampler_desc.minFilter = WGPUFilterMode_Nearest;
-    sampler_desc.addressModeU = WGPUAddressMode_ClampToEdge;
-    sampler_desc.addressModeV = WGPUAddressMode_ClampToEdge;
-    sampler_desc.addressModeW = WGPUAddressMode_ClampToEdge;
-    auto shadow_sampler = wgpuDeviceCreateSampler(device.handle(), &sampler_desc);
-
-    // --- IBL bind group layout (group 2) ---
-    WGPUBindGroupLayoutEntry ibl_entries[4] = {};
-
-    // binding 0: prefiltered env cubemap
-    ibl_entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    ibl_entries[0].binding = 0;
-    ibl_entries[0].visibility = WGPUShaderStage_Fragment;
-    ibl_entries[0].texture.sampleType = WGPUTextureSampleType_Float;
-    ibl_entries[0].texture.viewDimension = WGPUTextureViewDimension_Cube;
-
-    // binding 1: irradiance cubemap
-    ibl_entries[1] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    ibl_entries[1].binding = 1;
-    ibl_entries[1].visibility = WGPUShaderStage_Fragment;
-    ibl_entries[1].texture.sampleType = WGPUTextureSampleType_Float;
-    ibl_entries[1].texture.viewDimension = WGPUTextureViewDimension_Cube;
-
-    // binding 2: BRDF LUT
-    ibl_entries[2] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    ibl_entries[2].binding = 2;
-    ibl_entries[2].visibility = WGPUShaderStage_Fragment;
-    ibl_entries[2].texture.sampleType = WGPUTextureSampleType_Float;
-    ibl_entries[2].texture.viewDimension = WGPUTextureViewDimension_2D;
-
-    // binding 3: sampler
-    ibl_entries[3] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    ibl_entries[3].binding = 3;
-    ibl_entries[3].visibility = WGPUShaderStage_Fragment;
-    ibl_entries[3].sampler.type = WGPUSamplerBindingType_Filtering;
-
-    WGPUBindGroupLayoutDescriptor ibl_bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    ibl_bgl_desc.entryCount = 4;
-    ibl_bgl_desc.entries = ibl_entries;
-    auto ibl_bgl = wgpuDeviceCreateBindGroupLayout(device.handle(), &ibl_bgl_desc);
+    // --- IBL descriptor layout (group 2) via OutputSlot API ---
+    auto ibl_internal = create_output_layout(
+        device, {OutputSlot::texture(WGPUTextureFormat_RGBA8Unorm, WGPUTextureViewDimension_Cube),
+                 OutputSlot::texture(WGPUTextureFormat_RGBA8Unorm, WGPUTextureViewDimension_Cube),
+                 OutputSlot::texture(WGPUTextureFormat_RGBA8Unorm),
+                 OutputSlot::sampler(WGPUSamplerBindingType_Filtering)});
+    auto ibl_desc_layout = ibl_internal.layout;
+    ibl_internal.layout = nullptr;
+    ibl_internal.release();
 
     // --- IBL sampler ---
     WGPUSamplerDescriptor ibl_samp_desc = WGPU_SAMPLER_DESCRIPTOR_INIT;
@@ -291,66 +181,9 @@ void ForwardPass::do_renderer_setup(const webgpu::Device& device) {
     fb_2d_view_desc.mipLevelCount = 1;
     auto fallback_2d_view = wgpuTextureCreateView(fallback_2d_tex, &fb_2d_view_desc);
 
-    // --- Contact shadow bind group layout (group 3): texture + sampler ---
-    WGPUBindGroupLayoutEntry cs_entries[2] = {};
-
-    cs_entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    cs_entries[0].binding = 0;
-    cs_entries[0].visibility = WGPUShaderStage_Fragment;
-    cs_entries[0].texture.sampleType = WGPUTextureSampleType_Float;
-    cs_entries[0].texture.viewDimension = WGPUTextureViewDimension_2D;
-
-    cs_entries[1] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    cs_entries[1].binding = 1;
-    cs_entries[1].visibility = WGPUShaderStage_Fragment;
-    cs_entries[1].sampler.type = WGPUSamplerBindingType_Filtering;
-
-    WGPUBindGroupLayoutDescriptor cs_bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    cs_bgl_desc.entryCount = 2;
-    cs_bgl_desc.entries = cs_entries;
-    auto cs_bgl = wgpuDeviceCreateBindGroupLayout(device.handle(), &cs_bgl_desc);
-
-    // --- Contact shadow sampler (linear filtering) ---
-    WGPUSamplerDescriptor cs_samp_desc = WGPU_SAMPLER_DESCRIPTOR_INIT;
-    cs_samp_desc.magFilter = WGPUFilterMode_Linear;
-    cs_samp_desc.minFilter = WGPUFilterMode_Linear;
-    cs_samp_desc.mipmapFilter = WGPUMipmapFilterMode_Nearest;
-    auto cs_sampler = wgpuDeviceCreateSampler(device.handle(), &cs_samp_desc);
-
-    // --- 1x1 white fallback texture for contact shadow when disabled ---
-    WGPUTextureDescriptor fb_cs_desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
-    fb_cs_desc.size = {1, 1, 1};
-    fb_cs_desc.format = WGPUTextureFormat_R8Unorm;
-    fb_cs_desc.usage =
-        static_cast<WGPUTextureUsage>(WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst);
-    fb_cs_desc.dimension = WGPUTextureDimension_2D;
-    fb_cs_desc.mipLevelCount = 1;
-    auto fallback_cs_tex = wgpuDeviceCreateTexture(device.handle(), &fb_cs_desc);
-    INVARIANT_MSG(fallback_cs_tex, "Failed to create fallback contact shadow texture");
-
-    // Upload 1x1 white pixel (1.0 = fully lit)
-    {
-        uint8_t white = 255;
-        WGPUTexelCopyBufferLayout layout = {};
-        layout.bytesPerRow = 1;
-        layout.rowsPerImage = 1;
-        WGPUTexelCopyTextureInfo dest = {};
-        dest.texture = fallback_cs_tex;
-        dest.aspect = WGPUTextureAspect_All;
-        WGPUExtent3D extent = {1, 1, 1};
-        wgpuQueueWriteTexture(device.queue(), &dest, &white, 1, &layout, &extent);
-    }
-
-    WGPUTextureViewDescriptor fb_cs_view_desc = WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT;
-    fb_cs_view_desc.dimension = WGPUTextureViewDimension_2D;
-    fb_cs_view_desc.format = WGPUTextureFormat_R8Unorm;
-    fb_cs_view_desc.arrayLayerCount = 1;
-    fb_cs_view_desc.mipLevelCount = 1;
-    auto fallback_cs_view = wgpuTextureCreateView(fallback_cs_tex, &fb_cs_view_desc);
-    INVARIANT_MSG(fallback_cs_view, "Failed to create fallback contact shadow texture view");
-
-    // --- Pipeline layout with 4 bind groups ---
-    WGPUBindGroupLayout bgls[4] = {bind_group_layout, shadow_recv_bgl, ibl_bgl, cs_bgl};
+    // --- Pipeline layout with 4 descriptors (child passes own groups 1 and 3) ---
+    WGPUBindGroupLayout bgls[4] = {descriptor_layout, shadow->consumer_layout(), ibl_desc_layout,
+                                   cs->consumer_layout()};
     WGPUPipelineLayoutDescriptor pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
     pl_desc.bindGroupLayoutCount = 4;
     pl_desc.bindGroupLayouts = bgls;
@@ -377,35 +210,21 @@ void ForwardPass::do_renderer_setup(const webgpu::Device& device) {
         get_shader_loader().load("renderers/forward/generated/shaders/skybox.wgsl");
     auto skybox_shader = device.create_shader_module_from_source(skybox_shader_src);
 
-    // Skybox BGL: uniform buffer (Vert|Frag), cube texture (Frag), sampler (Frag)
-    WGPUBindGroupLayoutEntry skybox_bgl_entries[3] = {};
-
-    skybox_bgl_entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    skybox_bgl_entries[0].binding = 0;
-    skybox_bgl_entries[0].visibility =
-        static_cast<WGPUShaderStage>(WGPUShaderStage_Vertex | WGPUShaderStage_Fragment);
-    skybox_bgl_entries[0].buffer.type = WGPUBufferBindingType_Uniform;
-    skybox_bgl_entries[0].buffer.minBindingSize = sizeof(SkyboxUniforms);
-
-    skybox_bgl_entries[1] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    skybox_bgl_entries[1].binding = 1;
-    skybox_bgl_entries[1].visibility = WGPUShaderStage_Fragment;
-    skybox_bgl_entries[1].texture.sampleType = WGPUTextureSampleType_Float;
-    skybox_bgl_entries[1].texture.viewDimension = WGPUTextureViewDimension_Cube;
-
-    skybox_bgl_entries[2] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    skybox_bgl_entries[2].binding = 2;
-    skybox_bgl_entries[2].visibility = WGPUShaderStage_Fragment;
-    skybox_bgl_entries[2].sampler.type = WGPUSamplerBindingType_Filtering;
-
-    WGPUBindGroupLayoutDescriptor skybox_bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    skybox_bgl_desc.entryCount = 3;
-    skybox_bgl_desc.entries = skybox_bgl_entries;
-    auto skybox_bgl = wgpuDeviceCreateBindGroupLayout(device.handle(), &skybox_bgl_desc);
+    // Skybox BGL via OutputSlot API: uniform buffer (Vert|Frag), cube texture (Frag), sampler
+    // (Frag)
+    auto skybox_internal = create_output_layout(
+        device, {OutputSlot::uniform(sizeof(SkyboxUniforms))
+                     .visibility(static_cast<WGPUShaderStage>(WGPUShaderStage_Vertex |
+                                                              WGPUShaderStage_Fragment)),
+                 OutputSlot::texture(WGPUTextureFormat_RGBA8Unorm, WGPUTextureViewDimension_Cube),
+                 OutputSlot::sampler(WGPUSamplerBindingType_Filtering)});
+    auto skybox_desc_layout = skybox_internal.layout;
+    skybox_internal.layout = nullptr;
+    skybox_internal.release();
 
     WGPUPipelineLayoutDescriptor skybox_pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
     skybox_pl_desc.bindGroupLayoutCount = 1;
-    skybox_pl_desc.bindGroupLayouts = &skybox_bgl;
+    skybox_pl_desc.bindGroupLayouts = &skybox_desc_layout;
     auto skybox_pl = wgpuDeviceCreatePipelineLayout(device.handle(), &skybox_pl_desc);
 
     auto skybox_builder = webgpu::RenderPipelineBuilder(device)
@@ -428,25 +247,11 @@ void ForwardPass::do_renderer_setup(const webgpu::Device& device) {
     ltc.init(device);
 
     m_state = Ready{
-        std::move(shader),
-        std::move(pipeline),
-        bind_group_layout,
-        std::move(ltc),
-        shadow_recv_bgl,
-        shadow_sampler,
-        ibl_bgl,
-        ibl_sampler,
-        fallback_cube_tex,
-        fallback_cube_view,
-        fallback_2d_tex,
-        fallback_2d_view,
-        cs_bgl,
-        cs_sampler,
-        fallback_cs_tex,
-        fallback_cs_view,
-        std::move(skybox_shader),
-        std::move(skybox_pipeline),
-        skybox_bgl,
+        std::move(shader),  std::move(pipeline),      descriptor_layout,
+        std::move(ltc),     ibl_desc_layout,          ibl_sampler,
+        fallback_cube_tex,  fallback_cube_view,       fallback_2d_tex,
+        fallback_2d_view,   std::move(skybox_shader), std::move(skybox_pipeline),
+        skybox_desc_layout,
     };
 }
 
@@ -499,33 +304,20 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
     auto uniform_buf_handle = create_buffer(fg, uniform_buf_desc, "uniforms");
 
-    // Bind group 0: materials, lights, uniforms, LTC, scene textures
-    rendering::BindGroupDesc bg0_desc;
-    bg0_desc.layout = ready.bind_group_layout;
-    bg0_desc.entries = {
-        {0, rendering::ManagedBufferBinding{uniform_buf_handle, 0, sizeof(ForwardUniforms)}},
-        {1, rendering::ManagedBufferBinding{mat_buf_handle}},
-        {2, rendering::ManagedBufferBinding{light_buf_handle}},
-        {3, rendering::ExternalViewBinding{ready.ltc_textures.mat_view()}},
-        {4, rendering::ExternalViewBinding{ready.ltc_textures.amp_view()}},
-        {5, rendering::SamplerBinding{ready.ltc_textures.sampler()}},
-        {6, rendering::ExternalViewBinding{scene_tex_view}},
-        {7, rendering::SamplerBinding{scene_tex_sampler}},
-    };
-    auto bg0_handle = create_bind_group(fg, std::move(bg0_desc), "bg0");
+    // Descriptor 0: materials, lights, uniforms, LTC, scene textures
+    auto bg0_handle = descriptor(fg, ready.descriptor_layout, "bg0")
+                          .buffer(0, uniform_buf_handle, 0, sizeof(ForwardUniforms))
+                          .buffer(1, mat_buf_handle)
+                          .buffer(2, light_buf_handle)
+                          .external_view(3, ready.ltc_textures.mat_view())
+                          .external_view(4, ready.ltc_textures.amp_view())
+                          .sampler(5, ready.ltc_textures.sampler())
+                          .external_view(6, scene_tex_view)
+                          .sampler(7, scene_tex_sampler)
+                          .build();
 
-    // Bind group 1: shadow
-    PRECONDITION(shadow_out.shadow_array.is_valid());
-    PRECONDITION(shadow_out.shadow_info.is_valid());
-
-    rendering::BindGroupDesc bg1_desc;
-    bg1_desc.layout = ready.shadow_recv_bgl;
-    bg1_desc.entries = {
-        {0, rendering::ManagedBufferBinding{shadow_out.shadow_info}},
-        {1, rendering::ManagedTextureBinding{shadow_out.shadow_array}},
-        {2, rendering::SamplerBinding{ready.shadow_sampler}},
-    };
-    auto bg1_handle = create_bind_group(fg, std::move(bg1_desc), "shadow_bg");
+    // Descriptor 1: shadow (child-owned)
+    PRECONDITION(shadow_out.consumer_desc.is_valid());
 
     rendering::TextureDesc color_desc;
     color_desc.width = ctx.viewport_width;
@@ -575,61 +367,42 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
     auto& ibl_pipes = ctx.world.ibl_pipelines();
     auto ibl_ready = ibl.is_ready();
 
-    // IBL bind group resources (use fallback textures when IBL not ready)
+    // IBL descriptor resources (use fallback textures when IBL not ready)
     auto ibl_prefiltered_view = ibl_ready ? ibl.prefiltered_env_view() : ready.fallback_cube_view;
     auto ibl_env_cubemap_view = ibl_ready ? ibl.env_cubemap_view() : ready.fallback_cube_view;
     auto ibl_irradiance_view = ibl_ready ? ibl.irradiance_view() : ready.fallback_cube_view;
     auto ibl_brdf_lut_view = ibl_ready ? ibl_pipes.brdf_lut_view() : ready.fallback_2d_view;
 
-    // Bind group 2: IBL
-    rendering::BindGroupDesc bg2_desc;
-    bg2_desc.layout = ready.ibl_bgl;
-    bg2_desc.entries = {
-        {0, rendering::ExternalViewBinding{ibl_prefiltered_view}},
-        {1, rendering::ExternalViewBinding{ibl_irradiance_view}},
-        {2, rendering::ExternalViewBinding{ibl_brdf_lut_view}},
-        {3, rendering::SamplerBinding{ready.ibl_sampler}},
-    };
-    auto bg2_handle = create_bind_group(fg, std::move(bg2_desc), "ibl_bg");
+    // Descriptor 2: IBL
+    auto bg2_handle = descriptor(fg, ready.ibl_desc_layout, "ibl_bg")
+                          .external_view(0, ibl_prefiltered_view)
+                          .external_view(1, ibl_irradiance_view)
+                          .external_view(2, ibl_brdf_lut_view)
+                          .sampler(3, ready.ibl_sampler)
+                          .build();
 
     // Contact shadow pass (after G-buffer, before forward lighting)
-    rendering::ContactShadowPass::Outputs cs_out{};
-    if (auto* cs = get_pass<rendering::ContactShadowPass>(); cs && cs->is_ready()) {
-        cs_out = cs->add_to_frame_graph(
-            fg, ctx, {gbuf_out.depth, gbuf_out.normals, light_buf.handle(), light_buf.size()});
-    }
+    auto* cs_pass = get_pass<rendering::ContactShadowPass>();
+    PRECONDITION(cs_pass && cs_pass->is_ready());
+    auto cs_out = cs_pass->add_to_frame_graph(
+        fg, ctx, {gbuf_out.depth, gbuf_out.normals, light_buf.handle(), light_buf.size()},
+        fg.fallback_pool());
 
-    // Bind group 3: contact shadow
-    rendering::BindGroupDesc bg3_desc;
-    bg3_desc.layout = ready.cs_bgl;
-    if (cs_out.contact_shadow.is_valid()) {
-        bg3_desc.entries = {
-            {0, rendering::ManagedTextureBinding{cs_out.contact_shadow}},
-            {1, rendering::SamplerBinding{ready.cs_sampler}},
-        };
-    } else {
-        bg3_desc.entries = {
-            {0, rendering::ExternalViewBinding{ready.fallback_cs_view}},
-            {1, rendering::SamplerBinding{ready.cs_sampler}},
-        };
-    }
-    auto bg3_handle = create_bind_group(fg, std::move(bg3_desc), "cs_bg");
+    // Bind group 3: contact shadow (child-owned)
+    PRECONDITION(cs_out.consumer_desc.is_valid());
 
-    // Skybox uniform buffer + bind group
+    // Skybox uniform buffer + descriptor
     rendering::BufferDesc skybox_buf_desc;
     skybox_buf_desc.size = sizeof(SkyboxUniforms);
     skybox_buf_desc.usage =
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
     auto skybox_uniform_buf_handle = create_buffer(fg, skybox_buf_desc, "skybox_uniforms");
 
-    rendering::BindGroupDesc skybox_bg_desc;
-    skybox_bg_desc.layout = ready.skybox_bgl;
-    skybox_bg_desc.entries = {
-        {0, rendering::ManagedBufferBinding{skybox_uniform_buf_handle, 0, sizeof(SkyboxUniforms)}},
-        {1, rendering::ExternalViewBinding{ibl_env_cubemap_view}},
-        {2, rendering::SamplerBinding{ready.ibl_sampler}},
-    };
-    auto skybox_bg_handle = create_bind_group(fg, std::move(skybox_bg_desc), "skybox_bg");
+    auto skybox_bg_handle = descriptor(fg, ready.skybox_desc_layout, "skybox_bg")
+                                .buffer(0, skybox_uniform_buf_handle, 0, sizeof(SkyboxUniforms))
+                                .external_view(1, ibl_env_cubemap_view)
+                                .sampler(2, ready.ibl_sampler)
+                                .build();
 
     // Capture values for the execute lambda
     auto queue = ctx.queue;
@@ -644,6 +417,9 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
     auto viewport_width = ctx.viewport_width;
     auto viewport_height = ctx.viewport_height;
 
+    auto bg1_handle = shadow_out.consumer_desc;
+    auto bg3_handle = cs_out.consumer_desc;
+
     auto pass_builder = fg.add_pass("forward").color(color).read(shadow_out.shadow_array);
     if (cs_out.contact_shadow.is_valid()) {
         pass_builder.read(cs_out.contact_shadow);
@@ -651,15 +427,17 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
     for (uint32_t i = 0; i < eff_debug_count; ++i) {
         pass_builder.color(debug_handles[i]);
     }
+    // Group 0 is dynamic (per-draw offsets); groups 1-3 are static (auto-set)
+    pass_builder.descriptor(0, bg0_handle, rendering::dynamic_descriptor)
+        .descriptor(1, bg1_handle)
+        .descriptor(2, bg2_handle)
+        .descriptor(3, bg3_handle);
     pass_builder.depth(depth).execute([=, &fg, &world](WGPURenderPassEncoder pass) {
         auto objs = world.get_objects();
         auto meshes = world.get_meshes();
 
         auto uniform_buf = fg.get_buffer_ref(uniform_buf_handle).handle();
-        auto bg0 = fg.get_bind_group_ref(bg0_handle).handle();
-        auto bg1 = fg.get_bind_group_ref(bg1_handle).handle();
-        auto bg2 = fg.get_bind_group_ref(bg2_handle).handle();
-        auto bg3 = fg.get_bind_group_ref(bg3_handle).handle();
+        auto bg0 = fg.get_descriptor_ref(bg0_handle).handle();
 
         // Upload per-object uniforms
         {
@@ -723,9 +501,6 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
         }
 
         wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
-        wgpuRenderPassEncoderSetBindGroup(pass, 1, bg1, 0, nullptr);
-        wgpuRenderPassEncoderSetBindGroup(pass, 2, bg2, 0, nullptr);
-        wgpuRenderPassEncoderSetBindGroup(pass, 3, bg3, 0, nullptr);
 
         for (uint32_t i = 0; i < static_cast<uint32_t>(objs.size()); ++i) {
             if (!objs[i].active()) continue;
@@ -767,7 +542,7 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
 
         // Skybox: draw fullscreen triangle after all geometry
         if (ibl_ready) {
-            auto skybox_bg = fg.get_bind_group_ref(skybox_bg_handle).handle();
+            auto skybox_bg = fg.get_descriptor_ref(skybox_bg_handle).handle();
             wgpuRenderPassEncoderSetPipeline(pass, skybox_pipeline_handle);
             wgpuRenderPassEncoderSetBindGroup(pass, 0, skybox_bg, 0, nullptr);
             wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);

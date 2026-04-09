@@ -137,7 +137,7 @@ struct ComputeFixture {
         return device.create_shader_module_from_source(*src);
     }()};
 
-    WGPUBindGroupLayout bgl = nullptr;
+    WGPUBindGroupLayout desc_layout = nullptr;
     WGPUPipelineLayout pl = nullptr;
     pts::webgpu::ComputePipeline pipeline{[&] {
         WGPUBindGroupLayoutEntry entries[5] = {};
@@ -174,11 +174,11 @@ struct ComputeFixture {
         WGPUBindGroupLayoutDescriptor bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
         bgl_desc.entryCount = 5;
         bgl_desc.entries = entries;
-        bgl = wgpuDeviceCreateBindGroupLayout(device.handle(), &bgl_desc);
+        desc_layout = wgpuDeviceCreateBindGroupLayout(device.handle(), &bgl_desc);
 
         WGPUPipelineLayoutDescriptor pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
         pl_desc.bindGroupLayoutCount = 1;
-        pl_desc.bindGroupLayouts = &bgl;
+        pl_desc.bindGroupLayouts = &desc_layout;
         pl = wgpuDeviceCreatePipelineLayout(device.handle(), &pl_desc);
 
         return pts::webgpu::ComputePipelineBuilder(device)
@@ -198,7 +198,7 @@ struct ComputeFixture {
 
     ~ComputeFixture() {
         if (pl) wgpuPipelineLayoutRelease(pl);
-        if (bgl) wgpuBindGroupLayoutRelease(bgl);
+        if (desc_layout) wgpuBindGroupLayoutRelease(desc_layout);
         if (sampler) wgpuSamplerRelease(sampler);
     }
 
@@ -257,7 +257,7 @@ struct ComputeFixture {
         bg_entries[4].textureView = depth_view;
 
         WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-        bg_desc.layout = bgl;
+        bg_desc.layout = desc_layout;
         bg_desc.entryCount = 5;
         bg_desc.entries = bg_entries;
         auto bind_group = wgpuDeviceCreateBindGroup(device.handle(), &bg_desc);

@@ -4,6 +4,7 @@
 #include <core/profiling.h>
 #include <core/rendering/camera.h>
 #include <core/rendering/frameGraph.h>
+#include <core/rendering/outputLayout.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/shaderLoader.h>
@@ -43,10 +44,10 @@ static_assert(EditorPass::k_uniform_align >= sizeof(GizmoUniforms));
 
 EditorPass::~EditorPass() {
     if (auto* ready = std::get_if<Ready>(&m_state)) {
-        if (ready->picking_bind_group_layout)
-            wgpuBindGroupLayoutRelease(ready->picking_bind_group_layout);
-        if (ready->gizmo_bind_group_layout)
-            wgpuBindGroupLayoutRelease(ready->gizmo_bind_group_layout);
+        if (ready->picking_descriptor_layout)
+            wgpuBindGroupLayoutRelease(ready->picking_descriptor_layout);
+        if (ready->gizmo_descriptor_layout)
+            wgpuBindGroupLayoutRelease(ready->gizmo_descriptor_layout);
     }
 }
 
@@ -61,28 +62,24 @@ auto EditorPass::is_ready() const noexcept -> bool {
 void EditorPass::do_setup(const webgpu::Device& device) {
     WGPUBindGroupLayout old_picking_bgl = nullptr, old_gizmo_bgl = nullptr;
     if (auto* ready = std::get_if<Ready>(&m_state)) {
-        old_picking_bgl = ready->picking_bind_group_layout;
-        old_gizmo_bgl = ready->gizmo_bind_group_layout;
-        ready->picking_bind_group_layout = nullptr;
-        ready->gizmo_bind_group_layout = nullptr;
+        old_picking_bgl = ready->picking_descriptor_layout;
+        old_gizmo_bgl = ready->gizmo_descriptor_layout;
+        ready->picking_descriptor_layout = nullptr;
+        ready->gizmo_descriptor_layout = nullptr;
     }
 
     // ── Picking pipeline (mesh objects + light shapes) ─────────────────
     auto picking_src = get_shader_loader().load("editor/generated/shaders/picking.wgsl");
     auto picking_shader = device.create_shader_module_from_source(picking_src);
 
-    WGPUBindGroupLayoutEntry picking_bgl_entry = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    picking_bgl_entry.binding = 0;
-    picking_bgl_entry.visibility =
-        static_cast<WGPUShaderStage>(WGPUShaderStage_Vertex | WGPUShaderStage_Fragment);
-    picking_bgl_entry.buffer.type = WGPUBufferBindingType_Uniform;
-    picking_bgl_entry.buffer.hasDynamicOffset = true;
-    picking_bgl_entry.buffer.minBindingSize = sizeof(PickingUniforms);
-
-    WGPUBindGroupLayoutDescriptor picking_bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    picking_bgl_desc.entryCount = 1;
-    picking_bgl_desc.entries = &picking_bgl_entry;
-    auto picking_bgl = wgpuDeviceCreateBindGroupLayout(device.handle(), &picking_bgl_desc);
+    auto picking_internal_layout = rendering::create_output_layout(
+        device, {rendering::OutputSlot::uniform(sizeof(PickingUniforms))
+                     .dynamic()
+                     .visibility(static_cast<WGPUShaderStage>(WGPUShaderStage_Vertex |
+                                                              WGPUShaderStage_Fragment))});
+    auto picking_bgl = picking_internal_layout.layout;
+    picking_internal_layout.layout = nullptr;
+    picking_internal_layout.release();
 
     WGPUPipelineLayoutDescriptor picking_pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
     picking_pl_desc.bindGroupLayoutCount = 1;
@@ -119,18 +116,14 @@ void EditorPass::do_setup(const webgpu::Device& device) {
     auto gizmo_src = get_shader_loader().load("editor/generated/shaders/gizmo.wgsl");
     auto gizmo_shader = device.create_shader_module_from_source(gizmo_src);
 
-    WGPUBindGroupLayoutEntry gizmo_bgl_entry = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    gizmo_bgl_entry.binding = 0;
-    gizmo_bgl_entry.visibility =
-        static_cast<WGPUShaderStage>(WGPUShaderStage_Vertex | WGPUShaderStage_Fragment);
-    gizmo_bgl_entry.buffer.type = WGPUBufferBindingType_Uniform;
-    gizmo_bgl_entry.buffer.hasDynamicOffset = true;
-    gizmo_bgl_entry.buffer.minBindingSize = sizeof(GizmoUniforms);
-
-    WGPUBindGroupLayoutDescriptor gizmo_bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    gizmo_bgl_desc.entryCount = 1;
-    gizmo_bgl_desc.entries = &gizmo_bgl_entry;
-    auto gizmo_bgl = wgpuDeviceCreateBindGroupLayout(device.handle(), &gizmo_bgl_desc);
+    auto gizmo_internal_layout = rendering::create_output_layout(
+        device, {rendering::OutputSlot::uniform(sizeof(GizmoUniforms))
+                     .dynamic()
+                     .visibility(static_cast<WGPUShaderStage>(WGPUShaderStage_Vertex |
+                                                              WGPUShaderStage_Fragment))});
+    auto gizmo_bgl = gizmo_internal_layout.layout;
+    gizmo_internal_layout.layout = nullptr;
+    gizmo_internal_layout.release();
 
     WGPUPipelineLayoutDescriptor gizmo_pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
     gizmo_pl_desc.bindGroupLayoutCount = 1;
@@ -212,11 +205,9 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
     auto picking_buf_handle = create_buffer(fg, picking_buf_desc, "picking_uniforms");
 
-    rendering::BindGroupDesc picking_bg_desc;
-    picking_bg_desc.layout = ready.picking_bind_group_layout;
-    picking_bg_desc.entries = {
-        {0, rendering::ManagedBufferBinding{picking_buf_handle, 0, sizeof(PickingUniforms)}}};
-    auto picking_bg_handle = create_bind_group(fg, std::move(picking_bg_desc), "picking_bg0");
+    auto picking_bg_handle = descriptor(fg, ready.picking_descriptor_layout, "picking_bg0")
+                                 .buffer(0, picking_buf_handle, 0, sizeof(PickingUniforms))
+                                 .build();
 
     // Register gizmo uniform buffer with frame graph
     uint64_t gizmo_buf_size =
@@ -227,11 +218,9 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
     auto gizmo_buf_handle = create_buffer(fg, gizmo_buf_desc, "gizmo_uniforms");
 
-    rendering::BindGroupDesc gizmo_bg_desc;
-    gizmo_bg_desc.layout = ready.gizmo_bind_group_layout;
-    gizmo_bg_desc.entries = {
-        {0, rendering::ManagedBufferBinding{gizmo_buf_handle, 0, sizeof(GizmoUniforms)}}};
-    auto gizmo_bg_handle = create_bind_group(fg, std::move(gizmo_bg_desc), "gizmo_bg0");
+    auto gizmo_bg_handle = descriptor(fg, ready.gizmo_descriptor_layout, "gizmo_bg0")
+                               .buffer(0, gizmo_buf_handle, 0, sizeof(GizmoUniforms))
+                               .build();
 
     // ── Create/cache gizmo meshes and collect handles ──────────────────
     struct GizmoDrawInfo {
@@ -301,7 +290,7 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
             auto objs = world.get_objects();
             auto meshes = world.get_meshes();
             auto picking_buf = fg.get_buffer_ref(picking_buf_handle).handle();
-            auto picking_bg = fg.get_bind_group_ref(picking_bg_handle).handle();
+            auto picking_bg = fg.get_descriptor_ref(picking_bg_handle).handle();
 
             {
                 PTS_ZONE_NAMED("picking uniform upload");
@@ -403,7 +392,7 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
         .execute(
             [=, &fg, &world, gizmo_draws = std::move(gizmo_draws)](WGPURenderPassEncoder pass) {
                 auto gizmo_buf = fg.get_buffer_ref(gizmo_buf_handle).handle();
-                auto gizmo_bg = fg.get_bind_group_ref(gizmo_bg_handle).handle();
+                auto gizmo_bg = fg.get_descriptor_ref(gizmo_bg_handle).handle();
 
                 // Upload gizmo uniforms
                 auto lts = world.get_lights();

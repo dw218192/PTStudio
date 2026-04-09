@@ -1,6 +1,7 @@
 #include <core/diagnostics.h>
 #include <core/profiling.h>
 #include <core/rendering/frameGraph.h>
+#include <core/rendering/outputLayout.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/shaderLoader.h>
 #include <core/rendering/ssaoPass.h>
@@ -85,8 +86,8 @@ SSAOPass::~SSAOPass() {
 
 void SSAOPass::release_raw_handles() {
     if (auto* ready = std::get_if<Ready>(&m_state)) {
-        if (ready->gen_bgl) wgpuBindGroupLayoutRelease(ready->gen_bgl);
-        if (ready->blur_bgl) wgpuBindGroupLayoutRelease(ready->blur_bgl);
+        if (ready->gen_desc_layout) wgpuBindGroupLayoutRelease(ready->gen_desc_layout);
+        if (ready->blur_desc_layout) wgpuBindGroupLayoutRelease(ready->blur_desc_layout);
         if (ready->noise_view) wgpuTextureViewRelease(ready->noise_view);
         if (ready->depth_sampler) wgpuSamplerRelease(ready->depth_sampler);
         if (ready->linear_sampler) wgpuSamplerRelease(ready->linear_sampler);
@@ -157,85 +158,36 @@ void SSAOPass::do_setup(const webgpu::Device& device) {
     auto noise_view = wgpuTextureCreateView(noise_raw, &noise_view_desc);
     INVARIANT_MSG(noise_view, "Failed to create SSAO noise texture view");
 
-    // ── Samplers ──
-    WGPUSamplerDescriptor depth_sampler_desc = WGPU_SAMPLER_DESCRIPTOR_INIT;
-    depth_sampler_desc.magFilter = WGPUFilterMode_Nearest;
-    depth_sampler_desc.minFilter = WGPUFilterMode_Nearest;
-    depth_sampler_desc.mipmapFilter = WGPUMipmapFilterMode_Nearest;
-    auto depth_sampler = wgpuDeviceCreateSampler(device.handle(), &depth_sampler_desc);
-
-    WGPUSamplerDescriptor linear_sampler_desc = WGPU_SAMPLER_DESCRIPTOR_INIT;
-    linear_sampler_desc.magFilter = WGPUFilterMode_Linear;
-    linear_sampler_desc.minFilter = WGPUFilterMode_Linear;
-    linear_sampler_desc.mipmapFilter = WGPUMipmapFilterMode_Nearest;
-    auto linear_sampler = wgpuDeviceCreateSampler(device.handle(), &linear_sampler_desc);
-
-    WGPUSamplerDescriptor noise_sampler_desc = WGPU_SAMPLER_DESCRIPTOR_INIT;
-    noise_sampler_desc.magFilter = WGPUFilterMode_Nearest;
-    noise_sampler_desc.minFilter = WGPUFilterMode_Nearest;
-    noise_sampler_desc.mipmapFilter = WGPUMipmapFilterMode_Nearest;
-    noise_sampler_desc.addressModeU = WGPUAddressMode_Repeat;
-    noise_sampler_desc.addressModeV = WGPUAddressMode_Repeat;
-    auto noise_sampler = wgpuDeviceCreateSampler(device.handle(), &noise_sampler_desc);
-
     // ── AO Generation BGL ──
     // 0: uniforms, 1: depth, 2: normals, 3: noise, 4: depth_sampler,
     // 5: linear_sampler, 6: noise_sampler, 7: kernel
-    WGPUBindGroupLayoutEntry gen_entries[8] = {};
+    auto gen_internal = create_output_layout(
+        device,
+        {
+            OutputSlot::uniform(sizeof(SSAOUniforms)),
+            OutputSlot::texture(WGPUTextureFormat_Depth32Float),
+            OutputSlot::texture(WGPUTextureFormat_RG16Float),
+            OutputSlot::texture(WGPUTextureFormat_RGBA8Unorm),
+            OutputSlot::sampler(WGPUSamplerBindingType_NonFiltering),
+            OutputSlot::sampler(WGPUSamplerBindingType_Filtering),
+            OutputSlot::sampler(WGPUSamplerBindingType_NonFiltering, WGPUAddressMode_Repeat),
+            OutputSlot::storage(sizeof(glm::vec4) * k_max_kernel_size),
+        });
+    auto gen_desc_layout = gen_internal.layout;
+    gen_internal.layout = nullptr;
 
-    gen_entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    gen_entries[0].binding = 0;
-    gen_entries[0].visibility = WGPUShaderStage_Fragment;
-    gen_entries[0].buffer.type = WGPUBufferBindingType_Uniform;
-    gen_entries[0].buffer.minBindingSize = sizeof(SSAOUniforms);
-
-    gen_entries[1] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    gen_entries[1].binding = 1;
-    gen_entries[1].visibility = WGPUShaderStage_Fragment;
-    gen_entries[1].texture.sampleType = WGPUTextureSampleType_UnfilterableFloat;
-    gen_entries[1].texture.viewDimension = WGPUTextureViewDimension_2D;
-
-    gen_entries[2] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    gen_entries[2].binding = 2;
-    gen_entries[2].visibility = WGPUShaderStage_Fragment;
-    gen_entries[2].texture.sampleType = WGPUTextureSampleType_Float;
-    gen_entries[2].texture.viewDimension = WGPUTextureViewDimension_2D;
-
-    gen_entries[3] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    gen_entries[3].binding = 3;
-    gen_entries[3].visibility = WGPUShaderStage_Fragment;
-    gen_entries[3].texture.sampleType = WGPUTextureSampleType_Float;
-    gen_entries[3].texture.viewDimension = WGPUTextureViewDimension_2D;
-
-    gen_entries[4] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    gen_entries[4].binding = 4;
-    gen_entries[4].visibility = WGPUShaderStage_Fragment;
-    gen_entries[4].sampler.type = WGPUSamplerBindingType_NonFiltering;
-
-    gen_entries[5] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    gen_entries[5].binding = 5;
-    gen_entries[5].visibility = WGPUShaderStage_Fragment;
-    gen_entries[5].sampler.type = WGPUSamplerBindingType_Filtering;
-
-    gen_entries[6] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    gen_entries[6].binding = 6;
-    gen_entries[6].visibility = WGPUShaderStage_Fragment;
-    gen_entries[6].sampler.type = WGPUSamplerBindingType_NonFiltering;
-
-    gen_entries[7] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    gen_entries[7].binding = 7;
-    gen_entries[7].visibility = WGPUShaderStage_Fragment;
-    gen_entries[7].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-    gen_entries[7].buffer.minBindingSize = sizeof(glm::vec4) * k_max_kernel_size;
-
-    WGPUBindGroupLayoutDescriptor gen_bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    gen_bgl_desc.entryCount = 8;
-    gen_bgl_desc.entries = gen_entries;
-    auto gen_bgl = wgpuDeviceCreateBindGroupLayout(device.handle(), &gen_bgl_desc);
+    // Extract samplers from the internal layout
+    auto depth_sampler = gen_internal.slots[4].sampler;
+    gen_internal.slots[4].sampler = nullptr;
+    auto linear_sampler = gen_internal.slots[5].sampler;
+    gen_internal.slots[5].sampler = nullptr;
+    auto noise_sampler = gen_internal.slots[6].sampler;
+    gen_internal.slots[6].sampler = nullptr;
+    gen_internal.release();
 
     WGPUPipelineLayoutDescriptor gen_pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
     gen_pl_desc.bindGroupLayoutCount = 1;
-    gen_pl_desc.bindGroupLayouts = &gen_bgl;
+    gen_pl_desc.bindGroupLayouts = &gen_desc_layout;
     auto gen_pl = wgpuDeviceCreatePipelineLayout(device.handle(), &gen_pl_desc);
 
     auto gen_pipeline = webgpu::RenderPipelineBuilder(device)
@@ -248,44 +200,21 @@ void SSAOPass::do_setup(const webgpu::Device& device) {
 
     // ── Blur BGL ──
     // 0: uniforms, 1: ssao_raw, 2: depth, 3: linear_sampler, 4: depth_sampler
-    WGPUBindGroupLayoutEntry blur_entries[5] = {};
-
-    blur_entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    blur_entries[0].binding = 0;
-    blur_entries[0].visibility = WGPUShaderStage_Fragment;
-    blur_entries[0].buffer.type = WGPUBufferBindingType_Uniform;
-    blur_entries[0].buffer.minBindingSize = sizeof(SSAOBlurUniforms);
-
-    blur_entries[1] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    blur_entries[1].binding = 1;
-    blur_entries[1].visibility = WGPUShaderStage_Fragment;
-    blur_entries[1].texture.sampleType = WGPUTextureSampleType_Float;
-    blur_entries[1].texture.viewDimension = WGPUTextureViewDimension_2D;
-
-    blur_entries[2] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    blur_entries[2].binding = 2;
-    blur_entries[2].visibility = WGPUShaderStage_Fragment;
-    blur_entries[2].texture.sampleType = WGPUTextureSampleType_UnfilterableFloat;
-    blur_entries[2].texture.viewDimension = WGPUTextureViewDimension_2D;
-
-    blur_entries[3] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    blur_entries[3].binding = 3;
-    blur_entries[3].visibility = WGPUShaderStage_Fragment;
-    blur_entries[3].sampler.type = WGPUSamplerBindingType_Filtering;
-
-    blur_entries[4] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    blur_entries[4].binding = 4;
-    blur_entries[4].visibility = WGPUShaderStage_Fragment;
-    blur_entries[4].sampler.type = WGPUSamplerBindingType_NonFiltering;
-
-    WGPUBindGroupLayoutDescriptor blur_bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    blur_bgl_desc.entryCount = 5;
-    blur_bgl_desc.entries = blur_entries;
-    auto blur_bgl = wgpuDeviceCreateBindGroupLayout(device.handle(), &blur_bgl_desc);
+    auto blur_internal =
+        create_output_layout(device, {
+                                         OutputSlot::uniform(sizeof(SSAOBlurUniforms)),
+                                         OutputSlot::texture(WGPUTextureFormat_R8Unorm),
+                                         OutputSlot::texture(WGPUTextureFormat_Depth32Float),
+                                         OutputSlot::sampler(WGPUSamplerBindingType_Filtering),
+                                         OutputSlot::sampler(WGPUSamplerBindingType_NonFiltering),
+                                     });
+    auto blur_desc_layout = blur_internal.layout;
+    blur_internal.layout = nullptr;
+    blur_internal.release();
 
     WGPUPipelineLayoutDescriptor blur_pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
     blur_pl_desc.bindGroupLayoutCount = 1;
-    blur_pl_desc.bindGroupLayouts = &blur_bgl;
+    blur_pl_desc.bindGroupLayouts = &blur_desc_layout;
     auto blur_pl = wgpuDeviceCreatePipelineLayout(device.handle(), &blur_pl_desc);
 
     auto blur_pipeline = webgpu::RenderPipelineBuilder(device)
@@ -299,10 +228,10 @@ void SSAOPass::do_setup(const webgpu::Device& device) {
     m_state = Ready{
         std::move(gen_shader),
         std::move(gen_pipeline),
-        gen_bgl,
+        gen_desc_layout,
         std::move(blur_shader),
         std::move(blur_pipeline),
-        blur_bgl,
+        blur_desc_layout,
         webgpu::Texture(noise_raw),
         noise_view,
         depth_sampler,
@@ -347,33 +276,28 @@ SSAOPass::Outputs SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
     auto blur_uniform_buf_handle = create_buffer(fg, blur_buf_desc, "blur_uniforms");
 
-    // Register AO gen bind group (8 entries)
+    // Register AO gen descriptor (8 entries)
     auto kernel_buf = ready.kernel_buffer.handle();
-    BindGroupDesc gen_bg_desc;
-    gen_bg_desc.layout = ready.gen_bgl;
-    gen_bg_desc.entries = {
-        {0, ManagedBufferBinding{gen_uniform_buf_handle, 0, sizeof(SSAOUniforms)}},
-        {1, ManagedTextureBinding{depth_handle}},
-        {2, ManagedTextureBinding{normals_handle}},
-        {3, ExternalViewBinding{ready.noise_view}},
-        {4, SamplerBinding{ready.depth_sampler}},
-        {5, SamplerBinding{ready.linear_sampler}},
-        {6, SamplerBinding{ready.noise_sampler}},
-        {7, ExternalBufferBinding{kernel_buf, 0, sizeof(glm::vec4) * k_max_kernel_size}},
-    };
-    auto gen_bg_handle = create_bind_group(fg, std::move(gen_bg_desc), "gen_bg");
+    auto gen_bg_handle =
+        descriptor(fg, ready.gen_desc_layout, "gen_bg")
+            .buffer(0, gen_uniform_buf_handle, 0, sizeof(SSAOUniforms))
+            .texture(1, depth_handle)
+            .texture(2, normals_handle)
+            .external_view(3, ready.noise_view)
+            .sampler(4, ready.depth_sampler)
+            .sampler(5, ready.linear_sampler)
+            .sampler(6, ready.noise_sampler)
+            .external_buffer(7, kernel_buf, 0, sizeof(glm::vec4) * k_max_kernel_size)
+            .build();
 
-    // Register blur bind group (5 entries)
-    BindGroupDesc blur_bg_desc;
-    blur_bg_desc.layout = ready.blur_bgl;
-    blur_bg_desc.entries = {
-        {0, ManagedBufferBinding{blur_uniform_buf_handle, 0, sizeof(SSAOBlurUniforms)}},
-        {1, ManagedTextureBinding{ssao_raw_handle}},
-        {2, ManagedTextureBinding{depth_handle}},
-        {3, SamplerBinding{ready.linear_sampler}},
-        {4, SamplerBinding{ready.depth_sampler}},
-    };
-    auto blur_bg_handle = create_bind_group(fg, std::move(blur_bg_desc), "blur_bg");
+    // Register blur descriptor (5 entries)
+    auto blur_bg_handle = descriptor(fg, ready.blur_desc_layout, "blur_bg")
+                              .buffer(0, blur_uniform_buf_handle, 0, sizeof(SSAOBlurUniforms))
+                              .texture(1, ssao_raw_handle)
+                              .texture(2, depth_handle)
+                              .sampler(3, ready.linear_sampler)
+                              .sampler(4, ready.depth_sampler)
+                              .build();
 
     // Capture scalars for lambdas
     auto* gen_pipeline = ready.gen_pipeline.handle();
@@ -394,7 +318,7 @@ SSAOPass::Outputs SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext
         .color(ssao_raw_handle)
         .execute([=, &fg](WGPURenderPassEncoder pass) {
             auto gen_uniform_buf = fg.get_buffer_ref(gen_uniform_buf_handle).handle();
-            auto gen_bg = fg.get_bind_group_ref(gen_bg_handle).handle();
+            auto gen_bg = fg.get_descriptor_ref(gen_bg_handle).handle();
 
             SSAOUniforms uniforms{};
             uniforms.projection = proj_matrix;
@@ -421,7 +345,7 @@ SSAOPass::Outputs SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext
         .color(ssao_handle)
         .execute([=, &fg](WGPURenderPassEncoder pass) {
             auto blur_uniform_buf = fg.get_buffer_ref(blur_uniform_buf_handle).handle();
-            auto blur_bg = fg.get_bind_group_ref(blur_bg_handle).handle();
+            auto blur_bg = fg.get_descriptor_ref(blur_bg_handle).handle();
 
             SSAOBlurUniforms blur_u{};
             blur_u.texel_size = {1.0f / static_cast<float>(viewport_width),

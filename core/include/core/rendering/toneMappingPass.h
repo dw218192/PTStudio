@@ -63,7 +63,7 @@ class ToneMappingPass final : public IPass {
         // Tone mapping render pipeline
         webgpu::ShaderModule shader;
         webgpu::RenderPipeline pipeline;
-        WGPUBindGroupLayout bind_group_layout = nullptr;
+        WGPUBindGroupLayout descriptor_layout = nullptr;
         WGPUSampler sampler = nullptr;
         // 1x1 white fallback for when SSAO is unavailable (AO = 1.0)
         webgpu::Texture ssao_fallback_texture;
@@ -73,7 +73,7 @@ class ToneMappingPass final : public IPass {
         // Luminance compute pipeline
         webgpu::ShaderModule luminance_shader;
         webgpu::ComputePipeline luminance_pipeline;
-        WGPUBindGroupLayout luminance_bgl = nullptr;
+        WGPUBindGroupLayout luminance_desc_layout = nullptr;
         // 1x1 depth fallback (value 0.0 = not sky) for when scene_depth unavailable
         WGPUTexture depth_fallback_tex = nullptr;
         WGPUTextureView depth_fallback_view = nullptr;

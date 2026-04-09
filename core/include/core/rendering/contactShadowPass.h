@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/rendering/frameGraph.h>
+#include <core/rendering/outputLayout.h>
 #include <core/rendering/renderPass.h>
 #include <core/rendering/webgpu/pipeline.h>
 #include <core/rendering/webgpu/shader.h>
@@ -11,6 +12,7 @@
 
 namespace pts::rendering {
 
+class FallbackPool;
 class ShaderLoader;
 
 /// Screen-space contact shadow pass.
@@ -42,11 +44,16 @@ class ContactShadowPass final : public IPass {
     };
     struct Outputs {
         ResourceHandle contact_shadow;
+        DescriptorHandle consumer_desc;
     };
 
     void do_setup(const webgpu::Device& device) override;
-    Outputs add_to_frame_graph(FrameGraph& fg, const PassContext& ctx, const Inputs& in);
+    Outputs add_to_frame_graph(FrameGraph& fg, const PassContext& ctx, const Inputs& in,
+                               FallbackPool& fallbacks);
     void draw_imgui() override;
+
+    /// Layout for the consumer bind group (CS texture + sampler). Non-owning.
+    [[nodiscard]] WGPUBindGroupLayout consumer_layout() const;
 
     // Tunable parameters (exposed via ImGui)
     bool m_enabled = true;
@@ -59,11 +66,14 @@ class ContactShadowPass final : public IPass {
     struct Ready {
         webgpu::ShaderModule shader;
         webgpu::RenderPipeline pipeline;
-        WGPUBindGroupLayout bgl = nullptr;
+        WGPUBindGroupLayout desc_layout = nullptr;
 
         // Samplers
         WGPUSampler depth_sampler = nullptr;   // non-filtering
         WGPUSampler linear_sampler = nullptr;  // linear filtering
+
+        // Consumer output layout (forward pass reads CS texture)
+        OutputLayoutInfo output_layout;
     };
 
     void release_raw_handles();

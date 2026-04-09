@@ -1,6 +1,7 @@
 #include <core/diagnostics.h>
 #include <core/profiling.h>
 #include <core/rendering/frameGraph.h>
+#include <core/rendering/outputLayout.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/shaderLoader.h>
 #include <core/rendering/toneMappingPass.h>
@@ -40,11 +41,11 @@ static_assert(sizeof(ExposureResult) == 16);
 
 ToneMappingPass::~ToneMappingPass() {
     if (auto* ready = std::get_if<Ready>(&m_state)) {
-        if (ready->bind_group_layout) wgpuBindGroupLayoutRelease(ready->bind_group_layout);
+        if (ready->descriptor_layout) wgpuBindGroupLayoutRelease(ready->descriptor_layout);
         if (ready->sampler) wgpuSamplerRelease(ready->sampler);
         if (ready->ssao_fallback_view) wgpuTextureViewRelease(ready->ssao_fallback_view);
         if (ready->ssao_sampler) wgpuSamplerRelease(ready->ssao_sampler);
-        if (ready->luminance_bgl) wgpuBindGroupLayoutRelease(ready->luminance_bgl);
+        if (ready->luminance_desc_layout) wgpuBindGroupLayoutRelease(ready->luminance_desc_layout);
         if (ready->depth_fallback_view) wgpuTextureViewRelease(ready->depth_fallback_view);
         if (ready->depth_fallback_tex) wgpuTextureRelease(ready->depth_fallback_tex);
     }
@@ -60,11 +61,11 @@ auto ToneMappingPass::is_ready() const noexcept -> bool {
 
 void ToneMappingPass::do_setup(const webgpu::Device& device) {
     if (auto* ready = std::get_if<Ready>(&m_state)) {
-        if (ready->bind_group_layout) wgpuBindGroupLayoutRelease(ready->bind_group_layout);
+        if (ready->descriptor_layout) wgpuBindGroupLayoutRelease(ready->descriptor_layout);
         if (ready->sampler) wgpuSamplerRelease(ready->sampler);
         if (ready->ssao_fallback_view) wgpuTextureViewRelease(ready->ssao_fallback_view);
         if (ready->ssao_sampler) wgpuSamplerRelease(ready->ssao_sampler);
-        if (ready->luminance_bgl) wgpuBindGroupLayoutRelease(ready->luminance_bgl);
+        if (ready->luminance_desc_layout) wgpuBindGroupLayoutRelease(ready->luminance_desc_layout);
         if (ready->depth_fallback_view) wgpuTextureViewRelease(ready->depth_fallback_view);
         if (ready->depth_fallback_tex) wgpuTextureRelease(ready->depth_fallback_tex);
     }
@@ -75,50 +76,22 @@ void ToneMappingPass::do_setup(const webgpu::Device& device) {
 
     // Bind group layout: uniform + hdr texture + hdr sampler + ssao texture + ssao sampler +
     // exposure result
-    WGPUBindGroupLayoutEntry entries[6] = {};
-
-    entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    entries[0].binding = 0;
-    entries[0].visibility = WGPUShaderStage_Fragment;
-    entries[0].buffer.type = WGPUBufferBindingType_Uniform;
-    entries[0].buffer.minBindingSize = sizeof(ToneMappingUniforms);
-
-    entries[1] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    entries[1].binding = 1;
-    entries[1].visibility = WGPUShaderStage_Fragment;
-    entries[1].texture.sampleType = WGPUTextureSampleType_Float;
-    entries[1].texture.viewDimension = WGPUTextureViewDimension_2D;
-
-    entries[2] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    entries[2].binding = 2;
-    entries[2].visibility = WGPUShaderStage_Fragment;
-    entries[2].sampler.type = WGPUSamplerBindingType_Filtering;
-
-    entries[3] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    entries[3].binding = 3;
-    entries[3].visibility = WGPUShaderStage_Fragment;
-    entries[3].texture.sampleType = WGPUTextureSampleType_Float;
-    entries[3].texture.viewDimension = WGPUTextureViewDimension_2D;
-
-    entries[4] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    entries[4].binding = 4;
-    entries[4].visibility = WGPUShaderStage_Fragment;
-    entries[4].sampler.type = WGPUSamplerBindingType_Filtering;
-
-    entries[5] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    entries[5].binding = 5;
-    entries[5].visibility = WGPUShaderStage_Fragment;
-    entries[5].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-    entries[5].buffer.minBindingSize = sizeof(ExposureResult);
-
-    WGPUBindGroupLayoutDescriptor bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    bgl_desc.entryCount = 6;
-    bgl_desc.entries = entries;
-    auto bind_group_layout = wgpuDeviceCreateBindGroupLayout(device.handle(), &bgl_desc);
+    auto tone_internal =
+        create_output_layout(device, {
+                                         OutputSlot::uniform(sizeof(ToneMappingUniforms)),
+                                         OutputSlot::texture(WGPUTextureFormat_RGBA16Float),
+                                         OutputSlot::sampler(WGPUSamplerBindingType_Filtering),
+                                         OutputSlot::texture(WGPUTextureFormat_RGBA8Unorm),
+                                         OutputSlot::sampler(WGPUSamplerBindingType_Filtering),
+                                         OutputSlot::storage(sizeof(ExposureResult)),
+                                     });
+    auto descriptor_layout = tone_internal.layout;
+    tone_internal.layout = nullptr;
+    tone_internal.release();
 
     WGPUPipelineLayoutDescriptor pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
     pl_desc.bindGroupLayoutCount = 1;
-    pl_desc.bindGroupLayouts = &bind_group_layout;
+    pl_desc.bindGroupLayouts = &descriptor_layout;
     auto pipeline_layout = wgpuDeviceCreatePipelineLayout(device.handle(), &pl_desc);
 
     auto pipeline = webgpu::RenderPipelineBuilder(device)
@@ -180,45 +153,25 @@ void ToneMappingPass::do_setup(const webgpu::Device& device) {
     auto lum_shader_src = get_shader_loader().load("editor/generated/shaders/luminance.wgsl");
     auto luminance_shader = device.create_shader_module_from_source(lum_shader_src);
 
-    WGPUBindGroupLayoutEntry lum_entries[5] = {};
-
-    lum_entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    lum_entries[0].binding = 0;
-    lum_entries[0].visibility = WGPUShaderStage_Compute;
-    lum_entries[0].texture.sampleType = WGPUTextureSampleType_Float;
-    lum_entries[0].texture.viewDimension = WGPUTextureViewDimension_2D;
-
-    lum_entries[1] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    lum_entries[1].binding = 1;
-    lum_entries[1].visibility = WGPUShaderStage_Compute;
-    lum_entries[1].sampler.type = WGPUSamplerBindingType_Filtering;
-
-    lum_entries[2] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    lum_entries[2].binding = 2;
-    lum_entries[2].visibility = WGPUShaderStage_Compute;
-    lum_entries[2].buffer.type = WGPUBufferBindingType_Storage;
-    lum_entries[2].buffer.minBindingSize = sizeof(ExposureResult);
-
-    lum_entries[3] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    lum_entries[3].binding = 3;
-    lum_entries[3].visibility = WGPUShaderStage_Compute;
-    lum_entries[3].buffer.type = WGPUBufferBindingType_Uniform;
-    lum_entries[3].buffer.minBindingSize = sizeof(LuminanceParams);
-
-    lum_entries[4] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    lum_entries[4].binding = 4;
-    lum_entries[4].visibility = WGPUShaderStage_Compute;
-    lum_entries[4].texture.sampleType = WGPUTextureSampleType_UnfilterableFloat;
-    lum_entries[4].texture.viewDimension = WGPUTextureViewDimension_2D;
-
-    WGPUBindGroupLayoutDescriptor lum_bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    lum_bgl_desc.entryCount = 5;
-    lum_bgl_desc.entries = lum_entries;
-    auto luminance_bgl = wgpuDeviceCreateBindGroupLayout(device.handle(), &lum_bgl_desc);
+    auto lum_internal = create_output_layout(
+        device,
+        {
+            OutputSlot::texture(WGPUTextureFormat_RGBA16Float).visibility(WGPUShaderStage_Compute),
+            OutputSlot::sampler(WGPUSamplerBindingType_Filtering)
+                .visibility(WGPUShaderStage_Compute),
+            OutputSlot::storage(sizeof(ExposureResult))
+                .read_write()
+                .visibility(WGPUShaderStage_Compute),
+            OutputSlot::uniform(sizeof(LuminanceParams)).visibility(WGPUShaderStage_Compute),
+            OutputSlot::texture(WGPUTextureFormat_Depth32Float).visibility(WGPUShaderStage_Compute),
+        });
+    auto luminance_desc_layout = lum_internal.layout;
+    lum_internal.layout = nullptr;
+    lum_internal.release();
 
     WGPUPipelineLayoutDescriptor lum_pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
     lum_pl_desc.bindGroupLayoutCount = 1;
-    lum_pl_desc.bindGroupLayouts = &luminance_bgl;
+    lum_pl_desc.bindGroupLayouts = &luminance_desc_layout;
     auto lum_pipeline_layout = wgpuDeviceCreatePipelineLayout(device.handle(), &lum_pl_desc);
 
     auto luminance_pipeline = webgpu::ComputePipelineBuilder(device)
@@ -246,10 +199,18 @@ void ToneMappingPass::do_setup(const webgpu::Device& device) {
     auto depth_fallback_view = wgpuTextureCreateView(depth_fallback_tex, &df_view_desc);
 
     m_state = Ready{
-        std::move(shader), std::move(pipeline),         bind_group_layout,
-        sampler,           webgpu::Texture(fb_raw),     fb_view,
-        ssao_sampler,      std::move(luminance_shader), std::move(luminance_pipeline),
-        luminance_bgl,     depth_fallback_tex,          depth_fallback_view,
+        std::move(shader),
+        std::move(pipeline),
+        descriptor_layout,
+        sampler,
+        webgpu::Texture(fb_raw),
+        fb_view,
+        ssao_sampler,
+        std::move(luminance_shader),
+        std::move(luminance_pipeline),
+        luminance_desc_layout,
+        depth_fallback_tex,
+        depth_fallback_view,
     };
 }
 
@@ -303,17 +264,17 @@ void ToneMappingPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx)
         auto depth_handle = m_inputs.depth;
         bool has_depth = depth_handle.has_value();
 
-        BindGroupDesc lum_bg_desc;
-        lum_bg_desc.layout = ready.luminance_bgl;
-        lum_bg_desc.entries = {
-            {0, ManagedTextureBinding{hdr_handle}},
-            {1, SamplerBinding{ready.sampler}},
-            {2, ManagedBufferBinding{result_buf_handle, 0, sizeof(ExposureResult)}},
-            {3, ManagedBufferBinding{lum_params_handle, 0, sizeof(LuminanceParams)}},
-            {4, has_depth ? BindingResource{ManagedTextureBinding{*depth_handle}}
-                          : BindingResource{ExternalViewBinding{ready.depth_fallback_view}}},
-        };
-        auto lum_bg_handle = create_bind_group(fg, std::move(lum_bg_desc), "lum_bg");
+        auto lum_bg_bld = descriptor(fg, ready.luminance_desc_layout, "lum_bg")
+                              .texture(0, hdr_handle)
+                              .sampler(1, ready.sampler)
+                              .buffer(2, result_buf_handle, 0, sizeof(ExposureResult))
+                              .buffer(3, lum_params_handle, 0, sizeof(LuminanceParams));
+        if (has_depth) {
+            lum_bg_bld.texture(4, *depth_handle);
+        } else {
+            lum_bg_bld.external_view(4, ready.depth_fallback_view);
+        }
+        auto lum_bg_handle = lum_bg_bld.build();
 
         auto* lum_pipeline = ready.luminance_pipeline.handle();
         auto queue = ctx.queue;
@@ -330,7 +291,7 @@ void ToneMappingPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx)
         lum_builder.execute([=, &fg](WGPUComputePassEncoder enc) {
             auto result_buf = fg.get_buffer_ref(result_buf_handle).handle();
             auto lum_params_buf = fg.get_buffer_ref(lum_params_handle).handle();
-            auto lum_bg = fg.get_bind_group_ref(lum_bg_handle).handle();
+            auto lum_bg = fg.get_descriptor_ref(lum_bg_handle).handle();
 
             // Reset result buffer when auto-exposure was just re-enabled
             if (needs_reset) {
@@ -361,19 +322,19 @@ void ToneMappingPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx)
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
     auto uniform_buf_handle = create_buffer(fg, buf_desc, "uniforms");
 
-    // Register bind group (6 entries)
-    BindGroupDesc bg_desc;
-    bg_desc.layout = ready.bind_group_layout;
-    bg_desc.entries = {
-        {0, ManagedBufferBinding{uniform_buf_handle, 0, sizeof(ToneMappingUniforms)}},
-        {1, ManagedTextureBinding{hdr_handle}},
-        {2, SamplerBinding{ready.sampler}},
-        {3, ssao_found ? BindingResource{ManagedTextureBinding{*ssao_found}}
-                       : BindingResource{ExternalViewBinding{ready.ssao_fallback_view}}},
-        {4, SamplerBinding{ready.ssao_sampler}},
-        {5, ManagedBufferBinding{result_buf_handle, 0, sizeof(ExposureResult)}},
-    };
-    auto bg_handle = create_bind_group(fg, std::move(bg_desc), "bg0");
+    // Register descriptor (6 entries)
+    auto bg_builder = descriptor(fg, ready.descriptor_layout, "bg0")
+                          .buffer(0, uniform_buf_handle, 0, sizeof(ToneMappingUniforms))
+                          .texture(1, hdr_handle)
+                          .sampler(2, ready.sampler);
+    if (ssao_found) {
+        bg_builder.texture(3, *ssao_found);
+    } else {
+        bg_builder.external_view(3, ready.ssao_fallback_view);
+    }
+    auto bg_handle = bg_builder.sampler(4, ready.ssao_sampler)
+                         .buffer(5, result_buf_handle, 0, sizeof(ExposureResult))
+                         .build();
 
     auto* pipeline_handle = ready.pipeline.handle();
     auto queue = ctx.queue;
@@ -390,7 +351,7 @@ void ToneMappingPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx)
 
     builder.execute([=, &fg](WGPURenderPassEncoder pass) {
         auto uniform_buf = fg.get_buffer_ref(uniform_buf_handle).handle();
-        auto bind_group = fg.get_bind_group_ref(bg_handle).handle();
+        auto desc_group = fg.get_descriptor_ref(bg_handle).handle();
 
         ToneMappingUniforms uniforms{};
         uniforms.exposure = exposure;
@@ -399,7 +360,7 @@ void ToneMappingPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx)
         wgpuQueueWriteBuffer(queue, uniform_buf, 0, &uniforms, sizeof(uniforms));
 
         wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
-        wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 0, nullptr);
+        wgpuRenderPassEncoderSetBindGroup(pass, 0, desc_group, 0, nullptr);
         wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
     });
 }

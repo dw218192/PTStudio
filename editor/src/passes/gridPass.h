@@ -31,7 +31,7 @@ class GridPass final : public rendering::IPass {
     struct Ready {
         webgpu::ShaderModule shader;
         webgpu::RenderPipeline pipeline;
-        WGPUBindGroupLayout bind_group_layout = nullptr;
+        WGPUBindGroupLayout descriptor_layout = nullptr;
     };
 
     std::variant<std::monostate, Ready> m_state;

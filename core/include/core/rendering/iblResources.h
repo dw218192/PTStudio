@@ -46,10 +46,10 @@ class IblPipelines {
     WGPUComputePipeline irradiance_pipeline() const noexcept;
     WGPUComputePipeline prefilter_pipeline() const noexcept;
 
-    // Bind group layout accessors.
-    WGPUBindGroupLayout equirect_bgl() const noexcept;
-    WGPUBindGroupLayout downsample_bgl() const noexcept;
-    WGPUBindGroupLayout convolve_bgl() const noexcept;
+    // Descriptor layout accessors.
+    WGPUBindGroupLayout equirect_desc_layout() const noexcept;
+    WGPUBindGroupLayout downsample_desc_layout() const noexcept;
+    WGPUBindGroupLayout convolve_desc_layout() const noexcept;
 
    private:
     void release();
@@ -61,10 +61,10 @@ class IblPipelines {
     std::optional<webgpu::ComputePipeline> m_prefilter_pipeline;
     std::optional<webgpu::ComputePipeline> m_brdf_lut_pipeline;
 
-    WGPUBindGroupLayout m_equirect_bgl = nullptr;
-    WGPUBindGroupLayout m_downsample_bgl = nullptr;
-    WGPUBindGroupLayout m_convolve_bgl = nullptr;
-    WGPUBindGroupLayout m_brdf_lut_bgl = nullptr;
+    WGPUBindGroupLayout m_equirect_desc_layout = nullptr;
+    WGPUBindGroupLayout m_downsample_desc_layout = nullptr;
+    WGPUBindGroupLayout m_convolve_desc_layout = nullptr;
+    WGPUBindGroupLayout m_brdf_lut_desc_layout = nullptr;
 
     WGPUSampler m_sampler = nullptr;
     WGPUTexture m_brdf_lut = nullptr;

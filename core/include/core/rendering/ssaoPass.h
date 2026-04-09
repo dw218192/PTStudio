@@ -62,12 +62,12 @@ class SSAOPass final : public IPass {
         // AO generation
         webgpu::ShaderModule gen_shader;
         webgpu::RenderPipeline gen_pipeline;
-        WGPUBindGroupLayout gen_bgl = nullptr;
+        WGPUBindGroupLayout gen_desc_layout = nullptr;
 
         // Blur
         webgpu::ShaderModule blur_shader;
         webgpu::RenderPipeline blur_pipeline;
-        WGPUBindGroupLayout blur_bgl = nullptr;
+        WGPUBindGroupLayout blur_desc_layout = nullptr;
 
         // Noise texture (4x4 RGBA8Unorm)
         webgpu::Texture noise_texture;

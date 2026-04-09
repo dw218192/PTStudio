@@ -129,9 +129,13 @@ class IPass {
                                const char* label = nullptr) {
         return fg.import_buffer(this, buf, size, label);
     }
-    BindGroupHandle create_bind_group(FrameGraph& fg, BindGroupDesc desc,
-                                      const char* label = nullptr) {
-        return fg.find_or_create_bind_group(this, std::move(desc), label);
+    DescriptorHandle create_descriptor(FrameGraph& fg, DescriptorDesc desc,
+                                       const char* label = nullptr) {
+        return fg.find_or_create_descriptor(this, std::move(desc), label);
+    }
+    DescriptorBuilder descriptor(FrameGraph& fg, WGPUBindGroupLayout layout,
+                                 const char* label = nullptr) {
+        return fg.descriptor(this, layout, label);
     }
 
     /// Lazily create or return per-entity pass data, cached in the world.

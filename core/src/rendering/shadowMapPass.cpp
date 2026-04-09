@@ -1,5 +1,6 @@
 #include <core/diagnostics.h>
 #include <core/profiling.h>
+#include <core/rendering/fallbackPool.h>
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
@@ -20,7 +21,8 @@ ShadowMapPass::ShadowMapPass(const ShaderLoader& sl) : IPass(sl) {
 
 ShadowMapPass::~ShadowMapPass() {
     if (auto* ready = std::get_if<Ready>(&m_state)) {
-        if (ready->bgl) wgpuBindGroupLayoutRelease(ready->bgl);
+        if (ready->desc_layout) wgpuBindGroupLayoutRelease(ready->desc_layout);
+        ready->output_layout.release();
     }
 }
 
@@ -31,36 +33,25 @@ auto ShadowMapPass::is_ready() const noexcept -> bool {
 void ShadowMapPass::do_setup(const webgpu::Device& device) {
     // Release existing state for re-entry (hot-reload)
     if (auto* ready = std::get_if<Ready>(&m_state)) {
-        if (ready->bgl) wgpuBindGroupLayoutRelease(ready->bgl);
+        if (ready->desc_layout) wgpuBindGroupLayoutRelease(ready->desc_layout);
+        ready->output_layout.release();
     }
 
     auto shader_src = get_shader_loader().load("core/generated/shaders/shadow.wgsl");
     auto shader = device.create_shader_module_from_source(shader_src);
 
     // BGL: binding 0 = model matrix (dynamic), binding 1 = light VP (dynamic)
-    WGPUBindGroupLayoutEntry bgl_entries[2] = {};
-    bgl_entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    bgl_entries[0].binding = 0;
-    bgl_entries[0].visibility = WGPUShaderStage_Vertex;
-    bgl_entries[0].buffer.type = WGPUBufferBindingType_Uniform;
-    bgl_entries[0].buffer.hasDynamicOffset = true;
-    bgl_entries[0].buffer.minBindingSize = 64;  // one mat4 (model)
-
-    bgl_entries[1] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    bgl_entries[1].binding = 1;
-    bgl_entries[1].visibility = WGPUShaderStage_Vertex;
-    bgl_entries[1].buffer.type = WGPUBufferBindingType_Uniform;
-    bgl_entries[1].buffer.hasDynamicOffset = true;
-    bgl_entries[1].buffer.minBindingSize = 64;  // one mat4 (light VP)
-
-    WGPUBindGroupLayoutDescriptor bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    bgl_desc.entryCount = 2;
-    bgl_desc.entries = bgl_entries;
-    auto bgl = wgpuDeviceCreateBindGroupLayout(device.handle(), &bgl_desc);
+    auto internal_layout = create_output_layout(
+        device, {OutputSlot::uniform(64).dynamic().visibility(WGPUShaderStage_Vertex),
+                 OutputSlot::uniform(64).dynamic().visibility(WGPUShaderStage_Vertex)});
+    auto desc_layout = internal_layout.layout;
+    // Detach the BGL handle from the OutputLayoutInfo before releasing it
+    internal_layout.layout = nullptr;
+    internal_layout.release();
 
     WGPUPipelineLayoutDescriptor pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
     pl_desc.bindGroupLayoutCount = 1;
-    pl_desc.bindGroupLayouts = &bgl;
+    pl_desc.bindGroupLayouts = &desc_layout;
     auto pipeline_layout = wgpuDeviceCreatePipelineLayout(device.handle(), &pl_desc);
 
     // Position-only vertex layout: stride=12, one Float32x3 at offset 0, location 0
@@ -87,11 +78,25 @@ void ShadowMapPass::do_setup(const webgpu::Device& device) {
 
     wgpuPipelineLayoutRelease(pipeline_layout);
 
+    // Consumer output layout: slot 0 = ShadowInfo buffer,
+    // slot 1 = depth array texture, slot 2 = depth sampler (NonFiltering)
+    auto output_layout = create_output_layout(
+        device,
+        {OutputSlot::storage(sizeof(ShadowInfo)),
+         OutputSlot::texture(WGPUTextureFormat_Depth32Float, WGPUTextureViewDimension_2DArray),
+         OutputSlot::sampler(WGPUSamplerBindingType_NonFiltering)});
+
     m_state = Ready{
         std::move(shader),
         std::move(pipeline),
-        bgl,
+        desc_layout,
+        std::move(output_layout),
     };
+}
+
+WGPUBindGroupLayout ShadowMapPass::consumer_layout() const {
+    PRECONDITION(is_ready());
+    return std::get<Ready>(m_state).output_layout.layout;
 }
 
 ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx,
@@ -113,7 +118,7 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
         }
     }
 
-    // Always ensure at least 1 layer for downstream bind groups
+    // Always ensure at least 1 layer for downstream descriptors
     uint32_t layer_count = std::max(shadow_count, 1u);
 
     // Register shadow texture array with frame graph
@@ -147,7 +152,10 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
                 wgpuQueueWriteBuffer(queue, buf, 0, infos.data(),
                                      infos.size() * sizeof(ShadowInfo));
             });
-        return {shadow_array, shadow_info_buf};
+        auto consumer = ready.output_layout.build(
+            fg, this, {BufferHandle{shadow_info_buf}, TextureHandle{shadow_array}},
+            fg.fallback_pool(), "consumer_desc");
+        return {shadow_array, shadow_info_buf, consumer};
     }
 
     // Scene AABB from TLAS root (built by RenderWorld::prepare_gpu_buffers)
@@ -219,14 +227,11 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
     auto vp_buf_handle = create_buffer(fg, vp_buf_desc, "light_vps");
 
-    // Bind group: binding 0 = model (dynamic), binding 1 = light VP (dynamic)
-    BindGroupDesc bg_desc;
-    bg_desc.layout = ready.bgl;
-    bg_desc.entries = {
-        {0, ManagedBufferBinding{model_buf_handle, 0, 64}},
-        {1, ManagedBufferBinding{vp_buf_handle, 0, 64}},
-    };
-    auto bg_handle = create_bind_group(fg, std::move(bg_desc), "bg0");
+    // Descriptor: binding 0 = model (dynamic), binding 1 = light VP (dynamic)
+    auto bg_handle = descriptor(fg, ready.desc_layout, "bg0")
+                         .buffer(0, model_buf_handle, 0, 64)
+                         .buffer(1, vp_buf_handle, 0, 64)
+                         .build();
 
     // Extract per-layer view-projection matrices
     std::vector<glm::mat4> layer_vps;
@@ -273,7 +278,7 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
         fg.add_pass("shadow_depth_" + std::to_string(layer))
             .depth(shadow_array, layer)
             .execute([=, &fg, &world](WGPURenderPassEncoder pass) {
-                auto bg = fg.get_bind_group_ref(bg_handle).handle();
+                auto bg = fg.get_descriptor_ref(bg_handle).handle();
                 auto objs = world.get_objects();
                 auto mesh_slots = world.get_meshes();
                 uint32_t slots = static_cast<uint32_t>(objs.size());
@@ -297,7 +302,10 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
             });
     }
 
-    return {shadow_array, shadow_info_buf};
+    auto consumer = ready.output_layout.build(
+        fg, this, {BufferHandle{shadow_info_buf}, TextureHandle{shadow_array}}, fg.fallback_pool(),
+        "consumer_desc");
+    return {shadow_array, shadow_info_buf, consumer};
 }
 
 void ShadowMapPass::draw_imgui() {

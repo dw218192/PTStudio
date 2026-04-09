@@ -241,7 +241,8 @@ TEST_CASE("ContactShadowPass add_to_frame_graph produces valid output") {
     auto cs_out =
         cs_pass.add_to_frame_graph(fg, ctx,
                                    {gbuf_out.depth, gbuf_out.normals, world.light_buffer().handle(),
-                                    world.light_buffer().size()});
+                                    world.light_buffer().size()},
+                                   fg.fallback_pool());
 
     CHECK(cs_out.contact_shadow.is_valid());
 
@@ -282,7 +283,8 @@ TEST_CASE("ContactShadowPass disabled returns invalid handle") {
     auto cs_out =
         cs_pass.add_to_frame_graph(fg, ctx,
                                    {gbuf_out.depth, gbuf_out.normals, world.light_buffer().handle(),
-                                    world.light_buffer().size()});
+                                    world.light_buffer().size()},
+                                   fg.fallback_pool());
 
     CHECK_FALSE(cs_out.contact_shadow.is_valid());
 }

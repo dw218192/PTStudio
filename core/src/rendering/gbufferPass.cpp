@@ -1,7 +1,9 @@
 #include <core/diagnostics.h>
 #include <core/profiling.h>
+#include <core/rendering/fallbackPool.h>
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/gbufferPass.h>
+#include <core/rendering/outputLayout.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/shaderLoader.h>
@@ -24,7 +26,8 @@ GBufferPass::GBufferPass(const ShaderLoader& sl) : IPass(sl) {
 
 GBufferPass::~GBufferPass() {
     if (auto* ready = std::get_if<Ready>(&m_state)) {
-        if (ready->bgl) wgpuBindGroupLayoutRelease(ready->bgl);
+        if (ready->desc_layout) wgpuBindGroupLayoutRelease(ready->desc_layout);
+        ready->consumer_output.release();
     }
 }
 
@@ -40,32 +43,39 @@ auto GBufferPass::debug_targets() const noexcept -> std::pair<const DebugTarget*
     return {k_debug_targets, 1};
 }
 
+WGPUBindGroupLayout GBufferPass::consumer_layout() const {
+    PRECONDITION(is_ready());
+    return std::get<Ready>(m_state).consumer_output.layout;
+}
+
+std::vector<OutputSlot> GBufferPass::consumer_output_slots() const {
+    PRECONDITION(is_ready());
+    return std::get<Ready>(m_state).consumer_output.output_slots();
+}
+
 void GBufferPass::do_setup(const webgpu::Device& device) {
     // Release existing state for re-entry (hot-reload)
     if (auto* ready = std::get_if<Ready>(&m_state)) {
-        if (ready->bgl) wgpuBindGroupLayoutRelease(ready->bgl);
+        if (ready->desc_layout) wgpuBindGroupLayoutRelease(ready->desc_layout);
+        ready->consumer_output.release();
     }
 
     auto shader_src = get_shader_loader().load("core/generated/shaders/gbuffer.wgsl");
     auto shader = device.create_shader_module_from_source(shader_src);
 
     // BGL: binding 0 = dynamic uniform buffer (two mat4 = 128 bytes)
-    WGPUBindGroupLayoutEntry bgl_entry = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    bgl_entry.binding = 0;
-    bgl_entry.visibility =
-        static_cast<WGPUShaderStage>(WGPUShaderStage_Vertex | WGPUShaderStage_Fragment);
-    bgl_entry.buffer.type = WGPUBufferBindingType_Uniform;
-    bgl_entry.buffer.hasDynamicOffset = true;
-    bgl_entry.buffer.minBindingSize = sizeof(GBufferObjectUniforms);
-
-    WGPUBindGroupLayoutDescriptor bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    bgl_desc.entryCount = 1;
-    bgl_desc.entries = &bgl_entry;
-    auto bgl = wgpuDeviceCreateBindGroupLayout(device.handle(), &bgl_desc);
+    auto internal_layout =
+        create_output_layout(device, {OutputSlot::uniform(sizeof(GBufferObjectUniforms))
+                                          .dynamic()
+                                          .visibility(static_cast<WGPUShaderStage>(
+                                              WGPUShaderStage_Vertex | WGPUShaderStage_Fragment))});
+    auto desc_layout = internal_layout.layout;
+    internal_layout.layout = nullptr;
+    internal_layout.release();
 
     WGPUPipelineLayoutDescriptor pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
     pl_desc.bindGroupLayoutCount = 1;
-    pl_desc.bindGroupLayouts = &bgl;
+    pl_desc.bindGroupLayouts = &desc_layout;
     auto pipeline_layout = wgpuDeviceCreatePipelineLayout(device.handle(), &pl_desc);
 
     auto pipeline = webgpu::RenderPipelineBuilder(device)
@@ -81,10 +91,17 @@ void GBufferPass::do_setup(const webgpu::Device& device) {
 
     wgpuPipelineLayoutRelease(pipeline_layout);
 
+    // Consumer output layout: depth (sampled) + normals (sampled)
+    auto depth_st = OutputSlot::sampled_texture(WGPUTextureFormat_Depth32Float);
+    auto normals_st = OutputSlot::sampled_texture(WGPUTextureFormat_RG16Float);
+    auto consumer_output =
+        create_output_layout(device, {depth_st[0], depth_st[1], normals_st[0], normals_st[1]});
+
     m_state = Ready{
         std::move(shader),
         std::move(pipeline),
-        bgl,
+        desc_layout,
+        std::move(consumer_output),
     };
 }
 
@@ -106,12 +123,10 @@ GBufferPass::Outputs GBufferPass::add_to_frame_graph(FrameGraph& fg, const PassC
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
     auto uniform_buf_handle = create_buffer(fg, buf_desc, "uniforms");
 
-    // Register bind group with frame graph
-    BindGroupDesc bg_desc;
-    bg_desc.layout = ready.bgl;
-    bg_desc.entries = {
-        {0, ManagedBufferBinding{uniform_buf_handle, 0, sizeof(GBufferObjectUniforms)}}};
-    auto bg_handle = create_bind_group(fg, std::move(bg_desc), "bg0");
+    // Register descriptor with frame graph
+    auto bg_handle = descriptor(fg, ready.desc_layout, "bg0")
+                         .buffer(0, uniform_buf_handle, 0, sizeof(GBufferObjectUniforms))
+                         .build();
 
     // Create/find frame graph texture resources
     TextureDesc depth_desc;
@@ -139,7 +154,7 @@ GBufferPass::Outputs GBufferPass::add_to_frame_graph(FrameGraph& fg, const PassC
             auto objs = world.get_objects();
             auto meshes = world.get_meshes();
             auto buf = fg.get_buffer_ref(uniform_buf_handle).handle();
-            auto bg = fg.get_bind_group_ref(bg_handle).handle();
+            auto bg = fg.get_descriptor_ref(bg_handle).handle();
 
             // Upload per-object uniforms
             {
@@ -170,7 +185,12 @@ GBufferPass::Outputs GBufferPass::add_to_frame_graph(FrameGraph& fg, const PassC
             }
         });
 
-    return {depth, normals};
+    // Build consumer descriptor for downstream passes (SSAO, contact shadows)
+    auto consumer =
+        ready.consumer_output.build(fg, this, {TextureHandle{depth}, TextureHandle{normals}},
+                                    fg.fallback_pool(), "consumer_desc");
+
+    return {depth, normals, consumer};
 }
 
 }  // namespace pts::rendering

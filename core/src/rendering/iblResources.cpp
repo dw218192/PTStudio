@@ -1,6 +1,7 @@
 #include <core/diagnostics.h>
 #include <core/rendering/halfFloat.h>
 #include <core/rendering/iblResources.h>
+#include <core/rendering/outputLayout.h>
 #include <core/rendering/webgpu/device.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
 
@@ -105,130 +106,78 @@ WGPUTextureView create_2d_view(WGPUTexture tex, WGPUTextureFormat format) {
     return view;
 }
 
-WGPUBindGroupLayout create_brdf_lut_bgl(WGPUDevice dev) {
-    WGPUBindGroupLayoutEntry entries[2] = {};
-
-    entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    entries[0].binding = 0;
-    entries[0].visibility = WGPUShaderStage_Compute;
-    entries[0].buffer.type = WGPUBufferBindingType_Uniform;
-
-    entries[1] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    entries[1].binding = 1;
-    entries[1].visibility = WGPUShaderStage_Compute;
-    entries[1].storageTexture.access = WGPUStorageTextureAccess_WriteOnly;
-    entries[1].storageTexture.format = WGPUTextureFormat_RGBA16Float;
-    entries[1].storageTexture.viewDimension = WGPUTextureViewDimension_2D;
-
-    WGPUBindGroupLayoutDescriptor desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    desc.entryCount = 2;
-    desc.entries = entries;
-    auto bgl = wgpuDeviceCreateBindGroupLayout(dev, &desc);
-    CHECK_MSG(bgl, "Failed to create BRDF LUT bind group layout");
-    return bgl;
+WGPUBindGroupLayout create_brdf_lut_desc_layout(const webgpu::Device& device) {
+    auto internal = create_output_layout(
+        device,
+        {
+            OutputSlot::uniform(0).visibility(WGPUShaderStage_Compute),
+            OutputSlot::storage_texture(WGPUTextureFormat_RGBA16Float, WGPUTextureViewDimension_2D)
+                .visibility(WGPUShaderStage_Compute),
+        });
+    auto layout = internal.layout;
+    internal.layout = nullptr;
+    internal.release();
+    return layout;
 }
 
-WGPUBindGroupLayout create_equirect_bgl(WGPUDevice dev) {
-    WGPUBindGroupLayoutEntry entries[4] = {};
-
-    entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    entries[0].binding = 0;
-    entries[0].visibility = WGPUShaderStage_Compute;
-    entries[0].buffer.type = WGPUBufferBindingType_Uniform;
-
-    entries[1] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    entries[1].binding = 1;
-    entries[1].visibility = WGPUShaderStage_Compute;
-    entries[1].texture.sampleType = WGPUTextureSampleType_Float;
-    entries[1].texture.viewDimension = WGPUTextureViewDimension_2D;
-
-    entries[2] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    entries[2].binding = 2;
-    entries[2].visibility = WGPUShaderStage_Compute;
-    entries[2].sampler.type = WGPUSamplerBindingType_Filtering;
-
-    entries[3] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    entries[3].binding = 3;
-    entries[3].visibility = WGPUShaderStage_Compute;
-    entries[3].storageTexture.access = WGPUStorageTextureAccess_WriteOnly;
-    entries[3].storageTexture.format = WGPUTextureFormat_RGBA16Float;
-    entries[3].storageTexture.viewDimension = WGPUTextureViewDimension_2DArray;
-
-    WGPUBindGroupLayoutDescriptor desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    desc.entryCount = 4;
-    desc.entries = entries;
-    auto bgl = wgpuDeviceCreateBindGroupLayout(dev, &desc);
-    CHECK_MSG(bgl, "Failed to create equirect bind group layout");
-    return bgl;
+WGPUBindGroupLayout create_equirect_desc_layout(const webgpu::Device& device) {
+    auto internal = create_output_layout(
+        device, {
+                    OutputSlot::uniform(0).visibility(WGPUShaderStage_Compute),
+                    OutputSlot::texture(WGPUTextureFormat_RGBA16Float, WGPUTextureViewDimension_2D)
+                        .visibility(WGPUShaderStage_Compute),
+                    OutputSlot::sampler(WGPUSamplerBindingType_Filtering)
+                        .visibility(WGPUShaderStage_Compute),
+                    OutputSlot::storage_texture(WGPUTextureFormat_RGBA16Float,
+                                                WGPUTextureViewDimension_2DArray)
+                        .visibility(WGPUShaderStage_Compute),
+                });
+    auto layout = internal.layout;
+    internal.layout = nullptr;
+    internal.release();
+    return layout;
 }
 
-WGPUBindGroupLayout create_downsample_bgl(WGPUDevice dev) {
-    WGPUBindGroupLayoutEntry entries[3] = {};
-
-    entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    entries[0].binding = 0;
-    entries[0].visibility = WGPUShaderStage_Compute;
-    entries[0].buffer.type = WGPUBufferBindingType_Uniform;
-
-    entries[1] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    entries[1].binding = 1;
-    entries[1].visibility = WGPUShaderStage_Compute;
-    entries[1].texture.sampleType = WGPUTextureSampleType_Float;
-    entries[1].texture.viewDimension = WGPUTextureViewDimension_2DArray;
-
-    entries[2] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    entries[2].binding = 2;
-    entries[2].visibility = WGPUShaderStage_Compute;
-    entries[2].storageTexture.access = WGPUStorageTextureAccess_WriteOnly;
-    entries[2].storageTexture.format = WGPUTextureFormat_RGBA16Float;
-    entries[2].storageTexture.viewDimension = WGPUTextureViewDimension_2DArray;
-
-    WGPUBindGroupLayoutDescriptor desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    desc.entryCount = 3;
-    desc.entries = entries;
-    auto bgl = wgpuDeviceCreateBindGroupLayout(dev, &desc);
-    CHECK_MSG(bgl, "Failed to create downsample bind group layout");
-    return bgl;
+WGPUBindGroupLayout create_downsample_desc_layout(const webgpu::Device& device) {
+    auto internal = create_output_layout(
+        device,
+        {
+            OutputSlot::uniform(0).visibility(WGPUShaderStage_Compute),
+            OutputSlot::texture(WGPUTextureFormat_RGBA16Float, WGPUTextureViewDimension_2DArray)
+                .visibility(WGPUShaderStage_Compute),
+            OutputSlot::storage_texture(WGPUTextureFormat_RGBA16Float,
+                                        WGPUTextureViewDimension_2DArray)
+                .visibility(WGPUShaderStage_Compute),
+        });
+    auto layout = internal.layout;
+    internal.layout = nullptr;
+    internal.release();
+    return layout;
 }
 
-WGPUBindGroupLayout create_convolve_bgl(WGPUDevice dev) {
-    WGPUBindGroupLayoutEntry entries[4] = {};
-
-    entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    entries[0].binding = 0;
-    entries[0].visibility = WGPUShaderStage_Compute;
-    entries[0].buffer.type = WGPUBufferBindingType_Uniform;
-
-    entries[1] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    entries[1].binding = 1;
-    entries[1].visibility = WGPUShaderStage_Compute;
-    entries[1].texture.sampleType = WGPUTextureSampleType_Float;
-    entries[1].texture.viewDimension = WGPUTextureViewDimension_Cube;
-
-    entries[2] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    entries[2].binding = 2;
-    entries[2].visibility = WGPUShaderStage_Compute;
-    entries[2].sampler.type = WGPUSamplerBindingType_Filtering;
-
-    entries[3] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    entries[3].binding = 3;
-    entries[3].visibility = WGPUShaderStage_Compute;
-    entries[3].storageTexture.access = WGPUStorageTextureAccess_WriteOnly;
-    entries[3].storageTexture.format = WGPUTextureFormat_RGBA16Float;
-    entries[3].storageTexture.viewDimension = WGPUTextureViewDimension_2DArray;
-
-    WGPUBindGroupLayoutDescriptor desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    desc.entryCount = 4;
-    desc.entries = entries;
-    auto bgl = wgpuDeviceCreateBindGroupLayout(dev, &desc);
-    CHECK_MSG(bgl, "Failed to create convolve bind group layout");
-    return bgl;
+WGPUBindGroupLayout create_convolve_desc_layout(const webgpu::Device& device) {
+    auto internal = create_output_layout(
+        device,
+        {
+            OutputSlot::uniform(0).visibility(WGPUShaderStage_Compute),
+            OutputSlot::texture(WGPUTextureFormat_RGBA16Float, WGPUTextureViewDimension_Cube)
+                .visibility(WGPUShaderStage_Compute),
+            OutputSlot::sampler(WGPUSamplerBindingType_Filtering)
+                .visibility(WGPUShaderStage_Compute),
+            OutputSlot::storage_texture(WGPUTextureFormat_RGBA16Float,
+                                        WGPUTextureViewDimension_2DArray)
+                .visibility(WGPUShaderStage_Compute),
+        });
+    auto layout = internal.layout;
+    internal.layout = nullptr;
+    internal.release();
+    return layout;
 }
 
-WGPUPipelineLayout make_pipeline_layout(WGPUDevice dev, WGPUBindGroupLayout bgl) {
+WGPUPipelineLayout make_pipeline_layout(WGPUDevice dev, WGPUBindGroupLayout desc_layout) {
     WGPUPipelineLayoutDescriptor desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
     desc.bindGroupLayoutCount = 1;
-    desc.bindGroupLayouts = &bgl;
+    desc.bindGroupLayouts = &desc_layout;
     auto layout = wgpuDeviceCreatePipelineLayout(dev, &desc);
     CHECK_MSG(layout, "Failed to create pipeline layout");
     return layout;
@@ -244,17 +193,17 @@ void IblPipelines::release() {
     if (m_brdf_lut_view) wgpuTextureViewRelease(m_brdf_lut_view);
     if (m_brdf_lut) wgpuTextureRelease(m_brdf_lut);
     if (m_sampler) wgpuSamplerRelease(m_sampler);
-    if (m_equirect_bgl) wgpuBindGroupLayoutRelease(m_equirect_bgl);
-    if (m_downsample_bgl) wgpuBindGroupLayoutRelease(m_downsample_bgl);
-    if (m_convolve_bgl) wgpuBindGroupLayoutRelease(m_convolve_bgl);
-    if (m_brdf_lut_bgl) wgpuBindGroupLayoutRelease(m_brdf_lut_bgl);
+    if (m_equirect_desc_layout) wgpuBindGroupLayoutRelease(m_equirect_desc_layout);
+    if (m_downsample_desc_layout) wgpuBindGroupLayoutRelease(m_downsample_desc_layout);
+    if (m_convolve_desc_layout) wgpuBindGroupLayoutRelease(m_convolve_desc_layout);
+    if (m_brdf_lut_desc_layout) wgpuBindGroupLayoutRelease(m_brdf_lut_desc_layout);
     m_brdf_lut_view = nullptr;
     m_brdf_lut = nullptr;
     m_sampler = nullptr;
-    m_equirect_bgl = nullptr;
-    m_downsample_bgl = nullptr;
-    m_convolve_bgl = nullptr;
-    m_brdf_lut_bgl = nullptr;
+    m_equirect_desc_layout = nullptr;
+    m_downsample_desc_layout = nullptr;
+    m_convolve_desc_layout = nullptr;
+    m_brdf_lut_desc_layout = nullptr;
     m_equirect_to_cube_pipeline.reset();
     m_downsample_pipeline.reset();
     m_irradiance_pipeline.reset();
@@ -295,16 +244,16 @@ WGPUComputePipeline IblPipelines::prefilter_pipeline() const noexcept {
     return m_prefilter_pipeline->handle();
 }
 
-WGPUBindGroupLayout IblPipelines::equirect_bgl() const noexcept {
-    return m_equirect_bgl;
+WGPUBindGroupLayout IblPipelines::equirect_desc_layout() const noexcept {
+    return m_equirect_desc_layout;
 }
 
-WGPUBindGroupLayout IblPipelines::downsample_bgl() const noexcept {
-    return m_downsample_bgl;
+WGPUBindGroupLayout IblPipelines::downsample_desc_layout() const noexcept {
+    return m_downsample_desc_layout;
 }
 
-WGPUBindGroupLayout IblPipelines::convolve_bgl() const noexcept {
-    return m_convolve_bgl;
+WGPUBindGroupLayout IblPipelines::convolve_desc_layout() const noexcept {
+    return m_convolve_desc_layout;
 }
 
 void IblPipelines::init(const webgpu::Device& device, WGPUQueue queue) {
@@ -312,16 +261,16 @@ void IblPipelines::init(const webgpu::Device& device, WGPUQueue queue) {
     auto dev = device.handle();
 
     // Bind group layouts
-    m_brdf_lut_bgl = create_brdf_lut_bgl(dev);
-    m_equirect_bgl = create_equirect_bgl(dev);
-    m_downsample_bgl = create_downsample_bgl(dev);
-    m_convolve_bgl = create_convolve_bgl(dev);
+    m_brdf_lut_desc_layout = create_brdf_lut_desc_layout(device);
+    m_equirect_desc_layout = create_equirect_desc_layout(device);
+    m_downsample_desc_layout = create_downsample_desc_layout(device);
+    m_convolve_desc_layout = create_convolve_desc_layout(device);
 
     // Pipelines
     {
         auto wgsl = load_shader("brdf_lut.wgsl");
         auto shader = device.create_shader_module_from_source(wgsl);
-        auto layout = make_pipeline_layout(dev, m_brdf_lut_bgl);
+        auto layout = make_pipeline_layout(dev, m_brdf_lut_desc_layout);
         m_brdf_lut_pipeline = webgpu::ComputePipelineBuilder(device)
                                   .shader(shader)
                                   .entry_point("cs_main")
@@ -332,7 +281,7 @@ void IblPipelines::init(const webgpu::Device& device, WGPUQueue queue) {
     {
         auto wgsl = load_shader("equirect_to_cube.wgsl");
         auto shader = device.create_shader_module_from_source(wgsl);
-        auto layout = make_pipeline_layout(dev, m_equirect_bgl);
+        auto layout = make_pipeline_layout(dev, m_equirect_desc_layout);
         m_equirect_to_cube_pipeline = webgpu::ComputePipelineBuilder(device)
                                           .shader(shader)
                                           .entry_point("cs_main")
@@ -343,7 +292,7 @@ void IblPipelines::init(const webgpu::Device& device, WGPUQueue queue) {
     {
         auto wgsl = load_shader("downsample_cube.wgsl");
         auto shader = device.create_shader_module_from_source(wgsl);
-        auto layout = make_pipeline_layout(dev, m_downsample_bgl);
+        auto layout = make_pipeline_layout(dev, m_downsample_desc_layout);
         m_downsample_pipeline = webgpu::ComputePipelineBuilder(device)
                                     .shader(shader)
                                     .entry_point("cs_main")
@@ -354,7 +303,7 @@ void IblPipelines::init(const webgpu::Device& device, WGPUQueue queue) {
     {
         auto wgsl = load_shader("irradiance_convolve.wgsl");
         auto shader = device.create_shader_module_from_source(wgsl);
-        auto layout = make_pipeline_layout(dev, m_convolve_bgl);
+        auto layout = make_pipeline_layout(dev, m_convolve_desc_layout);
         m_irradiance_pipeline = webgpu::ComputePipelineBuilder(device)
                                     .shader(shader)
                                     .entry_point("cs_main")
@@ -365,7 +314,7 @@ void IblPipelines::init(const webgpu::Device& device, WGPUQueue queue) {
     {
         auto wgsl = load_shader("prefilter_env.wgsl");
         auto shader = device.create_shader_module_from_source(wgsl);
-        auto layout = make_pipeline_layout(dev, m_convolve_bgl);
+        auto layout = make_pipeline_layout(dev, m_convolve_desc_layout);
         m_prefilter_pipeline = webgpu::ComputePipelineBuilder(device)
                                    .shader(shader)
                                    .entry_point("cs_main")
@@ -438,7 +387,7 @@ void IblPipelines::generate_brdf_lut(const webgpu::Device& device, WGPUQueue que
     bg_entries[1].textureView = storage_view;
 
     WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-    bg_desc.layout = m_brdf_lut_bgl;
+    bg_desc.layout = m_brdf_lut_desc_layout;
     bg_desc.entryCount = 2;
     bg_desc.entries = bg_entries;
     auto bg = wgpuDeviceCreateBindGroup(dev, &bg_desc);
@@ -766,7 +715,7 @@ void IblResources::convert_equirect_to_cubemap(const IblPipelines& pipelines,
         entries[3].textureView = output_view;
 
         WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-        bg_desc.layout = pipelines.equirect_bgl();
+        bg_desc.layout = pipelines.equirect_desc_layout();
         bg_desc.entryCount = 4;
         bg_desc.entries = entries;
         auto bg = wgpuDeviceCreateBindGroup(dev, &bg_desc);
@@ -838,7 +787,7 @@ void IblResources::generate_env_mipmaps(const IblPipelines& pipelines, const web
             entries[2].textureView = output_view;
 
             WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-            bg_desc.layout = pipelines.downsample_bgl();
+            bg_desc.layout = pipelines.downsample_desc_layout();
             bg_desc.entryCount = 3;
             bg_desc.entries = entries;
             auto bg = wgpuDeviceCreateBindGroup(dev, &bg_desc);
@@ -913,7 +862,7 @@ void IblResources::convolve_irradiance(const IblPipelines& pipelines, const webg
         entries[3].textureView = output_view;
 
         WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-        bg_desc.layout = pipelines.convolve_bgl();
+        bg_desc.layout = pipelines.convolve_desc_layout();
         bg_desc.entryCount = 4;
         bg_desc.entries = entries;
         auto bg = wgpuDeviceCreateBindGroup(dev, &bg_desc);
@@ -993,7 +942,7 @@ void IblResources::prefilter_specular(const IblPipelines& pipelines, const webgp
             entries[3].textureView = output_view;
 
             WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-            bg_desc.layout = pipelines.convolve_bgl();
+            bg_desc.layout = pipelines.convolve_desc_layout();
             bg_desc.entryCount = 4;
             bg_desc.entries = entries;
             auto bg = wgpuDeviceCreateBindGroup(dev, &bg_desc);

@@ -5,6 +5,7 @@
 #include <core/rendering/bvh.h>
 #include <core/rendering/camera.h>
 #include <core/rendering/frameGraph.h>
+#include <core/rendering/outputLayout.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/rendererRegistry.h>
@@ -16,6 +17,7 @@
 
 using namespace pts;
 using namespace pts::editor;
+using namespace pts::rendering;
 
 REGISTER_RENDERER("Path Trace", PathTracerPass, false);
 
@@ -46,9 +48,9 @@ static constexpr std::size_t k_min_pixel_buffer_size = 16;
 
 PathTracerPass::~PathTracerPass() {
     if (auto* r = std::get_if<Ready>(&m_state)) {
-        if (r->compute_bgl) wgpuBindGroupLayoutRelease(r->compute_bgl);
-        if (r->ibl_bgl) wgpuBindGroupLayoutRelease(r->ibl_bgl);
-        if (r->blit_bgl) wgpuBindGroupLayoutRelease(r->blit_bgl);
+        if (r->compute_desc_layout) wgpuBindGroupLayoutRelease(r->compute_desc_layout);
+        if (r->ibl_desc_layout) wgpuBindGroupLayoutRelease(r->ibl_desc_layout);
+        if (r->blit_desc_layout) wgpuBindGroupLayoutRelease(r->blit_desc_layout);
     }
 }
 
@@ -62,9 +64,9 @@ auto PathTracerPass::is_ready() const noexcept -> bool {
 
 void PathTracerPass::do_renderer_setup(const webgpu::Device& device) {
     if (auto* r = std::get_if<Ready>(&m_state)) {
-        if (r->compute_bgl) wgpuBindGroupLayoutRelease(r->compute_bgl);
-        if (r->ibl_bgl) wgpuBindGroupLayoutRelease(r->ibl_bgl);
-        if (r->blit_bgl) wgpuBindGroupLayoutRelease(r->blit_bgl);
+        if (r->compute_desc_layout) wgpuBindGroupLayoutRelease(r->compute_desc_layout);
+        if (r->ibl_desc_layout) wgpuBindGroupLayoutRelease(r->ibl_desc_layout);
+        if (r->blit_desc_layout) wgpuBindGroupLayoutRelease(r->blit_desc_layout);
     }
 
     // --- Compute pipeline ---
@@ -75,78 +77,43 @@ void PathTracerPass::do_renderer_setup(const webgpu::Device& device) {
         sizeof(PTUniforms),
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
 
-    WGPUBindGroupLayoutEntry ce[10] = {};
-    for (int i = 0; i < 10; ++i) ce[i] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    auto compute_internal = create_output_layout(
+        device,
+        {
+            OutputSlot::uniform(sizeof(PTUniforms)).visibility(WGPUShaderStage_Compute),
+            OutputSlot::storage(0).visibility(WGPUShaderStage_Compute),
+            OutputSlot::storage(0).visibility(WGPUShaderStage_Compute),
+            OutputSlot::storage(0).visibility(WGPUShaderStage_Compute),
+            OutputSlot::storage(0).read_write().visibility(WGPUShaderStage_Compute),
+            OutputSlot::storage(0).read_write().visibility(WGPUShaderStage_Compute),
+            OutputSlot::storage(32).visibility(WGPUShaderStage_Compute),  // BVH nodes
+            OutputSlot::texture(WGPUTextureFormat_RGBA8Unorm, WGPUTextureViewDimension_2DArray)
+                .visibility(WGPUShaderStage_Compute),
+            OutputSlot::sampler(WGPUSamplerBindingType_Filtering)
+                .visibility(WGPUShaderStage_Compute),
+            OutputSlot::storage(0).visibility(WGPUShaderStage_Compute),  // instances
+        });
+    auto compute_desc_layout = compute_internal.layout;
+    compute_internal.layout = nullptr;
+    compute_internal.release();
 
-    ce[0].binding = 0;
-    ce[0].visibility = WGPUShaderStage_Compute;
-    ce[0].buffer.type = WGPUBufferBindingType_Uniform;
-    ce[0].buffer.minBindingSize = sizeof(PTUniforms);
+    // IBL descriptor layout (group 1): env cubemap + sampler
+    auto ibl_internal = create_output_layout(
+        device,
+        {
+            OutputSlot::texture(WGPUTextureFormat_RGBA16Float, WGPUTextureViewDimension_Cube)
+                .visibility(WGPUShaderStage_Compute),
+            OutputSlot::sampler(WGPUSamplerBindingType_Filtering)
+                .visibility(WGPUShaderStage_Compute),
+        });
+    auto ibl_desc_layout = ibl_internal.layout;
+    ibl_internal.layout = nullptr;
+    ibl_internal.release();
 
-    for (int i = 1; i <= 3; ++i) {
-        ce[i].binding = i;
-        ce[i].visibility = WGPUShaderStage_Compute;
-        ce[i].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-    }
-
-    ce[4].binding = 4;
-    ce[4].visibility = WGPUShaderStage_Compute;
-    ce[4].buffer.type = WGPUBufferBindingType_Storage;
-
-    ce[5].binding = 5;
-    ce[5].visibility = WGPUShaderStage_Compute;
-    ce[5].buffer.type = WGPUBufferBindingType_Storage;
-
-    // binding 6: BVH nodes (read-only storage)
-    ce[6].binding = 6;
-    ce[6].visibility = WGPUShaderStage_Compute;
-    ce[6].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-    ce[6].buffer.minBindingSize = 32;  // sizeof(BVHNode)
-
-    // binding 7: scene texture array
-    ce[7].binding = 7;
-    ce[7].visibility = WGPUShaderStage_Compute;
-    ce[7].texture.sampleType = WGPUTextureSampleType_Float;
-    ce[7].texture.viewDimension = WGPUTextureViewDimension_2DArray;
-    ce[7].texture.multisampled = false;
-
-    // binding 8: scene texture sampler
-    ce[8].binding = 8;
-    ce[8].visibility = WGPUShaderStage_Compute;
-    ce[8].sampler.type = WGPUSamplerBindingType_Filtering;
-
-    // binding 9: instances (read-only storage)
-    ce[9].binding = 9;
-    ce[9].visibility = WGPUShaderStage_Compute;
-    ce[9].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-
-    WGPUBindGroupLayoutDescriptor cbgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    cbgl_desc.entryCount = 10;
-    cbgl_desc.entries = ce;
-    auto compute_bgl = wgpuDeviceCreateBindGroupLayout(device.handle(), &cbgl_desc);
-
-    // IBL bind group layout (group 1): env cubemap + sampler
-    WGPUBindGroupLayoutEntry ie[2] = {};
-    ie[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    ie[0].binding = 0;
-    ie[0].visibility = WGPUShaderStage_Compute;
-    ie[0].texture.sampleType = WGPUTextureSampleType_Float;
-    ie[0].texture.viewDimension = WGPUTextureViewDimension_Cube;
-
-    ie[1] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    ie[1].binding = 1;
-    ie[1].visibility = WGPUShaderStage_Compute;
-    ie[1].sampler.type = WGPUSamplerBindingType_Filtering;
-
-    WGPUBindGroupLayoutDescriptor ibgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    ibgl_desc.entryCount = 2;
-    ibgl_desc.entries = ie;
-    auto ibl_bgl = wgpuDeviceCreateBindGroupLayout(device.handle(), &ibgl_desc);
-
-    WGPUBindGroupLayout compute_bgls[2] = {compute_bgl, ibl_bgl};
+    WGPUBindGroupLayout compute_desc_layouts[2] = {compute_desc_layout, ibl_desc_layout};
     WGPUPipelineLayoutDescriptor cpl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
     cpl_desc.bindGroupLayoutCount = 2;
-    cpl_desc.bindGroupLayouts = compute_bgls;
+    cpl_desc.bindGroupLayouts = compute_desc_layouts;
     auto cpl = wgpuDeviceCreatePipelineLayout(device.handle(), &cpl_desc);
 
     auto compute_pipeline = webgpu::ComputePipelineBuilder(device)
@@ -160,26 +127,17 @@ void PathTracerPass::do_renderer_setup(const webgpu::Device& device) {
     auto blit_src = get_shader_loader().load("editor/generated/shaders/pt_blit.wgsl");
     auto blit_shader = device.create_shader_module_from_source(blit_src);
 
-    WGPUBindGroupLayoutEntry be[2] = {};
-    be[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    be[0].binding = 0;
-    be[0].visibility = WGPUShaderStage_Fragment;
-    be[0].buffer.type = WGPUBufferBindingType_Uniform;
-    be[0].buffer.minBindingSize = sizeof(BlitUniforms);
-
-    be[1] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    be[1].binding = 1;
-    be[1].visibility = WGPUShaderStage_Fragment;
-    be[1].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-
-    WGPUBindGroupLayoutDescriptor bbgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    bbgl_desc.entryCount = 2;
-    bbgl_desc.entries = be;
-    auto blit_bgl = wgpuDeviceCreateBindGroupLayout(device.handle(), &bbgl_desc);
+    auto blit_internal = create_output_layout(device, {
+                                                          OutputSlot::uniform(sizeof(BlitUniforms)),
+                                                          OutputSlot::storage(0),
+                                                      });
+    auto blit_desc_layout = blit_internal.layout;
+    blit_internal.layout = nullptr;
+    blit_internal.release();
 
     WGPUPipelineLayoutDescriptor bpl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
     bpl_desc.bindGroupLayoutCount = 1;
-    bpl_desc.bindGroupLayouts = &blit_bgl;
+    bpl_desc.bindGroupLayouts = &blit_desc_layout;
     auto bpl = wgpuDeviceCreatePipelineLayout(device.handle(), &bpl_desc);
 
     auto blit_pipeline = webgpu::RenderPipelineBuilder(device)
@@ -191,14 +149,10 @@ void PathTracerPass::do_renderer_setup(const webgpu::Device& device) {
     wgpuPipelineLayoutRelease(bpl);
 
     m_state = Ready{
-        std::move(compute_shader),
-        std::move(compute_pipeline),
-        std::move(uniform_buffer),
-        compute_bgl,
-        ibl_bgl,
-        std::move(blit_shader),
-        std::move(blit_pipeline),
-        blit_bgl,
+        std::move(compute_shader), std::move(compute_pipeline),
+        std::move(uniform_buffer), compute_desc_layout,
+        ibl_desc_layout,           std::move(blit_shader),
+        std::move(blit_pipeline),  blit_desc_layout,
     };
 }
 
@@ -284,7 +238,7 @@ PathTracerPass::HdrOutputs PathTracerPass::do_add_to_frame_graph(
     auto height = ctx.viewport_height;
     auto inst_count = ctx.world.instance_count();
 
-    // --- Create compute bind group ---
+    // --- Create compute descriptor ---
     auto scene_tex_view = ctx.world.texture_array_view();
     auto scene_tex_sampler = ctx.world.texture_sampler();
 
@@ -320,12 +274,12 @@ PathTracerPass::HdrOutputs PathTracerPass::do_add_to_frame_graph(
     cbe[9].size = inst_buf.size();
 
     WGPUBindGroupDescriptor cbg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-    cbg_desc.layout = r.compute_bgl;
+    cbg_desc.layout = r.compute_desc_layout;
     cbg_desc.entryCount = 10;
     cbg_desc.entries = cbe;
     auto compute_bg = wgpuDeviceCreateBindGroup(dev, &cbg_desc);
 
-    // IBL bind group (group 1): env cubemap + sampler
+    // IBL descriptor (group 1): env cubemap + sampler
     auto& ibl = ctx.world.ibl_resources();
     auto& ibl_pipes = ctx.world.ibl_pipelines();
     WGPUBindGroup ibl_bg = nullptr;
@@ -339,7 +293,7 @@ PathTracerPass::HdrOutputs PathTracerPass::do_add_to_frame_graph(
         ibe[1].sampler = ibl_pipes.sampler();
 
         WGPUBindGroupDescriptor ibg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-        ibg_desc.layout = r.ibl_bgl;
+        ibg_desc.layout = r.ibl_desc_layout;
         ibg_desc.entryCount = 2;
         ibg_desc.entries = ibe;
         ibl_bg = wgpuDeviceCreateBindGroup(dev, &ibg_desc);
@@ -379,20 +333,17 @@ PathTracerPass::HdrOutputs PathTracerPass::do_add_to_frame_graph(
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
     auto blit_uniform_buf_handle = create_buffer(fg, blit_buf_desc, "blit_uniforms");
 
-    // Register blit bind group
-    rendering::BindGroupDesc blit_bg_desc{};
-    blit_bg_desc.layout = r.blit_bgl;
-    blit_bg_desc.entries = {
-        {0, rendering::ManagedBufferBinding{blit_uniform_buf_handle, 0, sizeof(BlitUniforms)}},
-        {1, rendering::ManagedBufferBinding{output_buf_handle}},
-    };
-    auto blit_bg_handle = create_bind_group(fg, std::move(blit_bg_desc), "blit_bg");
+    // Register blit descriptor
+    auto blit_bg_handle = descriptor(fg, r.blit_desc_layout, "blit_bg")
+                              .buffer(0, blit_uniform_buf_handle, 0, sizeof(BlitUniforms))
+                              .buffer(1, output_buf_handle)
+                              .build();
 
     auto* bp = r.blit_pipeline.handle();
     auto queue = ctx.queue;
     fg.add_pass("pathtracer_blit").color(color).execute([=, &fg](WGPURenderPassEncoder pass) {
         auto blit_uniform_buf = fg.get_buffer_ref(blit_uniform_buf_handle).handle();
-        auto blit_bg = fg.get_bind_group_ref(blit_bg_handle).handle();
+        auto blit_bg = fg.get_descriptor_ref(blit_bg_handle).handle();
 
         BlitUniforms bu{};
         bu.width = width;

@@ -31,8 +31,8 @@ static_assert(sizeof(GridUniforms) == 160, "GridUniforms must match shader std14
 
 GridPass::~GridPass() {
     if (auto* ready = std::get_if<Ready>(&m_state)) {
-        if (ready->bind_group_layout) {
-            wgpuBindGroupLayoutRelease(ready->bind_group_layout);
+        if (ready->descriptor_layout) {
+            wgpuBindGroupLayoutRelease(ready->descriptor_layout);
         }
     }
 }
@@ -48,18 +48,18 @@ auto GridPass::is_ready() const noexcept -> bool {
 void GridPass::do_setup(const webgpu::Device& device) {
     WGPUBindGroupLayout old_layout = nullptr;
     if (auto* ready = std::get_if<Ready>(&m_state)) {
-        old_layout = ready->bind_group_layout;
-        ready->bind_group_layout = nullptr;
+        old_layout = ready->descriptor_layout;
+        ready->descriptor_layout = nullptr;
     }
 
     auto shader_src = get_shader_loader().load("editor/generated/shaders/grid.wgsl");
     auto shader = device.create_shader_module_from_source(shader_src);
 
-    auto bind_group_layout = editor_grid_shader::create_bind_group_layout_0(device.handle());
+    auto descriptor_layout = editor_grid_shader::create_bind_group_layout_0(device.handle());
 
     WGPUPipelineLayoutDescriptor pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
     pl_desc.bindGroupLayoutCount = 1;
-    pl_desc.bindGroupLayouts = &bind_group_layout;
+    pl_desc.bindGroupLayouts = &descriptor_layout;
     WGPUPipelineLayout pipeline_layout = wgpuDeviceCreatePipelineLayout(device.handle(), &pl_desc);
 
     // Premultiplied alpha blending
@@ -87,7 +87,7 @@ void GridPass::do_setup(const webgpu::Device& device) {
     m_state = Ready{
         std::move(shader),
         std::move(pipeline),
-        bind_group_layout,
+        descriptor_layout,
     };
 
     if (old_layout) wgpuBindGroupLayoutRelease(old_layout);
@@ -108,12 +108,10 @@ void GridPass::render(rendering::FrameGraph& fg, const rendering::PassContext& c
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
     auto uniform_buf_handle = create_buffer(fg, buf_desc, "uniforms");
 
-    // Register bind group with frame graph
-    rendering::BindGroupDesc bg_desc{};
-    bg_desc.layout = ready.bind_group_layout;
-    bg_desc.entries = {
-        {0, rendering::ManagedBufferBinding{uniform_buf_handle, 0, sizeof(GridUniforms)}}};
-    auto bg_handle = create_bind_group(fg, std::move(bg_desc), "bg0");
+    // Register descriptor with frame graph
+    auto bg_handle = descriptor(fg, ready.descriptor_layout, "bg0")
+                         .buffer(0, uniform_buf_handle, 0, sizeof(GridUniforms))
+                         .build();
 
     auto queue = ctx.queue;
     auto view_mat = ctx.view_matrix;
@@ -131,7 +129,7 @@ void GridPass::render(rendering::FrameGraph& fg, const rendering::PassContext& c
     fg.add_pass("grid").color(color).depth_readonly(depth).execute(
         [=, &fg](WGPURenderPassEncoder pass) {
             auto uniform_buf = fg.get_buffer_ref(uniform_buf_handle).handle();
-            auto bind_group = fg.get_bind_group_ref(bg_handle).handle();
+            auto desc_group = fg.get_descriptor_ref(bg_handle).handle();
             GridUniforms gu;
             gu.inv_vp = inv_vp_mat;
             gu.vp = vp_mat;
@@ -143,7 +141,7 @@ void GridPass::render(rendering::FrameGraph& fg, const rendering::PassContext& c
             gu._pad = 0.0f;
             wgpuQueueWriteBuffer(queue, uniform_buf, 0, &gu, sizeof(gu));
             wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
-            wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 0, nullptr);
+            wgpuRenderPassEncoderSetBindGroup(pass, 0, desc_group, 0, nullptr);
             wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
         });
 }

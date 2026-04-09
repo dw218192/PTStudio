@@ -145,12 +145,12 @@ class EditorPass final : public rendering::IPass {
         webgpu::ShaderModule picking_shader;
         webgpu::RenderPipeline picking_pipeline;
         webgpu::RenderPipeline picking_line_pipeline;  // LineList topology for wireframe picking
-        WGPUBindGroupLayout picking_bind_group_layout = nullptr;
+        WGPUBindGroupLayout picking_descriptor_layout = nullptr;
 
         // Gizmo pipeline (wireframe color overlay for light shapes)
         webgpu::ShaderModule gizmo_shader;
         webgpu::RenderPipeline gizmo_color_pipeline;  // scene_color, LineList, blend
-        WGPUBindGroupLayout gizmo_bind_group_layout = nullptr;
+        WGPUBindGroupLayout gizmo_descriptor_layout = nullptr;
     };
 
     std::variant<std::monostate, Ready> m_state;

@@ -1,5 +1,6 @@
 #include <core/diagnostics.h>
 #include <core/profiling.h>
+#include <core/rendering/fallbackPool.h>
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/renderPass.h>
 #include <core/rendering/webgpu/device.h>
@@ -32,12 +33,50 @@ detail::CachedBuffer::~CachedBuffer() {
     }
 }
 
-// --- CachedBindGroup ---
+// --- CachedDescriptor ---
 
-detail::CachedBindGroup::~CachedBindGroup() {
+detail::CachedDescriptor::~CachedDescriptor() {
     if (bind_group) {
         wgpuBindGroupRelease(bind_group);
     }
+}
+
+// --- DescriptorBuilder ---
+
+DescriptorBuilder::DescriptorBuilder(FrameGraph& fg, std::string name, WGPUBindGroupLayout layout)
+    : m_fg(fg), m_name(std::move(name)) {
+    m_desc.layout = layout;
+}
+
+DescriptorBuilder& DescriptorBuilder::buffer(uint32_t binding, BufferHandle h, uint64_t offset,
+                                             uint64_t size) {
+    m_desc.entries.push_back({binding, ManagedBufferBinding{h, offset, size}});
+    return *this;
+}
+
+DescriptorBuilder& DescriptorBuilder::texture(uint32_t binding, TextureHandle h, uint32_t layer) {
+    m_desc.entries.push_back({binding, ManagedTextureBinding{h, layer}});
+    return *this;
+}
+
+DescriptorBuilder& DescriptorBuilder::external_view(uint32_t binding, WGPUTextureView view) {
+    m_desc.entries.push_back({binding, ExternalViewBinding{view}});
+    return *this;
+}
+
+DescriptorBuilder& DescriptorBuilder::external_buffer(uint32_t binding, WGPUBuffer buf,
+                                                      uint64_t offset, uint64_t size) {
+    m_desc.entries.push_back({binding, ExternalBufferBinding{buf, offset, size}});
+    return *this;
+}
+
+DescriptorBuilder& DescriptorBuilder::sampler(uint32_t binding, WGPUSampler sampler) {
+    m_desc.entries.push_back({binding, SamplerBinding{sampler}});
+    return *this;
+}
+
+DescriptorHandle DescriptorBuilder::build() {
+    return m_fg.find_or_create_descriptor(std::move(m_name), std::move(m_desc));
 }
 
 // --- PassBuilder ---
@@ -174,6 +213,18 @@ PassBuilder& PassBuilder::storage_write(ResourceHandle h) {
     return *this;
 }
 
+PassBuilder& PassBuilder::descriptor(uint32_t index, DescriptorHandle handle) {
+    auto& pass = m_graph.m_passes[m_pass_index];
+    pass.descriptor_slots.push_back({index, handle, false});
+    return *this;
+}
+
+PassBuilder& PassBuilder::descriptor(uint32_t index, DescriptorHandle handle, Dynamic) {
+    auto& pass = m_graph.m_passes[m_pass_index];
+    pass.descriptor_slots.push_back({index, handle, true});
+    return *this;
+}
+
 void PassBuilder::execute(ExecuteRenderFn fn) {
     auto& pass = m_graph.m_passes[m_pass_index];
     pass.type = PassType::Render;
@@ -193,9 +244,17 @@ FrameGraph::FrameGraph(const webgpu::Device& device, std::shared_ptr<spdlog::log
 }
 
 FrameGraph::~FrameGraph() {
-    m_bg_cache.clear();
+    m_descriptor_cache.clear();
     m_buffer_cache.clear();
     m_texture_cache.clear();
+    m_fallback_pool.reset();
+}
+
+FallbackPool& FrameGraph::fallback_pool() {
+    if (!m_fallback_pool) {
+        m_fallback_pool = std::make_unique<FallbackPool>(m_device);
+    }
+    return *m_fallback_pool;
 }
 
 ResourceHandle FrameGraph::create(std::string name, TextureDesc desc) {
@@ -279,38 +338,38 @@ BufferRef FrameGraph::get_buffer_ref(BufferHandle h) const {
     return ref;
 }
 
-BindGroupHandle FrameGraph::find_or_create_bind_group(std::string name, BindGroupDesc desc) {
-    PRECONDITION_MSG(desc.layout != nullptr, "find_or_create_bind_group: layout must not be null");
-    for (uint32_t i = 0; i < m_bg_resources.size(); ++i) {
-        if (m_bg_resources[i].name == name) {
-            return BindGroupHandle{i};
+DescriptorHandle FrameGraph::find_or_create_descriptor(std::string name, DescriptorDesc desc) {
+    PRECONDITION_MSG(desc.layout != nullptr, "find_or_create_descriptor: layout must not be null");
+    for (uint32_t i = 0; i < m_descriptor_resources.size(); ++i) {
+        if (m_descriptor_resources[i].name == name) {
+            return DescriptorHandle{i};
         }
     }
-    BindGroupResource res;
+    DescriptorResource res;
     res.name = std::move(name);
     res.desc = std::move(desc);
-    BindGroupHandle h;
-    h.index = static_cast<uint32_t>(m_bg_resources.size());
-    m_bg_resources.push_back(std::move(res));
+    DescriptorHandle h;
+    h.index = static_cast<uint32_t>(m_descriptor_resources.size());
+    m_descriptor_resources.push_back(std::move(res));
     return h;
 }
 
-std::optional<BindGroupHandle> FrameGraph::find_bind_group(const std::string& name) const {
-    for (uint32_t i = 0; i < m_bg_resources.size(); ++i) {
-        if (m_bg_resources[i].name == name) {
-            return BindGroupHandle{i};
+std::optional<DescriptorHandle> FrameGraph::find_descriptor(const std::string& name) const {
+    for (uint32_t i = 0; i < m_descriptor_resources.size(); ++i) {
+        if (m_descriptor_resources[i].name == name) {
+            return DescriptorHandle{i};
         }
     }
     return std::nullopt;
 }
 
-BindGroupRef FrameGraph::get_bind_group_ref(BindGroupHandle h) const {
-    PRECONDITION_MSG(h.is_valid() && h.index < m_bg_resources.size(),
-                     "get_bind_group_ref: invalid handle");
-    BindGroupRef ref;
-    auto& res = m_bg_resources[h.index];
-    auto it = m_bg_cache.find(res.name);
-    if (it != m_bg_cache.end()) {
+DescriptorRef FrameGraph::get_descriptor_ref(DescriptorHandle h) const {
+    PRECONDITION_MSG(h.is_valid() && h.index < m_descriptor_resources.size(),
+                     "get_descriptor_ref: invalid handle");
+    DescriptorRef ref;
+    auto& res = m_descriptor_resources[h.index];
+    auto it = m_descriptor_cache.find(res.name);
+    if (it != m_descriptor_cache.end()) {
         ref.m_cached = it->second;
     }
     return ref;
@@ -368,9 +427,9 @@ std::string FrameGraph::make_pass_key(const IPass* pass, const char* label, Reso
             n = counters.buffer++;
             kind_name = "buffer";
             break;
-        case ResourceKind::BindGroup:
-            n = counters.bind_group++;
-            kind_name = "bind_group";
+        case ResourceKind::Descriptor:
+            n = counters.descriptor++;
+            kind_name = "descriptor";
             break;
     }
     std::string key;
@@ -397,17 +456,26 @@ BufferHandle FrameGraph::import_buffer(const IPass* pass, WGPUBuffer buf, std::s
     return import_buffer(make_pass_key(pass, label, ResourceKind::Buffer), buf, size);
 }
 
-BindGroupHandle FrameGraph::find_or_create_bind_group(const IPass* pass, BindGroupDesc desc,
-                                                      const char* label) {
-    return find_or_create_bind_group(make_pass_key(pass, label, ResourceKind::BindGroup),
+DescriptorHandle FrameGraph::find_or_create_descriptor(const IPass* pass, DescriptorDesc desc,
+                                                       const char* label) {
+    return find_or_create_descriptor(make_pass_key(pass, label, ResourceKind::Descriptor),
                                      std::move(desc));
+}
+
+DescriptorBuilder FrameGraph::descriptor(std::string name, WGPUBindGroupLayout layout) {
+    return DescriptorBuilder(*this, std::move(name), layout);
+}
+
+DescriptorBuilder FrameGraph::descriptor(const IPass* pass, WGPUBindGroupLayout layout,
+                                         const char* label) {
+    return DescriptorBuilder(*this, make_pass_key(pass, label, ResourceKind::Descriptor), layout);
 }
 
 void FrameGraph::begin_frame() {
     m_resources.clear();
     m_passes.clear();
     m_buffer_resources.clear();
-    m_bg_resources.clear();
+    m_descriptor_resources.clear();
     m_pass_counters.clear();
     for (auto& [name, cached] : m_texture_cache) {
         cached->used_this_frame = false;
@@ -415,7 +483,7 @@ void FrameGraph::begin_frame() {
     for (auto& [name, cached] : m_buffer_cache) {
         cached->used_this_frame = false;
     }
-    for (auto& [name, cached] : m_bg_cache) {
+    for (auto& [name, cached] : m_descriptor_cache) {
         cached->used_this_frame = false;
     }
 }
@@ -503,8 +571,8 @@ void FrameGraph::compile() {
     // Allocate buffers
     allocate_buffers();
 
-    // Allocate bind groups (after textures and buffers are resolved)
-    allocate_bind_groups();
+    // Allocate descriptors (after textures and buffers are resolved)
+    allocate_descriptors();
 
     // Evict unused cached resources
     evict_unused();
@@ -645,11 +713,11 @@ void FrameGraph::allocate_buffers() {
     }
 }
 
-void FrameGraph::allocate_bind_groups() {
-    for (auto& res : m_bg_resources) {
+void FrameGraph::allocate_descriptors() {
+    for (auto& res : m_descriptor_resources) {
         auto& desc = res.desc;
 
-        // 1. Build a fingerprint for the bind group's current inputs.
+        // 1. Build a fingerprint for the descriptor's current inputs.
         //    Managed resources use their globally-unique version from the
         //    cache.  External resources (views, buffers, samplers) use
         //    their pointer identity so that any change is detected.
@@ -661,19 +729,19 @@ void FrameGraph::allocate_bind_groups() {
                     using T = std::decay_t<decltype(b)>;
                     if constexpr (std::is_same_v<T, ManagedBufferBinding>) {
                         INVARIANT_MSG(b.handle.index < m_buffer_resources.size(),
-                                      "allocate_bind_groups: buffer handle out of range");
+                                      "allocate_descriptors: buffer handle out of range");
                         auto& buf_name = m_buffer_resources[b.handle.index].name;
                         auto it = m_buffer_cache.find(buf_name);
                         INVARIANT_MSG(it != m_buffer_cache.end(),
-                                      "allocate_bind_groups: buffer not in cache");
+                                      "allocate_descriptors: buffer not in cache");
                         return it->second->version;
                     } else if constexpr (std::is_same_v<T, ManagedTextureBinding>) {
                         INVARIANT_MSG(b.handle.index < m_resources.size(),
-                                      "allocate_bind_groups: texture handle out of range");
+                                      "allocate_descriptors: texture handle out of range");
                         auto& tex_name = m_resources[b.handle.index].name;
                         auto it = m_texture_cache.find(tex_name);
                         INVARIANT_MSG(it != m_texture_cache.end(),
-                                      "allocate_bind_groups: texture not in cache");
+                                      "allocate_descriptors: texture not in cache");
                         return it->second->version;
                     } else if constexpr (std::is_same_v<T, ExternalViewBinding>) {
                         return static_cast<uint64_t>(reinterpret_cast<uintptr_t>(b.view));
@@ -687,16 +755,16 @@ void FrameGraph::allocate_bind_groups() {
         }
 
         // 2. Check cache for version match
-        auto cache_it = m_bg_cache.find(res.name);
-        if (cache_it != m_bg_cache.end() &&
+        auto cache_it = m_descriptor_cache.find(res.name);
+        if (cache_it != m_descriptor_cache.end() &&
             cache_it->second->input_versions_snapshot == current_versions) {
             cache_it->second->used_this_frame = true;
             continue;
         }
 
         // 3. Versions differ or new entry — rebuild
-        if (cache_it != m_bg_cache.end()) {
-            m_logger->debug("FrameGraph: rebuilding bind group '{}' (input versions changed)",
+        if (cache_it != m_descriptor_cache.end()) {
+            m_logger->debug("FrameGraph: rebuilding descriptor '{}' (input versions changed)",
                             res.name);
         }
 
@@ -721,7 +789,7 @@ void FrameGraph::allocate_bind_groups() {
                         auto& cached_tex = m_texture_cache.at(tex_name);
                         if (b.layer != UINT32_MAX) {
                             INVARIANT_MSG(b.layer < cached_tex->layer_views.size(),
-                                          "allocate_bind_groups: texture layer out of range");
+                                          "allocate_descriptors: texture layer out of range");
                             e.textureView = cached_tex->layer_views[b.layer];
                         } else {
                             e.textureView = cached_tex->view;
@@ -748,14 +816,15 @@ void FrameGraph::allocate_bind_groups() {
         bg_desc.entries = wgpu_entries.data();
         WGPUBindGroup bg = wgpuDeviceCreateBindGroup(m_device.handle(), &bg_desc);
 
-        auto cached = boost::intrusive_ptr<detail::CachedBindGroup>(new detail::CachedBindGroup());
+        auto cached =
+            boost::intrusive_ptr<detail::CachedDescriptor>(new detail::CachedDescriptor());
         cached->bind_group = bg;
         cached->input_versions_snapshot = std::move(current_versions);
         cached->used_this_frame = true;
         cached->version = next_version();
-        m_bg_cache[res.name] = cached;
+        m_descriptor_cache[res.name] = cached;
 
-        m_logger->debug("FrameGraph: created bind group '{}' (v{})", res.name, cached->version);
+        m_logger->debug("FrameGraph: created descriptor '{}' (v{})", res.name, cached->version);
     }
 }
 
@@ -776,10 +845,10 @@ void FrameGraph::evict_unused() {
             ++it;
         }
     }
-    for (auto it = m_bg_cache.begin(); it != m_bg_cache.end();) {
+    for (auto it = m_descriptor_cache.begin(); it != m_descriptor_cache.end();) {
         if (!it->second->used_this_frame) {
-            m_logger->debug("FrameGraph: evicting unused bind group '{}'", it->first);
-            it = m_bg_cache.erase(it);
+            m_logger->debug("FrameGraph: evicting unused descriptor '{}'", it->first);
+            it = m_descriptor_cache.erase(it);
         } else {
             ++it;
         }
@@ -827,6 +896,13 @@ void FrameGraph::execute(WGPUCommandEncoder encoder) {
             WGPUComputePassDescriptor desc = WGPU_COMPUTE_PASS_DESCRIPTOR_INIT;
             desc.label = {pass.name.c_str(), pass.name.size()};
             auto enc = wgpuCommandEncoderBeginComputePass(encoder, &desc);
+            // Auto-set static descriptors
+            for (auto& slot : pass.descriptor_slots) {
+                if (slot.is_dynamic) continue;
+                auto ref = get_descriptor_ref(slot.handle);
+                INVARIANT_MSG(ref.handle(), "static descriptor not resolved");
+                wgpuComputePassEncoderSetBindGroup(enc, slot.index, ref.handle(), 0, nullptr);
+            }
             if (pass.compute_fn) pass.compute_fn(enc);
             wgpuComputePassEncoderEnd(enc);
             wgpuComputePassEncoderRelease(enc);
@@ -873,6 +949,14 @@ void FrameGraph::execute(WGPUCommandEncoder encoder) {
 
             WGPURenderPassEncoder pass_encoder =
                 wgpuCommandEncoderBeginRenderPass(encoder, &pass_desc);
+            // Auto-set static descriptors before calling the execute lambda
+            for (auto& slot : pass.descriptor_slots) {
+                if (slot.is_dynamic) continue;
+                auto ref = get_descriptor_ref(slot.handle);
+                INVARIANT_MSG(ref.handle(), "static descriptor not resolved");
+                wgpuRenderPassEncoderSetBindGroup(pass_encoder, slot.index, ref.handle(), 0,
+                                                  nullptr);
+            }
             if (pass.render_fn) {
                 pass.render_fn(pass_encoder);
             }

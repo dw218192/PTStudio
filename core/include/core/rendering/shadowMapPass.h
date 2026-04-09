@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/rendering/frameGraph.h>
+#include <core/rendering/outputLayout.h>
 #include <core/rendering/renderPass.h>
 #include <core/rendering/webgpu/pipeline.h>
 #include <core/rendering/webgpu/shader.h>
@@ -40,8 +41,12 @@ class ShadowMapPass final : public IPass {
     struct Outputs {
         TextureHandle shadow_array;
         BufferHandle shadow_info;
+        DescriptorHandle consumer_desc;
     };
     Outputs add_to_frame_graph(FrameGraph& fg, const PassContext& ctx, const Inputs&);
+
+    /// Layout for the consumer bind group (shadow receiver). Non-owning.
+    [[nodiscard]] WGPUBindGroupLayout consumer_layout() const;
 
     [[nodiscard]] bool enabled() const {
         return m_enabled;
@@ -54,7 +59,8 @@ class ShadowMapPass final : public IPass {
     struct Ready {
         webgpu::ShaderModule shader;
         webgpu::RenderPipeline pipeline;
-        WGPUBindGroupLayout bgl = nullptr;
+        WGPUBindGroupLayout desc_layout = nullptr;
+        OutputLayoutInfo output_layout;
     };
     std::variant<std::monostate, Ready> m_state;
 

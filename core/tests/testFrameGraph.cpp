@@ -986,7 +986,7 @@ TEST_CASE("FrameGraph - non-array texture has no layer views") {
 
 namespace {
 
-struct BindGroupFixture : TestFixture {
+struct DescriptorFixture : TestFixture {
     WGPUBindGroupLayout create_buffer_layout() {
         WGPUBindGroupLayoutEntry entry = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
         entry.binding = 0;
@@ -1020,8 +1020,8 @@ struct BindGroupFixture : TestFixture {
 
 }  // namespace
 
-TEST_CASE("FrameGraph - bind group with buffer input") {
-    BindGroupFixture f;
+TEST_CASE("FrameGraph - descriptor with buffer input") {
+    DescriptorFixture f;
     auto layout = f.create_buffer_layout();
 
     f.graph.begin_frame();
@@ -1031,24 +1031,20 @@ TEST_CASE("FrameGraph - bind group with buffer input") {
     buf_desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
     auto buf_h = f.graph.find_or_create_buffer("ubo", buf_desc);
 
-    pts::rendering::BindGroupDesc bg_desc;
-    bg_desc.layout = layout;
-    bg_desc.entries = {{0, pts::rendering::ManagedBufferBinding{buf_h}}};
-
-    auto bg_h = f.graph.find_or_create_bind_group("my_bg", bg_desc);
+    auto bg_h = f.graph.descriptor("my_bg", layout).buffer(0, buf_h).build();
     CHECK(bg_h.is_valid());
 
     f.graph.compile();
 
-    auto ref = f.graph.get_bind_group_ref(bg_h);
+    auto ref = f.graph.get_descriptor_ref(bg_h);
     CHECK(static_cast<bool>(ref));
     CHECK(ref.handle() != nullptr);
 
     wgpuBindGroupLayoutRelease(layout);
 }
 
-TEST_CASE("FrameGraph - bind group version invalidation on buffer change") {
-    BindGroupFixture f;
+TEST_CASE("FrameGraph - descriptor version invalidation on buffer change") {
+    DescriptorFixture f;
     auto layout = f.create_buffer_layout();
 
     WGPUBufferDescriptor ext_desc = WGPU_BUFFER_DESCRIPTOR_INIT;
@@ -1059,33 +1055,25 @@ TEST_CASE("FrameGraph - bind group version invalidation on buffer change") {
     REQUIRE(ext_buf1 != nullptr);
     REQUIRE(ext_buf2 != nullptr);
 
-    // Frame 1 — import buf1, create bind group
+    // Frame 1 — import buf1, create descriptor
     f.graph.begin_frame();
     auto buf_h = f.graph.import_buffer("ubo", ext_buf1, 256);
 
-    pts::rendering::BindGroupDesc bg_desc;
-    bg_desc.layout = layout;
-    bg_desc.entries = {{0, pts::rendering::ManagedBufferBinding{buf_h}}};
-
-    auto bg_h = f.graph.find_or_create_bind_group("my_bg", bg_desc);
+    auto bg_h = f.graph.descriptor("my_bg", layout).buffer(0, buf_h).build();
     f.graph.compile();
-    auto ref1 = f.graph.get_bind_group_ref(bg_h);
+    auto ref1 = f.graph.get_descriptor_ref(bg_h);
     CHECK(ref1.handle() != nullptr);
 
-    // Frame 2 — import DIFFERENT buffer pointer → version bump → bind group rebuilds
+    // Frame 2 — import DIFFERENT buffer pointer → version bump → descriptor rebuilds
     f.graph.begin_frame();
     auto buf_h2 = f.graph.import_buffer("ubo", ext_buf2, 256);
 
-    pts::rendering::BindGroupDesc bg_desc2;
-    bg_desc2.layout = layout;
-    bg_desc2.entries = {{0, pts::rendering::ManagedBufferBinding{buf_h2}}};
-
-    auto bg_h2 = f.graph.find_or_create_bind_group("my_bg", bg_desc2);
+    auto bg_h2 = f.graph.descriptor("my_bg", layout).buffer(0, buf_h2).build();
     f.graph.compile();
-    auto ref2 = f.graph.get_bind_group_ref(bg_h2);
+    auto ref2 = f.graph.get_descriptor_ref(bg_h2);
     CHECK(ref2.handle() != nullptr);
 
-    // The bind group was rebuilt (different WGPUBindGroup handle)
+    // The descriptor was rebuilt (different WGPUBindGroup handle)
     CHECK(ref1.handle() != ref2.handle());
 
     wgpuBufferDestroy(ext_buf1);
@@ -1095,8 +1083,8 @@ TEST_CASE("FrameGraph - bind group version invalidation on buffer change") {
     wgpuBindGroupLayoutRelease(layout);
 }
 
-TEST_CASE("FrameGraph - bind group cache reuse when inputs stable") {
-    BindGroupFixture f;
+TEST_CASE("FrameGraph - descriptor cache reuse when inputs stable") {
+    DescriptorFixture f;
     auto layout = f.create_buffer_layout();
 
     // Frame 1
@@ -1107,26 +1095,18 @@ TEST_CASE("FrameGraph - bind group cache reuse when inputs stable") {
     buf_desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
     auto buf_h = f.graph.find_or_create_buffer("ubo", buf_desc);
 
-    pts::rendering::BindGroupDesc bg_desc;
-    bg_desc.layout = layout;
-    bg_desc.entries = {{0, pts::rendering::ManagedBufferBinding{buf_h}}};
-
-    f.graph.find_or_create_bind_group("my_bg", bg_desc);
+    f.graph.descriptor("my_bg", layout).buffer(0, buf_h).build();
     f.graph.compile();
-    auto ref1 = f.graph.get_bind_group_ref(f.graph.find_bind_group("my_bg").value());
+    auto ref1 = f.graph.get_descriptor_ref(f.graph.find_descriptor("my_bg").value());
     CHECK(ref1.handle() != nullptr);
 
-    // Frame 2 — same buffer desc, same bind group desc → should reuse
+    // Frame 2 — same buffer desc, same descriptor desc → should reuse
     f.graph.begin_frame();
     auto buf_h2 = f.graph.find_or_create_buffer("ubo", buf_desc);
 
-    pts::rendering::BindGroupDesc bg_desc2;
-    bg_desc2.layout = layout;
-    bg_desc2.entries = {{0, pts::rendering::ManagedBufferBinding{buf_h2}}};
-
-    f.graph.find_or_create_bind_group("my_bg", bg_desc2);
+    f.graph.descriptor("my_bg", layout).buffer(0, buf_h2).build();
     f.graph.compile();
-    auto ref2 = f.graph.get_bind_group_ref(f.graph.find_bind_group("my_bg").value());
+    auto ref2 = f.graph.get_descriptor_ref(f.graph.find_descriptor("my_bg").value());
 
     // Same underlying WGPUBindGroup should be reused
     CHECK(ref1.handle() == ref2.handle());
@@ -1134,49 +1114,39 @@ TEST_CASE("FrameGraph - bind group cache reuse when inputs stable") {
     wgpuBindGroupLayoutRelease(layout);
 }
 
-TEST_CASE("FrameGraph - bind group eviction") {
-    BindGroupFixture f;
+TEST_CASE("FrameGraph - descriptor eviction") {
+    DescriptorFixture f;
     auto layout = f.create_buffer_layout();
 
     pts::rendering::BufferDesc buf_desc;
     buf_desc.size = 256;
     buf_desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
 
-    // Frame 1 — create two bind groups
+    // Frame 1 — create two descriptors
     f.graph.begin_frame();
     auto buf_a = f.graph.find_or_create_buffer("ubo_a", buf_desc);
     auto buf_b = f.graph.find_or_create_buffer("ubo_b", buf_desc);
 
-    pts::rendering::BindGroupDesc desc_a;
-    desc_a.layout = layout;
-    desc_a.entries = {{0, pts::rendering::ManagedBufferBinding{buf_a}}};
-    f.graph.find_or_create_bind_group("bg_a", desc_a);
-
-    pts::rendering::BindGroupDesc desc_b;
-    desc_b.layout = layout;
-    desc_b.entries = {{0, pts::rendering::ManagedBufferBinding{buf_b}}};
-    f.graph.find_or_create_bind_group("bg_b", desc_b);
+    f.graph.descriptor("bg_a", layout).buffer(0, buf_a).build();
+    f.graph.descriptor("bg_b", layout).buffer(0, buf_b).build();
 
     f.graph.compile();
-    CHECK(f.graph.cached_bind_group_count() == 2);
+    CHECK(f.graph.cached_descriptor_count() == 2);
 
     // Frame 2 — only use bg_a, bg_b should be evicted
     f.graph.begin_frame();
     auto buf_a2 = f.graph.find_or_create_buffer("ubo_a", buf_desc);
 
-    pts::rendering::BindGroupDesc desc_a2;
-    desc_a2.layout = layout;
-    desc_a2.entries = {{0, pts::rendering::ManagedBufferBinding{buf_a2}}};
-    f.graph.find_or_create_bind_group("bg_a", desc_a2);
+    f.graph.descriptor("bg_a", layout).buffer(0, buf_a2).build();
 
     f.graph.compile();
-    CHECK(f.graph.cached_bind_group_count() == 1);
+    CHECK(f.graph.cached_descriptor_count() == 1);
 
     wgpuBindGroupLayoutRelease(layout);
 }
 
-TEST_CASE("FrameGraph - bind group with texture input") {
-    BindGroupFixture f;
+TEST_CASE("FrameGraph - descriptor with texture input") {
+    DescriptorFixture f;
     auto layout = f.create_texture_layout();
 
     pts::rendering::TextureDesc tex_desc;
@@ -1185,36 +1155,28 @@ TEST_CASE("FrameGraph - bind group with texture input") {
     tex_desc.format = WGPUTextureFormat_RGBA8Unorm;
     tex_desc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_RenderAttachment;
 
-    // Frame 1 — create texture and bind group referencing it
+    // Frame 1 — create texture and descriptor referencing it
     f.graph.begin_frame();
     auto tex_h = f.graph.create("my_tex", tex_desc);
     f.graph.add_pass("writer").color(tex_h).execute([](WGPURenderPassEncoder) {});
 
-    pts::rendering::BindGroupDesc bg_desc;
-    bg_desc.layout = layout;
-    bg_desc.entries = {{0, pts::rendering::ManagedTextureBinding{tex_h}}};
-
-    auto bg_h = f.graph.find_or_create_bind_group("tex_bg", bg_desc);
+    auto bg_h = f.graph.descriptor("tex_bg", layout).texture(0, tex_h).build();
     f.graph.compile();
-    auto ref1 = f.graph.get_bind_group_ref(bg_h);
+    auto ref1 = f.graph.get_descriptor_ref(bg_h);
     CHECK(ref1.handle() != nullptr);
 
-    // Frame 2 — same texture desc → bind group reused
+    // Frame 2 — same texture desc → descriptor reused
     f.graph.begin_frame();
     auto tex_h2 = f.graph.create("my_tex", tex_desc);
     f.graph.add_pass("writer").color(tex_h2).execute([](WGPURenderPassEncoder) {});
 
-    pts::rendering::BindGroupDesc bg_desc2;
-    bg_desc2.layout = layout;
-    bg_desc2.entries = {{0, pts::rendering::ManagedTextureBinding{tex_h2}}};
-
-    f.graph.find_or_create_bind_group("tex_bg", bg_desc2);
+    f.graph.descriptor("tex_bg", layout).texture(0, tex_h2).build();
     f.graph.compile();
-    auto ref2 = f.graph.get_bind_group_ref(f.graph.find_bind_group("tex_bg").value());
+    auto ref2 = f.graph.get_descriptor_ref(f.graph.find_descriptor("tex_bg").value());
     CHECK(ref2.handle() != nullptr);
     CHECK(ref1.handle() == ref2.handle());
 
-    // Frame 3 — resize texture → version bump → bind group rebuilds
+    // Frame 3 — resize texture → version bump → descriptor rebuilds
     tex_desc.width = 128;
     tex_desc.height = 128;
 
@@ -1222,50 +1184,42 @@ TEST_CASE("FrameGraph - bind group with texture input") {
     auto tex_h3 = f.graph.create("my_tex", tex_desc);
     f.graph.add_pass("writer").color(tex_h3).execute([](WGPURenderPassEncoder) {});
 
-    pts::rendering::BindGroupDesc bg_desc3;
-    bg_desc3.layout = layout;
-    bg_desc3.entries = {{0, pts::rendering::ManagedTextureBinding{tex_h3}}};
-
-    f.graph.find_or_create_bind_group("tex_bg", bg_desc3);
+    f.graph.descriptor("tex_bg", layout).texture(0, tex_h3).build();
     f.graph.compile();
-    auto ref3 = f.graph.get_bind_group_ref(f.graph.find_bind_group("tex_bg").value());
+    auto ref3 = f.graph.get_descriptor_ref(f.graph.find_descriptor("tex_bg").value());
     CHECK(ref3.handle() != nullptr);
     CHECK(ref1.handle() != ref3.handle());
 
     wgpuBindGroupLayoutRelease(layout);
 }
 
-TEST_CASE("FrameGraph - find_bind_group returns nullopt for missing") {
+TEST_CASE("FrameGraph - find_descriptor returns nullopt for missing") {
     TestFixture f;
     f.graph.begin_frame();
-    CHECK(!f.graph.find_bind_group("nonexistent").has_value());
+    CHECK(!f.graph.find_descriptor("nonexistent").has_value());
 }
 
-TEST_CASE("FrameGraph - cached_bind_group_count") {
-    BindGroupFixture f;
+TEST_CASE("FrameGraph - cached_descriptor_count") {
+    DescriptorFixture f;
     auto layout = f.create_buffer_layout();
 
     f.graph.begin_frame();
-    CHECK(f.graph.cached_bind_group_count() == 0);
+    CHECK(f.graph.cached_descriptor_count() == 0);
 
     pts::rendering::BufferDesc buf_desc;
     buf_desc.size = 64;
     buf_desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
     auto buf = f.graph.find_or_create_buffer("buf", buf_desc);
 
-    pts::rendering::BindGroupDesc bg_desc;
-    bg_desc.layout = layout;
-    bg_desc.entries = {{0, pts::rendering::ManagedBufferBinding{buf}}};
-
-    f.graph.find_or_create_bind_group("bg", bg_desc);
+    f.graph.descriptor("bg", layout).buffer(0, buf).build();
     f.graph.compile();
-    CHECK(f.graph.cached_bind_group_count() == 1);
+    CHECK(f.graph.cached_descriptor_count() == 1);
 
     wgpuBindGroupLayoutRelease(layout);
 }
 
-TEST_CASE("FrameGraph - bind group rebuilds when texture name changes across frames") {
-    BindGroupFixture f;
+TEST_CASE("FrameGraph - descriptor rebuilds when texture name changes across frames") {
+    DescriptorFixture f;
     auto layout = f.create_texture_layout();
 
     pts::rendering::TextureDesc tex_desc;
@@ -1274,30 +1228,24 @@ TEST_CASE("FrameGraph - bind group rebuilds when texture name changes across fra
     tex_desc.format = WGPUTextureFormat_RGBA8Unorm;
     tex_desc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_RenderAttachment;
 
-    // Frame 1: create "pass_a/color" texture and bind group
+    // Frame 1: create "pass_a/color" texture and descriptor
     f.graph.begin_frame();
     auto tex_h1 = f.graph.find_or_create("pass_a/color", tex_desc);
     f.graph.add_pass("writer_a").color(tex_h1).execute([](WGPURenderPassEncoder) {});
 
-    pts::rendering::BindGroupDesc bg_desc1;
-    bg_desc1.layout = layout;
-    bg_desc1.entries = {{0, pts::rendering::ManagedTextureBinding{tex_h1}}};
-    f.graph.find_or_create_bind_group("tex_bg", bg_desc1);
+    f.graph.descriptor("tex_bg", layout).texture(0, tex_h1).build();
     f.graph.compile();
-    auto ref1 = f.graph.get_bind_group_ref(f.graph.find_bind_group("tex_bg").value());
+    auto ref1 = f.graph.get_descriptor_ref(f.graph.find_descriptor("tex_bg").value());
     CHECK(ref1.handle() != nullptr);
 
-    // Frame 2: create "pass_b/color" (same desc, different name) and bind group
+    // Frame 2: create "pass_b/color" (same desc, different name) and descriptor
     f.graph.begin_frame();
     auto tex_h2 = f.graph.find_or_create("pass_b/color", tex_desc);
     f.graph.add_pass("writer_b").color(tex_h2).execute([](WGPURenderPassEncoder) {});
 
-    pts::rendering::BindGroupDesc bg_desc2;
-    bg_desc2.layout = layout;
-    bg_desc2.entries = {{0, pts::rendering::ManagedTextureBinding{tex_h2}}};
-    f.graph.find_or_create_bind_group("tex_bg", bg_desc2);
+    f.graph.descriptor("tex_bg", layout).texture(0, tex_h2).build();
     f.graph.compile();
-    auto ref2 = f.graph.get_bind_group_ref(f.graph.find_bind_group("tex_bg").value());
+    auto ref2 = f.graph.get_descriptor_ref(f.graph.find_descriptor("tex_bg").value());
     CHECK(ref2.handle() != nullptr);
 
     // Must rebuild — different texture name means different version
@@ -1306,8 +1254,8 @@ TEST_CASE("FrameGraph - bind group rebuilds when texture name changes across fra
     wgpuBindGroupLayoutRelease(layout);
 }
 
-TEST_CASE("FrameGraph - bind group rebuilds when external view changes") {
-    BindGroupFixture f;
+TEST_CASE("FrameGraph - descriptor rebuilds when external view changes") {
+    DescriptorFixture f;
     auto layout = f.create_texture_layout();
 
     // Create two WGPUTextures → two WGPUTextureViews
@@ -1333,24 +1281,18 @@ TEST_CASE("FrameGraph - bind group rebuilds when external view changes") {
     REQUIRE(view_a != nullptr);
     REQUIRE(view_b != nullptr);
 
-    // Frame 1: bind group with view_a
+    // Frame 1: descriptor with view_a
     f.graph.begin_frame();
-    pts::rendering::BindGroupDesc bg_desc1;
-    bg_desc1.layout = layout;
-    bg_desc1.entries = {{0, pts::rendering::ExternalViewBinding{view_a}}};
-    f.graph.find_or_create_bind_group("ext_bg", bg_desc1);
+    f.graph.descriptor("ext_bg", layout).external_view(0, view_a).build();
     f.graph.compile();
-    auto ref1 = f.graph.get_bind_group_ref(f.graph.find_bind_group("ext_bg").value());
+    auto ref1 = f.graph.get_descriptor_ref(f.graph.find_descriptor("ext_bg").value());
     CHECK(ref1.handle() != nullptr);
 
-    // Frame 2: bind group with view_b
+    // Frame 2: descriptor with view_b
     f.graph.begin_frame();
-    pts::rendering::BindGroupDesc bg_desc2;
-    bg_desc2.layout = layout;
-    bg_desc2.entries = {{0, pts::rendering::ExternalViewBinding{view_b}}};
-    f.graph.find_or_create_bind_group("ext_bg", bg_desc2);
+    f.graph.descriptor("ext_bg", layout).external_view(0, view_b).build();
     f.graph.compile();
-    auto ref2 = f.graph.get_bind_group_ref(f.graph.find_bind_group("ext_bg").value());
+    auto ref2 = f.graph.get_descriptor_ref(f.graph.find_descriptor("ext_bg").value());
     CHECK(ref2.handle() != nullptr);
 
     CHECK(ref1.handle() != ref2.handle());
@@ -1364,10 +1306,10 @@ TEST_CASE("FrameGraph - bind group rebuilds when external view changes") {
     wgpuBindGroupLayoutRelease(layout);
 }
 
-TEST_CASE("FrameGraph - bind group rebuilds when sampler changes") {
-    BindGroupFixture f;
+TEST_CASE("FrameGraph - descriptor rebuilds when sampler changes") {
+    DescriptorFixture f;
 
-    // Create a sampler-only bind group layout
+    // Create a sampler-only descriptor layout
     WGPUBindGroupLayoutEntry entry = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
     entry.binding = 0;
     entry.visibility = WGPUShaderStage_Fragment;
@@ -1390,24 +1332,18 @@ TEST_CASE("FrameGraph - bind group rebuilds when sampler changes") {
     REQUIRE(sampler_a != nullptr);
     REQUIRE(sampler_b != nullptr);
 
-    // Frame 1: bind group with sampler_a
+    // Frame 1: descriptor with sampler_a
     f.graph.begin_frame();
-    pts::rendering::BindGroupDesc bg_desc1;
-    bg_desc1.layout = layout;
-    bg_desc1.entries = {{0, pts::rendering::SamplerBinding{sampler_a}}};
-    f.graph.find_or_create_bind_group("samp_bg", bg_desc1);
+    f.graph.descriptor("samp_bg", layout).sampler(0, sampler_a).build();
     f.graph.compile();
-    auto ref1 = f.graph.get_bind_group_ref(f.graph.find_bind_group("samp_bg").value());
+    auto ref1 = f.graph.get_descriptor_ref(f.graph.find_descriptor("samp_bg").value());
     CHECK(ref1.handle() != nullptr);
 
-    // Frame 2: bind group with sampler_b
+    // Frame 2: descriptor with sampler_b
     f.graph.begin_frame();
-    pts::rendering::BindGroupDesc bg_desc2;
-    bg_desc2.layout = layout;
-    bg_desc2.entries = {{0, pts::rendering::SamplerBinding{sampler_b}}};
-    f.graph.find_or_create_bind_group("samp_bg", bg_desc2);
+    f.graph.descriptor("samp_bg", layout).sampler(0, sampler_b).build();
     f.graph.compile();
-    auto ref2 = f.graph.get_bind_group_ref(f.graph.find_bind_group("samp_bg").value());
+    auto ref2 = f.graph.get_descriptor_ref(f.graph.find_descriptor("samp_bg").value());
     CHECK(ref2.handle() != nullptr);
 
     CHECK(ref1.handle() != ref2.handle());
@@ -1565,8 +1501,8 @@ TEST_CASE("FrameGraph - IPass import_buffer namespaced") {
     wgpuBufferRelease(ext_buf);
 }
 
-TEST_CASE("FrameGraph - IPass find_or_create_bind_group namespaced") {
-    BindGroupFixture f;
+TEST_CASE("FrameGraph - IPass find_or_create_descriptor namespaced") {
+    DescriptorFixture f;
     pts::rendering::ShaderLoader sl{f.logger};
     TestPass pass{"test_pass", sl};
     auto layout = f.create_buffer_layout();
@@ -1578,18 +1514,439 @@ TEST_CASE("FrameGraph - IPass find_or_create_bind_group namespaced") {
     buf_desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
     auto buf_h = f.graph.find_or_create_buffer(&pass, buf_desc, "ubo");
 
-    pts::rendering::BindGroupDesc bg_desc;
-    bg_desc.layout = layout;
-    bg_desc.entries = {{0, pts::rendering::ManagedBufferBinding{buf_h}}};
-
-    auto bg_h = f.graph.find_or_create_bind_group(&pass, std::move(bg_desc), "bg0");
+    auto bg_h = f.graph.descriptor(&pass, layout, "bg0").buffer(0, buf_h).build();
     CHECK(bg_h.is_valid());
 
     f.graph.compile();
-    auto ref = f.graph.get_bind_group_ref(bg_h);
+    auto ref = f.graph.get_descriptor_ref(bg_h);
     CHECK(ref.handle() != nullptr);
 
     wgpuBindGroupLayoutRelease(layout);
+}
+
+TEST_CASE("FrameGraph - DescriptorBuilder fluent API") {
+    DescriptorFixture f;
+    auto buf_layout = f.create_buffer_layout();
+    auto tex_layout = f.create_texture_layout();
+
+    // Create a multi-entry layout: buffer + texture + sampler
+    WGPUBindGroupLayoutEntry multi_entries[3] = {};
+
+    multi_entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    multi_entries[0].binding = 0;
+    multi_entries[0].visibility = WGPUShaderStage_Fragment;
+    multi_entries[0].buffer.type = WGPUBufferBindingType_Uniform;
+    multi_entries[0].buffer.minBindingSize = 0;
+
+    multi_entries[1] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    multi_entries[1].binding = 1;
+    multi_entries[1].visibility = WGPUShaderStage_Fragment;
+    multi_entries[1].texture.sampleType = WGPUTextureSampleType_Float;
+    multi_entries[1].texture.viewDimension = WGPUTextureViewDimension_2D;
+
+    multi_entries[2] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    multi_entries[2].binding = 2;
+    multi_entries[2].visibility = WGPUShaderStage_Fragment;
+    multi_entries[2].sampler.type = WGPUSamplerBindingType_Filtering;
+
+    WGPUBindGroupLayoutDescriptor multi_bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
+    multi_bgl_desc.entryCount = 3;
+    multi_bgl_desc.entries = multi_entries;
+    auto multi_layout = wgpuDeviceCreateBindGroupLayout(f.device.handle(), &multi_bgl_desc);
+    REQUIRE(multi_layout != nullptr);
+
+    WGPUSamplerDescriptor samp_desc = WGPU_SAMPLER_DESCRIPTOR_INIT;
+    samp_desc.magFilter = WGPUFilterMode_Linear;
+    auto sampler = wgpuDeviceCreateSampler(f.device.handle(), &samp_desc);
+    REQUIRE(sampler != nullptr);
+
+    f.graph.begin_frame();
+
+    pts::rendering::BufferDesc buf_desc;
+    buf_desc.size = 64;
+    buf_desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+    auto buf = f.graph.find_or_create_buffer("ubo", buf_desc);
+
+    pts::rendering::TextureDesc tex_desc;
+    tex_desc.width = 32;
+    tex_desc.height = 32;
+    tex_desc.format = WGPUTextureFormat_RGBA8Unorm;
+    tex_desc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_RenderAttachment;
+    auto tex = f.graph.create("my_tex", tex_desc);
+    f.graph.add_pass("writer").color(tex).execute([](WGPURenderPassEncoder) {});
+
+    // Build descriptor with all three entry types
+    auto bg_h = f.graph.descriptor("multi_bg", multi_layout)
+                    .buffer(0, buf)
+                    .texture(1, tex)
+                    .sampler(2, sampler)
+                    .build();
+    CHECK(bg_h.is_valid());
+
+    f.graph.compile();
+    auto ref = f.graph.get_descriptor_ref(bg_h);
+    CHECK(ref.handle() != nullptr);
+
+    // Builder via IPass helper
+    pts::rendering::ShaderLoader sl{f.logger};
+    TestPass pass{"builder_test", sl};
+
+    f.graph.begin_frame();
+    auto buf2 = f.graph.find_or_create_buffer("ubo2", buf_desc);
+    auto bg_pass = f.graph.descriptor(&pass, buf_layout, "bg0").buffer(0, buf2).build();
+    CHECK(bg_pass.is_valid());
+    f.graph.compile();
+    CHECK(f.graph.get_descriptor_ref(bg_pass).handle() != nullptr);
+
+    wgpuSamplerRelease(sampler);
+    wgpuBindGroupLayoutRelease(multi_layout);
+    wgpuBindGroupLayoutRelease(buf_layout);
+    wgpuBindGroupLayoutRelease(tex_layout);
+}
+
+// --- Descriptor API ---
+
+TEST_CASE("FrameGraph - descriptor() fluent API creates valid handle") {
+    DescriptorFixture f;
+    auto layout = f.create_buffer_layout();
+
+    f.graph.begin_frame();
+
+    pts::rendering::BufferDesc buf_desc;
+    buf_desc.size = 256;
+    buf_desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+    auto buf_h = f.graph.find_or_create_buffer("ubo", buf_desc);
+
+    // Use the descriptor() fluent API
+    auto desc_h = f.graph.descriptor("my_desc", layout).buffer(0, buf_h).build();
+    CHECK(desc_h.is_valid());
+
+    f.graph.compile();
+
+    auto ref = f.graph.get_descriptor_ref(desc_h);
+    CHECK(static_cast<bool>(ref));
+    CHECK(ref.handle() != nullptr);
+
+    // Also check backward-compat aliases
+    auto found = f.graph.find_descriptor("my_desc");
+    REQUIRE(found.has_value());
+    CHECK(found->index == desc_h.index);
+    CHECK(f.graph.cached_descriptor_count() == 1);
+
+    wgpuBindGroupLayoutRelease(layout);
+}
+
+// --- PassBuilder.descriptor() auto-set ---
+
+TEST_CASE("FrameGraph - PassBuilder.descriptor() auto-sets static descriptors") {
+    DescriptorFixture f;
+    auto layout = f.create_buffer_layout();
+
+    f.graph.begin_frame();
+
+    pts::rendering::BufferDesc buf_desc;
+    buf_desc.size = 256;
+    buf_desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+    auto buf_h = f.graph.find_or_create_buffer("ubo", buf_desc);
+
+    auto desc_h = f.graph.descriptor("test_desc", layout).buffer(0, buf_h).build();
+
+    pts::rendering::TextureDesc color_desc;
+    color_desc.width = 64;
+    color_desc.height = 64;
+    color_desc.format = WGPUTextureFormat_BGRA8Unorm;
+    auto color = f.graph.create("color", color_desc);
+
+    bool executed = false;
+    f.graph.add_pass("test_pass")
+        .color(color)
+        .descriptor(0, desc_h)
+        .execute([&](WGPURenderPassEncoder) { executed = true; });
+
+    f.graph.compile();
+
+    auto encoder = f.create_encoder();
+    f.graph.execute(encoder);
+    f.submit(encoder);
+
+    CHECK(executed);
+
+    wgpuBindGroupLayoutRelease(layout);
+}
+
+TEST_CASE("FrameGraph - PassBuilder.descriptor() dynamic does not auto-set") {
+    DescriptorFixture f;
+    auto layout = f.create_buffer_layout();
+
+    f.graph.begin_frame();
+
+    pts::rendering::BufferDesc buf_desc;
+    buf_desc.size = 256;
+    buf_desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+    auto buf_h = f.graph.find_or_create_buffer("ubo", buf_desc);
+
+    auto desc_h = f.graph.descriptor("dyn_desc", layout).buffer(0, buf_h).build();
+
+    pts::rendering::TextureDesc color_desc;
+    color_desc.width = 64;
+    color_desc.height = 64;
+    color_desc.format = WGPUTextureFormat_BGRA8Unorm;
+    auto color = f.graph.create("color", color_desc);
+
+    bool executed = false;
+    f.graph.add_pass("test_pass")
+        .color(color)
+        .descriptor(0, desc_h, pts::rendering::dynamic_descriptor)
+        .execute([&](WGPURenderPassEncoder) { executed = true; });
+
+    f.graph.compile();
+
+    auto encoder = f.create_encoder();
+    f.graph.execute(encoder);
+    f.submit(encoder);
+
+    CHECK(executed);
+
+    wgpuBindGroupLayoutRelease(layout);
+}
+
+// --- OutputLayout ---
+
+#include <core/rendering/outputLayout.h>
+
+TEST_CASE("create_output_layout - single texture slot") {
+    TestFixture f;
+    using pts::rendering::OutputSlot;
+
+    auto info = pts::rendering::create_output_layout(
+        f.device, {OutputSlot::texture(WGPUTextureFormat_RGBA8Unorm)});
+
+    CHECK(info.layout != nullptr);
+    REQUIRE(info.slots.size() == 1);
+    CHECK(info.slots[0].binding == 0);
+    CHECK(info.slots[0].slot.kind == OutputSlot::Kind::Texture);
+    CHECK(info.slots[0].sampler == nullptr);  // texture slot, no sampler
+
+    info.release();
+}
+
+TEST_CASE("create_output_layout - sampled_texture expands to 2 slots") {
+    TestFixture f;
+    using pts::rendering::OutputSlot;
+
+    auto st = OutputSlot::sampled_texture(WGPUTextureFormat_RGBA8Unorm);
+    auto info = pts::rendering::create_output_layout(f.device, {st[0], st[1]});
+
+    CHECK(info.layout != nullptr);
+    REQUIRE(info.slots.size() == 2);
+    CHECK(info.slots[0].binding == 0);
+    CHECK(info.slots[0].slot.kind == OutputSlot::Kind::Texture);
+    CHECK(info.slots[0].sampler == nullptr);
+    CHECK(info.slots[1].binding == 1);
+    CHECK(info.slots[1].slot.kind == OutputSlot::Kind::Sampler);
+    CHECK(info.slots[1].sampler != nullptr);
+
+    info.release();
+}
+
+TEST_CASE("create_output_layout - storage then sampled_texture") {
+    TestFixture f;
+    using pts::rendering::OutputSlot;
+
+    auto st = OutputSlot::sampled_texture(WGPUTextureFormat_Depth32Float,
+                                          WGPUTextureViewDimension_2DArray);
+    auto info =
+        pts::rendering::create_output_layout(f.device, {OutputSlot::storage(80), st[0], st[1]});
+
+    CHECK(info.layout != nullptr);
+    REQUIRE(info.slots.size() == 3);
+    // Storage slot: binding 0, no sampler
+    CHECK(info.slots[0].binding == 0);
+    CHECK(info.slots[0].slot.kind == OutputSlot::Kind::Storage);
+    CHECK(info.slots[0].sampler == nullptr);
+    // Texture slot: binding 1
+    CHECK(info.slots[1].binding == 1);
+    CHECK(info.slots[1].slot.kind == OutputSlot::Kind::Texture);
+    // Sampler slot: binding 2, with auto-created sampler
+    CHECK(info.slots[2].binding == 2);
+    CHECK(info.slots[2].slot.kind == OutputSlot::Kind::Sampler);
+    CHECK(info.slots[2].sampler != nullptr);
+
+    info.release();
+}
+
+TEST_CASE("create_output_layout - uniform with dynamic and visibility") {
+    TestFixture f;
+    using pts::rendering::OutputSlot;
+
+    auto info = pts::rendering::create_output_layout(
+        f.device, {OutputSlot::uniform(128).dynamic().visibility(static_cast<WGPUShaderStage>(
+                      WGPUShaderStage_Vertex | WGPUShaderStage_Fragment))});
+
+    CHECK(info.layout != nullptr);
+    REQUIRE(info.slots.size() == 1);
+    CHECK(info.slots[0].binding == 0);
+    CHECK(info.slots[0].slot.kind == OutputSlot::Kind::Uniform);
+    CHECK(info.slots[0].slot.has_dynamic_offset == true);
+    CHECK(info.slots[0].slot.min_buffer_size == 128);
+
+    info.release();
+}
+
+TEST_CASE("create_output_layout - storage_texture slot") {
+    TestFixture f;
+    using pts::rendering::OutputSlot;
+
+    auto info = pts::rendering::create_output_layout(
+        f.device, {OutputSlot::storage_texture(WGPUTextureFormat_RGBA16Float)
+                       .visibility(WGPUShaderStage_Compute)});
+
+    CHECK(info.layout != nullptr);
+    REQUIRE(info.slots.size() == 1);
+    CHECK(info.slots[0].binding == 0);
+    CHECK(info.slots[0].slot.kind == OutputSlot::Kind::StorageTexture);
+    CHECK(info.slots[0].sampler == nullptr);
+
+    info.release();
+}
+
+TEST_CASE("create_output_layout - read_write storage buffer") {
+    TestFixture f;
+    using pts::rendering::OutputSlot;
+
+    auto info = pts::rendering::create_output_layout(
+        f.device, {OutputSlot::storage(64).read_write().visibility(WGPUShaderStage_Compute)});
+
+    CHECK(info.layout != nullptr);
+    REQUIRE(info.slots.size() == 1);
+    CHECK(info.slots[0].slot.kind == OutputSlot::Kind::Storage);
+    CHECK(info.slots[0].slot.is_read_write == true);
+
+    info.release();
+}
+
+TEST_CASE("create_output_layout - output_slots returns slot declarations") {
+    TestFixture f;
+    using pts::rendering::OutputSlot;
+
+    auto st = OutputSlot::sampled_texture(WGPUTextureFormat_RGBA8Unorm);
+    auto info =
+        pts::rendering::create_output_layout(f.device, {OutputSlot::storage(80), st[0], st[1]});
+
+    auto out_slots = info.output_slots();
+    REQUIRE(out_slots.size() == 3);
+    CHECK(out_slots[0].kind == OutputSlot::Kind::Storage);
+    CHECK(out_slots[1].kind == OutputSlot::Kind::Texture);
+    CHECK(out_slots[2].kind == OutputSlot::Kind::Sampler);
+
+    info.release();
+}
+
+TEST_CASE("create_output_layout - vector overload for concatenation") {
+    TestFixture f;
+    using pts::rendering::OutputSlot;
+
+    // Simulate concatenation from two sources
+    auto depth_st = OutputSlot::sampled_texture(WGPUTextureFormat_Depth32Float);
+    auto normals_st = OutputSlot::sampled_texture(WGPUTextureFormat_RG16Float);
+
+    std::vector<OutputSlot> combined;
+    combined.push_back(depth_st[0]);
+    combined.push_back(depth_st[1]);
+    combined.push_back(normals_st[0]);
+    combined.push_back(normals_st[1]);
+    combined.push_back(OutputSlot::uniform(64));
+
+    auto info = pts::rendering::create_output_layout(f.device, combined);
+
+    CHECK(info.layout != nullptr);
+    REQUIRE(info.slots.size() == 5);
+    CHECK(info.slots[0].binding == 0);  // depth texture
+    CHECK(info.slots[1].binding == 1);  // depth sampler
+    CHECK(info.slots[2].binding == 2);  // normals texture
+    CHECK(info.slots[3].binding == 3);  // normals sampler
+    CHECK(info.slots[4].binding == 4);  // uniform buffer
+
+    info.release();
+}
+
+TEST_CASE("create_output_layout - mixed compute pipeline layout") {
+    TestFixture f;
+    using pts::rendering::OutputSlot;
+
+    auto info = pts::rendering::create_output_layout(
+        f.device,
+        {OutputSlot::uniform(128).visibility(WGPUShaderStage_Compute),
+         OutputSlot::texture(WGPUTextureFormat_RGBA8Unorm, WGPUTextureViewDimension_2DArray)
+             .visibility(WGPUShaderStage_Compute),
+         OutputSlot::sampler(WGPUSamplerBindingType_Filtering).visibility(WGPUShaderStage_Compute),
+         OutputSlot::storage_texture(WGPUTextureFormat_RGBA16Float)
+             .visibility(WGPUShaderStage_Compute)});
+
+    CHECK(info.layout != nullptr);
+    REQUIRE(info.slots.size() == 4);
+    CHECK(info.slots[0].slot.kind == OutputSlot::Kind::Uniform);
+    CHECK(info.slots[1].slot.kind == OutputSlot::Kind::Texture);
+    CHECK(info.slots[2].slot.kind == OutputSlot::Kind::Sampler);
+    CHECK(info.slots[2].sampler != nullptr);
+    CHECK(info.slots[3].slot.kind == OutputSlot::Kind::StorageTexture);
+
+    info.release();
+}
+
+// --- FallbackPool ---
+
+#include <core/rendering/fallbackPool.h>
+
+TEST_CASE("FallbackPool - creates color texture view") {
+    TestFixture f;
+    pts::rendering::FallbackPool pool(f.device);
+
+    auto view = pool.view(WGPUTextureFormat_RGBA8Unorm, WGPUTextureViewDimension_2D);
+    CHECK(view != nullptr);
+
+    // Repeated call returns same view
+    auto view2 = pool.view(WGPUTextureFormat_RGBA8Unorm, WGPUTextureViewDimension_2D);
+    CHECK(view == view2);
+}
+
+TEST_CASE("FallbackPool - creates depth texture view") {
+    TestFixture f;
+    pts::rendering::FallbackPool pool(f.device);
+
+    auto view = pool.view(WGPUTextureFormat_Depth32Float, WGPUTextureViewDimension_2D);
+    CHECK(view != nullptr);
+}
+
+TEST_CASE("FallbackPool - different format/dimension returns different views") {
+    TestFixture f;
+    pts::rendering::FallbackPool pool(f.device);
+
+    auto color_2d = pool.view(WGPUTextureFormat_RGBA8Unorm, WGPUTextureViewDimension_2D);
+    auto r8_2d = pool.view(WGPUTextureFormat_R8Unorm, WGPUTextureViewDimension_2D);
+    CHECK(color_2d != r8_2d);
+}
+
+TEST_CASE("FallbackPool - creates buffer of at least requested size") {
+    TestFixture f;
+    pts::rendering::FallbackPool pool(f.device);
+
+    auto buf = pool.buffer(128);
+    CHECK(buf != nullptr);
+
+    // Smaller request reuses existing
+    auto buf2 = pool.buffer(64);
+    CHECK(buf == buf2);
+}
+
+TEST_CASE("FrameGraph - fallback_pool() is lazily created") {
+    TestFixture f;
+
+    // Before calling fallback_pool, it shouldn't exist yet
+    // After calling, should return a valid reference
+    auto& pool = f.graph.fallback_pool();
+    auto view = pool.view(WGPUTextureFormat_R8Unorm, WGPUTextureViewDimension_2D);
+    CHECK(view != nullptr);
 }
 
 PTS_TEST_MAIN()

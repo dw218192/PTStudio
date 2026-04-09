@@ -40,12 +40,12 @@ class PathTracerPass final : public rendering::IRenderer {
         webgpu::ShaderModule compute_shader;
         webgpu::ComputePipeline compute_pipeline;
         webgpu::Buffer uniform_buffer;
-        WGPUBindGroupLayout compute_bgl = nullptr;
-        WGPUBindGroupLayout ibl_bgl = nullptr;
+        WGPUBindGroupLayout compute_desc_layout = nullptr;
+        WGPUBindGroupLayout ibl_desc_layout = nullptr;
 
         webgpu::ShaderModule blit_shader;
         webgpu::RenderPipeline blit_pipeline;
-        WGPUBindGroupLayout blit_bgl = nullptr;
+        WGPUBindGroupLayout blit_desc_layout = nullptr;
     };
 
     std::variant<std::monostate, Ready> m_state;

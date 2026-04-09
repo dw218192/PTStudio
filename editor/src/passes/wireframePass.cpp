@@ -4,6 +4,7 @@
 #include <core/profiling.h>
 #include <core/rendering/camera.h>
 #include <core/rendering/frameGraph.h>
+#include <core/rendering/outputLayout.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/rendererRegistry.h>
@@ -35,8 +36,8 @@ static_assert(WireframePass::k_uniform_align >= sizeof(WireframeUniforms),
 
 WireframePass::~WireframePass() {
     if (auto* ready = std::get_if<Ready>(&m_state)) {
-        if (ready->bind_group_layout) {
-            wgpuBindGroupLayoutRelease(ready->bind_group_layout);
+        if (ready->descriptor_layout) {
+            wgpuBindGroupLayoutRelease(ready->descriptor_layout);
         }
     }
 }
@@ -52,29 +53,25 @@ auto WireframePass::is_ready() const noexcept -> bool {
 void WireframePass::do_renderer_setup(const webgpu::Device& device) {
     WGPUBindGroupLayout old_layout = nullptr;
     if (auto* ready = std::get_if<Ready>(&m_state)) {
-        old_layout = ready->bind_group_layout;
-        ready->bind_group_layout = nullptr;
+        old_layout = ready->descriptor_layout;
+        ready->descriptor_layout = nullptr;
     }
 
     auto shader_src = get_shader_loader().load("editor/generated/shaders/wireframe.wgsl");
     auto shader = device.create_shader_module_from_source(shader_src);
 
-    WGPUBindGroupLayoutEntry bgl_entry = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    bgl_entry.binding = 0;
-    bgl_entry.visibility =
-        static_cast<WGPUShaderStage>(WGPUShaderStage_Vertex | WGPUShaderStage_Fragment);
-    bgl_entry.buffer.type = WGPUBufferBindingType_Uniform;
-    bgl_entry.buffer.hasDynamicOffset = true;
-    bgl_entry.buffer.minBindingSize = sizeof(WireframeUniforms);
-
-    WGPUBindGroupLayoutDescriptor bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    bgl_desc.entryCount = 1;
-    bgl_desc.entries = &bgl_entry;
-    auto bind_group_layout = wgpuDeviceCreateBindGroupLayout(device.handle(), &bgl_desc);
+    auto internal_layout = rendering::create_output_layout(
+        device, {rendering::OutputSlot::uniform(sizeof(WireframeUniforms))
+                     .dynamic()
+                     .visibility(static_cast<WGPUShaderStage>(WGPUShaderStage_Vertex |
+                                                              WGPUShaderStage_Fragment))});
+    auto descriptor_layout = internal_layout.layout;
+    internal_layout.layout = nullptr;
+    internal_layout.release();
 
     WGPUPipelineLayoutDescriptor pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
     pl_desc.bindGroupLayoutCount = 1;
-    pl_desc.bindGroupLayouts = &bind_group_layout;
+    pl_desc.bindGroupLayouts = &descriptor_layout;
     WGPUPipelineLayout pipeline_layout = wgpuDeviceCreatePipelineLayout(device.handle(), &pl_desc);
 
     auto pipeline = webgpu::RenderPipelineBuilder(device)
@@ -94,7 +91,7 @@ void WireframePass::do_renderer_setup(const webgpu::Device& device) {
     m_state = Ready{
         std::move(shader),
         std::move(pipeline),
-        bind_group_layout,
+        descriptor_layout,
     };
 
     if (old_layout) wgpuBindGroupLayoutRelease(old_layout);
@@ -119,12 +116,10 @@ WireframePass::HdrOutputs WireframePass::do_add_to_frame_graph(rendering::FrameG
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
     auto uniform_buf_handle = create_buffer(fg, buf_desc, "uniforms");
 
-    // Register bind group
-    rendering::BindGroupDesc bg_desc;
-    bg_desc.layout = ready.bind_group_layout;
-    bg_desc.entries = {
-        {0, rendering::ManagedBufferBinding{uniform_buf_handle, 0, sizeof(WireframeUniforms)}}};
-    auto bg_handle = create_bind_group(fg, std::move(bg_desc), "bg0");
+    // Register descriptor
+    auto bg_handle = descriptor(fg, ready.descriptor_layout, "bg0")
+                         .buffer(0, uniform_buf_handle, 0, sizeof(WireframeUniforms))
+                         .build();
 
     rendering::TextureDesc color_desc;
     color_desc.width = ctx.viewport_width;
@@ -174,7 +169,7 @@ WireframePass::HdrOutputs WireframePass::do_add_to_frame_graph(rendering::FrameG
             auto objs = world.get_objects();
             auto mshs = world.get_meshes();
             auto uniform_buf = fg.get_buffer_ref(uniform_buf_handle).handle();
-            auto bind_group = fg.get_bind_group_ref(bg_handle).handle();
+            auto desc_group = fg.get_descriptor_ref(bg_handle).handle();
 
             {
                 PTS_ZONE_NAMED("wireframe uniform upload");
@@ -192,7 +187,7 @@ WireframePass::HdrOutputs WireframePass::do_add_to_frame_graph(rendering::FrameG
                 if (!objs[i].active()) continue;
                 if (!objs[i]->visible) continue;
                 uint32_t dyn_offset = i * k_uniform_align;
-                wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 1, &dyn_offset);
+                wgpuRenderPassEncoderSetBindGroup(pass, 0, desc_group, 1, &dyn_offset);
                 const auto& mesh = mshs[objs[i]->mesh_index];
                 auto& wf = get_or_create_pass_data<WireframeMesh>(
                     rendering::PassDataKind::Mesh, objs[i]->mesh_index, world, nullptr);
