@@ -3,6 +3,7 @@
 #include <core/diagnostics.h>
 #include <core/profiling.h>
 #include <core/rendering/camera.h>
+#include <core/rendering/contactShadowPass.h>
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/gbufferPass.h>
 #include <core/rendering/iblResources.h>
@@ -26,6 +27,7 @@ ForwardPass::ForwardPass(const rendering::ShaderLoader& sl) : IRenderer(sl) {
     add_pass<rendering::GBufferPass>(sl);
     add_pass<rendering::ShadowMapPass>(sl);
     add_pass<rendering::SSAOPass>(sl);
+    add_pass<rendering::ContactShadowPass>(sl);
 }
 
 struct ForwardUniforms {
@@ -35,7 +37,7 @@ struct ForwardUniforms {
     float time;
     uint32_t material_index;
     uint32_t light_count;
-    uint32_t _pad[2];
+    glm::vec2 viewport_size;
     glm::vec3 ibl_dome_modulation;
     uint32_t ibl_mip_count;
 };
@@ -63,6 +65,10 @@ ForwardPass::~ForwardPass() {
         if (ready->fallback_cube_tex) wgpuTextureRelease(ready->fallback_cube_tex);
         if (ready->fallback_2d_view) wgpuTextureViewRelease(ready->fallback_2d_view);
         if (ready->fallback_2d_tex) wgpuTextureRelease(ready->fallback_2d_tex);
+        if (ready->cs_bgl) wgpuBindGroupLayoutRelease(ready->cs_bgl);
+        if (ready->cs_sampler) wgpuSamplerRelease(ready->cs_sampler);
+        if (ready->fallback_cs_view) wgpuTextureViewRelease(ready->fallback_cs_view);
+        if (ready->fallback_cs_tex) wgpuTextureRelease(ready->fallback_cs_tex);
         if (ready->skybox_bgl) wgpuBindGroupLayoutRelease(ready->skybox_bgl);
     }
 }
@@ -100,6 +106,10 @@ void ForwardPass::do_renderer_setup(const webgpu::Device& device) {
         if (ready->fallback_cube_tex) wgpuTextureRelease(ready->fallback_cube_tex);
         if (ready->fallback_2d_view) wgpuTextureViewRelease(ready->fallback_2d_view);
         if (ready->fallback_2d_tex) wgpuTextureRelease(ready->fallback_2d_tex);
+        if (ready->cs_bgl) wgpuBindGroupLayoutRelease(ready->cs_bgl);
+        if (ready->cs_sampler) wgpuSamplerRelease(ready->cs_sampler);
+        if (ready->fallback_cs_view) wgpuTextureViewRelease(ready->fallback_cs_view);
+        if (ready->fallback_cs_tex) wgpuTextureRelease(ready->fallback_cs_tex);
         if (ready->skybox_bgl) wgpuBindGroupLayoutRelease(ready->skybox_bgl);
     }
 
@@ -281,10 +291,68 @@ void ForwardPass::do_renderer_setup(const webgpu::Device& device) {
     fb_2d_view_desc.mipLevelCount = 1;
     auto fallback_2d_view = wgpuTextureCreateView(fallback_2d_tex, &fb_2d_view_desc);
 
-    // --- Pipeline layout with 3 bind groups ---
-    WGPUBindGroupLayout bgls[3] = {bind_group_layout, shadow_recv_bgl, ibl_bgl};
+    // --- Contact shadow bind group layout (group 3): texture + sampler ---
+    WGPUBindGroupLayoutEntry cs_entries[2] = {};
+
+    cs_entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    cs_entries[0].binding = 0;
+    cs_entries[0].visibility = WGPUShaderStage_Fragment;
+    cs_entries[0].texture.sampleType = WGPUTextureSampleType_Float;
+    cs_entries[0].texture.viewDimension = WGPUTextureViewDimension_2D;
+
+    cs_entries[1] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    cs_entries[1].binding = 1;
+    cs_entries[1].visibility = WGPUShaderStage_Fragment;
+    cs_entries[1].sampler.type = WGPUSamplerBindingType_Filtering;
+
+    WGPUBindGroupLayoutDescriptor cs_bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
+    cs_bgl_desc.entryCount = 2;
+    cs_bgl_desc.entries = cs_entries;
+    auto cs_bgl = wgpuDeviceCreateBindGroupLayout(device.handle(), &cs_bgl_desc);
+
+    // --- Contact shadow sampler (linear filtering) ---
+    WGPUSamplerDescriptor cs_samp_desc = WGPU_SAMPLER_DESCRIPTOR_INIT;
+    cs_samp_desc.magFilter = WGPUFilterMode_Linear;
+    cs_samp_desc.minFilter = WGPUFilterMode_Linear;
+    cs_samp_desc.mipmapFilter = WGPUMipmapFilterMode_Nearest;
+    auto cs_sampler = wgpuDeviceCreateSampler(device.handle(), &cs_samp_desc);
+
+    // --- 1x1 white fallback texture for contact shadow when disabled ---
+    WGPUTextureDescriptor fb_cs_desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
+    fb_cs_desc.size = {1, 1, 1};
+    fb_cs_desc.format = WGPUTextureFormat_R8Unorm;
+    fb_cs_desc.usage =
+        static_cast<WGPUTextureUsage>(WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst);
+    fb_cs_desc.dimension = WGPUTextureDimension_2D;
+    fb_cs_desc.mipLevelCount = 1;
+    auto fallback_cs_tex = wgpuDeviceCreateTexture(device.handle(), &fb_cs_desc);
+    INVARIANT_MSG(fallback_cs_tex, "Failed to create fallback contact shadow texture");
+
+    // Upload 1x1 white pixel (1.0 = fully lit)
+    {
+        uint8_t white = 255;
+        WGPUTexelCopyBufferLayout layout = {};
+        layout.bytesPerRow = 1;
+        layout.rowsPerImage = 1;
+        WGPUTexelCopyTextureInfo dest = {};
+        dest.texture = fallback_cs_tex;
+        dest.aspect = WGPUTextureAspect_All;
+        WGPUExtent3D extent = {1, 1, 1};
+        wgpuQueueWriteTexture(device.queue(), &dest, &white, 1, &layout, &extent);
+    }
+
+    WGPUTextureViewDescriptor fb_cs_view_desc = WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT;
+    fb_cs_view_desc.dimension = WGPUTextureViewDimension_2D;
+    fb_cs_view_desc.format = WGPUTextureFormat_R8Unorm;
+    fb_cs_view_desc.arrayLayerCount = 1;
+    fb_cs_view_desc.mipLevelCount = 1;
+    auto fallback_cs_view = wgpuTextureCreateView(fallback_cs_tex, &fb_cs_view_desc);
+    INVARIANT_MSG(fallback_cs_view, "Failed to create fallback contact shadow texture view");
+
+    // --- Pipeline layout with 4 bind groups ---
+    WGPUBindGroupLayout bgls[4] = {bind_group_layout, shadow_recv_bgl, ibl_bgl, cs_bgl};
     WGPUPipelineLayoutDescriptor pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
-    pl_desc.bindGroupLayoutCount = 3;
+    pl_desc.bindGroupLayoutCount = 4;
     pl_desc.bindGroupLayouts = bgls;
     WGPUPipelineLayout pipeline_layout = wgpuDeviceCreatePipelineLayout(device.handle(), &pl_desc);
 
@@ -372,6 +440,10 @@ void ForwardPass::do_renderer_setup(const webgpu::Device& device) {
         fallback_cube_view,
         fallback_2d_tex,
         fallback_2d_view,
+        cs_bgl,
+        cs_sampler,
+        fallback_cs_tex,
+        fallback_cs_view,
         std::move(skybox_shader),
         std::move(skybox_pipeline),
         skybox_bgl,
@@ -520,6 +592,29 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
     };
     auto bg2_handle = create_bind_group(fg, std::move(bg2_desc), "ibl_bg");
 
+    // Contact shadow pass (after G-buffer, before forward lighting)
+    rendering::ContactShadowPass::Outputs cs_out{};
+    if (auto* cs = get_pass<rendering::ContactShadowPass>(); cs && cs->is_ready()) {
+        cs_out = cs->add_to_frame_graph(
+            fg, ctx, {gbuf_out.depth, gbuf_out.normals, light_buf.handle(), light_buf.size()});
+    }
+
+    // Bind group 3: contact shadow
+    rendering::BindGroupDesc bg3_desc;
+    bg3_desc.layout = ready.cs_bgl;
+    if (cs_out.contact_shadow.is_valid()) {
+        bg3_desc.entries = {
+            {0, rendering::ManagedTextureBinding{cs_out.contact_shadow}},
+            {1, rendering::SamplerBinding{ready.cs_sampler}},
+        };
+    } else {
+        bg3_desc.entries = {
+            {0, rendering::ExternalViewBinding{ready.fallback_cs_view}},
+            {1, rendering::SamplerBinding{ready.cs_sampler}},
+        };
+    }
+    auto bg3_handle = create_bind_group(fg, std::move(bg3_desc), "cs_bg");
+
     // Skybox uniform buffer + bind group
     rendering::BufferDesc skybox_buf_desc;
     skybox_buf_desc.size = sizeof(SkyboxUniforms);
@@ -546,7 +641,13 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
     auto skybox_pipeline_handle = ready.skybox_pipeline.handle();
     const auto& world = ctx.world;
 
+    auto viewport_width = ctx.viewport_width;
+    auto viewport_height = ctx.viewport_height;
+
     auto pass_builder = fg.add_pass("forward").color(color).read(shadow_out.shadow_array);
+    if (cs_out.contact_shadow.is_valid()) {
+        pass_builder.read(cs_out.contact_shadow);
+    }
     for (uint32_t i = 0; i < eff_debug_count; ++i) {
         pass_builder.color(debug_handles[i]);
     }
@@ -558,6 +659,7 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
         auto bg0 = fg.get_bind_group_ref(bg0_handle).handle();
         auto bg1 = fg.get_bind_group_ref(bg1_handle).handle();
         auto bg2 = fg.get_bind_group_ref(bg2_handle).handle();
+        auto bg3 = fg.get_bind_group_ref(bg3_handle).handle();
 
         // Upload per-object uniforms
         {
@@ -573,6 +675,8 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
                 u.time = elapsed_time;
                 u.material_index = obj->material_index;
                 u.light_count = light_count;
+                u.viewport_size = {static_cast<float>(viewport_width),
+                                   static_cast<float>(viewport_height)};
                 u.ibl_dome_modulation = ibl_ready ? dome_mod : glm::vec3{0.0f};
                 u.ibl_mip_count = rendering::k_prefilter_mip_count;
                 wgpuQueueWriteBuffer(queue, uniform_buf, i * k_uniform_align, &u, sizeof(u));
@@ -598,6 +702,8 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
                 u.time = elapsed_time;
                 u.material_index = light_slots[li]->material_index;
                 u.light_count = light_count;
+                u.viewport_size = {static_cast<float>(viewport_width),
+                                   static_cast<float>(viewport_height)};
                 u.ibl_dome_modulation = ibl_ready ? dome_mod : glm::vec3{0.0f};
                 u.ibl_mip_count = rendering::k_prefilter_mip_count;
                 wgpuQueueWriteBuffer(queue, uniform_buf, proxy_slot * k_uniform_align, &u,
@@ -619,6 +725,7 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
         wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
         wgpuRenderPassEncoderSetBindGroup(pass, 1, bg1, 0, nullptr);
         wgpuRenderPassEncoderSetBindGroup(pass, 2, bg2, 0, nullptr);
+        wgpuRenderPassEncoderSetBindGroup(pass, 3, bg3, 0, nullptr);
 
         for (uint32_t i = 0; i < static_cast<uint32_t>(objs.size()); ++i) {
             if (!objs[i].active()) continue;

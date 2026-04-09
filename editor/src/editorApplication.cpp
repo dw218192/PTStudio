@@ -486,6 +486,11 @@ void EditorApplication::on_ready() {
         "core/generated/shaders/ssao_blur.wgsl", "core/shaders/ssao_blur.slang",
         "core/generated/shaders/ssao_blur.wgsl", editor_resources::get_resource);
 
+    // Register contact shadow shader for hot-reload
+    m_shader_loader.register_shader(
+        "core/generated/shaders/contact_shadow.wgsl", "core/shaders/contact_shadow.slang",
+        "core/generated/shaders/contact_shadow.wgsl", editor_resources::get_resource);
+
     // Create editor passes (always-on, independent of renderer choice)
     {
         auto& dev = webgpu_context()->device();

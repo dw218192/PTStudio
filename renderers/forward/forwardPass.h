@@ -50,6 +50,11 @@ class ForwardPass final : public rendering::IRenderer {
         WGPUTextureView fallback_cube_view = nullptr;
         WGPUTexture fallback_2d_tex = nullptr;
         WGPUTextureView fallback_2d_view = nullptr;
+        // Contact shadow resources (bind group 3)
+        WGPUBindGroupLayout cs_bgl = nullptr;
+        WGPUSampler cs_sampler = nullptr;
+        WGPUTexture fallback_cs_tex = nullptr;
+        WGPUTextureView fallback_cs_view = nullptr;
         // Skybox
         webgpu::ShaderModule skybox_shader;
         webgpu::RenderPipeline skybox_pipeline;

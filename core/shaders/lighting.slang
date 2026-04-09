@@ -1,5 +1,6 @@
 import brdf;
 import light;
+import light_iteration;
 import ltc;
 import shadow_sampling;
 
@@ -16,13 +17,16 @@ float3 evaluate_lighting_ltc<B : IBRDF>(
     StructuredBuffer<ShadowInfo> shadow_infos,
     Texture2DArray<float> shadow_map,
     SamplerState shadow_sampler,
+    float2 screen_uv,
     out float3 direct_diffuse, out float3 direct_specular
 ) {
     direct_diffuse = float3(0.0);
     direct_specular = float3(0.0);
 
     float3 result = float3(0.0);
-    for (uint i = 0; i < light_count; i++) {
+    uint visible_count = get_light_count(light_count, screen_uv);
+    for (uint iter = 0; iter < visible_count; iter++) {
+        uint i = get_light_index(iter, screen_uv);
         Light light = lights[i];
 
         if (light.type == LIGHT_DOME) continue;

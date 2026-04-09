@@ -42,6 +42,10 @@ if(NOT EMSCRIPTEN)
     set(testShadowMapPass_source testShadowMapPass.cpp)
     set(testShadowMapPass_libs core)
 
+    list(APPEND TEST_NAMES testContactShadowPass)
+    set(testContactShadowPass_source testContactShadowPass.cpp)
+    set(testContactShadowPass_libs core)
+
     list(APPEND TEST_NAMES testPipelineBuilder)
     set(testPipelineBuilder_source testPipelineBuilder.cpp)
     set(testPipelineBuilder_libs core)
