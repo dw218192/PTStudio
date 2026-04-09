@@ -201,14 +201,28 @@ static DescriptorHandle build_impl(const OutputLayoutInfo& info, FrameGraph& fg,
                 break;
             }
 
-            case OutputSlot::Kind::Uniform:
-            case OutputSlot::Kind::Storage: {
+            case OutputSlot::Kind::Uniform: {
+                auto bind_size =
+                    si.slot.min_buffer_size > 0 ? si.slot.min_buffer_size : WGPU_WHOLE_SIZE;
                 if (auto* buf = std::get_if<BufferHandle>(&resource)) {
-                    builder.buffer(b, *buf, 0, si.slot.min_buffer_size);
+                    builder.buffer(b, *buf, 0, bind_size);
                 } else if (auto* raw_buf = std::get_if<WGPUBuffer>(&resource)) {
-                    builder.external_buffer(b, *raw_buf, 0, si.slot.min_buffer_size);
+                    builder.external_buffer(b, *raw_buf, 0, bind_size);
                 } else {
-                    PANIC("build: buffer slot requires BufferHandle or WGPUBuffer");
+                    PANIC("build: uniform slot requires BufferHandle or WGPUBuffer");
+                }
+                break;
+            }
+
+            case OutputSlot::Kind::Storage: {
+                // Storage buffers are variable-length; always bind the full buffer.
+                // min_buffer_size is only a layout validation constraint.
+                if (auto* buf = std::get_if<BufferHandle>(&resource)) {
+                    builder.buffer(b, *buf);
+                } else if (auto* raw_buf = std::get_if<WGPUBuffer>(&resource)) {
+                    builder.external_buffer(b, *raw_buf, 0, WGPU_WHOLE_SIZE);
+                } else {
+                    PANIC("build: storage slot requires BufferHandle or WGPUBuffer");
                 }
                 break;
             }

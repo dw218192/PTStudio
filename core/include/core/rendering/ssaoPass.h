@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/rendering/frameGraph.h>
+#include <core/rendering/outputLayout.h>
 #include <core/rendering/renderPass.h>
 #include <core/rendering/webgpu/buffer.h>
 #include <core/rendering/webgpu/pipeline.h>
@@ -13,6 +14,8 @@
 
 namespace pts::rendering {
 
+class FallbackPool;
+class GBufferPass;
 class ShaderLoader;
 
 /// Screen-space ambient occlusion pass.
@@ -21,7 +24,7 @@ class ShaderLoader;
 /// and bilateral blur.
 class SSAOPass final : public IPass {
    public:
-    explicit SSAOPass(const ShaderLoader& sl);
+    SSAOPass(const ShaderLoader& sl, const GBufferPass& gbuf);
     ~SSAOPass() override;
 
     SSAOPass(const SSAOPass&) = delete;
@@ -45,7 +48,8 @@ class SSAOPass final : public IPass {
     };
 
     void do_setup(const webgpu::Device& device) override;
-    Outputs add_to_frame_graph(FrameGraph& fg, const PassContext& ctx, const Inputs& in);
+    Outputs add_to_frame_graph(FrameGraph& fg, const PassContext& ctx, const Inputs& in,
+                               FallbackPool& fallbacks);
     void draw_imgui() override;
 
     // Tunable parameters (exposed via ImGui)
@@ -62,21 +66,16 @@ class SSAOPass final : public IPass {
         // AO generation
         webgpu::ShaderModule gen_shader;
         webgpu::RenderPipeline gen_pipeline;
-        WGPUBindGroupLayout gen_desc_layout = nullptr;
+        OutputLayoutInfo gen_layout;
 
         // Blur
         webgpu::ShaderModule blur_shader;
         webgpu::RenderPipeline blur_pipeline;
-        WGPUBindGroupLayout blur_desc_layout = nullptr;
+        OutputLayoutInfo blur_layout;
 
         // Noise texture (4x4 RGBA8Unorm)
         webgpu::Texture noise_texture;
         WGPUTextureView noise_view = nullptr;
-
-        // Samplers
-        WGPUSampler depth_sampler = nullptr;   // non-filtering
-        WGPUSampler linear_sampler = nullptr;  // linear filtering
-        WGPUSampler noise_sampler = nullptr;   // repeat wrapping
 
         // Sample kernel (hemisphere vectors)
         webgpu::Buffer kernel_buffer;
@@ -84,6 +83,7 @@ class SSAOPass final : public IPass {
 
     void release_raw_handles();
 
+    const GBufferPass* m_gbuf;
     std::variant<std::monostate, Ready> m_state;
 };
 

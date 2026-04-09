@@ -22,6 +22,7 @@ TEST_CASE("profiler init" * doctest::test_suite("setup")) {
 }
 
 // Minimal WGSL that satisfies the contact shadow pipeline layout.
+// Bindings match GBuffer consumer slots (0-3) + ContactShadow-specific (4-5).
 static constexpr auto k_contact_shadow_wgsl = R"(
 struct ContactShadowUniforms {
     projection : mat4x4<f32>,
@@ -47,11 +48,11 @@ struct Light {
     angle : f32,
 }
 
-@group(0) @binding(0) var<uniform> u : ContactShadowUniforms;
-@group(0) @binding(1) var depth_tex : texture_2d<f32>;
+@group(0) @binding(0) var depth_tex : texture_depth_2d;
+@group(0) @binding(1) var depth_sampler : sampler;
 @group(0) @binding(2) var normals_tex : texture_2d<f32>;
-@group(0) @binding(3) var depth_sampler : sampler;
-@group(0) @binding(4) var linear_sampler : sampler;
+@group(0) @binding(3) var linear_sampler : sampler;
+@group(0) @binding(4) var<uniform> u : ContactShadowUniforms;
 @group(0) @binding(5) var<storage, read> lights : array<Light>;
 
 struct VsOut {
@@ -144,14 +145,20 @@ auto fake_shader_getter(std::string_view key) -> std::optional<std::string_view>
 TEST_CASE("ContactShadowPass starts in unready state") {
     auto logger = make_logger();
     ShaderLoader loader(logger);
-    ContactShadowPass pass(loader);
+    loader.register_shader("core/generated/shaders/gbuffer.wgsl", "core/shaders/gbuffer.slang",
+                           "core/generated/shaders/gbuffer.wgsl", fake_shader_getter);
+    GBufferPass gbuf(loader);
+    ContactShadowPass pass(loader, gbuf);
     CHECK_FALSE(pass.is_ready());
 }
 
 TEST_CASE("ContactShadowPass disabled returns empty outputs") {
     auto logger = make_logger();
     ShaderLoader loader(logger);
-    ContactShadowPass pass(loader);
+    loader.register_shader("core/generated/shaders/gbuffer.wgsl", "core/shaders/gbuffer.slang",
+                           "core/generated/shaders/gbuffer.wgsl", fake_shader_getter);
+    GBufferPass gbuf(loader);
+    ContactShadowPass pass(loader, gbuf);
     pass.m_enabled = false;
     CHECK_FALSE(pass.is_ready());
 }
@@ -168,8 +175,13 @@ TEST_CASE("ContactShadowPass setup transitions to ready") {
     loader.register_shader("core/generated/shaders/contact_shadow.wgsl",
                            "core/shaders/contact_shadow.slang",
                            "core/generated/shaders/contact_shadow.wgsl", fake_shader_getter);
+    loader.register_shader("core/generated/shaders/gbuffer.wgsl", "core/shaders/gbuffer.slang",
+                           "core/generated/shaders/gbuffer.wgsl", fake_shader_getter);
 
-    ContactShadowPass pass(loader);
+    GBufferPass gbuf(loader);
+    gbuf.setup(device);
+
+    ContactShadowPass pass(loader, gbuf);
     CHECK_FALSE(pass.is_ready());
 
     pass.setup(device);
@@ -184,8 +196,13 @@ TEST_CASE("ContactShadowPass reports debug target when enabled") {
     loader.register_shader("core/generated/shaders/contact_shadow.wgsl",
                            "core/shaders/contact_shadow.slang",
                            "core/generated/shaders/contact_shadow.wgsl", fake_shader_getter);
+    loader.register_shader("core/generated/shaders/gbuffer.wgsl", "core/shaders/gbuffer.slang",
+                           "core/generated/shaders/gbuffer.wgsl", fake_shader_getter);
 
-    ContactShadowPass pass(loader);
+    GBufferPass gbuf(loader);
+    gbuf.setup(device);
+
+    ContactShadowPass pass(loader, gbuf);
     pass.setup(device);
 
     auto [targets, count] = pass.debug_targets();
@@ -209,12 +226,11 @@ TEST_CASE("ContactShadowPass add_to_frame_graph produces valid output") {
     loader.register_shader("core/generated/shaders/gbuffer.wgsl", "core/shaders/gbuffer.slang",
                            "core/generated/shaders/gbuffer.wgsl", fake_shader_getter);
 
-    ContactShadowPass cs_pass(loader);
-    cs_pass.setup(device);
-
-    // Create a gbuffer pass to get depth/normals handles
     GBufferPass gbuf_pass(loader);
     gbuf_pass.setup(device);
+
+    ContactShadowPass cs_pass(loader, gbuf_pass);
+    cs_pass.setup(device);
 
     FrameGraph fg(device, logger);
     OrbitCamera camera;
@@ -262,12 +278,12 @@ TEST_CASE("ContactShadowPass disabled returns invalid handle") {
     loader.register_shader("core/generated/shaders/gbuffer.wgsl", "core/shaders/gbuffer.slang",
                            "core/generated/shaders/gbuffer.wgsl", fake_shader_getter);
 
-    ContactShadowPass cs_pass(loader);
-    cs_pass.setup(device);
-    cs_pass.m_enabled = false;
-
     GBufferPass gbuf_pass(loader);
     gbuf_pass.setup(device);
+
+    ContactShadowPass cs_pass(loader, gbuf_pass);
+    cs_pass.setup(device);
+    cs_pass.m_enabled = false;
 
     FrameGraph fg(device, logger);
     OrbitCamera camera;

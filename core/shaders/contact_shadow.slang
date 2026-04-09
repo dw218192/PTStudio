@@ -14,11 +14,13 @@ struct ContactShadowUniforms {
     uint _pad;
 };
 
-[[vk::binding(0, 0)]] ConstantBuffer<ContactShadowUniforms> u;
-[[vk::binding(1, 0)]] Texture2D<float>  depth_tex;
+// GBuffer consumer slots (0-3)
+[[vk::binding(0, 0)]] Texture2D<float>  depth_tex;
+[[vk::binding(1, 0)]] SamplerState      depth_sampler;
 [[vk::binding(2, 0)]] Texture2D<float4> normals_tex;
-[[vk::binding(3, 0)]] SamplerState      depth_sampler;
-[[vk::binding(4, 0)]] SamplerState      linear_sampler;
+[[vk::binding(3, 0)]] SamplerState      linear_sampler;
+// ContactShadow-specific (4-5)
+[[vk::binding(4, 0)]] ConstantBuffer<ContactShadowUniforms> u;
 [[vk::binding(5, 0)]] StructuredBuffer<Light> lights;
 
 struct VsOut {

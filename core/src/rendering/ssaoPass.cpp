@@ -1,6 +1,8 @@
 #include <core/diagnostics.h>
 #include <core/profiling.h>
+#include <core/rendering/fallbackPool.h>
 #include <core/rendering/frameGraph.h>
+#include <core/rendering/gbufferPass.h>
 #include <core/rendering/outputLayout.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/shaderLoader.h>
@@ -77,7 +79,7 @@ void generate_noise_data(uint8_t* out) {
 
 }  // namespace
 
-SSAOPass::SSAOPass(const ShaderLoader& sl) : IPass(sl) {
+SSAOPass::SSAOPass(const ShaderLoader& sl, const GBufferPass& gbuf) : IPass(sl), m_gbuf(&gbuf) {
 }
 
 SSAOPass::~SSAOPass() {
@@ -86,12 +88,9 @@ SSAOPass::~SSAOPass() {
 
 void SSAOPass::release_raw_handles() {
     if (auto* ready = std::get_if<Ready>(&m_state)) {
-        if (ready->gen_desc_layout) wgpuBindGroupLayoutRelease(ready->gen_desc_layout);
-        if (ready->blur_desc_layout) wgpuBindGroupLayoutRelease(ready->blur_desc_layout);
+        ready->gen_layout.release();
+        ready->blur_layout.release();
         if (ready->noise_view) wgpuTextureViewRelease(ready->noise_view);
-        if (ready->depth_sampler) wgpuSamplerRelease(ready->depth_sampler);
-        if (ready->linear_sampler) wgpuSamplerRelease(ready->linear_sampler);
-        if (ready->noise_sampler) wgpuSamplerRelease(ready->noise_sampler);
     }
 }
 
@@ -159,35 +158,22 @@ void SSAOPass::do_setup(const webgpu::Device& device) {
     INVARIANT_MSG(noise_view, "Failed to create SSAO noise texture view");
 
     // ── AO Generation BGL ──
-    // 0: uniforms, 1: depth, 2: normals, 3: noise, 4: depth_sampler,
-    // 5: linear_sampler, 6: noise_sampler, 7: kernel
-    auto gen_internal = create_output_layout(
-        device,
-        {
-            OutputSlot::uniform(sizeof(SSAOUniforms)),
-            OutputSlot::texture(WGPUTextureFormat_Depth32Float),
-            OutputSlot::texture(WGPUTextureFormat_RG16Float),
-            OutputSlot::texture(WGPUTextureFormat_RGBA8Unorm),
-            OutputSlot::sampler(WGPUSamplerBindingType_NonFiltering),
-            OutputSlot::sampler(WGPUSamplerBindingType_Filtering),
-            OutputSlot::sampler(WGPUSamplerBindingType_NonFiltering, WGPUAddressMode_Repeat),
-            OutputSlot::storage(sizeof(glm::vec4) * k_max_kernel_size),
-        });
-    auto gen_desc_layout = gen_internal.layout;
-    gen_internal.layout = nullptr;
-
-    // Extract samplers from the internal layout
-    auto depth_sampler = gen_internal.slots[4].sampler;
-    gen_internal.slots[4].sampler = nullptr;
-    auto linear_sampler = gen_internal.slots[5].sampler;
-    gen_internal.slots[5].sampler = nullptr;
-    auto noise_sampler = gen_internal.slots[6].sampler;
-    gen_internal.slots[6].sampler = nullptr;
-    gen_internal.release();
+    // GBuffer consumer slots: 0=depth_tex, 1=depth_sampler, 2=normals_tex, 3=normals_sampler
+    // SSAO-specific:          4=uniforms, 5=noise_tex, 6=noise_sampler, 7=kernel
+    PRECONDITION(m_gbuf->is_ready());
+    auto gbuf_slots = m_gbuf->consumer_output_slots();
+    std::vector<OutputSlot> gen_slots;
+    gen_slots.insert(gen_slots.end(), gbuf_slots.begin(), gbuf_slots.end());
+    gen_slots.push_back(OutputSlot::uniform(sizeof(SSAOUniforms)));
+    gen_slots.push_back(OutputSlot::texture(WGPUTextureFormat_RGBA8Unorm));
+    gen_slots.push_back(
+        OutputSlot::sampler(WGPUSamplerBindingType_NonFiltering, WGPUAddressMode_Repeat));
+    gen_slots.push_back(OutputSlot::storage(sizeof(glm::vec4) * k_max_kernel_size));
+    auto gen_layout = create_output_layout(device, gen_slots);
 
     WGPUPipelineLayoutDescriptor gen_pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
     gen_pl_desc.bindGroupLayoutCount = 1;
-    gen_pl_desc.bindGroupLayouts = &gen_desc_layout;
+    gen_pl_desc.bindGroupLayouts = &gen_layout.layout;
     auto gen_pl = wgpuDeviceCreatePipelineLayout(device.handle(), &gen_pl_desc);
 
     auto gen_pipeline = webgpu::RenderPipelineBuilder(device)
@@ -200,7 +186,7 @@ void SSAOPass::do_setup(const webgpu::Device& device) {
 
     // ── Blur BGL ──
     // 0: uniforms, 1: ssao_raw, 2: depth, 3: linear_sampler, 4: depth_sampler
-    auto blur_internal =
+    auto blur_layout =
         create_output_layout(device, {
                                          OutputSlot::uniform(sizeof(SSAOBlurUniforms)),
                                          OutputSlot::texture(WGPUTextureFormat_R8Unorm),
@@ -208,13 +194,10 @@ void SSAOPass::do_setup(const webgpu::Device& device) {
                                          OutputSlot::sampler(WGPUSamplerBindingType_Filtering),
                                          OutputSlot::sampler(WGPUSamplerBindingType_NonFiltering),
                                      });
-    auto blur_desc_layout = blur_internal.layout;
-    blur_internal.layout = nullptr;
-    blur_internal.release();
 
     WGPUPipelineLayoutDescriptor blur_pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
     blur_pl_desc.bindGroupLayoutCount = 1;
-    blur_pl_desc.bindGroupLayouts = &blur_desc_layout;
+    blur_pl_desc.bindGroupLayouts = &blur_layout.layout;
     auto blur_pl = wgpuDeviceCreatePipelineLayout(device.handle(), &blur_pl_desc);
 
     auto blur_pipeline = webgpu::RenderPipelineBuilder(device)
@@ -226,23 +209,16 @@ void SSAOPass::do_setup(const webgpu::Device& device) {
     wgpuPipelineLayoutRelease(blur_pl);
 
     m_state = Ready{
-        std::move(gen_shader),
-        std::move(gen_pipeline),
-        gen_desc_layout,
-        std::move(blur_shader),
-        std::move(blur_pipeline),
-        blur_desc_layout,
-        webgpu::Texture(noise_raw),
-        noise_view,
-        depth_sampler,
-        linear_sampler,
-        noise_sampler,
+        std::move(gen_shader),      std::move(gen_pipeline),
+        std::move(gen_layout),      std::move(blur_shader),
+        std::move(blur_pipeline),   std::move(blur_layout),
+        webgpu::Texture(noise_raw), noise_view,
         std::move(kernel_buffer),
     };
 }
 
 SSAOPass::Outputs SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx,
-                                               const Inputs& in) {
+                                               const Inputs& in, FallbackPool& fallbacks) {
     PTS_ZONE_SCOPED;
     if (!m_enabled) return {};
     PRECONDITION(is_ready());
@@ -276,28 +252,22 @@ SSAOPass::Outputs SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
     auto blur_uniform_buf_handle = create_buffer(fg, blur_buf_desc, "blur_uniforms");
 
-    // Register AO gen descriptor (8 entries)
+    // Register AO gen descriptor via OutputLayoutInfo::build()
+    // Non-sampler resources in slot order: depth(0), normals(2), uniforms(4), noise(5), kernel(7)
     auto kernel_buf = ready.kernel_buffer.handle();
     auto gen_bg_handle =
-        descriptor(fg, ready.gen_desc_layout, "gen_bg")
-            .buffer(0, gen_uniform_buf_handle, 0, sizeof(SSAOUniforms))
-            .texture(1, depth_handle)
-            .texture(2, normals_handle)
-            .external_view(3, ready.noise_view)
-            .sampler(4, ready.depth_sampler)
-            .sampler(5, ready.linear_sampler)
-            .sampler(6, ready.noise_sampler)
-            .external_buffer(7, kernel_buf, 0, sizeof(glm::vec4) * k_max_kernel_size)
-            .build();
+        ready.gen_layout.build(fg, this,
+                               {TextureHandle{depth_handle}, TextureHandle{normals_handle},
+                                BufferHandle{gen_uniform_buf_handle}, ready.noise_view, kernel_buf},
+                               fallbacks, "gen_bg");
 
-    // Register blur descriptor (5 entries)
-    auto blur_bg_handle = descriptor(fg, ready.blur_desc_layout, "blur_bg")
-                              .buffer(0, blur_uniform_buf_handle, 0, sizeof(SSAOBlurUniforms))
-                              .texture(1, ssao_raw_handle)
-                              .texture(2, depth_handle)
-                              .sampler(3, ready.linear_sampler)
-                              .sampler(4, ready.depth_sampler)
-                              .build();
+    // Register blur descriptor via OutputLayoutInfo::build()
+    // Non-sampler resources: uniforms(0), ssao_raw(1), depth(2)
+    auto blur_bg_handle =
+        ready.blur_layout.build(fg, this,
+                                {BufferHandle{blur_uniform_buf_handle},
+                                 TextureHandle{ssao_raw_handle}, TextureHandle{depth_handle}},
+                                fallbacks, "blur_bg");
 
     // Capture scalars for lambdas
     auto* gen_pipeline = ready.gen_pipeline.handle();

@@ -13,6 +13,7 @@
 namespace pts::rendering {
 
 class FallbackPool;
+class GBufferPass;
 class ShaderLoader;
 
 /// Screen-space contact shadow pass.
@@ -21,7 +22,7 @@ class ShaderLoader;
 /// the depth buffer toward each non-dome light.
 class ContactShadowPass final : public IPass {
    public:
-    explicit ContactShadowPass(const ShaderLoader& sl);
+    ContactShadowPass(const ShaderLoader& sl, const GBufferPass& gbuf);
     ~ContactShadowPass() override;
 
     ContactShadowPass(const ContactShadowPass&) = delete;
@@ -66,11 +67,7 @@ class ContactShadowPass final : public IPass {
     struct Ready {
         webgpu::ShaderModule shader;
         webgpu::RenderPipeline pipeline;
-        WGPUBindGroupLayout desc_layout = nullptr;
-
-        // Samplers
-        WGPUSampler depth_sampler = nullptr;   // non-filtering
-        WGPUSampler linear_sampler = nullptr;  // linear filtering
+        OutputLayoutInfo internal_layout;
 
         // Consumer output layout (forward pass reads CS texture)
         OutputLayoutInfo output_layout;
@@ -78,6 +75,7 @@ class ContactShadowPass final : public IPass {
 
     void release_raw_handles();
 
+    const GBufferPass* m_gbuf;
     std::variant<std::monostate, Ready> m_state;
 };
 

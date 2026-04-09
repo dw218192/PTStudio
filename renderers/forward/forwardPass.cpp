@@ -26,10 +26,10 @@ using namespace pts::rendering;
 REGISTER_RENDERER("Forward", ForwardPass);
 
 ForwardPass::ForwardPass(const rendering::ShaderLoader& sl) : IRenderer(sl) {
-    add_pass<rendering::GBufferPass>(sl);
+    auto& gbuf = add_pass<rendering::GBufferPass>(sl);
     add_pass<rendering::ShadowMapPass>(sl);
-    add_pass<rendering::SSAOPass>(sl);
-    add_pass<rendering::ContactShadowPass>(sl);
+    add_pass<rendering::SSAOPass>(sl, gbuf);
+    add_pass<rendering::ContactShadowPass>(sl, gbuf);
 }
 
 struct ForwardUniforms {
@@ -552,7 +552,8 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
     // Post-pass: SSAO
     std::optional<rendering::TextureHandle> ssao_handle;
     if (auto* ssao = get_pass<rendering::SSAOPass>(); ssao && ssao->is_ready()) {
-        auto ssao_out = ssao->add_to_frame_graph(fg, ctx, {gbuf_out.depth, gbuf_out.normals});
+        auto ssao_out = ssao->add_to_frame_graph(fg, ctx, {gbuf_out.depth, gbuf_out.normals},
+                                                 fg.fallback_pool());
         if (ssao_out.ssao.is_valid()) ssao_handle = rendering::TextureHandle{ssao_out.ssao.index};
     }
 

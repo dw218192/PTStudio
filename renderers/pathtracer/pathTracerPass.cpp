@@ -4,6 +4,7 @@
 #include <core/profiling.h>
 #include <core/rendering/bvh.h>
 #include <core/rendering/camera.h>
+#include <core/rendering/fallbackPool.h>
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/outputLayout.h>
 #include <core/rendering/passContext.h>
@@ -50,6 +51,7 @@ PathTracerPass::~PathTracerPass() {
     if (auto* r = std::get_if<Ready>(&m_state)) {
         if (r->compute_desc_layout) wgpuBindGroupLayoutRelease(r->compute_desc_layout);
         if (r->ibl_desc_layout) wgpuBindGroupLayoutRelease(r->ibl_desc_layout);
+        if (r->ibl_sampler) wgpuSamplerRelease(r->ibl_sampler);
         if (r->blit_desc_layout) wgpuBindGroupLayoutRelease(r->blit_desc_layout);
     }
 }
@@ -66,6 +68,7 @@ void PathTracerPass::do_renderer_setup(const webgpu::Device& device) {
     if (auto* r = std::get_if<Ready>(&m_state)) {
         if (r->compute_desc_layout) wgpuBindGroupLayoutRelease(r->compute_desc_layout);
         if (r->ibl_desc_layout) wgpuBindGroupLayoutRelease(r->ibl_desc_layout);
+        if (r->ibl_sampler) wgpuSamplerRelease(r->ibl_sampler);
         if (r->blit_desc_layout) wgpuBindGroupLayoutRelease(r->blit_desc_layout);
     }
 
@@ -77,6 +80,7 @@ void PathTracerPass::do_renderer_setup(const webgpu::Device& device) {
         sizeof(PTUniforms),
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
 
+    // Create BGL via OutputSlot, then detach — scene sampler comes from the world at frame time
     auto compute_internal = create_output_layout(
         device,
         {
@@ -86,7 +90,7 @@ void PathTracerPass::do_renderer_setup(const webgpu::Device& device) {
             OutputSlot::storage(0).visibility(WGPUShaderStage_Compute),
             OutputSlot::storage(0).read_write().visibility(WGPUShaderStage_Compute),
             OutputSlot::storage(0).read_write().visibility(WGPUShaderStage_Compute),
-            OutputSlot::storage(32).visibility(WGPUShaderStage_Compute),  // BVH nodes
+            OutputSlot::storage(0).visibility(WGPUShaderStage_Compute),  // BVH nodes
             OutputSlot::texture(WGPUTextureFormat_RGBA8Unorm, WGPUTextureViewDimension_2DArray)
                 .visibility(WGPUShaderStage_Compute),
             OutputSlot::sampler(WGPUSamplerBindingType_Filtering)
@@ -103,12 +107,22 @@ void PathTracerPass::do_renderer_setup(const webgpu::Device& device) {
         {
             OutputSlot::texture(WGPUTextureFormat_RGBA16Float, WGPUTextureViewDimension_Cube)
                 .visibility(WGPUShaderStage_Compute),
-            OutputSlot::sampler(WGPUSamplerBindingType_Filtering)
+            OutputSlot::sampler(WGPUSamplerBindingType_Filtering, WGPUAddressMode_ClampToEdge,
+                                WGPUMipmapFilterMode_Linear)
                 .visibility(WGPUShaderStage_Compute),
         });
     auto ibl_desc_layout = ibl_internal.layout;
     ibl_internal.layout = nullptr;
     ibl_internal.release();
+
+    WGPUSamplerDescriptor ibl_samp_desc = WGPU_SAMPLER_DESCRIPTOR_INIT;
+    ibl_samp_desc.magFilter = WGPUFilterMode_Linear;
+    ibl_samp_desc.minFilter = WGPUFilterMode_Linear;
+    ibl_samp_desc.mipmapFilter = WGPUMipmapFilterMode_Linear;
+    ibl_samp_desc.addressModeU = WGPUAddressMode_ClampToEdge;
+    ibl_samp_desc.addressModeV = WGPUAddressMode_ClampToEdge;
+    ibl_samp_desc.addressModeW = WGPUAddressMode_ClampToEdge;
+    auto ibl_sampler = wgpuDeviceCreateSampler(device.handle(), &ibl_samp_desc);
 
     WGPUBindGroupLayout compute_desc_layouts[2] = {compute_desc_layout, ibl_desc_layout};
     WGPUPipelineLayoutDescriptor cpl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
@@ -151,8 +165,9 @@ void PathTracerPass::do_renderer_setup(const webgpu::Device& device) {
     m_state = Ready{
         std::move(compute_shader), std::move(compute_pipeline),
         std::move(uniform_buffer), compute_desc_layout,
-        ibl_desc_layout,           std::move(blit_shader),
-        std::move(blit_pipeline),  blit_desc_layout,
+        ibl_desc_layout,           ibl_sampler,
+        std::move(blit_shader),    std::move(blit_pipeline),
+        blit_desc_layout,
     };
 }
 
@@ -233,7 +248,6 @@ PathTracerPass::HdrOutputs PathTracerPass::do_add_to_frame_graph(
     auto& tri_buf = ctx.world.triangle_buffer();
     auto& inst_buf = ctx.world.instance_buffer();
     auto& bvh_buf = ctx.world.bvh_node_buffer();
-    auto dev = ctx.device.handle();
     auto width = ctx.viewport_width;
     auto height = ctx.viewport_height;
     auto inst_count = ctx.world.instance_count();
@@ -242,76 +256,40 @@ PathTracerPass::HdrOutputs PathTracerPass::do_add_to_frame_graph(
     auto scene_tex_view = ctx.world.texture_array_view();
     auto scene_tex_sampler = ctx.world.texture_sampler();
 
-    WGPUBindGroupEntry cbe[10] = {};
-    for (int i = 0; i < 10; ++i) cbe[i] = WGPU_BIND_GROUP_ENTRY_INIT;
-    cbe[0].binding = 0;
-    cbe[0].buffer = r.uniform_buffer.handle();
-    cbe[0].size = sizeof(PTUniforms);
-    cbe[1].binding = 1;
-    cbe[1].buffer = tri_buf.handle();
-    cbe[1].size = tri_buf.size();
-    cbe[2].binding = 2;
-    cbe[2].buffer = mat_buf.handle();
-    cbe[2].size = mat_buf.size();
-    cbe[3].binding = 3;
-    cbe[3].buffer = light_buf.handle();
-    cbe[3].size = light_buf.size();
-    cbe[4].binding = 4;
-    cbe[4].buffer = m_accum_buffer.handle();
-    cbe[4].size = m_accum_buffer.size();
-    cbe[5].binding = 5;
-    cbe[5].buffer = m_output_buffer.handle();
-    cbe[5].size = m_output_buffer.size();
-    cbe[6].binding = 6;
-    cbe[6].buffer = bvh_buf.handle();
-    cbe[6].size = bvh_buf.size();
-    cbe[7].binding = 7;
-    cbe[7].textureView = scene_tex_view;
-    cbe[8].binding = 8;
-    cbe[8].sampler = scene_tex_sampler;
-    cbe[9].binding = 9;
-    cbe[9].buffer = inst_buf.handle();
-    cbe[9].size = inst_buf.size();
-
-    WGPUBindGroupDescriptor cbg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-    cbg_desc.layout = r.compute_desc_layout;
-    cbg_desc.entryCount = 10;
-    cbg_desc.entries = cbe;
-    auto compute_bg = wgpuDeviceCreateBindGroup(dev, &cbg_desc);
+    auto compute_bg_handle =
+        descriptor(fg, r.compute_desc_layout, "compute_bg")
+            .external_buffer(0, r.uniform_buffer.handle(), 0, sizeof(PTUniforms))
+            .external_buffer(1, tri_buf.handle(), 0, WGPU_WHOLE_SIZE)
+            .external_buffer(2, mat_buf.handle(), 0, WGPU_WHOLE_SIZE)
+            .external_buffer(3, light_buf.handle(), 0, WGPU_WHOLE_SIZE)
+            .external_buffer(4, m_accum_buffer.handle(), 0, WGPU_WHOLE_SIZE)
+            .external_buffer(5, m_output_buffer.handle(), 0, WGPU_WHOLE_SIZE)
+            .external_buffer(6, bvh_buf.handle(), 0, WGPU_WHOLE_SIZE)
+            .external_view(7, scene_tex_view)
+            .sampler(8, scene_tex_sampler)
+            .external_buffer(9, inst_buf.handle(), 0, WGPU_WHOLE_SIZE)
+            .build();
 
     // IBL descriptor (group 1): env cubemap + sampler
     auto& ibl = ctx.world.ibl_resources();
-    auto& ibl_pipes = ctx.world.ibl_pipelines();
-    WGPUBindGroup ibl_bg = nullptr;
-    if (ibl.is_ready()) {
-        WGPUBindGroupEntry ibe[2] = {};
-        ibe[0] = WGPU_BIND_GROUP_ENTRY_INIT;
-        ibe[0].binding = 0;
-        ibe[0].textureView = ibl.env_cubemap_view();
-        ibe[1] = WGPU_BIND_GROUP_ENTRY_INIT;
-        ibe[1].binding = 1;
-        ibe[1].sampler = ibl_pipes.sampler();
-
-        WGPUBindGroupDescriptor ibg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-        ibg_desc.layout = r.ibl_desc_layout;
-        ibg_desc.entryCount = 2;
-        ibg_desc.entries = ibe;
-        ibl_bg = wgpuDeviceCreateBindGroup(dev, &ibg_desc);
-    }
+    bool ibl_ready = ibl.is_ready();
+    WGPUTextureView ibl_view = ibl_ready ? ibl.env_cubemap_view()
+                                         : fg.fallback_pool().view(WGPUTextureFormat_RGBA16Float,
+                                                                   WGPUTextureViewDimension_Cube);
+    auto ibl_bg_handle = descriptor(fg, r.ibl_desc_layout, "ibl_bg")
+                             .external_view(0, ibl_view)
+                             .sampler(1, r.ibl_sampler)
+                             .build();
 
     auto* cp = r.compute_pipeline.handle();
-    fg.add_pass("pathtracer_compute").execute([=](WGPUComputePassEncoder enc) {
-        if (inst_count == 0 || !ibl_bg) {
-            wgpuBindGroupRelease(compute_bg);
-            if (ibl_bg) wgpuBindGroupRelease(ibl_bg);
-            return;
-        }
+    fg.add_pass("pathtracer_compute").execute([=, &fg](WGPUComputePassEncoder enc) {
+        if (inst_count == 0 || !ibl_ready) return;
+        auto compute_bg = fg.get_descriptor_ref(compute_bg_handle).handle();
+        auto ibl_bg = fg.get_descriptor_ref(ibl_bg_handle).handle();
         wgpuComputePassEncoderSetPipeline(enc, cp);
         wgpuComputePassEncoderSetBindGroup(enc, 0, compute_bg, 0, nullptr);
         wgpuComputePassEncoderSetBindGroup(enc, 1, ibl_bg, 0, nullptr);
         wgpuComputePassEncoderDispatchWorkgroups(enc, (width + 7) / 8, (height + 7) / 8, 1);
-        wgpuBindGroupRelease(compute_bg);
-        wgpuBindGroupRelease(ibl_bg);
     });
 
     // --- Blit pass ---

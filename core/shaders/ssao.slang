@@ -10,12 +10,14 @@ struct SSAOUniforms {
     uint _pad1;
 };
 
-[[vk::binding(0, 0)]] ConstantBuffer<SSAOUniforms> u;
-[[vk::binding(1, 0)]] Texture2D<float>  depth_tex;
+// GBuffer consumer slots (0-3)
+[[vk::binding(0, 0)]] Texture2D<float>  depth_tex;
+[[vk::binding(1, 0)]] SamplerState      depth_sampler;
 [[vk::binding(2, 0)]] Texture2D<float4> normals_tex;
-[[vk::binding(3, 0)]] Texture2D<float4> noise_tex;
-[[vk::binding(4, 0)]] SamplerState      depth_sampler;
-[[vk::binding(5, 0)]] SamplerState      linear_sampler;
+[[vk::binding(3, 0)]] SamplerState      linear_sampler;
+// SSAO-specific (4-7)
+[[vk::binding(4, 0)]] ConstantBuffer<SSAOUniforms> u;
+[[vk::binding(5, 0)]] Texture2D<float4> noise_tex;
 [[vk::binding(6, 0)]] SamplerState      noise_sampler;
 [[vk::binding(7, 0)]] StructuredBuffer<float4> kernel;
 
