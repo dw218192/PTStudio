@@ -190,6 +190,9 @@ struct ShaderLoader::Impl {
         std::string wgsl_output;
         EmbeddedGetter embedded_getter;
         std::string cached_wgsl;
+        // Variant cache: variant_resource_key → compiled WGSL. Cleared on reload.
+        // mutable: load_variant() is logically const but memoizes.
+        mutable std::unordered_map<std::string, std::string> variant_cache;
 #ifdef PTS_SHADER_HOT_RELOAD
         std::vector<std::string> entry_points;
         std::vector<std::pair<std::filesystem::path, std::filesystem::file_time_type>> dependencies;
@@ -294,6 +297,14 @@ auto ShaderLoader::load_variant(std::string_view resource_key,
     PRECONDITION_MSG(it != m_impl->entries.end(), "Unknown shader resource_key");
     auto& entry = it->second;
 
+    // Cache hit — variants are stable until a reload invalidates them.
+    // Without this cache, hot-reload builds re-run the Slang compiler on every
+    // call (every frame for per-frame callers like load_pass_shader).
+    auto vit = entry.variant_cache.find(std::string(variant_resource_key));
+    if (vit != entry.variant_cache.end()) {
+        return vit->second;
+    }
+
 #ifdef PTS_SHADER_HOT_RELOAD
     if (m_impl->compiler) {
         namespace fs = std::filesystem;
@@ -301,7 +312,9 @@ auto ShaderLoader::load_variant(std::string_view resource_key,
         auto slang_path = workspace_root / entry.slang_source;
         auto result = m_impl->compiler->compile(slang_path, entry.entry_points, defines);
         if (result.success && !result.wgsl.empty()) {
-            return result.wgsl.front();
+            auto& cached = entry.variant_cache[std::string(variant_resource_key)];
+            cached = std::move(result.wgsl.front());
+            return cached;
         }
         m_impl->logger->warn("Variant compile failed for '{}', falling back to embedded: {}",
                              resource_key, result.diagnostics_text);
@@ -310,7 +323,9 @@ auto ShaderLoader::load_variant(std::string_view resource_key,
 
     auto embedded = entry.embedded_getter(variant_resource_key);
     PRECONDITION_MSG(embedded.has_value(), "Variant embedded resource not found");
-    return std::string(*embedded);
+    auto& cached = entry.variant_cache[std::string(variant_resource_key)];
+    cached = std::string(*embedded);
+    return cached;
 }
 
 bool ShaderLoader::poll_and_start_reload() {
@@ -415,6 +430,9 @@ auto ShaderLoader::try_finish_reload() -> std::vector<std::string> {
 
         if (new_wgsl != entry.cached_wgsl) {
             entry.cached_wgsl = std::move(new_wgsl);
+            // Invalidate variant cache — variants derive from the same Slang
+            // source and must be recompiled against the new source.
+            entry.variant_cache.clear();
             changed.push_back(sr.resource_key);
         }
 

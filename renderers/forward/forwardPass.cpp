@@ -135,43 +135,52 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
     PTS_ZONE_SCOPED;
 
     // Static textures used by the forward pipeline and its fallback paths.
-    init_ltc_textures(fg, ctx.device);
     {
-        static constexpr uint8_t k_black_cube_pixels[6 * 4] = {};  // 6 * 1x1 RGBA8 pixels
-        WGPUTextureDescriptor cube_desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
-        cube_desc.size = {1, 1, 6};
-        cube_desc.format = WGPUTextureFormat_RGBA8Unorm;
-        cube_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_TextureBinding |
-                                                        WGPUTextureUsage_CopyDst);
-        cube_desc.mipLevelCount = 1;
-        cube_desc.sampleCount = 1;
-        cube_desc.dimension = WGPUTextureDimension_2D;
-        fg.texture("forward_ibl_fallback_cube", cube_desc, k_black_cube_pixels,
-                   sizeof(k_black_cube_pixels), 4, WGPUTextureViewDimension_Cube);
-    }
-    {
-        static constexpr uint8_t k_black_2d_pixels[4] = {};  // 1x1 RGBA8
-        WGPUTextureDescriptor tex_desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
-        tex_desc.size = {1, 1, 1};
-        tex_desc.format = WGPUTextureFormat_RGBA8Unorm;
-        tex_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_TextureBinding |
-                                                       WGPUTextureUsage_CopyDst);
-        tex_desc.mipLevelCount = 1;
-        tex_desc.sampleCount = 1;
-        tex_desc.dimension = WGPUTextureDimension_2D;
-        fg.texture("forward_ibl_fallback_2d", tex_desc, k_black_2d_pixels,
-                   sizeof(k_black_2d_pixels), 4);
+        PTS_ZONE_NAMED("fwd: ltc+fallback init");
+        init_ltc_textures(fg, ctx.device);
+        {
+            static constexpr uint8_t k_black_cube_pixels[6 * 4] = {};  // 6 * 1x1 RGBA8 pixels
+            WGPUTextureDescriptor cube_desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
+            cube_desc.size = {1, 1, 6};
+            cube_desc.format = WGPUTextureFormat_RGBA8Unorm;
+            cube_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_TextureBinding |
+                                                            WGPUTextureUsage_CopyDst);
+            cube_desc.mipLevelCount = 1;
+            cube_desc.sampleCount = 1;
+            cube_desc.dimension = WGPUTextureDimension_2D;
+            fg.texture("forward_ibl_fallback_cube", cube_desc, k_black_cube_pixels,
+                       sizeof(k_black_cube_pixels), 4, WGPUTextureViewDimension_Cube);
+        }
+        {
+            static constexpr uint8_t k_black_2d_pixels[4] = {};  // 1x1 RGBA8
+            WGPUTextureDescriptor tex_desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
+            tex_desc.size = {1, 1, 1};
+            tex_desc.format = WGPUTextureFormat_RGBA8Unorm;
+            tex_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_TextureBinding |
+                                                           WGPUTextureUsage_CopyDst);
+            tex_desc.mipLevelCount = 1;
+            tex_desc.sampleCount = 1;
+            tex_desc.dimension = WGPUTextureDimension_2D;
+            fg.texture("forward_ibl_fallback_2d", tex_desc, k_black_2d_pixels,
+                       sizeof(k_black_2d_pixels), 4);
+        }
     }
 
     // Pre-passes: G-buffer (depth + normals) and shadow maps
     rendering::GBufferPass::Outputs gbuf_out;
-    if (auto* gbuf = get_pass<rendering::GBufferPass>()) {
-        gbuf_out = gbuf->add_to_frame_graph(fg, ctx, {});
+    {
+        PTS_ZONE_NAMED("fwd: gbuffer add_to_frame_graph");
+        if (auto* gbuf = get_pass<rendering::GBufferPass>()) {
+            gbuf_out = gbuf->add_to_frame_graph(fg, ctx, {});
+        }
     }
 
     rendering::ShadowMapPass::Outputs shadow_out{};
-    if (auto* shadow = get_pass<rendering::ShadowMapPass>()) {
-        shadow_out = shadow->add_to_frame_graph(fg, ctx, {});
+    {
+        PTS_ZONE_NAMED("fwd: shadow add_to_frame_graph");
+        if (auto* shadow = get_pass<rendering::ShadowMapPass>()) {
+            shadow_out = shadow->add_to_frame_graph(fg, ctx, {});
+        }
     }
 
     // --- BGL setup for the forward pipeline ---
@@ -211,9 +220,17 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
         fg.bind_group_layout("contact_shadow/consumer", {cs_slots[0], cs_slots[1]});
 
     auto [dbg_targets_setup, dbg_count_setup] = effective_debug_targets();
-    auto shader_wgsl = load_pass_shader("renderers/forward/generated/shaders/forward.wgsl");
-    auto shader =
-        fg.shader_from_wgsl("renderers/forward/generated/shaders/forward.wgsl", shader_wgsl);
+    std::string shader_wgsl;
+    {
+        PTS_ZONE_NAMED("fwd: load_pass_shader");
+        shader_wgsl = load_pass_shader("renderers/forward/generated/shaders/forward.wgsl");
+    }
+    WGPUShaderModule shader;
+    {
+        PTS_ZONE_NAMED("fwd: shader_from_wgsl");
+        shader =
+            fg.shader_from_wgsl("renderers/forward/generated/shaders/forward.wgsl", shader_wgsl);
+    }
 
     auto builder = fg.render_pipeline("forward")
                        .shader_module(shader)
