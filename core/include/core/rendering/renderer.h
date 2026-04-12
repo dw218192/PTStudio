@@ -5,20 +5,19 @@
 #include <core/rendering/toneMappingPass.h>
 
 #include <memory>
-#include <optional>
 #include <vector>
 
 namespace pts::rendering {
 
 class IRenderer : public IPass {
    public:
-    using IPass::IPass;
+    explicit IRenderer(const ShaderLoader& shader_loader);
     ~IRenderer() override;
 
     struct Outputs {
-        TextureHandle color;                 // tone-mapped LDR, display-ready
-        TextureHandle hdr_color;             // raw HDR scene color (for editor overlays)
-        std::optional<TextureHandle> depth;  // compute-only renderers may not produce
+        TextureDeclHandle color;      // tone-mapped LDR, display-ready
+        TextureDeclHandle hdr_color;  // raw HDR scene color (for editor overlays)
+        TextureDeclHandle depth;      // optional; compute-only renderers may not produce
     };
 
     /// Public entry point (non-virtual, NVI).
@@ -50,7 +49,8 @@ class IRenderer : public IPass {
 
     // ── Lifecycle: auto-forwarded to all children ──
 
-    void on_shaders_reloaded(const webgpu::Device& device) override;
+    void ensure_initialized(const webgpu::Device& device) override;
+    void on_shaders_reloaded(const webgpu::Device& device, FrameGraph& fg) override;
     void draw_imgui() override;
 
     void draw_viewport_overlay(const ViewportOverlayParams& params) override {
@@ -70,14 +70,11 @@ class IRenderer : public IPass {
    protected:
     /// What do_add_to_frame_graph returns — HDR color before tone mapping.
     struct HdrOutputs {
-        TextureHandle color;                 // HDR scene color
-        std::optional<TextureHandle> depth;  // compute-only renderers may not produce
-        std::optional<TextureHandle> ssao;   // ambient occlusion (if available)
+        TextureDeclHandle color;  // HDR scene color
+        TextureDeclHandle depth;  // optional; compute-only renderers may not produce
+        TextureDeclHandle ssao;   // optional; ambient occlusion (if available)
     };
 
-    void do_setup(const webgpu::Device& device) override;
-
-    virtual void do_renderer_setup(const webgpu::Device& device) = 0;
     virtual HdrOutputs do_add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) = 0;
     virtual void do_draw_imgui() {};
 

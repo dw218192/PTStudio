@@ -112,8 +112,7 @@ struct PerfOverlay {
 
         ImGui::Text("Passes:");
         for (auto& pass : passes) {
-            ImGui::BulletText("%.*s %s", static_cast<int>(pass->name().size()), pass->name().data(),
-                              pass->is_ready() ? "" : "(not ready)");
+            ImGui::BulletText("%.*s", static_cast<int>(pass->name().size()), pass->name().data());
         }
     }
 

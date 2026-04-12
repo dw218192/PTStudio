@@ -1,22 +1,16 @@
 #pragma once
 
 #include <core/rendering/renderPass.h>
-#include <core/rendering/webgpu/pipeline.h>
-#include <core/rendering/webgpu/shader.h>
-#include <core/rendering/webgpu/texture.h>
 #include <core/rendering/webgpu/webgpu.h>
 
 #include <cstdint>
-#include <optional>
 #include <string_view>
-#include <variant>
 
 namespace pts::rendering {
 
 class ToneMappingPass final : public IPass {
    public:
     using IPass::IPass;
-    ~ToneMappingPass() override;
 
     ToneMappingPass(const ToneMappingPass&) = delete;
     ToneMappingPass& operator=(const ToneMappingPass&) = delete;
@@ -24,26 +18,24 @@ class ToneMappingPass final : public IPass {
     ToneMappingPass& operator=(ToneMappingPass&&) = delete;
 
     [[nodiscard]] auto name() const noexcept -> std::string_view override;
-    [[nodiscard]] auto is_ready() const noexcept -> bool override;
     [[nodiscard]] auto requires_viewport() const noexcept -> bool override {
         return true;
     }
 
     struct Inputs {
-        TextureHandle hdr_color;
-        std::optional<TextureHandle> depth;  // for auto-exposure sky masking
-        std::optional<TextureHandle> ssao;   // ambient occlusion (from SSAOPass)
+        TextureDeclHandle hdr_color;
+        TextureDeclHandle depth;  // optional; for auto-exposure sky masking
+        TextureDeclHandle ssao;   // optional; ambient occlusion (from SSAOPass)
     };
     void set_inputs(const Inputs& in) {
         m_inputs = in;
     }
 
     /// LDR tone-mapped output. Valid after add_to_frame_graph.
-    [[nodiscard]] TextureHandle ldr_output() const {
+    [[nodiscard]] TextureDeclHandle ldr_output() const {
         return m_ldr_output;
     }
 
-    void do_setup(const webgpu::Device& device) override;
     void add_to_frame_graph(FrameGraph& fg, const PassContext& ctx);
     void draw_imgui() override;
 
@@ -57,29 +49,7 @@ class ToneMappingPass final : public IPass {
 
    private:
     Inputs m_inputs;
-    TextureHandle m_ldr_output;
-
-    struct Ready {
-        // Tone mapping render pipeline
-        webgpu::ShaderModule shader;
-        webgpu::RenderPipeline pipeline;
-        WGPUBindGroupLayout descriptor_layout = nullptr;
-        WGPUSampler sampler = nullptr;
-        // 1x1 white fallback for when SSAO is unavailable (AO = 1.0)
-        webgpu::Texture ssao_fallback_texture;
-        WGPUTextureView ssao_fallback_view = nullptr;
-        WGPUSampler ssao_sampler = nullptr;
-
-        // Luminance compute pipeline
-        webgpu::ShaderModule luminance_shader;
-        webgpu::ComputePipeline luminance_pipeline;
-        WGPUBindGroupLayout luminance_desc_layout = nullptr;
-        // 1x1 depth fallback (value 0.0 = not sky) for when scene_depth unavailable
-        WGPUTexture depth_fallback_tex = nullptr;
-        WGPUTextureView depth_fallback_view = nullptr;
-    };
-
-    std::variant<std::monostate, Ready> m_state;
+    TextureDeclHandle m_ldr_output;
     bool m_prev_auto_exposure = false;
     float m_prev_time = 0.0f;
 };

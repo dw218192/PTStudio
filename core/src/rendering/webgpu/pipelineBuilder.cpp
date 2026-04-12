@@ -27,6 +27,11 @@ auto RenderPipelineBuilder::shader(const ShaderModule& module) -> RenderPipeline
     return *this;
 }
 
+auto RenderPipelineBuilder::shader(WGPUShaderModule module) -> RenderPipelineBuilder& {
+    m_shader_module = module;
+    return *this;
+}
+
 auto RenderPipelineBuilder::vertex_entry(std::string_view name) -> RenderPipelineBuilder& {
     m_vertex_entry = std::string(name);
     return *this;
@@ -236,6 +241,11 @@ ComputePipelineBuilder::ComputePipelineBuilder(const Device& device) : m_device(
 
 auto ComputePipelineBuilder::shader(const ShaderModule& module) -> ComputePipelineBuilder& {
     m_shader = module.handle();
+    return *this;
+}
+
+auto ComputePipelineBuilder::shader(WGPUShaderModule module) -> ComputePipelineBuilder& {
+    m_shader = module;
     return *this;
 }
 

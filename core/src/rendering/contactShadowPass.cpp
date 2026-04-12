@@ -4,9 +4,10 @@
 #include <core/rendering/fallbackPool.h>
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/gbufferPass.h>
+#include <core/rendering/outputLayout.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/shaderLoader.h>
-#include <core/rendering/webgpu/pipelineBuilder.h>
+#include <core/rendering/webgpu/device.h>
 #include <imgui.h>
 
 #include <cstdint>
@@ -31,25 +32,6 @@ struct ContactShadowUniforms {
 static_assert(sizeof(ContactShadowUniforms) == 224,
               "ContactShadowUniforms must match shader std140 layout");
 
-ContactShadowPass::ContactShadowPass(const ShaderLoader& sl, const GBufferPass& gbuf)
-    : IPass(sl), m_gbuf(&gbuf) {
-}
-
-ContactShadowPass::~ContactShadowPass() {
-    release_raw_handles();
-}
-
-void ContactShadowPass::release_raw_handles() {
-    if (auto* ready = std::get_if<Ready>(&m_state)) {
-        ready->internal_layout.release();
-        ready->output_layout.release();
-    }
-}
-
-auto ContactShadowPass::is_ready() const noexcept -> bool {
-    return std::holds_alternative<Ready>(m_state);
-}
-
 static constexpr IPass::DebugTarget k_debug_targets[] = {
     {"Contact Shadow", "contact_shadow"},
 };
@@ -58,51 +40,8 @@ auto ContactShadowPass::debug_targets() const noexcept -> std::pair<const DebugT
     return {k_debug_targets, m_enabled ? 1u : 0u};
 }
 
-void ContactShadowPass::do_setup(const webgpu::Device& device) {
-    release_raw_handles();
-
-    auto shader_src = get_shader_loader().load("core/generated/shaders/contact_shadow.wgsl");
-    auto shader = device.create_shader_module_from_source(shader_src);
-
-    // ── Bind group layout ──
-    // GBuffer consumer slots: 0=depth_tex, 1=depth_sampler, 2=normals_tex, 3=normals_sampler
-    // ContactShadow-specific: 4=uniforms, 5=lights
-    PRECONDITION(m_gbuf->is_ready());
-    auto gbuf_slots = m_gbuf->consumer_output_slots();
-    std::vector<OutputSlot> slots;
-    slots.insert(slots.end(), gbuf_slots.begin(), gbuf_slots.end());
-    slots.push_back(OutputSlot::uniform(sizeof(ContactShadowUniforms)));
-    slots.push_back(OutputSlot::storage());
-    auto internal_layout = create_output_layout(device, slots);
-
-    WGPUPipelineLayoutDescriptor pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
-    pl_desc.bindGroupLayoutCount = 1;
-    pl_desc.bindGroupLayouts = &internal_layout.layout;
-    auto pl = wgpuDeviceCreatePipelineLayout(device.handle(), &pl_desc);
-
-    auto pipeline = webgpu::RenderPipelineBuilder(device)
-                        .shader(shader)
-                        .color_format(WGPUTextureFormat_R8Unorm)
-                        .cull_mode(WGPUCullMode_None)
-                        .pipeline_layout(pl)
-                        .build();
-    wgpuPipelineLayoutRelease(pl);
-
-    // Consumer output layout: slot 0 = contact shadow texture, slot 1 = sampler
-    auto st = OutputSlot::sampled_texture(WGPUTextureFormat_R8Unorm);
-    auto output_layout = create_output_layout(device, {st[0], st[1]});
-
-    m_state = Ready{
-        std::move(shader),
-        std::move(pipeline),
-        std::move(internal_layout),
-        std::move(output_layout),
-    };
-}
-
-WGPUBindGroupLayout ContactShadowPass::consumer_layout() const {
-    PRECONDITION(is_ready());
-    return std::get<Ready>(m_state).output_layout.layout;
+std::array<OutputSlot, 2> ContactShadowPass::consumer_slots() {
+    return OutputSlot::sampled_texture(WGPUTextureFormat_R8Unorm);
 }
 
 ContactShadowPass::Outputs ContactShadowPass::add_to_frame_graph(FrameGraph& fg,
@@ -110,14 +49,36 @@ ContactShadowPass::Outputs ContactShadowPass::add_to_frame_graph(FrameGraph& fg,
                                                                  const Inputs& in,
                                                                  FallbackPool& fallbacks) {
     PTS_ZONE_SCOPED;
-    PRECONDITION(is_ready());
-    auto& ready = std::get<Ready>(m_state);
-    auto& ol = ready.output_layout;
+    ensure_initialized(ctx.device);
+
+    auto cs_slots = consumer_slots();
+    auto consumer_bgl = fg.bind_group_layout("contact_shadow/consumer", {cs_slots[0], cs_slots[1]});
 
     if (!m_enabled) {
-        auto consumer = ol.build(fg, this, {TextureHandle{}}, fallbacks, "consumer_desc");
+        auto fallback_view = fallbacks.view(WGPUTextureFormat_R8Unorm, WGPUTextureViewDimension_2D);
+        auto consumer = descriptor(fg, consumer_bgl, "consumer_desc")
+                            .external_view(0, fallback_view)
+                            .sampler(1, fg.sampler(WGPUSamplerBindingType_Filtering))
+                            .build();
         return {{}, consumer};
     }
+
+    // ── Internal BGL ──
+    // GBuffer consumer slots: 0=depth_tex, 1=depth_sampler, 2=normals_tex, 3=normals_sampler
+    // ContactShadow-specific: 4=uniforms, 5=lights
+    auto gbuf_slots = GBufferPass::consumer_slots();
+    std::vector<OutputSlot> slots;
+    slots.insert(slots.end(), gbuf_slots.begin(), gbuf_slots.end());
+    slots.push_back(OutputSlot::uniform(sizeof(ContactShadowUniforms)));
+    slots.push_back(OutputSlot::storage());
+    auto internal_bgl = fg.bind_group_layout("contact_shadow/internal", slots);
+
+    auto* pipeline = fg.render_pipeline("contact_shadow")
+                         .shader("core/generated/shaders/contact_shadow.wgsl")
+                         .color_format(WGPUTextureFormat_R8Unorm)
+                         .cull_mode(WGPUCullMode_None)
+                         .bind_group_layouts({internal_bgl})
+                         .build();
 
     // ── Frame graph resources ──
     TextureDesc cs_desc;
@@ -125,26 +86,32 @@ ContactShadowPass::Outputs ContactShadowPass::add_to_frame_graph(FrameGraph& fg,
     cs_desc.height = ctx.viewport_height;
     cs_desc.format = WGPUTextureFormat_R8Unorm;
     cs_desc.clear_color = {1, 1, 1, 1};
-    auto cs_handle = create_texture(fg, cs_desc, "contact_shadow");
+    auto cs_decl = create_texture(fg, cs_desc, "contact_shadow");
 
     BufferDesc uniform_buf_desc;
     uniform_buf_desc.size = sizeof(ContactShadowUniforms);
     uniform_buf_desc.usage =
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
-    auto uniform_buf_handle = create_buffer(fg, uniform_buf_desc, "cs_uniforms");
+    auto uniform_buf_decl = create_buffer(fg, uniform_buf_desc, "cs_uniforms");
 
-    // Non-sampler resources in slot order: depth(0), normals(2), uniforms(4), lights(5)
-    auto bg_handle =
-        ready.internal_layout.build(fg, this,
-                                    {TextureHandle{in.depth}, TextureHandle{in.normals},
-                                     BufferHandle{uniform_buf_handle}, in.light_buffer},
-                                    fallbacks, "cs_bg");
+    // Internal descriptor: depth(0), depth_sampler(1), normals(2), normals_sampler(3),
+    //                      uniforms(4), lights(5)
+    auto bg_decl = descriptor(fg, internal_bgl, "cs_bg")
+                       .texture(0, in.depth)
+                       .sampler(1, fg.sampler(WGPUSamplerBindingType_NonFiltering))
+                       .texture(2, in.normals)
+                       .sampler(3, fg.sampler(WGPUSamplerBindingType_Filtering))
+                       .buffer(4, uniform_buf_decl, 0, sizeof(ContactShadowUniforms))
+                       .external_buffer(5, in.light_buffer, 0, WGPU_WHOLE_SIZE)
+                       .build();
 
     // Consumer descriptor: managed CS texture + sampler
-    auto consumer = ol.build(fg, this, {TextureHandle{cs_handle}}, fallbacks, "consumer_desc");
+    auto consumer = descriptor(fg, consumer_bgl, "consumer_desc")
+                        .texture(0, cs_decl)
+                        .sampler(1, fg.sampler(WGPUSamplerBindingType_Filtering))
+                        .build();
 
     // Capture scalars for lambda
-    auto* pipeline = ready.pipeline.handle();
     auto queue = ctx.queue;
     auto proj_matrix = ctx.proj_matrix;
     auto view_matrix = ctx.view_matrix;
@@ -159,10 +126,10 @@ ContactShadowPass::Outputs ContactShadowPass::add_to_frame_graph(FrameGraph& fg,
     fg.add_pass("contact_shadow_gen")
         .read(in.depth)
         .read(in.normals)
-        .color(cs_handle)
-        .execute([=, &fg](WGPURenderPassEncoder pass) {
-            auto uniform_buf = fg.get_buffer_ref(uniform_buf_handle).handle();
-            auto bg = fg.get_descriptor_ref(bg_handle).handle();
+        .color(cs_decl)
+        .execute([=](ExecuteContext& exec, WGPURenderPassEncoder pass) {
+            auto uniform_buf = exec.get(uniform_buf_decl).buffer;
+            auto bg = exec.get(bg_decl).bind_group;
 
             ContactShadowUniforms uniforms{};
             uniforms.projection = proj_matrix;
@@ -184,7 +151,7 @@ ContactShadowPass::Outputs ContactShadowPass::add_to_frame_graph(FrameGraph& fg,
             wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
         });
 
-    return {cs_handle, consumer};
+    return {cs_decl, consumer};
 }
 
 void ContactShadowPass::draw_imgui() {

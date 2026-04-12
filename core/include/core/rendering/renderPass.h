@@ -36,16 +36,20 @@ class IPass {
     virtual ~IPass() = default;
 
     [[nodiscard]] virtual auto name() const noexcept -> std::string_view = 0;
-    [[nodiscard]] virtual auto is_ready() const noexcept -> bool = 0;
 
-    /// Initialize the pass. Creates a named logger via LoggingManager (same
-    /// sinks/pattern as the rest of the application), computes allowed debug
-    /// targets, then calls do_setup().
-    void setup(const webgpu::Device& device);
+    /// Lazily initialize the pass: create the per-pass logger and query
+    /// device limits for debug-target gating. Idempotent — safe to call
+    /// every frame. Passes should invoke it at the top of
+    /// `add_to_frame_graph()` (or equivalent render method). The editor
+    /// application may also call it explicitly before querying
+    /// `effective_debug_targets()` for CLI resolution.
+    virtual void ensure_initialized(const webgpu::Device& device);
 
-    /// Called when shaders have been hot-reloaded. Default re-runs setup().
-    virtual void on_shaders_reloaded(const webgpu::Device& device) {
-        setup(device);
+    /// Called when shaders have been hot-reloaded. No-op by default —
+    /// shader invalidation is handled by the FrameGraph cache, which
+    /// bumps shader versions and triggers pipeline recreation on the
+    /// next frame.
+    virtual void on_shaders_reloaded(const webgpu::Device& /*device*/, FrameGraph& /*fg*/) {
     }
 
     /// Draw pass-specific ImGui windows/controls. Called during the UI phase.
@@ -116,22 +120,17 @@ class IPass {
     [[nodiscard]] auto load_pass_shader(std::string_view resource_key) const -> std::string;
 
    protected:
-    virtual void do_setup(const webgpu::Device& device) = 0;
-
     /// Frame graph resource helpers — auto-namespace by pass name.
-    TextureHandle create_texture(FrameGraph& fg, TextureDesc desc, const char* label = nullptr) {
-        return fg.find_or_create(this, desc, label);
+    TextureDeclHandle create_texture(FrameGraph& fg, TextureDesc desc,
+                                     const char* label = nullptr) {
+        return fg.texture(this, desc, label);
     }
-    BufferHandle create_buffer(FrameGraph& fg, BufferDesc desc, const char* label = nullptr) {
-        return fg.find_or_create_buffer(this, desc, label);
+    BufferDeclHandle create_buffer(FrameGraph& fg, BufferDesc desc, const char* label = nullptr) {
+        return fg.buffer(this, desc, label);
     }
-    BufferHandle import_buffer(FrameGraph& fg, WGPUBuffer buf, std::size_t size,
-                               const char* label = nullptr) {
+    BufferDeclHandle import_buffer(FrameGraph& fg, WGPUBuffer buf, std::size_t size,
+                                   const char* label = nullptr) {
         return fg.import_buffer(this, buf, size, label);
-    }
-    DescriptorHandle create_descriptor(FrameGraph& fg, DescriptorDesc desc,
-                                       const char* label = nullptr) {
-        return fg.find_or_create_descriptor(this, std::move(desc), label);
     }
     DescriptorBuilder descriptor(FrameGraph& fg, WGPUBindGroupLayout layout,
                                  const char* label = nullptr) {
@@ -197,7 +196,8 @@ class IPass {
    private:
     const ShaderLoader* m_shader_loader;
     std::shared_ptr<spdlog::logger> m_logger;
-    uint32_t m_allowed_debug_count = UINT32_MAX;
+    uint32_t m_allowed_debug_count = 0;
+    bool m_initialized = false;
 
     void compute_allowed_debug_targets(const webgpu::Device& device);
 

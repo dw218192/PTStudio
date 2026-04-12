@@ -207,14 +207,14 @@ struct EditorApplication final : GpuApplication {
     uint32_t m_viewport_height = 0;
     float m_viewport_x = 0.0f;
     float m_viewport_y = 0.0f;
-    rendering::TextureRef m_scene_color_ref;
+    WGPUTextureView m_scene_color_view = nullptr;
 
     // Debug visualization
     bool m_viewport_combo_open =
         false;  // suppresses picking while combo dropdown overlaps viewport
     int m_debug_target_selection = 0;
-    rendering::TextureRef m_active_debug_ref;
-    rendering::TextureRef m_gizmo_overlay_ref;
+    WGPUTextureView m_active_debug_view = nullptr;
+    WGPUTextureView m_gizmo_overlay_view = nullptr;
 
     // Console auto-scroll
     size_t m_last_console_msg_count = 0;

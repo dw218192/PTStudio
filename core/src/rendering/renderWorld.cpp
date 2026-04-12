@@ -1119,13 +1119,14 @@ const IblPipelines& RenderWorld::ibl_pipelines() const {
     return *m_ibl_pipelines;
 }
 
-void RenderWorld::update_ibl(const webgpu::Device& device, WGPUQueue queue, UpAxis up_axis) {
+void RenderWorld::update_ibl(const webgpu::Device& device, WGPUQueue queue, WGPUSampler ibl_sampler,
+                             UpAxis up_axis) {
     PTS_ZONE_SCOPED;
 
     // Lazy-init pipelines on first call
     if (!m_ibl_pipelines) {
         m_ibl_pipelines = std::make_unique<IblPipelines>();
-        m_ibl_pipelines->init(device, queue);
+        m_ibl_pipelines->init(device, queue, ibl_sampler);
     }
 
     // Only re-evaluate when lights change

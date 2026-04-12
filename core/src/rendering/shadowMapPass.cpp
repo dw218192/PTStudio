@@ -1,12 +1,12 @@
 #include <core/diagnostics.h>
 #include <core/profiling.h>
-#include <core/rendering/fallbackPool.h>
 #include <core/rendering/frameGraph.h>
+#include <core/rendering/outputLayout.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/shaderLoader.h>
 #include <core/rendering/shadowMapPass.h>
-#include <core/rendering/webgpu/pipelineBuilder.h>
+#include <core/rendering/webgpu/device.h>
 #include <imgui.h>
 
 #include <algorithm>
@@ -16,94 +16,41 @@
 
 namespace pts::rendering {
 
-ShadowMapPass::ShadowMapPass(const ShaderLoader& sl) : IPass(sl) {
-}
-
-ShadowMapPass::~ShadowMapPass() {
-    if (auto* ready = std::get_if<Ready>(&m_state)) {
-        if (ready->desc_layout) wgpuBindGroupLayoutRelease(ready->desc_layout);
-        ready->output_layout.release();
-    }
-}
-
-auto ShadowMapPass::is_ready() const noexcept -> bool {
-    return std::holds_alternative<Ready>(m_state);
-}
-
-void ShadowMapPass::do_setup(const webgpu::Device& device) {
-    // Release existing state for re-entry (hot-reload)
-    if (auto* ready = std::get_if<Ready>(&m_state)) {
-        if (ready->desc_layout) wgpuBindGroupLayoutRelease(ready->desc_layout);
-        ready->output_layout.release();
-    }
-
-    auto shader_src = get_shader_loader().load("core/generated/shaders/shadow.wgsl");
-    auto shader = device.create_shader_module_from_source(shader_src);
-
-    // BGL: binding 0 = model matrix (dynamic), binding 1 = light VP (dynamic)
-    auto internal_layout = create_output_layout(
-        device, {OutputSlot::uniform(64).dynamic().visibility(WGPUShaderStage_Vertex),
-                 OutputSlot::uniform(64).dynamic().visibility(WGPUShaderStage_Vertex)});
-    auto desc_layout = internal_layout.layout;
-    // Detach the BGL handle from the OutputLayoutInfo before releasing it
-    internal_layout.layout = nullptr;
-    internal_layout.release();
-
-    WGPUPipelineLayoutDescriptor pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
-    pl_desc.bindGroupLayoutCount = 1;
-    pl_desc.bindGroupLayouts = &desc_layout;
-    auto pipeline_layout = wgpuDeviceCreatePipelineLayout(device.handle(), &pl_desc);
-
-    // Position-only vertex layout: stride=12, one Float32x3 at offset 0, location 0
-    webgpu::VertexBufferLayout vtx_layout;
-    vtx_layout.stride = 12;
-    vtx_layout.step_mode = WGPUVertexStepMode_Vertex;
-    WGPUVertexAttribute pos_attr{};
-    pos_attr.format = WGPUVertexFormat_Float32x3;
-    pos_attr.offset = 0;
-    pos_attr.shaderLocation = 0;
-    vtx_layout.attributes.push_back(pos_attr);
-
-    auto pipeline = webgpu::RenderPipelineBuilder(device)
-                        .shader(shader)
-                        .no_fragment()
-                        .depth_format(WGPUTextureFormat_Depth32Float)
-                        .depth_write(true)
-                        .depth_compare(WGPUCompareFunction_Less)
-                        .cull_mode(WGPUCullMode_Front)
-                        .depth_bias(0, 0.0f)
-                        .vertex_buffer(std::move(vtx_layout))
-                        .pipeline_layout(pipeline_layout)
-                        .build();
-
-    wgpuPipelineLayoutRelease(pipeline_layout);
-
-    // Consumer output layout: slot 0 = ShadowInfo buffer,
-    // slot 1 = depth array texture, slot 2 = depth sampler (NonFiltering)
-    auto output_layout = create_output_layout(
-        device,
-        {OutputSlot::storage(sizeof(ShadowInfo)),
-         OutputSlot::texture(WGPUTextureFormat_Depth32Float, WGPUTextureViewDimension_2DArray),
-         OutputSlot::sampler(WGPUSamplerBindingType_NonFiltering)});
-
-    m_state = Ready{
-        std::move(shader),
-        std::move(pipeline),
-        desc_layout,
-        std::move(output_layout),
+std::vector<OutputSlot> ShadowMapPass::consumer_slots() {
+    return {
+        OutputSlot::storage(sizeof(ShadowInfo)),
+        OutputSlot::texture(WGPUTextureFormat_Depth32Float, WGPUTextureViewDimension_2DArray),
+        OutputSlot::sampler(WGPUSamplerBindingType_NonFiltering),
     };
-}
-
-WGPUBindGroupLayout ShadowMapPass::consumer_layout() const {
-    PRECONDITION(is_ready());
-    return std::get<Ready>(m_state).output_layout.layout;
 }
 
 ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx,
                                                          const Inputs&) {
     PTS_ZONE_SCOPED;
-    PRECONDITION(is_ready());
-    auto& ready = std::get<Ready>(m_state);
+    ensure_initialized(ctx.device);
+
+    auto desc_layout = fg.bind_group_layout(
+        "shadow_map/desc", {OutputSlot::uniform(64).dynamic().visibility(WGPUShaderStage_Vertex),
+                            OutputSlot::uniform(64).dynamic().visibility(WGPUShaderStage_Vertex)});
+    auto consumer_bgl = fg.bind_group_layout("shadow_map/consumer", consumer_slots());
+
+    // Position-only vertex layout: stride=12, one Float32x3 at offset 0, location 0
+    WGPUVertexAttribute pos_attr{};
+    pos_attr.format = WGPUVertexFormat_Float32x3;
+    pos_attr.offset = 0;
+    pos_attr.shaderLocation = 0;
+
+    auto* pipeline_handle = fg.render_pipeline("shadow_map")
+                                .shader("core/generated/shaders/shadow.wgsl")
+                                .no_fragment()
+                                .depth_format(WGPUTextureFormat_Depth32Float)
+                                .depth_write(true)
+                                .depth_compare(WGPUCompareFunction_Less)
+                                .cull_mode(WGPUCullMode_Front)
+                                .depth_bias(0, 0.0f)
+                                .vertex_buffer({12, WGPUVertexStepMode_Vertex, {pos_attr}})
+                                .bind_group_layouts({desc_layout})
+                                .build();
 
     // Count shadow-casting distant lights
     auto lights = ctx.world.get_lights();
@@ -146,15 +93,17 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
         auto queue = ctx.queue;
         auto empty_infos = std::vector<ShadowInfo>(info_count);
         fg.add_pass("shadow_info_upload")
-            .execute([queue, shadow_info_buf, infos = std::move(empty_infos),
-                      &fg](WGPUComputePassEncoder) {
-                auto buf = fg.get_buffer_ref(shadow_info_buf).handle();
+            .execute([queue, shadow_info_buf, infos = std::move(empty_infos)](
+                         ExecuteContext& exec, WGPUComputePassEncoder) {
+                auto buf = exec.get(shadow_info_buf).buffer;
                 wgpuQueueWriteBuffer(queue, buf, 0, infos.data(),
                                      infos.size() * sizeof(ShadowInfo));
             });
-        auto consumer = ready.output_layout.build(
-            fg, this, {BufferHandle{shadow_info_buf}, TextureHandle{shadow_array}},
-            fg.fallback_pool(), "consumer_desc");
+        auto consumer = descriptor(fg, consumer_bgl, "consumer_desc")
+                            .buffer(0, shadow_info_buf)
+                            .texture(1, shadow_array)
+                            .sampler(2, fg.sampler(WGPUSamplerBindingType_NonFiltering))
+                            .build();
         return {shadow_array, shadow_info_buf, consumer};
     }
 
@@ -216,7 +165,7 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
     model_buf_desc.size = model_buf_size;
     model_buf_desc.usage =
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
-    auto model_buf_handle = create_buffer(fg, model_buf_desc, "models");
+    auto model_buf_decl = create_buffer(fg, model_buf_desc, "models");
 
     // Light VP buffer: one VP matrix per shadow layer
     uint64_t vp_buf_size =
@@ -225,13 +174,13 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
     vp_buf_desc.size = vp_buf_size;
     vp_buf_desc.usage =
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
-    auto vp_buf_handle = create_buffer(fg, vp_buf_desc, "light_vps");
+    auto vp_buf_decl = create_buffer(fg, vp_buf_desc, "light_vps");
 
     // Descriptor: binding 0 = model (dynamic), binding 1 = light VP (dynamic)
-    auto bg_handle = descriptor(fg, ready.desc_layout, "bg0")
-                         .buffer(0, model_buf_handle, 0, 64)
-                         .buffer(1, vp_buf_handle, 0, 64)
-                         .build();
+    auto bg_decl = descriptor(fg, desc_layout, "bg0")
+                       .buffer(0, model_buf_decl, 0, 64)
+                       .buffer(1, vp_buf_decl, 0, 64)
+                       .build();
 
     // Extract per-layer view-projection matrices
     std::vector<glm::mat4> layer_vps;
@@ -241,22 +190,21 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
     }
     INVARIANT(layer_vps.size() == layer_index);
 
-    auto* pipeline_handle = ready.pipeline.handle();
     auto queue = ctx.queue;
     const auto& world = ctx.world;
 
     // Upload shadow info + model matrices + light VPs in a single compute pass
     fg.add_pass("shadow_upload")
-        .execute([queue, shadow_info_buf, model_buf_handle, vp_buf_handle, layer_index,
-                  infos = std::move(infos), layer_vps = std::move(layer_vps), &fg,
-                  &world](WGPUComputePassEncoder) {
+        .execute([queue, shadow_info_buf, model_buf_decl, vp_buf_decl, layer_index,
+                  infos = std::move(infos), layer_vps = std::move(layer_vps),
+                  &world](ExecuteContext& exec, WGPUComputePassEncoder) {
             // Shadow info buffer
-            auto info_buf = fg.get_buffer_ref(shadow_info_buf).handle();
+            auto info_buf = exec.get(shadow_info_buf).buffer;
             wgpuQueueWriteBuffer(queue, info_buf, 0, infos.data(),
                                  infos.size() * sizeof(ShadowInfo));
 
             // Model matrices (uploaded once, shared across all layers)
-            auto model_buf = fg.get_buffer_ref(model_buf_handle).handle();
+            auto model_buf = exec.get(model_buf_decl).buffer;
             auto objs = world.get_objects();
             for (uint32_t oi = 0; oi < static_cast<uint32_t>(objs.size()); ++oi) {
                 if (!objs[oi].active()) continue;
@@ -266,7 +214,7 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
             }
 
             // Light VP matrices
-            auto vp_buf = fg.get_buffer_ref(vp_buf_handle).handle();
+            auto vp_buf = exec.get(vp_buf_decl).buffer;
             for (uint32_t l = 0; l < layer_index; ++l) {
                 wgpuQueueWriteBuffer(queue, vp_buf, l * k_uniform_align, &layer_vps[l],
                                      sizeof(glm::mat4));
@@ -277,8 +225,8 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
     for (uint32_t layer = 0; layer < layer_index; ++layer) {
         fg.add_pass("shadow_depth_" + std::to_string(layer))
             .depth(shadow_array, layer)
-            .execute([=, &fg, &world](WGPURenderPassEncoder pass) {
-                auto bg = fg.get_descriptor_ref(bg_handle).handle();
+            .execute([=, &world](ExecuteContext& exec, WGPURenderPassEncoder pass) {
+                auto bg = exec.get(bg_decl).bind_group;
                 auto objs = world.get_objects();
                 auto mesh_slots = world.get_meshes();
                 uint32_t slots = static_cast<uint32_t>(objs.size());
@@ -302,9 +250,11 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
             });
     }
 
-    auto consumer = ready.output_layout.build(
-        fg, this, {BufferHandle{shadow_info_buf}, TextureHandle{shadow_array}}, fg.fallback_pool(),
-        "consumer_desc");
+    auto consumer = descriptor(fg, consumer_bgl, "consumer_desc")
+                        .buffer(0, shadow_info_buf)
+                        .texture(1, shadow_array)
+                        .sampler(2, fg.sampler(WGPUSamplerBindingType_NonFiltering))
+                        .build();
     return {shadow_array, shadow_info_buf, consumer};
 }
 

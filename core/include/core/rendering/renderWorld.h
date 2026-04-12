@@ -411,7 +411,9 @@ struct RenderWorld {
 
     /// Update IBL resources from the current dome light state.
     /// Inits BRDF LUT on first call, then loads HDR or sets uniform color.
-    void update_ibl(const webgpu::Device& device, WGPUQueue queue, UpAxis up_axis = UpAxis::Y);
+    /// The sampler is a trilinear-clamp sampler (e.g. from FrameGraph::sampler()).
+    void update_ibl(const webgpu::Device& device, WGPUQueue queue, WGPUSampler ibl_sampler,
+                    UpAxis up_axis = UpAxis::Y);
 
     IblResources& ibl_resources();
     const IblResources& ibl_resources() const;

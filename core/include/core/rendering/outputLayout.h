@@ -6,7 +6,6 @@
 #include <array>
 #include <cstdint>
 #include <initializer_list>
-#include <variant>
 #include <vector>
 
 namespace pts::webgpu {
@@ -14,13 +13,6 @@ class Device;
 }
 
 namespace pts::rendering {
-
-class FallbackPool;
-class FrameGraph;
-class IPass;
-struct TextureHandle;
-struct BufferHandle;
-struct DescriptorHandle;
 
 /// Describes a single binding slot in a bind group layout.
 /// Each OutputSlot maps to exactly one WGPUBindGroupLayoutEntry.
@@ -114,47 +106,13 @@ struct OutputSlot {
         WGPUTextureFormat fmt, WGPUTextureViewDimension dim = WGPUTextureViewDimension_2D);
 };
 
-/// Resource to pass to OutputLayoutInfo::build().
-/// Caller provides textures and buffers; sampler slots are auto-filled.
-using BuildResource = std::variant<TextureHandle, BufferHandle, WGPUTextureView, WGPUBuffer>;
-
-struct OutputLayoutInfo {
-    WGPUBindGroupLayout layout = nullptr;
-
-    struct SlotInfo {
-        OutputSlot slot;
-        uint32_t binding = 0;
-        WGPUSampler sampler = nullptr;  ///< Pre-created sampler for Sampler slots
-    };
-    std::vector<SlotInfo> slots;
-
-    /// Return the output slot declarations (for concatenation into parent layouts).
-    [[nodiscard]] std::vector<OutputSlot> output_slots() const;
-
-    /// Build a DescriptorHandle from a flat list of resources.
-    /// Sampler slots are auto-filled from pre-created samplers.
-    /// Non-sampler resources are consumed sequentially from the list.
-    /// Invalid handles → FallbackPool fallback.
-    [[nodiscard]] DescriptorHandle build(FrameGraph& fg, const IPass* pass,
-                                         std::initializer_list<BuildResource> resources,
-                                         FallbackPool& pool, const char* label = nullptr) const;
-
-    /// Overload accepting a vector (for programmatic resource lists).
-    [[nodiscard]] DescriptorHandle build(FrameGraph& fg, const IPass* pass,
-                                         const std::vector<BuildResource>& resources,
-                                         FallbackPool& pool, const char* label = nullptr) const;
-
-    void release();
-};
-
 /// Create a bind group layout from a flat list of OutputSlots.
 /// Each slot = one binding, indices sequential starting at 0.
-/// Sampler slots get a pre-created WGPUSampler stored in SlotInfo.
-OutputLayoutInfo create_output_layout(const webgpu::Device& device,
-                                      std::initializer_list<OutputSlot> slots);
+WGPUBindGroupLayout create_bind_group_layout(const webgpu::Device& device,
+                                             std::initializer_list<OutputSlot> slots);
 
 /// Overload accepting a vector (for concatenation from multiple sources).
-OutputLayoutInfo create_output_layout(const webgpu::Device& device,
-                                      const std::vector<OutputSlot>& slots);
+WGPUBindGroupLayout create_bind_group_layout(const webgpu::Device& device,
+                                             const std::vector<OutputSlot>& slots);
 
 }  // namespace pts::rendering

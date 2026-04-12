@@ -8,8 +8,7 @@
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/rendererRegistry.h>
-#include <core/rendering/shaderLoader.h>
-#include <core/rendering/webgpu/pipelineBuilder.h>
+#include <core/rendering/webgpu/device.h>
 #include <core/rendering/wireframeIndices.h>
 #include <wireframe_shader_metadata.h>
 
@@ -34,74 +33,31 @@ static_assert(sizeof(WireframeUniforms) == 64, "WireframeUniforms must match sha
 static_assert(WireframePass::k_uniform_align >= sizeof(WireframeUniforms),
               "Alignment must be >= uniform struct size");
 
-WireframePass::~WireframePass() {
-    if (auto* ready = std::get_if<Ready>(&m_state)) {
-        if (ready->descriptor_layout) {
-            wgpuBindGroupLayoutRelease(ready->descriptor_layout);
-        }
-    }
-}
-
 auto WireframePass::name() const noexcept -> std::string_view {
     return "wireframe";
-}
-
-auto WireframePass::is_ready() const noexcept -> bool {
-    return std::holds_alternative<Ready>(m_state);
-}
-
-void WireframePass::do_renderer_setup(const webgpu::Device& device) {
-    WGPUBindGroupLayout old_layout = nullptr;
-    if (auto* ready = std::get_if<Ready>(&m_state)) {
-        old_layout = ready->descriptor_layout;
-        ready->descriptor_layout = nullptr;
-    }
-
-    auto shader_src = get_shader_loader().load("editor/generated/shaders/wireframe.wgsl");
-    auto shader = device.create_shader_module_from_source(shader_src);
-
-    auto internal_layout = rendering::create_output_layout(
-        device, {rendering::OutputSlot::uniform(sizeof(WireframeUniforms))
-                     .dynamic()
-                     .visibility(static_cast<WGPUShaderStage>(WGPUShaderStage_Vertex |
-                                                              WGPUShaderStage_Fragment))});
-    auto descriptor_layout = internal_layout.layout;
-    internal_layout.layout = nullptr;
-    internal_layout.release();
-
-    WGPUPipelineLayoutDescriptor pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
-    pl_desc.bindGroupLayoutCount = 1;
-    pl_desc.bindGroupLayouts = &descriptor_layout;
-    WGPUPipelineLayout pipeline_layout = wgpuDeviceCreatePipelineLayout(device.handle(), &pl_desc);
-
-    auto pipeline = webgpu::RenderPipelineBuilder(device)
-                        .shader(shader)
-                        .color_format(WGPUTextureFormat_RGBA16Float)
-                        .depth_format(WGPUTextureFormat_Depth32Float)
-                        .depth_write(true)
-                        .depth_compare(WGPUCompareFunction_Less)
-                        .cull_mode(WGPUCullMode_None)
-                        .topology(WGPUPrimitiveTopology_LineList)
-                        .pipeline_layout(pipeline_layout)
-                        .vertex_layout<editor_wireframe_shader::VertexLayout>()
-                        .build();
-
-    wgpuPipelineLayoutRelease(pipeline_layout);
-
-    m_state = Ready{
-        std::move(shader),
-        std::move(pipeline),
-        descriptor_layout,
-    };
-
-    if (old_layout) wgpuBindGroupLayoutRelease(old_layout);
 }
 
 WireframePass::HdrOutputs WireframePass::do_add_to_frame_graph(rendering::FrameGraph& fg,
                                                                const rendering::PassContext& ctx) {
     PTS_ZONE_SCOPED;
-    PRECONDITION(is_ready());
-    auto& ready = std::get<Ready>(m_state);
+
+    auto descriptor_layout = fg.bind_group_layout(
+        "wireframe/desc", {rendering::OutputSlot::uniform(sizeof(WireframeUniforms))
+                               .dynamic()
+                               .visibility(static_cast<WGPUShaderStage>(
+                                   WGPUShaderStage_Vertex | WGPUShaderStage_Fragment))});
+
+    auto* pipeline_handle = fg.render_pipeline("wireframe")
+                                .shader("editor/generated/shaders/wireframe.wgsl")
+                                .color_format(WGPUTextureFormat_RGBA16Float)
+                                .depth_format(WGPUTextureFormat_Depth32Float)
+                                .depth_write(true)
+                                .depth_compare(WGPUCompareFunction_Less)
+                                .cull_mode(WGPUCullMode_None)
+                                .topology(WGPUPrimitiveTopology_LineList)
+                                .bind_group_layouts({descriptor_layout})
+                                .vertex_layout<editor_wireframe_shader::VertexLayout>()
+                                .build();
 
     auto objects = ctx.world.get_objects();
     auto meshes = ctx.world.get_meshes();
@@ -114,12 +70,12 @@ WireframePass::HdrOutputs WireframePass::do_add_to_frame_graph(rendering::FrameG
     buf_desc.size = needed_size;
     buf_desc.usage =
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
-    auto uniform_buf_handle = create_buffer(fg, buf_desc, "uniforms");
+    auto uniform_buf_decl = create_buffer(fg, buf_desc, "uniforms");
 
     // Register descriptor
-    auto bg_handle = descriptor(fg, ready.descriptor_layout, "bg0")
-                         .buffer(0, uniform_buf_handle, 0, sizeof(WireframeUniforms))
-                         .build();
+    auto bg_decl = descriptor(fg, descriptor_layout, "bg0")
+                       .buffer(0, uniform_buf_decl, 0, sizeof(WireframeUniforms))
+                       .build();
 
     rendering::TextureDesc color_desc;
     color_desc.width = ctx.viewport_width;
@@ -132,13 +88,12 @@ WireframePass::HdrOutputs WireframePass::do_add_to_frame_graph(rendering::FrameG
     depth_desc.height = ctx.viewport_height;
     depth_desc.format = WGPUTextureFormat_Depth32Float;
 
-    auto color = create_texture(fg, color_desc, "color");
-    auto depth = create_texture(fg, depth_desc, "depth");
+    auto color_decl = create_texture(fg, color_desc, "color");
+    auto depth_decl = create_texture(fg, depth_desc, "depth");
 
     auto queue = ctx.queue;
     auto view_mat = ctx.view_matrix;
     auto proj_mat = ctx.proj_matrix;
-    auto* pipeline_handle = ready.pipeline.handle();
     const auto& world = ctx.world;
 
     {
@@ -163,13 +118,13 @@ WireframePass::HdrOutputs WireframePass::do_add_to_frame_graph(rendering::FrameG
     }
 
     fg.add_pass("wireframe")
-        .color(color)
-        .depth(depth)
-        .execute([=, &fg, &world](WGPURenderPassEncoder pass) {
+        .color(color_decl)
+        .depth(depth_decl)
+        .execute([=, &world](rendering::ExecuteContext& exec, WGPURenderPassEncoder pass) {
             auto objs = world.get_objects();
             auto mshs = world.get_meshes();
-            auto uniform_buf = fg.get_buffer_ref(uniform_buf_handle).handle();
-            auto desc_group = fg.get_descriptor_ref(bg_handle).handle();
+            auto uniform_buf = exec.get(uniform_buf_decl).buffer;
+            auto desc_group = exec.get(bg_decl).bind_group;
 
             {
                 PTS_ZONE_NAMED("wireframe uniform upload");
@@ -200,5 +155,5 @@ WireframePass::HdrOutputs WireframePass::do_add_to_frame_graph(rendering::FrameG
             }
         });
 
-    return {color, depth};
+    return {color_decl, depth_decl};
 }

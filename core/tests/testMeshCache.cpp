@@ -20,11 +20,6 @@ struct TestPass final : IPass {
     auto name() const noexcept -> std::string_view override {
         return "test";
     }
-    auto is_ready() const noexcept -> bool override {
-        return true;
-    }
-    void do_setup(const webgpu::Device& /*device*/) override {
-    }
 
     // Expose protected members for testing.
     using IPass::get_or_create_pass_data;

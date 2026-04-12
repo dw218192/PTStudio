@@ -22,6 +22,17 @@ auto make_logger() -> std::shared_ptr<spdlog::logger> {
     logger->set_level(spdlog::level::debug);
     return logger;
 }
+
+WGPUSampler create_ibl_sampler(const pts::webgpu::Device& device) {
+    WGPUSamplerDescriptor desc = WGPU_SAMPLER_DESCRIPTOR_INIT;
+    desc.magFilter = WGPUFilterMode_Linear;
+    desc.minFilter = WGPUFilterMode_Linear;
+    desc.mipmapFilter = WGPUMipmapFilterMode_Linear;
+    desc.addressModeU = WGPUAddressMode_ClampToEdge;
+    desc.addressModeV = WGPUAddressMode_ClampToEdge;
+    desc.addressModeW = WGPUAddressMode_ClampToEdge;
+    return wgpuDeviceCreateSampler(device.handle(), &desc);
+}
 }  // namespace
 
 TEST_CASE("env_texture_path defaults to empty") {
@@ -43,6 +54,7 @@ TEST_CASE("ibl_resources accessor returns same object") {
 TEST_CASE("update_ibl with no lights produces black uniform IBL") {
     auto logger = make_logger();
     auto device = pts::webgpu::Device::create(logger);
+    auto sampler = create_ibl_sampler(device);
 
     RenderWorld world;
     // Force a light version change so update_ibl processes
@@ -51,7 +63,7 @@ TEST_CASE("update_ibl with no lights produces black uniform IBL") {
         // SyncScope destructor bumps light_version
     }
 
-    world.update_ibl(device, device.queue());
+    world.update_ibl(device, device.queue(), sampler);
 
     CHECK(world.ibl_resources().is_ready());
     CHECK(world.ibl_pipelines().brdf_lut_view() != nullptr);
@@ -59,11 +71,13 @@ TEST_CASE("update_ibl with no lights produces black uniform IBL") {
     CHECK(world.ibl_resources().prefiltered_env_view() != nullptr);
     CHECK(world.ibl_resources().env_cubemap_view() != nullptr);
     CHECK(world.ibl_pipelines().sampler() != nullptr);
+    wgpuSamplerRelease(sampler);
 }
 
 TEST_CASE("update_ibl with dome light (no texture) produces uniform color IBL") {
     auto logger = make_logger();
     auto device = pts::webgpu::Device::create(logger);
+    auto sampler = create_ibl_sampler(device);
 
     RenderWorld world;
     {
@@ -75,17 +89,19 @@ TEST_CASE("update_ibl with dome light (no texture) produces uniform color IBL") 
         w->intensity = 0.3f;
     }
 
-    world.update_ibl(device, device.queue());
+    world.update_ibl(device, device.queue(), sampler);
 
     CHECK(world.ibl_resources().is_ready());
     CHECK(world.ibl_resources().irradiance_view() != nullptr);
     CHECK(world.ibl_resources().prefiltered_env_view() != nullptr);
     CHECK(world.ibl_resources().env_cubemap_view() != nullptr);
+    wgpuSamplerRelease(sampler);
 }
 
 TEST_CASE("update_ibl skips when light_version unchanged") {
     auto logger = make_logger();
     auto device = pts::webgpu::Device::create(logger);
+    auto sampler = create_ibl_sampler(device);
 
     RenderWorld world;
     {
@@ -97,17 +113,19 @@ TEST_CASE("update_ibl skips when light_version unchanged") {
         w->intensity = 1.0f;
     }
 
-    world.update_ibl(device, device.queue());
+    world.update_ibl(device, device.queue(), sampler);
     CHECK(world.ibl_resources().is_ready());
 
     // Second call with no version change — should return early (no-op)
-    world.update_ibl(device, device.queue());
+    world.update_ibl(device, device.queue(), sampler);
     CHECK(world.ibl_resources().is_ready());
+    wgpuSamplerRelease(sampler);
 }
 
 TEST_CASE("update_ibl transitions from dome to no-dome (black)") {
     auto logger = make_logger();
     auto device = pts::webgpu::Device::create(logger);
+    auto sampler = create_ibl_sampler(device);
 
     RenderWorld world;
     uint32_t dome_idx;
@@ -120,7 +138,7 @@ TEST_CASE("update_ibl transitions from dome to no-dome (black)") {
         w->intensity = 1.0f;
     }
 
-    world.update_ibl(device, device.queue());
+    world.update_ibl(device, device.queue(), sampler);
     CHECK(world.ibl_resources().is_ready());
 
     // Remove dome light
@@ -129,14 +147,16 @@ TEST_CASE("update_ibl transitions from dome to no-dome (black)") {
         scope.free_light_slot(dome_idx);
     }
 
-    world.update_ibl(device, device.queue());
+    world.update_ibl(device, device.queue(), sampler);
     // Still ready (black environment)
     CHECK(world.ibl_resources().is_ready());
+    wgpuSamplerRelease(sampler);
 }
 
 TEST_CASE("update_ibl with Z-up produces ready IBL") {
     auto logger = make_logger();
     auto device = pts::webgpu::Device::create(logger);
+    auto sampler = create_ibl_sampler(device);
 
     RenderWorld world;
     {
@@ -148,17 +168,19 @@ TEST_CASE("update_ibl with Z-up produces ready IBL") {
         w->intensity = 1.0f;
     }
 
-    world.update_ibl(device, device.queue(), UpAxis::Z);
+    world.update_ibl(device, device.queue(), sampler, UpAxis::Z);
 
     CHECK(world.ibl_resources().is_ready());
     CHECK(world.ibl_resources().irradiance_view() != nullptr);
     CHECK(world.ibl_resources().prefiltered_env_view() != nullptr);
     CHECK(world.ibl_resources().env_cubemap_view() != nullptr);
+    wgpuSamplerRelease(sampler);
 }
 
 TEST_CASE("clear resets IBL state") {
     auto logger = make_logger();
     auto device = pts::webgpu::Device::create(logger);
+    auto sampler = create_ibl_sampler(device);
 
     RenderWorld world;
     {
@@ -169,11 +191,12 @@ TEST_CASE("clear resets IBL state") {
         w->color = {1.0f, 1.0f, 1.0f};
         w->intensity = 1.0f;
     }
-    world.update_ibl(device, device.queue());
+    world.update_ibl(device, device.queue(), sampler);
     CHECK(world.ibl_resources().is_ready());
 
     world.clear();
     CHECK_FALSE(world.ibl_resources().is_ready());
+    wgpuSamplerRelease(sampler);
 }
 
 #endif  // !__EMSCRIPTEN__

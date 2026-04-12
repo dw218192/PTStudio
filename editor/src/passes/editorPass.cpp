@@ -8,7 +8,7 @@
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/shaderLoader.h>
-#include <core/rendering/webgpu/pipelineBuilder.h>
+#include <core/rendering/webgpu/device.h>
 #include <gizmo_shader_metadata.h>
 #include <picking_shader_metadata.h>
 
@@ -42,93 +42,51 @@ static_assert(EditorPass::k_uniform_align >= sizeof(GizmoUniforms));
 
 // ── EditorPass implementation ──────────────────────────────────────────
 
-EditorPass::~EditorPass() {
-    if (auto* ready = std::get_if<Ready>(&m_state)) {
-        if (ready->picking_descriptor_layout)
-            wgpuBindGroupLayoutRelease(ready->picking_descriptor_layout);
-        if (ready->gizmo_descriptor_layout)
-            wgpuBindGroupLayoutRelease(ready->gizmo_descriptor_layout);
-    }
-}
-
 auto EditorPass::name() const noexcept -> std::string_view {
     return "editor";
 }
 
-auto EditorPass::is_ready() const noexcept -> bool {
-    return std::holds_alternative<Ready>(m_state);
-}
-
-void EditorPass::do_setup(const webgpu::Device& device) {
-    WGPUBindGroupLayout old_picking_bgl = nullptr, old_gizmo_bgl = nullptr;
-    if (auto* ready = std::get_if<Ready>(&m_state)) {
-        old_picking_bgl = ready->picking_descriptor_layout;
-        old_gizmo_bgl = ready->gizmo_descriptor_layout;
-        ready->picking_descriptor_layout = nullptr;
-        ready->gizmo_descriptor_layout = nullptr;
-    }
+void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext& ctx) {
+    PTS_ZONE_SCOPED;
+    ensure_initialized(ctx.device);
 
     // ── Picking pipeline (mesh objects + light shapes) ─────────────────
-    auto picking_src = get_shader_loader().load("editor/generated/shaders/picking.wgsl");
-    auto picking_shader = device.create_shader_module_from_source(picking_src);
+    auto picking_bgl = fg.bind_group_layout(
+        "editor/picking", {rendering::OutputSlot::uniform(sizeof(PickingUniforms))
+                               .dynamic()
+                               .visibility(static_cast<WGPUShaderStage>(
+                                   WGPUShaderStage_Vertex | WGPUShaderStage_Fragment))});
 
-    auto picking_internal_layout = rendering::create_output_layout(
-        device, {rendering::OutputSlot::uniform(sizeof(PickingUniforms))
-                     .dynamic()
-                     .visibility(static_cast<WGPUShaderStage>(WGPUShaderStage_Vertex |
-                                                              WGPUShaderStage_Fragment))});
-    auto picking_bgl = picking_internal_layout.layout;
-    picking_internal_layout.layout = nullptr;
-    picking_internal_layout.release();
-
-    WGPUPipelineLayoutDescriptor picking_pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
-    picking_pl_desc.bindGroupLayoutCount = 1;
-    picking_pl_desc.bindGroupLayouts = &picking_bgl;
-    auto picking_pl = wgpuDeviceCreatePipelineLayout(device.handle(), &picking_pl_desc);
-
-    auto picking_pipeline = webgpu::RenderPipelineBuilder(device)
-                                .shader(picking_shader)
-                                .color_format(WGPUTextureFormat_R32Uint)
-                                .depth_format(WGPUTextureFormat_Depth32Float)
-                                .depth_write(true)
-                                .depth_compare(WGPUCompareFunction_Less)
-                                .cull_mode(WGPUCullMode_Back)
-                                .pipeline_layout(picking_pl)
-                                .vertex_layout<editor_picking_shader::VertexLayout>()
-                                .build();
+    (void) fg.render_pipeline("editor_picking")
+        .shader("editor/generated/shaders/picking.wgsl")
+        .color_format(WGPUTextureFormat_R32Uint)
+        .depth_format(WGPUTextureFormat_Depth32Float)
+        .depth_write(true)
+        .depth_compare(WGPUCompareFunction_Less)
+        .cull_mode(WGPUCullMode_Back)
+        .bind_group_layouts({picking_bgl})
+        .vertex_layout<editor_picking_shader::VertexLayout>()
+        .build();
 
     // Line-list picking pipeline for wireframe-only lights (e.g. Distant)
-    auto picking_line_pipeline = webgpu::RenderPipelineBuilder(device)
-                                     .shader(picking_shader)
-                                     .color_format(WGPUTextureFormat_R32Uint)
-                                     .depth_format(WGPUTextureFormat_Depth32Float)
-                                     .depth_write(true)
-                                     .depth_compare(WGPUCompareFunction_Less)
-                                     .cull_mode(WGPUCullMode_None)
-                                     .topology(WGPUPrimitiveTopology_LineList)
-                                     .pipeline_layout(picking_pl)
-                                     .vertex_layout<editor_picking_shader::VertexLayout>()
-                                     .build();
-
-    wgpuPipelineLayoutRelease(picking_pl);
+    (void) fg.render_pipeline("editor_picking_line")
+        .shader("editor/generated/shaders/picking.wgsl")
+        .color_format(WGPUTextureFormat_R32Uint)
+        .depth_format(WGPUTextureFormat_Depth32Float)
+        .depth_write(true)
+        .depth_compare(WGPUCompareFunction_Less)
+        .cull_mode(WGPUCullMode_None)
+        .topology(WGPUPrimitiveTopology_LineList)
+        .bind_group_layouts({picking_bgl})
+        .vertex_layout<editor_picking_shader::VertexLayout>()
+        .build();
 
     // ── Gizmo color pipeline (wireframe overlay on scene_color) ────────
-    auto gizmo_src = get_shader_loader().load("editor/generated/shaders/gizmo.wgsl");
-    auto gizmo_shader = device.create_shader_module_from_source(gizmo_src);
-
-    auto gizmo_internal_layout = rendering::create_output_layout(
-        device, {rendering::OutputSlot::uniform(sizeof(GizmoUniforms))
-                     .dynamic()
-                     .visibility(static_cast<WGPUShaderStage>(WGPUShaderStage_Vertex |
-                                                              WGPUShaderStage_Fragment))});
-    auto gizmo_bgl = gizmo_internal_layout.layout;
-    gizmo_internal_layout.layout = nullptr;
-    gizmo_internal_layout.release();
-
-    WGPUPipelineLayoutDescriptor gizmo_pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
-    gizmo_pl_desc.bindGroupLayoutCount = 1;
-    gizmo_pl_desc.bindGroupLayouts = &gizmo_bgl;
-    auto gizmo_pl = wgpuDeviceCreatePipelineLayout(device.handle(), &gizmo_pl_desc);
+    auto gizmo_bgl = fg.bind_group_layout(
+        "editor/gizmo", {rendering::OutputSlot::uniform(sizeof(GizmoUniforms))
+                             .dynamic()
+                             .visibility(static_cast<WGPUShaderStage>(WGPUShaderStage_Vertex |
+                                                                      WGPUShaderStage_Fragment))});
 
     WGPUBlendState blend = {};
     blend.color.operation = WGPUBlendOperation_Add;
@@ -138,37 +96,15 @@ void EditorPass::do_setup(const webgpu::Device& device) {
     blend.alpha.srcFactor = WGPUBlendFactor_One;
     blend.alpha.dstFactor = WGPUBlendFactor_OneMinusSrcAlpha;
 
-    auto gizmo_color_pipeline = webgpu::RenderPipelineBuilder(device)
-                                    .shader(gizmo_shader)
-                                    .color_format(WGPUTextureFormat_RGBA8Unorm)
-                                    .blend_state(blend)
-                                    .cull_mode(WGPUCullMode_None)
-                                    .topology(WGPUPrimitiveTopology_LineList)
-                                    .pipeline_layout(gizmo_pl)
-                                    .vertex_layout<editor_gizmo_shader::VertexLayout>()
-                                    .build();
-
-    wgpuPipelineLayoutRelease(gizmo_pl);
-
-    m_state = Ready{
-        std::move(picking_shader),
-        std::move(picking_pipeline),
-        std::move(picking_line_pipeline),
-        picking_bgl,
-
-        std::move(gizmo_shader),
-        std::move(gizmo_color_pipeline),
-        gizmo_bgl,
-    };
-
-    if (old_picking_bgl) wgpuBindGroupLayoutRelease(old_picking_bgl);
-    if (old_gizmo_bgl) wgpuBindGroupLayoutRelease(old_gizmo_bgl);
-}
-
-void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext& ctx) {
-    PTS_ZONE_SCOPED;
-    PRECONDITION(is_ready());
-    auto& ready = std::get<Ready>(m_state);
+    (void) fg.render_pipeline("editor_gizmo")
+        .shader("editor/generated/shaders/gizmo.wgsl")
+        .color_format(WGPUTextureFormat_RGBA8Unorm)
+        .blend_state(blend)
+        .cull_mode(WGPUCullMode_None)
+        .topology(WGPUPrimitiveTopology_LineList)
+        .bind_group_layouts({gizmo_bgl})
+        .vertex_layout<editor_gizmo_shader::VertexLayout>()
+        .build();
 
     auto objects = ctx.world.get_objects();
     auto lights = ctx.world.get_lights();
@@ -203,11 +139,11 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
     picking_buf_desc.size = picking_buf_size;
     picking_buf_desc.usage =
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
-    auto picking_buf_handle = create_buffer(fg, picking_buf_desc, "picking_uniforms");
+    auto picking_buf_decl = create_buffer(fg, picking_buf_desc, "picking_uniforms");
 
-    auto picking_bg_handle = descriptor(fg, ready.picking_descriptor_layout, "picking_bg0")
-                                 .buffer(0, picking_buf_handle, 0, sizeof(PickingUniforms))
-                                 .build();
+    auto picking_bg_decl = descriptor(fg, picking_bgl, "picking_bg0")
+                               .buffer(0, picking_buf_decl, 0, sizeof(PickingUniforms))
+                               .build();
 
     // Register gizmo uniform buffer with frame graph
     uint64_t gizmo_buf_size =
@@ -216,11 +152,11 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
     gizmo_buf_desc.size = gizmo_buf_size;
     gizmo_buf_desc.usage =
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
-    auto gizmo_buf_handle = create_buffer(fg, gizmo_buf_desc, "gizmo_uniforms");
+    auto gizmo_buf_decl = create_buffer(fg, gizmo_buf_desc, "gizmo_uniforms");
 
-    auto gizmo_bg_handle = descriptor(fg, ready.gizmo_descriptor_layout, "gizmo_bg0")
-                               .buffer(0, gizmo_buf_handle, 0, sizeof(GizmoUniforms))
-                               .build();
+    auto gizmo_bg_decl = descriptor(fg, gizmo_bgl, "gizmo_bg0")
+                             .buffer(0, gizmo_buf_decl, 0, sizeof(GizmoUniforms))
+                             .build();
 
     // ── Create/cache gizmo meshes and collect handles ──────────────────
     struct GizmoDrawInfo {
@@ -267,8 +203,8 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
     depth_desc.height = ctx.viewport_height;
     depth_desc.format = WGPUTextureFormat_Depth32Float;
 
-    auto picking_ids = fg.find_or_create("picking_ids", picking_desc);
-    auto picking_depth = fg.find_or_create("picking_depth", depth_desc);
+    auto picking_ids_decl = fg.texture("picking_ids", picking_desc);
+    auto picking_depth_decl = fg.texture("picking_depth", depth_desc);
 
     auto queue = ctx.queue;
     auto vp = ctx.proj_matrix * ctx.view_matrix;
@@ -277,20 +213,20 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
     constexpr float k_min_screen_radius = 0.05f;
 
     // ── Pass 1: Picking ────────────────────────────────────────────────
-    auto mesh_picking_pl = ready.picking_pipeline.handle();
-    auto line_picking_pl = ready.picking_line_pipeline.handle();
+    auto mesh_picking_pl = fg.get_render_pipeline("editor_picking");
+    auto line_picking_pl = fg.get_render_pipeline("editor_picking_line");
     const auto& world = ctx.world;
     auto obj_count_cap = object_count;
     auto gizmo_light_indices_cap = gizmo_light_indices;
 
     fg.add_pass("editor_picking")
-        .color(picking_ids)
-        .depth(picking_depth)
-        .execute([=, &fg, &world](WGPURenderPassEncoder pass) {
+        .color(picking_ids_decl)
+        .depth(picking_depth_decl)
+        .execute([=, &world](rendering::ExecuteContext& exec, WGPURenderPassEncoder pass) {
             auto objs = world.get_objects();
             auto meshes = world.get_meshes();
-            auto picking_buf = fg.get_buffer_ref(picking_buf_handle).handle();
-            auto picking_bg = fg.get_descriptor_ref(picking_bg_handle).handle();
+            auto picking_buf = exec.get(picking_buf_decl).buffer;
+            auto picking_bg = exec.get(picking_bg_decl).bind_group;
 
             {
                 PTS_ZONE_NAMED("picking uniform upload");
@@ -383,54 +319,54 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
     gizmo_desc.format = WGPUTextureFormat_RGBA8Unorm;
     gizmo_desc.clear_color = {0, 0, 0, 0};
 
-    auto gizmo_overlay = fg.find_or_create("editor_gizmo_overlay", gizmo_desc);
+    auto gizmo_overlay_decl = fg.texture("editor_gizmo_overlay", gizmo_desc);
 
-    auto gizmo_color_pl = ready.gizmo_color_pipeline.handle();
+    auto gizmo_color_pl = fg.get_render_pipeline("editor_gizmo");
 
     fg.add_pass("editor_gizmos")
-        .color(gizmo_overlay)
-        .execute(
-            [=, &fg, &world, gizmo_draws = std::move(gizmo_draws)](WGPURenderPassEncoder pass) {
-                auto gizmo_buf = fg.get_buffer_ref(gizmo_buf_handle).handle();
-                auto gizmo_bg = fg.get_descriptor_ref(gizmo_bg_handle).handle();
+        .color(gizmo_overlay_decl)
+        .execute([=, &world, gizmo_draws = std::move(gizmo_draws)](rendering::ExecuteContext& exec,
+                                                                   WGPURenderPassEncoder pass) {
+            auto gizmo_buf = exec.get(gizmo_buf_decl).buffer;
+            auto gizmo_bg = exec.get(gizmo_bg_decl).bind_group;
 
-                // Upload gizmo uniforms
-                auto lts = world.get_lights();
-                for (uint32_t slot = 0;
-                     slot < static_cast<uint32_t>(gizmo_light_indices_cap.size()); ++slot) {
-                    uint32_t li = gizmo_light_indices_cap[slot];
-                    uint32_t picking_slot = obj_count_cap + slot;
-                    glm::vec3 light_pos = glm::vec3(lts[li]->transform[3]);
-                    float dist = glm::length(light_pos - camera_pos);
-                    float light_radius;
-                    if (lts[li]->type == rendering::LightData::Type::Rect)
-                        light_radius = std::max(lts[li]->width, lts[li]->height) * 0.5f;
-                    else if (lts[li]->type == rendering::LightData::Type::Distant)
-                        light_radius = 0.5f;
-                    else
-                        light_radius = lts[li]->radius;
-                    float scale = gizmo_distance_scale(dist, light_radius, k_min_screen_radius);
-                    auto scaled_transform =
-                        lts[li]->transform * glm::scale(glm::mat4(1.0f), glm::vec3(scale));
-                    bool is_selected = (selected_picking_id == picking_slot);
-                    GizmoUniforms gu{};
-                    gu.mvp = vp * scaled_transform;
-                    gu.color = is_selected ? glm::vec4(1.0f, 0.8f, 0.2f, 1.0f)
-                                           : glm::vec4(1.0f, 1.0f, 1.0f, 0.6f);
-                    wgpuQueueWriteBuffer(queue, gizmo_buf, slot * k_uniform_align, &gu, sizeof(gu));
-                }
+            // Upload gizmo uniforms
+            auto lts = world.get_lights();
+            for (uint32_t slot = 0; slot < static_cast<uint32_t>(gizmo_light_indices_cap.size());
+                 ++slot) {
+                uint32_t li = gizmo_light_indices_cap[slot];
+                uint32_t picking_slot = obj_count_cap + slot;
+                glm::vec3 light_pos = glm::vec3(lts[li]->transform[3]);
+                float dist = glm::length(light_pos - camera_pos);
+                float light_radius;
+                if (lts[li]->type == rendering::LightData::Type::Rect)
+                    light_radius = std::max(lts[li]->width, lts[li]->height) * 0.5f;
+                else if (lts[li]->type == rendering::LightData::Type::Distant)
+                    light_radius = 0.5f;
+                else
+                    light_radius = lts[li]->radius;
+                float scale = gizmo_distance_scale(dist, light_radius, k_min_screen_radius);
+                auto scaled_transform =
+                    lts[li]->transform * glm::scale(glm::mat4(1.0f), glm::vec3(scale));
+                bool is_selected = (selected_picking_id == picking_slot);
+                GizmoUniforms gu{};
+                gu.mvp = vp * scaled_transform;
+                gu.color = is_selected ? glm::vec4(1.0f, 0.8f, 0.2f, 1.0f)
+                                       : glm::vec4(1.0f, 1.0f, 1.0f, 0.6f);
+                wgpuQueueWriteBuffer(queue, gizmo_buf, slot * k_uniform_align, &gu, sizeof(gu));
+            }
 
-                wgpuRenderPassEncoderSetPipeline(pass, gizmo_color_pl);
-                for (uint32_t slot = 0; slot < static_cast<uint32_t>(gizmo_draws.size()); ++slot) {
-                    auto& draw = gizmo_draws[slot];
-                    if (draw.vertex_count == 0) continue;
-                    uint32_t dyn_offset = slot * EditorPass::k_uniform_align;
-                    wgpuRenderPassEncoderSetBindGroup(pass, 0, gizmo_bg, 1, &dyn_offset);
-                    wgpuRenderPassEncoderSetVertexBuffer(pass, 0, draw.vertex_buffer, 0,
-                                                         draw.vertex_count * sizeof(glm::vec3));
-                    wgpuRenderPassEncoderDraw(pass, draw.vertex_count, 1, 0, 0);
-                }
-            });
+            wgpuRenderPassEncoderSetPipeline(pass, gizmo_color_pl);
+            for (uint32_t slot = 0; slot < static_cast<uint32_t>(gizmo_draws.size()); ++slot) {
+                auto& draw = gizmo_draws[slot];
+                if (draw.vertex_count == 0) continue;
+                uint32_t dyn_offset = slot * EditorPass::k_uniform_align;
+                wgpuRenderPassEncoderSetBindGroup(pass, 0, gizmo_bg, 1, &dyn_offset);
+                wgpuRenderPassEncoderSetVertexBuffer(pass, 0, draw.vertex_buffer, 0,
+                                                     draw.vertex_count * sizeof(glm::vec3));
+                wgpuRenderPassEncoderDraw(pass, draw.vertex_count, 1, 0, 0);
+            }
+        });
 }
 
 auto EditorPass::resolve_picking_id(uint32_t id) const noexcept -> const pxr::SdfPath& {

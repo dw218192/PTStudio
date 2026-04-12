@@ -1,3 +1,4 @@
+#include <core/rendering/passContext.h>
 #include <core/rendering/renderPass.h>
 #include <core/rendering/renderer.h>
 #include <core/rendering/shaderLoader.h>
@@ -105,23 +106,23 @@ uint32_t color_attachment_bytes_per_sample(WGPUTextureFormat scene_format,
 IPass::IPass(const ShaderLoader& shader_loader) : m_shader_loader(&shader_loader) {
 }
 
-void IPass::setup(const webgpu::Device& device) {
+void IPass::ensure_initialized(const webgpu::Device& device) {
+    if (m_initialized) return;
+    m_initialized = true;
+
     // Create a per-pass logger sharing the ShaderLoader's sinks and level.
     // This mirrors LoggingManager::get_logger_shared — same sinks/pattern —
     // without requiring IPass to hold a LoggingManager reference.
+    auto pass_name = std::string{name()};
+    m_logger = spdlog::get(pass_name);
     if (!m_logger) {
-        auto pass_name = std::string{name()};
-        m_logger = spdlog::get(pass_name);
-        if (!m_logger) {
-            auto& parent = *m_shader_loader->logger();
-            m_logger = std::make_shared<spdlog::logger>(pass_name, parent.sinks().begin(),
-                                                        parent.sinks().end());
-            m_logger->set_level(parent.level());
-            spdlog::register_logger(m_logger);
-        }
+        auto& parent = *m_shader_loader->logger();
+        m_logger = std::make_shared<spdlog::logger>(pass_name, parent.sinks().begin(),
+                                                    parent.sinks().end());
+        m_logger->set_level(parent.level());
+        spdlog::register_logger(m_logger);
     }
     compute_allowed_debug_targets(device);
-    do_setup(device);
 }
 
 void IPass::compute_allowed_debug_targets(const webgpu::Device& device) {
@@ -171,16 +172,22 @@ auto IPass::load_pass_shader(std::string_view resource_key) const -> std::string
     return m_shader_loader->load_variant(resource_key, defines, variant_key);
 }
 
+IRenderer::IRenderer(const ShaderLoader& shader_loader)
+    : IPass(shader_loader), m_tonemapping(std::make_unique<ToneMappingPass>(shader_loader)) {
+}
+
 IRenderer::~IRenderer() = default;
 
-void IRenderer::do_setup(const webgpu::Device& device) {
-    for (auto& c : m_children) c->setup(device);
-    if (!m_tonemapping) {
-        m_tonemapping = std::make_unique<ToneMappingPass>(get_shader_loader());
+void IRenderer::ensure_initialized(const webgpu::Device& device) {
+    IPass::ensure_initialized(device);
+    for (auto& c : m_children) c->ensure_initialized(device);
+    m_tonemapping->ensure_initialized(device);
+    // Collected once on first init. If children's effective_debug_targets
+    // change after a device-limit re-query, clear m_all_debug_targets to
+    // force a recollect on the next call.
+    if (m_all_debug_targets.empty()) {
+        collect_debug_targets();
     }
-    m_tonemapping->setup(device);
-    do_renderer_setup(device);
-    collect_debug_targets();
 }
 
 void IRenderer::collect_debug_targets() {
@@ -199,20 +206,21 @@ void IRenderer::collect_debug_targets() {
     }
 }
 
-void IRenderer::on_shaders_reloaded(const webgpu::Device& device) {
-    for (auto& c : m_children) c->on_shaders_reloaded(device);
-    if (m_tonemapping) m_tonemapping->on_shaders_reloaded(device);
-    IPass::on_shaders_reloaded(device);
+void IRenderer::on_shaders_reloaded(const webgpu::Device& device, FrameGraph& fg) {
+    for (auto& c : m_children) c->on_shaders_reloaded(device, fg);
+    if (m_tonemapping) m_tonemapping->on_shaders_reloaded(device, fg);
+    IPass::on_shaders_reloaded(device, fg);
 }
 
 IRenderer::Outputs IRenderer::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {
+    ensure_initialized(ctx.device);
     auto hdr = do_add_to_frame_graph(fg, ctx);
-    INVARIANT_MSG(hdr.color.is_valid(), "Renderer must produce a color output");
+    INVARIANT_MSG(hdr.color, "Renderer must produce a color output");
 
     // Run tone mapping on HDR color → LDR display-ready
     INVARIANT(m_tonemapping);
-    TextureHandle display_color = hdr.color;
-    if (m_tonemapping_enabled && m_tonemapping->is_ready()) {
+    TextureDeclHandle display_color = hdr.color;
+    if (m_tonemapping_enabled) {
         m_tonemapping->set_inputs({hdr.color, hdr.depth, hdr.ssao});
         m_tonemapping->add_to_frame_graph(fg, ctx);
         display_color = m_tonemapping->ldr_output();

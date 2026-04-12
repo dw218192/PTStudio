@@ -64,33 +64,9 @@ auto fake_shader_getter(std::string_view key) -> std::optional<std::string_view>
 
 }  // namespace
 
-// --- Non-GPU tests ---
-
-TEST_CASE("ShadowMapPass starts in unready state") {
-    auto logger = make_logger();
-    ShaderLoader loader(logger);
-    ShadowMapPass pass(loader);
-    CHECK_FALSE(pass.is_ready());
-}
-
 // --- GPU tests ---
 
 #ifndef __EMSCRIPTEN__
-
-TEST_CASE("ShadowMapPass setup transitions to ready") {
-    auto logger = make_logger();
-    auto device = pts::webgpu::Device::create(logger);
-
-    ShaderLoader loader(logger);
-    loader.register_shader("core/generated/shaders/shadow.wgsl", "core/shaders/shadow.slang",
-                           "core/generated/shaders/shadow.wgsl", fake_shader_getter, {"vs_main"});
-
-    ShadowMapPass pass(loader);
-    CHECK_FALSE(pass.is_ready());
-
-    pass.setup(device);
-    CHECK(pass.is_ready());
-}
 
 TEST_CASE("ShadowMapPass add_to_frame_graph with no lights returns valid handles") {
     auto logger = make_logger();
@@ -101,9 +77,9 @@ TEST_CASE("ShadowMapPass add_to_frame_graph with no lights returns valid handles
                            "core/generated/shaders/shadow.wgsl", fake_shader_getter, {"vs_main"});
 
     ShadowMapPass pass(loader);
-    pass.setup(device);
 
-    FrameGraph fg(device, logger);
+    FrameGraph fg(device, logger, &loader);
+
     OrbitCamera camera;
     RenderWorld world;
 
@@ -113,8 +89,8 @@ TEST_CASE("ShadowMapPass add_to_frame_graph with no lights returns valid handles
     fg.begin_frame();
     auto out = pass.add_to_frame_graph(fg, ctx, {});
 
-    CHECK(out.shadow_array.is_valid());
-    CHECK(out.shadow_info.is_valid());
+    CHECK(bool(out.shadow_array));
+    CHECK(bool(out.shadow_info));
 }
 
 TEST_CASE("ShadowMapPass add_to_frame_graph with distant light produces valid outputs") {
@@ -126,9 +102,9 @@ TEST_CASE("ShadowMapPass add_to_frame_graph with distant light produces valid ou
                            "core/generated/shaders/shadow.wgsl", fake_shader_getter, {"vs_main"});
 
     ShadowMapPass pass(loader);
-    pass.setup(device);
 
-    FrameGraph fg(device, logger);
+    FrameGraph fg(device, logger, &loader);
+
     OrbitCamera camera;
     RenderWorld world;
 
@@ -176,15 +152,17 @@ TEST_CASE("ShadowMapPass add_to_frame_graph with distant light produces valid ou
     fg.begin_frame();
     auto out = pass.add_to_frame_graph(fg, ctx, {});
 
-    CHECK(out.shadow_array.is_valid());
-    CHECK(out.shadow_info.is_valid());
+    CHECK(bool(out.shadow_array));
+    CHECK(bool(out.shadow_info));
 
     // Compile and execute to verify resources are properly allocated
     fg.compile();
-    auto shadow_tex = fg.get_texture_ref(out.shadow_array);
-    CHECK(shadow_tex.view() != nullptr);
-    auto shadow_info = fg.get_buffer_ref(out.shadow_info);
-    CHECK(shadow_info.handle() != nullptr);
+    const auto* shadow_tex = fg.compiled_texture(out.shadow_array);
+    const auto* shadow_buf = fg.compiled_buffer(out.shadow_info);
+    REQUIRE(shadow_tex != nullptr);
+    CHECK(shadow_tex->view != nullptr);
+    REQUIRE(shadow_buf != nullptr);
+    CHECK(shadow_buf->buffer != nullptr);
 }
 
 TEST_CASE("ShadowMapPass caps shadow count at k_max_shadow_maps") {
@@ -196,9 +174,9 @@ TEST_CASE("ShadowMapPass caps shadow count at k_max_shadow_maps") {
                            "core/generated/shaders/shadow.wgsl", fake_shader_getter, {"vs_main"});
 
     ShadowMapPass pass(loader);
-    pass.setup(device);
 
-    FrameGraph fg(device, logger);
+    FrameGraph fg(device, logger, &loader);
+
     OrbitCamera camera;
     RenderWorld world;
 
@@ -245,13 +223,14 @@ TEST_CASE("ShadowMapPass caps shadow count at k_max_shadow_maps") {
     fg.begin_frame();
     auto out = pass.add_to_frame_graph(fg, ctx, {});
 
-    CHECK(out.shadow_array.is_valid());
-    CHECK(out.shadow_info.is_valid());
+    CHECK(bool(out.shadow_array));
+    CHECK(bool(out.shadow_info));
 
     // Compile to verify the shadow texture array has the right layer count
     fg.compile();
-    auto shadow_tex = fg.get_texture_ref(out.shadow_array);
-    CHECK(shadow_tex.layer_count() == k_max_shadow_maps);
+    const auto* shadow_tex = fg.compiled_texture(out.shadow_array);
+    REQUIRE(shadow_tex != nullptr);
+    CHECK(shadow_tex->layer_views.size() == k_max_shadow_maps);
 }
 
 TEST_CASE("ShadowMapPass skips non-distant lights") {
@@ -263,9 +242,9 @@ TEST_CASE("ShadowMapPass skips non-distant lights") {
                            "core/generated/shaders/shadow.wgsl", fake_shader_getter, {"vs_main"});
 
     ShadowMapPass pass(loader);
-    pass.setup(device);
 
-    FrameGraph fg(device, logger);
+    FrameGraph fg(device, logger, &loader);
+
     OrbitCamera camera;
     RenderWorld world;
 
@@ -289,13 +268,14 @@ TEST_CASE("ShadowMapPass skips non-distant lights") {
     fg.begin_frame();
     auto out = pass.add_to_frame_graph(fg, ctx, {});
 
-    CHECK(out.shadow_array.is_valid());
-    CHECK(out.shadow_info.is_valid());
+    CHECK(bool(out.shadow_array));
+    CHECK(bool(out.shadow_info));
 
     // Non-distant lights produce a 1-layer fallback array texture
     fg.compile();
-    auto shadow_tex = fg.get_texture_ref(out.shadow_array);
-    CHECK(shadow_tex.layer_count() == 1);
+    const auto* shadow_tex = fg.compiled_texture(out.shadow_array);
+    REQUIRE(shadow_tex != nullptr);
+    CHECK(shadow_tex->layer_views.size() == 1);
 }
 
 #endif  // !__EMSCRIPTEN__

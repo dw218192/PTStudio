@@ -3,17 +3,14 @@
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/outputLayout.h>
 #include <core/rendering/renderPass.h>
-#include <core/rendering/webgpu/pipeline.h>
-#include <core/rendering/webgpu/shader.h>
 #include <core/rendering/webgpu/webgpu.h>
 
+#include <array>
 #include <cstdint>
-#include <variant>
 
 namespace pts::rendering {
 
 class FallbackPool;
-class GBufferPass;
 class ShaderLoader;
 
 /// Screen-space contact shadow pass.
@@ -22,8 +19,7 @@ class ShaderLoader;
 /// the depth buffer toward each non-dome light.
 class ContactShadowPass final : public IPass {
    public:
-    ContactShadowPass(const ShaderLoader& sl, const GBufferPass& gbuf);
-    ~ContactShadowPass() override;
+    using IPass::IPass;
 
     ContactShadowPass(const ContactShadowPass&) = delete;
     ContactShadowPass& operator=(const ContactShadowPass&) = delete;
@@ -33,28 +29,26 @@ class ContactShadowPass final : public IPass {
     [[nodiscard]] auto name() const noexcept -> std::string_view override {
         return "contact_shadow";
     }
-    [[nodiscard]] auto is_ready() const noexcept -> bool override;
     [[nodiscard]] auto debug_targets() const noexcept
         -> std::pair<const DebugTarget*, uint32_t> override;
 
     struct Inputs {
-        ResourceHandle depth;
-        ResourceHandle normals;
-        WGPUBuffer light_buffer;
-        uint64_t light_buffer_size;
+        TextureDeclHandle depth;
+        TextureDeclHandle normals;
+        WGPUBuffer light_buffer = nullptr;
+        uint64_t light_buffer_size = 0;
     };
     struct Outputs {
-        ResourceHandle contact_shadow;
-        DescriptorHandle consumer_desc;
+        TextureDeclHandle contact_shadow;
+        DescriptorDeclHandle consumer_desc;
     };
 
-    void do_setup(const webgpu::Device& device) override;
     Outputs add_to_frame_graph(FrameGraph& fg, const PassContext& ctx, const Inputs& in,
                                FallbackPool& fallbacks);
     void draw_imgui() override;
 
-    /// Layout for the consumer bind group (CS texture + sampler). Non-owning.
-    [[nodiscard]] WGPUBindGroupLayout consumer_layout() const;
+    /// Slot declarations for the consumer bind group (CS texture + sampler).
+    [[nodiscard]] static std::array<OutputSlot, 2> consumer_slots();
 
     // Tunable parameters (exposed via ImGui)
     bool m_enabled = true;
@@ -62,21 +56,6 @@ class ContactShadowPass final : public IPass {
     float m_thickness = 0.05f;
     float m_normal_offset = 0.01f;
     int m_step_count = 16;
-
-   private:
-    struct Ready {
-        webgpu::ShaderModule shader;
-        webgpu::RenderPipeline pipeline;
-        OutputLayoutInfo internal_layout;
-
-        // Consumer output layout (forward pass reads CS texture)
-        OutputLayoutInfo output_layout;
-    };
-
-    void release_raw_handles();
-
-    const GBufferPass* m_gbuf;
-    std::variant<std::monostate, Ready> m_state;
 };
 
 }  // namespace pts::rendering

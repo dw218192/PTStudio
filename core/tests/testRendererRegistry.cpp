@@ -1,4 +1,5 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+#include <core/rendering/frameGraph.h>
 #include <core/rendering/renderer.h>
 #include <core/rendering/rendererRegistry.h>
 #include <core/rendering/shaderLoader.h>
@@ -19,11 +20,6 @@ struct FakePass final : IRenderer {
     auto name() const noexcept -> std::string_view override {
         return "fake";
     }
-    auto is_ready() const noexcept -> bool override {
-        return true;
-    }
-    void do_renderer_setup(const pts::webgpu::Device& /*device*/) override {
-    }
     HdrOutputs do_add_to_frame_graph(FrameGraph& /*fg*/, const PassContext& /*ctx*/) override {
         return {};
     }
@@ -33,11 +29,6 @@ struct AnotherFakePass final : IRenderer {
     using IRenderer::IRenderer;
     auto name() const noexcept -> std::string_view override {
         return "another";
-    }
-    auto is_ready() const noexcept -> bool override {
-        return true;
-    }
-    void do_renderer_setup(const pts::webgpu::Device& /*device*/) override {
     }
     HdrOutputs do_add_to_frame_graph(FrameGraph& /*fg*/, const PassContext& /*ctx*/) override {
         return {};
@@ -50,18 +41,10 @@ struct FakeChild final : IPass {
     auto name() const noexcept -> std::string_view override {
         return "fake_child";
     }
-    auto is_ready() const noexcept -> bool override {
-        return ready;
-    }
-    void do_setup(const pts::webgpu::Device& /*device*/) override {
-        ++setup_count;
-    }
     void draw_imgui() override {
         ++imgui_count;
     }
 
-    bool ready = true;
-    int setup_count = 0;
     int imgui_count = 0;
 };
 

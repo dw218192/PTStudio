@@ -24,6 +24,17 @@ auto make_logger() -> std::shared_ptr<spdlog::logger> {
     return logger;
 }
 
+WGPUSampler create_ibl_sampler(const pts::webgpu::Device& device) {
+    WGPUSamplerDescriptor desc = WGPU_SAMPLER_DESCRIPTOR_INIT;
+    desc.magFilter = WGPUFilterMode_Linear;
+    desc.minFilter = WGPUFilterMode_Linear;
+    desc.mipmapFilter = WGPUMipmapFilterMode_Linear;
+    desc.addressModeU = WGPUAddressMode_ClampToEdge;
+    desc.addressModeV = WGPUAddressMode_ClampToEdge;
+    desc.addressModeW = WGPUAddressMode_ClampToEdge;
+    return wgpuDeviceCreateSampler(device.handle(), &desc);
+}
+
 }  // namespace
 
 #ifndef __EMSCRIPTEN__
@@ -31,21 +42,24 @@ auto make_logger() -> std::shared_ptr<spdlog::logger> {
 TEST_CASE("IblPipelines init creates BRDF LUT and sampler") {
     auto logger = make_logger();
     auto device = pts::webgpu::Device::create(logger);
+    auto sampler = create_ibl_sampler(device);
 
     IblPipelines pipes;
-    pipes.init(device, device.queue());
+    pipes.init(device, device.queue(), sampler);
 
     CHECK(pipes.is_ready());
     CHECK(pipes.brdf_lut_view() != nullptr);
     CHECK(pipes.sampler() != nullptr);
+    wgpuSamplerRelease(sampler);
 }
 
 TEST_CASE("IblResources set_uniform_environment transitions to ready") {
     auto logger = make_logger();
     auto device = pts::webgpu::Device::create(logger);
+    auto sampler = create_ibl_sampler(device);
 
     IblPipelines pipes;
-    pipes.init(device, device.queue());
+    pipes.init(device, device.queue(), sampler);
 
     IblResources ibl;
     ibl.set_uniform_environment(device, device.queue(), 0.5f, 0.5f, 0.5f);
@@ -54,14 +68,16 @@ TEST_CASE("IblResources set_uniform_environment transitions to ready") {
     CHECK(ibl.prefiltered_env_view() != nullptr);
     CHECK(ibl.env_cubemap_view() != nullptr);
     CHECK(ibl.irradiance_view() != nullptr);
+    wgpuSamplerRelease(sampler);
 }
 
 TEST_CASE("IblResources set_environment with synthetic HDR data") {
     auto logger = make_logger();
     auto device = pts::webgpu::Device::create(logger);
+    auto sampler = create_ibl_sampler(device);
 
     IblPipelines pipes;
-    pipes.init(device, device.queue());
+    pipes.init(device, device.queue(), sampler);
 
     IblResources ibl;
 
@@ -82,6 +98,7 @@ TEST_CASE("IblResources set_environment with synthetic HDR data") {
     CHECK(ibl.env_cubemap_view() != nullptr);
     CHECK(ibl.irradiance_view() != nullptr);
     CHECK(ibl.prefiltered_env_view() != ibl.env_cubemap_view());
+    wgpuSamplerRelease(sampler);
 }
 
 TEST_CASE("IblResources set_uniform_environment can be called again") {

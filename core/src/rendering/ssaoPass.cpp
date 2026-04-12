@@ -7,7 +7,7 @@
 #include <core/rendering/passContext.h>
 #include <core/rendering/shaderLoader.h>
 #include <core/rendering/ssaoPass.h>
-#include <core/rendering/webgpu/pipelineBuilder.h>
+#include <core/rendering/webgpu/device.h>
 #include <imgui.h>
 
 #include <array>
@@ -79,25 +79,6 @@ void generate_noise_data(uint8_t* out) {
 
 }  // namespace
 
-SSAOPass::SSAOPass(const ShaderLoader& sl, const GBufferPass& gbuf) : IPass(sl), m_gbuf(&gbuf) {
-}
-
-SSAOPass::~SSAOPass() {
-    release_raw_handles();
-}
-
-void SSAOPass::release_raw_handles() {
-    if (auto* ready = std::get_if<Ready>(&m_state)) {
-        ready->gen_layout.release();
-        ready->blur_layout.release();
-        if (ready->noise_view) wgpuTextureViewRelease(ready->noise_view);
-    }
-}
-
-auto SSAOPass::is_ready() const noexcept -> bool {
-    return std::holds_alternative<Ready>(m_state);
-}
-
 static constexpr IPass::DebugTarget k_debug_targets[] = {
     {"AO", "ssao"},
 };
@@ -106,62 +87,50 @@ auto SSAOPass::debug_targets() const noexcept -> std::pair<const DebugTarget*, u
     return {k_debug_targets, m_enabled ? 1u : 0u};
 }
 
-void SSAOPass::do_setup(const webgpu::Device& device) {
-    release_raw_handles();
+SSAOPass::Outputs SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx,
+                                               const Inputs& in, FallbackPool& fallbacks) {
+    PTS_ZONE_SCOPED;
+    if (!m_enabled) return {};
+    ensure_initialized(ctx.device);
 
-    auto gen_src = get_shader_loader().load("core/generated/shaders/ssao.wgsl");
-    auto gen_shader = device.create_shader_module_from_source(gen_src);
+    // ── Kernel buffer (persistent — first-call upload) ──
+    // The initial data must outlive the first compile(); store it in a static
+    // buffer that persists for the process lifetime.
+    static const auto k_kernel_data = [] {
+        std::array<glm::vec4, k_max_kernel_size> k{};
+        generate_kernel(k.data(), k_max_kernel_size);
+        return k;
+    }();
+    {
+        BufferDesc desc;
+        desc.size = sizeof(k_kernel_data);
+        desc.usage =
+            static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
+        fg.buffer("ssao_kernel", desc, k_kernel_data.data());
+    }
 
-    auto blur_src = get_shader_loader().load("core/generated/shaders/ssao_blur.wgsl");
-    auto blur_shader = device.create_shader_module_from_source(blur_src);
-
-    // ── Kernel buffer ──
-    std::array<glm::vec4, k_max_kernel_size> kernel_data{};
-    generate_kernel(kernel_data.data(), k_max_kernel_size);
-
-    auto kernel_buffer = device.create_buffer(
-        sizeof(glm::vec4) * k_max_kernel_size,
-        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
-    wgpuQueueWriteBuffer(device.queue(), kernel_buffer.handle(), 0, kernel_data.data(),
-                         sizeof(glm::vec4) * k_max_kernel_size);
-
-    // ── Noise texture (4×4 RGBA8Unorm) ──
-    uint8_t noise_data[4 * 4 * 4];
-    generate_noise_data(noise_data);
-
-    WGPUTextureDescriptor noise_tex_desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
-    noise_tex_desc.size = {4, 4, 1};
-    noise_tex_desc.format = WGPUTextureFormat_RGBA8Unorm;
-    noise_tex_desc.usage =
-        static_cast<WGPUTextureUsage>(WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst);
-    noise_tex_desc.mipLevelCount = 1;
-    noise_tex_desc.sampleCount = 1;
-    noise_tex_desc.dimension = WGPUTextureDimension_2D;
-    auto noise_raw = wgpuDeviceCreateTexture(device.handle(), &noise_tex_desc);
-    INVARIANT_MSG(noise_raw, "Failed to create SSAO noise texture");
-
-    WGPUTexelCopyBufferLayout layout = {};
-    layout.bytesPerRow = 4 * 4;  // 4 pixels × 4 bytes
-    layout.rowsPerImage = 4;
-    WGPUTexelCopyTextureInfo dest = {};
-    dest.texture = noise_raw;
-    dest.aspect = WGPUTextureAspect_All;
-    WGPUExtent3D extent = {4, 4, 1};
-    wgpuQueueWriteTexture(device.queue(), &dest, noise_data, sizeof(noise_data), &layout, &extent);
-
-    WGPUTextureViewDescriptor noise_view_desc = WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT;
-    noise_view_desc.format = WGPUTextureFormat_RGBA8Unorm;
-    noise_view_desc.dimension = WGPUTextureViewDimension_2D;
-    noise_view_desc.mipLevelCount = 1;
-    noise_view_desc.arrayLayerCount = 1;
-    auto noise_view = wgpuTextureCreateView(noise_raw, &noise_view_desc);
-    INVARIANT_MSG(noise_view, "Failed to create SSAO noise texture view");
+    // ── Noise texture (4×4 RGBA8Unorm, persistent) ──
+    static const auto k_noise_data = [] {
+        std::array<uint8_t, 4 * 4 * 4> d{};
+        generate_noise_data(d.data());
+        return d;
+    }();
+    {
+        WGPUTextureDescriptor noise_tex_desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
+        noise_tex_desc.size = {4, 4, 1};
+        noise_tex_desc.format = WGPUTextureFormat_RGBA8Unorm;
+        noise_tex_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_TextureBinding |
+                                                             WGPUTextureUsage_CopyDst);
+        noise_tex_desc.mipLevelCount = 1;
+        noise_tex_desc.sampleCount = 1;
+        noise_tex_desc.dimension = WGPUTextureDimension_2D;
+        fg.texture("ssao_noise", noise_tex_desc, k_noise_data.data(), k_noise_data.size(), 4 * 4);
+    }
 
     // ── AO Generation BGL ──
     // GBuffer consumer slots: 0=depth_tex, 1=depth_sampler, 2=normals_tex, 3=normals_sampler
     // SSAO-specific:          4=uniforms, 5=noise_tex, 6=noise_sampler, 7=kernel
-    PRECONDITION(m_gbuf->is_ready());
-    auto gbuf_slots = m_gbuf->consumer_output_slots();
+    auto gbuf_slots = GBufferPass::consumer_slots();
     std::vector<OutputSlot> gen_slots;
     gen_slots.insert(gen_slots.end(), gbuf_slots.begin(), gbuf_slots.end());
     gen_slots.push_back(OutputSlot::uniform(sizeof(SSAOUniforms)));
@@ -169,60 +138,30 @@ void SSAOPass::do_setup(const webgpu::Device& device) {
     gen_slots.push_back(
         OutputSlot::sampler(WGPUSamplerBindingType_NonFiltering, WGPUAddressMode_Repeat));
     gen_slots.push_back(OutputSlot::storage(sizeof(glm::vec4) * k_max_kernel_size));
-    auto gen_layout = create_output_layout(device, gen_slots);
+    auto gen_bgl = fg.bind_group_layout("ssao/gen", gen_slots);
 
-    WGPUPipelineLayoutDescriptor gen_pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
-    gen_pl_desc.bindGroupLayoutCount = 1;
-    gen_pl_desc.bindGroupLayouts = &gen_layout.layout;
-    auto gen_pl = wgpuDeviceCreatePipelineLayout(device.handle(), &gen_pl_desc);
+    auto blur_bgl = fg.bind_group_layout(
+        "ssao/blur", {
+                         OutputSlot::uniform(sizeof(SSAOBlurUniforms)),
+                         OutputSlot::texture(WGPUTextureFormat_R8Unorm),
+                         OutputSlot::texture(WGPUTextureFormat_Depth32Float),
+                         OutputSlot::sampler(WGPUSamplerBindingType_Filtering),
+                         OutputSlot::sampler(WGPUSamplerBindingType_NonFiltering),
+                     });
 
-    auto gen_pipeline = webgpu::RenderPipelineBuilder(device)
-                            .shader(gen_shader)
-                            .color_format(WGPUTextureFormat_R8Unorm)
-                            .cull_mode(WGPUCullMode_None)
-                            .pipeline_layout(gen_pl)
-                            .build();
-    wgpuPipelineLayoutRelease(gen_pl);
-
-    // ── Blur BGL ──
-    // 0: uniforms, 1: ssao_raw, 2: depth, 3: linear_sampler, 4: depth_sampler
-    auto blur_layout =
-        create_output_layout(device, {
-                                         OutputSlot::uniform(sizeof(SSAOBlurUniforms)),
-                                         OutputSlot::texture(WGPUTextureFormat_R8Unorm),
-                                         OutputSlot::texture(WGPUTextureFormat_Depth32Float),
-                                         OutputSlot::sampler(WGPUSamplerBindingType_Filtering),
-                                         OutputSlot::sampler(WGPUSamplerBindingType_NonFiltering),
-                                     });
-
-    WGPUPipelineLayoutDescriptor blur_pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
-    blur_pl_desc.bindGroupLayoutCount = 1;
-    blur_pl_desc.bindGroupLayouts = &blur_layout.layout;
-    auto blur_pl = wgpuDeviceCreatePipelineLayout(device.handle(), &blur_pl_desc);
-
-    auto blur_pipeline = webgpu::RenderPipelineBuilder(device)
-                             .shader(blur_shader)
-                             .color_format(WGPUTextureFormat_RGBA8Unorm)
+    auto* gen_pipeline = fg.render_pipeline("ssao_gen")
+                             .shader("core/generated/shaders/ssao.wgsl")
+                             .color_format(WGPUTextureFormat_R8Unorm)
                              .cull_mode(WGPUCullMode_None)
-                             .pipeline_layout(blur_pl)
+                             .bind_group_layouts({gen_bgl})
                              .build();
-    wgpuPipelineLayoutRelease(blur_pl);
 
-    m_state = Ready{
-        std::move(gen_shader),      std::move(gen_pipeline),
-        std::move(gen_layout),      std::move(blur_shader),
-        std::move(blur_pipeline),   std::move(blur_layout),
-        webgpu::Texture(noise_raw), noise_view,
-        std::move(kernel_buffer),
-    };
-}
-
-SSAOPass::Outputs SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx,
-                                               const Inputs& in, FallbackPool& fallbacks) {
-    PTS_ZONE_SCOPED;
-    if (!m_enabled) return {};
-    PRECONDITION(is_ready());
-    auto& ready = std::get<Ready>(m_state);
+    auto* blur_pipeline = fg.render_pipeline("ssao_blur")
+                              .shader("core/generated/shaders/ssao_blur.wgsl")
+                              .color_format(WGPUTextureFormat_RGBA8Unorm)
+                              .cull_mode(WGPUCullMode_None)
+                              .bind_group_layouts({blur_bgl})
+                              .build();
 
     // ── Frame graph resources ──
     TextureDesc r8_desc;
@@ -231,47 +170,55 @@ SSAOPass::Outputs SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext
     r8_desc.format = WGPUTextureFormat_R8Unorm;
     r8_desc.clear_color = {1, 1, 1, 1};
 
-    auto depth_handle = in.depth;
-    auto normals_handle = in.normals;
-    auto ssao_raw_handle = create_texture(fg, r8_desc, "ssao_raw");
+    auto depth_decl = in.depth;
+    auto normals_decl = in.normals;
+    auto ssao_raw_decl = create_texture(fg, r8_desc, "ssao_raw");
 
     TextureDesc ao_desc = r8_desc;
     ao_desc.format = WGPUTextureFormat_RGBA8Unorm;
-    auto ssao_handle = create_texture(fg, ao_desc, "ssao");
+    auto ssao_decl = create_texture(fg, ao_desc, "ssao");
 
     // Register uniform buffers with frame graph
     BufferDesc gen_buf_desc;
     gen_buf_desc.size = sizeof(SSAOUniforms);
     gen_buf_desc.usage =
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
-    auto gen_uniform_buf_handle = create_buffer(fg, gen_buf_desc, "gen_uniforms");
+    auto gen_uniform_buf_decl = create_buffer(fg, gen_buf_desc, "gen_uniforms");
 
     BufferDesc blur_buf_desc;
     blur_buf_desc.size = sizeof(SSAOBlurUniforms);
     blur_buf_desc.usage =
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
-    auto blur_uniform_buf_handle = create_buffer(fg, blur_buf_desc, "blur_uniforms");
+    auto blur_uniform_buf_decl = create_buffer(fg, blur_buf_desc, "blur_uniforms");
 
-    // Register AO gen descriptor via OutputLayoutInfo::build()
-    // Non-sampler resources in slot order: depth(0), normals(2), uniforms(4), noise(5), kernel(7)
-    auto kernel_buf = ready.kernel_buffer.handle();
-    auto gen_bg_handle =
-        ready.gen_layout.build(fg, this,
-                               {TextureHandle{depth_handle}, TextureHandle{normals_handle},
-                                BufferHandle{gen_uniform_buf_handle}, ready.noise_view, kernel_buf},
-                               fallbacks, "gen_bg");
+    // Look up persistent resources (bumps their last_declared_frame)
+    auto kernel_decl = fg.find_buffer("ssao_kernel");
+    auto noise_decl = fg.find_texture("ssao_noise");
+    INVARIANT(kernel_decl && noise_decl);
 
-    // Register blur descriptor via OutputLayoutInfo::build()
-    // Non-sampler resources: uniforms(0), ssao_raw(1), depth(2)
-    auto blur_bg_handle =
-        ready.blur_layout.build(fg, this,
-                                {BufferHandle{blur_uniform_buf_handle},
-                                 TextureHandle{ssao_raw_handle}, TextureHandle{depth_handle}},
-                                fallbacks, "blur_bg");
+    // AO gen descriptor via DescriptorBuilder
+    auto gen_bg_decl =
+        descriptor(fg, gen_bgl, "gen_bg")
+            .texture(0, depth_decl)
+            .sampler(1, fg.sampler(WGPUSamplerBindingType_NonFiltering))
+            .texture(2, normals_decl)
+            .sampler(3, fg.sampler(WGPUSamplerBindingType_Filtering))
+            .buffer(4, gen_uniform_buf_decl, 0, sizeof(SSAOUniforms))
+            .texture(5, noise_decl)
+            .sampler(6, fg.sampler(WGPUSamplerBindingType_NonFiltering, WGPUAddressMode_Repeat))
+            .buffer(7, kernel_decl)
+            .build();
+
+    // Blur descriptor via DescriptorBuilder
+    auto blur_bg_decl = descriptor(fg, blur_bgl, "blur_bg")
+                            .buffer(0, blur_uniform_buf_decl, 0, sizeof(SSAOBlurUniforms))
+                            .texture(1, ssao_raw_decl)
+                            .texture(2, depth_decl)
+                            .sampler(3, fg.sampler(WGPUSamplerBindingType_Filtering))
+                            .sampler(4, fg.sampler(WGPUSamplerBindingType_NonFiltering))
+                            .build();
 
     // Capture scalars for lambdas
-    auto* gen_pipeline = ready.gen_pipeline.handle();
-    auto* blur_pipeline = ready.blur_pipeline.handle();
     auto queue = ctx.queue;
     auto proj_matrix = ctx.proj_matrix;
     auto viewport_width = ctx.viewport_width;
@@ -283,12 +230,12 @@ SSAOPass::Outputs SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext
 
     // ── Pass 1: AO Generation ──
     fg.add_pass("ssao_gen")
-        .read(depth_handle)
-        .read(normals_handle)
-        .color(ssao_raw_handle)
-        .execute([=, &fg](WGPURenderPassEncoder pass) {
-            auto gen_uniform_buf = fg.get_buffer_ref(gen_uniform_buf_handle).handle();
-            auto gen_bg = fg.get_descriptor_ref(gen_bg_handle).handle();
+        .read(depth_decl)
+        .read(normals_decl)
+        .color(ssao_raw_decl)
+        .execute([=](ExecuteContext& exec, WGPURenderPassEncoder pass) {
+            auto gen_uniform_buf = exec.get(gen_uniform_buf_decl).buffer;
+            auto gen_bg = exec.get(gen_bg_decl).bind_group;
 
             SSAOUniforms uniforms{};
             uniforms.projection = proj_matrix;
@@ -310,12 +257,12 @@ SSAOPass::Outputs SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext
 
     // ── Pass 2: Bilateral Blur ──
     fg.add_pass("ssao_blur")
-        .read(ssao_raw_handle)
-        .read(depth_handle)
-        .color(ssao_handle)
-        .execute([=, &fg](WGPURenderPassEncoder pass) {
-            auto blur_uniform_buf = fg.get_buffer_ref(blur_uniform_buf_handle).handle();
-            auto blur_bg = fg.get_descriptor_ref(blur_bg_handle).handle();
+        .read(ssao_raw_decl)
+        .read(depth_decl)
+        .color(ssao_decl)
+        .execute([=](ExecuteContext& exec, WGPURenderPassEncoder pass) {
+            auto blur_uniform_buf = exec.get(blur_uniform_buf_decl).buffer;
+            auto blur_bg = exec.get(blur_bg_decl).bind_group;
 
             SSAOBlurUniforms blur_u{};
             blur_u.texel_size = {1.0f / static_cast<float>(viewport_width),
@@ -327,7 +274,7 @@ SSAOPass::Outputs SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext
             wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
         });
 
-    return {ssao_handle};
+    return {ssao_decl};
 }
 
 void SSAOPass::draw_imgui() {

@@ -107,21 +107,17 @@ WGPUTextureView create_2d_view(WGPUTexture tex, WGPUTextureFormat format) {
 }
 
 WGPUBindGroupLayout create_brdf_lut_desc_layout(const webgpu::Device& device) {
-    auto internal = create_output_layout(
+    return create_bind_group_layout(
         device,
         {
             OutputSlot::uniform(0).visibility(WGPUShaderStage_Compute),
             OutputSlot::storage_texture(WGPUTextureFormat_RGBA16Float, WGPUTextureViewDimension_2D)
                 .visibility(WGPUShaderStage_Compute),
         });
-    auto layout = internal.layout;
-    internal.layout = nullptr;
-    internal.release();
-    return layout;
 }
 
 WGPUBindGroupLayout create_equirect_desc_layout(const webgpu::Device& device) {
-    auto internal = create_output_layout(
+    return create_bind_group_layout(
         device, {
                     OutputSlot::uniform(0).visibility(WGPUShaderStage_Compute),
                     OutputSlot::texture(WGPUTextureFormat_RGBA16Float, WGPUTextureViewDimension_2D)
@@ -132,14 +128,10 @@ WGPUBindGroupLayout create_equirect_desc_layout(const webgpu::Device& device) {
                                                 WGPUTextureViewDimension_2DArray)
                         .visibility(WGPUShaderStage_Compute),
                 });
-    auto layout = internal.layout;
-    internal.layout = nullptr;
-    internal.release();
-    return layout;
 }
 
 WGPUBindGroupLayout create_downsample_desc_layout(const webgpu::Device& device) {
-    auto internal = create_output_layout(
+    return create_bind_group_layout(
         device,
         {
             OutputSlot::uniform(0).visibility(WGPUShaderStage_Compute),
@@ -149,14 +141,10 @@ WGPUBindGroupLayout create_downsample_desc_layout(const webgpu::Device& device) 
                                         WGPUTextureViewDimension_2DArray)
                 .visibility(WGPUShaderStage_Compute),
         });
-    auto layout = internal.layout;
-    internal.layout = nullptr;
-    internal.release();
-    return layout;
 }
 
 WGPUBindGroupLayout create_convolve_desc_layout(const webgpu::Device& device) {
-    auto internal = create_output_layout(
+    return create_bind_group_layout(
         device,
         {
             OutputSlot::uniform(0).visibility(WGPUShaderStage_Compute),
@@ -168,10 +156,6 @@ WGPUBindGroupLayout create_convolve_desc_layout(const webgpu::Device& device) {
                                         WGPUTextureViewDimension_2DArray)
                 .visibility(WGPUShaderStage_Compute),
         });
-    auto layout = internal.layout;
-    internal.layout = nullptr;
-    internal.release();
-    return layout;
 }
 
 WGPUPipelineLayout make_pipeline_layout(WGPUDevice dev, WGPUBindGroupLayout desc_layout) {
@@ -192,7 +176,7 @@ WGPUPipelineLayout make_pipeline_layout(WGPUDevice dev, WGPUBindGroupLayout desc
 void IblPipelines::release() {
     if (m_brdf_lut_view) wgpuTextureViewRelease(m_brdf_lut_view);
     if (m_brdf_lut) wgpuTextureRelease(m_brdf_lut);
-    if (m_sampler) wgpuSamplerRelease(m_sampler);
+    // m_sampler is NOT released here — it's owned by the FrameGraph sampler pool
     if (m_equirect_desc_layout) wgpuBindGroupLayoutRelease(m_equirect_desc_layout);
     if (m_downsample_desc_layout) wgpuBindGroupLayoutRelease(m_downsample_desc_layout);
     if (m_convolve_desc_layout) wgpuBindGroupLayoutRelease(m_convolve_desc_layout);
@@ -256,8 +240,9 @@ WGPUBindGroupLayout IblPipelines::convolve_desc_layout() const noexcept {
     return m_convolve_desc_layout;
 }
 
-void IblPipelines::init(const webgpu::Device& device, WGPUQueue queue) {
+void IblPipelines::init(const webgpu::Device& device, WGPUQueue queue, WGPUSampler sampler) {
     PRECONDITION_MSG(!m_initialized, "IblPipelines already initialized");
+    PRECONDITION(sampler != nullptr);
     auto dev = device.handle();
 
     // Bind group layouts
@@ -323,18 +308,8 @@ void IblPipelines::init(const webgpu::Device& device, WGPUQueue queue) {
         wgpuPipelineLayoutRelease(layout);
     }
 
-    // Trilinear clamp sampler
-    {
-        WGPUSamplerDescriptor desc = WGPU_SAMPLER_DESCRIPTOR_INIT;
-        desc.magFilter = WGPUFilterMode_Linear;
-        desc.minFilter = WGPUFilterMode_Linear;
-        desc.mipmapFilter = WGPUMipmapFilterMode_Linear;
-        desc.addressModeU = WGPUAddressMode_ClampToEdge;
-        desc.addressModeV = WGPUAddressMode_ClampToEdge;
-        desc.addressModeW = WGPUAddressMode_ClampToEdge;
-        m_sampler = wgpuDeviceCreateSampler(dev, &desc);
-        CHECK_MSG(m_sampler, "Failed to create IBL sampler");
-    }
+    // Sampler provided externally (shared via FrameGraph sampler pool)
+    m_sampler = sampler;
 
     // Generate BRDF LUT
     generate_brdf_lut(device, queue);

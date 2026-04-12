@@ -33,7 +33,8 @@ class IblPipelines {
     IblPipelines& operator=(IblPipelines&&) = delete;
 
     /// Create compute pipelines and generate the BRDF LUT.
-    void init(const webgpu::Device& device, WGPUQueue queue);
+    /// The sampler is provided externally (e.g. from FrameGraph::sampler()).
+    void init(const webgpu::Device& device, WGPUQueue queue, WGPUSampler sampler);
 
     bool is_ready() const noexcept;
 

@@ -1,8 +1,5 @@
 #include <core/diagnostics.h>
-#include <core/rendering/fallbackPool.h>
-#include <core/rendering/frameGraph.h>
 #include <core/rendering/outputLayout.h>
-#include <core/rendering/renderPass.h>
 #include <core/rendering/webgpu/device.h>
 
 namespace pts::rendering {
@@ -28,49 +25,6 @@ std::array<OutputSlot, 2> OutputSlot::sampled_texture(WGPUTextureFormat fmt,
         OutputSlot::sampler(depth ? WGPUSamplerBindingType_NonFiltering
                                   : WGPUSamplerBindingType_Filtering),
     };
-}
-
-void OutputLayoutInfo::release() {
-    for (auto& slot : slots) {
-        if (slot.sampler) {
-            wgpuSamplerRelease(slot.sampler);
-            slot.sampler = nullptr;
-        }
-    }
-    if (layout) {
-        wgpuBindGroupLayoutRelease(layout);
-        layout = nullptr;
-    }
-}
-
-std::vector<OutputSlot> OutputLayoutInfo::output_slots() const {
-    std::vector<OutputSlot> out;
-    out.reserve(slots.size());
-    for (auto& si : slots) {
-        out.push_back(si.slot);
-    }
-    return out;
-}
-
-static WGPUSampler create_sampler_for_slot(const webgpu::Device& device, const OutputSlot& slot) {
-    PRECONDITION(slot.kind == OutputSlot::Kind::Sampler);
-    WGPUSamplerDescriptor desc = WGPU_SAMPLER_DESCRIPTOR_INIT;
-    desc.addressModeU = slot.address_mode;
-    desc.addressModeV = slot.address_mode;
-    desc.addressModeW = slot.address_mode;
-
-    if (slot.sampler_type == WGPUSamplerBindingType_Filtering) {
-        desc.magFilter = WGPUFilterMode_Linear;
-        desc.minFilter = WGPUFilterMode_Linear;
-    } else {
-        desc.magFilter = WGPUFilterMode_Nearest;
-        desc.minFilter = WGPUFilterMode_Nearest;
-    }
-    desc.mipmapFilter = slot.mipmap_filter;
-
-    auto sampler = wgpuDeviceCreateSampler(device.handle(), &desc);
-    INVARIANT_MSG(sampler, "create_output_layout: failed to create sampler");
-    return sampler;
 }
 
 static WGPUBindGroupLayoutEntry make_bgl_entry(const OutputSlot& slot, uint32_t binding) {
@@ -112,150 +66,32 @@ static WGPUBindGroupLayoutEntry make_bgl_entry(const OutputSlot& slot, uint32_t 
     return e;
 }
 
-static OutputLayoutInfo create_output_layout_impl(const webgpu::Device& device,
-                                                  const OutputSlot* slot_data, size_t slot_count) {
-    OutputLayoutInfo info;
-    info.slots.reserve(slot_count);
-
+static WGPUBindGroupLayout create_bgl_impl(const webgpu::Device& device,
+                                           const OutputSlot* slot_data, size_t slot_count) {
     std::vector<WGPUBindGroupLayoutEntry> entries;
     entries.reserve(slot_count);
 
-    uint32_t binding = 0;
     for (size_t i = 0; i < slot_count; ++i) {
-        auto& slot = slot_data[i];
-        OutputLayoutInfo::SlotInfo si{};
-        si.slot = slot;
-        si.binding = binding;
-
-        entries.push_back(make_bgl_entry(slot, binding));
-        ++binding;
-
-        if (slot.kind == OutputSlot::Kind::Sampler) {
-            si.sampler = create_sampler_for_slot(device, slot);
-        }
-
-        info.slots.push_back(si);
+        entries.push_back(make_bgl_entry(slot_data[i], static_cast<uint32_t>(i)));
     }
 
     WGPUBindGroupLayoutDescriptor bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
     bgl_desc.entryCount = entries.size();
     bgl_desc.entries = entries.data();
-    info.layout = wgpuDeviceCreateBindGroupLayout(device.handle(), &bgl_desc);
-    INVARIANT_MSG(info.layout, "create_output_layout: failed to create bind group layout");
+    auto layout = wgpuDeviceCreateBindGroupLayout(device.handle(), &bgl_desc);
+    INVARIANT_MSG(layout, "create_bind_group_layout: failed to create bind group layout");
 
-    return info;
+    return layout;
 }
 
-OutputLayoutInfo create_output_layout(const webgpu::Device& device,
-                                      std::initializer_list<OutputSlot> slots) {
-    return create_output_layout_impl(device, slots.begin(), slots.size());
+WGPUBindGroupLayout create_bind_group_layout(const webgpu::Device& device,
+                                             std::initializer_list<OutputSlot> slots) {
+    return create_bgl_impl(device, slots.begin(), slots.size());
 }
 
-OutputLayoutInfo create_output_layout(const webgpu::Device& device,
-                                      const std::vector<OutputSlot>& slots) {
-    return create_output_layout_impl(device, slots.data(), slots.size());
-}
-
-// --- OutputLayoutInfo::build() ---
-
-static DescriptorHandle build_impl(const OutputLayoutInfo& info, FrameGraph& fg, const IPass* pass,
-                                   const BuildResource* res_data, size_t res_count,
-                                   FallbackPool& pool, const char* label) {
-    // Count non-sampler slots to validate resource count
-    size_t non_sampler_count = 0;
-    for (auto& si : info.slots) {
-        if (si.slot.kind != OutputSlot::Kind::Sampler) ++non_sampler_count;
-    }
-    INVARIANT_MSG(res_count == non_sampler_count,
-                  "build: resource count must match non-sampler slot count");
-
-    auto builder = fg.descriptor(pass, info.layout, label);
-
-    size_t res_index = 0;
-    for (auto& si : info.slots) {
-        uint32_t b = si.binding;
-
-        if (si.slot.kind == OutputSlot::Kind::Sampler) {
-            INVARIANT_MSG(si.sampler, "build: sampler slot missing pre-created sampler");
-            builder.sampler(b, si.sampler);
-            continue;
-        }
-
-        INVARIANT(res_index < res_count);
-        auto& resource = res_data[res_index++];
-
-        switch (si.slot.kind) {
-            case OutputSlot::Kind::Texture: {
-                if (auto* tex = std::get_if<TextureHandle>(&resource)) {
-                    if (tex->is_valid()) {
-                        builder.texture(b, *tex);
-                    } else {
-                        auto fallback_view = pool.view(si.slot.format, si.slot.dimension);
-                        builder.external_view(b, fallback_view);
-                    }
-                } else if (auto* view = std::get_if<WGPUTextureView>(&resource)) {
-                    builder.external_view(b, *view);
-                } else {
-                    PANIC("build: texture slot requires TextureHandle or WGPUTextureView");
-                }
-                break;
-            }
-
-            case OutputSlot::Kind::Uniform: {
-                auto bind_size =
-                    si.slot.min_buffer_size > 0 ? si.slot.min_buffer_size : WGPU_WHOLE_SIZE;
-                if (auto* buf = std::get_if<BufferHandle>(&resource)) {
-                    builder.buffer(b, *buf, 0, bind_size);
-                } else if (auto* raw_buf = std::get_if<WGPUBuffer>(&resource)) {
-                    builder.external_buffer(b, *raw_buf, 0, bind_size);
-                } else {
-                    PANIC("build: uniform slot requires BufferHandle or WGPUBuffer");
-                }
-                break;
-            }
-
-            case OutputSlot::Kind::Storage: {
-                // Storage buffers are variable-length; always bind the full buffer.
-                // min_buffer_size is only a layout validation constraint.
-                if (auto* buf = std::get_if<BufferHandle>(&resource)) {
-                    builder.buffer(b, *buf);
-                } else if (auto* raw_buf = std::get_if<WGPUBuffer>(&resource)) {
-                    builder.external_buffer(b, *raw_buf, 0, WGPU_WHOLE_SIZE);
-                } else {
-                    PANIC("build: storage slot requires BufferHandle or WGPUBuffer");
-                }
-                break;
-            }
-
-            case OutputSlot::Kind::StorageTexture: {
-                if (auto* tex = std::get_if<TextureHandle>(&resource)) {
-                    builder.texture(b, *tex);
-                } else if (auto* view = std::get_if<WGPUTextureView>(&resource)) {
-                    builder.external_view(b, *view);
-                } else {
-                    PANIC("build: storage texture slot requires TextureHandle or WGPUTextureView");
-                }
-                break;
-            }
-
-            case OutputSlot::Kind::Sampler:
-                UNREACHABLE();
-        }
-    }
-
-    return builder.build();
-}
-
-DescriptorHandle OutputLayoutInfo::build(FrameGraph& fg, const IPass* pass,
-                                         std::initializer_list<BuildResource> resources,
-                                         FallbackPool& pool, const char* label) const {
-    return build_impl(*this, fg, pass, resources.begin(), resources.size(), pool, label);
-}
-
-DescriptorHandle OutputLayoutInfo::build(FrameGraph& fg, const IPass* pass,
-                                         const std::vector<BuildResource>& resources,
-                                         FallbackPool& pool, const char* label) const {
-    return build_impl(*this, fg, pass, resources.data(), resources.size(), pool, label);
+WGPUBindGroupLayout create_bind_group_layout(const webgpu::Device& device,
+                                             const std::vector<OutputSlot>& slots) {
+    return create_bgl_impl(device, slots.data(), slots.size());
 }
 
 }  // namespace pts::rendering

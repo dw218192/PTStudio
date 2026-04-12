@@ -156,7 +156,7 @@ class HelloApp : public pts::GpuApplication {
         m_graph->add_pass("forward")
             .color(ctx.surface_view(), WGPUColor{0.1, 0.1, 0.1, 1.0})
             .present()
-            .execute([&](WGPURenderPassEncoder pass) {
+            .execute([&](pts::rendering::ExecuteContext&, WGPURenderPassEncoder pass) {
                 wgpuRenderPassEncoderSetPipeline(pass, m_pipeline->handle());
                 auto objects = m_world.get_objects();
                 auto meshes = m_world.get_meshes();
@@ -184,7 +184,9 @@ class HelloApp : public pts::GpuApplication {
         // ImGui overlay pass (preserves 3D content via Load)
         m_graph->add_pass("imgui")
             .color(ctx.surface_view())
-            .execute([&](WGPURenderPassEncoder pass) { scope.render_into(pass); });
+            .execute([&](pts::rendering::ExecuteContext&, WGPURenderPassEncoder pass) {
+                scope.render_into(pass);
+            });
 
         m_graph->compile();
         m_graph->execute(ctx.encoder());
