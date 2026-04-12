@@ -155,9 +155,10 @@ DescriptorBuilder& DescriptorBuilder::sampler(uint32_t binding, WGPUSampler samp
 }
 
 DescriptorDeclHandle DescriptorBuilder::build() {
+    PTS_ZONE_SCOPED;
     PRECONDITION_MSG(m_layout != nullptr, "DescriptorBuilder::build: layout must not be null");
 
-    auto it = m_fg.m_descriptor_name_to_handle.find(m_name);
+    auto it = m_fg.m_descriptor_name_to_handle.find(std::string_view{m_name});
     uint32_t idx;
     if (it != m_fg.m_descriptor_name_to_handle.end()) {
         idx = it->second;
@@ -385,6 +386,7 @@ FrameGraph::~FrameGraph() {
 
 WGPUSampler FrameGraph::sampler(WGPUSamplerBindingType type, WGPUAddressMode address,
                                 WGPUMipmapFilterMode mipmap) {
+    PTS_ZONE_SCOPED;
     auto key = SamplerKey{type, address, mipmap};
     auto it = m_sampler_cache.find(key);
     if (it != m_sampler_cache.end()) return it->second;
@@ -407,29 +409,30 @@ WGPUSampler FrameGraph::sampler(WGPUSamplerBindingType type, WGPUAddressMode add
 
 WGPUBindGroupLayout FrameGraph::bind_group_layout(std::string_view name,
                                                   std::initializer_list<OutputSlot> slots) {
-    auto key = std::string(name);
-    auto it = m_bgl_cache.find(key);
+    PTS_ZONE_SCOPED;
+    auto it = m_bgl_cache.find(name);
     if (it != m_bgl_cache.end()) return it->second;
     auto bgl = create_bind_group_layout(m_device, slots);
-    m_bgl_cache.emplace(std::move(key), bgl);
+    m_bgl_cache.emplace(std::string(name), bgl);
     return bgl;
 }
 
 WGPUBindGroupLayout FrameGraph::bind_group_layout(std::string_view name,
                                                   const std::vector<OutputSlot>& slots) {
-    auto key = std::string(name);
-    auto it = m_bgl_cache.find(key);
+    PTS_ZONE_SCOPED;
+    auto it = m_bgl_cache.find(name);
     if (it != m_bgl_cache.end()) return it->second;
     auto bgl = create_bind_group_layout(m_device, slots);
-    m_bgl_cache.emplace(std::move(key), bgl);
+    m_bgl_cache.emplace(std::string(name), bgl);
     return bgl;
 }
 
 // ── Shaders ──────────────────────────────────────────────────────────────
 
 WGPUShaderModule FrameGraph::shader(std::string_view resource_key) {
+    PTS_ZONE_SCOPED;
     PRECONDITION_MSG(m_shader_loader, "FrameGraph::shader() requires a ShaderLoader");
-    auto it = m_shader_cache.find(std::string(resource_key));
+    auto it = m_shader_cache.find(resource_key);
     if (it != m_shader_cache.end()) return it->second.module;
 
     auto wgsl = m_shader_loader->load(resource_key);
@@ -438,7 +441,8 @@ WGPUShaderModule FrameGraph::shader(std::string_view resource_key) {
 
 WGPUShaderModule FrameGraph::shader_from_wgsl(std::string_view cache_key,
                                               const std::string& wgsl_source) {
-    auto it = m_shader_cache.find(std::string(cache_key));
+    PTS_ZONE_SCOPED;
+    auto it = m_shader_cache.find(cache_key);
     if (it != m_shader_cache.end()) return it->second.module;
 
     WGPUShaderSourceWGSL wgsl_desc = WGPU_SHADER_SOURCE_WGSL_INIT;
@@ -453,7 +457,7 @@ WGPUShaderModule FrameGraph::shader_from_wgsl(std::string_view cache_key,
 }
 
 void FrameGraph::invalidate_shader(std::string_view resource_key) {
-    auto it = m_shader_cache.find(std::string(resource_key));
+    auto it = m_shader_cache.find(resource_key);
     if (it != m_shader_cache.end()) {
         wgpuShaderModuleRelease(it->second.module);
         m_shader_cache.erase(it);
@@ -485,7 +489,7 @@ RenderPipelineCacheBuilder::RenderPipelineCacheBuilder(FrameGraph& fg, std::stri
 auto RenderPipelineCacheBuilder::shader(std::string_view resource_key)
     -> RenderPipelineCacheBuilder& {
     m_shader_module = m_fg.shader(resource_key);
-    auto it = m_fg.m_shader_cache.find(std::string(resource_key));
+    auto it = m_fg.m_shader_cache.find(resource_key);
     INVARIANT(it != m_fg.m_shader_cache.end());
     m_shader_version = it->second.version;
     return *this;
@@ -665,9 +669,19 @@ auto RenderPipelineCacheBuilder::compute_fingerprint() const -> size_t {
 auto RenderPipelineCacheBuilder::build() -> WGPURenderPipeline {
     PRECONDITION_MSG(m_shader_module != nullptr, "shader not set on render pipeline builder");
 
+    // Fast path — same shader version means same pipeline. Assumes non-shader
+    // config is compile-time constant for a given pipeline name.
+    auto it = m_fg.m_render_pipeline_cache.find(std::string_view{m_name});
+    if (it != m_fg.m_render_pipeline_cache.end() && it->second.shader_version == m_shader_version) {
+        PTS_ZONE_NAMED("render_pipeline cache hit");
+        return it->second.pipeline;
+    }
+
+    // Slow path — shader invalidated or first build: full fingerprint match.
+    PTS_ZONE_NAMED("render_pipeline cache miss");
     auto fp = compute_fingerprint();
-    auto it = m_fg.m_render_pipeline_cache.find(m_name);
     if (it != m_fg.m_render_pipeline_cache.end() && it->second.fingerprint == fp) {
+        it->second.shader_version = m_shader_version;
         return it->second.pipeline;
     }
 
@@ -732,7 +746,7 @@ auto RenderPipelineCacheBuilder::build() -> WGPURenderPipeline {
         wgpuPipelineLayoutRelease(owned_pl);
     }
 
-    m_fg.m_render_pipeline_cache[m_name] = {handle, fp};
+    m_fg.m_render_pipeline_cache[m_name] = {handle, m_shader_version, fp};
     return handle;
 }
 
@@ -745,7 +759,7 @@ ComputePipelineCacheBuilder::ComputePipelineCacheBuilder(FrameGraph& fg, std::st
 auto ComputePipelineCacheBuilder::shader(std::string_view resource_key)
     -> ComputePipelineCacheBuilder& {
     m_shader_module = m_fg.shader(resource_key);
-    auto it = m_fg.m_shader_cache.find(std::string(resource_key));
+    auto it = m_fg.m_shader_cache.find(resource_key);
     INVARIANT(it != m_fg.m_shader_cache.end());
     m_shader_version = it->second.version;
     return *this;
@@ -797,9 +811,17 @@ auto ComputePipelineCacheBuilder::compute_fingerprint() const -> size_t {
 auto ComputePipelineCacheBuilder::build() -> WGPUComputePipeline {
     PRECONDITION_MSG(m_shader_module != nullptr, "shader not set on compute pipeline builder");
 
+    auto it = m_fg.m_compute_pipeline_cache.find(std::string_view{m_name});
+    if (it != m_fg.m_compute_pipeline_cache.end() &&
+        it->second.shader_version == m_shader_version) {
+        PTS_ZONE_NAMED("compute_pipeline cache hit");
+        return it->second.pipeline;
+    }
+
+    PTS_ZONE_NAMED("compute_pipeline cache miss");
     auto fp = compute_fingerprint();
-    auto it = m_fg.m_compute_pipeline_cache.find(m_name);
     if (it != m_fg.m_compute_pipeline_cache.end() && it->second.fingerprint == fp) {
+        it->second.shader_version = m_shader_version;
         return it->second.pipeline;
     }
 
@@ -833,7 +855,7 @@ auto ComputePipelineCacheBuilder::build() -> WGPUComputePipeline {
         wgpuPipelineLayoutRelease(owned_pl);
     }
 
-    m_fg.m_compute_pipeline_cache[m_name] = {handle, fp};
+    m_fg.m_compute_pipeline_cache[m_name] = {handle, m_shader_version, fp};
     return handle;
 }
 
@@ -846,14 +868,14 @@ ComputePipelineCacheBuilder FrameGraph::compute_pipeline(std::string_view name) 
 }
 
 WGPURenderPipeline FrameGraph::get_render_pipeline(std::string_view name) const {
-    auto it = m_render_pipeline_cache.find(std::string(name));
+    auto it = m_render_pipeline_cache.find(name);
     PRECONDITION_MSG(it != m_render_pipeline_cache.end(),
                      "get_render_pipeline: pipeline not found in cache");
     return it->second.pipeline;
 }
 
 WGPUComputePipeline FrameGraph::get_compute_pipeline(std::string_view name) const {
-    auto it = m_compute_pipeline_cache.find(std::string(name));
+    auto it = m_compute_pipeline_cache.find(name);
     PRECONDITION_MSG(it != m_compute_pipeline_cache.end(),
                      "get_compute_pipeline: pipeline not found in cache");
     return it->second.pipeline;
@@ -870,7 +892,8 @@ FallbackPool& FrameGraph::fallback_pool() {
 
 TextureDeclHandle FrameGraph::texture(std::string_view debug_label, TextureDesc desc,
                                       Lifetime lifetime) {
-    auto it = m_texture_name_to_handle.find(std::string(debug_label));
+    PTS_ZONE_SCOPED;
+    auto it = m_texture_name_to_handle.find(debug_label);
     if (it != m_texture_name_to_handle.end()) {
         uint32_t idx = it->second;
         auto& decl = m_texture_decls[idx];
@@ -898,9 +921,10 @@ TextureDeclHandle FrameGraph::texture(std::string_view debug_label,
                                       const WGPUTextureDescriptor& tex_desc, const void* data,
                                       uint64_t data_size, uint32_t bytes_per_row,
                                       WGPUTextureViewDimension view_dim) {
+    PTS_ZONE_SCOPED;
     PRECONDITION(data != nullptr);
     PRECONDITION(data_size > 0);
-    auto it = m_texture_name_to_handle.find(std::string(debug_label));
+    auto it = m_texture_name_to_handle.find(debug_label);
     if (it != m_texture_name_to_handle.end()) {
         auto& decl = m_texture_decls[it->second];
         decl.active = true;
@@ -933,6 +957,7 @@ TextureDeclHandle FrameGraph::texture(std::string_view debug_label,
 }
 
 void FrameGraph::resize(TextureDeclHandle h, TextureDesc new_desc) {
+    PTS_ZONE_SCOPED;
     auto& decl = tex_decl(h);
     decl.active = true;
     decl.last_active_frame = m_frame_number;
@@ -942,7 +967,7 @@ void FrameGraph::resize(TextureDeclHandle h, TextureDesc new_desc) {
 }
 
 TextureDeclHandle FrameGraph::find_texture(std::string_view label) const {
-    auto it = m_texture_name_to_handle.find(std::string(label));
+    auto it = m_texture_name_to_handle.find(label);
     if (it == m_texture_name_to_handle.end()) return TextureDeclHandle{};
     if (!m_texture_decls[it->second].active) return TextureDeclHandle{};
     return TextureDeclHandle{it->second};
@@ -969,7 +994,8 @@ const Descriptor* FrameGraph::compiled_descriptor(DescriptorDeclHandle h) const 
 
 BufferDeclHandle FrameGraph::buffer(std::string_view debug_label, BufferDesc desc,
                                     Lifetime lifetime) {
-    auto it = m_buffer_name_to_handle.find(std::string(debug_label));
+    PTS_ZONE_SCOPED;
+    auto it = m_buffer_name_to_handle.find(debug_label);
     if (it != m_buffer_name_to_handle.end()) {
         uint32_t idx = it->second;
         auto& decl = m_buffer_decls[idx];
@@ -996,10 +1022,11 @@ BufferDeclHandle FrameGraph::buffer(std::string_view debug_label, BufferDesc des
 
 BufferDeclHandle FrameGraph::buffer(std::string_view debug_label, BufferDesc desc,
                                     const void* data) {
+    PTS_ZONE_SCOPED;
     PRECONDITION(data != nullptr);
     PRECONDITION_MSG((desc.usage & WGPUBufferUsage_CopyDst) != 0,
                      "buffer(name,desc,data) requires WGPUBufferUsage_CopyDst");
-    auto it = m_buffer_name_to_handle.find(std::string(debug_label));
+    auto it = m_buffer_name_to_handle.find(debug_label);
     if (it != m_buffer_name_to_handle.end()) {
         auto& decl = m_buffer_decls[it->second];
         decl.active = true;
@@ -1024,8 +1051,9 @@ BufferDeclHandle FrameGraph::buffer(std::string_view debug_label, BufferDesc des
 
 BufferDeclHandle FrameGraph::import_buffer(std::string_view debug_label, WGPUBuffer buf,
                                            std::size_t size) {
+    PTS_ZONE_SCOPED;
     PRECONDITION_MSG(buf != nullptr, "import_buffer: buffer must not be null");
-    auto it = m_buffer_name_to_handle.find(std::string(debug_label));
+    auto it = m_buffer_name_to_handle.find(debug_label);
     if (it != m_buffer_name_to_handle.end()) {
         uint32_t idx = it->second;
         auto& decl = m_buffer_decls[idx];
@@ -1050,6 +1078,7 @@ BufferDeclHandle FrameGraph::import_buffer(std::string_view debug_label, WGPUBuf
 }
 
 void FrameGraph::import_buffer(BufferDeclHandle h, WGPUBuffer buf, std::size_t size) {
+    PTS_ZONE_SCOPED;
     PRECONDITION_MSG(buf != nullptr, "import_buffer: buffer must not be null");
     auto& decl = buf_decl(h);
     decl.active = true;
@@ -1059,6 +1088,7 @@ void FrameGraph::import_buffer(BufferDeclHandle h, WGPUBuffer buf, std::size_t s
 }
 
 void FrameGraph::resize(BufferDeclHandle h, BufferDesc new_desc) {
+    PTS_ZONE_SCOPED;
     auto& decl = buf_decl(h);
     decl.active = true;
     decl.last_active_frame = m_frame_number;
@@ -1069,7 +1099,7 @@ void FrameGraph::resize(BufferDeclHandle h, BufferDesc new_desc) {
 }
 
 BufferDeclHandle FrameGraph::find_buffer(std::string_view label) const {
-    auto it = m_buffer_name_to_handle.find(std::string(label));
+    auto it = m_buffer_name_to_handle.find(label);
     if (it == m_buffer_name_to_handle.end()) return BufferDeclHandle{};
     if (!m_buffer_decls[it->second].active) return BufferDeclHandle{};
     return BufferDeclHandle{it->second};
@@ -1080,7 +1110,7 @@ bool FrameGraph::valid(BufferDeclHandle h) const {
 }
 
 DescriptorDeclHandle FrameGraph::find_descriptor(std::string_view name) const {
-    auto it = m_descriptor_name_to_handle.find(std::string(name));
+    auto it = m_descriptor_name_to_handle.find(name);
     if (it == m_descriptor_name_to_handle.end()) return DescriptorDeclHandle{};
     if (!m_descriptor_decls[it->second].active) return DescriptorDeclHandle{};
     return DescriptorDeclHandle{it->second};
@@ -1091,11 +1121,13 @@ bool FrameGraph::valid(DescriptorDeclHandle h) const {
 }
 
 DescriptorBuilder FrameGraph::descriptor(std::string_view name, WGPUBindGroupLayout layout) {
+    PTS_ZONE_SCOPED;
     return DescriptorBuilder(*this, std::string(name), layout);
 }
 
 DescriptorBuilder FrameGraph::descriptor(const IPass* pass, WGPUBindGroupLayout layout,
                                          const char* label) {
+    PTS_ZONE_SCOPED;
     return DescriptorBuilder(*this, make_pass_key(pass, label, ResourceKind::Descriptor), layout);
 }
 
@@ -1153,6 +1185,7 @@ BufferDeclHandle FrameGraph::import_buffer(const IPass* pass, WGPUBuffer buf, st
 }
 
 PassBuilder FrameGraph::add_pass(std::string name) {
+    PTS_ZONE_SCOPED;
     Pass pass;
     pass.name = std::move(name);
     pass.index = static_cast<uint32_t>(m_passes.size());
@@ -1163,6 +1196,7 @@ PassBuilder FrameGraph::add_pass(std::string name) {
 // ── Frame lifecycle ──────────────────────────────────────────────────────
 
 void FrameGraph::begin_frame() {
+    PTS_ZONE_SCOPED;
     ++m_frame_number;
     m_passes.clear();
     m_pass_counters.clear();
@@ -1330,6 +1364,7 @@ void FrameGraph::compile() {
 }
 
 void FrameGraph::materialize_textures() {
+    PTS_ZONE_SCOPED;
     for (uint32_t i = 0; i < static_cast<uint32_t>(m_texture_decls.size()); ++i) {
         auto& decl = m_texture_decls[i];
         if (!decl.active) continue;
@@ -1447,6 +1482,7 @@ void FrameGraph::materialize_textures() {
 }
 
 void FrameGraph::materialize_buffers() {
+    PTS_ZONE_SCOPED;
     for (uint32_t i = 0; i < static_cast<uint32_t>(m_buffer_decls.size()); ++i) {
         auto& decl = m_buffer_decls[i];
         if (!decl.active) continue;
@@ -1538,6 +1574,7 @@ void FrameGraph::materialize_buffers() {
 }
 
 void FrameGraph::materialize_descriptors() {
+    PTS_ZONE_SCOPED;
     for (uint32_t i = 0; i < static_cast<uint32_t>(m_descriptor_decls.size()); ++i) {
         auto& decl = m_descriptor_decls[i];
         if (!decl.active) continue;
@@ -1644,6 +1681,7 @@ void FrameGraph::materialize_descriptors() {
 }
 
 void FrameGraph::evict_unused() {
+    PTS_ZONE_SCOPED;
     // Descriptors: mark inactive, clear compiled. Bind groups are internal
     // to the FG so immediate destruction is safe.
     for (uint32_t i = 0; i < static_cast<uint32_t>(m_descriptor_decls.size()); ++i) {

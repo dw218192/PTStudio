@@ -5,6 +5,8 @@
 #include <core/rendering/outputLayout.h>
 #include <core/rendering/webgpu/webgpu.h>
 
+#include <boost/container_hash/hash.hpp>
+#include <boost/unordered/unordered_flat_map.hpp>
 #include <cstdint>
 #include <functional>
 #include <initializer_list>
@@ -35,6 +37,34 @@ namespace pts::rendering {
 class IPass;
 class FrameGraph;
 class ExecuteContext;
+
+// ──────────────────────────────────────────────────────────────────────────
+// Transparent string hasher / equal for heterogeneous lookup into
+// string-keyed caches (find by string_view without allocating std::string).
+// ──────────────────────────────────────────────────────────────────────────
+
+struct StringViewHash {
+    using is_transparent = void;
+    size_t operator()(std::string_view sv) const noexcept {
+        return boost::hash<std::string_view>{}(sv);
+    }
+    size_t operator()(const std::string& s) const noexcept {
+        return boost::hash<std::string_view>{}(s);
+    }
+    size_t operator()(const char* s) const noexcept {
+        return boost::hash<std::string_view>{}(std::string_view{s});
+    }
+};
+
+struct StringViewEqual {
+    using is_transparent = void;
+    bool operator()(std::string_view a, std::string_view b) const noexcept {
+        return a == b;
+    }
+};
+
+template <typename T>
+using FlatStringMap = boost::unordered_flat_map<std::string, T, StringViewHash, StringViewEqual>;
 
 enum class Lifetime { Frame, Persistent };
 
@@ -657,10 +687,11 @@ class FrameGraph {
     std::vector<BufferDecl> m_buffer_decls;
     std::vector<DescriptorDecl> m_descriptor_decls;
 
-    // Name → handle registries (cold-path: first-time registration + find)
-    std::unordered_map<std::string, uint32_t> m_texture_name_to_handle;
-    std::unordered_map<std::string, uint32_t> m_buffer_name_to_handle;
-    std::unordered_map<std::string, uint32_t> m_descriptor_name_to_handle;
+    // Name → handle registries. Flat-map + transparent hash → string_view
+    // lookups do not allocate a std::string on the hot path.
+    FlatStringMap<uint32_t> m_texture_name_to_handle;
+    FlatStringMap<uint32_t> m_buffer_name_to_handle;
+    FlatStringMap<uint32_t> m_descriptor_name_to_handle;
 
     // Compiled resources — parallel vectors indexed by handle.value
     std::vector<std::unique_ptr<Texture>> m_compiled_textures;
@@ -680,23 +711,30 @@ class FrameGraph {
         WGPUShaderModule module = nullptr;
         uint64_t version = 0;
     };
-    std::unordered_map<std::string, ShaderEntry> m_shader_cache;
+    FlatStringMap<ShaderEntry> m_shader_cache;
 
     using SamplerKey = std::tuple<WGPUSamplerBindingType, WGPUAddressMode, WGPUMipmapFilterMode>;
     std::map<SamplerKey, WGPUSampler> m_sampler_cache;
 
-    std::unordered_map<std::string, WGPUBindGroupLayout> m_bgl_cache;
+    FlatStringMap<WGPUBindGroupLayout> m_bgl_cache;
 
+    // Pipeline cache entries carry both the shader_version (cheap to compare,
+    // used for the hot-path fast exit) and a fingerprint over the full config
+    // (checked only on a shader-version mismatch). If non-shader config changes
+    // at runtime, callers must rename the pipeline — there is no automatic
+    // detection on the fast path.
     struct CachedRenderPipeline {
         WGPURenderPipeline pipeline = nullptr;
+        uint64_t shader_version = 0;
         size_t fingerprint = 0;
     };
     struct CachedComputePipeline {
         WGPUComputePipeline pipeline = nullptr;
+        uint64_t shader_version = 0;
         size_t fingerprint = 0;
     };
-    std::unordered_map<std::string, CachedRenderPipeline> m_render_pipeline_cache;
-    std::unordered_map<std::string, CachedComputePipeline> m_compute_pipeline_cache;
+    FlatStringMap<CachedRenderPipeline> m_render_pipeline_cache;
+    FlatStringMap<CachedComputePipeline> m_compute_pipeline_cache;
 
     // Per-pass auto-naming counters, reset each begin_frame()
     struct PassCounters {
