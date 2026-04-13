@@ -9,6 +9,7 @@
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/renderer.h>
 #include <core/rendering/sceneLoader.h>
+#include <core/rendering/shaderCompiler.h>
 #include <core/rendering/shaderLoader.h>
 #include <core/rendering/webgpu/bufferReadback.h>
 #include <core/rendering/webgpu/textureReadback.h>
@@ -147,6 +148,7 @@ struct EditorApplication final : GpuApplication {
     size_t m_active_config_index = 0;
     bool m_editor_passes_enabled = true;
     rendering::ShaderLoader m_shader_loader;
+    std::unique_ptr<rendering::IShaderCompiler> m_shader_compiler;
 
     /// Iterate all passes for lifecycle (setup, imgui, hot-reload, debug targets).
     /// Never used for frame graph recording.

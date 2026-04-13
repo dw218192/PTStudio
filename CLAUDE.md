@@ -70,7 +70,7 @@ Scene passes can declare debug MRT outputs (Normals, Base Color, etc.) via `debu
 - `effective_debug_target_names()` returns the gated count; the editor UI and frame graph use this
 - `load_pass_shader(resource_key)` automatically selects the no-debug shader variant when targets are disabled — passes just call this instead of `ShaderLoader::load()` directly
 - The no-debug variant is compiled at build time with `-DNO_DEBUG_TARGETS` (see `config.yaml` slangc entries with `defines:`)
-- At runtime in hot-reload builds, `ShaderLoader::load_variant()` recompiles via Slang with the define; non-hot-reload builds fall back to the pre-compiled embedded WGSL
+- On native, `SlangCompiler` recompiles via libslang with the define and caches the WGSL on disk (`<exe-dir>/shader_cache/`); on WASM the `EmbeddedCompiler` serves the pre-compiled embedded variant.
 
 **Shader convention:** guard debug MRT struct fields and writes with `#ifndef NO_DEBUG_TARGETS`. The variant key is derived automatically by inserting `_no_debug` before the extension (e.g. `forward.wgsl` → `forward_no_debug.wgsl`). Both the base and variant WGSL must be listed in `config.yaml` under `slangc.shaders` and `embed.resources`.
 

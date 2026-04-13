@@ -220,16 +220,10 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
         fg.bind_group_layout("contact_shadow/consumer", {cs_slots[0], cs_slots[1]});
 
     auto [dbg_targets_setup, dbg_count_setup] = effective_debug_targets();
-    std::string shader_wgsl;
-    {
-        PTS_ZONE_NAMED("fwd: load_pass_shader");
-        shader_wgsl = load_pass_shader("renderers/forward/generated/shaders/forward.wgsl");
-    }
     WGPUShaderModule shader;
     {
-        PTS_ZONE_NAMED("fwd: shader_from_wgsl");
-        shader =
-            fg.shader_from_wgsl("renderers/forward/generated/shaders/forward.wgsl", shader_wgsl);
+        PTS_ZONE_NAMED("fwd: load_pass_shader_module");
+        shader = load_pass_shader_module(fg, "renderers/forward/generated/shaders/forward.wgsl");
     }
 
     auto builder = fg.render_pipeline("forward")
@@ -279,8 +273,10 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
     auto& light_buf = ctx.world.light_buffer();
     auto& mat_buf = ctx.world.material_buffer();
     auto light_count = ctx.world.gpu_light_count();
-    auto light_buf_decl = import_buffer(fg, light_buf.handle(), light_buf.size(), "world_lights");
-    auto mat_buf_decl = import_buffer(fg, mat_buf.handle(), mat_buf.size(), "world_materials");
+    auto light_buf_decl = import_buffer(fg, light_buf.handle(), light_buf.size(),
+                                        ctx.world.lights_version(), "world_lights");
+    auto mat_buf_decl = import_buffer(fg, mat_buf.handle(), mat_buf.size(),
+                                      ctx.world.materials_version(), "world_materials");
 
     auto scene_tex_view = ctx.world.texture_array_view();
     auto scene_tex_sampler = ctx.world.texture_sampler();

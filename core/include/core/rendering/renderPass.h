@@ -45,13 +45,6 @@ class IPass {
     /// `effective_debug_targets()` for CLI resolution.
     virtual void ensure_initialized(const webgpu::Device& device);
 
-    /// Called when shaders have been hot-reloaded. No-op by default —
-    /// shader invalidation is handled by the FrameGraph cache, which
-    /// bumps shader versions and triggers pipeline recreation on the
-    /// next frame.
-    virtual void on_shaders_reloaded(const webgpu::Device& /*device*/, FrameGraph& /*fg*/) {
-    }
-
     /// Draw pass-specific ImGui windows/controls. Called during the UI phase.
     virtual void draw_imgui() {
     }
@@ -119,6 +112,13 @@ class IPass {
     /// forward_no_debug.wgsl).
     [[nodiscard]] auto load_pass_shader(std::string_view resource_key) const -> std::string;
 
+    /// Get-or-build the pass shader module via FrameGraph, automatically
+    /// selecting the no-debug variant when device limits require it. Prefer
+    /// this over load_pass_shader + shader_from_wgsl in per-frame callers —
+    /// FG's dep-tracked cache avoids invoking Slang on every frame.
+    [[nodiscard]] auto load_pass_shader_module(FrameGraph& fg, std::string_view resource_key) const
+        -> WGPUShaderModule;
+
    protected:
     /// Frame graph resource helpers — auto-namespace by pass name.
     TextureDeclHandle create_texture(FrameGraph& fg, TextureDesc desc,
@@ -129,8 +129,8 @@ class IPass {
         return fg.buffer(this, desc, label);
     }
     BufferDeclHandle import_buffer(FrameGraph& fg, WGPUBuffer buf, std::size_t size,
-                                   const char* label = nullptr) {
-        return fg.import_buffer(this, buf, size, label);
+                                   uint64_t external_version, const char* label = nullptr) {
+        return fg.import_buffer(this, buf, size, external_version, label);
     }
     DescriptorBuilder descriptor(FrameGraph& fg, WGPUBindGroupLayout layout,
                                  const char* label = nullptr) {

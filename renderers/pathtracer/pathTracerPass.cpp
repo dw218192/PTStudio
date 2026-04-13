@@ -60,6 +60,7 @@ void PathTracerPass::ensure_pixel_buffers(const webgpu::Device& device, uint32_t
         sz, static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
     m_output_buffer = device.create_buffer(
         sz, static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
+    ++m_output_buffer_version;
     m_pixel_width = width;
     m_pixel_height = height;
     m_frame_count = 0;
@@ -231,8 +232,8 @@ PathTracerPass::HdrOutputs PathTracerPass::do_add_to_frame_graph(
     auto color_decl = create_texture(fg, color_desc, "color");
 
     // Import the pass-owned output buffer so the FG can track pointer changes
-    auto output_buf_decl =
-        import_buffer(fg, m_output_buffer.handle(), m_output_buffer.size(), "output");
+    auto output_buf_decl = import_buffer(fg, m_output_buffer.handle(), m_output_buffer.size(),
+                                         m_output_buffer_version, "output");
 
     // Register blit uniform buffer with frame graph
     rendering::BufferDesc blit_buf_desc{};

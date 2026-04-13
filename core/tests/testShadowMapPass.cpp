@@ -5,6 +5,7 @@
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
+#include <core/rendering/shaderCompiler.h>
 #include <core/rendering/shaderLoader.h>
 #include <core/rendering/shadowMapPass.h>
 #include <core/rendering/webgpu/device.h>
@@ -78,7 +79,8 @@ TEST_CASE("ShadowMapPass add_to_frame_graph with no lights returns valid handles
 
     ShadowMapPass pass(loader);
 
-    FrameGraph fg(device, logger, &loader);
+    EmbeddedCompiler compiler(loader);
+    FrameGraph fg(device, logger, &compiler);
 
     OrbitCamera camera;
     RenderWorld world;
@@ -103,7 +105,8 @@ TEST_CASE("ShadowMapPass add_to_frame_graph with distant light produces valid ou
 
     ShadowMapPass pass(loader);
 
-    FrameGraph fg(device, logger, &loader);
+    EmbeddedCompiler compiler(loader);
+    FrameGraph fg(device, logger, &compiler);
 
     OrbitCamera camera;
     RenderWorld world;
@@ -175,7 +178,8 @@ TEST_CASE("ShadowMapPass caps shadow count at k_max_shadow_maps") {
 
     ShadowMapPass pass(loader);
 
-    FrameGraph fg(device, logger, &loader);
+    EmbeddedCompiler compiler(loader);
+    FrameGraph fg(device, logger, &compiler);
 
     OrbitCamera camera;
     RenderWorld world;
@@ -243,7 +247,8 @@ TEST_CASE("ShadowMapPass skips non-distant lights") {
 
     ShadowMapPass pass(loader);
 
-    FrameGraph fg(device, logger, &loader);
+    EmbeddedCompiler compiler(loader);
+    FrameGraph fg(device, logger, &compiler);
 
     OrbitCamera camera;
     RenderWorld world;

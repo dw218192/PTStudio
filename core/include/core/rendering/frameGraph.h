@@ -1,11 +1,13 @@
 #pragma once
 
+#include <core/cache/depTrackedCache.h>
 #include <core/defines.h>
 #include <core/diagnostics.h>
 #include <core/rendering/outputLayout.h>
 #include <core/rendering/webgpu/webgpu.h>
 
 #include <boost/container_hash/hash.hpp>
+#include <boost/core/span.hpp>
 #include <boost/unordered/unordered_flat_map.hpp>
 #include <cstdint>
 #include <functional>
@@ -21,7 +23,7 @@
 
 namespace pts::rendering {
 class FallbackPool;
-class ShaderLoader;
+class IShaderCompiler;
 }  // namespace pts::rendering
 
 namespace spdlog {
@@ -222,6 +224,10 @@ struct BufferDecl {
     // External buffer (import_buffer). When set, compile() wraps it.
     WGPUBuffer external_buffer = nullptr;
     uint64_t external_size = 0;
+    // Caller-provided version for imported buffers. Propagates into the
+    // compiled Buffer's `version` so descriptors binding this buffer rebuild
+    // when the external source (e.g. RenderWorld) mutates.
+    uint64_t external_version = 0;
 
     // Persistent initial upload
     const void* upload_data = nullptr;
@@ -279,10 +285,6 @@ struct DescriptorDecl {
     std::vector<DescriptorEntry> entries;
     bool active = false;
     uint64_t last_active_frame = 0;
-
-    // Snapshot of referenced resources' versions — compared by compile()
-    // to detect input changes and trigger bind group rebuild.
-    std::vector<uint64_t> input_versions_snapshot;
 
     Descriptor* compiled = nullptr;
 
@@ -425,12 +427,16 @@ class RenderPipelineCacheBuilder {
     RenderPipelineCacheBuilder(FrameGraph& fg, std::string name);
 
     void ensure_target_count(uint32_t index);
-    [[nodiscard]] auto compute_fingerprint() const -> size_t;
 
     FrameGraph& m_fg;
     std::string m_name;
     WGPUShaderModule m_shader_module = nullptr;
-    uint64_t m_shader_version = 0;
+    // Version of the shader module (from m_fg.m_shader_cache) this pipeline
+    // was built against. Snapshot at shader()/shader_module() time.
+    uint64_t m_shader_module_version = 0;
+    // Name the shader was resolved from (empty for shader_module()). Used
+    // only for diagnostics.
+    std::string m_shader_resource_key;
     std::string m_vertex_entry = "vs_main";
     std::string m_fragment_entry = "fs_main";
 
@@ -473,12 +479,11 @@ class ComputePipelineCacheBuilder {
     friend class FrameGraph;
     ComputePipelineCacheBuilder(FrameGraph& fg, std::string name);
 
-    [[nodiscard]] auto compute_fingerprint() const -> size_t;
-
     FrameGraph& m_fg;
     std::string m_name;
     WGPUShaderModule m_shader_module = nullptr;
-    uint64_t m_shader_version = 0;
+    uint64_t m_shader_module_version = 0;
+    std::string m_shader_resource_key;
     std::string m_entry_point = "cs_main";
     WGPUPipelineLayout m_pipeline_layout = nullptr;
     std::vector<WGPUBindGroupLayout> m_bind_group_layouts;
@@ -487,7 +492,7 @@ class ComputePipelineCacheBuilder {
 class FrameGraph {
    public:
     explicit FrameGraph(const webgpu::Device& device, std::shared_ptr<spdlog::logger> logger,
-                        const ShaderLoader* shader_loader = nullptr);
+                        IShaderCompiler* compiler = nullptr);
     ~FrameGraph();
     NO_COPY_MOVE(FrameGraph);
 
@@ -525,9 +530,11 @@ class FrameGraph {
     /// Persistent buffer with initial upload.
     BufferDeclHandle buffer(std::string_view debug_label, BufferDesc desc, const void* data);
     /// Wrap an externally-owned buffer. Persistent lifetime.
-    BufferDeclHandle import_buffer(std::string_view debug_label, WGPUBuffer buf, std::size_t size);
+    BufferDeclHandle import_buffer(std::string_view debug_label, WGPUBuffer buf, std::size_t size,
+                                   uint64_t external_version);
     /// Handle-based update for an imported buffer (avoids string lookup).
-    void import_buffer(BufferDeclHandle h, WGPUBuffer buf, std::size_t size);
+    void import_buffer(BufferDeclHandle h, WGPUBuffer buf, std::size_t size,
+                       uint64_t external_version);
 
     void resize(BufferDeclHandle h, BufferDesc new_desc);
 
@@ -546,7 +553,7 @@ class FrameGraph {
     TextureDeclHandle texture(const IPass* pass, TextureDesc desc, const char* label = nullptr);
     BufferDeclHandle buffer(const IPass* pass, BufferDesc desc, const char* label = nullptr);
     BufferDeclHandle import_buffer(const IPass* pass, WGPUBuffer buf, std::size_t size,
-                                   const char* label = nullptr);
+                                   uint64_t external_version, const char* label = nullptr);
 
     PassBuilder add_pass(std::string name);
 
@@ -577,6 +584,13 @@ class FrameGraph {
 
     WGPUShaderModule shader(std::string_view resource_key);
     WGPUShaderModule shader_from_wgsl(std::string_view cache_key, const std::string& wgsl_source);
+    /// Get-or-build a preprocessor variant of a registered shader. Uses the
+    /// base source's revision as the dep, so repeated calls within a session
+    /// hit the cache (critical for per-frame callers like load_pass_shader
+    /// in hot-reload builds — without this, Slang would recompile every frame).
+    WGPUShaderModule shader_variant(std::string_view variant_cache_key,
+                                    std::string_view source_resource_key,
+                                    boost::span<const std::string_view> defines);
     void invalidate_shader(std::string_view resource_key);
     void invalidate_all_shaders();
 
@@ -598,6 +612,13 @@ class FrameGraph {
     [[nodiscard]] size_t cached_bind_group_layout_count() const {
         return m_bgl_cache.size();
     }
+
+    // Version accessors for use as dep sources by caches external to FG
+    // (and by the pipeline caches internally).
+    [[nodiscard]] uint64_t shader_version(std::string_view resource_key) const {
+        return m_shader_cache.version(resource_key);
+    }
+    [[nodiscard]] uint64_t bgl_version(WGPUBindGroupLayout layout) const;
 
    private:
     friend class PassBuilder;
@@ -675,7 +696,7 @@ class FrameGraph {
     }
 
     const webgpu::Device& m_device;
-    const ShaderLoader* m_shader_loader = nullptr;
+    IShaderCompiler* m_compiler = nullptr;
     std::shared_ptr<spdlog::logger> m_logger;
     std::unique_ptr<FallbackPool> m_fallback_pool;
 
@@ -696,7 +717,9 @@ class FrameGraph {
     // Compiled resources — parallel vectors indexed by handle.value
     std::vector<std::unique_ptr<Texture>> m_compiled_textures;
     std::vector<std::unique_ptr<Buffer>> m_compiled_buffers;
-    std::vector<std::unique_ptr<Descriptor>> m_compiled_descriptors;
+    // Descriptors live in m_descriptor_cache (DepTrackedCache, keyed by
+    // handle.value) so dep-based invalidation and version tracking are
+    // uniform across FG caches.
 
     // Deferred destruction — old compiled resources kept alive through execute()
     // so pre-compile references (e.g. ImGui draw data) stay valid. Cleared at
@@ -706,35 +729,29 @@ class FrameGraph {
 
     std::vector<Pass> m_passes;
 
-    // Shader / sampler / BGL / pipeline caches
-    struct ShaderEntry {
-        WGPUShaderModule module = nullptr;
-        uint64_t version = 0;
-    };
-    FlatStringMap<ShaderEntry> m_shader_cache;
+    using ShaderCache =
+        pts::cache::DepTrackedCache<std::string, WGPUShaderModule, StringViewHash, StringViewEqual>;
+    using BglCache = pts::cache::DepTrackedCache<std::string, WGPUBindGroupLayout, StringViewHash,
+                                                 StringViewEqual>;
+    using RenderPipelineCache = pts::cache::DepTrackedCache<std::string, WGPURenderPipeline,
+                                                            StringViewHash, StringViewEqual>;
+    using ComputePipelineCache = pts::cache::DepTrackedCache<std::string, WGPUComputePipeline,
+                                                             StringViewHash, StringViewEqual>;
+    using DescriptorCache = pts::cache::DepTrackedCache<uint32_t, std::unique_ptr<Descriptor>>;
+
+    ShaderCache m_shader_cache;
+    BglCache m_bgl_cache;
+    RenderPipelineCache m_render_pipeline_cache;
+    ComputePipelineCache m_compute_pipeline_cache;
+    DescriptorCache m_descriptor_cache;
+
+    // Inverse lookup: WGPUBindGroupLayout → version from m_bgl_cache. Maintained
+    // alongside BGL inserts so pipeline builders (which hold raw layout handles
+    // rather than names) can gather BGL versions for their dep vector.
+    std::unordered_map<WGPUBindGroupLayout, uint64_t> m_bgl_version_lookup;
 
     using SamplerKey = std::tuple<WGPUSamplerBindingType, WGPUAddressMode, WGPUMipmapFilterMode>;
     std::map<SamplerKey, WGPUSampler> m_sampler_cache;
-
-    FlatStringMap<WGPUBindGroupLayout> m_bgl_cache;
-
-    // Pipeline cache entries carry both the shader_version (cheap to compare,
-    // used for the hot-path fast exit) and a fingerprint over the full config
-    // (checked only on a shader-version mismatch). If non-shader config changes
-    // at runtime, callers must rename the pipeline — there is no automatic
-    // detection on the fast path.
-    struct CachedRenderPipeline {
-        WGPURenderPipeline pipeline = nullptr;
-        uint64_t shader_version = 0;
-        size_t fingerprint = 0;
-    };
-    struct CachedComputePipeline {
-        WGPUComputePipeline pipeline = nullptr;
-        uint64_t shader_version = 0;
-        size_t fingerprint = 0;
-    };
-    FlatStringMap<CachedRenderPipeline> m_render_pipeline_cache;
-    FlatStringMap<CachedComputePipeline> m_compute_pipeline_cache;
 
     // Per-pass auto-naming counters, reset each begin_frame()
     struct PassCounters {

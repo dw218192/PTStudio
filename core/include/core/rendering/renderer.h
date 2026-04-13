@@ -50,7 +50,6 @@ class IRenderer : public IPass {
     // ── Lifecycle: auto-forwarded to all children ──
 
     void ensure_initialized(const webgpu::Device& device) override;
-    void on_shaders_reloaded(const webgpu::Device& device, FrameGraph& fg) override;
     void draw_imgui() override;
 
     void draw_viewport_overlay(const ViewportOverlayParams& params) override {

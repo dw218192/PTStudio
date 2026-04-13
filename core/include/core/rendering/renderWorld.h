@@ -438,6 +438,29 @@ struct RenderWorld {
     uint32_t get_light_version() const;
     uint32_t get_material_version() const;
 
+    /// Per-kind monotonic version accessors. uint64_t to avoid wraparound.
+    /// Dependents (e.g. FG import_buffer with external_version) pass these
+    /// into DepTrackedCache deps so bind groups rebuild on world mutations
+    /// affecting the bound buffers.
+    uint64_t lights_version() const {
+        return m_lights_version;
+    }
+    uint64_t materials_version() const {
+        return m_materials_version;
+    }
+    uint64_t scene_textures_version() const {
+        return m_scene_textures_version;
+    }
+    uint64_t instances_version() const {
+        return m_instances_version;
+    }
+    uint64_t triangles_version() const {
+        return m_triangles_version;
+    }
+    uint64_t bvh_version() const {
+        return m_bvh_version;
+    }
+
    private:
     friend class SyncScope;
 
@@ -455,15 +478,21 @@ struct RenderWorld {
     boost::container::flat_map<pxr::SdfPath, PrimSlot> m_prim_slots;
 
     uint32_t m_mesh_version = 0;
-    uint32_t m_light_version = 0;
-    uint32_t m_material_version = 0;
+    // Per-kind monotonic versions. Bumped at mutation points. uint64_t to
+    // avoid wraparound across long sessions.
+    uint64_t m_lights_version = 0;
+    uint64_t m_materials_version = 0;
+    uint64_t m_scene_textures_version = 0;
+    uint64_t m_instances_version = 0;
+    uint64_t m_triangles_version = 0;
+    uint64_t m_bvh_version = 0;
 
     // GPU buffer state
     webgpu::Buffer m_gpu_light_buffer;
     webgpu::Buffer m_gpu_material_buffer;
     uint32_t m_gpu_light_count = 0;
-    uint32_t m_cached_light_version = UINT32_MAX;
-    uint32_t m_cached_material_version = UINT32_MAX;
+    uint64_t m_cached_lights_version = UINT64_MAX;
+    uint64_t m_cached_materials_version = UINT64_MAX;
 
     // Per-slot generation cache for partial light updates
     std::vector<uint32_t> m_cached_light_generations;
@@ -482,8 +511,7 @@ struct RenderWorld {
     webgpu::Buffer m_gpu_instances;  // GPUInstance array
     uint32_t m_tlas_node_count = 0;
     uint32_t m_instance_count = 0;
-    uint32_t m_transform_version = 0;
-    uint32_t m_cached_transform_version = UINT32_MAX;
+    uint64_t m_cached_instances_version = UINT64_MAX;
     uint32_t m_cached_geometry_version = UINT32_MAX;
 
     // Texture array state
@@ -497,8 +525,7 @@ struct RenderWorld {
     WGPUTexture m_texture_array = nullptr;
     WGPUTextureView m_texture_array_view = nullptr;
     WGPUSampler m_texture_sampler = nullptr;
-    uint32_t m_texture_version = 0;
-    uint32_t m_cached_texture_version = UINT32_MAX;
+    uint64_t m_cached_scene_textures_version = UINT64_MAX;
     uint32_t m_texture_size = 1024;
 
     // Per-pass data cache — keyed by pass identity (this pointer)
@@ -508,7 +535,7 @@ struct RenderWorld {
     std::unique_ptr<IblPipelines> m_ibl_pipelines;
     IblResources m_ibl;
     std::string m_ibl_env_path;                 // currently loaded HDR path (empty = uniform)
-    uint32_t m_ibl_light_version = UINT32_MAX;  // light version when IBL was last updated
+    uint64_t m_ibl_light_version = UINT64_MAX;  // light version when IBL was last updated
     glm::vec3 m_ibl_uniform_color{-1.0f};       // sentinel: never matches real color
     UpAxis m_ibl_up_axis = UpAxis::Y;           // up axis when IBL was last converted
 };

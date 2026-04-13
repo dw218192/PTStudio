@@ -67,8 +67,9 @@ SyncScope::SyncScope(RenderWorld& world) : m_world(world) {
 
 SyncScope::~SyncScope() {
     ++m_world.m_mesh_version;
-    ++m_world.m_light_version;
-    ++m_world.m_material_version;
+    ++m_world.m_lights_version;
+    ++m_world.m_materials_version;
+    ++m_world.m_instances_version;
 }
 
 SyncScope RenderWorld::begin_sync() {
@@ -221,11 +222,11 @@ uint32_t RenderWorld::get_mesh_version() const {
 }
 
 uint32_t RenderWorld::get_light_version() const {
-    return m_light_version;
+    return static_cast<uint32_t>(m_lights_version);
 }
 
 uint32_t RenderWorld::get_material_version() const {
-    return m_material_version;
+    return static_cast<uint32_t>(m_materials_version);
 }
 
 const webgpu::Buffer& RenderWorld::light_buffer() const {
@@ -494,7 +495,7 @@ uint32_t SyncScope::load_texture(const std::string& resolved_path) {
 
     m_world.m_texture_images.push_back(std::move(img));
     m_world.m_texture_cache[resolved_path] = index;
-    ++m_world.m_texture_version;
+    ++m_world.m_scene_textures_version;
     return index;
 }
 
@@ -510,16 +511,16 @@ PreparedSceneData RenderWorld::prepare_scene_data() {
     PreparedSceneData data;
 
     // --- Materials ---
-    if (m_material_version != m_cached_material_version) {
+    if (m_materials_version != m_cached_materials_version) {
         data.materials = m_materials;
         data.materials_dirty = true;
-        m_cached_material_version = m_material_version;
+        m_cached_materials_version = m_materials_version;
     }
 
     // --- Lights ---
     auto lights = get_lights();
 
-    if (m_light_version != m_cached_light_version) {
+    if (m_lights_version != m_cached_lights_version) {
         // Structural change — full rebuild
         for (const auto& slot : lights) {
             if (!slot.active()) continue;
@@ -537,7 +538,7 @@ PreparedSceneData RenderWorld::prepare_scene_data() {
         }
 
         data.lights_dirty = true;
-        m_cached_light_version = m_light_version;
+        m_cached_lights_version = m_lights_version;
 
         // Snapshot all generations
         m_cached_light_generations.resize(lights.size());
@@ -621,7 +622,7 @@ PreparedSceneData RenderWorld::prepare_scene_data() {
         bool any_blas_dirty = !dirty_meshes.empty();
 
         // Step 2: Build instance array + TLAS
-        bool need_rebuild = any_blas_dirty || m_transform_version != m_cached_transform_version ||
+        bool need_rebuild = any_blas_dirty || m_instances_version != m_cached_instances_version ||
                             m_mesh_version != m_cached_geometry_version;
 
         if (need_rebuild) {
@@ -742,19 +743,23 @@ PreparedSceneData RenderWorld::prepare_scene_data() {
             data.instance_count = inst_count;
             data.geometry_dirty = true;
 
-            m_cached_transform_version = m_transform_version;
+            m_cached_instances_version = m_instances_version;
             m_cached_geometry_version = m_mesh_version;
+            // Geometry rebuild bumps triangles/bvh. Instances also bump
+            // (scene topology changed).
+            ++m_triangles_version;
+            ++m_bvh_version;
         }
     }
 
     // --- Texture array ---
-    if (m_texture_version != m_cached_texture_version) {
+    if (m_scene_textures_version != m_cached_scene_textures_version) {
         data.texture_size = m_texture_size;
         for (const auto& img : m_texture_images) {
             data.texture_layers.push_back({img.pixels.data(), img.width, img.height});
         }
         data.textures_dirty = true;
-        m_cached_texture_version = m_texture_version;
+        m_cached_scene_textures_version = m_scene_textures_version;
     }
 
     return data;
@@ -1022,9 +1027,15 @@ void RenderWorld::clear() {
     m_gpu_light_buffer = {};
     m_gpu_material_buffer = {};
     m_gpu_light_count = 0;
-    m_cached_light_version = UINT32_MAX;
-    m_cached_material_version = UINT32_MAX;
+    m_cached_lights_version = UINT64_MAX;
+    m_cached_materials_version = UINT64_MAX;
     m_cached_light_generations.clear();
+    m_lights_version = 0;
+    m_materials_version = 0;
+    m_instances_version = 0;
+    m_triangles_version = 0;
+    m_bvh_version = 0;
+    m_scene_textures_version = 0;
 
     // Two-level BVH state
     m_blas_cache.clear();
@@ -1034,7 +1045,7 @@ void RenderWorld::clear() {
     m_gpu_instances = {};
     m_tlas_node_count = 0;
     m_instance_count = 0;
-    m_cached_transform_version = UINT32_MAX;
+    m_cached_instances_version = UINT64_MAX;
     m_cached_geometry_version = UINT32_MAX;
 
     // Texture state
@@ -1053,13 +1064,12 @@ void RenderWorld::clear() {
         wgpuSamplerRelease(m_texture_sampler);
         m_texture_sampler = nullptr;
     }
-    m_texture_version = 0;
-    m_cached_texture_version = UINT32_MAX;
+    m_cached_scene_textures_version = UINT64_MAX;
 
     // IBL state
     m_ibl = {};
     m_ibl_env_path.clear();
-    m_ibl_light_version = UINT32_MAX;
+    m_ibl_light_version = UINT64_MAX;
     m_ibl_uniform_color = glm::vec3(-1.0f);
     m_ibl_up_axis = UpAxis::Y;
 }
@@ -1081,7 +1091,7 @@ void RenderWorld::update_transforms(const pxr::UsdStageRefPtr& stage,
                 case PrimSlot::Kind::Object: {
                     auto w = m_objects.write(slot.index);
                     w->transform = xf;
-                    ++m_transform_version;
+                    ++m_instances_version;
                     break;
                 }
                 case PrimSlot::Kind::Light: {
@@ -1091,7 +1101,7 @@ void RenderWorld::update_transforms(const pxr::UsdStageRefPtr& stage,
                         glm::vec4 local_dir(0.0f, 0.0f, -1.0f, 0.0f);
                         w->direction = glm::normalize(glm::vec3(xf * local_dir));
                     }
-                    ++m_light_version;
+                    ++m_lights_version;
                     break;
                 }
                 case PrimSlot::Kind::Camera: {
@@ -1130,7 +1140,7 @@ void RenderWorld::update_ibl(const webgpu::Device& device, WGPUQueue queue, WGPU
     }
 
     // Only re-evaluate when lights change
-    if (m_ibl_light_version == m_light_version) return;
+    if (m_ibl_light_version == m_lights_version) return;
 
     // Find first dome light
     const LightData* dome = nullptr;
@@ -1149,7 +1159,7 @@ void RenderWorld::update_ibl(const webgpu::Device& device, WGPUQueue queue, WGPU
         m_ibl.set_uniform_environment(device, queue, 0.0f, 0.0f, 0.0f);
         m_ibl_env_path.clear();
         m_ibl_uniform_color = glm::vec3(0.0f);
-        m_ibl_light_version = m_light_version;
+        m_ibl_light_version = m_lights_version;
         return;
     }
 
@@ -1195,7 +1205,7 @@ void RenderWorld::update_ibl(const webgpu::Device& device, WGPUQueue queue, WGPU
         m_ibl_uniform_color = c;
     }
 
-    m_ibl_light_version = m_light_version;
+    m_ibl_light_version = m_lights_version;
 }
 
 }  // namespace pts::rendering

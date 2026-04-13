@@ -57,10 +57,10 @@ TEST_CASE("free + re-alloc reuses slots") {
     CHECK(scope.alloc_light_slot() == l0);
     CHECK(world.get_lights()[l0].active() == true);
 
-    PTS_UNUSED(a);
-    PTS_UNUSED(c);
-    PTS_UNUSED(m1);
-    PTS_UNUSED(l1);
+    UNUSED(a);
+    UNUSED(c);
+    UNUSED(m1);
+    UNUSED(l1);
 }
 
 TEST_CASE("find_object_by_prim returns correct index") {

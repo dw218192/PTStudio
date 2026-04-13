@@ -22,10 +22,51 @@ from repo_tools.core import (
 # ── Shader resolution ───────────────────────────────────────────────
 
 
+def _insert_suffix(path: Path, suffix: str) -> Path:
+    """Insert a filename suffix before the final extension."""
+    if not suffix:
+        return path
+    return path.with_name(path.stem + suffix + path.suffix)
+
+
+def _shader_variants(shader: dict) -> list[dict]:
+    """Return the variant list for a shader entry.
+
+    Each returned dict has at minimum ``defines`` (list) and ``suffix`` (str).
+    If the entry has no explicit ``variants``, a single implicit variant is
+    synthesised from the top-level ``defines``.
+    """
+    variants_cfg = shader.get("variants")
+    if variants_cfg is None:
+        return [{
+            "defines": list(shader.get("defines", [])),
+            "suffix": "",
+        }]
+    out: list[dict] = []
+    for variant in variants_cfg:
+        if not isinstance(variant, dict):
+            raise ValueError(
+                f"Invalid variant entry: expected dict, got {type(variant).__name__}"
+            )
+        out.append({
+            "defines": list(variant.get("defines", [])),
+            "suffix": str(variant.get("suffix", "")),
+        })
+    return out
+
+
 def _resolve_slang_shaders(
     root: Path, config: dict, tokens: dict[str, str], args: dict[str, Any]
-) -> tuple[list[tuple[Path, Path, bool]], int]:
-    """Resolve shader entries, returning (input, output, reflect) tuples."""
+) -> tuple[list[tuple[Path, Path, bool, list[str]]], int]:
+    """Resolve shader entries. One tuple per (input × variant).
+
+    Each shader entry may declare a ``variants`` list. Each variant has
+    ``defines`` (list[str]) and ``suffix`` (str). The suffix is inserted
+    before the output filename's extension (e.g. ``forward.wgsl`` with
+    suffix ``"_no_debug"`` -> ``forward_no_debug.wgsl``). When ``variants``
+    is omitted, the entry is treated as a single base variant (suffix="",
+    defines from the entry's top-level ``defines`` field).
+    """
     shaders = args.get("shaders")
     if shaders is None:
         shaders = config.get("slangc", {}).get("shaders", [])
@@ -53,6 +94,13 @@ def _resolve_slang_shaders(
         output_value = shader.get("output")
         reflect = bool(shader.get("reflect", False))
 
+        try:
+            variants = _shader_variants(shader)
+        except ValueError as e:
+            logger.error(f"Shader entry {idx} ({input_value}): {e}")
+            errors += 1
+            continue
+
         input_pattern = resolve_path(root, str(input_value), tokens)
         input_paths = [
             path for path in glob_paths(input_pattern) if path.is_file()
@@ -78,17 +126,23 @@ def _resolve_slang_shaders(
                 output_text = output_pattern_text
                 if "*" in output_pattern_text:
                     output_text = output_pattern_text.replace("*", input_path.stem)
-                output_path = Path(output_text)
+                base_output = Path(output_text)
             else:
-                output_path = input_path.with_suffix(".wgsl")
+                base_output = input_path.with_suffix(".wgsl")
 
-            if output_path in seen_outputs:
-                logger.error(f"Duplicate shader output path: {output_path}")
-                errors += 1
-                continue
-            seen_outputs.add(output_path)
-            defines = shader.get("defines", [])
-            resolved.append((input_path, output_path, reflect, defines))
+            for variant in variants:
+                output_path = _insert_suffix(base_output, variant["suffix"])
+                if output_path in seen_outputs:
+                    logger.error(f"Duplicate shader output path: {output_path}")
+                    errors += 1
+                    continue
+                seen_outputs.add(output_path)
+                # Only the base (no-suffix) variant emits reflection JSON —
+                # shader_codegen consumes it for define-agnostic C++ metadata.
+                variant_reflect = reflect and not variant["suffix"]
+                resolved.append((
+                    input_path, output_path, variant_reflect, variant["defines"],
+                ))
 
     return resolved, errors
 

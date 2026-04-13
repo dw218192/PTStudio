@@ -411,9 +411,13 @@ void EditorApplication::on_ready() {
 
     // ── Rendering init ──
 
+    // Shader compiler — wraps ShaderLoader so native hot-reload keeps working.
+    // Sub-ticket B replaces the native branch with a SlangCompiler.
+    m_shader_compiler = rendering::make_shader_compiler(m_shader_loader);
+
     // Frame graph
     m_frame_graph = std::make_unique<rendering::FrameGraph>(
-        device, get_logging_manager().get_logger_shared("frame_graph"), &m_shader_loader);
+        device, get_logging_manager().get_logger_shared("frame_graph"), m_shader_compiler.get());
 
     // Load scene via unified load_stage()
     discover_demo_scenes(m_demo_scene_paths, m_demo_scene_names);
@@ -740,17 +744,24 @@ void EditorApplication::render(FrameContext& ctx) {
     // Process deferred USD change notifications before rendering
     process_dirty_prims();
 
-#ifdef PTS_SHADER_HOT_RELOAD
-    {
-        auto changed = m_shader_loader.try_finish_reload();
-        m_shader_loader.poll_and_start_reload();
-        if (!changed.empty()) {
-            m_frame_graph->invalidate_all_shaders();
-            auto const& device = webgpu_context()->device();
-            for_each_pass([&](auto& pass) { pass.on_shaders_reloaded(device, *m_frame_graph); });
+    // Hot-reload: ask the compiler for any sources dirty since last poll. The
+    // compiler bumps its per-source revision; FrameGraph's DepTrackedCache
+    // drops stale shader modules on the next shader()/shader_variant() call,
+    // and pipelines rebuild via their shader_module_version dep.
+    if (m_shader_compiler) {
+        auto dirty = m_shader_compiler->poll_dirty();
+        for (const auto& key : dirty) {
+            m_frame_graph->invalidate_shader(key);
+            // Also invalidate the NO_DEBUG_TARGETS variant cache key, which is
+            // keyed separately in the FG shader cache but shares the same
+            // libslang source.
+            auto dot = key.rfind('.');
+            if (dot != std::string::npos) {
+                m_frame_graph->invalidate_shader(key.substr(0, dot) + "_no_debug" +
+                                                 key.substr(dot));
+            }
         }
     }
-#endif
 
     // Begin ImGui frame if available (interactive mode only)
     if (m_imgui) {

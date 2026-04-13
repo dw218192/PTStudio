@@ -7,6 +7,7 @@
 #include <core/rendering/gbufferPass.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
+#include <core/rendering/shaderCompiler.h>
 #include <core/rendering/shaderLoader.h>
 #include <core/rendering/webgpu/device.h>
 #include <doctest/doctest.h>
@@ -183,7 +184,8 @@ TEST_CASE("ContactShadowPass add_to_frame_graph produces valid output") {
 
     ContactShadowPass cs_pass(loader);
 
-    FrameGraph fg(device, logger, &loader);
+    EmbeddedCompiler compiler(loader);
+    FrameGraph fg(device, logger, &compiler);
 
     OrbitCamera camera;
     RenderWorld world;
@@ -235,7 +237,8 @@ TEST_CASE("ContactShadowPass disabled returns invalid handle") {
 
     ContactShadowPass cs_pass(loader);
 
-    FrameGraph fg(device, logger, &loader);
+    EmbeddedCompiler compiler(loader);
+    FrameGraph fg(device, logger, &compiler);
     cs_pass.m_enabled = false;
     OrbitCamera camera;
     RenderWorld world;

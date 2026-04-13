@@ -54,62 +54,27 @@ TEST_CASE("ShaderLoader supports multiple independent shader registrations") {
     CHECK(loader.load("shaders/b.wgsl") == "// shader B");
 }
 
-TEST_CASE("ShaderLoader poll_and_reload returns empty with no dirty files") {
-    ShaderLoader loader(make_logger());
-    loader.register_shader("shaders/test.wgsl", "shaders/test.slang", "generated/shaders/test.wgsl",
-                           fake_getter);
-
-    auto changed = loader.poll_and_reload();
-    CHECK(changed.empty());
-}
-
-TEST_CASE("ShaderLoader poll_and_start_reload returns false with no dirty files") {
-    ShaderLoader loader(make_logger());
-    loader.register_shader("shaders/test.wgsl", "shaders/test.slang", "generated/shaders/test.wgsl",
-                           fake_getter);
-
-    CHECK_FALSE(loader.poll_and_start_reload());
-    CHECK_FALSE(loader.is_reloading());
-}
-
-TEST_CASE("ShaderLoader try_finish_reload returns empty when no task started") {
-    ShaderLoader loader(make_logger());
-    loader.register_shader("shaders/test.wgsl", "shaders/test.slang", "generated/shaders/test.wgsl",
-                           fake_getter);
-
-    auto changed = loader.try_finish_reload();
-    CHECK(changed.empty());
-}
-
-TEST_CASE("ShaderLoader is_reloading returns false when no task started") {
-    ShaderLoader loader(make_logger());
-    loader.register_shader("shaders/test.wgsl", "shaders/test.slang", "generated/shaders/test.wgsl",
-                           fake_getter);
-
-    CHECK_FALSE(loader.is_reloading());
-}
-
 TEST_CASE("ShaderLoader register_shader accepts custom entry_points") {
     ShaderLoader loader(make_logger());
     loader.register_shader("shaders/test.wgsl", "shaders/test.slang", "generated/shaders/test.wgsl",
                            fake_getter, {"cs_main"});
 
-    auto result = loader.load("shaders/test.wgsl");
-    CHECK(result == "// embedded wgsl");
+    auto entry = loader.find("shaders/test.wgsl");
+    REQUIRE(entry != nullptr);
+    REQUIRE(entry->entry_points.size() == 1);
+    CHECK(entry->entry_points[0] == "cs_main");
 }
 
-TEST_CASE("ShaderLoader discovers dependencies from real slang file") {
+TEST_CASE("ShaderLoader find returns nullptr for unregistered key") {
     ShaderLoader loader(make_logger());
+    CHECK(loader.find("does/not/exist.wgsl") == nullptr);
+}
 
-    // Use the real test shader — simple.slang has only vertex_main
+TEST_CASE("ShaderLoader serves embedded content via test resource getter") {
+    ShaderLoader loader(make_logger());
     loader.register_shader("shaders/test/simple.wgsl", "assets/shaders/test/simple.slang",
                            "assets/shaders/test/simple.wgsl", test_resources::get_resource,
                            {"vertex_main"});
-
-    // Embedded content is served correctly
     auto result = loader.load("shaders/test/simple.wgsl");
     CHECK_FALSE(result.empty());
-
-    // No dirty files after initial registration
-    CHECK_FALSE(loader.poll_and_start_reload());
 }

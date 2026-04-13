@@ -34,6 +34,7 @@ class PathTracerPass final : public rendering::IRenderer {
     webgpu::Buffer m_uniform_buffer;
     webgpu::Buffer m_accum_buffer;
     webgpu::Buffer m_output_buffer;
+    uint64_t m_output_buffer_version = 0;  // bumped when m_output_buffer is recreated
     uint32_t m_pixel_width = 0;
     uint32_t m_pixel_height = 0;
 

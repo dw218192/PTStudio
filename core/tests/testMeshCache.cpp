@@ -34,7 +34,7 @@ TEST_CASE("get_or_create_pass_data creates entry on first call") {
     auto slot = scope.alloc_mesh_slot();
     {
         auto w = scope.write_mesh(slot);
-        PTS_UNUSED(w);
+        UNUSED(w);
     }
 
     int factory_calls = 0;
@@ -53,7 +53,7 @@ TEST_CASE("get_or_create_pass_data returns cached value on same version") {
     auto slot = scope.alloc_mesh_slot();
     {
         auto w = scope.write_mesh(slot);
-        PTS_UNUSED(w);
+        UNUSED(w);
     }
 
     int factory_calls = 0;
@@ -76,7 +76,7 @@ TEST_CASE("get_or_create_pass_data re-creates on version change") {
         slot = scope.alloc_mesh_slot();
         {
             auto w = scope.write_mesh(slot);
-            PTS_UNUSED(w);
+            UNUSED(w);
         }
     }
 
@@ -90,7 +90,7 @@ TEST_CASE("get_or_create_pass_data re-creates on version change") {
     {
         auto scope = world.begin_sync();
         auto w = scope.write_mesh(slot);
-        PTS_UNUSED(w);
+        UNUSED(w);
     }
 
     auto& val = pass.get_or_create_pass_data<int>(PassDataKind::Mesh, slot, world, [&]() {
@@ -112,11 +112,11 @@ TEST_CASE("get_or_create_pass_data supports different keys") {
         // Bump generation on each via write guard
         {
             auto w = scope.write_mesh(s0);
-            PTS_UNUSED(w);
+            UNUSED(w);
         }
         {
             auto w = scope.write_mesh(s1);
-            PTS_UNUSED(w);
+            UNUSED(w);
         }
     }
     auto& a =
@@ -136,7 +136,7 @@ TEST_CASE("world swap invalidates pass data cache") {
         auto slot = scope.alloc_mesh_slot();
         {
             auto w = scope.write_mesh(slot);
-            PTS_UNUSED(w);
+            UNUSED(w);
         }
         pass.get_or_create_pass_data<int>(PassDataKind::Mesh, slot, world, [&]() {
             ++factory_calls;
@@ -150,7 +150,7 @@ TEST_CASE("world swap invalidates pass data cache") {
     auto slot2 = scope2.alloc_mesh_slot();
     {
         auto w = scope2.write_mesh(slot2);
-        PTS_UNUSED(w);
+        UNUSED(w);
     }
     pass.get_or_create_pass_data<int>(PassDataKind::Mesh, slot2, world2, [&]() {
         ++factory_calls;
@@ -166,7 +166,7 @@ TEST_CASE("get_or_create_pass_data with nullptr factory succeeds on hit") {
     auto slot = scope.alloc_mesh_slot();
     {
         auto w = scope.write_mesh(slot);
-        PTS_UNUSED(w);
+        UNUSED(w);
     }
 
     pass.get_or_create_pass_data<int>(PassDataKind::Mesh, slot, world, []() { return 42; });

@@ -59,8 +59,7 @@ target_compile_definitions(developer_flags INTERFACE
     PTS_WINDOWING="${PTS_WINDOWING}"
     "PTS_WINDOWING_${PTS_WINDOWING}=1"
     $<$<CXX_COMPILER_ID:MSVC>:NOMINMAX>
-    $<$<AND:$<NOT:$<BOOL:${EMSCRIPTEN}>>,$<CONFIG:Debug>>:PTS_SHADER_HOT_RELOAD>
-    $<$<AND:$<NOT:$<BOOL:${EMSCRIPTEN}>>,$<CONFIG:Debug>>:PTS_WORKSPACE_ROOT="${CMAKE_SOURCE_DIR}">
+    $<$<NOT:$<BOOL:${EMSCRIPTEN}>>:PTS_WORKSPACE_ROOT="${CMAKE_SOURCE_DIR}">
 )
 
 target_compile_features(developer_flags INTERFACE cxx_std_17)

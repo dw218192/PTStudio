@@ -83,7 +83,7 @@ RenderWorld populate_from_stage(const pxr::UsdStageRefPtr& stage, TaskProgress& 
 
     size_t total = 0;
     for (const auto& prim : pxr::UsdPrimRange(stage->GetPseudoRoot())) {
-        PTS_UNUSED(prim);
+        UNUSED(prim);
         ++total;
     }
 

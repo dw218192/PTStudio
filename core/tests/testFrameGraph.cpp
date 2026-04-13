@@ -1,5 +1,7 @@
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/renderPass.h>
+#include <core/rendering/shaderCompiler.h>
+#include <core/rendering/shaderLoader.h>
 #include <core/rendering/webgpu/device.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
@@ -372,13 +374,13 @@ TEST_CASE("FrameGraph - import_buffer same pointer reuses") {
     REQUIRE(ext_buf != nullptr);
 
     f.graph.begin_frame();
-    auto d1 = f.graph.import_buffer("imported", ext_buf, 256);
+    auto d1 = f.graph.import_buffer("imported", ext_buf, 256, 1);
     f.graph.compile();
     auto* compiled1 = f.graph.compiled_buffer(d1);
     CHECK(f.graph.cached_buffer_count() == 1);
 
     f.graph.begin_frame();
-    auto d2 = f.graph.import_buffer("imported", ext_buf, 256);
+    auto d2 = f.graph.import_buffer("imported", ext_buf, 256, 1);
     f.graph.compile();
     CHECK(d1 == d2);
     CHECK(f.graph.compiled_buffer(d2) == compiled1);
@@ -400,11 +402,11 @@ TEST_CASE("FrameGraph - import_buffer different pointer recreates") {
     REQUIRE(ext_buf2 != nullptr);
 
     f.graph.begin_frame();
-    f.graph.import_buffer("imported", ext_buf1, 256);
+    f.graph.import_buffer("imported", ext_buf1, 256, 1);
     f.graph.compile();
 
     f.graph.begin_frame();
-    auto d2 = f.graph.import_buffer("imported", ext_buf2, 256);
+    auto d2 = f.graph.import_buffer("imported", ext_buf2, 256, 2);
     f.graph.compile();
     CHECK(f.graph.compiled_buffer(d2)->buffer == ext_buf2);
 
@@ -543,13 +545,13 @@ TEST_CASE("FrameGraph - descriptor rebuilds on buffer change") {
     auto ext_buf2 = wgpuDeviceCreateBuffer(f.device.handle(), &ext_desc);
 
     f.graph.begin_frame();
-    auto buf = f.graph.import_buffer("ubo", ext_buf1, 256);
+    auto buf = f.graph.import_buffer("ubo", ext_buf1, 256, 1);
     auto bg = f.graph.descriptor("my_bg", layout).buffer(0, buf).build();
     f.graph.compile();
     auto v1 = f.graph.compiled_descriptor(bg)->version;
 
     f.graph.begin_frame();
-    auto buf2 = f.graph.import_buffer("ubo", ext_buf2, 256);
+    auto buf2 = f.graph.import_buffer("ubo", ext_buf2, 256, 2);
     auto bg2 = f.graph.descriptor("my_bg", layout).buffer(0, buf2).build();
     f.graph.compile();
     CHECK(f.graph.compiled_descriptor(bg2) != nullptr);
@@ -653,8 +655,6 @@ TEST_CASE("FrameGraph - descriptor rebuilds on texture change") {
 
 // --- IPass*-based auto-naming tests ---
 
-#include <core/rendering/shaderLoader.h>
-
 namespace {
 
 struct TestPass : pts::rendering::IPass {
@@ -745,7 +745,8 @@ TEST_CASE("FrameGraph - shader() caches by key") {
     };
     sl.register_shader("test/shader.wgsl", "test/shader.slang", "test/shader.wgsl", getter);
 
-    FrameGraph graph{f.device, f.logger, &sl};
+    pts::rendering::EmbeddedCompiler compiler{sl};
+    FrameGraph graph{f.device, f.logger, &compiler};
 
     auto m1 = graph.shader("test/shader.wgsl");
     auto m2 = graph.shader("test/shader.wgsl");
@@ -766,7 +767,8 @@ TEST_CASE("FrameGraph - invalidate_shader forces new module") {
     };
     sl.register_shader("test/shader.wgsl", "test/shader.slang", "test/shader.wgsl", getter);
 
-    FrameGraph graph{f.device, f.logger, &sl};
+    pts::rendering::EmbeddedCompiler compiler{sl};
+    FrameGraph graph{f.device, f.logger, &compiler};
 
     graph.shader("test/shader.wgsl");
     CHECK(graph.cached_shader_count() == 1);
@@ -782,7 +784,8 @@ TEST_CASE("FrameGraph - invalidate_shader forces new module") {
 
 namespace {
 
-auto make_pipeline_test_graph(TestFixture& f, pts::rendering::ShaderLoader& sl) -> FrameGraph {
+auto make_pipeline_test_graph(TestFixture& f, pts::rendering::ShaderLoader& sl,
+                              pts::rendering::IShaderCompiler& compiler) -> FrameGraph {
     auto getter = [](std::string_view key) -> std::optional<std::string_view> {
         if (key == "test/shader.wgsl")
             return "@vertex fn vs_main() -> @builtin(position) vec4f { return vec4f(0); }\n"
@@ -790,7 +793,7 @@ auto make_pipeline_test_graph(TestFixture& f, pts::rendering::ShaderLoader& sl) 
         return std::nullopt;
     };
     sl.register_shader("test/shader.wgsl", "test/shader.slang", "test/shader.wgsl", getter);
-    return FrameGraph{f.device, f.logger, &sl};
+    return FrameGraph{f.device, f.logger, &compiler};
 }
 
 }  // namespace
@@ -798,7 +801,8 @@ auto make_pipeline_test_graph(TestFixture& f, pts::rendering::ShaderLoader& sl) 
 TEST_CASE("FrameGraph - render_pipeline returns non-null") {
     TestFixture f;
     pts::rendering::ShaderLoader sl{f.logger};
-    auto graph = make_pipeline_test_graph(f, sl);
+    pts::rendering::EmbeddedCompiler compiler{sl};
+    auto graph = make_pipeline_test_graph(f, sl, compiler);
 
     auto p = graph.render_pipeline("test_rp")
                  .shader("test/shader.wgsl")

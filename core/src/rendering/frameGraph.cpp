@@ -3,7 +3,7 @@
 #include <core/rendering/fallbackPool.h>
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/renderPass.h>
-#include <core/rendering/shaderLoader.h>
+#include <core/rendering/shaderCompiler.h>
 #include <core/rendering/webgpu/device.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
 #include <spdlog/spdlog.h>
@@ -165,7 +165,6 @@ DescriptorDeclHandle DescriptorBuilder::build() {
     } else {
         idx = static_cast<uint32_t>(m_fg.m_descriptor_decls.size());
         m_fg.m_descriptor_decls.emplace_back();
-        m_fg.m_compiled_descriptors.emplace_back();
         m_fg.m_descriptor_decls[idx].debug_label = m_name;
         m_fg.m_descriptor_name_to_handle.emplace(m_name, idx);
     }
@@ -348,34 +347,35 @@ void PassBuilder::execute(ExecuteComputeFn fn) {
 // ── FrameGraph ───────────────────────────────────────────────────────────
 
 FrameGraph::FrameGraph(const webgpu::Device& device, std::shared_ptr<spdlog::logger> logger,
-                       const ShaderLoader* shader_loader)
-    : m_device(device), m_shader_loader(shader_loader), m_logger(std::move(logger)) {
+                       IShaderCompiler* compiler)
+    : m_device(device), m_compiler(compiler), m_logger(std::move(logger)) {
 }
 
 FrameGraph::~FrameGraph() {
     // Release pipelines before shaders (pipelines reference shaders)
-    for (auto& [key, entry] : m_render_pipeline_cache) {
-        if (entry.pipeline) wgpuRenderPipelineRelease(entry.pipeline);
-    }
+    m_render_pipeline_cache.for_each([](const std::string&, WGPURenderPipeline& p) {
+        if (p) wgpuRenderPipelineRelease(p);
+    });
     m_render_pipeline_cache.clear();
-    for (auto& [key, entry] : m_compute_pipeline_cache) {
-        if (entry.pipeline) wgpuComputePipelineRelease(entry.pipeline);
-    }
+    m_compute_pipeline_cache.for_each([](const std::string&, WGPUComputePipeline& p) {
+        if (p) wgpuComputePipelineRelease(p);
+    });
     m_compute_pipeline_cache.clear();
-    for (auto& [key, entry] : m_shader_cache) {
-        wgpuShaderModuleRelease(entry.module);
-    }
+    m_shader_cache.for_each([](const std::string&, WGPUShaderModule& m) {
+        if (m) wgpuShaderModuleRelease(m);
+    });
     m_shader_cache.clear();
     for (auto& [key, s] : m_sampler_cache) {
         wgpuSamplerRelease(s);
     }
     m_sampler_cache.clear();
-    for (auto& [key, bgl] : m_bgl_cache) {
+    m_bgl_cache.for_each([](const std::string&, WGPUBindGroupLayout& bgl) {
         if (bgl) wgpuBindGroupLayoutRelease(bgl);
-    }
+    });
     m_bgl_cache.clear();
+    m_bgl_version_lookup.clear();
     // Destroy compiled resources before decls
-    m_compiled_descriptors.clear();
+    m_descriptor_cache.clear();
     m_compiled_buffers.clear();
     m_compiled_textures.clear();
     m_descriptor_decls.clear();
@@ -410,76 +410,132 @@ WGPUSampler FrameGraph::sampler(WGPUSamplerBindingType type, WGPUAddressMode add
 WGPUBindGroupLayout FrameGraph::bind_group_layout(std::string_view name,
                                                   std::initializer_list<OutputSlot> slots) {
     PTS_ZONE_SCOPED;
-    auto it = m_bgl_cache.find(name);
-    if (it != m_bgl_cache.end()) return it->second;
-    auto bgl = create_bind_group_layout(m_device, slots);
-    m_bgl_cache.emplace(std::string(name), bgl);
+    auto& bgl = m_bgl_cache.get_or_build(
+        name, pts::cache::DepTrackedCache<std::string, WGPUBindGroupLayout>::Span{},
+        [&] { return create_bind_group_layout(m_device, slots); });
+    m_bgl_version_lookup[bgl] = m_bgl_cache.version(name);
     return bgl;
 }
 
 WGPUBindGroupLayout FrameGraph::bind_group_layout(std::string_view name,
                                                   const std::vector<OutputSlot>& slots) {
     PTS_ZONE_SCOPED;
-    auto it = m_bgl_cache.find(name);
-    if (it != m_bgl_cache.end()) return it->second;
-    auto bgl = create_bind_group_layout(m_device, slots);
-    m_bgl_cache.emplace(std::string(name), bgl);
+    auto& bgl = m_bgl_cache.get_or_build(
+        name, pts::cache::DepTrackedCache<std::string, WGPUBindGroupLayout>::Span{},
+        [&] { return create_bind_group_layout(m_device, slots); });
+    m_bgl_version_lookup[bgl] = m_bgl_cache.version(name);
     return bgl;
+}
+
+uint64_t FrameGraph::bgl_version(WGPUBindGroupLayout layout) const {
+    auto it = m_bgl_version_lookup.find(layout);
+    if (it == m_bgl_version_lookup.end()) return 0;
+    return it->second;
 }
 
 // ── Shaders ──────────────────────────────────────────────────────────────
 
 WGPUShaderModule FrameGraph::shader(std::string_view resource_key) {
     PTS_ZONE_SCOPED;
-    PRECONDITION_MSG(m_shader_loader, "FrameGraph::shader() requires a ShaderLoader");
-    auto it = m_shader_cache.find(resource_key);
-    if (it != m_shader_cache.end()) return it->second.module;
-
-    auto wgsl = m_shader_loader->load(resource_key);
-    return shader_from_wgsl(resource_key, wgsl);
+    PRECONDITION_MSG(m_compiler, "FrameGraph::shader() requires an IShaderCompiler");
+    // Dep: source revision tracked by the compiler. Bumped by invalidate_shader().
+    uint64_t rev = m_compiler->source_revision(resource_key);
+    uint64_t deps[] = {rev};
+    return m_shader_cache.get_or_build_with_replace(
+        resource_key, ShaderCache::Span{deps, 1},
+        [&]() -> WGPUShaderModule {
+            auto wgsl = m_compiler->compile(ShaderKey{resource_key, {}});
+            WGPUShaderSourceWGSL wgsl_desc = WGPU_SHADER_SOURCE_WGSL_INIT;
+            wgsl_desc.code.data = wgsl.data();
+            wgsl_desc.code.length = wgsl.size();
+            WGPUShaderModuleDescriptor desc = {};
+            desc.nextInChain = reinterpret_cast<WGPUChainedStruct*>(&wgsl_desc);
+            auto m = wgpuDeviceCreateShaderModule(m_device.handle(), &desc);
+            INVARIANT_MSG(m, "FrameGraph::shader() failed to create shader module");
+            return m;
+        },
+        [](WGPUShaderModule& old) {
+            if (old) wgpuShaderModuleRelease(old);
+        });
 }
 
 WGPUShaderModule FrameGraph::shader_from_wgsl(std::string_view cache_key,
                                               const std::string& wgsl_source) {
     PTS_ZONE_SCOPED;
-    auto it = m_shader_cache.find(cache_key);
-    if (it != m_shader_cache.end()) return it->second.module;
+    // shader_from_wgsl is used for ad-hoc inline WGSL (e.g. test fixtures); the
+    // caller does not use the compiler. Dep is the cache_key's revision as
+    // reported by the compiler (1 by default, so cache hits from frame to
+    // frame). When no compiler is attached, skip revision tracking entirely.
+    uint64_t rev = m_compiler ? m_compiler->source_revision(cache_key) : 1;
+    uint64_t deps[] = {rev};
+    return m_shader_cache.get_or_build_with_replace(
+        cache_key, ShaderCache::Span{deps, 1},
+        [&]() -> WGPUShaderModule {
+            WGPUShaderSourceWGSL wgsl_desc = WGPU_SHADER_SOURCE_WGSL_INIT;
+            wgsl_desc.code.data = wgsl_source.data();
+            wgsl_desc.code.length = wgsl_source.size();
+            WGPUShaderModuleDescriptor desc = {};
+            desc.nextInChain = reinterpret_cast<WGPUChainedStruct*>(&wgsl_desc);
+            auto m = wgpuDeviceCreateShaderModule(m_device.handle(), &desc);
+            INVARIANT_MSG(m, "FrameGraph::shader() failed to create shader module");
+            return m;
+        },
+        [](WGPUShaderModule& old) {
+            if (old) wgpuShaderModuleRelease(old);
+        });
+}
 
-    WGPUShaderSourceWGSL wgsl_desc = WGPU_SHADER_SOURCE_WGSL_INIT;
-    wgsl_desc.code.data = wgsl_source.data();
-    wgsl_desc.code.length = wgsl_source.size();
-    WGPUShaderModuleDescriptor desc = {};
-    desc.nextInChain = reinterpret_cast<WGPUChainedStruct*>(&wgsl_desc);
-    auto m = wgpuDeviceCreateShaderModule(m_device.handle(), &desc);
-    INVARIANT_MSG(m, "FrameGraph::shader() failed to create shader module");
-    m_shader_cache.emplace(std::string(cache_key), ShaderEntry{m, next_version()});
-    return m;
+WGPUShaderModule FrameGraph::shader_variant(std::string_view variant_cache_key,
+                                            std::string_view source_resource_key,
+                                            boost::span<const std::string_view> defines) {
+    PTS_ZONE_SCOPED;
+    PRECONDITION_MSG(m_compiler, "FrameGraph::shader_variant() requires an IShaderCompiler");
+    // Dep is the source's revision: when the underlying Slang source changes,
+    // all variants built from it must rebuild.
+    uint64_t rev = m_compiler->source_revision(source_resource_key);
+    uint64_t deps[] = {rev};
+    return m_shader_cache.get_or_build_with_replace(
+        variant_cache_key, ShaderCache::Span{deps, 1},
+        [&]() -> WGPUShaderModule {
+            auto wgsl = m_compiler->compile(ShaderKey{source_resource_key, defines});
+            WGPUShaderSourceWGSL wgsl_desc = WGPU_SHADER_SOURCE_WGSL_INIT;
+            wgsl_desc.code.data = wgsl.data();
+            wgsl_desc.code.length = wgsl.size();
+            WGPUShaderModuleDescriptor desc = {};
+            desc.nextInChain = reinterpret_cast<WGPUChainedStruct*>(&wgsl_desc);
+            auto m = wgpuDeviceCreateShaderModule(m_device.handle(), &desc);
+            INVARIANT_MSG(m, "FrameGraph::shader_variant() failed to create shader module");
+            return m;
+        },
+        [](WGPUShaderModule& old) {
+            if (old) wgpuShaderModuleRelease(old);
+        });
 }
 
 void FrameGraph::invalidate_shader(std::string_view resource_key) {
-    auto it = m_shader_cache.find(resource_key);
-    if (it != m_shader_cache.end()) {
-        wgpuShaderModuleRelease(it->second.module);
-        m_shader_cache.erase(it);
+    // Release any existing module and drop entry so next shader() call rebuilds
+    // with a fresh version. Bump the source revision on the compiler so any
+    // variants of this source (which use the same source_revision as their
+    // dep) rebuild too.
+    if (auto* m = m_shader_cache.find(resource_key)) {
+        if (*m) wgpuShaderModuleRelease(*m);
     }
+    m_shader_cache.erase(resource_key);
+    if (m_compiler) m_compiler->invalidate(resource_key);
 }
 
 void FrameGraph::invalidate_all_shaders() {
-    for (auto& [key, entry] : m_shader_cache) {
-        wgpuShaderModuleRelease(entry.module);
+    if (m_compiler) {
+        m_shader_cache.for_each(
+            [this](const std::string& key, WGPUShaderModule&) { m_compiler->invalidate(key); });
     }
+    m_shader_cache.for_each([](const std::string&, WGPUShaderModule& m) {
+        if (m) wgpuShaderModuleRelease(m);
+    });
     m_shader_cache.clear();
 }
 
 // ── Pipeline cache ───────────────────────────────────────────────────────
-
-namespace {
-
-inline size_t hash_combine(size_t seed, size_t value) {
-    return seed ^ (value + 0x9e3779b9 + (seed << 6) + (seed >> 2));
-}
-
-}  // namespace
 
 RenderPipelineCacheBuilder::RenderPipelineCacheBuilder(FrameGraph& fg, std::string name)
     : m_fg(fg), m_name(std::move(name)) {
@@ -489,22 +545,25 @@ RenderPipelineCacheBuilder::RenderPipelineCacheBuilder(FrameGraph& fg, std::stri
 auto RenderPipelineCacheBuilder::shader(std::string_view resource_key)
     -> RenderPipelineCacheBuilder& {
     m_shader_module = m_fg.shader(resource_key);
-    auto it = m_fg.m_shader_cache.find(resource_key);
-    INVARIANT(it != m_fg.m_shader_cache.end());
-    m_shader_version = it->second.version;
+    m_shader_resource_key = std::string(resource_key);
+    m_shader_module_version = m_fg.m_shader_cache.version(resource_key);
     return *this;
 }
 
 auto RenderPipelineCacheBuilder::shader_module(WGPUShaderModule module)
     -> RenderPipelineCacheBuilder& {
     m_shader_module = module;
-    for (const auto& [key, entry] : m_fg.m_shader_cache) {
-        if (entry.module == module) {
-            m_shader_version = entry.version;
-            return *this;
+    m_shader_module_version = 0;
+    m_fg.m_shader_cache.for_each([&](const std::string& key, WGPUShaderModule& m) {
+        if (m == module) {
+            m_shader_module_version = m_fg.m_shader_cache.version(key);
+            m_shader_resource_key = key;
         }
+    });
+    if (m_shader_module_version == 0) {
+        // Not in cache — fall back to handle address as a stable identifier.
+        m_shader_module_version = reinterpret_cast<uintptr_t>(module);
     }
-    m_shader_version = reinterpret_cast<uintptr_t>(module);
     return *this;
 }
 
@@ -618,136 +677,83 @@ void RenderPipelineCacheBuilder::ensure_target_count(uint32_t index) {
     }
 }
 
-auto RenderPipelineCacheBuilder::compute_fingerprint() const -> size_t {
-    size_t h = 0;
-    h = hash_combine(h, static_cast<size_t>(m_shader_version));
-    h = hash_combine(h, std::hash<std::string>{}(m_vertex_entry));
-    h = hash_combine(h, std::hash<std::string>{}(m_fragment_entry));
-    h = hash_combine(h, m_color_targets.size());
-    for (const auto& ct : m_color_targets) {
-        h = hash_combine(h, static_cast<size_t>(ct.format));
-        h = hash_combine(h, static_cast<size_t>(ct.write_mask));
-        h = hash_combine(h, static_cast<size_t>(ct.has_blend));
-        if (ct.has_blend) {
-            h = hash_combine(h, static_cast<size_t>(ct.blend.color.operation));
-            h = hash_combine(h, static_cast<size_t>(ct.blend.color.srcFactor));
-            h = hash_combine(h, static_cast<size_t>(ct.blend.color.dstFactor));
-            h = hash_combine(h, static_cast<size_t>(ct.blend.alpha.operation));
-            h = hash_combine(h, static_cast<size_t>(ct.blend.alpha.srcFactor));
-            h = hash_combine(h, static_cast<size_t>(ct.blend.alpha.dstFactor));
-        }
-    }
-    h = hash_combine(h, static_cast<size_t>(m_topology));
-    h = hash_combine(h, static_cast<size_t>(m_cull_mode));
-    h = hash_combine(h, static_cast<size_t>(m_front_face));
-    h = hash_combine(h, static_cast<size_t>(m_depth_format));
-    h = hash_combine(h, static_cast<size_t>(m_depth_write));
-    h = hash_combine(h, static_cast<size_t>(m_depth_compare));
-    h = hash_combine(h, std::hash<int32_t>{}(m_depth_bias));
-    h = hash_combine(h, std::hash<float>{}(m_depth_bias_slope_scale));
-    h = hash_combine(h, static_cast<size_t>(m_sample_count));
-    h = hash_combine(h, m_vertex_buffers.size());
-    for (const auto& vb : m_vertex_buffers) {
-        h = hash_combine(h, static_cast<size_t>(vb.stride));
-        h = hash_combine(h, static_cast<size_t>(vb.step_mode));
-        h = hash_combine(h, vb.attributes.size());
-        for (const auto& attr : vb.attributes) {
-            h = hash_combine(h, static_cast<size_t>(attr.format));
-            h = hash_combine(h, static_cast<size_t>(attr.offset));
-            h = hash_combine(h, static_cast<size_t>(attr.shaderLocation));
-        }
-    }
-    h = hash_combine(h, reinterpret_cast<uintptr_t>(m_pipeline_layout));
-    h = hash_combine(h, m_bind_group_layouts.size());
-    for (auto bgl : m_bind_group_layouts) {
-        h = hash_combine(h, reinterpret_cast<uintptr_t>(bgl));
-    }
-    h = hash_combine(h, static_cast<size_t>(m_has_fragment));
-    return h;
-}
-
 auto RenderPipelineCacheBuilder::build() -> WGPURenderPipeline {
     PRECONDITION_MSG(m_shader_module != nullptr, "shader not set on render pipeline builder");
 
-    // Fast path — same shader version means same pipeline. Assumes non-shader
-    // config is compile-time constant for a given pipeline name.
-    auto it = m_fg.m_render_pipeline_cache.find(std::string_view{m_name});
-    if (it != m_fg.m_render_pipeline_cache.end() && it->second.shader_version == m_shader_version) {
-        PTS_ZONE_NAMED("render_pipeline cache hit");
-        return it->second.pipeline;
+    // Deps: shader module version + every bound BGL's version. Config (blend,
+    // formats, vertex layout) is considered constant per pipeline name.
+    boost::container::small_vector<uint64_t, 8> deps;
+    deps.push_back(m_shader_module_version);
+    for (auto bgl : m_bind_group_layouts) {
+        deps.push_back(m_fg.bgl_version(bgl));
     }
 
-    // Slow path — shader invalidated or first build: full fingerprint match.
-    PTS_ZONE_NAMED("render_pipeline cache miss");
-    auto fp = compute_fingerprint();
-    if (it != m_fg.m_render_pipeline_cache.end() && it->second.fingerprint == fp) {
-        it->second.shader_version = m_shader_version;
-        return it->second.pipeline;
-    }
+    return m_fg.m_render_pipeline_cache.get_or_build_with_replace(
+        m_name, FrameGraph::RenderPipelineCache::Span{deps.data(), deps.size()},
+        [&]() -> WGPURenderPipeline {
+            PTS_ZONE_NAMED("render_pipeline build");
+            webgpu::RenderPipelineBuilder builder(m_fg.m_device);
+            builder.shader(m_shader_module);
+            builder.vertex_entry(m_vertex_entry);
 
-    if (it != m_fg.m_render_pipeline_cache.end() && it->second.pipeline) {
-        wgpuRenderPipelineRelease(it->second.pipeline);
-    }
-
-    webgpu::RenderPipelineBuilder builder(m_fg.m_device);
-    builder.shader(m_shader_module);
-    builder.vertex_entry(m_vertex_entry);
-
-    if (!m_has_fragment) {
-        builder.no_fragment();
-    } else {
-        builder.fragment_entry(m_fragment_entry);
-        for (uint32_t i = 0; i < static_cast<uint32_t>(m_color_targets.size()); ++i) {
-            builder.color_format(m_color_targets[i].format, i);
-            builder.write_mask(m_color_targets[i].write_mask, i);
-            if (m_color_targets[i].has_blend) {
-                builder.blend_state(m_color_targets[i].blend, i);
+            if (!m_has_fragment) {
+                builder.no_fragment();
+            } else {
+                builder.fragment_entry(m_fragment_entry);
+                for (uint32_t i = 0; i < static_cast<uint32_t>(m_color_targets.size()); ++i) {
+                    builder.color_format(m_color_targets[i].format, i);
+                    builder.write_mask(m_color_targets[i].write_mask, i);
+                    if (m_color_targets[i].has_blend) {
+                        builder.blend_state(m_color_targets[i].blend, i);
+                    }
+                }
             }
-        }
-    }
 
-    builder.topology(m_topology);
-    builder.cull_mode(m_cull_mode);
-    builder.front_face(m_front_face);
-    builder.depth_format(m_depth_format);
-    builder.depth_write(m_depth_write);
-    builder.depth_compare(m_depth_compare);
-    builder.depth_bias(m_depth_bias, m_depth_bias_slope_scale);
-    builder.sample_count(m_sample_count);
+            builder.topology(m_topology);
+            builder.cull_mode(m_cull_mode);
+            builder.front_face(m_front_face);
+            builder.depth_format(m_depth_format);
+            builder.depth_write(m_depth_write);
+            builder.depth_compare(m_depth_compare);
+            builder.depth_bias(m_depth_bias, m_depth_bias_slope_scale);
+            builder.sample_count(m_sample_count);
 
-    for (const auto& vb : m_vertex_buffers) {
-        webgpu::VertexBufferLayout layout;
-        layout.stride = vb.stride;
-        layout.step_mode = vb.step_mode;
-        layout.attributes = vb.attributes;
-        builder.vertex_buffer(std::move(layout));
-    }
+            for (const auto& vb : m_vertex_buffers) {
+                webgpu::VertexBufferLayout layout;
+                layout.stride = vb.stride;
+                layout.step_mode = vb.step_mode;
+                layout.attributes = vb.attributes;
+                builder.vertex_buffer(std::move(layout));
+            }
 
-    WGPUPipelineLayout owned_pl = nullptr;
-    if (!m_bind_group_layouts.empty()) {
-        PRECONDITION_MSG(m_pipeline_layout == nullptr,
-                         "render_pipeline: pipeline_layout() and bind_group_layouts() "
-                         "are mutually exclusive");
-        WGPUPipelineLayoutDescriptor pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
-        pl_desc.bindGroupLayoutCount = static_cast<uint32_t>(m_bind_group_layouts.size());
-        pl_desc.bindGroupLayouts = m_bind_group_layouts.data();
-        owned_pl = wgpuDeviceCreatePipelineLayout(m_fg.m_device.handle(), &pl_desc);
-        INVARIANT_MSG(owned_pl, "render_pipeline: failed to create pipeline layout");
-        builder.pipeline_layout(owned_pl);
-    } else if (m_pipeline_layout) {
-        builder.pipeline_layout(m_pipeline_layout);
-    }
+            WGPUPipelineLayout owned_pl = nullptr;
+            if (!m_bind_group_layouts.empty()) {
+                PRECONDITION_MSG(m_pipeline_layout == nullptr,
+                                 "render_pipeline: pipeline_layout() and bind_group_layouts() "
+                                 "are mutually exclusive");
+                WGPUPipelineLayoutDescriptor pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
+                pl_desc.bindGroupLayoutCount = static_cast<uint32_t>(m_bind_group_layouts.size());
+                pl_desc.bindGroupLayouts = m_bind_group_layouts.data();
+                owned_pl = wgpuDeviceCreatePipelineLayout(m_fg.m_device.handle(), &pl_desc);
+                INVARIANT_MSG(owned_pl, "render_pipeline: failed to create pipeline layout");
+                builder.pipeline_layout(owned_pl);
+            } else if (m_pipeline_layout) {
+                builder.pipeline_layout(m_pipeline_layout);
+            }
 
-    auto raii = builder.build();
-    auto handle = raii.handle();
-    wgpuRenderPipelineAddRef(handle);
+            auto raii = builder.build();
+            auto handle = raii.handle();
+            wgpuRenderPipelineAddRef(handle);
 
-    if (owned_pl) {
-        wgpuPipelineLayoutRelease(owned_pl);
-    }
+            if (owned_pl) {
+                wgpuPipelineLayoutRelease(owned_pl);
+            }
 
-    m_fg.m_render_pipeline_cache[m_name] = {handle, m_shader_version, fp};
-    return handle;
+            return handle;
+        },
+        [](WGPURenderPipeline& old) {
+            if (old) wgpuRenderPipelineRelease(old);
+        });
 }
 
 // --- ComputePipelineCacheBuilder ---
@@ -759,22 +765,24 @@ ComputePipelineCacheBuilder::ComputePipelineCacheBuilder(FrameGraph& fg, std::st
 auto ComputePipelineCacheBuilder::shader(std::string_view resource_key)
     -> ComputePipelineCacheBuilder& {
     m_shader_module = m_fg.shader(resource_key);
-    auto it = m_fg.m_shader_cache.find(resource_key);
-    INVARIANT(it != m_fg.m_shader_cache.end());
-    m_shader_version = it->second.version;
+    m_shader_resource_key = std::string(resource_key);
+    m_shader_module_version = m_fg.m_shader_cache.version(resource_key);
     return *this;
 }
 
 auto ComputePipelineCacheBuilder::shader_module(WGPUShaderModule module)
     -> ComputePipelineCacheBuilder& {
     m_shader_module = module;
-    for (const auto& [key, entry] : m_fg.m_shader_cache) {
-        if (entry.module == module) {
-            m_shader_version = entry.version;
-            return *this;
+    m_shader_module_version = 0;
+    m_fg.m_shader_cache.for_each([&](const std::string& key, WGPUShaderModule& m) {
+        if (m == module) {
+            m_shader_module_version = m_fg.m_shader_cache.version(key);
+            m_shader_resource_key = key;
         }
+    });
+    if (m_shader_module_version == 0) {
+        m_shader_module_version = reinterpret_cast<uintptr_t>(module);
     }
-    m_shader_version = reinterpret_cast<uintptr_t>(module);
     return *this;
 }
 
@@ -796,67 +804,49 @@ auto ComputePipelineCacheBuilder::bind_group_layouts(
     return *this;
 }
 
-auto ComputePipelineCacheBuilder::compute_fingerprint() const -> size_t {
-    size_t h = 0;
-    h = hash_combine(h, static_cast<size_t>(m_shader_version));
-    h = hash_combine(h, std::hash<std::string>{}(m_entry_point));
-    h = hash_combine(h, reinterpret_cast<uintptr_t>(m_pipeline_layout));
-    h = hash_combine(h, m_bind_group_layouts.size());
-    for (auto bgl : m_bind_group_layouts) {
-        h = hash_combine(h, reinterpret_cast<uintptr_t>(bgl));
-    }
-    return h;
-}
-
 auto ComputePipelineCacheBuilder::build() -> WGPUComputePipeline {
     PRECONDITION_MSG(m_shader_module != nullptr, "shader not set on compute pipeline builder");
 
-    auto it = m_fg.m_compute_pipeline_cache.find(std::string_view{m_name});
-    if (it != m_fg.m_compute_pipeline_cache.end() &&
-        it->second.shader_version == m_shader_version) {
-        PTS_ZONE_NAMED("compute_pipeline cache hit");
-        return it->second.pipeline;
+    boost::container::small_vector<uint64_t, 8> deps;
+    deps.push_back(m_shader_module_version);
+    for (auto bgl : m_bind_group_layouts) {
+        deps.push_back(m_fg.bgl_version(bgl));
     }
 
-    PTS_ZONE_NAMED("compute_pipeline cache miss");
-    auto fp = compute_fingerprint();
-    if (it != m_fg.m_compute_pipeline_cache.end() && it->second.fingerprint == fp) {
-        it->second.shader_version = m_shader_version;
-        return it->second.pipeline;
-    }
+    return m_fg.m_compute_pipeline_cache.get_or_build_with_replace(
+        m_name, FrameGraph::ComputePipelineCache::Span{deps.data(), deps.size()},
+        [&]() -> WGPUComputePipeline {
+            PTS_ZONE_NAMED("compute_pipeline build");
+            webgpu::ComputePipelineBuilder builder(m_fg.m_device);
+            builder.shader(m_shader_module);
+            builder.entry_point(m_entry_point);
 
-    if (it != m_fg.m_compute_pipeline_cache.end() && it->second.pipeline) {
-        wgpuComputePipelineRelease(it->second.pipeline);
-    }
+            WGPUPipelineLayout owned_pl = nullptr;
+            if (!m_bind_group_layouts.empty()) {
+                PRECONDITION_MSG(m_pipeline_layout == nullptr,
+                                 "compute_pipeline: pipeline_layout() and bind_group_layouts() "
+                                 "are mutually exclusive");
+                WGPUPipelineLayoutDescriptor pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
+                pl_desc.bindGroupLayoutCount = static_cast<uint32_t>(m_bind_group_layouts.size());
+                pl_desc.bindGroupLayouts = m_bind_group_layouts.data();
+                owned_pl = wgpuDeviceCreatePipelineLayout(m_fg.m_device.handle(), &pl_desc);
+                INVARIANT_MSG(owned_pl, "compute_pipeline: failed to create pipeline layout");
+                builder.pipeline_layout(owned_pl);
+            } else if (m_pipeline_layout) {
+                builder.pipeline_layout(m_pipeline_layout);
+            }
 
-    webgpu::ComputePipelineBuilder builder(m_fg.m_device);
-    builder.shader(m_shader_module);
-    builder.entry_point(m_entry_point);
-
-    WGPUPipelineLayout owned_pl = nullptr;
-    if (!m_bind_group_layouts.empty()) {
-        PRECONDITION_MSG(m_pipeline_layout == nullptr,
-                         "compute_pipeline: pipeline_layout() and bind_group_layouts() "
-                         "are mutually exclusive");
-        WGPUPipelineLayoutDescriptor pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
-        pl_desc.bindGroupLayoutCount = static_cast<uint32_t>(m_bind_group_layouts.size());
-        pl_desc.bindGroupLayouts = m_bind_group_layouts.data();
-        owned_pl = wgpuDeviceCreatePipelineLayout(m_fg.m_device.handle(), &pl_desc);
-        INVARIANT_MSG(owned_pl, "compute_pipeline: failed to create pipeline layout");
-        builder.pipeline_layout(owned_pl);
-    } else if (m_pipeline_layout) {
-        builder.pipeline_layout(m_pipeline_layout);
-    }
-
-    auto raii = builder.build();
-    auto handle = raii.handle();
-    wgpuComputePipelineAddRef(handle);
-    if (owned_pl) {
-        wgpuPipelineLayoutRelease(owned_pl);
-    }
-
-    m_fg.m_compute_pipeline_cache[m_name] = {handle, m_shader_version, fp};
-    return handle;
+            auto raii = builder.build();
+            auto handle = raii.handle();
+            wgpuComputePipelineAddRef(handle);
+            if (owned_pl) {
+                wgpuPipelineLayoutRelease(owned_pl);
+            }
+            return handle;
+        },
+        [](WGPUComputePipeline& old) {
+            if (old) wgpuComputePipelineRelease(old);
+        });
 }
 
 RenderPipelineCacheBuilder FrameGraph::render_pipeline(std::string_view name) {
@@ -868,17 +858,15 @@ ComputePipelineCacheBuilder FrameGraph::compute_pipeline(std::string_view name) 
 }
 
 WGPURenderPipeline FrameGraph::get_render_pipeline(std::string_view name) const {
-    auto it = m_render_pipeline_cache.find(name);
-    PRECONDITION_MSG(it != m_render_pipeline_cache.end(),
-                     "get_render_pipeline: pipeline not found in cache");
-    return it->second.pipeline;
+    auto* p = m_render_pipeline_cache.find(name);
+    PRECONDITION_MSG(p != nullptr, "get_render_pipeline: pipeline not found in cache");
+    return *p;
 }
 
 WGPUComputePipeline FrameGraph::get_compute_pipeline(std::string_view name) const {
-    auto it = m_compute_pipeline_cache.find(name);
-    PRECONDITION_MSG(it != m_compute_pipeline_cache.end(),
-                     "get_compute_pipeline: pipeline not found in cache");
-    return it->second.pipeline;
+    auto* p = m_compute_pipeline_cache.find(name);
+    PRECONDITION_MSG(p != nullptr, "get_compute_pipeline: pipeline not found in cache");
+    return *p;
 }
 
 FallbackPool& FrameGraph::fallback_pool() {
@@ -988,8 +976,9 @@ const Buffer* FrameGraph::compiled_buffer(BufferDeclHandle h) const {
 }
 
 const Descriptor* FrameGraph::compiled_descriptor(DescriptorDeclHandle h) const {
-    if (!h || h.value >= m_compiled_descriptors.size()) return nullptr;
-    return m_compiled_descriptors[h.value].get();
+    if (!h) return nullptr;
+    auto* p = m_descriptor_cache.find(h.value);
+    return (p && *p) ? p->get() : nullptr;
 }
 
 BufferDeclHandle FrameGraph::buffer(std::string_view debug_label, BufferDesc desc,
@@ -1050,7 +1039,7 @@ BufferDeclHandle FrameGraph::buffer(std::string_view debug_label, BufferDesc des
 }
 
 BufferDeclHandle FrameGraph::import_buffer(std::string_view debug_label, WGPUBuffer buf,
-                                           std::size_t size) {
+                                           std::size_t size, uint64_t external_version) {
     PTS_ZONE_SCOPED;
     PRECONDITION_MSG(buf != nullptr, "import_buffer: buffer must not be null");
     auto it = m_buffer_name_to_handle.find(debug_label);
@@ -1061,6 +1050,7 @@ BufferDeclHandle FrameGraph::import_buffer(std::string_view debug_label, WGPUBuf
         decl.last_active_frame = m_frame_number;
         decl.external_buffer = buf;
         decl.external_size = size;
+        decl.external_version = external_version;
         return BufferDeclHandle{idx};
     }
     uint32_t idx = static_cast<uint32_t>(m_buffer_decls.size());
@@ -1073,11 +1063,13 @@ BufferDeclHandle FrameGraph::import_buffer(std::string_view debug_label, WGPUBuf
     decl.last_active_frame = m_frame_number;
     decl.external_buffer = buf;
     decl.external_size = size;
+    decl.external_version = external_version;
     m_buffer_name_to_handle.emplace(std::string(debug_label), idx);
     return BufferDeclHandle{idx};
 }
 
-void FrameGraph::import_buffer(BufferDeclHandle h, WGPUBuffer buf, std::size_t size) {
+void FrameGraph::import_buffer(BufferDeclHandle h, WGPUBuffer buf, std::size_t size,
+                               uint64_t external_version) {
     PTS_ZONE_SCOPED;
     PRECONDITION_MSG(buf != nullptr, "import_buffer: buffer must not be null");
     auto& decl = buf_decl(h);
@@ -1085,6 +1077,7 @@ void FrameGraph::import_buffer(BufferDeclHandle h, WGPUBuffer buf, std::size_t s
     decl.last_active_frame = m_frame_number;
     decl.external_buffer = buf;
     decl.external_size = size;
+    decl.external_version = external_version;
 }
 
 void FrameGraph::resize(BufferDeclHandle h, BufferDesc new_desc) {
@@ -1180,8 +1173,9 @@ BufferDeclHandle FrameGraph::buffer(const IPass* pass, BufferDesc desc, const ch
 }
 
 BufferDeclHandle FrameGraph::import_buffer(const IPass* pass, WGPUBuffer buf, std::size_t size,
-                                           const char* label) {
-    return import_buffer(make_pass_key(pass, label, ResourceKind::Buffer), buf, size);
+                                           uint64_t external_version, const char* label) {
+    return import_buffer(make_pass_key(pass, label, ResourceKind::Buffer), buf, size,
+                         external_version);
 }
 
 PassBuilder FrameGraph::add_pass(std::string name) {
@@ -1494,9 +1488,12 @@ void FrameGraph::materialize_buffers() {
             continue;
         }
 
-        // Imported buffer (external)
+        // Imported buffer (external). Identity is (handle, external_version)
+        // — same handle with a bumped version triggers a rebuild so descriptors
+        // binding this buffer see a changed dep and rebuild their bind groups.
         if (decl.external_buffer) {
-            if (m_compiled_buffers[i] && m_compiled_buffers[i]->buffer == decl.external_buffer) {
+            if (m_compiled_buffers[i] && m_compiled_buffers[i]->buffer == decl.external_buffer &&
+                m_compiled_buffers[i]->version == decl.external_version) {
                 decl.compiled = m_compiled_buffers[i].get();
                 continue;
             }
@@ -1508,11 +1505,15 @@ void FrameGraph::materialize_buffers() {
             compiled->size = decl.external_size;
             compiled->usage = WGPUBufferUsage_None;
             compiled->owned = false;
-            compiled->version = next_version();
+            // Buffer::version carries the caller-provided external_version so
+            // descriptor cache deps detect external mutation without needing
+            // the handle to change.
+            compiled->version = decl.external_version != 0 ? decl.external_version : next_version();
             decl.compiled = compiled.get();
+            auto final_version = compiled->version;
             m_compiled_buffers[i] = std::move(compiled);
-            m_logger->debug("FrameGraph: imported buffer '{}' (size={})", decl.debug_label,
-                            decl.external_size);
+            m_logger->debug("FrameGraph: imported buffer '{}' (size={}, v={})", decl.debug_label,
+                            decl.external_size, final_version);
             continue;
         }
 
@@ -1584,11 +1585,14 @@ void FrameGraph::materialize_descriptors() {
             continue;
         }
 
-        // Compute current input versions
-        std::vector<uint64_t> current_versions;
-        current_versions.reserve(decl.entries.size());
+        // Deps: BGL version + every bound resource's version (buffer/texture
+        // compiled::version for managed, address for external). Descriptors
+        // binding imported world buffers will rebuild when the caller-provided
+        // external_version changes (propagated via Buffer::version).
+        boost::container::small_vector<uint64_t, 8> deps;
+        deps.push_back(bgl_version(decl.layout));
         for (auto& entry : decl.entries) {
-            current_versions.push_back(std::visit(
+            deps.push_back(std::visit(
                 [&](auto& b) -> uint64_t {
                     using T = std::decay_t<decltype(b)>;
                     if constexpr (std::is_same_v<T, ManagedBufferBinding>) {
@@ -1608,75 +1612,71 @@ void FrameGraph::materialize_descriptors() {
                     } else if constexpr (std::is_same_v<T, SamplerBinding>) {
                         return static_cast<uint64_t>(reinterpret_cast<uintptr_t>(b.sampler));
                     }
+                    return 0;
                 },
                 entry.resource));
         }
 
-        // Check cache for version match
-        if (m_compiled_descriptors[i] && decl.input_versions_snapshot == current_versions) {
-            decl.compiled = m_compiled_descriptors[i].get();
-            continue;
-        }
+        const auto& ptr = m_descriptor_cache.get_or_build_with_replace(
+            i, DescriptorCache::Span{deps.data(), deps.size()},
+            [&]() -> std::unique_ptr<Descriptor> {
+                std::vector<WGPUBindGroupEntry> wgpu_entries;
+                wgpu_entries.reserve(decl.entries.size());
+                for (auto& entry : decl.entries) {
+                    WGPUBindGroupEntry e = WGPU_BIND_GROUP_ENTRY_INIT;
+                    e.binding = entry.binding;
+                    std::visit(
+                        [&](auto& b) {
+                            using T = std::decay_t<decltype(b)>;
+                            if constexpr (std::is_same_v<T, ManagedBufferBinding>) {
+                                auto* buf = buf_decl(b.handle).compiled;
+                                e.buffer = buf->buffer;
+                                e.offset = b.offset;
+                                e.size = b.size > 0 ? b.size : buf->size;
+                            } else if constexpr (std::is_same_v<T, ManagedTextureBinding>) {
+                                auto* tex = tex_decl(b.handle).compiled;
+                                if (b.layer != UINT32_MAX) {
+                                    INVARIANT_MSG(
+                                        b.layer < tex->layer_views.size(),
+                                        "materialize_descriptors: texture layer out of range");
+                                    e.textureView = tex->layer_views[b.layer];
+                                } else {
+                                    e.textureView = tex->view;
+                                }
+                            } else if constexpr (std::is_same_v<T, ExternalViewBinding>) {
+                                e.textureView = b.view;
+                            } else if constexpr (std::is_same_v<T, ExternalBufferBinding>) {
+                                e.buffer = b.buffer;
+                                e.offset = b.offset;
+                                e.size = b.size;
+                            } else if constexpr (std::is_same_v<T, SamplerBinding>) {
+                                e.sampler = b.sampler;
+                            }
+                        },
+                        entry.resource);
+                    wgpu_entries.push_back(e);
+                }
 
-        if (m_compiled_descriptors[i]) {
-            m_logger->debug("FrameGraph: rebuilding descriptor '{}' (inputs changed)",
-                            decl.debug_label);
-            m_compiled_descriptors[i].reset();
-        }
+                WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
+                bg_desc.label = {decl.debug_label.c_str(), decl.debug_label.size()};
+                bg_desc.layout = decl.layout;
+                bg_desc.entryCount = wgpu_entries.size();
+                bg_desc.entries = wgpu_entries.data();
+                WGPUBindGroup bg = wgpuDeviceCreateBindGroup(m_device.handle(), &bg_desc);
 
-        // Build WGPUBindGroupEntry array
-        std::vector<WGPUBindGroupEntry> wgpu_entries;
-        wgpu_entries.reserve(decl.entries.size());
-        for (auto& entry : decl.entries) {
-            WGPUBindGroupEntry e = WGPU_BIND_GROUP_ENTRY_INIT;
-            e.binding = entry.binding;
-            std::visit(
-                [&](auto& b) {
-                    using T = std::decay_t<decltype(b)>;
-                    if constexpr (std::is_same_v<T, ManagedBufferBinding>) {
-                        auto* buf = buf_decl(b.handle).compiled;
-                        e.buffer = buf->buffer;
-                        e.offset = b.offset;
-                        e.size = b.size > 0 ? b.size : buf->size;
-                    } else if constexpr (std::is_same_v<T, ManagedTextureBinding>) {
-                        auto* tex = tex_decl(b.handle).compiled;
-                        if (b.layer != UINT32_MAX) {
-                            INVARIANT_MSG(b.layer < tex->layer_views.size(),
-                                          "materialize_descriptors: texture layer out of range");
-                            e.textureView = tex->layer_views[b.layer];
-                        } else {
-                            e.textureView = tex->view;
-                        }
-                    } else if constexpr (std::is_same_v<T, ExternalViewBinding>) {
-                        e.textureView = b.view;
-                    } else if constexpr (std::is_same_v<T, ExternalBufferBinding>) {
-                        e.buffer = b.buffer;
-                        e.offset = b.offset;
-                        e.size = b.size;
-                    } else if constexpr (std::is_same_v<T, SamplerBinding>) {
-                        e.sampler = b.sampler;
-                    }
-                },
-                entry.resource);
-            wgpu_entries.push_back(e);
-        }
-
-        WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-        bg_desc.label = {decl.debug_label.c_str(), decl.debug_label.size()};
-        bg_desc.layout = decl.layout;
-        bg_desc.entryCount = wgpu_entries.size();
-        bg_desc.entries = wgpu_entries.data();
-        WGPUBindGroup bg = wgpuDeviceCreateBindGroup(m_device.handle(), &bg_desc);
-
-        auto compiled = std::make_unique<Descriptor>();
-        compiled->bind_group = bg;
-        compiled->version = next_version();
-        decl.compiled = compiled.get();
-        decl.input_versions_snapshot = std::move(current_versions);
-        m_compiled_descriptors[i] = std::move(compiled);
-
-        m_logger->debug("FrameGraph: created descriptor '{}' (v{})", decl.debug_label,
-                        decl.compiled->version);
+                auto compiled = std::make_unique<Descriptor>();
+                compiled->bind_group = bg;
+                compiled->version = next_version();
+                m_logger->debug("FrameGraph: created descriptor '{}' (v{})", decl.debug_label,
+                                compiled->version);
+                return compiled;
+            },
+            [&](std::unique_ptr<Descriptor>& old) {
+                m_logger->debug("FrameGraph: rebuilding descriptor '{}' (inputs changed)",
+                                decl.debug_label);
+                old.reset();
+            });
+        decl.compiled = ptr.get();
     }
 }
 
@@ -1689,7 +1689,7 @@ void FrameGraph::evict_unused() {
         if (!decl.active) continue;
         if (decl.last_active_frame == m_frame_number) continue;
         m_logger->debug("FrameGraph: evicting unused descriptor '{}'", decl.debug_label);
-        m_compiled_descriptors[i].reset();
+        m_descriptor_cache.erase(i);
         decl.compiled = nullptr;
         decl.active = false;
     }
@@ -1841,9 +1841,9 @@ size_t FrameGraph::cached_buffer_count() const {
 
 size_t FrameGraph::cached_descriptor_count() const {
     size_t count = 0;
-    for (auto& ptr : m_compiled_descriptors) {
+    m_descriptor_cache.for_each([&](uint32_t, const std::unique_ptr<Descriptor>& ptr) {
         if (ptr) ++count;
-    }
+    });
     return count;
 }
 

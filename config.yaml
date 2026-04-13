@@ -32,6 +32,7 @@ build:
     format: {}
     slangc: {}
     shader_codegen: {}
+    shader_variants_codegen: {}
     usdz: {}
     embed: {}
   postbuild: {}
@@ -105,9 +106,10 @@ slangc:
     - input: "renderers/forward/forward.slang"
       output: "renderers/forward/generated/shaders/forward.wgsl"
       reflect: true
-    - input: "renderers/forward/forward.slang"
-      output: "renderers/forward/generated/shaders/forward_no_debug.wgsl"
-      defines: ["NO_DEBUG_TARGETS"]
+      variants:
+        - {}
+        - defines: ["NO_DEBUG_TARGETS"]
+          suffix: "_no_debug"
     - input: "renderers/forward/skybox.slang"
       output: "renderers/forward/generated/shaders/skybox.wgsl"
     - input: "core/shaders/shadow.slang"
@@ -203,13 +205,21 @@ shader_codegen:
       output: "editor/generated/tonemapping_shader_metadata.h"
       namespace: "editor_tonemapping_shader"
 
+shader_variants_codegen:
+  # Consumes `slangc.shaders[].variants[]` and emits a C++ header describing
+  # every (sorted defines → filename suffix) registered for embedding.
+  # Consumed by EmbeddedCompiler to map compile(source_key, defines) requests
+  # onto the embedded resource key.
+  output: "core/generated/shader_variants_map.h"
+  namespace: "pts::rendering::variants"
+
 embed:
   template: "core/templates/embedded_resources.h.j2"
+  # Shader entries use "*.wgsl" globs so every variant emitted by the slangc
+  # prebuild (e.g. forward.wgsl + forward_no_debug.wgsl) is auto-included.
   resources:
     - input:
-        - "renderers/forward/generated/shaders/forward.wgsl"
-        - "renderers/forward/generated/shaders/forward_no_debug.wgsl"
-        - "renderers/forward/generated/shaders/skybox.wgsl"
+        - "renderers/forward/generated/shaders/*.wgsl"
         - "core/generated/shaders/shadow.wgsl"
         - "core/generated/shaders/gbuffer.wgsl"
         - "core/generated/shaders/ssao.wgsl"

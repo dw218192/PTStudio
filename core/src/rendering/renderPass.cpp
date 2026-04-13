@@ -168,8 +168,21 @@ auto IPass::load_pass_shader(std::string_view resource_key) const -> std::string
     auto dot = key.rfind('.');
     INVARIANT_MSG(dot != std::string::npos, "resource_key must have an extension");
     auto variant_key = key.substr(0, dot) + "_no_debug" + key.substr(dot);
+    return m_shader_loader->load(variant_key);
+}
+
+auto IPass::load_pass_shader_module(FrameGraph& fg, std::string_view resource_key) const
+    -> WGPUShaderModule {
+    auto [targets, count] = effective_debug_targets();
+    if (count > 0) {
+        return fg.shader(resource_key);
+    }
+    auto key = std::string(resource_key);
+    auto dot = key.rfind('.');
+    INVARIANT_MSG(dot != std::string::npos, "resource_key must have an extension");
+    auto variant_key = key.substr(0, dot) + "_no_debug" + key.substr(dot);
     std::string_view defines[] = {k_no_debug_define};
-    return m_shader_loader->load_variant(resource_key, defines, variant_key);
+    return fg.shader_variant(variant_key, resource_key, defines);
 }
 
 IRenderer::IRenderer(const ShaderLoader& shader_loader)
@@ -204,12 +217,6 @@ void IRenderer::collect_debug_targets() {
             m_all_debug_targets.push_back(targets[i]);
         }
     }
-}
-
-void IRenderer::on_shaders_reloaded(const webgpu::Device& device, FrameGraph& fg) {
-    for (auto& c : m_children) c->on_shaders_reloaded(device, fg);
-    if (m_tonemapping) m_tonemapping->on_shaders_reloaded(device, fg);
-    IPass::on_shaders_reloaded(device, fg);
 }
 
 IRenderer::Outputs IRenderer::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx) {

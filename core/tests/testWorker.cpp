@@ -56,8 +56,8 @@ TEST_CASE("OneShotTask - reports progress mid-work") {
     while (!task.is_done()) {
         auto prog = task.progress();
         auto stat = task.status();
-        PTS_UNUSED(prog);
-        PTS_UNUSED(stat);
+        UNUSED(prog);
+        UNUSED(stat);
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 

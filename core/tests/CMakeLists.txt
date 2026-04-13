@@ -15,6 +15,10 @@ list(APPEND TEST_NAMES testCommandLine)
 set(testCommandLine_source testCommandLine.cpp)
 set(testCommandLine_libs core)
 
+list(APPEND TEST_NAMES testDepTrackedCache)
+set(testDepTrackedCache_source testDepTrackedCache.cpp)
+set(testDepTrackedCache_libs core)
+
 list(APPEND TEST_NAMES testAsyncStateMachine)
 set(testAsyncStateMachine_source testAsyncStateMachine.cpp)
 set(testAsyncStateMachine_libs core)
@@ -63,6 +67,12 @@ if(NOT EMSCRIPTEN)
     set(testGeometricAdapters_source testGeometricAdapters.cpp)
     set(testGeometricAdapters_libs core)
     set(testGeometricAdapters_includes ${CMAKE_CURRENT_SOURCE_DIR}/generated)
+
+    # SlangCompiler - native only (requires libslang)
+    list(APPEND TEST_NAMES testSlangCompiler)
+    set(testSlangCompiler_source testSlangCompiler.cpp)
+    set(testSlangCompiler_libs core)
+    set(testSlangCompiler_includes ${CMAKE_CURRENT_SOURCE_DIR}/generated)
 endif()
 
 # PropertyDescriptor / get_properties - no GPU needed, just USD stages
