@@ -35,7 +35,7 @@ float3 F_Schlick(float VdotH, float3 F0) {
 }
 
 // ---------------------------------------------------------------------------
-// ShadingGeometry — space-agnostic dot products for BRDF evaluation
+// ShadingGeometry -- space-agnostic dot products for BRDF evaluation
 // ---------------------------------------------------------------------------
 
 struct ShadingGeometry {

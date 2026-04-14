@@ -21,7 +21,7 @@
 using namespace pts;
 using namespace pts::editor;
 
-// ── Uniform structs ────────────────────────────────────────────────────
+// -- Uniform structs ----------------------------------------------------
 
 struct PickingUniforms {
     glm::mat4 mvp;
@@ -39,7 +39,7 @@ static_assert(sizeof(GizmoUniforms) == 80);
 static_assert(EditorPass::k_uniform_align >= sizeof(PickingUniforms));
 static_assert(EditorPass::k_uniform_align >= sizeof(GizmoUniforms));
 
-// ── EditorPass implementation ──────────────────────────────────────────
+// -- EditorPass implementation ------------------------------------------
 
 auto EditorPass::name() const noexcept -> std::string_view {
     return "editor";
@@ -49,7 +49,7 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
     PTS_ZONE_SCOPED;
     ensure_initialized(ctx.device);
 
-    // ── Picking pipeline (mesh objects + light shapes) ─────────────────
+    // -- Picking pipeline (mesh objects + light shapes) -----------------
     auto picking_bgl = fg.bind_group_layout(
         "editor/picking", editor_picking_shader::create_bind_group_layout_0(ctx.device.handle()));
 
@@ -77,7 +77,7 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
         .vertex_layout<editor_picking_shader::VertexLayout>()
         .build();
 
-    // ── Gizmo color pipeline (wireframe overlay on scene_color) ────────
+    // -- Gizmo color pipeline (wireframe overlay on scene_color) --------
     auto gizmo_bgl = fg.bind_group_layout(
         "editor/gizmo", editor_gizmo_shader::create_bind_group_layout_0(ctx.device.handle()));
 
@@ -113,7 +113,7 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
     }
     auto gizmo_count = static_cast<uint32_t>(gizmo_light_indices.size());
 
-    // Build picking table: flat mapping from picking_id → prim_path
+    // Build picking table: flat mapping from picking_id -> prim_path
     m_picking_table.clear();
     m_picking_table.reserve(object_count + gizmo_count);
     for (uint32_t i = 0; i < object_count; ++i) {
@@ -151,7 +151,7 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
                              .buffer(0, gizmo_buf_decl, 0, sizeof(GizmoUniforms))
                              .build();
 
-    // ── Create/cache gizmo meshes and collect handles ──────────────────
+    // -- Create/cache gizmo meshes and collect handles ------------------
     struct GizmoDrawInfo {
         WGPUBuffer vertex_buffer;  // lines for color overlay
         uint32_t vertex_count;
@@ -182,7 +182,7 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
         gizmo_draws.push_back({mesh.vertex_buffer.handle(), mesh.vertex_count});
     }
 
-    // ── Texture descriptors ────────────────────────────────────────────
+    // -- Texture descriptors --------------------------------------------
     rendering::TextureDesc picking_desc;
     picking_desc.width = ctx.viewport_width;
     picking_desc.height = ctx.viewport_height;
@@ -205,7 +205,7 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
     auto selected_picking_id = ctx.selected_picking_id;
     constexpr float k_min_screen_radius = 0.05f;
 
-    // ── Pass 1: Picking ────────────────────────────────────────────────
+    // -- Pass 1: Picking ------------------------------------------------
     auto mesh_picking_pl = fg.get_render_pipeline("editor_picking");
     auto line_picking_pl = fg.get_render_pipeline("editor_picking_line");
     const auto& world = ctx.world;
@@ -305,7 +305,7 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
             }
         });
 
-    // ── Pass 2: Gizmo color overlay (own transparent texture, composited by editor) ──
+    // -- Pass 2: Gizmo color overlay (own transparent texture, composited by editor) --
     rendering::TextureDesc gizmo_desc;
     gizmo_desc.width = ctx.viewport_width;
     gizmo_desc.height = ctx.viewport_height;

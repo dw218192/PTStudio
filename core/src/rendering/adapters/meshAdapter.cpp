@@ -71,7 +71,7 @@ bool MeshAdapter::can_adapt(const pxr::UsdPrim& prim) const {
 }
 
 void MeshAdapter::sync(pxr::UsdPrim prim, SyncScope& scope) {
-    // GeomSubset children are handled by the parent mesh's sync — skip them.
+    // GeomSubset children are handled by the parent mesh's sync -- skip them.
     if (prim.IsA<pxr::UsdGeomSubset>()) return;
 
     pxr::UsdGeomMesh mesh(prim);

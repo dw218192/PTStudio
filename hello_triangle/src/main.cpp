@@ -77,7 +77,7 @@ class HelloApp : public pts::GpuApplication {
         pts::rendering::populate_from_stage(m_world, stage);
         m_world.upload_all_meshes(device);
 
-        // Route WGSL through IShaderCompiler — consistent with renderer passes.
+        // Route WGSL through IShaderCompiler -- consistent with renderer passes.
         m_shader_loader = std::make_unique<pts::rendering::ShaderLoader>(
             get_logging_manager().get_logger_shared("shader_loader"));
         m_shader_loader->register_shader(

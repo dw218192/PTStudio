@@ -210,7 +210,7 @@ TEST_CASE("prepare_gpu_buffers creates light buffer with fallback when no lights
     auto device = pts::webgpu::Device::create(logger);
 
     pts::rendering::RenderWorld world;
-    // No lights added — should get fallback distant light
+    // No lights added -- should get fallback distant light
     {
         auto scope = world.begin_sync();
         // just bump versions
@@ -268,7 +268,7 @@ TEST_CASE("prepare_gpu_buffers skips upload when versions unchanged") {
     auto mat_buf_handle = world.material_buffer().handle();
     auto light_buf_handle = world.light_buffer().handle();
 
-    // Call again without changes — buffers should be reused (same handle)
+    // Call again without changes -- buffers should be reused (same handle)
     world.prepare_gpu_buffers(device, device.queue());
     CHECK(world.material_buffer().handle() == mat_buf_handle);
     CHECK(world.light_buffer().handle() == light_buf_handle);

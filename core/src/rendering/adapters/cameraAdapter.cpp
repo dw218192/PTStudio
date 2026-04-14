@@ -105,7 +105,7 @@ pxr::UsdPrim CameraAdapter::create_from_view(const pxr::UsdStageRefPtr& stage,
     cam.GetVerticalApertureAttr().Set(k_v_aperture);
     cam.GetClippingRangeAttr().Set(pxr::GfVec2f(near_clip, far_clip));
 
-    // View matrix → world transform (inverse), then set as xformOp:transform.
+    // View matrix -> world transform (inverse), then set as xformOp:transform.
     auto world_xf = glm::inverse(view_matrix);
     pxr::GfMatrix4d usd_xf;
     for (int i = 0; i < 4; ++i)

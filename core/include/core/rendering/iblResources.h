@@ -13,7 +13,7 @@ class Device;
 
 namespace pts::rendering {
 
-// IBL constants — shared between IblPipelines and IblResources.
+// IBL constants -- shared between IblPipelines and IblResources.
 static constexpr uint32_t k_env_size = 256;
 static constexpr uint32_t k_irradiance_size = 64;
 static constexpr uint32_t k_brdf_lut_size = 512;

@@ -1,6 +1,6 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 
-// diagnostics.h defines CHECK which conflicts with doctest — include it first
+// diagnostics.h defines CHECK which conflicts with doctest -- include it first
 // then undef before doctest redefines it.
 #include <core/diagnostics.h>
 #undef CHECK
@@ -29,7 +29,7 @@ TEST_CASE("Distant light circle lies in XY plane") {
     light.type = LightData::Type::Distant;
     auto verts = generate_light_verts(light);
 
-    // First 96 vertices are the circle — all Z should be 0
+    // First 96 vertices are the circle -- all Z should be 0
     for (size_t i = 0; i < 96; ++i) {
         CHECK(verts[i].z == doctest::Approx(0.0f));
     }

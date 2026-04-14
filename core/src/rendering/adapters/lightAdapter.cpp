@@ -87,7 +87,7 @@ void LightAdapter::sync(pxr::UsdPrim prim, SyncScope& scope) {
         return;
     }
 
-    // Shadow API (optional — defaults to true if not authored)
+    // Shadow API (optional -- defaults to true if not authored)
     pxr::UsdLuxShadowAPI shadow_api(prim);
     if (shadow_api) {
         bool enable = true;

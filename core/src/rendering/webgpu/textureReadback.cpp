@@ -89,7 +89,7 @@ void TextureReadback::request(WGPUCommandEncoder encoder, WGPUTexture texture, u
     WGPUExtent3D extent = {width, height, 1};
     wgpuCommandEncoderCopyTextureToBuffer(encoder, &src, &dst, &extent);
 
-    // Defer mapAsync to on_tick() — caller must submit the encoder first
+    // Defer mapAsync to on_tick() -- caller must submit the encoder first
     m_needs_map = true;
     transition<CopyingState>();
 }

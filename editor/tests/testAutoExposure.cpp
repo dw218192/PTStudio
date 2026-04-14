@@ -92,7 +92,7 @@ auto readback_buffer(const pts::webgpu::Device& device, WGPUBuffer src, uint64_t
     staging_desc.usage = WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst;
     auto staging = wgpuDeviceCreateBuffer(device.handle(), &staging_desc);
 
-    // Copy src → staging
+    // Copy src -> staging
     WGPUCommandEncoderDescriptor enc_desc = WGPU_COMMAND_ENCODER_DESCRIPTOR_INIT;
     auto encoder = wgpuDeviceCreateCommandEncoder(device.handle(), &enc_desc);
     wgpuCommandEncoderCopyBufferToBuffer(encoder, src, 0, staging, 0, size);
@@ -310,7 +310,7 @@ struct ComputeFixture {
 TEST_CASE("Auto-exposure: middle gray produces near-zero exposure correction") {
     ComputeFixture fx;
 
-    // Middle gray (0.18) — auto-exposure should compute ~0.0 EV correction
+    // Middle gray (0.18) -- auto-exposure should compute ~0.0 EV correction
     constexpr uint32_t w = 16, h = 16;
     auto tex = create_uniform_hdr_texture(fx.device, w, h, 0.18f, 0.18f, 0.18f);
 
@@ -326,8 +326,8 @@ TEST_CASE("Auto-exposure: middle gray produces near-zero exposure correction") {
     auto result = fx.run(tex, w, h, 2.0f, 1.0f / 60.0f, result_buf);
 
     CHECK(result.frame_count == 1);
-    // Luminance of (0.18, 0.18, 0.18) ≈ 0.18
-    // log2(0.18) ≈ -2.474, ev = -2.474 - log2(0.18) = 0, auto_exposure = 0
+    // Luminance of (0.18, 0.18, 0.18) ~= 0.18
+    // log2(0.18) ~= -2.474, ev = -2.474 - log2(0.18) = 0, auto_exposure = 0
     CHECK(result.auto_exposure == doctest::Approx(0.0f).epsilon(0.15));
 
     wgpuBufferRelease(result_buf);
@@ -337,7 +337,7 @@ TEST_CASE("Auto-exposure: middle gray produces near-zero exposure correction") {
 TEST_CASE("Auto-exposure: bright scene produces negative exposure correction") {
     ComputeFixture fx;
 
-    // Bright scene (10.0 per channel) — should produce negative auto_exposure
+    // Bright scene (10.0 per channel) -- should produce negative auto_exposure
     constexpr uint32_t w = 16, h = 16;
     auto tex = create_uniform_hdr_texture(fx.device, w, h, 10.0f, 10.0f, 10.0f);
 
@@ -352,8 +352,8 @@ TEST_CASE("Auto-exposure: bright scene produces negative exposure correction") {
     auto result = fx.run(tex, w, h, 2.0f, 1.0f / 60.0f, result_buf);
 
     CHECK(result.frame_count == 1);
-    // Luminance = 10.0, log2(10) ≈ 3.322
-    // ev = 3.322 - log2(0.18) ≈ 3.322 + 2.474 ≈ 5.796
+    // Luminance = 10.0, log2(10) ~= 3.322
+    // ev = 3.322 - log2(0.18) ~= 3.322 + 2.474 ~= 5.796
     // auto_exposure = -5.796
     CHECK(result.auto_exposure < -3.0f);
     CHECK(result.auto_exposure > -10.0f);

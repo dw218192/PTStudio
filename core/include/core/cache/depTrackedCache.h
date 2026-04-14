@@ -136,7 +136,7 @@ class DepTrackedCache {
     /// Returns a pointer to the unique_ptr wrapping the old value so the caller
     /// may extract and release GPU handles before destruction.
     std::unique_ptr<Value> erase_extract(const Key& key) {
-        // Not directly supported — Entry owns the value, not the Value alone.
+        // Not directly supported -- Entry owns the value, not the Value alone.
         // Keep this as a placeholder; callers can fetch via find() then erase().
         UNUSED(key);
         return nullptr;

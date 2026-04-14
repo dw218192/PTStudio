@@ -57,7 +57,7 @@ struct ContextFailedState {};
  * @brief WebGPU rendering context bundling device and optional surface.
  *
  * Supports two creation modes:
- *   - `create()`: windowed — device + surface from viewport
+ *   - `create()`: windowed -- device + surface from viewport
  *   - `create_headless()`: device only, no surface
  *
  * After headless creation, call `create_surface()` to attach a surface.

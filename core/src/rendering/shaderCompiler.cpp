@@ -26,7 +26,7 @@ namespace pts::rendering {
 
 namespace {
 
-// Sorted + '\n'-terminated join — must match canonical_defines() in
+// Sorted + '\n'-terminated join -- must match canonical_defines() in
 // slangCompiler.cpp so the generated variant map's defines_canon compares
 // byte-for-byte.
 std::string canonical_defines_join(boost::span<const std::string_view> defines) {
@@ -87,7 +87,7 @@ void EmbeddedCompiler::invalidate(std::string_view source_key) {
 namespace {
 
 #ifndef __EMSCRIPTEN__
-/// Native backend: SlangCompiler only. No embedded fallback — native WGSL is
+/// Native backend: SlangCompiler only. No embedded fallback -- native WGSL is
 /// not embedded, and "fail loud" trumps papering over Slang failures with
 /// stale pre-built WGSL.
 class NativeShaderCompiler final : public IShaderCompiler {

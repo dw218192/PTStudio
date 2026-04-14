@@ -37,7 +37,7 @@ std::string create_test_texture(const std::string& filename) {
     std::ofstream f(path, std::ios::binary);
     // PPM P6 format: 2x2 RGB image
     f << "P6\n2 2\n255\n";
-    // 4 pixels × 3 channels = 12 bytes of pixel data
+    // 4 pixels x 3 channels = 12 bytes of pixel data
     for (int i = 0; i < 4; ++i) {
         f.put(static_cast<char>(255));
         f.put(static_cast<char>(0));
@@ -114,7 +114,7 @@ pxr::UsdStageRefPtr create_textured_stage(const std::string& texture_path) {
         .Set(pxr::SdfAssetPath(texture_path));
     diffuse_tex.CreateOutput(pxr::TfToken("rgb"), pxr::SdfValueTypeNames->Float3);
 
-    // Connect diffuseColor → DiffuseTex.rgb
+    // Connect diffuseColor -> DiffuseTex.rgb
     surface.GetInput(pxr::TfToken("diffuseColor"))
         .ConnectToSource(diffuse_tex.ConnectableAPI(), pxr::TfToken("rgb"));
 
@@ -125,16 +125,16 @@ pxr::UsdStageRefPtr create_textured_stage(const std::string& texture_path) {
         .Set(pxr::SdfAssetPath(texture_path));
     orm_tex.CreateOutput(pxr::TfToken("r"), pxr::SdfValueTypeNames->Float);
 
-    // Connect metallic → OrmTex.r
+    // Connect metallic -> OrmTex.r
     surface.GetInput(pxr::TfToken("metallic"))
         .ConnectToSource(orm_tex.ConnectableAPI(), pxr::TfToken("r"));
 
-    // Connect roughness → OrmTex.g
+    // Connect roughness -> OrmTex.g
     orm_tex.CreateOutput(pxr::TfToken("g"), pxr::SdfValueTypeNames->Float);
     surface.GetInput(pxr::TfToken("roughness"))
         .ConnectToSource(orm_tex.ConnectableAPI(), pxr::TfToken("g"));
 
-    // Connect opacity → OrmTex.a
+    // Connect opacity -> OrmTex.a
     orm_tex.CreateOutput(pxr::TfToken("a"), pxr::SdfValueTypeNames->Float);
     surface.GetInput(pxr::TfToken("opacity"))
         .ConnectToSource(orm_tex.ConnectableAPI(), pxr::TfToken("a"));
@@ -200,7 +200,7 @@ TEST_CASE("read_preview_surface reads scalar values") {
     CHECK(mat.emissive_color.x == doctest::Approx(0.1f));
     CHECK(mat.emissive_color.y == doctest::Approx(0.2f));
     CHECK(mat.emissive_color.z == doctest::Approx(0.3f));
-    // No textures connected — all should be UINT32_MAX
+    // No textures connected -- all should be UINT32_MAX
     CHECK(mat.diffuse_tex == UINT32_MAX);
     CHECK(mat.normal_tex == UINT32_MAX);
     CHECK(mat.metallic_tex == UINT32_MAX);
@@ -286,7 +286,7 @@ TEST_CASE("read_preview_surface with unresolvable texture keeps UINT32_MAX") {
     auto scope = world.begin_sync();
     auto mat = pts::rendering::read_preview_surface(surface, scope);
 
-    // Texture file doesn't exist — should remain UINT32_MAX
+    // Texture file doesn't exist -- should remain UINT32_MAX
     CHECK(mat.diffuse_tex == UINT32_MAX);
     // Scalar value should still be read
     CHECK(mat.diffuse_color.x == doctest::Approx(0.5f));
@@ -327,7 +327,7 @@ TEST_CASE("Texture deduplication across material inputs") {
     // diffuse_tex, metallic_tex (ORM), roughness_tex (ORM), opacity_tex (ORM) all reference
     // the same file. ORM shares one texture, diffuse is a separate load of the same file.
     // Due to deduplication by path, they should share layer indices where paths match.
-    // DiffuseTex and OrmTex both use the same file → same layer index
+    // DiffuseTex and OrmTex both use the same file -> same layer index
     CHECK(mat.diffuse_tex == mat.metallic_tex);
     CHECK(mat.metallic_tex == mat.roughness_tex);
     CHECK(mat.roughness_tex == mat.opacity_tex);
@@ -341,7 +341,7 @@ TEST_CASE("load_texture resolves filesystem paths via ArResolver") {
     pts::rendering::RenderWorld world;
     auto scope = world.begin_sync();
 
-    // ArResolver handles filesystem paths — exercises the stbi_load_from_memory path
+    // ArResolver handles filesystem paths -- exercises the stbi_load_from_memory path
     auto idx = scope.load_texture(tex_path);
     CHECK(idx != UINT32_MAX);
     CHECK(idx == 0);

@@ -37,7 +37,7 @@ VsOut vs_main(uint vertex_id : SV_VertexID) {
 
 // Reconstruct view-space position from UV and depth.
 float3 reconstruct_view_pos(float2 uv, float depth) {
-    // UV → NDC
+    // UV -> NDC
     float2 ndc_xy = float2(uv.x * 2.0 - 1.0, 1.0 - 2.0 * uv.y);
     float4 clip = float4(ndc_xy, depth, 1.0);
     float4 view = mul(u.inv_projection, clip);

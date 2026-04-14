@@ -203,7 +203,7 @@ TEST_CASE("DepTrackedCache - cascading invalidation: dep version bumps propagate
     auto bgl_v2 = bgl.version("layout");
     CHECK(bgl_v2 > bgl_v1);
 
-    // Pipeline now sees changed dep → rebuilds
+    // Pipeline now sees changed dep -> rebuilds
     uint64_t p_deps2[] = {bgl_v2};
     int rebuilds = 0;
     pipe.get_or_build("pl", Span{p_deps2, 1}, [&] {
@@ -213,7 +213,7 @@ TEST_CASE("DepTrackedCache - cascading invalidation: dep version bumps propagate
     CHECK(rebuilds == 1);
     CHECK(pipe.version("pl") > pv1);
 
-    // Descriptor also sees changed dep → rebuilds
+    // Descriptor also sees changed dep -> rebuilds
     uint64_t d_deps2[] = {bgl_v2, 42};
     int desc_rebuilds = 0;
     desc.get_or_build("dg", Span{d_deps2, 2}, [&] {

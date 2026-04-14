@@ -19,7 +19,7 @@ class ShaderLoader;
 /// Fields may be extended with additional variant axes (PSO config, material
 /// features, vertex layout, ...) without churning IShaderCompiler call sites.
 /// Defines must be in a canonical (sorted) order for `operator==` / `hash_value`
-/// to agree across semantically equal sets — callers typically pull these from
+/// to agree across semantically equal sets -- callers typically pull these from
 /// `shader_variants_map` or other deterministic sources.
 struct ShaderKey {
     std::string_view source;
@@ -73,7 +73,7 @@ class IShaderCompiler {
     }
 
     /// Monotonic revision counter for a source key. FrameGraph uses this as a
-    /// DepTrackedCache dep — when the revision changes, dependent shader
+    /// DepTrackedCache dep -- when the revision changes, dependent shader
     /// modules and pipelines are rebuilt. Tracked per-source (not per-variant)
     /// since every variant of a source rebuilds together.
     [[nodiscard]] virtual uint64_t source_revision(std::string_view source_key) const = 0;

@@ -65,7 +65,7 @@ TEST_CASE("RenderPipelineBuilder - write_mask on multiple color targets") {
     auto shader = f.make_shader();
 
     // Verify write_mask builder chain works and auto-expands color targets.
-    // Build as depth-only to avoid needing a fragment shader — write_mask
+    // Build as depth-only to avoid needing a fragment shader -- write_mask
     // configures state that would take effect if a fragment stage were present.
     auto pipeline = pts::webgpu::RenderPipelineBuilder(f.device)
                         .shader(shader)

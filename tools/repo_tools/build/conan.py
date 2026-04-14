@@ -12,7 +12,7 @@ from pathlib import Path
 from repo_tools.core import ShellCommand, find_venv_executable, logger
 
 
-# ── Conan Profile ────────────────────────────────────────────────────
+# -- Conan Profile ----------------------------------------------------
 
 
 def ensure_conan_profile() -> None:
@@ -28,7 +28,7 @@ def ensure_conan_profile() -> None:
         logger.info("Conan profiles already exist.")
 
 
-# ── Emscripten Helpers ───────────────────────────────────────────────
+# -- Emscripten Helpers -----------------------------------------------
 
 
 def get_emsdk_version(root: Path) -> str:
@@ -45,7 +45,7 @@ def _write_emscripten_profile(profile_path: Path, emsdk_version: str) -> None:
     """Write a Conan profile for Emscripten cross-builds.
 
     Using a profile (rather than CLI -s:h/-c:h overrides) allows [tool_requires]
-    to propagate emsdk and ninja to ALL dependency builds — not just the consumer.
+    to propagate emsdk and ninja to ALL dependency builds -- not just the consumer.
     Without this, packages like OpenUSD fail to find emcc when building from source.
     """
     content = f"""\
@@ -90,7 +90,7 @@ def get_emscripten_conan_flags(root: Path, build_folder: Path) -> list[str]:
     return [f"--profile:host={profile_path}"]
 
 
-# ── Dawn / emdawnwebgpu ──────────────────────────────────────────────
+# -- Dawn / emdawnwebgpu ----------------------------------------------
 
 
 def _parse_conanfile_metadata(conanfile_path: Path) -> tuple[str | None, str | None]:
@@ -154,7 +154,7 @@ def ensure_emdawnwebgpu_port(root: Path, build_folder: Path) -> Path:
     return port_file
 
 
-# ── Conan Local Recipes ──────────────────────────────────────────────
+# -- Conan Local Recipes ----------------------------------------------
 
 
 def _discover_local_recipes(root: Path, recipes_dir: Path) -> list[dict]:
@@ -291,7 +291,7 @@ def strip_local_recipe_revisions(
         )
 
 
-# ── Conan Environment ────────────────────────────────────────────────
+# -- Conan Environment ------------------------------------------------
 
 
 def load_conan_env(build_dir: Path, preset_type: str = "test") -> dict[str, str]:

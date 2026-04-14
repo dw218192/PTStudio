@@ -38,7 +38,7 @@ class IPass {
     [[nodiscard]] virtual auto name() const noexcept -> std::string_view = 0;
 
     /// Lazily initialize the pass: create the per-pass logger and query
-    /// device limits for debug-target gating. Idempotent — safe to call
+    /// device limits for debug-target gating. Idempotent -- safe to call
     /// every frame. Passes should invoke it at the top of
     /// `add_to_frame_graph()` (or equivalent render method). The editor
     /// application may also call it explicitly before querying
@@ -108,7 +108,7 @@ class IPass {
     /// selecting the no-debug-targets variant when device limits require it.
     /// Shaders that declare debug MRT outputs must guard them with
     /// `#ifndef NO_DEBUG_TARGETS`; the variant key is derived by inserting
-    /// "_no_debug" before the extension (e.g. forward.wgsl →
+    /// "_no_debug" before the extension (e.g. forward.wgsl ->
     /// forward_no_debug.wgsl). Routing through FrameGraph hits the
     /// dep-tracked cache so Slang isn't invoked every frame; compilation
     /// itself flows through the FrameGraph's IShaderCompiler.
@@ -116,7 +116,7 @@ class IPass {
         -> WGPUShaderModule;
 
    protected:
-    /// Frame graph resource helpers — auto-namespace by pass name.
+    /// Frame graph resource helpers -- auto-namespace by pass name.
     TextureDeclHandle create_texture(FrameGraph& fg, TextureDesc desc,
                                      const char* label = nullptr) {
         return fg.texture(this, desc, label);
@@ -156,7 +156,7 @@ class IPass {
         return *static_cast<T*>(entry.data.get());
     }
 
-    /// get_or_create_pass_data without factory — asserts that the entry already exists.
+    /// get_or_create_pass_data without factory -- asserts that the entry already exists.
     template <typename T>
     auto get_or_create_pass_data(PassDataKind kind, uint32_t index, const RenderWorld& world,
                                  std::nullptr_t) -> T& {
@@ -169,7 +169,7 @@ class IPass {
         return *static_cast<T*>(it->second.data.get());
     }
 
-    /// Per-category pass data — invalidated when *any* entity in the category changes.
+    /// Per-category pass data -- invalidated when *any* entity in the category changes.
     template <typename T, typename Factory>
     auto get_or_create_pass_data(PassDataKind kind, const RenderWorld& world, Factory&& factory)
         -> T& {

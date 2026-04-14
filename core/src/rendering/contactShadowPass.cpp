@@ -27,7 +27,7 @@ struct ContactShadowUniforms {
     float normal_offset;       // 208: 4
     int32_t step_count;        // 212: 4
     uint32_t light_count;      // 216: 4
-    uint32_t _pad;             // 220: 4 → total 224
+    uint32_t _pad;             // 220: 4 -> total 224
 };
 static_assert(sizeof(ContactShadowUniforms) == 224,
               "ContactShadowUniforms must match shader std140 layout");
@@ -72,7 +72,7 @@ ContactShadowPass::Outputs ContactShadowPass::add_to_frame_graph(FrameGraph& fg,
                          .bind_group_layouts({internal_bgl})
                          .build();
 
-    // ── Frame graph resources ──
+    // -- Frame graph resources --
     TextureDesc cs_desc;
     cs_desc.width = ctx.viewport_width;
     cs_desc.height = ctx.viewport_height;

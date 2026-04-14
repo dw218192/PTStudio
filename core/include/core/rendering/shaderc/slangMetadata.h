@@ -1,11 +1,11 @@
 #pragma once
 
-// libslang-backed C++ metadata-header emitter — native only. Walks a linked
+// libslang-backed C++ metadata-header emitter -- native only. Walks a linked
 // `slang::ShaderReflection` + `slang::IComponentType` and emits the
 // `<name>_shader_metadata.h` file consumed by the C++ render passes
 // (inline constexpr entry-point names, VertexLayout, create_bind_group_layout_N
 // helpers, k_color_attachment_count). Replaces the Python shader_codegen.py
-// Jinja template path — see the `pts_shaderc compile --metadata` flag.
+// Jinja template path -- see the `pts_shaderc compile --metadata` flag.
 //
 // Byte-compat scope: reproduces the template output for the patterns in use
 // today (constant buffers, varying inputs/outputs, single-element vertex

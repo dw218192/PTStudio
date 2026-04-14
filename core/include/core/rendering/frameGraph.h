@@ -39,10 +39,10 @@ class IPass;
 class FrameGraph;
 class ExecuteContext;
 
-// ──────────────────────────────────────────────────────────────────────────
+// --------------------------------------------------------------------------
 // Transparent string hasher / equal for heterogeneous lookup into
 // string-keyed caches (find by string_view without allocating std::string).
-// ──────────────────────────────────────────────────────────────────────────
+// --------------------------------------------------------------------------
 
 struct StringViewHash {
     using is_transparent = void;
@@ -69,9 +69,9 @@ using FlatStringMap = boost::unordered_flat_map<std::string, T, StringViewHash, 
 
 enum class Lifetime { Frame, Persistent };
 
-// ──────────────────────────────────────────────────────────────────────────
-// Handle types — strong-typedef uint32_t, UINT32_MAX sentinel means invalid.
-// ──────────────────────────────────────────────────────────────────────────
+// --------------------------------------------------------------------------
+// Handle types -- strong-typedef uint32_t, UINT32_MAX sentinel means invalid.
+// --------------------------------------------------------------------------
 
 struct TextureDeclHandle {
     uint32_t value = UINT32_MAX;
@@ -112,9 +112,9 @@ struct DescriptorDeclHandle {
     }
 };
 
-// ──────────────────────────────────────────────────────────────────────────
-// Desc types — pure-data descriptions, no GPU handles.
-// ──────────────────────────────────────────────────────────────────────────
+// --------------------------------------------------------------------------
+// Desc types -- pure-data descriptions, no GPU handles.
+// --------------------------------------------------------------------------
 
 struct TextureDesc {
     uint32_t width = 0;
@@ -132,10 +132,10 @@ struct BufferDesc {
     WGPUBufferUsage usage = WGPUBufferUsage_None;
 };
 
-// ──────────────────────────────────────────────────────────────────────────
-// Compiled-phase types — GPU handles valid, only reachable in execute lambdas
+// --------------------------------------------------------------------------
+// Compiled-phase types -- GPU handles valid, only reachable in execute lambdas
 // via ExecuteContext::get(handle). FrameGraph owns them.
-// ──────────────────────────────────────────────────────────────────────────
+// --------------------------------------------------------------------------
 
 struct Texture {
     WGPUTexture texture = nullptr;
@@ -170,10 +170,10 @@ struct Descriptor {
     NO_COPY_MOVE(Descriptor);
 };
 
-// ──────────────────────────────────────────────────────────────────────────
-// Declaration-phase types — no GPU handle fields. Stored in dense vectors
+// --------------------------------------------------------------------------
+// Declaration-phase types -- no GPU handle fields. Stored in dense vectors
 // indexed by handle. Back-pointer to compiled struct set by compile().
-// ──────────────────────────────────────────────────────────────────────────
+// --------------------------------------------------------------------------
 
 struct TextureDecl {
     std::string debug_label;
@@ -190,7 +190,7 @@ struct TextureDecl {
 
     // External view (if this decl wraps an externally-owned view like the
     // swapchain surface). When non-null, compile() does not allocate a
-    // Texture — ExecuteContext::get() is not expected to be used on these.
+    // Texture -- ExecuteContext::get() is not expected to be used on these.
     WGPUTextureView external_view = nullptr;
 
     // Persistent initial upload (used by static-texture overload)
@@ -201,7 +201,7 @@ struct TextureDecl {
     WGPUTextureViewDimension upload_view_dim = WGPUTextureViewDimension_2D;
     bool has_upload = false;
 
-    // Back-link to compiled result — set by compile(), consumed by ExecuteContext.
+    // Back-link to compiled result -- set by compile(), consumed by ExecuteContext.
     Texture* compiled = nullptr;
 
     TextureDecl() = default;
@@ -241,9 +241,9 @@ struct BufferDecl {
     BufferDecl& operator=(BufferDecl&&) noexcept = default;
 };
 
-// ──────────────────────────────────────────────────────────────────────────
-// Descriptor entry variants — managed bindings reference handles.
-// ──────────────────────────────────────────────────────────────────────────
+// --------------------------------------------------------------------------
+// Descriptor entry variants -- managed bindings reference handles.
+// --------------------------------------------------------------------------
 
 struct ManagedBufferBinding {
     BufferDeclHandle handle;
@@ -293,10 +293,10 @@ struct DescriptorDecl {
     DescriptorDecl& operator=(DescriptorDecl&&) noexcept = default;
 };
 
-// ──────────────────────────────────────────────────────────────────────────
-// ExecuteContext — passed to pass execute lambdas. Provides O(1) accessor
+// --------------------------------------------------------------------------
+// ExecuteContext -- passed to pass execute lambdas. Provides O(1) accessor
 // to compiled resources via handle indexing.
-// ──────────────────────────────────────────────────────────────────────────
+// --------------------------------------------------------------------------
 
 class ExecuteContext {
    public:
@@ -338,7 +338,7 @@ class PassBuilder {
     /// Declare a descriptor (bind group) for this pass at the given group index.
     /// Static descriptors are auto-set before the execute callback.
     PassBuilder& descriptor(uint32_t index, DescriptorDeclHandle h);
-    /// Declare a dynamic descriptor — resolved but NOT auto-set. The execute
+    /// Declare a dynamic descriptor -- resolved but NOT auto-set. The execute
     /// lambda must call setBindGroup manually (e.g. for per-draw offsets).
     PassBuilder& descriptor(uint32_t index, DescriptorDeclHandle h, Dynamic);
 
@@ -495,7 +495,7 @@ class FrameGraph {
     ~FrameGraph();
     NO_COPY_MOVE(FrameGraph);
 
-    // ── Textures ────────────────────────────────────────────────────────
+    // -- Textures --------------------------------------------------------
     /// Register a texture decl. First call allocates a slot; subsequent calls
     /// with the same label update the desc and return the existing handle.
     TextureDeclHandle texture(std::string_view debug_label, TextureDesc desc,
@@ -523,7 +523,7 @@ class FrameGraph {
     [[nodiscard]] const Buffer* compiled_buffer(BufferDeclHandle h) const;
     [[nodiscard]] const Descriptor* compiled_descriptor(DescriptorDeclHandle h) const;
 
-    // ── Buffers ─────────────────────────────────────────────────────────
+    // -- Buffers ---------------------------------------------------------
     BufferDeclHandle buffer(std::string_view debug_label, BufferDesc desc,
                             Lifetime lifetime = Lifetime::Frame);
     /// Persistent buffer with initial upload.
@@ -540,7 +540,7 @@ class FrameGraph {
     [[nodiscard]] BufferDeclHandle find_buffer(std::string_view label) const;
     [[nodiscard]] bool valid(BufferDeclHandle h) const;
 
-    // ── Descriptors ─────────────────────────────────────────────────────
+    // -- Descriptors -----------------------------------------------------
     DescriptorBuilder descriptor(std::string_view name, WGPUBindGroupLayout layout);
     DescriptorBuilder descriptor(const IPass* pass, WGPUBindGroupLayout layout,
                                  const char* label = nullptr);
@@ -548,7 +548,7 @@ class FrameGraph {
     [[nodiscard]] DescriptorDeclHandle find_descriptor(std::string_view name) const;
     [[nodiscard]] bool valid(DescriptorDeclHandle h) const;
 
-    // ── Pass-based API (auto-namespaces by pass name) ───────────────────
+    // -- Pass-based API (auto-namespaces by pass name) -------------------
     TextureDeclHandle texture(const IPass* pass, TextureDesc desc, const char* label = nullptr);
     BufferDeclHandle buffer(const IPass* pass, BufferDesc desc, const char* label = nullptr);
     BufferDeclHandle import_buffer(const IPass* pass, WGPUBuffer buf, std::size_t size,
@@ -556,7 +556,7 @@ class FrameGraph {
 
     PassBuilder add_pass(std::string name);
 
-    // ── Frame lifecycle ─────────────────────────────────────────────────
+    // -- Frame lifecycle -------------------------------------------------
     void begin_frame();
     void compile();
     void execute(WGPUCommandEncoder encoder);
@@ -571,25 +571,25 @@ class FrameGraph {
         return m_frame_number;
     }
 
-    // ── Samplers / BGLs / Shaders / Pipelines ───────────────────────────
+    // -- Samplers / BGLs / Shaders / Pipelines ---------------------------
     WGPUSampler sampler(WGPUSamplerBindingType type,
                         WGPUAddressMode address = WGPUAddressMode_ClampToEdge,
                         WGPUMipmapFilterMode mipmap = WGPUMipmapFilterMode_Nearest);
 
     /// Register a caller-constructed bind group layout under `name` so
     /// downstream FG machinery (pipeline cache, dep tracking) can reference
-    /// it by name. The caller retains nothing — ownership transfers to the
+    /// it by name. The caller retains nothing -- ownership transfers to the
     /// FG cache, which destroys the layout when the cache entry is evicted
     /// or the FG is torn down. Intended for layouts produced by shader
     /// reflection (via the generated `<shader>::create_bind_group_layout_N`
     /// helpers). If `name` is already cached, the supplied `existing` is
-    /// released and the cached handle is returned — callers that register
+    /// released and the cached handle is returned -- callers that register
     /// the same name later are expected to pass a structurally equivalent
     /// layout.
     WGPUBindGroupLayout bind_group_layout(std::string_view name, WGPUBindGroupLayout existing);
 
     /// Look up a bind group layout that was previously registered via the
-    /// (name, existing) overload. Fails loud if `name` is not present —
+    /// (name, existing) overload. Fails loud if `name` is not present --
     /// callers that need the layout must ensure the owning pass registered
     /// it first.
     WGPUBindGroupLayout bind_group_layout(std::string_view name);
@@ -599,7 +599,7 @@ class FrameGraph {
     /// Get-or-build a preprocessor variant of a registered shader. Uses the
     /// base source's revision as the dep, so repeated calls within a session
     /// hit the cache (critical for per-frame callers like load_pass_shader_module
-    /// in hot-reload builds — without this, Slang would recompile every frame).
+    /// in hot-reload builds -- without this, Slang would recompile every frame).
     WGPUShaderModule shader_variant(std::string_view variant_cache_key,
                                     std::string_view source_resource_key,
                                     boost::span<const std::string_view> defines);
@@ -611,7 +611,7 @@ class FrameGraph {
     [[nodiscard]] WGPURenderPipeline get_render_pipeline(std::string_view name) const;
     [[nodiscard]] WGPUComputePipeline get_compute_pipeline(std::string_view name) const;
 
-    // ── Introspection ───────────────────────────────────────────────────
+    // -- Introspection ---------------------------------------------------
     [[nodiscard]] size_t cached_texture_count() const;
     [[nodiscard]] size_t cached_buffer_count() const;
     [[nodiscard]] size_t cached_descriptor_count() const;
@@ -715,25 +715,25 @@ class FrameGraph {
     uint64_t m_frame_number = 0;
     uint64_t m_next_version = 1;
 
-    // Decls — dense vectors indexed by handle.value
+    // Decls -- dense vectors indexed by handle.value
     std::vector<TextureDecl> m_texture_decls;
     std::vector<BufferDecl> m_buffer_decls;
     std::vector<DescriptorDecl> m_descriptor_decls;
 
-    // Name → handle registries. Flat-map + transparent hash → string_view
+    // Name -> handle registries. Flat-map + transparent hash -> string_view
     // lookups do not allocate a std::string on the hot path.
     FlatStringMap<uint32_t> m_texture_name_to_handle;
     FlatStringMap<uint32_t> m_buffer_name_to_handle;
     FlatStringMap<uint32_t> m_descriptor_name_to_handle;
 
-    // Compiled resources — parallel vectors indexed by handle.value
+    // Compiled resources -- parallel vectors indexed by handle.value
     std::vector<std::unique_ptr<Texture>> m_compiled_textures;
     std::vector<std::unique_ptr<Buffer>> m_compiled_buffers;
     // Descriptors live in m_descriptor_cache (DepTrackedCache, keyed by
     // handle.value) so dep-based invalidation and version tracking are
     // uniform across FG caches.
 
-    // Deferred destruction — old compiled resources kept alive through execute()
+    // Deferred destruction -- old compiled resources kept alive through execute()
     // so pre-compile references (e.g. ImGui draw data) stay valid. Cleared at
     // begin_frame() after the previous frame's GPU work is submitted.
     std::vector<std::unique_ptr<Texture>> m_deferred_textures;
@@ -757,7 +757,7 @@ class FrameGraph {
     ComputePipelineCache m_compute_pipeline_cache;
     DescriptorCache m_descriptor_cache;
 
-    // Inverse lookup: WGPUBindGroupLayout → version from m_bgl_cache. Maintained
+    // Inverse lookup: WGPUBindGroupLayout -> version from m_bgl_cache. Maintained
     // alongside BGL inserts so pipeline builders (which hold raw layout handles
     // rather than names) can gather BGL versions for their dep vector.
     std::unordered_map<WGPUBindGroupLayout, uint64_t> m_bgl_version_lookup;

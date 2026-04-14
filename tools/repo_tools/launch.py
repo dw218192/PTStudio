@@ -33,7 +33,7 @@ from repo_tools.core import (
     to_cmake_build_type,
 )
 
-# Tracy release to download — update when upgrading tracy Conan package
+# Tracy release to download -- update when upgrading tracy Conan package
 _TRACY_VERSION = "0.13.1"
 _TRACY_VIEWER_URL = (
     f"https://github.com/wolfpld/tracy/releases/download/v{_TRACY_VERSION}/"
@@ -416,7 +416,7 @@ def _run_executable(
     build_dir = Path(context["build_dir"])
     is_emscripten = exe_path.suffix.lower() in (".js", ".html")
 
-    # Interactive Emscripten launch — bypass batch wrapping entirely
+    # Interactive Emscripten launch -- bypass batch wrapping entirely
     if is_emscripten and not capture_output:
         html_path = exe_path.with_suffix(".html") if exe_path.suffix.lower() != ".html" else exe_path
         logger.info(f"Launching {html_path.name} in browser")
@@ -559,12 +559,12 @@ def _run_tests(context: dict[str, Any], verbose: bool, from_package: bool = Fals
         editor_exe = bin_dir / ("editor.exe" if is_windows() else "editor")
     scenes: list[Path] = sorted(scenes_dir.glob("*.usdz")) if scenes_dir.is_dir() else []
     if not editor_exe.exists():
-        logger.error("FAILED: smoke tests — editor executable not found")
+        logger.error("FAILED: smoke tests -- editor executable not found")
         failed += 1
         failed_tests.append("editorSmoke (missing editor)")
     elif not scenes:
         logger.error(
-            "FAILED: smoke tests — no .usdz scene files in "
+            "FAILED: smoke tests -- no .usdz scene files in "
             f"{scenes_dir}. Run './repo build' to generate them."
         )
         failed += 1
@@ -874,7 +874,7 @@ class LaunchTool(RepoTool):
                 tracy_proc = subprocess.Popen(
                     [str(tracy_exe), "-a", "127.0.0.1", "-o", str(out_path), "-f"],
                 )
-                logger.info(f"Tracy capture started → {out_path}")
+                logger.info(f"Tracy capture started -> {out_path}")
 
         try:
             result = _run_executable(target_exe, ctx.passthrough_args, context)

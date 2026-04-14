@@ -5,7 +5,7 @@ import light;
 import material_sampling;
 import sampling;
 
-// ── Scene data ──────────────────────────────────────────────────
+// -- Scene data --------------------------------------------------
 
 struct PackedTriangle {
     float3 v0; uint _p0;
@@ -64,7 +64,7 @@ float3 offset_ray_transmit(float3 p, float3 n) {
     return p - n * offset_epsilon(p);
 }
 
-// ── Ray-triangle intersection ───────────────────────────────────
+// -- Ray-triangle intersection -----------------------------------
 
 struct HitRecord {
     float3 position;
@@ -111,17 +111,17 @@ HitRecord trace_scene(float3 ro, float3 rd) {
 
         if (tlas_node.count <= 0) 
         {
-            // TLAS interior — push children
+            // TLAS interior -- push children
             tlas_stack[tlas_sp++] = tlas_node.left_first;
             tlas_stack[tlas_sp++] = tlas_node.left_first + 1;
             continue;
         }
 
-        // TLAS leaf — iterate instances
+        // TLAS leaf -- iterate instances
         for (uint i = 0; i < tlas_node.count; i++) {
             Instance inst = instances[tlas_node.left_first + i];
 
-            // Transform ray to local space (don't normalize — preserves t)
+            // Transform ray to local space (don't normalize -- preserves t)
             float3 local_ro = mul(inst.inv_transform, float4(ro, 1.0)).xyz;
             float3 local_rd = mul(inst.inv_transform, float4(rd, 0.0)).xyz;
 
@@ -137,13 +137,13 @@ HitRecord trace_scene(float3 ro, float3 rd) {
                     continue;
 
                 if (blas_node.count <= 0) {
-                    // BLAS interior — push children
+                    // BLAS interior -- push children
                     blas_stack[blas_sp++] = blas_node.left_first;
                     blas_stack[blas_sp++] = blas_node.left_first + 1;
                     continue;
                 }
 
-                // BLAS leaf — test triangles
+                // BLAS leaf -- test triangles
                 for (uint j = 0; j < blas_node.count; j++) {
                     PackedTriangle tri =
                             triangles[inst.tri_offset + blas_node.left_first + j];
@@ -192,7 +192,7 @@ HitRecord trace_scene(float3 ro, float3 rd) {
     return best;
 }
 
-// ── Main ────────────────────────────────────────────────────────
+// -- Main --------------------------------------------------------
 
 [shader("compute")]
 [numthreads(8, 8, 1)]
@@ -221,7 +221,7 @@ void cs_main(uint3 did : SV_DispatchThreadID) {
     for (uint bounce = 0; bounce < MAX_BOUNCES; bounce++) {
         HitRecord hit = trace_scene(ray_origin, ray_dir);
         if (!hit.hit) {
-            // Miss → sample environment cubemap
+            // Miss -> sample environment cubemap
             float3 env_color = env_cubemap.SampleLevel(env_sampler, ray_dir, 0.0).rgb;
             radiance += throughput * env_color * u.dome_modulation;
             break;
@@ -239,7 +239,7 @@ void cs_main(uint3 did : SV_DispatchThreadID) {
         float metallic = sm.metallic;
         float roughness = sm.roughness;
 
-        // Transmissive branch (delta BSDF — skip NEE and Russian roulette)
+        // Transmissive branch (delta BSDF -- skip NEE and Russian roulette)
         bool is_transmissive = (sm.opacity < 1.0) && (sm.metallic < 0.5);
         if (is_transmissive) {
             float eta_i = front_face ? 1.0 : mat.ior;
@@ -255,7 +255,7 @@ void cs_main(uint3 did : SV_DispatchThreadID) {
                 // Refract
                 float3 wt;
                 if (!refract_direction(V, Ng, eta, wt)) {
-                    // TIR fallback — reflect
+                    // TIR fallback -- reflect
                     ray_origin = offset_ray(hit.position, Ng);
                     ray_dir = reflect(-V, Ng);
                 } else {

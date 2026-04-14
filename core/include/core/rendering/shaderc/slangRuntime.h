@@ -1,6 +1,6 @@
 #pragma once
 
-// libslang-backed compile primitive — native only. WASM builds never see this
+// libslang-backed compile primitive -- native only. WASM builds never see this
 // header (libslang isn't compiled for wasm in our pipeline).
 #ifndef __EMSCRIPTEN__
 

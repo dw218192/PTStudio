@@ -7,7 +7,7 @@
 #include <chrono>
 #include <thread>
 
-// ── TaskProgress ─────────────────────────────────────────────────────────────
+// -- TaskProgress -------------------------------------------------------------
 
 TEST_CASE("TaskProgress - set and read progress") {
     pts::TaskProgress progress;
@@ -21,7 +21,7 @@ TEST_CASE("TaskProgress - set and read status") {
     CHECK(progress.status() == "loading");
 }
 
-// ── OneShotTask ──────────────────────────────────────────────────────────────
+// -- OneShotTask --------------------------------------------------------------
 
 TEST_CASE("OneShotTask - completes and returns result") {
     pts::OneShotTask<int> task("add", [](pts::TaskProgress& p) {
@@ -87,7 +87,7 @@ TEST_CASE("OneShotTask - string result type") {
     CHECK(task.take_result() == "hello world");
 }
 
-// ── Worker (persistent) ─────────────────────────────────────────────────────
+// -- Worker (persistent) -----------------------------------------------------
 
 TEST_CASE("Worker - single job completes") {
     pts::Worker<int, int> worker([](int&& x, pts::TaskProgress& p) {
@@ -135,17 +135,17 @@ TEST_CASE("Worker - latest-wins replaces pending job") {
         return x;
     });
 
-    // Submit first job — it will block on the gate
+    // Submit first job -- it will block on the gate
     worker.submit(1);
     // Give the worker thread time to pick up job 1
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
-    // While job 1 is held, rapidly submit more — only the last should survive
+    // While job 1 is held, rapidly submit more -- only the last should survive
     worker.submit(2);
     worker.submit(3);
     worker.submit(4);
 
-    // Release job 1 — loop will then pick up job 4 (latest-wins)
+    // Release job 1 -- loop will then pick up job 4 (latest-wins)
     gate.store(true, std::memory_order_release);
 
     // Wait for both jobs to complete
@@ -183,7 +183,7 @@ TEST_CASE("Worker - shutdown drains in-flight work") {
 
 TEST_CASE("Worker - shutdown with no pending work returns immediately") {
     pts::Worker<int, int> worker([](int&& x, pts::TaskProgress&) { return x; });
-    // Shutdown with no jobs submitted — should not hang
+    // Shutdown with no jobs submitted -- should not hang
     worker.shutdown();
     CHECK(true);
 }
@@ -224,7 +224,7 @@ TEST_CASE("Worker - progress resets between jobs") {
 
 TEST_CASE("Worker - has_result is lockfree") {
     pts::Worker<int, int> worker([](int&& x, pts::TaskProgress&) { return x; });
-    // has_result() uses std::atomic — verify it returns false before any submission
+    // has_result() uses std::atomic -- verify it returns false before any submission
     CHECK_FALSE(worker.has_result());
     // take_result returns nullopt when no result
     CHECK_FALSE(worker.take_result().has_value());

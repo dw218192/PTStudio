@@ -1,4 +1,4 @@
-// libslang backend — native only. WASM builds use EmbeddedCompiler exclusively
+// libslang backend -- native only. WASM builds use EmbeddedCompiler exclusively
 // and never include this translation unit's symbols.
 #ifndef __EMSCRIPTEN__
 
@@ -27,13 +27,13 @@ namespace pts::rendering {
 
 namespace {
 
-// Disk-cache keys are NOT security-sensitive — only collision resistance among
+// Disk-cache keys are NOT security-sensitive -- only collision resistance among
 // same-process inputs matters, and a std::size_t from boost::hash_combine over
 // all relevant fields gives that at a fraction of the code of a cryptographic
 // hash. Collisions would silently serve stale WGSL; format_version +
 // defines_canon + source bytes + dep hashes together make a collision
 // astronomically unlikely. If that ever becomes inadequate, swap a real
-// cryptographic hash in here — the sidecar format is stable.
+// cryptographic hash in here -- the sidecar format is stable.
 std::string hash_hex(std::size_t h) {
     char buf[17];
     std::snprintf(buf, sizeof(buf), "%016zx", h);
@@ -83,7 +83,7 @@ std::string canonical_defines(boost::span<const std::string_view> defines) {
     return out;
 }
 
-// Hash a file's bytes. Returns 0 on read failure (treated as "dep missing" —
+// Hash a file's bytes. Returns 0 on read failure (treated as "dep missing" --
 // the computed cache key then won't match the stored meta, forcing recompile).
 std::size_t hash_file(const std::filesystem::path& p) {
     std::error_code ec;
@@ -173,7 +173,7 @@ struct SlangCompiler::Impl {
         return hash_hex(h);
     }
 
-    // Meta key identifies a (source_key, defines) slot — stable across
+    // Meta key identifies a (source_key, defines) slot -- stable across
     // recompiles. Value stored is the last cache_key + its dep list.
     std::string meta_key(std::string_view source_key, const std::string& defines_canon) const {
         std::size_t h = 0;
@@ -217,7 +217,7 @@ struct SlangCompiler::Impl {
     std::string do_compile(const ShaderKey& key) {
         auto* loaded = loader->find(key.source);
         if (!loaded) {
-            // Not a registered shader — fall back to embedded lookup.
+            // Not a registered shader -- fall back to embedded lookup.
             return error_fallback ? error_fallback->compile(key) : loader->load(key.source);
         }
         auto slang_path = workspace_root / loaded->slang_source;

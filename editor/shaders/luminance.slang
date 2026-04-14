@@ -47,7 +47,7 @@ void cs_main(uint gi : SV_GroupIndex) {
         uint x = i % params.dimensions.x;
         uint y = i / params.dimensions.x;
         float2 uv = (float2(x, y) + 0.5) / float2(params.dimensions);
-        // Skip sky pixels — depth == 1.0 means nothing was rasterized
+        // Skip sky pixels -- depth == 1.0 means nothing was rasterized
         if (params.has_depth != 0u) {
             float depth = depth_input.Load(int3(x, y, 0)).r;
             if (depth >= 1.0) continue;

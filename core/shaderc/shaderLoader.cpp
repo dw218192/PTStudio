@@ -42,7 +42,7 @@ auto ShaderLoader::load(std::string_view resource_key) const -> std::string {
         PRECONDITION_MSG(embedded.has_value(), "embedded resource missing for registered key");
         return std::string(*embedded);
     }
-    // Not directly registered — may be a derived variant key (e.g. NO_DEBUG).
+    // Not directly registered -- may be a derived variant key (e.g. NO_DEBUG).
     // Probe every registered entry's embedded_getter; first hit wins.
     for (const auto& [_, entry] : m_entries) {
         auto embedded = entry.embedded_getter(resource_key);

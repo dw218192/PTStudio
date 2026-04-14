@@ -1,4 +1,4 @@
-"""Publish subcommand — prepare a static site from packaged WASM artifacts."""
+"""Publish subcommand -- prepare a static site from packaged WASM artifacts."""
 
 from __future__ import annotations
 

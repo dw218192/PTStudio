@@ -109,7 +109,7 @@ WGPUTextureView create_2d_view(WGPUTexture tex, WGPUTextureFormat format) {
 // annotation, so slang reflection yields `rgba32float`. At runtime we patch the
 // generated WGSL to `rgba16float, write` (see load_shader above) and pair it
 // with RGBA16Float textures. The BGLs below are open-coded to match that
-// runtime format explicitly — shader reflection can't tell us the target
+// runtime format explicitly -- shader reflection can't tell us the target
 // format. Keep these local to this translation unit.
 WGPUBindGroupLayout create_brdf_lut_desc_layout(const webgpu::Device& device) {
     WGPUBindGroupLayoutEntry entries[2] = {};
@@ -237,7 +237,7 @@ WGPUPipelineLayout make_pipeline_layout(WGPUDevice dev, WGPUBindGroupLayout desc
 void IblPipelines::release() {
     if (m_brdf_lut_view) wgpuTextureViewRelease(m_brdf_lut_view);
     if (m_brdf_lut) wgpuTextureRelease(m_brdf_lut);
-    // m_sampler is NOT released here — it's owned by the FrameGraph sampler pool
+    // m_sampler is NOT released here -- it's owned by the FrameGraph sampler pool
     if (m_equirect_desc_layout) wgpuBindGroupLayoutRelease(m_equirect_desc_layout);
     if (m_downsample_desc_layout) wgpuBindGroupLayoutRelease(m_downsample_desc_layout);
     if (m_convolve_desc_layout) wgpuBindGroupLayoutRelease(m_convolve_desc_layout);
@@ -397,7 +397,7 @@ void IblPipelines::generate_brdf_lut(const webgpu::Device& device, WGPUQueue que
 
     m_brdf_lut_view = create_2d_view(m_brdf_lut, WGPUTextureFormat_RGBA16Float);
 
-    // Uniform buffer — std140 pads to 16 bytes
+    // Uniform buffer -- std140 pads to 16 bytes
     struct alignas(16) Params {
         uint32_t size;
     };
@@ -511,7 +511,7 @@ WGPUTextureView IblResources::irradiance_view() const noexcept {
 }
 
 // ---------------------------------------------------------------------------
-// set_environment — full HDR equirect pipeline
+// set_environment -- full HDR equirect pipeline
 // ---------------------------------------------------------------------------
 
 void IblResources::set_environment(const IblPipelines& pipelines, const webgpu::Device& device,
@@ -618,7 +618,7 @@ void IblResources::set_environment(const IblPipelines& pipelines, const webgpu::
 }
 
 // ---------------------------------------------------------------------------
-// set_uniform_environment — solid color 1×1 cubemaps
+// set_uniform_environment -- solid color 1x1 cubemaps
 // ---------------------------------------------------------------------------
 
 void IblResources::set_uniform_environment(const webgpu::Device& device, WGPUQueue queue, float r,
@@ -700,7 +700,7 @@ void IblResources::set_uniform_environment(const webgpu::Device& device, WGPUQue
 }
 
 // ---------------------------------------------------------------------------
-// Equirect → Cubemap
+// Equirect -> Cubemap
 // ---------------------------------------------------------------------------
 
 void IblResources::convert_equirect_to_cubemap(const IblPipelines& pipelines,
@@ -711,7 +711,7 @@ void IblResources::convert_equirect_to_cubemap(const IblPipelines& pipelines,
     // Dispatch one face at a time with a single-layer output view.
     // Writing to multiple array layers via textureStore in a single dispatch
     // silently drops writes to layers > 0 on some D3D12 backends (Dawn/Tint
-    // WGSL→HLSL codegen issue with mixed u32/i32 textureStore coordinates).
+    // WGSL->HLSL codegen issue with mixed u32/i32 textureStore coordinates).
     struct alignas(16) Params {
         uint32_t size;
         uint32_t up_axis;

@@ -22,7 +22,7 @@ constexpr const char* k_no_debug_define = "NO_DEBUG_TARGETS";
 //   total = roundUp(total, renderTargetComponentAlignment) + renderTargetPixelByteCost
 //
 // The per-format values come from the spec's format capability table.
-// renderTargetPixelByteCost can be LARGER than the texel block size —
+// renderTargetPixelByteCost can be LARGER than the texel block size --
 // e.g. RGBA8Unorm has a 4-byte texel block but costs 8 bytes as a render target.
 
 struct RenderTargetCost {
@@ -79,7 +79,7 @@ RenderTargetCost render_target_cost(WGPUTextureFormat format) {
         case WGPUTextureFormat_RGBA32Sint:
             return {16, 4};
         default:
-            spdlog::warn("Unknown render target format {} — assuming 16 bytes",
+            spdlog::warn("Unknown render target format {} -- assuming 16 bytes",
                          static_cast<int>(format));
             return {16, 4};
     }
@@ -111,7 +111,7 @@ void IPass::ensure_initialized(const webgpu::Device& device) {
     m_initialized = true;
 
     // Create a per-pass logger sharing the ShaderLoader's sinks and level.
-    // This mirrors LoggingManager::get_logger_shared — same sinks/pattern —
+    // This mirrors LoggingManager::get_logger_shared -- same sinks/pattern --
     // without requiring IPass to hold a LoggingManager reference.
     auto pass_name = std::string{name()};
     m_logger = spdlog::get(pass_name);
@@ -211,7 +211,7 @@ IRenderer::Outputs IRenderer::add_to_frame_graph(FrameGraph& fg, const PassConte
     auto hdr = do_add_to_frame_graph(fg, ctx);
     INVARIANT_MSG(hdr.color, "Renderer must produce a color output");
 
-    // Run tone mapping on HDR color → LDR display-ready
+    // Run tone mapping on HDR color -> LDR display-ready
     INVARIANT(m_tonemapping);
     TextureDeclHandle display_color = hdr.color;
     if (m_tonemapping_enabled) {

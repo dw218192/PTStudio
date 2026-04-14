@@ -90,7 +90,7 @@ struct TestListener : pxr::TfWeakBase {
 };
 }  // namespace
 
-// GPU-dependent tests — Device::create() requires native Dawn (not available in node.js)
+// GPU-dependent tests -- Device::create() requires native Dawn (not available in node.js)
 #ifndef __EMSCRIPTEN__
 
 TEST_CASE("populate_from_stage populates prim_path on ObjectData slots") {
@@ -554,7 +554,7 @@ TEST_CASE("Re-syncing displayColor prim reuses cached material") {
         pts::rendering::sync_prim(scope, stage, pxr::SdfPath("/Root/Mesh"));
     }
 
-    // Material count should not grow — cached slot is reused
+    // Material count should not grow -- cached slot is reused
     REQUIRE(world.get_materials().size() == 1);
     CHECK(world.get_materials()[0].diffuse_color.x == doctest::Approx(0.1f));
     CHECK(world.get_materials()[0].diffuse_color.y == doctest::Approx(0.9f));
@@ -599,7 +599,7 @@ TEST_CASE("Bound material takes precedence over displayColor") {
     auto mat_idx = world.get_objects()[0]->material_index;
     REQUIRE(mat_idx > pts::rendering::k_default_material);
     REQUIRE(static_cast<std::size_t>(mat_idx - 1) < world.get_materials().size());
-    // Bound material wins — displayColor is ignored
+    // Bound material wins -- displayColor is ignored
     auto& mat = world.get_materials()[mat_idx - 1];
     CHECK(mat.diffuse_color.x == doctest::Approx(0.0f));
     CHECK(mat.diffuse_color.y == doctest::Approx(0.5f));

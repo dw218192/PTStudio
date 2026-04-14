@@ -13,7 +13,7 @@
 
 namespace pts::rendering {
 
-// ── Compiled resource destructors ────────────────────────────────────────
+// -- Compiled resource destructors ----------------------------------------
 
 Texture::~Texture() {
     for (auto lv : layer_views) {
@@ -40,7 +40,7 @@ Descriptor::~Descriptor() {
     }
 }
 
-// ── Handle accessors ────────────────────────────────────────────────────
+// -- Handle accessors ----------------------------------------------------
 
 TextureDecl& FrameGraph::tex_decl(TextureDeclHandle h) {
     PRECONDITION(h && h.value < m_texture_decls.size());
@@ -72,7 +72,7 @@ const DescriptorDecl& FrameGraph::desc_decl(DescriptorDeclHandle h) const {
     return m_descriptor_decls[h.value];
 }
 
-// ── ExecuteContext ───────────────────────────────────────────────────────
+// -- ExecuteContext -------------------------------------------------------
 
 const Texture& ExecuteContext::get(TextureDeclHandle h) const {
     PRECONDITION_MSG(h, "ExecuteContext::get(TextureDeclHandle): invalid handle");
@@ -81,7 +81,7 @@ const Texture& ExecuteContext::get(TextureDeclHandle h) const {
     auto& decl = m_fg.m_texture_decls[h.value];
     PRECONDITION_MSG(decl.active, "ExecuteContext::get(TextureDeclHandle): decl not active");
     PRECONDITION_MSG(decl.last_active_frame == m_frame_number,
-                     "ExecuteContext::get(TextureDeclHandle): stale handle — not "
+                     "ExecuteContext::get(TextureDeclHandle): stale handle -- not "
                      "referenced by any pass this frame");
     PRECONDITION_MSG(decl.compiled != nullptr,
                      "ExecuteContext::get(TextureDeclHandle): decl has no compiled resource");
@@ -114,7 +114,7 @@ const Descriptor& ExecuteContext::get(DescriptorDeclHandle h) const {
     return *decl.compiled;
 }
 
-// ── DescriptorBuilder ────────────────────────────────────────────────────
+// -- DescriptorBuilder ----------------------------------------------------
 
 DescriptorBuilder::DescriptorBuilder(FrameGraph& fg, std::string name, WGPUBindGroupLayout layout)
     : m_fg(fg), m_name(std::move(name)), m_layout(layout) {
@@ -196,7 +196,7 @@ DescriptorDeclHandle DescriptorBuilder::build() {
     return DescriptorDeclHandle{idx};
 }
 
-// ── PassBuilder ──────────────────────────────────────────────────────────
+// -- PassBuilder ----------------------------------------------------------
 
 PassBuilder::PassBuilder(FrameGraph& graph, uint32_t pass_index)
     : m_graph(graph), m_pass_index(pass_index) {
@@ -344,7 +344,7 @@ void PassBuilder::execute(ExecuteComputeFn fn) {
     pass.compute_fn = std::move(fn);
 }
 
-// ── FrameGraph ───────────────────────────────────────────────────────────
+// -- FrameGraph -----------------------------------------------------------
 
 FrameGraph::FrameGraph(const webgpu::Device& device, std::shared_ptr<spdlog::logger> logger,
                        IShaderCompiler* compiler)
@@ -416,7 +416,7 @@ WGPUBindGroupLayout FrameGraph::bind_group_layout(std::string_view name,
         [&] { return existing; });
     if (bgl != existing) {
         // Cache hit on same name but with a different handle: drop the new
-        // one — callers are expected to use a stable name per layout identity.
+        // one -- callers are expected to use a stable name per layout identity.
         wgpuBindGroupLayoutRelease(existing);
     }
     m_bgl_version_lookup[bgl] = m_bgl_cache.version(name);
@@ -438,7 +438,7 @@ uint64_t FrameGraph::bgl_version(WGPUBindGroupLayout layout) const {
     return it->second;
 }
 
-// ── Shaders ──────────────────────────────────────────────────────────────
+// -- Shaders --------------------------------------------------------------
 
 WGPUShaderModule FrameGraph::shader(std::string_view resource_key) {
     PTS_ZONE_SCOPED;
@@ -540,7 +540,7 @@ void FrameGraph::invalidate_all_shaders() {
     m_shader_cache.clear();
 }
 
-// ── Pipeline cache ───────────────────────────────────────────────────────
+// -- Pipeline cache -------------------------------------------------------
 
 RenderPipelineCacheBuilder::RenderPipelineCacheBuilder(FrameGraph& fg, std::string name)
     : m_fg(fg), m_name(std::move(name)) {
@@ -566,7 +566,7 @@ auto RenderPipelineCacheBuilder::shader_module(WGPUShaderModule module)
         }
     });
     if (m_shader_module_version == 0) {
-        // Not in cache — fall back to handle address as a stable identifier.
+        // Not in cache -- fall back to handle address as a stable identifier.
         m_shader_module_version = reinterpret_cast<uintptr_t>(module);
     }
     return *this;
@@ -881,7 +881,7 @@ FallbackPool& FrameGraph::fallback_pool() {
     return *m_fallback_pool;
 }
 
-// ── Decl creation / lookup ───────────────────────────────────────────────
+// -- Decl creation / lookup -----------------------------------------------
 
 TextureDeclHandle FrameGraph::texture(std::string_view debug_label, TextureDesc desc,
                                       Lifetime lifetime) {
@@ -1129,7 +1129,7 @@ DescriptorBuilder FrameGraph::descriptor(const IPass* pass, WGPUBindGroupLayout 
     return DescriptorBuilder(*this, make_pass_key(pass, label, ResourceKind::Descriptor), layout);
 }
 
-// ── Pass-based helpers ───────────────────────────────────────────────────
+// -- Pass-based helpers ---------------------------------------------------
 
 std::string FrameGraph::make_pass_key(const IPass* pass, const char* label, ResourceKind kind) {
     PRECONDITION_MSG(pass != nullptr, "make_pass_key: pass must not be null");
@@ -1192,7 +1192,7 @@ PassBuilder FrameGraph::add_pass(std::string name) {
     return PassBuilder(*this, static_cast<uint32_t>(m_passes.size() - 1));
 }
 
-// ── Frame lifecycle ──────────────────────────────────────────────────────
+// -- Frame lifecycle ------------------------------------------------------
 
 void FrameGraph::begin_frame() {
     PTS_ZONE_SCOPED;
@@ -1314,7 +1314,7 @@ void FrameGraph::compile() {
 
         for (auto& att : pass.color_attachments) {
             if (!att.handle) {
-                // External view — always clear with provided clear color
+                // External view -- always clear with provided clear color
                 att.load_op = WGPULoadOp_Clear;
                 att.store_op = WGPUStoreOp_Store;
                 continue;
@@ -1375,7 +1375,7 @@ void FrameGraph::materialize_textures() {
             continue;
         }
 
-        // Persistent with upload — create once, reuse forever
+        // Persistent with upload -- create once, reuse forever
         if (decl.has_upload) {
             if (m_compiled_textures[i]) {
                 decl.compiled = m_compiled_textures[i].get();
@@ -1412,13 +1412,13 @@ void FrameGraph::materialize_textures() {
             continue;
         }
 
-        // External view — no compiled backing.
+        // External view -- no compiled backing.
         if (decl.external_view) {
             decl.compiled = nullptr;
             continue;
         }
 
-        // Managed path — allocate or reuse based on desc match
+        // Managed path -- allocate or reuse based on desc match
         if (m_compiled_textures[i] && descs_match(m_compiled_textures[i]->desc, decl.desc)) {
             decl.compiled = m_compiled_textures[i].get();
             continue;
@@ -1494,7 +1494,7 @@ void FrameGraph::materialize_buffers() {
         }
 
         // Imported buffer (external). Identity is (handle, external_version)
-        // — same handle with a bumped version triggers a rebuild so descriptors
+        // -- same handle with a bumped version triggers a rebuild so descriptors
         // binding this buffer see a changed dep and rebuild their bind groups.
         if (decl.external_buffer) {
             if (m_compiled_buffers[i] && m_compiled_buffers[i]->buffer == decl.external_buffer &&
@@ -1549,7 +1549,7 @@ void FrameGraph::materialize_buffers() {
             continue;
         }
 
-        // Managed buffer — reuse if sufficient size + superset usage
+        // Managed buffer -- reuse if sufficient size + superset usage
         if (m_compiled_buffers[i] && m_compiled_buffers[i]->size >= decl.desc.size &&
             (m_compiled_buffers[i]->usage & decl.desc.usage) == decl.desc.usage) {
             decl.compiled = m_compiled_buffers[i].get();
@@ -1826,7 +1826,7 @@ void FrameGraph::execute(WGPUCommandEncoder encoder) {
     }
 }
 
-// ── Introspection ────────────────────────────────────────────────────────
+// -- Introspection --------------------------------------------------------
 
 size_t FrameGraph::cached_texture_count() const {
     size_t count = 0;

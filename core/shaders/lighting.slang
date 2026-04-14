@@ -5,7 +5,7 @@ import ltc;
 import shadow_sampling;
 
 // ---------------------------------------------------------------------------
-// Lighting evaluation — LTC for rect/disk area lights (forward renderer)
+// Lighting evaluation -- LTC for rect/disk area lights (forward renderer)
 // ---------------------------------------------------------------------------
 
 float3 evaluate_lighting_ltc<B : IBRDF>(

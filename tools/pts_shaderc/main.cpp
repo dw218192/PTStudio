@@ -104,7 +104,7 @@ Args parse_args(int argc, char** argv) {
     return a;
 }
 
-// ── Staleness check ──
+// -- Staleness check --
 //
 // Mirrors the pre-refactor slangc.py logic: rebuild when the output is
 // missing, when the source or any sibling `.slang` module in the source

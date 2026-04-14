@@ -1,4 +1,4 @@
-"""USDZ packaging tool — builds and runs usdz_pack (two-phase build).
+"""USDZ packaging tool -- builds and runs usdz_pack (two-phase build).
 
 Phase 1: cmake --build --target usdz_pack (compiles the host tool)
 Phase 2: run usdz_pack for each scene (creates .usdz from .usda)

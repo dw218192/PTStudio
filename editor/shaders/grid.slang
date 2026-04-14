@@ -17,7 +17,7 @@ struct VsOut {
     float3 far_point  : FAR_POINT;
 };
 
-// Full-screen triangle from vertex IDs — no vertex buffer needed.
+// Full-screen triangle from vertex IDs -- no vertex buffer needed.
 [shader("vertex")]
 VsOut vs_main(uint vid : SV_VertexID) {
     float2 uv  = float2((vid << 1) & 2, vid & 2);
@@ -34,7 +34,7 @@ VsOut vs_main(uint vid : SV_VertexID) {
     return o;
 }
 
-// ── helpers ──────────────────────────────────────────────────────────
+// -- helpers ----------------------------------------------------------
 
 float grid_line(float2 coord, float scale) {
     float2 scaled   = coord * scale;
@@ -48,7 +48,7 @@ float compute_depth(float3 world_pos) {
     return clip.z / clip.w;
 }
 
-// ── fragment ─────────────────────────────────────────────────────────
+// -- fragment ---------------------------------------------------------
 
 struct FsOut {
     float4 color : SV_Target;
@@ -95,18 +95,18 @@ FsOut fs_main(float3 near_point : NEAR_POINT, float3 far_point : FAR_POINT) {
     // Discard fragments behind camera or outside clip volume
     if (t < 0.0 || depth < 0.0 || depth > 1.0) discard;
 
-    // ── distance fade ────────────────────────────────────────────────
+    // -- distance fade ------------------------------------------------
     float fade = 1.0 - smoothstep(unit_scale * 20.0, unit_scale * 150.0, dist);
     if (fade <= 0.0) discard;
 
-    // ── grid lines (fine = 10cm physical, major = 1m physical) ──────
+    // -- grid lines (fine = 10cm physical, major = 1m physical) ------
     float line_fine  = grid_line(coord, 1.0 / fine_spacing);
     float line_major = grid_line(coord, 1.0 / major_spacing);
 
     float alpha  = max(line_fine * 0.3, line_major * 0.5) * fade;
     float3 color = float3(0.5, 0.5, 0.5);
 
-    // ── axis highlighting ────────────────────────────────────────────
+    // -- axis highlighting --------------------------------------------
     float2 deriv = fwidth(coord);
 
     if (u.up_axis == 2) {

@@ -16,7 +16,7 @@ cd tools/framework
 git stash
 git checkout main
 git pull --ff-only origin main
-git stash pop   # conflict → stop, ask user
+git stash pop   # conflict -> stop, ask user
 ```
 
 ### 2. Bootstrap test driver & run tests
@@ -31,8 +31,8 @@ bash test_driver/tools/framework/bootstrap.sh test_driver
 cd test_driver && ./repo test
 ```
 
-**Fail → fix the issue and re-run tests. Do NOT bump version or proceed until
-tests pass.** Loop fix → test until green.
+**Fail -> fix the issue and re-run tests. Do NOT bump version or proceed until
+tests pass.** Loop fix -> test until green.
 
 ### 3. Clean up test driver
 
@@ -48,7 +48,7 @@ rm -rf test_driver
 
 ### 4. Bump version & changelog
 
-- Patch-increment `version` in `pyproject.toml` (e.g. `0.7.26` → `0.7.27`)
+- Patch-increment `version` in `pyproject.toml` (e.g. `0.7.26` -> `0.7.27`)
 - Prepend to `CHANGELOG.md`:
 
 ```markdown
@@ -68,7 +68,7 @@ git push origin main
 
 ### 6. Wait for CI tag
 
-CI auto-tags `v<version>` on green. Poll `git fetch origin --tags && git tag -l "v<new-version>"` every ~30s, up to 3 min. Timeout → print manual finish instructions and stop.
+CI auto-tags `v<version>` on green. Poll `git fetch origin --tags && git tag -l "v<new-version>"` every ~30s, up to 3 min. Timeout -> print manual finish instructions and stop.
 
 ### 7. Pin in parent repo
 
@@ -77,4 +77,4 @@ cd tools/framework && git checkout v<new-version>
 cd ../.. && git add tools/framework && git commit -m "Pin repokit submodule to v<new-version>"
 ```
 
-Print: old version → new version, changelog entry, pin commit hash.
+Print: old version -> new version, changelog entry, pin commit hash.

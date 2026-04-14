@@ -17,10 +17,10 @@ struct MappedState {};
 
 /// Async full-texture readback from GPU to CPU.
 /// Usage:
-///   1. Call request() — records CopyTextureToBuffer on the encoder
+///   1. Call request() -- records CopyTextureToBuffer on the encoder
 ///   2. Caller submits the encoder
-///   3. Call tick() each frame — drives mapAsync
-///   4. Call try_read() — returns pixel data when ready
+///   3. Call tick() each frame -- drives mapAsync
+///   4. Call try_read() -- returns pixel data when ready
 class TextureReadback
     : public AsyncStateMachine<TextureReadback, texture_readback::IdleState,
                                texture_readback::CopyingState, texture_readback::MappedState> {

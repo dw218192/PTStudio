@@ -195,7 +195,7 @@ class SlotVector {
     std::vector<uint32_t> m_free;
 };
 
-// --- Data structs (plain POD, no version/active — those live in Slot<>) ---
+// --- Data structs (plain POD, no version/active -- those live in Slot<>) ---
 
 struct MeshData {
     webgpu::Buffer vertex_buffer;  // interleaved (pos+normal+color+mat_idx)
@@ -245,7 +245,7 @@ struct CameraData {
     bool orthographic{false};
 };
 
-/// Prim path → slot lookup entry. A single map replaces separate
+/// Prim path -> slot lookup entry. A single map replaces separate
 /// prim_to_object / prim_to_light maps for better cache locality.
 struct PrimSlot {
     enum class Kind : uint8_t { Object, Light, Camera };
@@ -259,8 +259,8 @@ struct ShadowInfo {
     glm::mat4 light_vp{1.0f};  // 64 bytes
     float texel_size = 0.0f;   //  4 bytes
     float normal_bias = 0.0f;  //  4 bytes
-    uint32_t has_shadow = 0;   //  4 bytes — 0 = no shadow, 1 = active
-    uint32_t layer = 0;        //  4 bytes — texture array layer index
+    uint32_t has_shadow = 0;   //  4 bytes -- 0 = no shadow, 1 = active
+    uint32_t layer = 0;        //  4 bytes -- texture array layer index
 };
 static_assert(sizeof(ShadowInfo) == 80, "ShadowInfo must be 80 bytes for GPU alignment");
 
@@ -430,7 +430,7 @@ struct RenderWorld {
 
     void clear();
 
-    // Category version counters — bumped by SyncScope when any slot in that
+    // Category version counters -- bumped by SyncScope when any slot in that
     // category changes.  Used internally by IPass::get_or_create_pass_data
     // and prepare_gpu_buffers.  Prefer the pass_data API over reading these
     // directly in renderer code.
@@ -470,10 +470,10 @@ struct RenderWorld {
     SlotVector<LightData> m_lights;
     SlotVector<CameraData> m_cameras;
 
-    /// Material path → material index (deduplication cache).
+    /// Material path -> material index (deduplication cache).
     std::unordered_map<std::string, uint32_t> m_material_cache;
 
-    /// Prim path → slot (object or light). SdfPath has operator< and O(1)
+    /// Prim path -> slot (object or light). SdfPath has operator< and O(1)
     /// equality via interned strings.
     boost::container::flat_map<pxr::SdfPath, PrimSlot> m_prim_slots;
 
@@ -528,7 +528,7 @@ struct RenderWorld {
     uint64_t m_cached_scene_textures_version = UINT64_MAX;
     uint32_t m_texture_size = 1024;
 
-    // Per-pass data cache — keyed by pass identity (this pointer)
+    // Per-pass data cache -- keyed by pass identity (this pointer)
     std::unordered_map<const void*, PassDataMap> m_pass_data_cache;
 
     // IBL state

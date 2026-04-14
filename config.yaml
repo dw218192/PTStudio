@@ -53,11 +53,11 @@ agent:
       C++17 codebase. Naming: UpperCamelCase types, snake_case functions/variables,
       m_prefix for private members, k_snake_case for constexpr constants,
       lowerCamelCase.cpp files, snake_case directories.
-      Public API boundaries must be noexcept and return error_code or boost::result —
+      Public API boundaries must be noexcept and return error_code or boost::result --
       never let exceptions escape. Use ABI-safe types only at DLL boundaries
-      (fixed-width ints, POD structs, opaque handles — no std::string/vector).
+      (fixed-width ints, POD structs, opaque handles -- no std::string/vector).
       Prefer Rule of Zero, RAII, string_view/span for non-owning views.
-      Prefer returning values over storing state — e.g. init() returns an
+      Prefer returning values over storing state -- e.g. init() returns an
       error code rather than storing it as a member for the caller to query.
       Use #pragma once, include what you use, forward-declare in headers.
     reviewer: >
@@ -99,7 +99,7 @@ slangc:
   # Each entry may declare a `metadata: { output, namespace }` block; when
   # present, pts_shaderc walks the linked reflection in-process and emits the
   # C++ metadata header (replaces the old shader_codegen.py + reflect.json
-  # detour). Only the base (no-suffix) variant emits metadata — it is
+  # detour). Only the base (no-suffix) variant emits metadata -- it is
   # define-agnostic.
   shaders:
     - input: "assets/shaders/test/*.slang"
@@ -206,7 +206,7 @@ slangc:
 
 shader_variants_codegen:
   # Consumes `slangc.shaders[].variants[]` and emits a C++ header describing
-  # every (sorted defines → filename suffix) registered for embedding.
+  # every (sorted defines -> filename suffix) registered for embedding.
   # Consumed by EmbeddedCompiler to map compile(source_key, defines) requests
   # onto the embedded resource key.
   output: "core/generated/shader_variants_map.h"
@@ -222,7 +222,7 @@ embed:
   # when the active platform is emscripten.
   #
   # ibl_resources is an exception until iblResources.cpp is plumbed through
-  # IShaderCompiler — it still reads WGSL from its own embedded namespace on
+  # IShaderCompiler -- it still reads WGSL from its own embedded namespace on
   # both platforms.
   resources:
     - input:
@@ -301,7 +301,7 @@ package:
       dest: "deps/usd/"
     - src: "{workspace_root}/assets/scenes/*.usdz"
       dest: "assets/scenes/"
-  # Emscripten package omits conanbuild scripts — Conan .sh scripts use
+  # Emscripten package omits conanbuild scripts -- Conan .sh scripts use
   # hardcoded absolute paths and can't be relocated.  Unit tests only need
   # node (on CI PATH); smoke tests use the browser.
   mappings@emscripten:

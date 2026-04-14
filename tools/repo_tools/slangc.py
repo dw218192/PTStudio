@@ -1,9 +1,9 @@
 """Slang shader compilation driver.
 
 Thin driver over the `pts_shaderc` CLI (tools/pts_shaderc/). Resolves
-config.yaml `slangc.shaders` entries — glob expansion, variant suffixes,
-optional metadata-header emission — and invokes pts_shaderc once per
-(input × variant). pts_shaderc handles compile, metadata-header emission,
+config.yaml `slangc.shaders` entries -- glob expansion, variant suffixes,
+optional metadata-header emission -- and invokes pts_shaderc once per
+(input x variant). pts_shaderc handles compile, metadata-header emission,
 and staleness checks in-process via libslang.
 """
 
@@ -129,7 +129,7 @@ class SlangcTool(RepoTool):
                         cmd += ["-D", d]
                     for sp in search_paths:
                         cmd += ["-I", str(sp)]
-                    # Metadata emits only for the base (no-suffix) variant —
+                    # Metadata emits only for the base (no-suffix) variant --
                     # the C++ header is define-agnostic.
                     if metadata and not variant["suffix"]:
                         metadata_output = resolve_path(root, str(metadata["output"]), tokens)

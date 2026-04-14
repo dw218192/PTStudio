@@ -18,7 +18,7 @@ namespace pts::rendering {
 using EmbeddedGetter = std::optional<std::string_view> (*)(std::string_view);
 
 /// Registry of shader source metadata (slang path + embedded WGSL fallback +
-/// entry points). Does not compile shaders — `SlangCompiler` / `EmbeddedCompiler`
+/// entry points). Does not compile shaders -- `SlangCompiler` / `EmbeddedCompiler`
 /// consume this registry and produce WGSL.
 ///
 /// Kept as a thin shim so existing pass/renderer ctors that take a

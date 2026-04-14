@@ -1,6 +1,6 @@
 # Standalone entry point for the --host-tools-only CI build.
 #
-# This file is NEVER added as a subdirectory of the root project — the root
+# This file is NEVER added as a subdirectory of the root project -- the root
 # declares pts_shaderc inline with the rest of its native targets. This file
 # exists only so that Linux CI can build pts_shaderc in isolation, with just
 # slang + boost + spdlog from tools/conanfile.txt, skipping the full runtime
@@ -26,7 +26,7 @@ if(NOT EXISTS "${PTS_CORE_SHADERC_DIR}/CMakeLists.txt")
 endif()
 add_subdirectory("${PTS_CORE_SHADERC_DIR}" core_shaderc_build)
 
-# pts_shaderc — Slang → WGSL compiler CLI used by the slangc prebuild step.
+# pts_shaderc -- Slang -> WGSL compiler CLI used by the slangc prebuild step.
 # Shares the run_slang() backend with runtime SlangCompiler via core::shaderc.
 add_executable(pts_shaderc pts_shaderc/main.cpp)
 target_link_libraries(pts_shaderc PRIVATE core::shaderc)

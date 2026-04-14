@@ -4,8 +4,8 @@ public struct ShadowInfo {
     public float4x4 light_vp;   // 64 bytes
     public float texel_size;    //  4 bytes
     public float normal_bias;   //  4 bytes
-    public uint has_shadow;     //  4 bytes — 0 = no shadow, 1 = shadow active
-    public uint layer;          //  4 bytes — index into shadow map texture array
+    public uint has_shadow;     //  4 bytes -- 0 = no shadow, 1 = shadow active
+    public uint layer;          //  4 bytes -- index into shadow map texture array
 };
 
 // 5x5 PCF with manual depth comparison

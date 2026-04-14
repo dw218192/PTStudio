@@ -202,7 +202,7 @@ TEST_CASE("FrameGraph - cache invalidation on resize") {
     f.graph.compile();
     CHECK(f.graph.compiled_texture(d1)->view != nullptr);
 
-    // Frame 2 - different size → decl gets new desc → compiled recreated.
+    // Frame 2 - different size -> decl gets new desc -> compiled recreated.
     // (Normal user pattern would be eviction first; here we force recreation by
     // re-declaring with same name but different width.)
     desc.width = 128;
@@ -556,7 +556,7 @@ TEST_CASE("FrameGraph - descriptor rebuilds on buffer change") {
     f.graph.compile();
     CHECK(f.graph.compiled_descriptor(bg2) != nullptr);
     CHECK(f.graph.compiled_descriptor(bg2)->bind_group != nullptr);
-    // Version bumps monotonically on rebuild — proves we did rebuild.
+    // Version bumps monotonically on rebuild -- proves we did rebuild.
     CHECK(f.graph.compiled_descriptor(bg2)->version != v1);
 
     wgpuBufferDestroy(ext_buf1);
@@ -632,7 +632,7 @@ TEST_CASE("FrameGraph - descriptor rebuilds on texture change") {
     auto v1 = f.graph.compiled_descriptor(bg)->version;
     auto bg1_ptr = f.graph.compiled_descriptor(bg)->bind_group;
 
-    // Frame 2: same desc → reuse (bind_group pointer stable, version stable)
+    // Frame 2: same desc -> reuse (bind_group pointer stable, version stable)
     f.graph.begin_frame();
     auto tex2 = f.graph.texture("my_tex", tex_desc);
     f.graph.add_pass("writer").color(tex2).execute([](ExecuteContext&, WGPURenderPassEncoder) {});
@@ -641,7 +641,7 @@ TEST_CASE("FrameGraph - descriptor rebuilds on texture change") {
     CHECK(f.graph.compiled_descriptor(bg2)->version == v1);
     CHECK(f.graph.compiled_descriptor(bg2)->bind_group == bg1_ptr);
 
-    // Frame 3: new texture name → different decl → descriptor rebuilds.
+    // Frame 3: new texture name -> different decl -> descriptor rebuilds.
     f.graph.begin_frame();
     TextureDesc tex3_desc = tex_desc;
     auto tex3 = f.graph.texture("my_tex_v2", tex3_desc);

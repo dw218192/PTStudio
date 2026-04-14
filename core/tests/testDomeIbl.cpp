@@ -116,7 +116,7 @@ TEST_CASE("update_ibl skips when light_version unchanged") {
     world.update_ibl(device, device.queue(), sampler);
     CHECK(world.ibl_resources().is_ready());
 
-    // Second call with no version change — should return early (no-op)
+    // Second call with no version change -- should return early (no-op)
     world.update_ibl(device, device.queue(), sampler);
     CHECK(world.ibl_resources().is_ready());
     wgpuSamplerRelease(sampler);

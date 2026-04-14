@@ -6,7 +6,7 @@
 #if defined(TRACY_DELAYED_INIT) && defined(TRACY_MANUAL_LIFETIME)
 #include <client/TracyProfiler.hpp>
 // With manual lifetime, there is no static s_profiler and no atexit handler.
-// We start the profiler explicitly but skip shutdown — Tracy 0.13.1's
+// We start the profiler explicitly but skip shutdown -- Tracy 0.13.1's
 // ShutdownProfiler() deadlocks because Worker() blocks in Accept() with no
 // timeout.  The OS reclaims all threads, sockets, and memory at process exit.
 #define PTS_STARTUP_PROFILER() tracy::StartupProfiler()

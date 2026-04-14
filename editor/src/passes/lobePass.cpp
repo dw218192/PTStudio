@@ -167,7 +167,7 @@ void LobePass::set_material(float roughness, float metallic) {
 }
 
 void LobePass::draw_imgui() {
-    // No standalone window — lobe is drawn inline via draw_lobe_widget()
+    // No standalone window -- lobe is drawn inline via draw_lobe_widget()
 }
 
 bool LobePass::draw_lobe_widget() {

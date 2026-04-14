@@ -35,7 +35,7 @@ struct AnotherFakePass final : IRenderer {
     }
 };
 
-/// A minimal IPass child (not a renderer — has no children of its own).
+/// A minimal IPass child (not a renderer -- has no children of its own).
 struct FakeChild final : IPass {
     using IPass::IPass;
     auto name() const noexcept -> std::string_view override {
@@ -91,5 +91,5 @@ TEST_CASE("IRenderer::add_pass returns reference and owns child") {
     CHECK(child.name() == "fake_child");
 }
 
-// draw_imgui forwarding is exercised at runtime — ImGui widget state
+// draw_imgui forwarding is exercised at runtime -- ImGui widget state
 // makes it impractical to unit-test without a full render backend.

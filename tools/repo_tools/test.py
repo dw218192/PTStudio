@@ -1,4 +1,4 @@
-"""Test subcommand — discovers and runs test executables."""
+"""Test subcommand -- discovers and runs test executables."""
 
 from __future__ import annotations
 

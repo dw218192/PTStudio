@@ -34,10 +34,10 @@ Organize prims under `/Root`:
 
 ```
 /Root
-  /Materials        ← Scope containing all materials
+  /Materials        <- Scope containing all materials
     /MatName
-      /Shader       ← UsdPreviewSurface shader node
-  /Geometry         ← Xform grouping geometry (optional, flat layout OK for small scenes)
+      /Shader       <- UsdPreviewSurface shader node
+  /Geometry         <- Xform grouping geometry (optional, flat layout OK for small scenes)
     /MeshName
   /Lights
     /LightName
@@ -47,26 +47,26 @@ For simple scenes with few prims, flat layout under `/Root` is fine (no `/Geomet
 
 ## Supported Prim Types
 
-PTStudio adapters support these types. Only use these — anything else is silently ignored.
+PTStudio adapters support these types. Only use these -- anything else is silently ignored.
 
 ### Geometry
-- `Cube` — `double size`
-- `Sphere` — `double radius`
-- `Cylinder` — `token axis`, `double height`, `double radius`
-- `Cone` — `token axis`, `double height`, `double radius`
-- `Capsule` — `token axis`, `double height`, `double radius`
-- `Mesh` — `point3f[] points`, `int[] faceVertexCounts`, `int[] faceVertexIndices`, `normal3f[] normals` (optional)
+- `Cube` -- `double size`
+- `Sphere` -- `double radius`
+- `Cylinder` -- `token axis`, `double height`, `double radius`
+- `Cone` -- `token axis`, `double height`, `double radius`
+- `Capsule` -- `token axis`, `double height`, `double radius`
+- `Mesh` -- `point3f[] points`, `int[] faceVertexCounts`, `int[] faceVertexIndices`, `normal3f[] normals` (optional)
 
 ### Lights
 
 All directional area lights (RectLight, DiskLight, DistantLight) are centered
 in the XY plane and **emit along -Z** by default. Rotate to aim them.
 
-- `DistantLight` — `float inputs:intensity`, `color3f inputs:color`, `float inputs:angle`. Emits along -Z.
-- `SphereLight` — `float inputs:intensity`, `color3f inputs:color`, `float inputs:radius`. Omnidirectional.
-- `RectLight` — `float inputs:intensity`, `color3f inputs:color`, `float inputs:width`, `float inputs:height`. Emits along -Z.
-- `DiskLight` — `float inputs:intensity`, `color3f inputs:color`, `float inputs:radius`. Emits along -Z.
-- `DomeLight` — `float inputs:intensity`, `color3f inputs:color`, `asset inputs:texture:file`. Emits inward.
+- `DistantLight` -- `float inputs:intensity`, `color3f inputs:color`, `float inputs:angle`. Emits along -Z.
+- `SphereLight` -- `float inputs:intensity`, `color3f inputs:color`, `float inputs:radius`. Omnidirectional.
+- `RectLight` -- `float inputs:intensity`, `color3f inputs:color`, `float inputs:width`, `float inputs:height`. Emits along -Z.
+- `DiskLight` -- `float inputs:intensity`, `color3f inputs:color`, `float inputs:radius`. Emits along -Z.
+- `DomeLight` -- `float inputs:intensity`, `color3f inputs:color`, `asset inputs:texture:file`. Emits inward.
 
 ### Materials (UsdPreviewSurface only)
 
@@ -131,7 +131,7 @@ uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
 Always set `orientation = "rightHanded"` on custom meshes. In USD's `rightHanded`
 convention, vertices go **clockwise** when viewed from the front face. This
 matches how the renderer's projection and culling work together (glm right-handed
-projection flips Z → CW world becomes CCW clip → `WGPUFrontFace_CCW` matches).
+projection flips Z -> CW world becomes CCW clip -> `WGPUFrontFace_CCW` matches).
 
 For a +Y-facing ground plane, wind vertices **CW when viewed from above**:
 
@@ -174,8 +174,8 @@ over "Root"
 
 - Always include at least one light so the scene is visible.
 - For general-purpose scenes: a `DistantLight` rotated ~(-45, 30, 0) at intensity 1.0 works well as a sun.
-- For area-light testing: use `RectLight` or `DiskLight` with higher intensity (100–500+) since they are physically-sized emitters.
-- `DomeLight` at low intensity (0.5–1.0) provides ambient fill.
+- For area-light testing: use `RectLight` or `DiskLight` with higher intensity (100-500+) since they are physically-sized emitters.
+- `DomeLight` at low intensity (0.5-1.0) provides ambient fill.
 
 ## Verification
 
@@ -192,8 +192,8 @@ For specific debug output:
 
 ## What NOT to do
 
-- Do not use schema types not listed above (e.g. UsdGeomBasisCurves, UsdSkelRoot) — they are not supported.
-- Do not use texture file references — the editor has no texture loading pipeline yet.
-- Do not use `class` prims or inherits composition — keep scenes self-contained.
+- Do not use schema types not listed above (e.g. UsdGeomBasisCurves, UsdSkelRoot) -- they are not supported.
+- Do not use texture file references -- the editor has no texture loading pipeline yet.
+- Do not use `class` prims or inherits composition -- keep scenes self-contained.
 - Do not use animation / time samples unless explicitly asked.
-- Do not omit `xformOpOrder` when using any xformOp — USD requires it.
+- Do not omit `xformOpOrder` when using any xformOp -- USD requires it.

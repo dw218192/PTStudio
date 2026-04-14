@@ -400,7 +400,7 @@ float* load_image_float(const unsigned char* buf, size_t size, const std::string
         return out;
     }
     // LDR formats (PNG, JPG, etc.): use stbi_load (uint8) and normalize to
-    // [0,1] without gamma conversion. stbi_loadf would apply sRGB→linear
+    // [0,1] without gamma conversion. stbi_loadf would apply sRGB->linear
     // (pow 2.2), causing double-linearization when the shader also applies it.
     int channels = 0;
     auto* bytes = stbi_load_from_memory(reinterpret_cast<const stbi_uc*>(buf),
@@ -521,7 +521,7 @@ PreparedSceneData RenderWorld::prepare_scene_data() {
     auto lights = get_lights();
 
     if (m_lights_version != m_cached_lights_version) {
-        // Structural change — full rebuild
+        // Structural change -- full rebuild
         for (const auto& slot : lights) {
             if (!slot.active()) continue;
             data.gpu_lights.push_back(to_light(slot.data()));
@@ -672,7 +672,7 @@ PreparedSceneData RenderWorld::prepare_scene_data() {
             auto inst_count = static_cast<uint32_t>(instances.size());
 
             // Build TLAS from world-space AABBs into PreparedSceneData
-            // (not m_tlas — that's read by the render thread)
+            // (not m_tlas -- that's read by the render thread)
             {
                 PTS_ZONE_NAMED("TLAS build");
                 data.tlas.build(world_aabbs, inst_count);
@@ -1154,7 +1154,7 @@ void RenderWorld::update_ibl(const webgpu::Device& device, WGPUQueue queue, WGPU
     }
 
     if (!dome) {
-        // No dome light — black ambient
+        // No dome light -- black ambient
         if (m_ibl_env_path.empty() && m_ibl_uniform_color == glm::vec3(0.0f)) return;
         m_ibl.set_uniform_environment(device, queue, 0.0f, 0.0f, 0.0f);
         m_ibl_env_path.clear();

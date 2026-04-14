@@ -22,7 +22,7 @@ bool LoadingOverlay::draw() {
 
     auto& io = ImGui::GetIO();
 
-    // Input blocker — drawn first so it's behind the progress window in z-order
+    // Input blocker -- drawn first so it's behind the progress window in z-order
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(io.DisplaySize);
     ImGui::Begin("##LoadingBlocker", nullptr,
@@ -36,7 +36,7 @@ bool LoadingOverlay::draw() {
     ImGui::GetForegroundDrawList()->AddRectFilled(ImVec2(0, 0), io.DisplaySize,
                                                   IM_COL32(0, 0, 0, 100));
 
-    // Centered progress window — fixed width
+    // Centered progress window -- fixed width
     constexpr float k_window_width = 360.0f;
     ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
                             ImGuiCond_Always, ImVec2(0.5f, 0.5f));
@@ -61,7 +61,7 @@ bool LoadingOverlay::draw() {
                 auto ellipsis = std::string("...");
                 float ellipsis_w = ImGui::CalcTextSize(ellipsis.c_str()).x;
                 float budget = max_w - ellipsis_w;
-                // Binary search is overkill — take a fixed prefix/suffix ratio
+                // Binary search is overkill -- take a fixed prefix/suffix ratio
                 size_t total = status_text.size();
                 size_t suffix_len = total / 3;
                 size_t prefix_len = total - suffix_len;

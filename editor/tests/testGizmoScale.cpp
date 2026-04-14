@@ -1,6 +1,6 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 
-// diagnostics.h defines CHECK which conflicts with doctest — include it first
+// diagnostics.h defines CHECK which conflicts with doctest -- include it first
 // then undef before doctest redefines it.
 #include <core/diagnostics.h>
 #undef CHECK
@@ -12,7 +12,7 @@
 using pts::editor::gizmo_distance_scale;
 
 TEST_CASE("gizmo_distance_scale never shrinks below 1") {
-    // Close camera → scale stays at 1
+    // Close camera -> scale stays at 1
     CHECK(gizmo_distance_scale(1.0f, 5.0f) == doctest::Approx(1.0f));
     CHECK(gizmo_distance_scale(0.0f, 1.0f) == doctest::Approx(1.0f));
 }

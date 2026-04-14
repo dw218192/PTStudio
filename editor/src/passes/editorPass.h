@@ -21,7 +21,7 @@ inline float gizmo_distance_scale(float camera_distance, float world_radius,
     return std::max(1.0f, min_screen_radius * camera_distance / r);
 }
 
-// ── Gizmo geometry generation (inline for testability) ────────────────
+// -- Gizmo geometry generation (inline for testability) ----------------
 
 static constexpr uint32_t k_gizmo_circle_segments = 48;
 
@@ -104,8 +104,8 @@ inline std::vector<glm::vec3> generate_light_verts(const rendering::LightData& l
 
 /// Combined picking + wireframe light gizmo pass.
 /// Submits two frame graph passes:
-///   "editor_picking" — renders mesh objects + light shapes to picking_ids
-///   "editor_gizmos"  — renders light wireframe shapes to scene_color
+///   "editor_picking" -- renders mesh objects + light shapes to picking_ids
+///   "editor_gizmos"  -- renders light wireframe shapes to scene_color
 class EditorPass final : public rendering::IPass {
    public:
     using IPass::IPass;
@@ -134,7 +134,7 @@ class EditorPass final : public rendering::IPass {
         uint32_t vertex_count = 0;
     };
 
-    /// Flat table: picking_id → prim_path. Built each frame in add_to_frame_graph.
+    /// Flat table: picking_id -> prim_path. Built each frame in add_to_frame_graph.
     std::vector<pxr::SdfPath> m_picking_table;
 };
 

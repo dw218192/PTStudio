@@ -4,9 +4,9 @@ message(STATUS "Building Editor Tests")
 
 find_package(doctest REQUIRED)
 
-# testCaptureConfig — tests AppConfig and CLI flag registration (no GPU needed)
-# testGizmoScale — tests gizmo distance-based scaling (no GPU needed)
-# testTransformDecompose — tests TRS matrix decompose/recompose roundtrip (no GPU needed)
+# testCaptureConfig -- tests AppConfig and CLI flag registration (no GPU needed)
+# testGizmoScale -- tests gizmo distance-based scaling (no GPU needed)
+# testTransformDecompose -- tests TRS matrix decompose/recompose roundtrip (no GPU needed)
 set(TEST_NAMES testCaptureConfig testGizmoScale testTransformDecompose testLightGizmoVerts testAutoExposure)
 set(testCaptureConfig_source testCaptureConfig.cpp)
 set(testGizmoScale_source testGizmoScale.cpp)

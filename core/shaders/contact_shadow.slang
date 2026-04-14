@@ -57,7 +57,7 @@ float3 get_light_direction_view(Light light, float3 frag_view_pos) {
         float3 world_dir = -light.direction_or_pos;
         return normalize(mul(u.view, float4(world_dir, 0.0)).xyz);
     }
-    // Point/area lights: world position → view space (w=1), then subtract fragment
+    // Point/area lights: world position -> view space (w=1), then subtract fragment
     float3 light_view_pos = mul(u.view, float4(light.direction_or_pos, 1.0)).xyz;
     return normalize(light_view_pos - frag_view_pos);
 }

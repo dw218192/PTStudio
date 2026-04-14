@@ -18,7 +18,7 @@ class TestCollectVariants:
 
     def test_implicit_base_variant_is_skipped(self):
         # A shader with no variants and no defines is the implicit base
-        # variant — EmbeddedCompiler returns source_key unchanged for empty
+        # variant -- EmbeddedCompiler returns source_key unchanged for empty
         # defines, so it shouldn't appear in the map.
         shaders = [{"input": "a.slang", "output": "a.wgsl"}]
         assert _collect_variants(_config(shaders)) == []

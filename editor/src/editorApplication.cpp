@@ -194,7 +194,7 @@ void EditorApplication::process_dirty_prims() {
         m_resync_paths.erase(std::unique(m_resync_paths.begin(), m_resync_paths.end()),
                              m_resync_paths.end());
 
-        // Selection is prim-path based — survives resync automatically
+        // Selection is prim-path based -- survives resync automatically
 
         {
             auto scope = m_world.begin_sync();
@@ -228,7 +228,7 @@ void EditorApplication::process_dirty_prims() {
         m_resync_paths.clear();
     }
 
-    // Xform-only changes — lightweight transform update (no mesh re-upload)
+    // Xform-only changes -- lightweight transform update (no mesh re-upload)
     if (!m_dirty_xform_paths.empty()) {
         std::sort(m_dirty_xform_paths.begin(), m_dirty_xform_paths.end());
         m_dirty_xform_paths.erase(
@@ -409,9 +409,9 @@ void EditorApplication::on_ready() {
 
     auto const& device = webgpu_context()->device();
 
-    // ── Rendering init ──
+    // -- Rendering init --
 
-    // Shader compiler — wraps ShaderLoader so native hot-reload keeps working.
+    // Shader compiler -- wraps ShaderLoader so native hot-reload keeps working.
     // Sub-ticket B replaces the native branch with a SlangCompiler.
     m_shader_compiler = rendering::make_shader_compiler(m_shader_loader);
 
@@ -497,7 +497,7 @@ void EditorApplication::on_ready() {
 
     // Create editor passes (always-on, independent of renderer choice).
     // Resources (BGLs, pipelines, shaders) are created lazily on the first
-    // render() call via the FrameGraph caches — no eager setup step.
+    // render() call via the FrameGraph caches -- no eager setup step.
     {
         auto& dev = webgpu_context()->device();
         m_grid_pass = std::make_unique<GridPass>(m_shader_loader);
@@ -508,7 +508,7 @@ void EditorApplication::on_ready() {
         m_lobe_pass->ensure_initialized(dev);
     }
 
-    // Set up renderer pass — optionally select by name
+    // Set up renderer pass -- optionally select by name
     {
         auto& entries = rendering::RendererRegistry::entries();
         INVARIANT_MSG(!entries.empty(), "No renderers registered");
@@ -558,7 +558,7 @@ void EditorApplication::on_ready() {
 
     if (!m_app_config.camera_target.empty()) {
         float x, y, z;
-        // Format already validated in process_args — parse is safe here
+        // Format already validated in process_args -- parse is safe here
         std::sscanf(m_app_config.camera_target.c_str(), "%f,%f,%f", &x, &y, &z);
         m_camera.set_target({x, y, z});
     }
@@ -682,7 +682,7 @@ void EditorApplication::render(FrameContext& ctx) {
     bool const capture_mode = m_app_config.is_capture_mode();
     if (!m_scene_load_task) ++m_frame_count;
 
-    // ── Capture readback: tick the async state machine and save when ready ──
+    // -- Capture readback: tick the async state machine and save when ready --
     if (m_capture_readback.is_pending()) {
         m_capture_readback.tick();
         auto pixels = m_capture_readback.try_read();
@@ -716,7 +716,7 @@ void EditorApplication::render(FrameContext& ctx) {
         // GPU upload on main thread
         world.upload_all_meshes(webgpu_context()->device());
 
-        // Quiesce the prep worker — it captures m_world by reference, so
+        // Quiesce the prep worker -- it captures m_world by reference, so
         // swapping the world while a job is in flight is a data race.
         m_prep_worker.reset();
         m_world = std::move(world);
@@ -770,7 +770,7 @@ void EditorApplication::render(FrameContext& ctx) {
     }
 
     if (m_imgui && !capture_mode) {
-        // Poll input — prev_hovered_widget makes this order-independent from UI drawing
+        // Poll input -- prev_hovered_widget makes this order-independent from UI drawing
         m_input->poll(get_time(), window_width(), window_height(), m_imgui->prev_hovered_widget());
 
         if (m_first_frame) {
@@ -804,7 +804,7 @@ void EditorApplication::render(FrameContext& ctx) {
         }
         m_imgui->end_window();
 
-        // Renderer settings window — one shared window, each pass draws a section
+        // Renderer settings window -- one shared window, each pass draws a section
         if (ImGui::Begin("Renderer")) {
             for_each_pass([](auto& pass) { pass.draw_imgui(); });
         }
@@ -820,7 +820,7 @@ void EditorApplication::render(FrameContext& ctx) {
         m_loading_overlay.draw();
     }
 
-    // ── Frame graph ──
+    // -- Frame graph --
     auto const& device = ctx.device();
     auto queue = device.queue();
 
@@ -910,7 +910,7 @@ void EditorApplication::render(FrameContext& ctx) {
     }
 
     // Declare reads on all debug target textures so frame graph tracks them.
-    // Debug targets are created by the passes themselves — we just look them up.
+    // Debug targets are created by the passes themselves -- we just look them up.
     std::vector<rendering::TextureDeclHandle> debug_target_decls;
     if (has_viewport) {
         auto collect_debug_targets = [&](auto& pass) {
@@ -930,7 +930,7 @@ void EditorApplication::render(FrameContext& ctx) {
     }
 
     if (!capture_mode) {
-        // ImGui overlay pass — declare reads on any texture that ImGui::Image references
+        // ImGui overlay pass -- declare reads on any texture that ImGui::Image references
         auto imgui_builder = m_frame_graph->add_pass("imgui")
                                  .color(ctx.surface_view(), WGPUColor{0.08, 0.08, 0.12, 1.0})
                                  .present();
@@ -974,7 +974,7 @@ void EditorApplication::render(FrameContext& ctx) {
     m_frame_graph->compile();
     m_frame_graph->execute(ctx.encoder());
 
-    // ── Issue capture readback (shared by --capture-and-quit and interactive screenshot) ──
+    // -- Issue capture readback (shared by --capture-and-quit and interactive screenshot) --
     {
         bool should_capture = false;
         if (capture_mode && m_frame_count >= m_app_config.capture_frames) {
@@ -1000,7 +1000,7 @@ void EditorApplication::render(FrameContext& ctx) {
         }
     }
 
-    // ── GPU picking readback ──
+    // -- GPU picking readback --
     m_picking_readback.tick();
 
     if (auto picked_id = m_picking_readback.try_read_u32()) {
@@ -1151,7 +1151,7 @@ void EditorApplication::load_stage(pxr::UsdStageRefPtr stage, std::string_view l
     INVARIANT_MSG(stage, "load_stage called with null stage");
 
     if (m_init_complete) {
-        // Async path — populate in background, finalize in render()
+        // Async path -- populate in background, finalize in render()
         m_scene_load_task.reset();
         m_pending_stage.Reset();
         m_pending_stage = stage;
@@ -1170,7 +1170,7 @@ void EditorApplication::load_stage(pxr::UsdStageRefPtr stage, std::string_view l
 
         log(LogLevel::Info, "Loading scene: {} (background)", label);
     } else {
-        // Sync path — during on_ready(), before init is complete
+        // Sync path -- during on_ready(), before init is complete
         auto const& device = webgpu_context()->device();
 
         // Apply override layer if specified (only on initial load)
@@ -1355,7 +1355,7 @@ auto EditorApplication::draw_inspector_panel() noexcept -> void {
     if (!m_selected_prim.IsEmpty()) {
         auto prim = m_stage->GetPrimAtPath(m_selected_prim);
         if (prim.IsValid()) {
-            // ── Transform section (TRS) ──
+            // -- Transform section (TRS) --
             pxr::UsdGeomXformable xformable(prim);
             if (xformable) {
                 pxr::GfMatrix4d gf_local;
@@ -1404,7 +1404,7 @@ auto EditorApplication::draw_inspector_panel() noexcept -> void {
                 if (surface.GetConnectedSource(&source, &source_name, &source_type)) {
                     auto shader = pxr::UsdShadeShader(source.GetPrim());
 
-                    // Sync from USD → lobe sliders only when selection changes
+                    // Sync from USD -> lobe sliders only when selection changes
                     if (m_selected_prim != m_lobe_bound_prim) {
                         m_lobe_bound_prim = m_selected_prim;
                         float roughness = 0.5f;
@@ -1702,7 +1702,7 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
         }
     }
 
-    // ── ImGuizmo gizmo ──
+    // -- ImGuizmo gizmo --
     if (m_editor_passes_enabled && !m_selected_prim.IsEmpty() && m_stage && m_viewport_width > 0 &&
         m_viewport_height > 0) {
         auto prim = m_stage->GetPrimAtPath(m_selected_prim);
@@ -1764,7 +1764,7 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
         }
     }
 
-    // ── Viewport right-click context menu ──
+    // -- Viewport right-click context menu --
     if (m_open_viewport_context) {
         m_open_viewport_context = false;
         ImGui::OpenPopup("ViewportContextMenu");
@@ -1833,7 +1833,7 @@ auto EditorApplication::handle_input(InputEvent const& event) noexcept -> void {
         }
     }
 
-    if (m_active_camera_index != 0) return;  // scene camera active — no orbit input
+    if (m_active_camera_index != 0) return;  // scene camera active -- no orbit input
 
     bool rmb_held = ImGui::IsMouseDown(ImGuiMouseButton_Right);
 

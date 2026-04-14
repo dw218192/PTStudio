@@ -95,7 +95,7 @@ class BuildTool(RepoTool):
             msg = r.message
             if r.level in ("error", "critical", "warning"):
                 lines.append(msg)
-            elif any(k in msg for k in ("✓", "✗", "CMake build", "FAILED")):
+            elif any(k in msg for k in ("[OK]", "[FAIL]", "CMake build", "FAILED")):
                 lines.append(msg)
             elif r.level == "output" and (
                 "error" in msg.lower() or "warning" in msg.lower()

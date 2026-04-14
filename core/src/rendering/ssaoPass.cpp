@@ -29,14 +29,14 @@ struct SSAOUniforms {
     float bias;                // 140: 4
     float intensity;           // 144: 4
     int32_t sample_count;      // 148: 4
-    uint32_t _pad[2];          // 152: 8  → total 160
+    uint32_t _pad[2];          // 152: 8  -> total 160
 };
 static_assert(sizeof(SSAOUniforms) == 160, "SSAOUniforms must match shader std140 layout");
 
 // Must match BlurUniforms in ssao_blur.slang.
 struct SSAOBlurUniforms {
     glm::vec2 texel_size;  // 0: 8
-    float _pad[2];         // 8: 8  → total 16
+    float _pad[2];         // 8: 8  -> total 16
 };
 static_assert(sizeof(SSAOBlurUniforms) == 16, "SSAOBlurUniforms must match shader std140 layout");
 
@@ -94,7 +94,7 @@ SSAOPass::Outputs SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext
     if (!m_enabled) return {};
     ensure_initialized(ctx.device);
 
-    // ── Kernel buffer (persistent — first-call upload) ──
+    // -- Kernel buffer (persistent -- first-call upload) --
     // The initial data must outlive the first compile(); store it in a static
     // buffer that persists for the process lifetime.
     static const auto k_kernel_data = [] {
@@ -110,7 +110,7 @@ SSAOPass::Outputs SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext
         fg.buffer("ssao_kernel", desc, k_kernel_data.data());
     }
 
-    // ── Noise texture (4×4 RGBA8Unorm, persistent) ──
+    // -- Noise texture (4x4 RGBA8Unorm, persistent) --
     static const auto k_noise_data = [] {
         std::array<uint8_t, 4 * 4 * 4> d{};
         generate_noise_data(d.data());
@@ -148,7 +148,7 @@ SSAOPass::Outputs SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext
                               .bind_group_layouts({blur_bgl})
                               .build();
 
-    // ── Frame graph resources ──
+    // -- Frame graph resources --
     TextureDesc r8_desc;
     r8_desc.width = ctx.viewport_width;
     r8_desc.height = ctx.viewport_height;
@@ -213,7 +213,7 @@ SSAOPass::Outputs SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext
     auto intensity = m_intensity;
     auto sample_count = m_sample_count;
 
-    // ── Pass 1: AO Generation ──
+    // -- Pass 1: AO Generation --
     fg.add_pass("ssao_gen")
         .read(depth_decl)
         .read(normals_decl)
@@ -240,7 +240,7 @@ SSAOPass::Outputs SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext
             wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
         });
 
-    // ── Pass 2: Bilateral Blur ──
+    // -- Pass 2: Bilateral Blur --
     fg.add_pass("ssao_blur")
         .read(ssao_raw_decl)
         .read(depth_decl)

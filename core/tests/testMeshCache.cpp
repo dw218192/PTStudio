@@ -144,7 +144,7 @@ TEST_CASE("world swap invalidates pass data cache") {
         });
         CHECK(factory_calls == 1);
     }
-    // Old world destroyed — cache gone. New world must recreate.
+    // Old world destroyed -- cache gone. New world must recreate.
     RenderWorld world2;
     auto scope2 = world2.begin_sync();
     auto slot2 = scope2.alloc_mesh_slot();

@@ -31,7 +31,7 @@ void sync_prim_impl(pxr::UsdPrim prim, SyncScope& scope) {
             return;
         }
     }
-    // No adapter handles this prim — remove any stale entry from a prior sync
+    // No adapter handles this prim -- remove any stale entry from a prior sync
     // (e.g. prim type changed from mesh to something unsupported).
     remove_prim(scope, prim.GetPath());
 }

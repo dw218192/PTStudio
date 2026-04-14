@@ -111,7 +111,7 @@ void ToneMappingPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx)
             static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
         auto lum_params_decl = create_buffer(fg, lum_params_desc, "lum_params");
 
-        // Depth for sky masking (optional — path tracer may not have it)
+        // Depth for sky masking (optional -- path tracer may not have it)
         auto depth_decl = m_inputs.depth;
         bool has_depth = static_cast<bool>(depth_decl);
 

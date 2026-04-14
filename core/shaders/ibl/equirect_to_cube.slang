@@ -1,4 +1,4 @@
-// Equirectangular HDR → cubemap face conversion.
+// Equirectangular HDR -> cubemap face conversion.
 // Dispatched once per face (Z=1) with a single-layer output view.
 // Per-face dispatch works around a Dawn/Tint D3D12 codegen issue where
 // textureStore to texture_storage_2d_array silently drops writes to

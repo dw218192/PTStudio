@@ -21,8 +21,8 @@ class IRenderer : public IPass {
     };
 
     /// Public entry point (non-virtual, NVI).
-    /// Calls do_add_to_frame_graph → gets HDR scene color + depth,
-    /// then runs tone mapping → LDR display-ready color.
+    /// Calls do_add_to_frame_graph -> gets HDR scene color + depth,
+    /// then runs tone mapping -> LDR display-ready color.
     Outputs add_to_frame_graph(FrameGraph& fg, const PassContext& ctx);
 
     // Exposure controls (delegated to ToneMappingPass)
@@ -47,7 +47,7 @@ class IRenderer : public IPass {
         return nullptr;
     }
 
-    // ── Lifecycle: auto-forwarded to all children ──
+    // -- Lifecycle: auto-forwarded to all children --
 
     void ensure_initialized(const webgpu::Device& device) override;
     void draw_imgui() override;
@@ -67,7 +67,7 @@ class IRenderer : public IPass {
     }
 
    protected:
-    /// What do_add_to_frame_graph returns — HDR color before tone mapping.
+    /// What do_add_to_frame_graph returns -- HDR color before tone mapping.
     struct HdrOutputs {
         TextureDeclHandle color;  // HDR scene color
         TextureDeclHandle depth;  // optional; compute-only renderers may not produce

@@ -1,4 +1,4 @@
-"""Build orchestrator — main build_command and helpers."""
+"""Build orchestrator -- main build_command and helpers."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ from .ide import (
 )
 
 
-# ── Prebuild / Postbuild Steps ───────────────────────────────────────
+# -- Prebuild / Postbuild Steps ---------------------------------------
 
 
 def execute_build_steps(
@@ -85,13 +85,13 @@ def execute_build_steps(
 
         tool = get_tool(repo_tool)
         if tool is None:
-            logger.error(f"  ✗ Unknown repo tool: {repo_tool}")
+            logger.error(f"  [FAIL] Unknown repo tool: {repo_tool}")
             raise RuntimeError(
                 f"Unknown repo tool '{repo_tool}' in {step_type} step '{step_name}'"
             )
         if repo_tool == current_tool:
             logger.error(
-                f"  ✗ Cannot call '{repo_tool}' tool from {step_type} steps (would cause recursion)"
+                f"  [FAIL] Cannot call '{repo_tool}' tool from {step_type} steps (would cause recursion)"
             )
             raise RuntimeError(
                 f"{step_type} step '{step_name}' cannot use '{repo_tool}' tool"
@@ -101,13 +101,13 @@ def execute_build_steps(
 
         try:
             invoke_tool(repo_tool, tokens, config, dimensions=dimensions, extra_args=step_args_value)
-            logger.info(f"  ✓ {step_name} completed")
+            logger.info(f"  [OK] {step_name} completed")
         except Exception as e:
-            logger.error(f"  ✗ {step_name} failed: {e}")
+            logger.error(f"  [FAIL] {step_name} failed: {e}")
             raise RuntimeError(f"{step_type} step '{step_name}' failed") from e
 
 
-# ── Helpers ──────────────────────────────────────────────────────────
+# -- Helpers ----------------------------------------------------------
 
 
 def _host_package_names(lock_file: Path) -> list[str]:
@@ -169,7 +169,7 @@ def _write_deploy_sentinel(lock_file: Path, conan_deps_root: Path, build_type: s
     sentinel.write_text(h.hexdigest())
 
 
-# ── Host-tools-only Build ────────────────────────────────────────────
+# -- Host-tools-only Build --------------------------------------------
 
 
 def _host_tools_only_build(
@@ -285,7 +285,7 @@ def _host_tools_only_build(
             shutil.copy2(built, dest)
             logger.info(f"Staged host tool: {dest} (from {built})")
 
-    # Run only prebuild steps that map to a host tool (e.g. usdz → *.usdz).
+    # Run only prebuild steps that map to a host tool (e.g. usdz -> *.usdz).
     host_prebuild_steps = {
         name: cfg for name, cfg in (prebuild_steps or {}).items()
         if name in _HOST_TOOL_TARGETS
@@ -300,7 +300,7 @@ def _host_tools_only_build(
     logger.info("Host-tools-only build complete")
 
 
-# ── Main Build Logic ─────────────────────────────────────────────────
+# -- Main Build Logic -------------------------------------------------
 
 
 def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> None:
@@ -349,7 +349,7 @@ def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> 
         )
 
     # Host-tools-only short-circuits before touching the root project's
-    # Conan graph — the root lock file isn't cross-platform (e.g. Linux
+    # Conan graph -- the root lock file isn't cross-platform (e.g. Linux
     # GLFW pulls in xorg/system not present in conan_glfw.lock).
     if host_tools_only:
         logs_dir.mkdir(parents=True, exist_ok=True)
@@ -467,12 +467,12 @@ def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> 
             logger.info("Installing dependencies with Conan...")
 
             # Skip deployers when the lock file hasn't changed since the
-            # last successful deploy — avoids the full_deploy delete-and-
+            # last successful deploy -- avoids the full_deploy delete-and-
             # recopy that fails when another process holds a file handle.
             skip_deploy = _deploy_is_current(lock_file, conan_deps_root, build_type)
             deployer_flags: list[str] = []
             if skip_deploy:
-                logger.info("Deploy is current (lock file unchanged) — skipping deployers")
+                logger.info("Deploy is current (lock file unchanged) -- skipping deployers")
             else:
                 deployer_flags = [
                     f"--deployer-folder={conan_deps_root}",

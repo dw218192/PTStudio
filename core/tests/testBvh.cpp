@@ -227,7 +227,7 @@ TEST_CASE("transform_aabb - uniform scale") {
 }
 
 TEST_CASE("transform_aabb - 90-degree rotation around Z") {
-    // After rotating 90° around Z: X→Y, Y→-X
+    // After rotating 90 deg around Z: X->Y, Y->-X
     auto aabb = AABB::from_min_max({1, 0, 0}, {3, 1, 1});
     glm::mat4 m(1.0f);
     // column 0 = (0, 1, 0), column 1 = (-1, 0, 0)

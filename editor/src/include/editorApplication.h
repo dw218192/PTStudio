@@ -54,7 +54,7 @@ struct AppConfig {
     int capture_frames = 1;         // frames to render before capture
     std::string renderer_name;      // empty = default (first)
     std::string debug_output_name;  // empty = scene_color
-    std::string camera_target;      // "x,y,z" — empty = default
+    std::string camera_target;      // "x,y,z" -- empty = default
     std::string camera_distance;    // empty = default (3.0)
     std::string camera_yaw;         // degrees, empty = default (0)
     std::string camera_pitch;       // degrees, empty = default (~17)
@@ -152,7 +152,7 @@ struct EditorApplication final : GpuApplication {
 
     /// Iterate all passes for lifecycle (setup, imgui, hot-reload, debug targets).
     /// Never used for frame graph recording.
-    /// Iterate all top-level passes. Renderers manage their own children —
+    /// Iterate all top-level passes. Renderers manage their own children --
     /// debug targets, imgui, hot-reload, and texture refs are all forwarded
     /// internally. No sub-pass iteration needed here.
     template <typename Fn>

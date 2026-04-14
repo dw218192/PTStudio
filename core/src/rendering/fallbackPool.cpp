@@ -63,7 +63,7 @@ WGPUTextureView FallbackPool::view(WGPUTextureFormat format, WGPUTextureViewDime
     tex_desc.dimension = WGPUTextureDimension_2D;
 
     if (depth) {
-        // Depth textures cannot be CopyDst — create render-attachment-only
+        // Depth textures cannot be CopyDst -- create render-attachment-only
         tex_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_TextureBinding |
                                                        WGPUTextureUsage_RenderAttachment);
     } else {

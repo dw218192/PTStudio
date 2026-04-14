@@ -22,8 +22,8 @@ float2 ltc_coords(float NdotV, float roughness) {
 ///   | m00   0   m02 |
 ///   |  0    1    0  |
 ///   | m20   0   m22 |
-/// Slang float3x3(A,B,C) → WGSL mat3x3(A,B,C) as columns.
-/// mul(v, M) in Slang → M * v in WGSL (matrix × column vector).
+/// Slang float3x3(A,B,C) -> WGSL mat3x3(A,B,C) as columns.
+/// mul(v, M) in Slang -> M * v in WGSL (matrix x column vector).
 /// Columns: (t.x=m00, 0, t.y=m20), (0,1,0), (t.z=m02, 0, t.w=m22).
 float3x3 ltc_matrix(float4 t) {
     return float3x3(
@@ -36,7 +36,7 @@ float3x3 ltc_matrix(float4 t) {
 /// Single edge contribution to the polygon form factor integral.
 /// v1, v2 must be on the unit sphere (normalized).
 /// Uses a rational polynomial fit for theta/sin(theta) to avoid acos
-/// instability near dot(v1,v2) ≈ ±1. (LearnOpenGL / Heitz improved variant)
+/// instability near dot(v1,v2) ~= +/-1. (LearnOpenGL / Heitz improved variant)
 float integrate_edge(float3 v1, float3 v2) {
     float x = dot(v1, v2);
     float y = abs(x);
@@ -62,7 +62,7 @@ int clip_edge(float3 a, float3 b, out float3 o1, out float3 o2) {
     if (a.z < 0.0 && b.z < 0.0) {
         return 0;
     }
-    // One above, one below — interpolate to find horizon crossing
+    // One above, one below -- interpolate to find horizon crossing
     float t = a.z / (a.z - b.z);
     float3 mid = a + t * (b - a);
     if (a.z >= 0.0) {
@@ -82,7 +82,7 @@ int clip_edge(float3 a, float3 b, out float3 o1, out float3 o2) {
 
 /// Clip a quad against the z=0 horizon and evaluate the form factor integral.
 /// Input: 4 polygon vertices (not necessarily normalized).
-/// After clipping, the polygon can have 3–5 vertices.
+/// After clipping, the polygon can have 3-5 vertices.
 /// Returns the integral value (always >= 0).
 float ltc_evaluate_clipped_quad(float3 v0, float3 v1, float3 v2, float3 v3) {
     // Clip quad against z=0 plane.  A clipped quad produces at most 5 vertices.
@@ -100,12 +100,12 @@ float ltc_evaluate_clipped_quad(float3 v0, float3 v1, float3 v2, float3 v3) {
         if (a_above && b_above) {
             dst[n++] = a;
         } else if (a_above) {
-            // a above, b below — emit a and the crossing
+            // a above, b below -- emit a and the crossing
             dst[n++] = a;
             float t = a.z / (a.z - b.z);
             dst[n++] = a + t * (b - a);
         } else if (b_above) {
-            // a below, b above — emit the crossing only (b emitted by next edge)
+            // a below, b above -- emit the crossing only (b emitted by next edge)
             float t = a.z / (a.z - b.z);
             dst[n++] = a + t * (b - a);
         }

@@ -51,7 +51,7 @@ def _collect_variants(config: dict) -> list[tuple[str, str]]:
                 )
             defines = list(variant.get("defines", []))
             suffix = str(variant.get("suffix", ""))
-            # Skip the implicit base variant — EmbeddedCompiler returns
+            # Skip the implicit base variant -- EmbeddedCompiler returns
             # the source_key unchanged when defines is empty.
             if not defines and not suffix:
                 continue
@@ -110,7 +110,7 @@ def _render_header(namespace: str, variants: list[tuple[str, str]]) -> str:
 
 {open_ns}
 struct Variant {{
-    // Sorted defines joined with '\\n' — matches canonical_defines() in
+    // Sorted defines joined with '\\n' -- matches canonical_defines() in
     // slangCompiler.cpp so runtime lookup can hash-compare directly.
     std::string_view defines_canon;
     // Filename suffix inserted before the extension on the source_key

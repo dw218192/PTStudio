@@ -7,7 +7,7 @@
 namespace pts::rendering {
 
 inline uint16_t float_to_half(float f) {
-    // IEEE 754 float32 → float16 conversion
+    // IEEE 754 float32 -> float16 conversion
     uint32_t bits;
     std::memcpy(&bits, &f, sizeof(bits));
 
@@ -24,7 +24,7 @@ inline uint16_t float_to_half(float f) {
         if (mantissa == 0) return static_cast<uint16_t>(sign | 0x7C00);              // inf
         return static_cast<uint16_t>(sign | 0x7C00 | std::max(mantissa >> 13, 1u));  // nan
     }
-    if (exponent > 30) return static_cast<uint16_t>(sign | 0x7C00);  // overflow → inf
+    if (exponent > 30) return static_cast<uint16_t>(sign | 0x7C00);  // overflow -> inf
 
     return static_cast<uint16_t>(sign | (exponent << 10) | (mantissa >> 13));
 }

@@ -24,7 +24,7 @@ std::shared_ptr<spdlog::logger> test_logger() {
     return logger;
 }
 
-// Stub getter used for SlangCompiler tests — the real compiler output replaces
+// Stub getter used for SlangCompiler tests -- the real compiler output replaces
 // this content; we only need register_shader's embedded_getter precondition
 // satisfied.
 std::optional<std::string_view> stub_getter(std::string_view /*key*/) {

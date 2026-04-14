@@ -80,7 +80,7 @@ auto ForwardPass::renderer_debug_targets() const noexcept
 static void init_ltc_textures(rendering::FrameGraph& fg, const pts::webgpu::Device& /*device*/) {
     constexpr uint32_t n = static_cast<uint32_t>(rendering::k_ltc_size);
 
-    // Static upload data — must outlive the first compile() so the decl
+    // Static upload data -- must outlive the first compile() so the decl
     // keeps a valid pointer until wgpuQueueWriteTexture runs.
     static const auto k_ltc_mat_half = [] {
         constexpr uint32_t sz = static_cast<uint32_t>(rendering::k_ltc_size);

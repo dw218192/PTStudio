@@ -33,7 +33,7 @@
 
 #include "testApplication.h"
 
-// can_adapt tests — no GPU needed
+// can_adapt tests -- no GPU needed
 
 TEST_CASE("Adapters do not cross-match prim types") {
     auto stage = pxr::UsdStage::CreateInMemory();
@@ -92,7 +92,7 @@ TEST_CASE("populate_from_stage with progress builds RenderWorld") {
     }
 }
 
-// PrimFactory tests — no GPU needed
+// PrimFactory tests -- no GPU needed
 
 TEST_CASE("Geometry adapters each return exactly one factory") {
     CHECK(pts::rendering::CubeAdapter::instance().get_factories().size() == 1);
@@ -171,7 +171,7 @@ TEST_CASE("Registry collects factories from adapters") {
     CHECK(has_lights);
 }
 
-// GPU-dependent tests — sync() uploads mesh data to the GPU
+// GPU-dependent tests -- sync() uploads mesh data to the GPU
 
 #ifndef __EMSCRIPTEN__
 
@@ -371,7 +371,7 @@ TEST_CASE("sync_prim updates existing object") {
     REQUIRE(f.world.get_objects().size() == 1);
     auto initial_version = f.world.get_mesh_version();
 
-    // Re-sync the same prim — should update in place, not add a new object
+    // Re-sync the same prim -- should update in place, not add a new object
     {
         auto scope = f.world.begin_sync();
         pts::rendering::sync_prim(scope, stage, pxr::SdfPath("/Cube"));
@@ -415,7 +415,7 @@ TEST_CASE("sync_prim with invalid path calls remove_prim") {
 
     REQUIRE(f.world.get_objects().size() == 1);
 
-    // Remove from stage, then sync — should remove from world
+    // Remove from stage, then sync -- should remove from world
     stage->RemovePrim(pxr::SdfPath("/Cube"));
     {
         auto scope = f.world.begin_sync();
@@ -508,7 +508,7 @@ TEST_CASE("GeomSubset materialBind creates per-subset objects") {
     auto stage = pxr::UsdStage::CreateInMemory();
     auto mesh = define_quad_fan_mesh(stage);
 
-    // Two subsets, each covering 2 faces — full coverage, no remainder.
+    // Two subsets, each covering 2 faces -- full coverage, no remainder.
     auto sub_a = pxr::UsdGeomSubset::Define(stage, pxr::SdfPath("/Mesh/SubA"));
     sub_a.GetFamilyNameAttr().Set(pxr::TfToken("materialBind"));
     sub_a.GetElementTypeAttr().Set(pxr::TfToken("face"));
@@ -532,7 +532,7 @@ TEST_CASE("GeomSubset materialBind creates per-subset objects") {
     CHECK(world.find_object_by_prim(pxr::SdfPath("/Mesh/SubA")) >= 0);
     CHECK(world.find_object_by_prim(pxr::SdfPath("/Mesh/SubB")) >= 0);
 
-    // Each subset has 2 faces → 2 triangles → 6 indices.
+    // Each subset has 2 faces -> 2 triangles -> 6 indices.
     auto meshes = world.get_meshes();
     auto objects = world.get_objects();
     for (const auto& obj : objects) {
@@ -551,7 +551,7 @@ TEST_CASE("GeomSubset with remainder emits mesh-level object for uncovered faces
     auto stage = pxr::UsdStage::CreateInMemory();
     auto mesh = define_quad_fan_mesh(stage);
 
-    // One subset covering faces 0,1 — faces 2,3 are remainder.
+    // One subset covering faces 0,1 -- faces 2,3 are remainder.
     auto sub = pxr::UsdGeomSubset::Define(stage, pxr::SdfPath("/Mesh/Sub"));
     sub.GetFamilyNameAttr().Set(pxr::TfToken("materialBind"));
     sub.GetElementTypeAttr().Set(pxr::TfToken("face"));
@@ -589,7 +589,7 @@ TEST_CASE("Mesh without GeomSubsets creates single object (no regression)") {
 
     auto objects = world.get_objects();
     auto meshes = world.get_meshes();
-    // 4 faces × 1 tri each = 4 triangles = 12 indices.
+    // 4 faces x 1 tri each = 4 triangles = 12 indices.
     CHECK(meshes[objects[0]->mesh_index]->index_count == 12);
 }
 
@@ -597,7 +597,7 @@ TEST_CASE("Non-materialBind subsets are ignored (mesh treated as whole)") {
     auto stage = pxr::UsdStage::CreateInMemory();
     auto mesh = define_quad_fan_mesh(stage);
 
-    // Subset with a different family — should be ignored.
+    // Subset with a different family -- should be ignored.
     auto sub = pxr::UsdGeomSubset::Define(stage, pxr::SdfPath("/Mesh/Sub"));
     sub.GetFamilyNameAttr().Set(pxr::TfToken("someOtherFamily"));
     sub.GetElementTypeAttr().Set(pxr::TfToken("face"));
@@ -606,7 +606,7 @@ TEST_CASE("Non-materialBind subsets are ignored (mesh treated as whole)") {
     pts::rendering::RenderWorld world;
     pts::rendering::populate_from_stage(world, stage);
 
-    // No materialBind subsets → single whole-mesh object.
+    // No materialBind subsets -> single whole-mesh object.
     CHECK(count_active_objects(world) == 1);
     CHECK(world.find_object_by_prim(pxr::SdfPath("/Mesh")) >= 0);
 }

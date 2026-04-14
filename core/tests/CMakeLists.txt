@@ -10,7 +10,7 @@ find_package(doctest REQUIRED)
 # Test executables
 set(TEST_NAMES)
 
-# Non-GPU tests — run on all platforms including Emscripten (via node.js)
+# Non-GPU tests -- run on all platforms including Emscripten (via node.js)
 list(APPEND TEST_NAMES testCommandLine)
 set(testCommandLine_source testCommandLine.cpp)
 set(testCommandLine_libs core)
@@ -23,7 +23,7 @@ list(APPEND TEST_NAMES testAsyncStateMachine)
 set(testAsyncStateMachine_source testAsyncStateMachine.cpp)
 set(testAsyncStateMachine_libs core)
 
-# GPU tests — require native WebGPU (Dawn); no browser/node.js GPU access
+# GPU tests -- require native WebGPU (Dawn); no browser/node.js GPU access
 if(NOT EMSCRIPTEN)
     list(APPEND TEST_NAMES testWebGpu)
     set(testWebGpu_source testWebGpu.cpp)
