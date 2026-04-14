@@ -586,7 +586,7 @@ class FrameGraph {
     WGPUShaderModule shader_from_wgsl(std::string_view cache_key, const std::string& wgsl_source);
     /// Get-or-build a preprocessor variant of a registered shader. Uses the
     /// base source's revision as the dep, so repeated calls within a session
-    /// hit the cache (critical for per-frame callers like load_pass_shader
+    /// hit the cache (critical for per-frame callers like load_pass_shader_module
     /// in hot-reload builds — without this, Slang would recompile every frame).
     WGPUShaderModule shader_variant(std::string_view variant_cache_key,
                                     std::string_view source_resource_key,

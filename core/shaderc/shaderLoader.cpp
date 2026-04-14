@@ -1,5 +1,5 @@
 #include <core/diagnostics.h>
-#include <core/rendering/shaderLoader.h>
+#include <core/rendering/shaderc/shaderLoader.h>
 #include <spdlog/spdlog.h>
 
 #include <string>
@@ -22,8 +22,10 @@ void ShaderLoader::register_shader(std::string_view resource_key, std::string_vi
                                    std::string_view wgsl_output, EmbeddedGetter embedded_getter,
                                    std::vector<std::string> entry_points) {
     PRECONDITION_MSG(embedded_getter, "embedded_getter must not be null");
-    auto embedded = embedded_getter(resource_key);
-    PRECONDITION_MSG(embedded.has_value(), "embedded resource must exist at registration time");
+    // Embedded WGSL may be absent at registration time on native builds: with
+    // Step 6 we only embed WGSL on Emscripten, since native always routes
+    // through SlangCompiler. load() is the call site that still demands a hit,
+    // and it will panic loudly if the key is ever reached without an embed.
     Entry entry;
     entry.resource_key = std::string(resource_key);
     entry.slang_source = std::string(slang_source);

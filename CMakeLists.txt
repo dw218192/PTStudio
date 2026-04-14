@@ -172,10 +172,19 @@ if(EMSCRIPTEN)
         "--emrun")
 endif()
 
-# Host tool: USDZ packager (native only, used by prebuild step)
+# Shared shader-compile primitives (in-tree library, linked by both `core`
+# and the `pts_shaderc` host-tool CLI).
+add_subdirectory(core/shaderc)
+
+# Host tools used by prebuild steps (native only).
+# For --host-tools-only CI builds, tools/CMakeLists.txt provides a standalone
+# entry point that builds pts_shaderc without the rest of the project graph.
 if(NOT EMSCRIPTEN)
     add_executable(usdz_pack tools/conan/usdz_pack/usdzPack.cpp)
     target_link_libraries(usdz_pack PRIVATE openusd::usd_usdUtils)
+
+    add_executable(pts_shaderc tools/pts_shaderc/main.cpp)
+    target_link_libraries(pts_shaderc PRIVATE core::shaderc)
 endif()
 
 # add subprojects

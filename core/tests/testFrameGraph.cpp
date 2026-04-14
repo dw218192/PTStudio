@@ -1,7 +1,7 @@
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/renderPass.h>
 #include <core/rendering/shaderCompiler.h>
-#include <core/rendering/shaderLoader.h>
+#include <core/rendering/shaderc/shaderLoader.h>
 #include <core/rendering/webgpu/device.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>

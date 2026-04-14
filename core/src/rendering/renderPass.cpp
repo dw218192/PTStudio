@@ -1,7 +1,7 @@
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderPass.h>
 #include <core/rendering/renderer.h>
-#include <core/rendering/shaderLoader.h>
+#include <core/rendering/shaderc/shaderLoader.h>
 #include <core/rendering/toneMappingPass.h>
 #include <core/rendering/webgpu/device.h>
 #include <imgui.h>
@@ -156,19 +156,6 @@ void IPass::compute_allowed_debug_targets(const webgpu::Device& device) {
     }
 
     m_allowed_debug_count = fits ? desired : 0;
-}
-
-auto IPass::load_pass_shader(std::string_view resource_key) const -> std::string {
-    auto [targets, count] = effective_debug_targets();
-    if (count > 0) {
-        return m_shader_loader->load(resource_key);
-    }
-    // Derive variant key: "path/foo.wgsl" → "path/foo_no_debug.wgsl"
-    auto key = std::string(resource_key);
-    auto dot = key.rfind('.');
-    INVARIANT_MSG(dot != std::string::npos, "resource_key must have an extension");
-    auto variant_key = key.substr(0, dot) + "_no_debug" + key.substr(dot);
-    return m_shader_loader->load(variant_key);
 }
 
 auto IPass::load_pass_shader_module(FrameGraph& fg, std::string_view resource_key) const

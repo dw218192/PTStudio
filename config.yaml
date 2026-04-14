@@ -31,7 +31,6 @@ build:
   prebuild:
     format: {}
     slangc: {}
-    shader_codegen: {}
     shader_variants_codegen: {}
     usdz: {}
     embed: {}
@@ -97,15 +96,24 @@ slangc:
   search_paths:
     - "core/shaders"
     - "core/shaders/ibl"
+  # Each entry may declare a `metadata: { output, namespace }` block; when
+  # present, pts_shaderc walks the linked reflection in-process and emits the
+  # C++ metadata header (replaces the old shader_codegen.py + reflect.json
+  # detour). Only the base (no-suffix) variant emits metadata — it is
+  # define-agnostic.
   shaders:
     - input: "assets/shaders/test/*.slang"
       output: "assets/shaders/test/*.wgsl"
     - input: "hello_triangle/shaders/hello_triangle.slang"
       output: "hello_triangle/generated/shaders/hello_triangle.wgsl"
-      reflect: true
+      metadata:
+        output: "hello_triangle/generated/shader_metadata.h"
+        namespace: "hello_triangle_shader"
     - input: "renderers/forward/forward.slang"
       output: "renderers/forward/generated/shaders/forward.wgsl"
-      reflect: true
+      metadata:
+        output: "renderers/forward/generated/shader_metadata.h"
+        namespace: "forward_shader"
       variants:
         - {}
         - defines: ["NO_DEBUG_TARGETS"]
@@ -114,37 +122,59 @@ slangc:
       output: "renderers/forward/generated/shaders/skybox.wgsl"
     - input: "core/shaders/shadow.slang"
       output: "core/generated/shaders/shadow.wgsl"
-      reflect: true
+      metadata:
+        output: "core/generated/shadow_shader_metadata.h"
+        namespace: "shadow_shader"
     - input: "core/shaders/gbuffer.slang"
       output: "core/generated/shaders/gbuffer.wgsl"
-      reflect: true
+      metadata:
+        output: "core/generated/gbuffer_shader_metadata.h"
+        namespace: "gbuffer_shader"
     - input: "core/shaders/ssao.slang"
       output: "core/generated/shaders/ssao.wgsl"
-      reflect: true
+      metadata:
+        output: "core/generated/ssao_shader_metadata.h"
+        namespace: "ssao_shader"
     - input: "core/shaders/ssao_blur.slang"
       output: "core/generated/shaders/ssao_blur.wgsl"
-      reflect: true
+      metadata:
+        output: "core/generated/ssao_blur_shader_metadata.h"
+        namespace: "ssao_blur_shader"
     - input: "core/shaders/contact_shadow.slang"
       output: "core/generated/shaders/contact_shadow.wgsl"
-      reflect: true
+      metadata:
+        output: "core/generated/contact_shadow_shader_metadata.h"
+        namespace: "contact_shadow_shader"
     - input: "editor/shaders/picking.slang"
       output: "editor/generated/shaders/picking.wgsl"
-      reflect: true
+      metadata:
+        output: "editor/generated/picking_shader_metadata.h"
+        namespace: "editor_picking_shader"
     - input: "editor/shaders/grid.slang"
       output: "editor/generated/shaders/grid.wgsl"
-      reflect: true
+      metadata:
+        output: "editor/generated/grid_shader_metadata.h"
+        namespace: "editor_grid_shader"
     - input: "editor/shaders/wireframe.slang"
       output: "editor/generated/shaders/wireframe.wgsl"
-      reflect: true
+      metadata:
+        output: "editor/generated/wireframe_shader_metadata.h"
+        namespace: "editor_wireframe_shader"
     - input: "editor/shaders/gizmo.slang"
       output: "editor/generated/shaders/gizmo.wgsl"
-      reflect: true
+      metadata:
+        output: "editor/generated/gizmo_shader_metadata.h"
+        namespace: "editor_gizmo_shader"
     - input: "editor/shaders/lobe.slang"
       output: "editor/generated/shaders/lobe.wgsl"
-      reflect: true
+      metadata:
+        output: "editor/generated/lobe_shader_metadata.h"
+        namespace: "editor_lobe_shader"
     - input: "editor/shaders/tonemapping.slang"
       output: "editor/generated/shaders/tonemapping.wgsl"
-      reflect: true
+      metadata:
+        output: "editor/generated/tonemapping_shader_metadata.h"
+        namespace: "editor_tonemapping_shader"
     - input: "editor/shaders/luminance.slang"
       output: "editor/generated/shaders/luminance.wgsl"
     - input: "renderers/pathtracer/pathtracer.slang"
@@ -162,49 +192,6 @@ slangc:
     - input: "core/shaders/ibl/prefilter_env.slang"
       output: "core/generated/shaders/prefilter_env.wgsl"
 
-shader_codegen:
-  template: "core/templates/shader_metadata.h.j2"
-  shaders:
-    - reflect: "hello_triangle/generated/shaders/hello_triangle.reflect.json"
-      output: "hello_triangle/generated/shader_metadata.h"
-      namespace: "hello_triangle_shader"
-    - reflect: "renderers/forward/generated/shaders/forward.reflect.json"
-      output: "renderers/forward/generated/shader_metadata.h"
-      namespace: "forward_shader"
-    - reflect: "core/generated/shaders/shadow.reflect.json"
-      output: "core/generated/shadow_shader_metadata.h"
-      namespace: "shadow_shader"
-    - reflect: "core/generated/shaders/gbuffer.reflect.json"
-      output: "core/generated/gbuffer_shader_metadata.h"
-      namespace: "gbuffer_shader"
-    - reflect: "core/generated/shaders/ssao.reflect.json"
-      output: "core/generated/ssao_shader_metadata.h"
-      namespace: "ssao_shader"
-    - reflect: "core/generated/shaders/ssao_blur.reflect.json"
-      output: "core/generated/ssao_blur_shader_metadata.h"
-      namespace: "ssao_blur_shader"
-    - reflect: "core/generated/shaders/contact_shadow.reflect.json"
-      output: "core/generated/contact_shadow_shader_metadata.h"
-      namespace: "contact_shadow_shader"
-    - reflect: "editor/generated/shaders/picking.reflect.json"
-      output: "editor/generated/picking_shader_metadata.h"
-      namespace: "editor_picking_shader"
-    - reflect: "editor/generated/shaders/grid.reflect.json"
-      output: "editor/generated/grid_shader_metadata.h"
-      namespace: "editor_grid_shader"
-    - reflect: "editor/generated/shaders/wireframe.reflect.json"
-      output: "editor/generated/wireframe_shader_metadata.h"
-      namespace: "editor_wireframe_shader"
-    - reflect: "editor/generated/shaders/gizmo.reflect.json"
-      output: "editor/generated/gizmo_shader_metadata.h"
-      namespace: "editor_gizmo_shader"
-    - reflect: "editor/generated/shaders/lobe.reflect.json"
-      output: "editor/generated/lobe_shader_metadata.h"
-      namespace: "editor_lobe_shader"
-    - reflect: "editor/generated/shaders/tonemapping.reflect.json"
-      output: "editor/generated/tonemapping_shader_metadata.h"
-      namespace: "editor_tonemapping_shader"
-
 shader_variants_codegen:
   # Consumes `slangc.shaders[].variants[]` and emits a C++ header describing
   # every (sorted defines → filename suffix) registered for embedding.
@@ -217,8 +204,18 @@ embed:
   template: "core/templates/embedded_resources.h.j2"
   # Shader entries use "*.wgsl" globs so every variant emitted by the slangc
   # prebuild (e.g. forward.wgsl + forward_no_debug.wgsl) is auto-included.
+  #
+  # WGSL is only embedded on Emscripten: native always compiles from .slang at
+  # runtime via SlangCompiler. The `input@emscripten` override replaces `input`
+  # when the active platform is emscripten.
+  #
+  # ibl_resources is an exception until iblResources.cpp is plumbed through
+  # IShaderCompiler — it still reads WGSL from its own embedded namespace on
+  # both platforms.
   resources:
     - input:
+        - "editor/icons/*.*"
+      input@emscripten:
         - "renderers/forward/generated/shaders/*.wgsl"
         - "core/generated/shaders/shadow.wgsl"
         - "core/generated/shaders/gbuffer.wgsl"
@@ -246,11 +243,16 @@ embed:
       output: "core/generated/embedded_ibl_shaders.h"
       namespace: "ibl_resources"
     - input:
+        # Test fixture WGSL stays embedded on both platforms so the unit
+        # tests that route through EmbeddedCompiler don't require a .slang
+        # source tree on native.
         - "assets/shaders/test/simple.wgsl"
         - "assets/scenes/test_cube.usda"
       output: "core/tests/generated/embedded_test_resources.h"
       namespace: "test_resources"
     - input:
+        - "hello_triangle/scenes/triangle.usda"
+      input@emscripten:
         - "hello_triangle/generated/shaders/hello_triangle.wgsl"
         - "hello_triangle/scenes/triangle.usda"
       output: "hello_triangle/generated/embedded_resources.h"

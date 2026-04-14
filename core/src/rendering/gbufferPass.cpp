@@ -5,7 +5,7 @@
 #include <core/rendering/outputLayout.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
-#include <core/rendering/shaderLoader.h>
+#include <core/rendering/shaderc/shaderLoader.h>
 #include <core/rendering/webgpu/device.h>
 #include <gbuffer_shader_metadata.h>
 

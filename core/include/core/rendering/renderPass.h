@@ -104,18 +104,14 @@ class IPass {
         return *m_logger;
     }
 
-    /// Load the pass shader, automatically selecting the no-debug-targets
-    /// variant when the device limit requires it. Shaders that declare debug
-    /// MRT outputs must guard them with `#ifndef NO_DEBUG_TARGETS`.
-    /// The variant is loaded from an embedded resource whose key is derived
-    /// by inserting "_no_debug" before the extension (e.g. forward.wgsl →
-    /// forward_no_debug.wgsl).
-    [[nodiscard]] auto load_pass_shader(std::string_view resource_key) const -> std::string;
-
     /// Get-or-build the pass shader module via FrameGraph, automatically
-    /// selecting the no-debug variant when device limits require it. Prefer
-    /// this over load_pass_shader + shader_from_wgsl in per-frame callers —
-    /// FG's dep-tracked cache avoids invoking Slang on every frame.
+    /// selecting the no-debug-targets variant when device limits require it.
+    /// Shaders that declare debug MRT outputs must guard them with
+    /// `#ifndef NO_DEBUG_TARGETS`; the variant key is derived by inserting
+    /// "_no_debug" before the extension (e.g. forward.wgsl →
+    /// forward_no_debug.wgsl). Routing through FrameGraph hits the
+    /// dep-tracked cache so Slang isn't invoked every frame; compilation
+    /// itself flows through the FrameGraph's IShaderCompiler.
     [[nodiscard]] auto load_pass_shader_module(FrameGraph& fg, std::string_view resource_key) const
         -> WGPUShaderModule;
 

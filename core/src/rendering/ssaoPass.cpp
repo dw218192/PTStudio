@@ -5,7 +5,7 @@
 #include <core/rendering/gbufferPass.h>
 #include <core/rendering/outputLayout.h>
 #include <core/rendering/passContext.h>
-#include <core/rendering/shaderLoader.h>
+#include <core/rendering/shaderc/shaderLoader.h>
 #include <core/rendering/ssaoPass.h>
 #include <core/rendering/webgpu/device.h>
 #include <imgui.h>

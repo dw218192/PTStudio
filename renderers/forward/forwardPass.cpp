@@ -14,7 +14,7 @@
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/rendererRegistry.h>
-#include <core/rendering/shaderLoader.h>
+#include <core/rendering/shaderc/shaderLoader.h>
 #include <core/rendering/shadowMapPass.h>
 #include <core/rendering/ssaoPass.h>
 #include <core/rendering/webgpu/device.h>

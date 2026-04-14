@@ -20,6 +20,10 @@ name = "image_convert"
 commands = ["ffmpeg"]
 
 [[allow]]
+name = "docker"
+commands = ["docker"]
+
+[[allow]]
 name = "framework_contrib"
 override_deny = true
 commands = ["cmd.exe", "bash"]

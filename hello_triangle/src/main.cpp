@@ -6,6 +6,8 @@
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/sceneLoader.h>
+#include <core/rendering/shaderCompiler.h>
+#include <core/rendering/shaderc/shaderLoader.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
 #include <core/rendering/webgpuContext.h>
 #include <embedded_resources.h>
@@ -46,6 +48,8 @@ class HelloApp : public pts::GpuApplication {
 
    private:
     pts::rendering::RenderWorld m_world;
+    std::unique_ptr<pts::rendering::ShaderLoader> m_shader_loader;
+    std::unique_ptr<pts::rendering::IShaderCompiler> m_shader_compiler;
     std::unique_ptr<pts::rendering::FrameGraph> m_graph;
     std::optional<pts::webgpu::ShaderModule> m_shader;
     std::optional<pts::webgpu::RenderPipeline> m_pipeline;
@@ -65,12 +69,6 @@ class HelloApp : public pts::GpuApplication {
         if (!usda) {
             throw std::runtime_error("missing embedded resource: scenes/triangle.usda");
         }
-        auto shader_src =
-            hello_triangle_resources::get_resource("generated/shaders/hello_triangle.wgsl");
-        if (!shader_src) {
-            throw std::runtime_error(
-                "missing embedded resource: generated/shaders/hello_triangle.wgsl");
-        }
 
         // Load USD stage from embedded resource
         auto layer = pxr::SdfLayer::CreateAnonymous(".usda");
@@ -79,8 +77,16 @@ class HelloApp : public pts::GpuApplication {
         pts::rendering::populate_from_stage(m_world, stage);
         m_world.upload_all_meshes(device);
 
-        // Create shader module
-        m_shader.emplace(device.create_shader_module_from_source(*shader_src));
+        // Route WGSL through IShaderCompiler — consistent with renderer passes.
+        m_shader_loader = std::make_unique<pts::rendering::ShaderLoader>(
+            get_logging_manager().get_logger_shared("shader_loader"));
+        m_shader_loader->register_shader(
+            "generated/shaders/hello_triangle.wgsl", "hello_triangle/shaders/hello_triangle.slang",
+            "generated/shaders/hello_triangle.wgsl", hello_triangle_resources::get_resource);
+        m_shader_compiler = pts::rendering::make_shader_compiler(*m_shader_loader);
+        auto shader_wgsl = m_shader_compiler->compile(
+            pts::rendering::ShaderKey{"generated/shaders/hello_triangle.wgsl"});
+        m_shader.emplace(device.create_shader_module_from_source(shader_wgsl));
 
         // Create uniform buffer
         m_uniform_buffer = device.create_buffer(sizeof(Uniforms),

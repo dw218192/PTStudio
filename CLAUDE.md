@@ -37,6 +37,25 @@ Tool configs (slangc, shader_codegen, embed) live at the top level of `config.ya
 
 The `embed` prebuild step generates C++ headers with `get_resource(key)` lookup. Resource keys are derived from input file paths by stripping the longest common prefix across all inputs in a group. Adding a new file to an embed group can change the common prefix and break existing lookups. When adding files to an embed resource group, always check that existing `get_resource()` callers still use the correct key.
 
+### Build-time Tools: Python vs C++
+
+Two distinct kinds of build-time tools, under different trees:
+
+- **Python tools** live in `tools/repo_tools/` and are invoked by the repo CLI framework (`./repo <tool>`). Examples: `format`, `slangc` (Python wrapper over libslang), `shader_codegen`, `embed`, `clean`, `test`, `build`, `package`, `publish`, `usdz` (driver that invokes the `usdz_pack` binary). These run in the repo's managed venv — no compilation needed, just Python imports.
+- **C++ tools** live in `tools/conan/<tool>/` as standalone Conan packages. Examples: `usdz_pack` (wraps `UsdUtilsCreateNewUsdzPackage` from OpenUSD). Each has its own `conanfile.py` + `CMakeLists.txt` and builds into a native executable. These can't cross-compile to WASM, so Emscripten builds consume the scenes/outputs they produce rather than invoking them directly.
+
+Python tools run anywhere Python does. C++ tools need a native toolchain matching the host OS.
+
+### Linux Tool Builds (Docker)
+
+C++ build-time tools (currently `usdz_pack`) can be built on Linux via Docker for local CI-matching iteration:
+
+    bash tools/docker/build-tools.sh
+
+First build takes ~30-40 min (OpenUSD + TBB + OpenSubdiv compiled from source). Subsequent builds reuse the `pts-conan-cache` Docker volume and finish in seconds on a cache hit. The `pts-managed` volume overlays `tools/framework/_managed/` so Windows Python/venv artifacts on the bind-mounted workspace don't collide with the Linux ones. Requires Docker Desktop or Docker Engine.
+
+For CI, `./repo build --host-tools-only` does the same on the Linux runner directly — builds each C++ host tool via its own Conan package (isolated from the root project's Conan graph) and runs only the prebuild steps that depend on those tools (e.g. `usdz` packaging). The Emscripten job runs this before the cross-build so it has freshly-generated `.usdz` scenes to `--embed-file`.
+
 ### Tracy Profiler (debug builds only)
 
 Tracy 0.13.1's static `s_profiler` deadlocks at process exit on Windows if `<thread>` is included in widely-used headers — the changed static init ordering causes Tracy's destructor to run after WinSock cleanup, and its profiler thread hangs in `accept()`. **Never include `<thread>` (or headers that transitively include it, like `backgroundTask.h`) in `.h` files that are widely included.** Forward-declare and include in `.cpp` only. The proper fix is rebuilding Tracy with `TRACY_DELAYED_INIT=ON` + `TRACY_MANUAL_LIFETIME=ON`.
@@ -68,7 +87,7 @@ Scene passes can declare debug MRT outputs (Normals, Base Color, etc.) via `debu
 **How it works:**
 - `IScenePass::setup()` queries device limits and computes an all-or-nothing `m_allowed_debug_count` (all debug targets fit, or none)
 - `effective_debug_target_names()` returns the gated count; the editor UI and frame graph use this
-- `load_pass_shader(resource_key)` automatically selects the no-debug shader variant when targets are disabled — passes just call this instead of `ShaderLoader::load()` directly
+- `load_pass_shader_module(fg, resource_key)` automatically selects the no-debug shader variant when targets are disabled — passes route through FrameGraph (and hence the dep-tracked IShaderCompiler cache) instead of reading embedded WGSL directly
 - The no-debug variant is compiled at build time with `-DNO_DEBUG_TARGETS` (see `config.yaml` slangc entries with `defines:`)
 - On native, `SlangCompiler` recompiles via libslang with the define and caches the WGSL on disk (`<exe-dir>/shader_cache/`); on WASM the `EmbeddedCompiler` serves the pre-compiled embedded variant.
 

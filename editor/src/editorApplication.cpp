@@ -466,10 +466,10 @@ void EditorApplication::on_ready() {
         "editor/generated/shaders/luminance.wgsl", "editor/shaders/luminance.slang",
         "editor/generated/shaders/luminance.wgsl", editor_resources::get_resource, {"cs_main"});
     m_shader_loader.register_shader(
-        "editor/generated/shaders/pathtracer.wgsl", "editor/shaders/pathtracer.slang",
+        "editor/generated/shaders/pathtracer.wgsl", "renderers/pathtracer/pathtracer.slang",
         "editor/generated/shaders/pathtracer.wgsl", editor_resources::get_resource, {"cs_main"});
     m_shader_loader.register_shader(
-        "editor/generated/shaders/pt_blit.wgsl", "editor/shaders/pt_blit.slang",
+        "editor/generated/shaders/pt_blit.wgsl", "renderers/pathtracer/pt_blit.slang",
         "editor/generated/shaders/pt_blit.wgsl", editor_resources::get_resource);
 
     // Register shadow shader for hot-reload (vertex-only: no fragment stage)

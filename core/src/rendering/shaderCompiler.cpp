@@ -1,6 +1,6 @@
 #include <core/diagnostics.h>
 #include <core/rendering/shaderCompiler.h>
-#include <core/rendering/shaderLoader.h>
+#include <core/rendering/shaderc/shaderLoader.h>
 #include <shader_variants_map.h>
 
 #include <algorithm>
@@ -87,15 +87,15 @@ void EmbeddedCompiler::invalidate(std::string_view source_key) {
 namespace {
 
 #ifndef __EMSCRIPTEN__
-/// Native backend: SlangCompiler primary + EmbeddedCompiler as error fallback.
-/// Own the fallback via composition so callers hold a single compiler object.
+/// Native backend: SlangCompiler only. No embedded fallback — native WGSL is
+/// not embedded, and "fail loud" trumps papering over Slang failures with
+/// stale pre-built WGSL.
 class NativeShaderCompiler final : public IShaderCompiler {
    public:
     NativeShaderCompiler(const ShaderLoader& loader, std::filesystem::path cache_dir,
                          std::filesystem::path workspace_root, std::filesystem::path search_path)
-        : m_fallback(loader),
-          m_slang(loader, loader.logger(), std::move(cache_dir), std::move(workspace_root),
-                  std::move(search_path), &m_fallback) {
+        : m_slang(loader, loader.logger(), std::move(cache_dir), std::move(workspace_root),
+                  std::move(search_path), /*error_fallback=*/nullptr) {
     }
 
     std::string compile(const ShaderKey& key) override {
@@ -115,7 +115,6 @@ class NativeShaderCompiler final : public IShaderCompiler {
     }
 
    private:
-    EmbeddedCompiler m_fallback;
     SlangCompiler m_slang;
 };
 #endif  // __EMSCRIPTEN__

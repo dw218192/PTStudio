@@ -1,6 +1,6 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <core/diagnostics.h>
-#include <core/rendering/shaderLoader.h>
+#include <core/rendering/shaderc/shaderLoader.h>
 #include <core/rendering/slangCompiler.h>
 #include <doctest/doctest.h>
 #include <spdlog/sinks/stdout_color_sinks.h>

@@ -1,5 +1,5 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
-#include <core/rendering/shaderLoader.h>
+#include <core/rendering/shaderc/shaderLoader.h>
 #include <doctest/doctest.h>
 #include <generated/embedded_test_resources.h>
 #include <spdlog/sinks/stdout_color_sinks.h>

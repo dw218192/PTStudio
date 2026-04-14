@@ -2,7 +2,7 @@
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/renderer.h>
 #include <core/rendering/rendererRegistry.h>
-#include <core/rendering/shaderLoader.h>
+#include <core/rendering/shaderc/shaderLoader.h>
 #include <doctest/doctest.h>
 #include <spdlog/spdlog.h>
 

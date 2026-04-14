@@ -10,7 +10,7 @@
 #include <core/rendering/renderer.h>
 #include <core/rendering/sceneLoader.h>
 #include <core/rendering/shaderCompiler.h>
-#include <core/rendering/shaderLoader.h>
+#include <core/rendering/shaderc/shaderLoader.h>
 #include <core/rendering/webgpu/bufferReadback.h>
 #include <core/rendering/webgpu/textureReadback.h>
 #include <core/rendering/webgpu/webgpu.h>

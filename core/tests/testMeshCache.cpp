@@ -1,5 +1,5 @@
 #include <core/rendering/renderPass.h>
-#include <core/rendering/shaderLoader.h>
+#include <core/rendering/shaderc/shaderLoader.h>
 #include <spdlog/spdlog.h>
 
 #include "testApplication.h"

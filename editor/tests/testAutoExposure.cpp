@@ -1,6 +1,8 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #define NOMINMAX
 #include <core/rendering/halfFloat.h>
+#include <core/rendering/shaderCompiler.h>
+#include <core/rendering/shaderc/shaderLoader.h>
 #include <core/rendering/webgpu/device.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
 #include <doctest/doctest.h>
@@ -132,9 +134,19 @@ auto readback_buffer(const pts::webgpu::Device& device, WGPUBuffer src, uint64_t
 struct ComputeFixture {
     std::shared_ptr<spdlog::logger> logger = create_test_logger();
     pts::webgpu::Device device = pts::webgpu::Device::create(logger);
+    pts::rendering::ShaderLoader loader{[this] {
+        pts::rendering::ShaderLoader l(logger);
+        l.register_shader(
+            "editor/generated/shaders/luminance.wgsl", "editor/shaders/luminance.slang",
+            "editor/generated/shaders/luminance.wgsl", editor_resources::get_resource, {"cs_main"});
+        return l;
+    }()};
+    std::unique_ptr<pts::rendering::IShaderCompiler> compiler =
+        pts::rendering::make_shader_compiler(loader);
     pts::webgpu::ShaderModule shader{[&] {
-        auto src = editor_resources::get_resource("editor/generated/shaders/luminance.wgsl");
-        return device.create_shader_module_from_source(*src);
+        auto wgsl =
+            compiler->compile(pts::rendering::ShaderKey{"editor/generated/shaders/luminance.wgsl"});
+        return device.create_shader_module_from_source(wgsl);
     }()};
 
     WGPUBindGroupLayout desc_layout = nullptr;

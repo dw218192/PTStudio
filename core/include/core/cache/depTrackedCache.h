@@ -4,6 +4,7 @@
 
 #include <boost/container/small_vector.hpp>
 #include <boost/container_hash/hash.hpp>
+#include <boost/core/span.hpp>
 #include <boost/unordered/unordered_flat_map.hpp>
 #include <cstddef>
 #include <cstdint>
@@ -12,12 +13,6 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
-
-#if __has_include(<span>) && __cplusplus >= 202002L
-#include <span>
-#endif
-
-#include <boost/core/span.hpp>
 
 namespace pts::cache {
 

@@ -60,6 +60,16 @@ class BuildTool(RepoTool):
             default=None,
             help="Windowing backend (default: glfw)",
         )(cmd)
+        cmd = click.option(
+            "--host-tools-only",
+            is_flag=True,
+            default=None,
+            help=(
+                "Build only host tools (e.g. usdz_pack) via their own Conan "
+                "packages and run their prebuild steps. Skips the main app "
+                "build. Not valid with --platform emscripten."
+            ),
+        )(cmd)
         return cmd
 
     def default_args(self, tokens: dict[str, str]) -> dict[str, Any]:
@@ -70,6 +80,7 @@ class BuildTool(RepoTool):
             "build_only": False,
             "conan_profile": "default",
             "windowing": "glfw",
+            "host_tools_only": False,
             "prebuild": {},
             "postbuild": {},
             "conan": {},

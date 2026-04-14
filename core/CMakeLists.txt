@@ -124,6 +124,8 @@ foreach(_mod IN LISTS PTS_USD_MODULES)
 	target_link_libraries(${lib_name} PUBLIC openusd::usd_${_mod})
 endforeach()
 
+target_link_libraries(${lib_name} PUBLIC core::shaderc)
+
 if (NOT EMSCRIPTEN)
 	target_link_libraries(${lib_name}
 		PRIVATE portable-file-dialogs::portable-file-dialogs

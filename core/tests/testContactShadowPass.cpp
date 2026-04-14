@@ -8,7 +8,7 @@
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/shaderCompiler.h>
-#include <core/rendering/shaderLoader.h>
+#include <core/rendering/shaderc/shaderLoader.h>
 #include <core/rendering/webgpu/device.h>
 #include <doctest/doctest.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
