@@ -5,7 +5,35 @@
 #include <slang-com-ptr.h>
 #include <slang.h>
 
+#include <mutex>
+#include <unordered_set>
+
 namespace pts::rendering {
+
+namespace {
+
+// Slang source declaring the `[DynamicBuffer]` user attribute. Registered
+// once per IGlobalSession via `addBuiltins` so that shaders can annotate
+// uniform buffers for dynamic-offset dispatch without having to `import` a
+// dedicated module. The attribute is read back during metadata emission (see
+// `slangMetadata.cpp::has_dynamic_buffer_attr`).
+constexpr const char* k_pts_attrs_builtins =
+    "[__AttributeUsage(_AttributeTargets.Var)]\n"
+    "public struct DynamicBufferAttribute {}\n"
+    "[__AttributeUsage(_AttributeTargets.Var)]\n"
+    "public struct NonFilterableAttribute {}\n"
+    "[__AttributeUsage(_AttributeTargets.Var)]\n"
+    "public struct NonFilteringAttribute {}\n";
+
+void ensure_pts_attrs_registered(slang::IGlobalSession* gs) {
+    static std::mutex s_mutex;
+    static std::unordered_set<slang::IGlobalSession*> s_registered;
+    std::lock_guard<std::mutex> lock(s_mutex);
+    if (!s_registered.insert(gs).second) return;
+    gs->addBuiltins("pts_attrs.slang", k_pts_attrs_builtins);
+}
+
+}  // namespace
 
 SlangCompileOutput run_slang(slang::IGlobalSession* global_session,
                              const std::filesystem::path& search_path,
@@ -14,6 +42,8 @@ SlangCompileOutput run_slang(slang::IGlobalSession* global_session,
                              boost::span<const std::string_view> defines,
                              std::string_view metadata_namespace) {
     SlangCompileOutput out;
+
+    ensure_pts_attrs_registered(global_session);
 
     slang::SessionDesc session_desc = {};
     slang::TargetDesc target_desc = {};
@@ -132,7 +162,7 @@ SlangCompileOutput run_slang(slang::IGlobalSession* global_session,
         }
         if (layout) {
             out.metadata_header =
-                run_slang_metadata_header(layout, linked.get(), metadata_namespace,
+                run_slang_metadata_header(global_session, layout, linked.get(), metadata_namespace,
                                           /*target_index=*/0);
         }
     }

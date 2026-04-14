@@ -3,7 +3,6 @@
 #include <core/cache/depTrackedCache.h>
 #include <core/defines.h>
 #include <core/diagnostics.h>
-#include <core/rendering/outputLayout.h>
 #include <core/rendering/webgpu/webgpu.h>
 
 #include <boost/container_hash/hash.hpp>
@@ -577,10 +576,23 @@ class FrameGraph {
                         WGPUAddressMode address = WGPUAddressMode_ClampToEdge,
                         WGPUMipmapFilterMode mipmap = WGPUMipmapFilterMode_Nearest);
 
-    WGPUBindGroupLayout bind_group_layout(std::string_view name,
-                                          std::initializer_list<OutputSlot> slots);
-    WGPUBindGroupLayout bind_group_layout(std::string_view name,
-                                          const std::vector<OutputSlot>& slots);
+    /// Register a caller-constructed bind group layout under `name` so
+    /// downstream FG machinery (pipeline cache, dep tracking) can reference
+    /// it by name. The caller retains nothing — ownership transfers to the
+    /// FG cache, which destroys the layout when the cache entry is evicted
+    /// or the FG is torn down. Intended for layouts produced by shader
+    /// reflection (via the generated `<shader>::create_bind_group_layout_N`
+    /// helpers). If `name` is already cached, the supplied `existing` is
+    /// released and the cached handle is returned — callers that register
+    /// the same name later are expected to pass a structurally equivalent
+    /// layout.
+    WGPUBindGroupLayout bind_group_layout(std::string_view name, WGPUBindGroupLayout existing);
+
+    /// Look up a bind group layout that was previously registered via the
+    /// (name, existing) overload. Fails loud if `name` is not present —
+    /// callers that need the layout must ensure the owning pass registered
+    /// it first.
+    WGPUBindGroupLayout bind_group_layout(std::string_view name);
 
     WGPUShaderModule shader(std::string_view resource_key);
     WGPUShaderModule shader_from_wgsl(std::string_view cache_key, const std::string& wgsl_source);

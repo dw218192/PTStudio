@@ -1,10 +1,10 @@
+#include <contact_shadow_shader_metadata.h>
 #include <core/diagnostics.h>
 #include <core/profiling.h>
 #include <core/rendering/contactShadowPass.h>
 #include <core/rendering/fallbackPool.h>
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/gbufferPass.h>
-#include <core/rendering/outputLayout.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/shaderc/shaderLoader.h>
 #include <core/rendering/webgpu/device.h>
@@ -40,10 +40,6 @@ auto ContactShadowPass::debug_targets() const noexcept -> std::pair<const DebugT
     return {k_debug_targets, m_enabled ? 1u : 0u};
 }
 
-std::array<OutputSlot, 2> ContactShadowPass::consumer_slots() {
-    return OutputSlot::sampled_texture(WGPUTextureFormat_R8Unorm);
-}
-
 ContactShadowPass::Outputs ContactShadowPass::add_to_frame_graph(FrameGraph& fg,
                                                                  const PassContext& ctx,
                                                                  const Inputs& in,
@@ -51,8 +47,10 @@ ContactShadowPass::Outputs ContactShadowPass::add_to_frame_graph(FrameGraph& fg,
     PTS_ZONE_SCOPED;
     ensure_initialized(ctx.device);
 
-    auto cs_slots = consumer_slots();
-    auto consumer_bgl = fg.bind_group_layout("contact_shadow/consumer", {cs_slots[0], cs_slots[1]});
+    // Consumer layout registered up-front by the owning renderer (forwardPass)
+    // from its shader's reflection; the consumer-side bind group shape is a
+    // property of the downstream consumer, not of contact_shadow.slang.
+    auto consumer_bgl = fg.bind_group_layout("contact_shadow/consumer");
 
     if (!m_enabled) {
         auto fallback_view = fallbacks.view(WGPUTextureFormat_R8Unorm, WGPUTextureViewDimension_2D);
@@ -63,15 +61,9 @@ ContactShadowPass::Outputs ContactShadowPass::add_to_frame_graph(FrameGraph& fg,
         return {{}, consumer};
     }
 
-    // ── Internal BGL ──
-    // GBuffer consumer slots: 0=depth_tex, 1=depth_sampler, 2=normals_tex, 3=normals_sampler
-    // ContactShadow-specific: 4=uniforms, 5=lights
-    auto gbuf_slots = GBufferPass::consumer_slots();
-    std::vector<OutputSlot> slots;
-    slots.insert(slots.end(), gbuf_slots.begin(), gbuf_slots.end());
-    slots.push_back(OutputSlot::uniform(sizeof(ContactShadowUniforms)));
-    slots.push_back(OutputSlot::storage());
-    auto internal_bgl = fg.bind_group_layout("contact_shadow/internal", slots);
+    auto internal_bgl = fg.bind_group_layout(
+        "contact_shadow/internal",
+        contact_shadow_shader::create_bind_group_layout_0(ctx.device.handle()));
 
     auto* pipeline = fg.render_pipeline("contact_shadow")
                          .shader("core/generated/shaders/contact_shadow.wgsl")

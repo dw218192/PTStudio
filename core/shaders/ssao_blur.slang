@@ -5,9 +5,9 @@ struct BlurUniforms {
 
 [[vk::binding(0, 0)]] ConstantBuffer<BlurUniforms> u;
 [[vk::binding(1, 0)]] Texture2D<float4> ssao_tex;
-[[vk::binding(2, 0)]] Texture2D<float>  depth_tex;
+[[vk::binding(2, 0)]] [NonFilterable] Texture2D<float>  depth_tex;
 [[vk::binding(3, 0)]] SamplerState      linear_sampler;
-[[vk::binding(4, 0)]] SamplerState      depth_sampler;
+[[vk::binding(4, 0)]] [NonFiltering]   SamplerState      depth_sampler;
 
 struct VsOut {
     float4 position : SV_Position;

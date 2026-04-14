@@ -6,13 +6,14 @@
 #include <core/rendering/camera.h>
 #include <core/rendering/fallbackPool.h>
 #include <core/rendering/frameGraph.h>
-#include <core/rendering/outputLayout.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/rendererRegistry.h>
 #include <core/rendering/shaderc/shaderLoader.h>
 #include <core/rendering/webgpu/device.h>
 #include <imgui.h>
+#include <renderers/pathtracer/generated/pathtracer_shader_metadata.h>
+#include <renderers/pathtracer/generated/pt_blit_shader_metadata.h>
 
 #include <glm/glm.hpp>
 
@@ -76,34 +77,11 @@ PathTracerPass::HdrOutputs PathTracerPass::do_add_to_frame_graph(
             static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst));
     }
 
-    // Compute pipeline BGLs — scene sampler comes from the world at frame time
     auto compute_desc_layout = fg.bind_group_layout(
-        "pathtracer/compute",
-        {
-            OutputSlot::uniform(sizeof(PTUniforms)).visibility(WGPUShaderStage_Compute),
-            OutputSlot::storage(0).visibility(WGPUShaderStage_Compute),
-            OutputSlot::storage(0).visibility(WGPUShaderStage_Compute),
-            OutputSlot::storage(0).visibility(WGPUShaderStage_Compute),
-            OutputSlot::storage(0).read_write().visibility(WGPUShaderStage_Compute),
-            OutputSlot::storage(0).read_write().visibility(WGPUShaderStage_Compute),
-            OutputSlot::storage(0).visibility(WGPUShaderStage_Compute),  // BVH nodes
-            OutputSlot::texture(WGPUTextureFormat_RGBA8Unorm, WGPUTextureViewDimension_2DArray)
-                .visibility(WGPUShaderStage_Compute),
-            OutputSlot::sampler(WGPUSamplerBindingType_Filtering)
-                .visibility(WGPUShaderStage_Compute),
-            OutputSlot::storage(0).visibility(WGPUShaderStage_Compute),  // instances
-        });
+        "pathtracer/compute", pathtracer_shader::create_bind_group_layout_0(ctx.device.handle()));
 
-    // IBL descriptor layout (group 1): env cubemap + sampler
     auto ibl_desc_layout = fg.bind_group_layout(
-        "pathtracer/ibl",
-        {
-            OutputSlot::texture(WGPUTextureFormat_RGBA16Float, WGPUTextureViewDimension_Cube)
-                .visibility(WGPUShaderStage_Compute),
-            OutputSlot::sampler(WGPUSamplerBindingType_Filtering, WGPUAddressMode_ClampToEdge,
-                                WGPUMipmapFilterMode_Linear)
-                .visibility(WGPUShaderStage_Compute),
-        });
+        "pathtracer/ibl", pathtracer_shader::create_bind_group_layout_1(ctx.device.handle()));
 
     auto* cp = fg.compute_pipeline("pathtracer_compute")
                    .shader("editor/generated/shaders/pathtracer.wgsl")
@@ -112,7 +90,7 @@ PathTracerPass::HdrOutputs PathTracerPass::do_add_to_frame_graph(
                    .build();
 
     auto blit_desc_layout = fg.bind_group_layout(
-        "pathtracer/blit", {OutputSlot::uniform(sizeof(BlitUniforms)), OutputSlot::storage(0)});
+        "pathtracer/blit", pt_blit_shader::create_bind_group_layout_0(ctx.device.handle()));
 
     auto* bp = fg.render_pipeline("pathtracer_blit")
                    .shader("editor/generated/shaders/pt_blit.wgsl")

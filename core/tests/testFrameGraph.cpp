@@ -897,30 +897,4 @@ TEST_CASE("FrameGraph - persistent buffer with data") {
     CHECK(f.graph.compiled_buffer(d2)->buffer == b1);
 }
 
-// --- OutputLayout ---
-
-#include <core/rendering/outputLayout.h>
-
-TEST_CASE("create_bind_group_layout - single texture slot") {
-    TestFixture f;
-    using pts::rendering::OutputSlot;
-
-    auto layout = pts::rendering::create_bind_group_layout(
-        f.device, {OutputSlot::texture(WGPUTextureFormat_RGBA8Unorm)});
-
-    CHECK(layout != nullptr);
-    wgpuBindGroupLayoutRelease(layout);
-}
-
-TEST_CASE("create_bind_group_layout - sampled_texture expands to 2 entries") {
-    TestFixture f;
-    using pts::rendering::OutputSlot;
-
-    auto st = OutputSlot::sampled_texture(WGPUTextureFormat_RGBA8Unorm);
-    auto layout = pts::rendering::create_bind_group_layout(f.device, {st[0], st[1]});
-
-    CHECK(layout != nullptr);
-    wgpuBindGroupLayoutRelease(layout);
-}
-
 PTS_TEST_MAIN()

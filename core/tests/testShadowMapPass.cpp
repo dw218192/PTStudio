@@ -63,6 +63,31 @@ auto fake_shader_getter(std::string_view key) -> std::optional<std::string_view>
     return std::nullopt;
 }
 
+// Build+register the shadow consumer BGL the pass expects. In production
+// this is registered by the owning renderer (forwardPass) from its shader's
+// reflection; tests don't depend on forward, so we construct it explicitly
+// to match the canonical shape: storage(ShadowInfo) + texture2DArray(depth)
+// + sampler(non-filtering).
+void register_shadow_consumer_bgl(pts::rendering::FrameGraph& fg, WGPUDevice device) {
+    WGPUBindGroupLayoutEntry entries[3]{};
+    entries[0].binding = 0;
+    entries[0].visibility = WGPUShaderStage_Fragment;
+    entries[0].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
+    entries[1].binding = 1;
+    entries[1].visibility = WGPUShaderStage_Fragment;
+    entries[1].texture.sampleType = WGPUTextureSampleType_Depth;
+    entries[1].texture.viewDimension = WGPUTextureViewDimension_2DArray;
+    entries[1].texture.multisampled = false;
+    entries[2].binding = 2;
+    entries[2].visibility = WGPUShaderStage_Fragment;
+    entries[2].sampler.type = WGPUSamplerBindingType_NonFiltering;
+
+    WGPUBindGroupLayoutDescriptor desc{};
+    desc.entryCount = 3;
+    desc.entries = entries;
+    fg.bind_group_layout("shadow_map/consumer", wgpuDeviceCreateBindGroupLayout(device, &desc));
+}
+
 }  // namespace
 
 // --- GPU tests ---
@@ -89,6 +114,7 @@ TEST_CASE("ShadowMapPass add_to_frame_graph with no lights returns valid handles
                     glm::mat4(1), glm::mat4(1),   glm::vec3(0), 0.0f,  0};
 
     fg.begin_frame();
+    register_shadow_consumer_bgl(fg, device.handle());
     auto out = pass.add_to_frame_graph(fg, ctx, {});
 
     CHECK(bool(out.shadow_array));
@@ -153,6 +179,7 @@ TEST_CASE("ShadowMapPass add_to_frame_graph with distant light produces valid ou
                     glm::mat4(1), glm::mat4(1),   glm::vec3(0), 0.0f,  0};
 
     fg.begin_frame();
+    register_shadow_consumer_bgl(fg, device.handle());
     auto out = pass.add_to_frame_graph(fg, ctx, {});
 
     CHECK(bool(out.shadow_array));
@@ -225,6 +252,7 @@ TEST_CASE("ShadowMapPass caps shadow count at k_max_shadow_maps") {
                     glm::mat4(1), glm::mat4(1),   glm::vec3(0), 0.0f,  0};
 
     fg.begin_frame();
+    register_shadow_consumer_bgl(fg, device.handle());
     auto out = pass.add_to_frame_graph(fg, ctx, {});
 
     CHECK(bool(out.shadow_array));
@@ -271,6 +299,7 @@ TEST_CASE("ShadowMapPass skips non-distant lights") {
                     glm::mat4(1), glm::mat4(1),   glm::vec3(0), 0.0f,  0};
 
     fg.begin_frame();
+    register_shadow_consumer_bgl(fg, device.handle());
     auto out = pass.add_to_frame_graph(fg, ctx, {});
 
     CHECK(bool(out.shadow_array));

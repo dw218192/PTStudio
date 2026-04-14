@@ -3,12 +3,13 @@
 #include <core/rendering/fallbackPool.h>
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/gbufferPass.h>
-#include <core/rendering/outputLayout.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/shaderc/shaderLoader.h>
 #include <core/rendering/ssaoPass.h>
 #include <core/rendering/webgpu/device.h>
 #include <imgui.h>
+#include <ssao_blur_shader_metadata.h>
+#include <ssao_shader_metadata.h>
 
 #include <array>
 #include <cmath>
@@ -127,27 +128,11 @@ SSAOPass::Outputs SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext
         fg.texture("ssao_noise", noise_tex_desc, k_noise_data.data(), k_noise_data.size(), 4 * 4);
     }
 
-    // ── AO Generation BGL ──
-    // GBuffer consumer slots: 0=depth_tex, 1=depth_sampler, 2=normals_tex, 3=normals_sampler
-    // SSAO-specific:          4=uniforms, 5=noise_tex, 6=noise_sampler, 7=kernel
-    auto gbuf_slots = GBufferPass::consumer_slots();
-    std::vector<OutputSlot> gen_slots;
-    gen_slots.insert(gen_slots.end(), gbuf_slots.begin(), gbuf_slots.end());
-    gen_slots.push_back(OutputSlot::uniform(sizeof(SSAOUniforms)));
-    gen_slots.push_back(OutputSlot::texture(WGPUTextureFormat_RGBA8Unorm));
-    gen_slots.push_back(
-        OutputSlot::sampler(WGPUSamplerBindingType_NonFiltering, WGPUAddressMode_Repeat));
-    gen_slots.push_back(OutputSlot::storage(sizeof(glm::vec4) * k_max_kernel_size));
-    auto gen_bgl = fg.bind_group_layout("ssao/gen", gen_slots);
+    auto gen_bgl = fg.bind_group_layout(
+        "ssao/gen", ssao_shader::create_bind_group_layout_0(ctx.device.handle()));
 
     auto blur_bgl = fg.bind_group_layout(
-        "ssao/blur", {
-                         OutputSlot::uniform(sizeof(SSAOBlurUniforms)),
-                         OutputSlot::texture(WGPUTextureFormat_R8Unorm),
-                         OutputSlot::texture(WGPUTextureFormat_Depth32Float),
-                         OutputSlot::sampler(WGPUSamplerBindingType_Filtering),
-                         OutputSlot::sampler(WGPUSamplerBindingType_NonFiltering),
-                     });
+        "ssao/blur", ssao_blur_shader::create_bind_group_layout_0(ctx.device.handle()));
 
     auto* gen_pipeline = fg.render_pipeline("ssao_gen")
                              .shader("core/generated/shaders/ssao.wgsl")

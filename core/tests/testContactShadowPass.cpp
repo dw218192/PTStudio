@@ -139,6 +139,26 @@ auto fake_shader_getter(std::string_view key) -> std::optional<std::string_view>
     return std::nullopt;
 }
 
+// Build+register the contact shadow consumer BGL. In production this is
+// registered by the owning renderer (forwardPass) from its shader's
+// reflection; tests pre-register the canonical shape (sampled_texture<R8>).
+void register_cs_consumer_bgl(pts::rendering::FrameGraph& fg, WGPUDevice device) {
+    WGPUBindGroupLayoutEntry entries[2]{};
+    entries[0].binding = 0;
+    entries[0].visibility = WGPUShaderStage_Fragment;
+    entries[0].texture.sampleType = WGPUTextureSampleType_Float;
+    entries[0].texture.viewDimension = WGPUTextureViewDimension_2D;
+    entries[0].texture.multisampled = false;
+    entries[1].binding = 1;
+    entries[1].visibility = WGPUShaderStage_Fragment;
+    entries[1].sampler.type = WGPUSamplerBindingType_Filtering;
+
+    WGPUBindGroupLayoutDescriptor desc{};
+    desc.entryCount = 2;
+    desc.entries = entries;
+    fg.bind_group_layout("contact_shadow/consumer", wgpuDeviceCreateBindGroupLayout(device, &desc));
+}
+
 }  // namespace
 
 // --- GPU tests ---
@@ -206,6 +226,7 @@ TEST_CASE("ContactShadowPass add_to_frame_graph produces valid output") {
                     glm::mat4(1), glm::mat4(1),   glm::vec3(0), 0.0f,  0};
 
     fg.begin_frame();
+    register_cs_consumer_bgl(fg, device.handle());
     auto gbuf_out = gbuf_pass.add_to_frame_graph(fg, ctx, {});
 
     auto cs_out =
@@ -248,6 +269,7 @@ TEST_CASE("ContactShadowPass disabled returns invalid handle") {
                     glm::mat4(1), glm::mat4(1),   glm::vec3(0), 0.0f,  0};
 
     fg.begin_frame();
+    register_cs_consumer_bgl(fg, device.handle());
     auto gbuf_out = gbuf_pass.add_to_frame_graph(fg, ctx, {});
 
     auto cs_out =

@@ -4,7 +4,6 @@
 #include <core/profiling.h>
 #include <core/rendering/camera.h>
 #include <core/rendering/frameGraph.h>
-#include <core/rendering/outputLayout.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/shaderc/shaderLoader.h>
@@ -52,10 +51,7 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
 
     // ── Picking pipeline (mesh objects + light shapes) ─────────────────
     auto picking_bgl = fg.bind_group_layout(
-        "editor/picking", {rendering::OutputSlot::uniform(sizeof(PickingUniforms))
-                               .dynamic()
-                               .visibility(static_cast<WGPUShaderStage>(
-                                   WGPUShaderStage_Vertex | WGPUShaderStage_Fragment))});
+        "editor/picking", editor_picking_shader::create_bind_group_layout_0(ctx.device.handle()));
 
     (void) fg.render_pipeline("editor_picking")
         .shader("editor/generated/shaders/picking.wgsl")
@@ -83,10 +79,7 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
 
     // ── Gizmo color pipeline (wireframe overlay on scene_color) ────────
     auto gizmo_bgl = fg.bind_group_layout(
-        "editor/gizmo", {rendering::OutputSlot::uniform(sizeof(GizmoUniforms))
-                             .dynamic()
-                             .visibility(static_cast<WGPUShaderStage>(WGPUShaderStage_Vertex |
-                                                                      WGPUShaderStage_Fragment))});
+        "editor/gizmo", editor_gizmo_shader::create_bind_group_layout_0(ctx.device.handle()));
 
     WGPUBlendState blend = {};
     blend.color.operation = WGPUBlendOperation_Add;

@@ -1,12 +1,10 @@
 #pragma once
 
 #include <core/rendering/frameGraph.h>
-#include <core/rendering/outputLayout.h>
 #include <core/rendering/renderPass.h>
 #include <core/rendering/webgpu/webgpu.h>
 
 #include <cstdint>
-#include <vector>
 
 namespace pts::rendering {
 
@@ -39,11 +37,6 @@ class ShadowMapPass final : public IPass {
         DescriptorDeclHandle consumer_desc;
     };
     Outputs add_to_frame_graph(FrameGraph& fg, const PassContext& ctx, const Inputs&);
-
-    /// Slot declarations for the consumer bind group (shadow receiver).
-    /// Renderers pass these to FrameGraph::bind_group_layout() to obtain
-    /// the BGL for pipeline layout creation.
-    [[nodiscard]] static std::vector<OutputSlot> consumer_slots();
 
     [[nodiscard]] bool enabled() const {
         return m_enabled;

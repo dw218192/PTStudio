@@ -1,7 +1,6 @@
 #pragma once
 
 #include <core/rendering/frameGraph.h>
-#include <core/rendering/outputLayout.h>
 #include <core/rendering/renderPass.h>
 #include <core/rendering/webgpu/webgpu.h>
 
@@ -32,15 +31,8 @@ class GBufferPass final : public IPass {
     struct Outputs {
         TextureDeclHandle depth;
         TextureDeclHandle normals;
-        /// Consumer descriptor for downstream passes (depth + normals + samplers).
-        DescriptorDeclHandle consumer_desc;
     };
     Outputs add_to_frame_graph(FrameGraph& fg, const PassContext& ctx, const Inputs&);
-
-    /// Output slot declarations for the consumer bind group.
-    /// Static — the slots are always the same regardless of instance state.
-    /// Child passes (contactShadowPass, ssaoPass) call this to concatenate into their layouts.
-    [[nodiscard]] static std::vector<OutputSlot> consumer_slots();
 
    private:
     static constexpr uint32_t k_uniform_align = 256;

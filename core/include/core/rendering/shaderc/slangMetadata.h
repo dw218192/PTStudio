@@ -18,6 +18,7 @@
 namespace slang {
 struct ShaderReflection;
 struct IComponentType;
+struct IGlobalSession;
 }  // namespace slang
 
 namespace pts::rendering {
@@ -26,7 +27,11 @@ namespace pts::rendering {
 /// `ns` is the enclosing `namespace` name (single identifier). `target_index`
 /// selects the Slang target (always 0 in our pipeline). `linked` may be null
 /// in which case every binding is treated as used by every stage (permissive).
-std::string run_slang_metadata_header(slang::ShaderReflection* reflection,
+/// `global_session` is required for resolving user attributes (e.g.
+/// `[DynamicBuffer]`); pass null only in contexts where attribute handling is
+/// irrelevant.
+std::string run_slang_metadata_header(slang::IGlobalSession* global_session,
+                                      slang::ShaderReflection* reflection,
                                       slang::IComponentType* linked, std::string_view ns,
                                       int target_index = 0);
 

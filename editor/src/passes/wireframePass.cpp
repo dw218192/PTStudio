@@ -4,7 +4,6 @@
 #include <core/profiling.h>
 #include <core/rendering/camera.h>
 #include <core/rendering/frameGraph.h>
-#include <core/rendering/outputLayout.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/rendererRegistry.h>
@@ -42,10 +41,7 @@ WireframePass::HdrOutputs WireframePass::do_add_to_frame_graph(rendering::FrameG
     PTS_ZONE_SCOPED;
 
     auto descriptor_layout = fg.bind_group_layout(
-        "wireframe/desc", {rendering::OutputSlot::uniform(sizeof(WireframeUniforms))
-                               .dynamic()
-                               .visibility(static_cast<WGPUShaderStage>(
-                                   WGPUShaderStage_Vertex | WGPUShaderStage_Fragment))});
+        "wireframe/desc", editor_wireframe_shader::create_bind_group_layout_0(ctx.device.handle()));
 
     auto* pipeline_handle = fg.render_pipeline("wireframe")
                                 .shader("editor/generated/shaders/wireframe.wgsl")

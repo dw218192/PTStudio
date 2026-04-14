@@ -1,13 +1,13 @@
 #include <core/diagnostics.h>
 #include <core/profiling.h>
 #include <core/rendering/frameGraph.h>
-#include <core/rendering/outputLayout.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/shaderc/shaderLoader.h>
 #include <core/rendering/shadowMapPass.h>
 #include <core/rendering/webgpu/device.h>
 #include <imgui.h>
+#include <shadow_shader_metadata.h>
 
 #include <algorithm>
 #include <cmath>
@@ -16,23 +16,18 @@
 
 namespace pts::rendering {
 
-std::vector<OutputSlot> ShadowMapPass::consumer_slots() {
-    return {
-        OutputSlot::storage(sizeof(ShadowInfo)),
-        OutputSlot::texture(WGPUTextureFormat_Depth32Float, WGPUTextureViewDimension_2DArray),
-        OutputSlot::sampler(WGPUSamplerBindingType_NonFiltering),
-    };
-}
-
 ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx,
                                                          const Inputs&) {
     PTS_ZONE_SCOPED;
     ensure_initialized(ctx.device);
 
     auto desc_layout = fg.bind_group_layout(
-        "shadow_map/desc", {OutputSlot::uniform(64).dynamic().visibility(WGPUShaderStage_Vertex),
-                            OutputSlot::uniform(64).dynamic().visibility(WGPUShaderStage_Vertex)});
-    auto consumer_bgl = fg.bind_group_layout("shadow_map/consumer", consumer_slots());
+        "shadow_map/desc", shadow_shader::create_bind_group_layout_0(ctx.device.handle()));
+    // Consumer layout is registered up-front by the owning renderer (e.g. forwardPass)
+    // using its own shader's reflection, since the shape of the consumer-side bind
+    // group is a property of how downstream passes read shadow output, not of
+    // shadow.slang.
+    auto consumer_bgl = fg.bind_group_layout("shadow_map/consumer");
 
     // Position-only vertex layout: stride=12, one Float32x3 at offset 0, location 0
     WGPUVertexAttribute pos_attr{};

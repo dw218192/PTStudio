@@ -18,7 +18,7 @@ struct Uniforms {
 };
 
 [[vk::binding(0, 0)]]
-ConstantBuffer<Uniforms> u;
+[DynamicBuffer] ConstantBuffer<Uniforms> u;
 
 [[vk::binding(1, 0)]]
 StructuredBuffer<Material> materials;
@@ -43,8 +43,8 @@ SamplerState scene_sampler;
 
 // Bind group 1: shadow data
 [[vk::binding(0, 1)]] StructuredBuffer<ShadowInfo> shadow_infos;
-[[vk::binding(1, 1)]] Texture2DArray<float> shadow_map;
-[[vk::binding(2, 1)]] SamplerState shadow_sampler;
+[[vk::binding(1, 1)]] [NonFilterable] Texture2DArray<float> shadow_map;
+[[vk::binding(2, 1)]] [NonFiltering]  SamplerState shadow_sampler;
 
 // Bind group 2: IBL
 [[vk::binding(0, 2)]] TextureCube<float4> ibl_prefiltered;

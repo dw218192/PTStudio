@@ -4,7 +4,6 @@
 #include <core/profiling.h>
 #include <core/rendering/camera.h>
 #include <core/rendering/frameGraph.h>
-#include <core/rendering/outputLayout.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/webgpu/device.h>
@@ -41,9 +40,7 @@ void GridPass::render(rendering::FrameGraph& fg, const rendering::PassContext& c
     ensure_initialized(ctx.device);
 
     auto descriptor_layout = fg.bind_group_layout(
-        "grid/desc", {rendering::OutputSlot::uniform(sizeof(GridUniforms))
-                          .visibility(static_cast<WGPUShaderStage>(WGPUShaderStage_Vertex |
-                                                                   WGPUShaderStage_Fragment))});
+        "grid/desc", editor_grid_shader::create_bind_group_layout_0(ctx.device.handle()));
 
     // Premultiplied alpha blending
     WGPUBlendState blend_state = {};

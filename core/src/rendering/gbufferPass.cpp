@@ -2,7 +2,6 @@
 #include <core/profiling.h>
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/gbufferPass.h>
-#include <core/rendering/outputLayout.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/shaderc/shaderLoader.h>
@@ -28,24 +27,13 @@ auto GBufferPass::debug_targets() const noexcept -> std::pair<const DebugTarget*
     return {k_debug_targets, 1};
 }
 
-std::vector<OutputSlot> GBufferPass::consumer_slots() {
-    auto depth_st = OutputSlot::sampled_texture(WGPUTextureFormat_Depth32Float);
-    auto normals_st = OutputSlot::sampled_texture(WGPUTextureFormat_RG16Float);
-    return {depth_st[0], depth_st[1], normals_st[0], normals_st[1]};
-}
-
 GBufferPass::Outputs GBufferPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx,
                                                      const Inputs&) {
     PTS_ZONE_SCOPED;
     ensure_initialized(ctx.device);
 
     auto desc_layout = fg.bind_group_layout(
-        "gbuffer/desc", {OutputSlot::uniform(sizeof(GBufferObjectUniforms))
-                             .dynamic()
-                             .visibility(static_cast<WGPUShaderStage>(WGPUShaderStage_Vertex |
-                                                                      WGPUShaderStage_Fragment))});
-
-    auto consumer_bgl = fg.bind_group_layout("gbuffer/consumer", consumer_slots());
+        "gbuffer/desc", gbuffer_shader::create_bind_group_layout_0(ctx.device.handle()));
 
     auto* pipeline_handle = fg.render_pipeline("gbuffer")
                                 .shader("core/generated/shaders/gbuffer.wgsl")
@@ -133,15 +121,7 @@ GBufferPass::Outputs GBufferPass::add_to_frame_graph(FrameGraph& fg, const PassC
             }
         });
 
-    // Build consumer descriptor for downstream passes (SSAO, contact shadows)
-    auto consumer = descriptor(fg, consumer_bgl, "consumer_desc")
-                        .texture(0, depth_decl)
-                        .sampler(1, fg.sampler(WGPUSamplerBindingType_NonFiltering))
-                        .texture(2, normals_decl)
-                        .sampler(3, fg.sampler(WGPUSamplerBindingType_Filtering))
-                        .build();
-
-    return {depth_decl, normals_decl, consumer};
+    return {depth_decl, normals_decl};
 }
 
 }  // namespace pts::rendering

@@ -2,12 +2,13 @@
 #include <core/profiling.h>
 #include <core/rendering/fallbackPool.h>
 #include <core/rendering/frameGraph.h>
-#include <core/rendering/outputLayout.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/shaderc/shaderLoader.h>
 #include <core/rendering/toneMappingPass.h>
 #include <core/rendering/webgpu/device.h>
 #include <imgui.h>
+#include <luminance_shader_metadata.h>
+#include <tonemapping_shader_metadata.h>
 
 using namespace pts;
 using namespace pts::rendering;
@@ -50,14 +51,7 @@ void ToneMappingPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx)
 
     // --- Tone mapping render pipeline ---
     auto descriptor_layout = fg.bind_group_layout(
-        "tonemapping/desc", {
-                                OutputSlot::uniform(sizeof(ToneMappingUniforms)),
-                                OutputSlot::texture(WGPUTextureFormat_RGBA16Float),
-                                OutputSlot::sampler(WGPUSamplerBindingType_Filtering),
-                                OutputSlot::texture(WGPUTextureFormat_RGBA8Unorm),
-                                OutputSlot::sampler(WGPUSamplerBindingType_Filtering),
-                                OutputSlot::storage(sizeof(ExposureResult)),
-                            });
+        "tonemapping/desc", tonemapping_shader::create_bind_group_layout_0(ctx.device.handle()));
 
     auto* pipeline_handle = fg.render_pipeline("tonemapping")
                                 .shader("editor/generated/shaders/tonemapping.wgsl")
@@ -68,17 +62,7 @@ void ToneMappingPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx)
 
     // --- Luminance compute pipeline ---
     auto luminance_desc_layout = fg.bind_group_layout(
-        "tonemapping/luminance",
-        {
-            OutputSlot::texture(WGPUTextureFormat_RGBA16Float).visibility(WGPUShaderStage_Compute),
-            OutputSlot::sampler(WGPUSamplerBindingType_Filtering)
-                .visibility(WGPUShaderStage_Compute),
-            OutputSlot::storage(sizeof(ExposureResult))
-                .read_write()
-                .visibility(WGPUShaderStage_Compute),
-            OutputSlot::uniform(sizeof(LuminanceParams)).visibility(WGPUShaderStage_Compute),
-            OutputSlot::texture(WGPUTextureFormat_Depth32Float).visibility(WGPUShaderStage_Compute),
-        });
+        "tonemapping/luminance", luminance_shader::create_bind_group_layout_0(ctx.device.handle()));
 
     auto* lum_pipeline = fg.compute_pipeline("luminance")
                              .shader("editor/generated/shaders/luminance.wgsl")

@@ -1,11 +1,9 @@
 #pragma once
 
 #include <core/rendering/frameGraph.h>
-#include <core/rendering/outputLayout.h>
 #include <core/rendering/renderPass.h>
 #include <core/rendering/webgpu/webgpu.h>
 
-#include <array>
 #include <cstdint>
 
 namespace pts::rendering {
@@ -46,9 +44,6 @@ class ContactShadowPass final : public IPass {
     Outputs add_to_frame_graph(FrameGraph& fg, const PassContext& ctx, const Inputs& in,
                                FallbackPool& fallbacks);
     void draw_imgui() override;
-
-    /// Slot declarations for the consumer bind group (CS texture + sampler).
-    [[nodiscard]] static std::array<OutputSlot, 2> consumer_slots();
 
     // Tunable parameters (exposed via ImGui)
     bool m_enabled = true;

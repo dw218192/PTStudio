@@ -1,7 +1,6 @@
 #include <core/diagnostics.h>
 #include <core/rendering/halfFloat.h>
 #include <core/rendering/iblResources.h>
-#include <core/rendering/outputLayout.h>
 #include <core/rendering/webgpu/device.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
 
@@ -106,56 +105,118 @@ WGPUTextureView create_2d_view(WGPUTexture tex, WGPUTextureFormat format) {
     return view;
 }
 
+// The IBL compute shaders (.slang) declare RWTexture2D<float4> without a format
+// annotation, so slang reflection yields `rgba32float`. At runtime we patch the
+// generated WGSL to `rgba16float, write` (see load_shader above) and pair it
+// with RGBA16Float textures. The BGLs below are open-coded to match that
+// runtime format explicitly — shader reflection can't tell us the target
+// format. Keep these local to this translation unit.
 WGPUBindGroupLayout create_brdf_lut_desc_layout(const webgpu::Device& device) {
-    return create_bind_group_layout(
-        device,
-        {
-            OutputSlot::uniform(0).visibility(WGPUShaderStage_Compute),
-            OutputSlot::storage_texture(WGPUTextureFormat_RGBA16Float, WGPUTextureViewDimension_2D)
-                .visibility(WGPUShaderStage_Compute),
-        });
+    WGPUBindGroupLayoutEntry entries[2] = {};
+    entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    entries[0].binding = 0;
+    entries[0].visibility = WGPUShaderStage_Compute;
+    entries[0].buffer.type = WGPUBufferBindingType_Uniform;
+
+    entries[1] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    entries[1].binding = 1;
+    entries[1].visibility = WGPUShaderStage_Compute;
+    entries[1].storageTexture.access = WGPUStorageTextureAccess_WriteOnly;
+    entries[1].storageTexture.format = WGPUTextureFormat_RGBA16Float;
+    entries[1].storageTexture.viewDimension = WGPUTextureViewDimension_2D;
+
+    WGPUBindGroupLayoutDescriptor desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
+    desc.entryCount = 2;
+    desc.entries = entries;
+    return wgpuDeviceCreateBindGroupLayout(device.handle(), &desc);
 }
 
 WGPUBindGroupLayout create_equirect_desc_layout(const webgpu::Device& device) {
-    return create_bind_group_layout(
-        device, {
-                    OutputSlot::uniform(0).visibility(WGPUShaderStage_Compute),
-                    OutputSlot::texture(WGPUTextureFormat_RGBA16Float, WGPUTextureViewDimension_2D)
-                        .visibility(WGPUShaderStage_Compute),
-                    OutputSlot::sampler(WGPUSamplerBindingType_Filtering)
-                        .visibility(WGPUShaderStage_Compute),
-                    OutputSlot::storage_texture(WGPUTextureFormat_RGBA16Float,
-                                                WGPUTextureViewDimension_2DArray)
-                        .visibility(WGPUShaderStage_Compute),
-                });
+    WGPUBindGroupLayoutEntry entries[4] = {};
+    entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    entries[0].binding = 0;
+    entries[0].visibility = WGPUShaderStage_Compute;
+    entries[0].buffer.type = WGPUBufferBindingType_Uniform;
+
+    entries[1] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    entries[1].binding = 1;
+    entries[1].visibility = WGPUShaderStage_Compute;
+    entries[1].texture.sampleType = WGPUTextureSampleType_Float;
+    entries[1].texture.viewDimension = WGPUTextureViewDimension_2D;
+
+    entries[2] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    entries[2].binding = 2;
+    entries[2].visibility = WGPUShaderStage_Compute;
+    entries[2].sampler.type = WGPUSamplerBindingType_Filtering;
+
+    entries[3] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    entries[3].binding = 3;
+    entries[3].visibility = WGPUShaderStage_Compute;
+    entries[3].storageTexture.access = WGPUStorageTextureAccess_WriteOnly;
+    entries[3].storageTexture.format = WGPUTextureFormat_RGBA16Float;
+    entries[3].storageTexture.viewDimension = WGPUTextureViewDimension_2DArray;
+
+    WGPUBindGroupLayoutDescriptor desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
+    desc.entryCount = 4;
+    desc.entries = entries;
+    return wgpuDeviceCreateBindGroupLayout(device.handle(), &desc);
 }
 
 WGPUBindGroupLayout create_downsample_desc_layout(const webgpu::Device& device) {
-    return create_bind_group_layout(
-        device,
-        {
-            OutputSlot::uniform(0).visibility(WGPUShaderStage_Compute),
-            OutputSlot::texture(WGPUTextureFormat_RGBA16Float, WGPUTextureViewDimension_2DArray)
-                .visibility(WGPUShaderStage_Compute),
-            OutputSlot::storage_texture(WGPUTextureFormat_RGBA16Float,
-                                        WGPUTextureViewDimension_2DArray)
-                .visibility(WGPUShaderStage_Compute),
-        });
+    WGPUBindGroupLayoutEntry entries[3] = {};
+    entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    entries[0].binding = 0;
+    entries[0].visibility = WGPUShaderStage_Compute;
+    entries[0].buffer.type = WGPUBufferBindingType_Uniform;
+
+    entries[1] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    entries[1].binding = 1;
+    entries[1].visibility = WGPUShaderStage_Compute;
+    entries[1].texture.sampleType = WGPUTextureSampleType_Float;
+    entries[1].texture.viewDimension = WGPUTextureViewDimension_2DArray;
+
+    entries[2] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    entries[2].binding = 2;
+    entries[2].visibility = WGPUShaderStage_Compute;
+    entries[2].storageTexture.access = WGPUStorageTextureAccess_WriteOnly;
+    entries[2].storageTexture.format = WGPUTextureFormat_RGBA16Float;
+    entries[2].storageTexture.viewDimension = WGPUTextureViewDimension_2DArray;
+
+    WGPUBindGroupLayoutDescriptor desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
+    desc.entryCount = 3;
+    desc.entries = entries;
+    return wgpuDeviceCreateBindGroupLayout(device.handle(), &desc);
 }
 
 WGPUBindGroupLayout create_convolve_desc_layout(const webgpu::Device& device) {
-    return create_bind_group_layout(
-        device,
-        {
-            OutputSlot::uniform(0).visibility(WGPUShaderStage_Compute),
-            OutputSlot::texture(WGPUTextureFormat_RGBA16Float, WGPUTextureViewDimension_Cube)
-                .visibility(WGPUShaderStage_Compute),
-            OutputSlot::sampler(WGPUSamplerBindingType_Filtering)
-                .visibility(WGPUShaderStage_Compute),
-            OutputSlot::storage_texture(WGPUTextureFormat_RGBA16Float,
-                                        WGPUTextureViewDimension_2DArray)
-                .visibility(WGPUShaderStage_Compute),
-        });
+    WGPUBindGroupLayoutEntry entries[4] = {};
+    entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    entries[0].binding = 0;
+    entries[0].visibility = WGPUShaderStage_Compute;
+    entries[0].buffer.type = WGPUBufferBindingType_Uniform;
+
+    entries[1] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    entries[1].binding = 1;
+    entries[1].visibility = WGPUShaderStage_Compute;
+    entries[1].texture.sampleType = WGPUTextureSampleType_Float;
+    entries[1].texture.viewDimension = WGPUTextureViewDimension_Cube;
+
+    entries[2] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    entries[2].binding = 2;
+    entries[2].visibility = WGPUShaderStage_Compute;
+    entries[2].sampler.type = WGPUSamplerBindingType_Filtering;
+
+    entries[3] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
+    entries[3].binding = 3;
+    entries[3].visibility = WGPUShaderStage_Compute;
+    entries[3].storageTexture.access = WGPUStorageTextureAccess_WriteOnly;
+    entries[3].storageTexture.format = WGPUTextureFormat_RGBA16Float;
+    entries[3].storageTexture.viewDimension = WGPUTextureViewDimension_2DArray;
+
+    WGPUBindGroupLayoutDescriptor desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
+    desc.entryCount = 4;
+    desc.entries = entries;
+    return wgpuDeviceCreateBindGroupLayout(device.handle(), &desc);
 }
 
 WGPUPipelineLayout make_pipeline_layout(WGPUDevice dev, WGPUBindGroupLayout desc_layout) {

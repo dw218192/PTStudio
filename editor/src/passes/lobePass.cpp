@@ -3,10 +3,10 @@
 #include <core/diagnostics.h>
 #include <core/profiling.h>
 #include <core/rendering/frameGraph.h>
-#include <core/rendering/outputLayout.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/webgpu/device.h>
 #include <imgui.h>
+#include <lobe_shader_metadata.h>
 
 #include <cmath>
 #include <glm/glm.hpp>
@@ -39,10 +39,7 @@ void LobePass::render(rendering::FrameGraph& fg, const rendering::PassContext& c
     ensure_initialized(ctx.device);
 
     auto descriptor_layout = fg.bind_group_layout(
-        "lobe/desc", {rendering::OutputSlot::uniform(sizeof(LobeUniforms))
-                          .dynamic()
-                          .visibility(static_cast<WGPUShaderStage>(WGPUShaderStage_Vertex |
-                                                                   WGPUShaderStage_Fragment))});
+        "lobe/desc", editor_lobe_shader::create_bind_group_layout_0(ctx.device.handle()));
 
     auto* pipeline_handle = fg.render_pipeline("lobe")
                                 .shader("editor/generated/shaders/lobe.wgsl")

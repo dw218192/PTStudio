@@ -73,6 +73,11 @@ if(NOT EMSCRIPTEN)
     set(testSlangCompiler_source testSlangCompiler.cpp)
     set(testSlangCompiler_libs core)
     set(testSlangCompiler_includes ${CMAKE_CURRENT_SOURCE_DIR}/generated)
+
+    # SlangMetadata emitter - native only (requires libslang)
+    list(APPEND TEST_NAMES testSlangMetadata)
+    set(testSlangMetadata_source testSlangMetadata.cpp)
+    set(testSlangMetadata_libs core)
 endif()
 
 # PropertyDescriptor / get_properties - no GPU needed, just USD stages

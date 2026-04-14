@@ -10,7 +10,6 @@
 #include <core/rendering/halfFloat.h>
 #include <core/rendering/iblResources.h>
 #include <core/rendering/ltcData.h>
-#include <core/rendering/outputLayout.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/rendererRegistry.h>
@@ -19,6 +18,7 @@
 #include <core/rendering/ssaoPass.h>
 #include <core/rendering/webgpu/device.h>
 #include <renderers/forward/generated/shader_metadata.h>
+#include <renderers/forward/generated/skybox_shader_metadata.h>
 
 #include <glm/glm.hpp>
 #include <vector>
@@ -166,6 +166,25 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
         }
     }
 
+    // --- BGL setup for the forward pipeline (layouts from shader reflection) ---
+    // Register forward's BGLs (including consumer layouts) BEFORE pre-passes so
+    // the FG cache is keyed to the shader-derived layouts. Pre-passes that later
+    // call fg.bind_group_layout with the same name will receive the cached
+    // handles (their own supplied layouts are released as duplicates).
+    auto descriptor_layout = fg.bind_group_layout(
+        "forward/desc", forward_shader::create_bind_group_layout_0(ctx.device.handle()));
+
+    auto ibl_desc_layout = fg.bind_group_layout(
+        "forward/ibl", forward_shader::create_bind_group_layout_2(ctx.device.handle()));
+
+    auto skybox_desc_layout = fg.bind_group_layout(
+        "forward/skybox", skybox_shader::create_bind_group_layout_0(ctx.device.handle()));
+
+    auto shadow_consumer_bgl = fg.bind_group_layout(
+        "shadow_map/consumer", forward_shader::create_bind_group_layout_1(ctx.device.handle()));
+    auto cs_consumer_bgl = fg.bind_group_layout(
+        "contact_shadow/consumer", forward_shader::create_bind_group_layout_3(ctx.device.handle()));
+
     // Pre-passes: G-buffer (depth + normals) and shadow maps
     rendering::GBufferPass::Outputs gbuf_out;
     {
@@ -182,42 +201,6 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
             shadow_out = shadow->add_to_frame_graph(fg, ctx, {});
         }
     }
-
-    // --- BGL setup for the forward pipeline ---
-    auto descriptor_layout = fg.bind_group_layout(
-        "forward/desc",
-        {OutputSlot::uniform(sizeof(ForwardUniforms))
-             .dynamic()
-             .visibility(
-                 static_cast<WGPUShaderStage>(WGPUShaderStage_Vertex | WGPUShaderStage_Fragment)),
-         OutputSlot::storage(), OutputSlot::storage(),
-         OutputSlot::texture(WGPUTextureFormat_RGBA32Float),
-         OutputSlot::texture(WGPUTextureFormat_RG32Float),
-         OutputSlot::sampler(WGPUSamplerBindingType_Filtering),
-         OutputSlot::texture(WGPUTextureFormat_RGBA8Unorm, WGPUTextureViewDimension_2DArray),
-         OutputSlot::sampler(WGPUSamplerBindingType_Filtering)});
-
-    auto ibl_desc_layout = fg.bind_group_layout(
-        "forward/ibl",
-        {OutputSlot::texture(WGPUTextureFormat_RGBA8Unorm, WGPUTextureViewDimension_Cube),
-         OutputSlot::texture(WGPUTextureFormat_RGBA8Unorm, WGPUTextureViewDimension_Cube),
-         OutputSlot::texture(WGPUTextureFormat_RGBA8Unorm),
-         OutputSlot::sampler(WGPUSamplerBindingType_Filtering)});
-
-    auto skybox_desc_layout = fg.bind_group_layout(
-        "forward/skybox",
-        {OutputSlot::uniform(sizeof(SkyboxUniforms))
-             .visibility(
-                 static_cast<WGPUShaderStage>(WGPUShaderStage_Vertex | WGPUShaderStage_Fragment)),
-         OutputSlot::texture(WGPUTextureFormat_RGBA8Unorm, WGPUTextureViewDimension_Cube),
-         OutputSlot::sampler(WGPUSamplerBindingType_Filtering)});
-
-    // Child-owned consumer BGLs (same cache names as the child passes use).
-    auto shadow_consumer_bgl =
-        fg.bind_group_layout("shadow_map/consumer", rendering::ShadowMapPass::consumer_slots());
-    auto cs_slots = rendering::ContactShadowPass::consumer_slots();
-    auto cs_consumer_bgl =
-        fg.bind_group_layout("contact_shadow/consumer", {cs_slots[0], cs_slots[1]});
 
     auto [dbg_targets_setup, dbg_count_setup] = effective_debug_targets();
     WGPUShaderModule shader;

@@ -120,6 +120,9 @@ slangc:
           suffix: "_no_debug"
     - input: "renderers/forward/skybox.slang"
       output: "renderers/forward/generated/shaders/skybox.wgsl"
+      metadata:
+        output: "renderers/forward/generated/skybox_shader_metadata.h"
+        namespace: "skybox_shader"
     - input: "core/shaders/shadow.slang"
       output: "core/generated/shaders/shadow.wgsl"
       metadata:
@@ -173,14 +176,23 @@ slangc:
     - input: "editor/shaders/tonemapping.slang"
       output: "editor/generated/shaders/tonemapping.wgsl"
       metadata:
-        output: "editor/generated/tonemapping_shader_metadata.h"
-        namespace: "editor_tonemapping_shader"
+        output: "core/generated/tonemapping_shader_metadata.h"
+        namespace: "tonemapping_shader"
     - input: "editor/shaders/luminance.slang"
       output: "editor/generated/shaders/luminance.wgsl"
+      metadata:
+        output: "core/generated/luminance_shader_metadata.h"
+        namespace: "luminance_shader"
     - input: "renderers/pathtracer/pathtracer.slang"
       output: "editor/generated/shaders/pathtracer.wgsl"
+      metadata:
+        output: "renderers/pathtracer/generated/pathtracer_shader_metadata.h"
+        namespace: "pathtracer_shader"
     - input: "renderers/pathtracer/pt_blit.slang"
       output: "editor/generated/shaders/pt_blit.wgsl"
+      metadata:
+        output: "renderers/pathtracer/generated/pt_blit_shader_metadata.h"
+        namespace: "pt_blit_shader"
     - input: "core/shaders/ibl/brdf_lut.slang"
       output: "core/generated/shaders/brdf_lut.wgsl"
     - input: "core/shaders/ibl/equirect_to_cube.slang"

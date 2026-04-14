@@ -408,23 +408,28 @@ WGPUSampler FrameGraph::sampler(WGPUSamplerBindingType type, WGPUAddressMode add
 }
 
 WGPUBindGroupLayout FrameGraph::bind_group_layout(std::string_view name,
-                                                  std::initializer_list<OutputSlot> slots) {
+                                                  WGPUBindGroupLayout existing) {
     PTS_ZONE_SCOPED;
+    INVARIANT_MSG(existing, "FrameGraph::bind_group_layout: existing layout must be non-null");
     auto& bgl = m_bgl_cache.get_or_build(
         name, pts::cache::DepTrackedCache<std::string, WGPUBindGroupLayout>::Span{},
-        [&] { return create_bind_group_layout(m_device, slots); });
+        [&] { return existing; });
+    if (bgl != existing) {
+        // Cache hit on same name but with a different handle: drop the new
+        // one — callers are expected to use a stable name per layout identity.
+        wgpuBindGroupLayoutRelease(existing);
+    }
     m_bgl_version_lookup[bgl] = m_bgl_cache.version(name);
     return bgl;
 }
 
-WGPUBindGroupLayout FrameGraph::bind_group_layout(std::string_view name,
-                                                  const std::vector<OutputSlot>& slots) {
+WGPUBindGroupLayout FrameGraph::bind_group_layout(std::string_view name) {
     PTS_ZONE_SCOPED;
-    auto& bgl = m_bgl_cache.get_or_build(
-        name, pts::cache::DepTrackedCache<std::string, WGPUBindGroupLayout>::Span{},
-        [&] { return create_bind_group_layout(m_device, slots); });
-    m_bgl_version_lookup[bgl] = m_bgl_cache.version(name);
-    return bgl;
+    auto* cached = m_bgl_cache.find(name);
+    INVARIANT_MSG(cached,
+                  "FrameGraph::bind_group_layout(name): no layout registered under this name; "
+                  "the owning pass must register it first via the (name, existing) overload");
+    return *cached;
 }
 
 uint64_t FrameGraph::bgl_version(WGPUBindGroupLayout layout) const {
