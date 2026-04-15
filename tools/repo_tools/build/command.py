@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -199,9 +200,6 @@ def _host_tools_only_build(
 
     Then runs only the prebuild steps mapped to _HOST_TOOL_TARGETS.
     """
-    import shutil
-    import sys
-
     ensure_conan_profile()
     export_local_conan_recipes(root, logs_dir, conan_config)
 
@@ -544,6 +542,17 @@ def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> 
                     g.run([cmake_exe, "--build", "--preset", preset_name, "--target", target],
                           log_file=logs_dir / f"cmake_build_{target}.log",
                           env_script=conanbuild, cwd=root)
+
+            # Mirror the --host-tools-only layout: stage the Conan env
+            # scripts next to the built host-tool binaries so downstream
+            # prebuild steps (e.g. slangc) can locate conanrun via a
+            # single convention regardless of which build path built the
+            # tool.
+            bin_dir = build_dir / "bin"
+            bin_dir.mkdir(parents=True, exist_ok=True)
+            for script in build_dir.glob("conan*"):
+                if script.is_file():
+                    shutil.copy2(script, bin_dir / script.name)
 
         # Phase 2: Execute prebuild steps (may use host tools built above)
         if prebuild_steps:

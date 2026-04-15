@@ -98,24 +98,11 @@ class SlangcTool(RepoTool):
 
         build_dir = Path(tokens["build_dir"])
         pts_shaderc = _resolve_pts_shaderc(build_dir)
-        # Resolve the conanrun env script for pts_shaderc. Windows uses
-        # PATH (not RPATH) for DLL discovery, so sourcing conanrun is
-        # required there to find slang.dll. Linux/macOS get away without
-        # it because Conan bakes RPATH at build time, but we still use
-        # conanrun when present.
-        #
-        # Two candidates, in preference order:
-        #   1. Next to the binary: `<pts_shaderc_dir>/conanrun.*`
-        #      (staged during `--host-tools-only` so cross-compile works)
-        #   2. The current build's main conanrun: `<build_dir>/conanrun.*`
-        #      (present in native same-platform builds)
-        conanrun_suffix = ".bat" if sys.platform == "win32" else ".sh"
-        conanrun: Path | None = None
-        for candidate in (pts_shaderc.parent, build_dir):
-            script = candidate / f"conanrun{conanrun_suffix}"
-            if script.exists():
-                conanrun = candidate / "conanrun"  # ShellCommand appends suffix
-                break
+        # conanrun is staged next to the binary by both host-tool build
+        # paths (native Phase 1 and --host-tools-only). Windows needs it
+        # to find slang.dll via PATH; Linux's RPATH makes it redundant
+        # but harmless.
+        conanrun = pts_shaderc.parent / "conanrun"
         logs_dir = Path(tokens["logs_root"])
         logs_dir.mkdir(parents=True, exist_ok=True)
 
