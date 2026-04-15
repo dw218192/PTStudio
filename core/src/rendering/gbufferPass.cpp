@@ -59,9 +59,9 @@ GBufferPass::Outputs GBufferPass::add_to_frame_graph(FrameGraph& fg, const PassC
     auto uniform_buf_decl = create_buffer(fg, buf_desc, "uniforms");
 
     // Register descriptor with frame graph
-    auto bg_decl = descriptor(fg, desc_layout, "bg0")
-                       .buffer(0, uniform_buf_decl, 0, sizeof(GBufferObjectUniforms))
-                       .build();
+    auto desc_decl = descriptor(fg, desc_layout, "desc0")
+                         .buffer(0, uniform_buf_decl, 0, sizeof(GBufferObjectUniforms))
+                         .build();
 
     // Create/find frame graph texture resources
     TextureDesc depth_desc;
@@ -90,7 +90,7 @@ GBufferPass::Outputs GBufferPass::add_to_frame_graph(FrameGraph& fg, const PassC
             auto objs = world.get_objects().span_raw();
             auto meshes = world.get_meshes().span_raw();
             auto buf = exec.get(uniform_buf_decl).buffer;
-            auto bg = exec.get(bg_decl).bind_group;
+            auto desc = exec.get(desc_decl).bind_group;
 
             // Upload per-object uniforms
             {
@@ -110,7 +110,7 @@ GBufferPass::Outputs GBufferPass::add_to_frame_graph(FrameGraph& fg, const PassC
                 if (!objs[i].active) continue;
                 if (!objs[i].value.visible) continue;
                 uint32_t dyn_offset = i * k_uniform_align;
-                wgpuRenderPassEncoderSetBindGroup(pass, 0, bg, 1, &dyn_offset);
+                wgpuRenderPassEncoderSetBindGroup(pass, 0, desc, 1, &dyn_offset);
                 const auto& mesh = meshes[objs[i].value.mesh_index].value;
                 wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh.vertex_buffer.handle(), 0,
                                                      mesh.vertex_buffer.size());

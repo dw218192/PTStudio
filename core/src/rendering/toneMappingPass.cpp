@@ -115,18 +115,18 @@ void ToneMappingPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx)
         auto depth_decl = m_inputs.depth;
         bool has_depth = static_cast<bool>(depth_decl);
 
-        auto lum_bg_bld = descriptor(fg, luminance_desc_layout, "lum_bg")
-                              .texture(0, hdr_decl)
-                              .sampler(1, fg.sampler(WGPUSamplerBindingType_Filtering))
-                              .buffer(2, result_buf_decl, 0, sizeof(ExposureResult))
-                              .buffer(3, lum_params_decl, 0, sizeof(LuminanceParams));
+        auto lum_desc_bld = descriptor(fg, luminance_desc_layout, "lum_desc")
+                                .texture(0, hdr_decl)
+                                .sampler(1, fg.sampler(WGPUSamplerBindingType_Filtering))
+                                .buffer(2, result_buf_decl, 0, sizeof(ExposureResult))
+                                .buffer(3, lum_params_decl, 0, sizeof(LuminanceParams));
         if (has_depth) {
-            lum_bg_bld.texture(4, depth_decl);
+            lum_desc_bld.texture(4, depth_decl);
         } else {
-            lum_bg_bld.external_view(4, fg.fallback_pool().view(WGPUTextureFormat_Depth32Float,
-                                                                WGPUTextureViewDimension_2D));
+            lum_desc_bld.external_view(4, fg.fallback_pool().view(WGPUTextureFormat_Depth32Float,
+                                                                  WGPUTextureViewDimension_2D));
         }
-        auto lum_bg_decl = lum_bg_bld.build();
+        auto lum_desc_decl = lum_desc_bld.build();
 
         auto queue = ctx.queue;
         auto width = ctx.viewport_width;
@@ -142,7 +142,7 @@ void ToneMappingPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx)
         lum_builder.execute([=](rendering::ExecuteContext& exec, WGPUComputePassEncoder enc) {
             auto result_buf = exec.get(result_buf_decl).buffer;
             auto lum_params_buf = exec.get(lum_params_decl).buffer;
-            auto lum_bg = exec.get(lum_bg_decl).bind_group;
+            auto lum_desc = exec.get(lum_desc_decl).bind_group;
 
             // Reset result buffer when auto-exposure was just re-enabled
             if (needs_reset) {
@@ -159,7 +159,7 @@ void ToneMappingPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx)
             wgpuQueueWriteBuffer(queue, lum_params_buf, 0, &params, sizeof(params));
 
             wgpuComputePassEncoderSetPipeline(enc, lum_pipeline);
-            wgpuComputePassEncoderSetBindGroup(enc, 0, lum_bg, 0, nullptr);
+            wgpuComputePassEncoderSetBindGroup(enc, 0, lum_desc, 0, nullptr);
             wgpuComputePassEncoderDispatchWorkgroups(enc, 1, 1, 1);
         });
     }
@@ -174,19 +174,19 @@ void ToneMappingPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx)
     auto uniform_buf_decl = create_buffer(fg, buf_desc, "uniforms");
 
     // Register descriptor (6 entries)
-    auto bg_builder = descriptor(fg, descriptor_layout, "bg0")
-                          .buffer(0, uniform_buf_decl, 0, sizeof(ToneMappingUniforms))
-                          .texture(1, hdr_decl)
-                          .sampler(2, fg.sampler(WGPUSamplerBindingType_Filtering));
+    auto desc_builder = descriptor(fg, descriptor_layout, "desc0")
+                            .buffer(0, uniform_buf_decl, 0, sizeof(ToneMappingUniforms))
+                            .texture(1, hdr_decl)
+                            .sampler(2, fg.sampler(WGPUSamplerBindingType_Filtering));
     if (ssao_decl) {
-        bg_builder.texture(3, ssao_decl);
+        desc_builder.texture(3, ssao_decl);
     } else {
-        bg_builder.external_view(
+        desc_builder.external_view(
             3, fg.fallback_pool().view(WGPUTextureFormat_RGBA8Unorm, WGPUTextureViewDimension_2D));
     }
-    auto bg_decl = bg_builder.sampler(4, fg.sampler(WGPUSamplerBindingType_Filtering))
-                       .buffer(5, result_buf_decl, 0, sizeof(ExposureResult))
-                       .build();
+    auto desc_decl = desc_builder.sampler(4, fg.sampler(WGPUSamplerBindingType_Filtering))
+                         .buffer(5, result_buf_decl, 0, sizeof(ExposureResult))
+                         .build();
 
     auto queue = ctx.queue;
     auto exposure = m_exposure;
@@ -202,7 +202,7 @@ void ToneMappingPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx)
 
     builder.execute([=](rendering::ExecuteContext& exec, WGPURenderPassEncoder pass) {
         auto uniform_buf = exec.get(uniform_buf_decl).buffer;
-        auto desc_group = exec.get(bg_decl).bind_group;
+        auto descriptor = exec.get(desc_decl).bind_group;
 
         ToneMappingUniforms uniforms{};
         uniforms.exposure = exposure;
@@ -211,7 +211,7 @@ void ToneMappingPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx)
         wgpuQueueWriteBuffer(queue, uniform_buf, 0, &uniforms, sizeof(uniforms));
 
         wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
-        wgpuRenderPassEncoderSetBindGroup(pass, 0, desc_group, 0, nullptr);
+        wgpuRenderPassEncoderSetBindGroup(pass, 0, descriptor, 0, nullptr);
         wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
     });
 }

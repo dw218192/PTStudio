@@ -164,27 +164,28 @@ PathTracerPass::HdrOutputs PathTracerPass::do_add_to_frame_graph(
     auto scene_tex_view = ctx.world.texture_array_view();
     auto scene_tex_sampler = ctx.world.texture_sampler();
 
-    auto compute_bg_decl = descriptor(fg, compute_desc_layout, "compute_bg")
-                               .external_buffer(0, m_uniform_buffer.handle(), 0, sizeof(PTUniforms))
-                               .external_buffer(1, tri_buf.handle(), 0, WGPU_WHOLE_SIZE)
-                               .external_buffer(2, mat_buf.handle(), 0, WGPU_WHOLE_SIZE)
-                               .external_buffer(3, light_buf.handle(), 0, WGPU_WHOLE_SIZE)
-                               .external_buffer(4, m_accum_buffer.handle(), 0, WGPU_WHOLE_SIZE)
-                               .external_buffer(5, m_output_buffer.handle(), 0, WGPU_WHOLE_SIZE)
-                               .external_buffer(6, bvh_buf.handle(), 0, WGPU_WHOLE_SIZE)
-                               .external_view(7, scene_tex_view)
-                               .sampler(8, scene_tex_sampler)
-                               .external_buffer(9, inst_buf.handle(), 0, WGPU_WHOLE_SIZE)
-                               .build();
+    auto compute_desc_decl =
+        descriptor(fg, compute_desc_layout, "compute_desc")
+            .external_buffer(0, m_uniform_buffer.handle(), 0, sizeof(PTUniforms))
+            .external_buffer(1, tri_buf.handle(), 0, WGPU_WHOLE_SIZE)
+            .external_buffer(2, mat_buf.handle(), 0, WGPU_WHOLE_SIZE)
+            .external_buffer(3, light_buf.handle(), 0, WGPU_WHOLE_SIZE)
+            .external_buffer(4, m_accum_buffer.handle(), 0, WGPU_WHOLE_SIZE)
+            .external_buffer(5, m_output_buffer.handle(), 0, WGPU_WHOLE_SIZE)
+            .external_buffer(6, bvh_buf.handle(), 0, WGPU_WHOLE_SIZE)
+            .external_view(7, scene_tex_view)
+            .sampler(8, scene_tex_sampler)
+            .external_buffer(9, inst_buf.handle(), 0, WGPU_WHOLE_SIZE)
+            .build();
 
-    // IBL descriptor (group 1): env cubemap + sampler
+    // IBL descriptor (slot 1): env cubemap + sampler
     auto& ibl = ctx.world.ibl_resources();
     bool ibl_ready = ibl.is_ready();
     WGPUTextureView ibl_view = ibl_ready ? ibl.env_cubemap_view()
                                          : fg.fallback_pool().view(WGPUTextureFormat_RGBA16Float,
                                                                    WGPUTextureViewDimension_Cube);
-    auto ibl_bg_decl =
-        descriptor(fg, ibl_desc_layout, "ibl_bg")
+    auto ibl_desc_decl =
+        descriptor(fg, ibl_desc_layout, "ibl_desc")
             .external_view(0, ibl_view)
             .sampler(1, fg.sampler(WGPUSamplerBindingType_Filtering, WGPUAddressMode_ClampToEdge,
                                    WGPUMipmapFilterMode_Linear))
@@ -193,11 +194,11 @@ PathTracerPass::HdrOutputs PathTracerPass::do_add_to_frame_graph(
     fg.add_pass("pathtracer_compute")
         .execute([=](rendering::ExecuteContext& exec, WGPUComputePassEncoder enc) {
             if (inst_count == 0 || !ibl_ready) return;
-            auto compute_bg = exec.get(compute_bg_decl).bind_group;
-            auto ibl_bg = exec.get(ibl_bg_decl).bind_group;
+            auto compute_desc = exec.get(compute_desc_decl).bind_group;
+            auto ibl_desc = exec.get(ibl_desc_decl).bind_group;
             wgpuComputePassEncoderSetPipeline(enc, cp);
-            wgpuComputePassEncoderSetBindGroup(enc, 0, compute_bg, 0, nullptr);
-            wgpuComputePassEncoderSetBindGroup(enc, 1, ibl_bg, 0, nullptr);
+            wgpuComputePassEncoderSetBindGroup(enc, 0, compute_desc, 0, nullptr);
+            wgpuComputePassEncoderSetBindGroup(enc, 1, ibl_desc, 0, nullptr);
             wgpuComputePassEncoderDispatchWorkgroups(enc, (width + 7) / 8, (height + 7) / 8, 1);
         });
 
@@ -221,17 +222,17 @@ PathTracerPass::HdrOutputs PathTracerPass::do_add_to_frame_graph(
     auto blit_uniform_buf_decl = create_buffer(fg, blit_buf_desc, "blit_uniforms");
 
     // Register blit descriptor
-    auto blit_bg_decl = descriptor(fg, blit_desc_layout, "blit_bg")
-                            .buffer(0, blit_uniform_buf_decl, 0, sizeof(BlitUniforms))
-                            .buffer(1, output_buf_decl)
-                            .build();
+    auto blit_desc_decl = descriptor(fg, blit_desc_layout, "blit_desc")
+                              .buffer(0, blit_uniform_buf_decl, 0, sizeof(BlitUniforms))
+                              .buffer(1, output_buf_decl)
+                              .build();
 
     auto queue = ctx.queue;
     fg.add_pass("pathtracer_blit")
         .color(color_decl)
         .execute([=](rendering::ExecuteContext& exec, WGPURenderPassEncoder pass) {
             auto blit_uniform_buf = exec.get(blit_uniform_buf_decl).buffer;
-            auto blit_bg = exec.get(blit_bg_decl).bind_group;
+            auto blit_desc = exec.get(blit_desc_decl).bind_group;
 
             BlitUniforms bu{};
             bu.width = width;
@@ -239,7 +240,7 @@ PathTracerPass::HdrOutputs PathTracerPass::do_add_to_frame_graph(
             wgpuQueueWriteBuffer(queue, blit_uniform_buf, 0, &bu, sizeof(bu));
 
             wgpuRenderPassEncoderSetPipeline(pass, bp);
-            wgpuRenderPassEncoderSetBindGroup(pass, 0, blit_bg, 0, nullptr);
+            wgpuRenderPassEncoderSetBindGroup(pass, 0, blit_desc, 0, nullptr);
             wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
         });
 

@@ -523,13 +523,13 @@ TEST_CASE("FrameGraph - descriptor with buffer input") {
     buf_desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
     auto buf = f.graph.buffer("ubo", buf_desc);
 
-    auto bg = f.graph.descriptor("my_bg", layout).buffer(0, buf).build();
-    CHECK(bool(bg));
+    auto desc = f.graph.descriptor("my_desc", layout).buffer(0, buf).build();
+    CHECK(bool(desc));
 
     f.graph.compile();
 
-    CHECK(f.graph.compiled_descriptor(bg) != nullptr);
-    CHECK(f.graph.compiled_descriptor(bg)->bind_group != nullptr);
+    CHECK(f.graph.compiled_descriptor(desc) != nullptr);
+    CHECK(f.graph.compiled_descriptor(desc)->bind_group != nullptr);
 
     wgpuBindGroupLayoutRelease(layout);
 }
@@ -546,18 +546,18 @@ TEST_CASE("FrameGraph - descriptor rebuilds on buffer change") {
 
     f.graph.begin_frame();
     auto buf = f.graph.import_buffer("ubo", ext_buf1, 256, 1);
-    auto bg = f.graph.descriptor("my_bg", layout).buffer(0, buf).build();
+    auto desc = f.graph.descriptor("my_desc", layout).buffer(0, buf).build();
     f.graph.compile();
-    auto v1 = f.graph.compiled_descriptor(bg)->version;
+    auto v1 = f.graph.compiled_descriptor(desc)->version;
 
     f.graph.begin_frame();
     auto buf2 = f.graph.import_buffer("ubo", ext_buf2, 256, 2);
-    auto bg2 = f.graph.descriptor("my_bg", layout).buffer(0, buf2).build();
+    auto desc2 = f.graph.descriptor("my_desc", layout).buffer(0, buf2).build();
     f.graph.compile();
-    CHECK(f.graph.compiled_descriptor(bg2) != nullptr);
-    CHECK(f.graph.compiled_descriptor(bg2)->bind_group != nullptr);
+    CHECK(f.graph.compiled_descriptor(desc2) != nullptr);
+    CHECK(f.graph.compiled_descriptor(desc2)->bind_group != nullptr);
     // Version bumps monotonically on rebuild -- proves we did rebuild.
-    CHECK(f.graph.compiled_descriptor(bg2)->version != v1);
+    CHECK(f.graph.compiled_descriptor(desc2)->version != v1);
 
     wgpuBufferDestroy(ext_buf1);
     wgpuBufferRelease(ext_buf1);
@@ -576,15 +576,15 @@ TEST_CASE("FrameGraph - descriptor reuses when inputs stable") {
 
     f.graph.begin_frame();
     auto buf = f.graph.buffer("ubo", buf_desc);
-    auto bg = f.graph.descriptor("my_bg", layout).buffer(0, buf).build();
+    auto desc = f.graph.descriptor("my_desc", layout).buffer(0, buf).build();
     f.graph.compile();
-    auto bg1 = f.graph.compiled_descriptor(bg)->bind_group;
+    auto desc1 = f.graph.compiled_descriptor(desc)->bind_group;
 
     f.graph.begin_frame();
     auto buf2 = f.graph.buffer("ubo", buf_desc);
-    auto bg2 = f.graph.descriptor("my_bg", layout).buffer(0, buf2).build();
+    auto desc2 = f.graph.descriptor("my_desc", layout).buffer(0, buf2).build();
     f.graph.compile();
-    CHECK(f.graph.compiled_descriptor(bg2)->bind_group == bg1);
+    CHECK(f.graph.compiled_descriptor(desc2)->bind_group == desc1);
 
     wgpuBindGroupLayoutRelease(layout);
 }
@@ -600,14 +600,14 @@ TEST_CASE("FrameGraph - descriptor eviction") {
     f.graph.begin_frame();
     auto buf_a = f.graph.buffer("ubo_a", buf_desc);
     auto buf_b = f.graph.buffer("ubo_b", buf_desc);
-    f.graph.descriptor("bg_a", layout).buffer(0, buf_a).build();
-    f.graph.descriptor("bg_b", layout).buffer(0, buf_b).build();
+    f.graph.descriptor("desc_a", layout).buffer(0, buf_a).build();
+    f.graph.descriptor("desc_b", layout).buffer(0, buf_b).build();
     f.graph.compile();
     CHECK(f.graph.cached_descriptor_count() == 2);
 
     f.graph.begin_frame();
     auto buf_a2 = f.graph.buffer("ubo_a", buf_desc);
-    f.graph.descriptor("bg_a", layout).buffer(0, buf_a2).build();
+    f.graph.descriptor("desc_a", layout).buffer(0, buf_a2).build();
     f.graph.compile();
     CHECK(f.graph.cached_descriptor_count() == 1);
 
@@ -627,28 +627,28 @@ TEST_CASE("FrameGraph - descriptor rebuilds on texture change") {
     f.graph.begin_frame();
     auto tex = f.graph.texture("my_tex", tex_desc);
     f.graph.add_pass("writer").color(tex).execute([](ExecuteContext&, WGPURenderPassEncoder) {});
-    auto bg = f.graph.descriptor("tex_bg", layout).texture(0, tex).build();
+    auto desc = f.graph.descriptor("tex_desc", layout).texture(0, tex).build();
     f.graph.compile();
-    auto v1 = f.graph.compiled_descriptor(bg)->version;
-    auto bg1_ptr = f.graph.compiled_descriptor(bg)->bind_group;
+    auto v1 = f.graph.compiled_descriptor(desc)->version;
+    auto desc1_ptr = f.graph.compiled_descriptor(desc)->bind_group;
 
-    // Frame 2: same desc -> reuse (bind_group pointer stable, version stable)
+    // Frame 2: same desc -> reuse (pointer stable, version stable)
     f.graph.begin_frame();
     auto tex2 = f.graph.texture("my_tex", tex_desc);
     f.graph.add_pass("writer").color(tex2).execute([](ExecuteContext&, WGPURenderPassEncoder) {});
-    auto bg2 = f.graph.descriptor("tex_bg", layout).texture(0, tex2).build();
+    auto desc2 = f.graph.descriptor("tex_desc", layout).texture(0, tex2).build();
     f.graph.compile();
-    CHECK(f.graph.compiled_descriptor(bg2)->version == v1);
-    CHECK(f.graph.compiled_descriptor(bg2)->bind_group == bg1_ptr);
+    CHECK(f.graph.compiled_descriptor(desc2)->version == v1);
+    CHECK(f.graph.compiled_descriptor(desc2)->bind_group == desc1_ptr);
 
     // Frame 3: new texture name -> different decl -> descriptor rebuilds.
     f.graph.begin_frame();
     TextureDesc tex3_desc = tex_desc;
     auto tex3 = f.graph.texture("my_tex_v2", tex3_desc);
     f.graph.add_pass("writer").color(tex3).execute([](ExecuteContext&, WGPURenderPassEncoder) {});
-    auto bg3 = f.graph.descriptor("tex_bg", layout).texture(0, tex3).build();
+    auto desc3 = f.graph.descriptor("tex_desc", layout).texture(0, tex3).build();
     f.graph.compile();
-    CHECK(f.graph.compiled_descriptor(bg3)->version != v1);
+    CHECK(f.graph.compiled_descriptor(desc3)->version != v1);
 
     wgpuBindGroupLayoutRelease(layout);
 }

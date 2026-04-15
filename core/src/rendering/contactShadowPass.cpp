@@ -48,7 +48,7 @@ ContactShadowPass::Outputs ContactShadowPass::add_to_frame_graph(FrameGraph& fg,
     ensure_initialized(ctx.device);
 
     // Consumer layout registered up-front by the owning renderer (forwardPass)
-    // from its shader's reflection; the consumer-side bind group shape is a
+    // from its shader's reflection; the consumer-side descriptor shape is a
     // property of the downstream consumer, not of contact_shadow.slang.
     auto consumer_bgl = fg.bind_group_layout("contact_shadow/consumer");
 
@@ -88,14 +88,14 @@ ContactShadowPass::Outputs ContactShadowPass::add_to_frame_graph(FrameGraph& fg,
 
     // Internal descriptor: depth(0), depth_sampler(1), normals(2), normals_sampler(3),
     //                      uniforms(4), lights(5)
-    auto bg_decl = descriptor(fg, internal_bgl, "cs_bg")
-                       .texture(0, in.depth)
-                       .sampler(1, fg.sampler(WGPUSamplerBindingType_NonFiltering))
-                       .texture(2, in.normals)
-                       .sampler(3, fg.sampler(WGPUSamplerBindingType_Filtering))
-                       .buffer(4, uniform_buf_decl, 0, sizeof(ContactShadowUniforms))
-                       .external_buffer(5, in.light_buffer, 0, WGPU_WHOLE_SIZE)
-                       .build();
+    auto desc_decl = descriptor(fg, internal_bgl, "cs_desc")
+                         .texture(0, in.depth)
+                         .sampler(1, fg.sampler(WGPUSamplerBindingType_NonFiltering))
+                         .texture(2, in.normals)
+                         .sampler(3, fg.sampler(WGPUSamplerBindingType_Filtering))
+                         .buffer(4, uniform_buf_decl, 0, sizeof(ContactShadowUniforms))
+                         .external_buffer(5, in.light_buffer, 0, WGPU_WHOLE_SIZE)
+                         .build();
 
     // Consumer descriptor: managed CS texture + sampler
     auto consumer = descriptor(fg, consumer_bgl, "consumer_desc")
@@ -121,7 +121,7 @@ ContactShadowPass::Outputs ContactShadowPass::add_to_frame_graph(FrameGraph& fg,
         .color(cs_decl)
         .execute([=](ExecuteContext& exec, WGPURenderPassEncoder pass) {
             auto uniform_buf = exec.get(uniform_buf_decl).buffer;
-            auto bg = exec.get(bg_decl).bind_group;
+            auto desc = exec.get(desc_decl).bind_group;
 
             ContactShadowUniforms uniforms{};
             uniforms.projection = proj_matrix;
@@ -139,7 +139,7 @@ ContactShadowPass::Outputs ContactShadowPass::add_to_frame_graph(FrameGraph& fg,
             wgpuQueueWriteBuffer(queue, uniform_buf, 0, &uniforms, sizeof(uniforms));
 
             wgpuRenderPassEncoderSetPipeline(pass, pipeline);
-            wgpuRenderPassEncoderSetBindGroup(pass, 0, bg, 0, nullptr);
+            wgpuRenderPassEncoderSetBindGroup(pass, 0, desc, 0, nullptr);
             wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
         });
 

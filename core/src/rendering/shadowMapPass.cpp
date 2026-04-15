@@ -24,8 +24,8 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
     auto desc_layout = fg.bind_group_layout(
         "shadow_map/desc", shadow_shader::create_bind_group_layout_0(ctx.device.handle()));
     // Consumer layout is registered up-front by the owning renderer (e.g. forwardPass)
-    // using its own shader's reflection, since the shape of the consumer-side bind
-    // group is a property of how downstream passes read shadow output, not of
+    // using its own shader's reflection, since the shape of the consumer-side
+    // descriptor is a property of how downstream passes read shadow output, not of
     // shadow.slang.
     auto consumer_bgl = fg.bind_group_layout("shadow_map/consumer");
 
@@ -172,10 +172,10 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
     auto vp_buf_decl = create_buffer(fg, vp_buf_desc, "light_vps");
 
     // Descriptor: binding 0 = model (dynamic), binding 1 = light VP (dynamic)
-    auto bg_decl = descriptor(fg, desc_layout, "bg0")
-                       .buffer(0, model_buf_decl, 0, 64)
-                       .buffer(1, vp_buf_decl, 0, 64)
-                       .build();
+    auto desc_decl = descriptor(fg, desc_layout, "desc0")
+                         .buffer(0, model_buf_decl, 0, 64)
+                         .buffer(1, vp_buf_decl, 0, 64)
+                         .build();
 
     // Extract per-layer view-projection matrices
     std::vector<glm::mat4> layer_vps;
@@ -221,7 +221,7 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
         fg.add_pass("shadow_depth_" + std::to_string(layer))
             .depth(shadow_array, layer)
             .execute([=, &world](ExecuteContext& exec, WGPURenderPassEncoder pass) {
-                auto bg = exec.get(bg_decl).bind_group;
+                auto desc = exec.get(desc_decl).bind_group;
                 auto objs = world.get_objects().span_raw();
                 auto mesh_slots = world.get_meshes().span_raw();
                 uint32_t slots = static_cast<uint32_t>(objs.size());
@@ -233,7 +233,7 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
                     if (!objs[i].value.visible) continue;
                     uint32_t model_offset = i * k_uniform_align;
                     uint32_t dyn_offsets[2] = {model_offset, vp_offset};
-                    wgpuRenderPassEncoderSetBindGroup(pass, 0, bg, 2, dyn_offsets);
+                    wgpuRenderPassEncoderSetBindGroup(pass, 0, desc, 2, dyn_offsets);
                     const auto& mesh = mesh_slots[objs[i].value.mesh_index].value;
                     wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh.position_buffer.handle(), 0,
                                                          mesh.position_buffer.size());

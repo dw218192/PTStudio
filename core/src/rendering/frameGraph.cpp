@@ -1493,7 +1493,7 @@ void FrameGraph::materialize_buffers() {
 
         // Imported buffer (external). Identity is (handle, external_version)
         // -- same handle with a bumped version triggers a rebuild so descriptors
-        // binding this buffer see a changed dep and rebuild their bind groups.
+        // binding this buffer see a changed dep and rebuild.
         if (decl.external_buffer) {
             if (m_compiled_buffers[i] && m_compiled_buffers[i]->buffer == decl.external_buffer &&
                 m_compiled_buffers[i]->version == decl.external_version) {
@@ -1685,8 +1685,8 @@ void FrameGraph::materialize_descriptors() {
 
 void FrameGraph::evict_unused() {
     PTS_ZONE_SCOPED;
-    // Descriptors: mark inactive, clear compiled. Bind groups are internal
-    // to the FG so immediate destruction is safe.
+    // Descriptors: mark inactive, clear compiled. The underlying WGPUBindGroups
+    // are internal to the FG so immediate destruction is safe.
     for (uint32_t i = 0; i < static_cast<uint32_t>(m_descriptor_decls.size()); ++i) {
         auto& decl = m_descriptor_decls[i];
         if (!decl.active) continue;

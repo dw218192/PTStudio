@@ -335,7 +335,7 @@ class PassBuilder {
     PassBuilder& read(TextureDeclHandle h);
     PassBuilder& storage_write(TextureDeclHandle h);
 
-    /// Declare a descriptor (bind group) for this pass at the given group index.
+    /// Declare a descriptor for this pass at the given group index.
     /// Static descriptors are auto-set before the execute callback.
     PassBuilder& descriptor(uint32_t index, DescriptorDeclHandle h);
     /// Declare a dynamic descriptor -- resolved but NOT auto-set. The execute

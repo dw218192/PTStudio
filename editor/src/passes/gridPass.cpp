@@ -70,9 +70,9 @@ void GridPass::render(rendering::FrameGraph& fg, const rendering::PassContext& c
     auto uniform_buf_decl = create_buffer(fg, buf_desc, "uniforms");
 
     // Register descriptor with frame graph
-    auto bg_decl = descriptor(fg, descriptor_layout, "bg0")
-                       .buffer(0, uniform_buf_decl, 0, sizeof(GridUniforms))
-                       .build();
+    auto desc_decl = descriptor(fg, descriptor_layout, "desc0")
+                         .buffer(0, uniform_buf_decl, 0, sizeof(GridUniforms))
+                         .build();
 
     auto queue = ctx.queue;
     auto view_mat = ctx.view_matrix;
@@ -88,7 +88,7 @@ void GridPass::render(rendering::FrameGraph& fg, const rendering::PassContext& c
     fg.add_pass("grid").color(color).depth_readonly(depth).execute(
         [=](rendering::ExecuteContext& exec, WGPURenderPassEncoder pass) {
             auto uniform_buf = exec.get(uniform_buf_decl).buffer;
-            auto desc_group = exec.get(bg_decl).bind_group;
+            auto descriptor = exec.get(desc_decl).bind_group;
             GridUniforms gu;
             gu.inv_vp = inv_vp_mat;
             gu.vp = vp_mat;
@@ -100,7 +100,7 @@ void GridPass::render(rendering::FrameGraph& fg, const rendering::PassContext& c
             gu._pad = 0.0f;
             wgpuQueueWriteBuffer(queue, uniform_buf, 0, &gu, sizeof(gu));
             wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
-            wgpuRenderPassEncoderSetBindGroup(pass, 0, desc_group, 0, nullptr);
+            wgpuRenderPassEncoderSetBindGroup(pass, 0, descriptor, 0, nullptr);
             wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
         });
 }

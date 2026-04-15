@@ -128,24 +128,24 @@ SSAOPass::Outputs SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext
         fg.texture("ssao_noise", noise_tex_desc, k_noise_data.data(), k_noise_data.size(), 4 * 4);
     }
 
-    auto gen_bgl = fg.bind_group_layout(
+    auto gen_descl = fg.bind_group_layout(
         "ssao/gen", ssao_shader::create_bind_group_layout_0(ctx.device.handle()));
 
-    auto blur_bgl = fg.bind_group_layout(
+    auto blur_descl = fg.bind_group_layout(
         "ssao/blur", ssao_blur_shader::create_bind_group_layout_0(ctx.device.handle()));
 
     auto* gen_pipeline = fg.render_pipeline("ssao_gen")
                              .shader("core/generated/shaders/ssao.wgsl")
                              .color_format(WGPUTextureFormat_R8Unorm)
                              .cull_mode(WGPUCullMode_None)
-                             .bind_group_layouts({gen_bgl})
+                             .bind_group_layouts({gen_descl})
                              .build();
 
     auto* blur_pipeline = fg.render_pipeline("ssao_blur")
                               .shader("core/generated/shaders/ssao_blur.wgsl")
                               .color_format(WGPUTextureFormat_RGBA8Unorm)
                               .cull_mode(WGPUCullMode_None)
-                              .bind_group_layouts({blur_bgl})
+                              .bind_group_layouts({blur_descl})
                               .build();
 
     // -- Frame graph resources --
@@ -182,8 +182,8 @@ SSAOPass::Outputs SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext
     INVARIANT(kernel_decl && noise_decl);
 
     // AO gen descriptor via DescriptorBuilder
-    auto gen_bg_decl =
-        descriptor(fg, gen_bgl, "gen_bg")
+    auto gen_desc_decl =
+        descriptor(fg, gen_descl, "gen_desc")
             .texture(0, depth_decl)
             .sampler(1, fg.sampler(WGPUSamplerBindingType_NonFiltering))
             .texture(2, normals_decl)
@@ -195,13 +195,13 @@ SSAOPass::Outputs SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext
             .build();
 
     // Blur descriptor via DescriptorBuilder
-    auto blur_bg_decl = descriptor(fg, blur_bgl, "blur_bg")
-                            .buffer(0, blur_uniform_buf_decl, 0, sizeof(SSAOBlurUniforms))
-                            .texture(1, ssao_raw_decl)
-                            .texture(2, depth_decl)
-                            .sampler(3, fg.sampler(WGPUSamplerBindingType_Filtering))
-                            .sampler(4, fg.sampler(WGPUSamplerBindingType_NonFiltering))
-                            .build();
+    auto blur_desc_decl = descriptor(fg, blur_descl, "blur_desc")
+                              .buffer(0, blur_uniform_buf_decl, 0, sizeof(SSAOBlurUniforms))
+                              .texture(1, ssao_raw_decl)
+                              .texture(2, depth_decl)
+                              .sampler(3, fg.sampler(WGPUSamplerBindingType_Filtering))
+                              .sampler(4, fg.sampler(WGPUSamplerBindingType_NonFiltering))
+                              .build();
 
     // Capture scalars for lambdas
     auto queue = ctx.queue;
@@ -220,7 +220,7 @@ SSAOPass::Outputs SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext
         .color(ssao_raw_decl)
         .execute([=](ExecuteContext& exec, WGPURenderPassEncoder pass) {
             auto gen_uniform_buf = exec.get(gen_uniform_buf_decl).buffer;
-            auto gen_bg = exec.get(gen_bg_decl).bind_group;
+            auto gen_desc = exec.get(gen_desc_decl).bind_group;
 
             SSAOUniforms uniforms{};
             uniforms.projection = proj_matrix;
@@ -236,7 +236,7 @@ SSAOPass::Outputs SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext
             wgpuQueueWriteBuffer(queue, gen_uniform_buf, 0, &uniforms, sizeof(uniforms));
 
             wgpuRenderPassEncoderSetPipeline(pass, gen_pipeline);
-            wgpuRenderPassEncoderSetBindGroup(pass, 0, gen_bg, 0, nullptr);
+            wgpuRenderPassEncoderSetBindGroup(pass, 0, gen_desc, 0, nullptr);
             wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
         });
 
@@ -247,7 +247,7 @@ SSAOPass::Outputs SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext
         .color(ssao_decl)
         .execute([=](ExecuteContext& exec, WGPURenderPassEncoder pass) {
             auto blur_uniform_buf = exec.get(blur_uniform_buf_decl).buffer;
-            auto blur_bg = exec.get(blur_bg_decl).bind_group;
+            auto blur_desc = exec.get(blur_desc_decl).bind_group;
 
             SSAOBlurUniforms blur_u{};
             blur_u.texel_size = {1.0f / static_cast<float>(viewport_width),
@@ -255,7 +255,7 @@ SSAOPass::Outputs SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext
             wgpuQueueWriteBuffer(queue, blur_uniform_buf, 0, &blur_u, sizeof(blur_u));
 
             wgpuRenderPassEncoderSetPipeline(pass, blur_pipeline);
-            wgpuRenderPassEncoderSetBindGroup(pass, 0, blur_bg, 0, nullptr);
+            wgpuRenderPassEncoderSetBindGroup(pass, 0, blur_desc, 0, nullptr);
             wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
         });
 

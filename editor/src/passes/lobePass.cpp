@@ -59,9 +59,9 @@ void LobePass::render(rendering::FrameGraph& fg, const rendering::PassContext& c
     auto uniform_buf_decl = create_buffer(fg, buf_desc, "uniforms");
 
     // Register descriptor
-    auto bg_decl = descriptor(fg, descriptor_layout, "bg0")
-                       .buffer(0, uniform_buf_decl, 0, sizeof(LobeUniforms))
-                       .build();
+    auto desc_decl = descriptor(fg, descriptor_layout, "desc0")
+                         .buffer(0, uniform_buf_decl, 0, sizeof(LobeUniforms))
+                         .build();
 
     rendering::TextureDesc color_desc;
     color_desc.width = k_texture_size;
@@ -104,7 +104,7 @@ void LobePass::render(rendering::FrameGraph& fg, const rendering::PassContext& c
         .depth(depth_decl)
         .execute([=](rendering::ExecuteContext& exec, WGPURenderPassEncoder pass) {
             auto uniform_buf = exec.get(uniform_buf_decl).buffer;
-            auto desc_group = exec.get(bg_decl).bind_group;
+            auto descriptor = exec.get(desc_decl).bind_group;
 
             // Upload both uniform slots
             LobeUniforms lu_spec{};
@@ -128,13 +128,13 @@ void LobePass::render(rendering::FrameGraph& fg, const rendering::PassContext& c
 
             if (show_specular) {
                 uint32_t offset_spec = 0;
-                wgpuRenderPassEncoderSetBindGroup(pass, 0, desc_group, 1, &offset_spec);
+                wgpuRenderPassEncoderSetBindGroup(pass, 0, descriptor, 1, &offset_spec);
                 wgpuRenderPassEncoderDraw(pass, vertex_count, 1, 0, 0);
             }
 
             if (show_diffuse) {
                 uint32_t offset_diff = k_uniform_align;
-                wgpuRenderPassEncoderSetBindGroup(pass, 0, desc_group, 1, &offset_diff);
+                wgpuRenderPassEncoderSetBindGroup(pass, 0, descriptor, 1, &offset_diff);
                 wgpuRenderPassEncoderDraw(pass, vertex_count, 1, 0, 0);
             }
         });

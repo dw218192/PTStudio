@@ -50,7 +50,7 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
     ensure_initialized(ctx.device);
 
     // -- Picking pipeline (mesh objects + light shapes) -----------------
-    auto picking_bgl = fg.bind_group_layout(
+    auto picking_descl = fg.bind_group_layout(
         "editor/picking", editor_picking_shader::create_bind_group_layout_0(ctx.device.handle()));
 
     (void) fg.render_pipeline("editor_picking")
@@ -60,7 +60,7 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
         .depth_write(true)
         .depth_compare(WGPUCompareFunction_Less)
         .cull_mode(WGPUCullMode_Back)
-        .bind_group_layouts({picking_bgl})
+        .bind_group_layouts({picking_descl})
         .vertex_layout<editor_picking_shader::VertexLayout>()
         .build();
 
@@ -73,12 +73,12 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
         .depth_compare(WGPUCompareFunction_Less)
         .cull_mode(WGPUCullMode_None)
         .topology(WGPUPrimitiveTopology_LineList)
-        .bind_group_layouts({picking_bgl})
+        .bind_group_layouts({picking_descl})
         .vertex_layout<editor_picking_shader::VertexLayout>()
         .build();
 
     // -- Gizmo color pipeline (wireframe overlay on scene_color) --------
-    auto gizmo_bgl = fg.bind_group_layout(
+    auto gizmo_descl = fg.bind_group_layout(
         "editor/gizmo", editor_gizmo_shader::create_bind_group_layout_0(ctx.device.handle()));
 
     WGPUBlendState blend = {};
@@ -95,7 +95,7 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
         .blend_state(blend)
         .cull_mode(WGPUCullMode_None)
         .topology(WGPUPrimitiveTopology_LineList)
-        .bind_group_layouts({gizmo_bgl})
+        .bind_group_layouts({gizmo_descl})
         .vertex_layout<editor_gizmo_shader::VertexLayout>()
         .build();
 
@@ -145,9 +145,9 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
     auto picking_buf_decl = create_buffer(fg, picking_buf_desc, "picking_uniforms");
 
-    auto picking_bg_decl = descriptor(fg, picking_bgl, "picking_bg0")
-                               .buffer(0, picking_buf_decl, 0, sizeof(PickingUniforms))
-                               .build();
+    auto picking_desc_decl = descriptor(fg, picking_descl, "picking_desc0")
+                                 .buffer(0, picking_buf_decl, 0, sizeof(PickingUniforms))
+                                 .build();
 
     // Register gizmo uniform buffer with frame graph
     uint64_t gizmo_buf_size =
@@ -158,9 +158,9 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
     auto gizmo_buf_decl = create_buffer(fg, gizmo_buf_desc, "gizmo_uniforms");
 
-    auto gizmo_bg_decl = descriptor(fg, gizmo_bgl, "gizmo_bg0")
-                             .buffer(0, gizmo_buf_decl, 0, sizeof(GizmoUniforms))
-                             .build();
+    auto gizmo_desc_decl = descriptor(fg, gizmo_descl, "gizmo_desc0")
+                               .buffer(0, gizmo_buf_decl, 0, sizeof(GizmoUniforms))
+                               .build();
 
     // -- Create/cache gizmo meshes and collect handles ------------------
     struct GizmoDrawInfo {
@@ -230,7 +230,7 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
             auto objs = world.get_objects().span_raw();
             auto mshs = world.get_meshes().span_raw();
             auto picking_buf = exec.get(picking_buf_decl).buffer;
-            auto picking_bg = exec.get(picking_bg_decl).bind_group;
+            auto picking_desc = exec.get(picking_desc_decl).bind_group;
 
             {
                 PTS_ZONE_NAMED("picking uniform upload");
@@ -273,7 +273,7 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
                 if (!objs[i].active) continue;
                 if (!objs[i].value.visible) continue;
                 uint32_t dyn_offset = i * EditorPass::k_uniform_align;
-                wgpuRenderPassEncoderSetBindGroup(pass, 0, picking_bg, 1, &dyn_offset);
+                wgpuRenderPassEncoderSetBindGroup(pass, 0, picking_desc, 1, &dyn_offset);
                 const auto& mesh = mshs[objs[i].value.mesh_index].value;
                 wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh.position_buffer.handle(), 0,
                                                      mesh.position_buffer.size());
@@ -290,7 +290,7 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
                 if (lts[li].value.mesh_index == UINT32_MAX) continue;
                 uint32_t picking_slot = obj_count_cap + slot;
                 uint32_t dyn_offset = picking_slot * EditorPass::k_uniform_align;
-                wgpuRenderPassEncoderSetBindGroup(pass, 0, picking_bg, 1, &dyn_offset);
+                wgpuRenderPassEncoderSetBindGroup(pass, 0, picking_desc, 1, &dyn_offset);
                 const auto& mesh = mshs[lts[li].value.mesh_index].value;
                 wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh.position_buffer.handle(), 0,
                                                      mesh.position_buffer.size());
@@ -310,7 +310,7 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
                 if (draw.vertex_count == 0) continue;
                 uint32_t picking_slot = obj_count_cap + slot;
                 uint32_t dyn_offset = picking_slot * EditorPass::k_uniform_align;
-                wgpuRenderPassEncoderSetBindGroup(pass, 0, picking_bg, 1, &dyn_offset);
+                wgpuRenderPassEncoderSetBindGroup(pass, 0, picking_desc, 1, &dyn_offset);
                 wgpuRenderPassEncoderSetVertexBuffer(pass, 0, draw.vertex_buffer, 0,
                                                      draw.vertex_count * sizeof(glm::vec3));
                 wgpuRenderPassEncoderDraw(pass, draw.vertex_count, 1, 0, 0);
@@ -333,7 +333,7 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
         .execute([=, &world, gizmo_draws = std::move(gizmo_draws)](rendering::ExecuteContext& exec,
                                                                    WGPURenderPassEncoder pass) {
             auto gizmo_buf = exec.get(gizmo_buf_decl).buffer;
-            auto gizmo_bg = exec.get(gizmo_bg_decl).bind_group;
+            auto gizmo_desc = exec.get(gizmo_desc_decl).bind_group;
 
             // Upload gizmo uniforms
             auto lts = world.get_lights().span_raw();
@@ -367,7 +367,7 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
                 auto& draw = gizmo_draws[slot];
                 if (draw.vertex_count == 0) continue;
                 uint32_t dyn_offset = slot * EditorPass::k_uniform_align;
-                wgpuRenderPassEncoderSetBindGroup(pass, 0, gizmo_bg, 1, &dyn_offset);
+                wgpuRenderPassEncoderSetBindGroup(pass, 0, gizmo_desc, 1, &dyn_offset);
                 wgpuRenderPassEncoderSetVertexBuffer(pass, 0, draw.vertex_buffer, 0,
                                                      draw.vertex_count * sizeof(glm::vec3));
                 wgpuRenderPassEncoderDraw(pass, draw.vertex_count, 1, 0, 0);

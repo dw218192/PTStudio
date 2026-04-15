@@ -335,7 +335,7 @@ struct RenderWorld {
 
     /// Per-kind monotonic version accessors. uint64_t to avoid wraparound.
     /// Dependents (e.g. FG import_buffer with external_version) pass these
-    /// into DepTrackedSlotMap deps so bind groups rebuild on world mutations
+    /// into DepTrackedSlotMap deps so descriptors rebuild on world mutations
     /// affecting the bound buffers.
     uint64_t lights_version() const {
         return m_lights_version;

@@ -166,11 +166,11 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
         }
     }
 
-    // --- BGL setup for the forward pipeline (layouts from shader reflection) ---
-    // Register forward's BGLs (including consumer layouts) BEFORE pre-passes so
-    // the FG cache is keyed to the shader-derived layouts. Pre-passes that later
-    // call fg.bind_group_layout with the same name will receive the cached
-    // handles (their own supplied layouts are released as duplicates).
+    // --- Layout setup for the forward pipeline (from shader reflection) ---
+    // Register forward's layouts (including consumer layouts) BEFORE pre-passes
+    // so the FG cache is keyed to the shader-derived layouts. Pre-passes that
+    // later call fg.bind_group_layout with the same name will receive the
+    // cached handles (their own supplied layouts are released as duplicates).
     auto descriptor_layout = fg.bind_group_layout(
         "forward/desc", forward_shader::create_bind_group_layout_0(ctx.device.handle()));
 
@@ -280,16 +280,16 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
     auto ltc_sampler = fg.sampler(WGPUSamplerBindingType_Filtering);
 
     // Descriptor 0: materials, lights, uniforms, LTC, scene textures
-    auto bg0_decl = descriptor(fg, descriptor_layout, "bg0")
-                        .buffer(0, uniform_buf_decl, 0, sizeof(ForwardUniforms))
-                        .buffer(1, mat_buf_decl)
-                        .buffer(2, light_buf_decl)
-                        .texture(3, ltc_mat_decl)
-                        .texture(4, ltc_amp_decl)
-                        .sampler(5, ltc_sampler)
-                        .external_view(6, scene_tex_view)
-                        .sampler(7, scene_tex_sampler)
-                        .build();
+    auto desc0_decl = descriptor(fg, descriptor_layout, "desc0")
+                          .buffer(0, uniform_buf_decl, 0, sizeof(ForwardUniforms))
+                          .buffer(1, mat_buf_decl)
+                          .buffer(2, light_buf_decl)
+                          .texture(3, ltc_mat_decl)
+                          .texture(4, ltc_amp_decl)
+                          .sampler(5, ltc_sampler)
+                          .external_view(6, scene_tex_view)
+                          .sampler(7, scene_tex_sampler)
+                          .build();
 
     // Descriptor 1: shadow (child-owned)
     PRECONDITION(shadow_out.consumer_desc);
@@ -361,7 +361,7 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
     // Descriptor 2: IBL
     auto ibl_sampler = fg.sampler(WGPUSamplerBindingType_Filtering, WGPUAddressMode_ClampToEdge,
                                   WGPUMipmapFilterMode_Linear);
-    auto ibl_bld = descriptor(fg, ibl_desc_layout, "ibl_bg");
+    auto ibl_bld = descriptor(fg, ibl_desc_layout, "ibl_desc");
     if (ibl_ready) {
         ibl_bld.external_view(0, ibl_prefiltered_view)
             .external_view(1, ibl_irradiance_view)
@@ -369,7 +369,7 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
     } else {
         ibl_bld.texture(0, fb_cube_decl).texture(1, fb_cube_decl).texture(2, fb_2d_decl);
     }
-    auto bg2_decl = ibl_bld.sampler(3, ibl_sampler).build();
+    auto desc2_decl = ibl_bld.sampler(3, ibl_sampler).build();
 
     // Contact shadow pass (after G-buffer, before forward lighting)
     auto* cs_pass = get_pass<rendering::ContactShadowPass>();
@@ -378,7 +378,7 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
         fg, ctx, {gbuf_out.depth, gbuf_out.normals, light_buf.handle(), light_buf.size()},
         fg.fallback_pool());
 
-    // Bind group 3: contact shadow (child-owned)
+    // Descriptor 3: contact shadow (child-owned)
     PRECONDITION(cs_out.consumer_desc);
 
     // Skybox uniform buffer + descriptor
@@ -388,14 +388,14 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
     auto skybox_uniform_buf_decl = create_buffer(fg, skybox_buf_desc, "skybox_uniforms");
 
-    auto skybox_bld = descriptor(fg, skybox_desc_layout, "skybox_bg")
+    auto skybox_bld = descriptor(fg, skybox_desc_layout, "skybox_desc")
                           .buffer(0, skybox_uniform_buf_decl, 0, sizeof(SkyboxUniforms));
     if (ibl_ready) {
         skybox_bld.external_view(1, ibl_env_cubemap_view);
     } else {
         skybox_bld.texture(1, fb_cube_decl);
     }
-    auto skybox_bg_decl = skybox_bld.sampler(2, ibl_sampler).build();
+    auto skybox_desc_decl = skybox_bld.sampler(2, ibl_sampler).build();
 
     // Capture values for the execute lambda
     auto queue = ctx.queue;
@@ -408,8 +408,8 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
     auto viewport_width = ctx.viewport_width;
     auto viewport_height = ctx.viewport_height;
 
-    auto bg1_decl = shadow_out.consumer_desc;
-    auto bg3_decl = cs_out.consumer_desc;
+    auto desc1_decl = shadow_out.consumer_desc;
+    auto desc3_decl = cs_out.consumer_desc;
 
     auto pass_builder = fg.add_pass("forward").color(color_decl).read(shadow_out.shadow_array);
     if (cs_out.contact_shadow) {
@@ -419,17 +419,17 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
         pass_builder.color(debug_decls[i]);
     }
     // Group 0 is dynamic (per-draw offsets); groups 1-3 are static (auto-set)
-    pass_builder.descriptor(0, bg0_decl, rendering::dynamic_descriptor)
-        .descriptor(1, bg1_decl)
-        .descriptor(2, bg2_decl)
-        .descriptor(3, bg3_decl);
+    pass_builder.descriptor(0, desc0_decl, rendering::dynamic_descriptor)
+        .descriptor(1, desc1_decl)
+        .descriptor(2, desc2_decl)
+        .descriptor(3, desc3_decl);
     pass_builder.depth(depth_decl)
         .execute([=, &world](rendering::ExecuteContext& exec, WGPURenderPassEncoder pass) {
             auto objs = world.get_objects().span_raw();
             auto meshes_raw = world.get_meshes().span_raw();
 
             auto uniform_buf = exec.get(uniform_buf_decl).buffer;
-            auto bg0 = exec.get(bg0_decl).bind_group;
+            auto desc0 = exec.get(desc0_decl).bind_group;
 
             // Upload per-object uniforms
             {
@@ -499,7 +499,7 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
                 if (!objs[i].active) continue;
                 if (!objs[i].value.visible) continue;
                 uint32_t dyn_offset = i * k_uniform_align;
-                wgpuRenderPassEncoderSetBindGroup(pass, 0, bg0, 1, &dyn_offset);
+                wgpuRenderPassEncoderSetBindGroup(pass, 0, desc0, 1, &dyn_offset);
                 const auto& mesh = meshes_raw[objs[i].value.mesh_index].value;
                 wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh.vertex_buffer.handle(), 0,
                                                      mesh.vertex_buffer.size());
@@ -521,7 +521,7 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
                         continue;
                     }
                     uint32_t dyn_offset = proxy_idx * k_uniform_align;
-                    wgpuRenderPassEncoderSetBindGroup(pass, 0, bg0, 1, &dyn_offset);
+                    wgpuRenderPassEncoderSetBindGroup(pass, 0, desc0, 1, &dyn_offset);
                     const auto& mesh = meshes_raw[light_slots[li].value.mesh_index].value;
                     wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh.vertex_buffer.handle(), 0,
                                                          mesh.vertex_buffer.size());
@@ -535,9 +535,9 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
 
             // Skybox: draw fullscreen triangle after all geometry
             if (ibl_ready) {
-                auto skybox_bg = exec.get(skybox_bg_decl).bind_group;
+                auto skybox_desc = exec.get(skybox_desc_decl).bind_group;
                 wgpuRenderPassEncoderSetPipeline(pass, skybox_pipeline_handle);
-                wgpuRenderPassEncoderSetBindGroup(pass, 0, skybox_bg, 0, nullptr);
+                wgpuRenderPassEncoderSetBindGroup(pass, 0, skybox_desc, 0, nullptr);
                 wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
             }
         });

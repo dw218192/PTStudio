@@ -69,9 +69,9 @@ WireframePass::HdrOutputs WireframePass::do_add_to_frame_graph(rendering::FrameG
     auto uniform_buf_decl = create_buffer(fg, buf_desc, "uniforms");
 
     // Register descriptor
-    auto bg_decl = descriptor(fg, descriptor_layout, "bg0")
-                       .buffer(0, uniform_buf_decl, 0, sizeof(WireframeUniforms))
-                       .build();
+    auto desc_decl = descriptor(fg, descriptor_layout, "desc0")
+                         .buffer(0, uniform_buf_decl, 0, sizeof(WireframeUniforms))
+                         .build();
 
     rendering::TextureDesc color_desc;
     color_desc.width = ctx.viewport_width;
@@ -120,7 +120,7 @@ WireframePass::HdrOutputs WireframePass::do_add_to_frame_graph(rendering::FrameG
             auto objs = world.get_objects().span_raw();
             auto mshs = world.get_meshes().span_raw();
             auto uniform_buf = exec.get(uniform_buf_decl).buffer;
-            auto desc_group = exec.get(bg_decl).bind_group;
+            auto descriptor = exec.get(desc_decl).bind_group;
 
             {
                 PTS_ZONE_NAMED("wireframe uniform upload");
@@ -138,7 +138,7 @@ WireframePass::HdrOutputs WireframePass::do_add_to_frame_graph(rendering::FrameG
                 if (!objs[i].active) continue;
                 if (!objs[i].value.visible) continue;
                 uint32_t dyn_offset = i * k_uniform_align;
-                wgpuRenderPassEncoderSetBindGroup(pass, 0, desc_group, 1, &dyn_offset);
+                wgpuRenderPassEncoderSetBindGroup(pass, 0, descriptor, 1, &dyn_offset);
                 const auto& mesh = mshs[objs[i].value.mesh_index].value;
                 auto& wf = get_or_create_pass_data<WireframeMesh>(
                     rendering::PassDataKind::Mesh, objs[i].value.mesh_index, world, nullptr);
