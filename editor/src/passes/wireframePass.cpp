@@ -7,8 +7,7 @@
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/rendererRegistry.h>
-#include <core/rendering/shaderLoader.h>
-#include <core/rendering/webgpu/pipelineBuilder.h>
+#include <core/rendering/webgpu/device.h>
 #include <core/rendering/wireframeIndices.h>
 #include <wireframe_shader_metadata.h>
 
@@ -33,81 +32,31 @@ static_assert(sizeof(WireframeUniforms) == 64, "WireframeUniforms must match sha
 static_assert(WireframePass::k_uniform_align >= sizeof(WireframeUniforms),
               "Alignment must be >= uniform struct size");
 
-WireframePass::~WireframePass() {
-    if (auto* ready = std::get_if<Ready>(&m_state)) {
-        if (ready->bind_group_layout) {
-            wgpuBindGroupLayoutRelease(ready->bind_group_layout);
-        }
-    }
-}
-
 auto WireframePass::name() const noexcept -> std::string_view {
     return "wireframe";
-}
-
-auto WireframePass::is_ready() const noexcept -> bool {
-    return std::holds_alternative<Ready>(m_state);
-}
-
-void WireframePass::do_renderer_setup(const webgpu::Device& device) {
-    WGPUBindGroupLayout old_layout = nullptr;
-    if (auto* ready = std::get_if<Ready>(&m_state)) {
-        old_layout = ready->bind_group_layout;
-        ready->bind_group_layout = nullptr;
-    }
-
-    auto shader_src = get_shader_loader().load("editor/generated/shaders/wireframe.wgsl");
-    auto shader = device.create_shader_module_from_source(shader_src);
-
-    WGPUBindGroupLayoutEntry bgl_entry = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    bgl_entry.binding = 0;
-    bgl_entry.visibility =
-        static_cast<WGPUShaderStage>(WGPUShaderStage_Vertex | WGPUShaderStage_Fragment);
-    bgl_entry.buffer.type = WGPUBufferBindingType_Uniform;
-    bgl_entry.buffer.hasDynamicOffset = true;
-    bgl_entry.buffer.minBindingSize = sizeof(WireframeUniforms);
-
-    WGPUBindGroupLayoutDescriptor bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    bgl_desc.entryCount = 1;
-    bgl_desc.entries = &bgl_entry;
-    auto bind_group_layout = wgpuDeviceCreateBindGroupLayout(device.handle(), &bgl_desc);
-
-    WGPUPipelineLayoutDescriptor pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
-    pl_desc.bindGroupLayoutCount = 1;
-    pl_desc.bindGroupLayouts = &bind_group_layout;
-    WGPUPipelineLayout pipeline_layout = wgpuDeviceCreatePipelineLayout(device.handle(), &pl_desc);
-
-    auto pipeline = webgpu::RenderPipelineBuilder(device)
-                        .shader(shader)
-                        .color_format(WGPUTextureFormat_RGBA16Float)
-                        .depth_format(WGPUTextureFormat_Depth32Float)
-                        .depth_write(true)
-                        .depth_compare(WGPUCompareFunction_Less)
-                        .cull_mode(WGPUCullMode_None)
-                        .topology(WGPUPrimitiveTopology_LineList)
-                        .pipeline_layout(pipeline_layout)
-                        .vertex_layout<editor_wireframe_shader::VertexLayout>()
-                        .build();
-
-    wgpuPipelineLayoutRelease(pipeline_layout);
-
-    m_state = Ready{
-        std::move(shader),
-        std::move(pipeline),
-        bind_group_layout,
-    };
-
-    if (old_layout) wgpuBindGroupLayoutRelease(old_layout);
 }
 
 WireframePass::HdrOutputs WireframePass::do_add_to_frame_graph(rendering::FrameGraph& fg,
                                                                const rendering::PassContext& ctx) {
     PTS_ZONE_SCOPED;
-    PRECONDITION(is_ready());
-    auto& ready = std::get<Ready>(m_state);
 
-    auto objects = ctx.world.get_objects();
-    auto meshes = ctx.world.get_meshes();
+    auto descriptor_layout = fg.bind_group_layout(
+        "wireframe/desc", editor_wireframe_shader::create_bind_group_layout_0(ctx.device.handle()));
+
+    auto* pipeline_handle = fg.render_pipeline("wireframe")
+                                .shader("editor/generated/shaders/wireframe.wgsl")
+                                .color_format(WGPUTextureFormat_RGBA16Float)
+                                .depth_format(WGPUTextureFormat_Depth32Float)
+                                .depth_write(true)
+                                .depth_compare(WGPUCompareFunction_Less)
+                                .cull_mode(WGPUCullMode_None)
+                                .topology(WGPUPrimitiveTopology_LineList)
+                                .bind_group_layouts({descriptor_layout})
+                                .vertex_layout<editor_wireframe_shader::VertexLayout>()
+                                .build();
+
+    auto objects = ctx.world.get_objects().span_raw();
+    auto meshes = ctx.world.get_meshes().span_raw();
     auto object_count = static_cast<uint32_t>(objects.size());
 
     // Register per-object uniform buffer with frame graph
@@ -117,18 +66,12 @@ WireframePass::HdrOutputs WireframePass::do_add_to_frame_graph(rendering::FrameG
     buf_desc.size = needed_size;
     buf_desc.usage =
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
-    auto uniform_buf_handle = create_buffer(fg, buf_desc, "uniforms");
+    auto uniform_buf_decl = create_buffer(fg, buf_desc, "uniforms");
 
-    // Register bind group
-    rendering::BindGroupEntry entry{};
-    entry.binding = 0;
-    entry.buffer = uniform_buf_handle;
-    entry.buffer_size = sizeof(WireframeUniforms);
-
-    rendering::BindGroupDesc bg_desc;
-    bg_desc.layout = ready.bind_group_layout;
-    bg_desc.entries = {entry};
-    auto bg_handle = create_bind_group(fg, std::move(bg_desc), "bg0");
+    // Register descriptor
+    auto desc_decl = descriptor(fg, descriptor_layout, "desc0")
+                         .buffer(0, uniform_buf_decl, 0, sizeof(WireframeUniforms))
+                         .build();
 
     rendering::TextureDesc color_desc;
     color_desc.width = ctx.viewport_width;
@@ -141,25 +84,24 @@ WireframePass::HdrOutputs WireframePass::do_add_to_frame_graph(rendering::FrameG
     depth_desc.height = ctx.viewport_height;
     depth_desc.format = WGPUTextureFormat_Depth32Float;
 
-    auto color = create_texture(fg, color_desc, "color");
-    auto depth = create_texture(fg, depth_desc, "depth");
+    auto color_decl = create_texture(fg, color_desc, "color");
+    auto depth_decl = create_texture(fg, depth_desc, "depth");
 
     auto queue = ctx.queue;
     auto view_mat = ctx.view_matrix;
     auto proj_mat = ctx.proj_matrix;
-    auto* pipeline_handle = ready.pipeline.handle();
     const auto& world = ctx.world;
 
     {
         PTS_ZONE_NAMED("wireframe mesh cache");
         for (uint32_t i = 0; i < object_count; ++i) {
-            if (!objects[i].active()) continue;
-            if (!objects[i]->visible) continue;
-            const auto& obj = objects[i];
+            if (!objects[i].active) continue;
+            if (!objects[i].value.visible) continue;
+            const auto& obj = objects[i].value;
             get_or_create_pass_data<WireframeMesh>(
-                rendering::PassDataKind::Mesh, obj->mesh_index, ctx.world, [&]() {
-                    const auto& mesh = meshes[obj->mesh_index];
-                    auto indices = expand_wireframe_indices(mesh->cpu_indices);
+                rendering::PassDataKind::Mesh, obj.mesh_index, ctx.world, [&]() {
+                    const auto& mesh = meshes[obj.mesh_index].value;
+                    auto indices = expand_wireframe_indices(mesh.cpu_indices);
                     auto buf = ctx.device.create_buffer(
                         indices.size() * sizeof(uint32_t),
                         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Index |
@@ -172,36 +114,36 @@ WireframePass::HdrOutputs WireframePass::do_add_to_frame_graph(rendering::FrameG
     }
 
     fg.add_pass("wireframe")
-        .color(color)
-        .depth(depth)
-        .execute([=, &fg, &world](WGPURenderPassEncoder pass) {
-            auto objs = world.get_objects();
-            auto mshs = world.get_meshes();
-            auto uniform_buf = fg.get_buffer_ref(uniform_buf_handle).handle();
-            auto bind_group = fg.get_bind_group_ref(bg_handle).handle();
+        .color(color_decl)
+        .depth(depth_decl)
+        .execute([=, &world](rendering::ExecuteContext& exec, WGPURenderPassEncoder pass) {
+            auto objs = world.get_objects().span_raw();
+            auto mshs = world.get_meshes().span_raw();
+            auto uniform_buf = exec.get(uniform_buf_decl).buffer;
+            auto descriptor = exec.get(desc_decl).bind_group;
 
             {
                 PTS_ZONE_NAMED("wireframe uniform upload");
                 for (uint32_t i = 0; i < static_cast<uint32_t>(objs.size()); ++i) {
-                    if (!objs[i].active()) continue;
-                    if (!objs[i]->visible) continue;
+                    if (!objs[i].active) continue;
+                    if (!objs[i].value.visible) continue;
                     WireframeUniforms u{};
-                    u.mvp = proj_mat * view_mat * objs[i]->transform;
+                    u.mvp = proj_mat * view_mat * objs[i].value.transform;
                     wgpuQueueWriteBuffer(queue, uniform_buf, i * k_uniform_align, &u, sizeof(u));
                 }
             }
 
             wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
             for (uint32_t i = 0; i < static_cast<uint32_t>(objs.size()); ++i) {
-                if (!objs[i].active()) continue;
-                if (!objs[i]->visible) continue;
+                if (!objs[i].active) continue;
+                if (!objs[i].value.visible) continue;
                 uint32_t dyn_offset = i * k_uniform_align;
-                wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 1, &dyn_offset);
-                const auto& mesh = mshs[objs[i]->mesh_index];
+                wgpuRenderPassEncoderSetBindGroup(pass, 0, descriptor, 1, &dyn_offset);
+                const auto& mesh = mshs[objs[i].value.mesh_index].value;
                 auto& wf = get_or_create_pass_data<WireframeMesh>(
-                    rendering::PassDataKind::Mesh, objs[i]->mesh_index, world, nullptr);
-                wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh->vertex_buffer.handle(), 0,
-                                                     mesh->vertex_buffer.size());
+                    rendering::PassDataKind::Mesh, objs[i].value.mesh_index, world, nullptr);
+                wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh.vertex_buffer.handle(), 0,
+                                                     mesh.vertex_buffer.size());
                 wgpuRenderPassEncoderSetIndexBuffer(pass, wf.index_buffer.handle(),
                                                     WGPUIndexFormat_Uint32, 0,
                                                     wf.index_buffer.size());
@@ -209,5 +151,5 @@ WireframePass::HdrOutputs WireframePass::do_add_to_frame_graph(rendering::FrameG
             }
         });
 
-    return {color, depth};
+    return {color_decl, depth_decl};
 }

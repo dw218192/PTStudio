@@ -90,7 +90,7 @@ auto open_file_dialog(ImGui::FileDialogueMode mode) -> std::string {
 
 void ImGui::FileDialogueAsync(FileDialogueMode mode, const std::string& accept,
                               std::function<void(FileDialogueResult)> on_result) {
-    PTS_UNUSED(accept);
+    UNUSED(accept);
     auto path = open_file_dialog(mode);
     if (path.empty()) return;
 

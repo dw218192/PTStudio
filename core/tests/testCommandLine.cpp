@@ -87,7 +87,7 @@ TEST_CASE("CommandLine - add_string with default value") {
     auto argv = make_argv(args);
 
     REQUIRE(cli.parse(1, argv.data()) == true);
-    // has() should be false — the option was not explicitly provided on the command line
+    // has() should be false -- the option was not explicitly provided on the command line
     CHECK_FALSE(cli.has("level"));
     CHECK(cli.get_string("level") == "info");
 }

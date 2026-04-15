@@ -2,20 +2,16 @@
 
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/renderPass.h>
-#include <core/rendering/webgpu/pipeline.h>
-#include <core/rendering/webgpu/shader.h>
 #include <core/rendering/webgpu/webgpu.h>
 
 #include <cstdint>
 #include <string_view>
-#include <variant>
 
 namespace pts::editor {
 
 class LobePass final : public rendering::IPass {
    public:
     using IPass::IPass;
-    ~LobePass() override;
 
     LobePass(const LobePass&) = delete;
     LobePass& operator=(const LobePass&) = delete;
@@ -23,12 +19,10 @@ class LobePass final : public rendering::IPass {
     LobePass& operator=(LobePass&&) = delete;
 
     [[nodiscard]] auto name() const noexcept -> std::string_view override;
-    [[nodiscard]] auto is_ready() const noexcept -> bool override;
     [[nodiscard]] auto requires_viewport() const noexcept -> bool override {
         return false;
     }
 
-    void do_setup(const webgpu::Device& device) override;
     void render(rendering::FrameGraph& fg, const rendering::PassContext& ctx);
     void draw_imgui() override;
     void update_texture_refs(rendering::FrameGraph& fg) override;
@@ -53,17 +47,10 @@ class LobePass final : public rendering::IPass {
     static constexpr uint32_t k_uniform_align = 256;
 
    private:
-    struct Ready {
-        webgpu::ShaderModule shader;
-        webgpu::RenderPipeline pipeline;
-        WGPUBindGroupLayout bind_group_layout = nullptr;
-    };
-
-    std::variant<std::monostate, Ready> m_state;
-
-    // Frame graph handles for self-contained ImGui display
-    rendering::ResourceHandle m_lobe_color_handle;
-    rendering::TextureRef m_lobe_color_ref;
+    // Frame graph decls for self-contained ImGui display (cached ref to
+    // compiled view for ImGui::Image across frames).
+    rendering::TextureDeclHandle m_lobe_color_decl;
+    WGPUTextureView m_lobe_color_view = nullptr;
 
     // ImGui parameters
     float m_roughness = 0.5f;

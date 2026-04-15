@@ -111,7 +111,7 @@ void subdivide(std::vector<BVHNode>& nodes, std::vector<uint32_t>& tri_indices,
 
     auto best = evaluate_sah(tri_indices, tri_aabbs, centroid_bounds, first, count);
 
-    // No valid split (degenerate centroid range) — try median split
+    // No valid split (degenerate centroid range) -- try median split
     if (best.axis < 0) {
         if (count <= 2 * k_bvh_max_leaf_size) return;
 

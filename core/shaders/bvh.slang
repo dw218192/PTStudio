@@ -1,4 +1,4 @@
-/// GPU BVH node — matches C++ BVHNode (32 bytes).
+/// GPU BVH node -- matches C++ BVHNode (32 bytes).
 public struct BVHNode {
     public float3 aabb_min;
     public uint left_first;
@@ -6,7 +6,7 @@ public struct BVHNode {
     public uint count;          // 0 = interior, >0 = leaf tri count
 };
 
-/// Per-instance data for two-level BVH traversal — matches C++ GPUInstance (144 bytes).
+/// Per-instance data for two-level BVH traversal -- matches C++ GPUInstance (144 bytes).
 public struct Instance {
     public float4x4 transform;
     public float4x4 inv_transform;

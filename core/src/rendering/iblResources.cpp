@@ -105,9 +105,14 @@ WGPUTextureView create_2d_view(WGPUTexture tex, WGPUTextureFormat format) {
     return view;
 }
 
-WGPUBindGroupLayout create_brdf_lut_bgl(WGPUDevice dev) {
+// The IBL compute shaders (.slang) declare RWTexture2D<float4> without a format
+// annotation, so slang reflection yields `rgba32float`. At runtime we patch the
+// generated WGSL to `rgba16float, write` (see load_shader above) and pair it
+// with RGBA16Float textures. The BGLs below are open-coded to match that
+// runtime format explicitly -- shader reflection can't tell us the target
+// format. Keep these local to this translation unit.
+WGPUBindGroupLayout create_brdf_lut_desc_layout(const webgpu::Device& device) {
     WGPUBindGroupLayoutEntry entries[2] = {};
-
     entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
     entries[0].binding = 0;
     entries[0].visibility = WGPUShaderStage_Compute;
@@ -123,14 +128,11 @@ WGPUBindGroupLayout create_brdf_lut_bgl(WGPUDevice dev) {
     WGPUBindGroupLayoutDescriptor desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
     desc.entryCount = 2;
     desc.entries = entries;
-    auto bgl = wgpuDeviceCreateBindGroupLayout(dev, &desc);
-    CHECK_MSG(bgl, "Failed to create BRDF LUT bind group layout");
-    return bgl;
+    return wgpuDeviceCreateBindGroupLayout(device.handle(), &desc);
 }
 
-WGPUBindGroupLayout create_equirect_bgl(WGPUDevice dev) {
+WGPUBindGroupLayout create_equirect_desc_layout(const webgpu::Device& device) {
     WGPUBindGroupLayoutEntry entries[4] = {};
-
     entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
     entries[0].binding = 0;
     entries[0].visibility = WGPUShaderStage_Compute;
@@ -157,14 +159,11 @@ WGPUBindGroupLayout create_equirect_bgl(WGPUDevice dev) {
     WGPUBindGroupLayoutDescriptor desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
     desc.entryCount = 4;
     desc.entries = entries;
-    auto bgl = wgpuDeviceCreateBindGroupLayout(dev, &desc);
-    CHECK_MSG(bgl, "Failed to create equirect bind group layout");
-    return bgl;
+    return wgpuDeviceCreateBindGroupLayout(device.handle(), &desc);
 }
 
-WGPUBindGroupLayout create_downsample_bgl(WGPUDevice dev) {
+WGPUBindGroupLayout create_downsample_desc_layout(const webgpu::Device& device) {
     WGPUBindGroupLayoutEntry entries[3] = {};
-
     entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
     entries[0].binding = 0;
     entries[0].visibility = WGPUShaderStage_Compute;
@@ -186,14 +185,11 @@ WGPUBindGroupLayout create_downsample_bgl(WGPUDevice dev) {
     WGPUBindGroupLayoutDescriptor desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
     desc.entryCount = 3;
     desc.entries = entries;
-    auto bgl = wgpuDeviceCreateBindGroupLayout(dev, &desc);
-    CHECK_MSG(bgl, "Failed to create downsample bind group layout");
-    return bgl;
+    return wgpuDeviceCreateBindGroupLayout(device.handle(), &desc);
 }
 
-WGPUBindGroupLayout create_convolve_bgl(WGPUDevice dev) {
+WGPUBindGroupLayout create_convolve_desc_layout(const webgpu::Device& device) {
     WGPUBindGroupLayoutEntry entries[4] = {};
-
     entries[0] = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
     entries[0].binding = 0;
     entries[0].visibility = WGPUShaderStage_Compute;
@@ -220,15 +216,13 @@ WGPUBindGroupLayout create_convolve_bgl(WGPUDevice dev) {
     WGPUBindGroupLayoutDescriptor desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
     desc.entryCount = 4;
     desc.entries = entries;
-    auto bgl = wgpuDeviceCreateBindGroupLayout(dev, &desc);
-    CHECK_MSG(bgl, "Failed to create convolve bind group layout");
-    return bgl;
+    return wgpuDeviceCreateBindGroupLayout(device.handle(), &desc);
 }
 
-WGPUPipelineLayout make_pipeline_layout(WGPUDevice dev, WGPUBindGroupLayout bgl) {
+WGPUPipelineLayout make_pipeline_layout(WGPUDevice dev, WGPUBindGroupLayout desc_layout) {
     WGPUPipelineLayoutDescriptor desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
     desc.bindGroupLayoutCount = 1;
-    desc.bindGroupLayouts = &bgl;
+    desc.bindGroupLayouts = &desc_layout;
     auto layout = wgpuDeviceCreatePipelineLayout(dev, &desc);
     CHECK_MSG(layout, "Failed to create pipeline layout");
     return layout;
@@ -243,18 +237,18 @@ WGPUPipelineLayout make_pipeline_layout(WGPUDevice dev, WGPUBindGroupLayout bgl)
 void IblPipelines::release() {
     if (m_brdf_lut_view) wgpuTextureViewRelease(m_brdf_lut_view);
     if (m_brdf_lut) wgpuTextureRelease(m_brdf_lut);
-    if (m_sampler) wgpuSamplerRelease(m_sampler);
-    if (m_equirect_bgl) wgpuBindGroupLayoutRelease(m_equirect_bgl);
-    if (m_downsample_bgl) wgpuBindGroupLayoutRelease(m_downsample_bgl);
-    if (m_convolve_bgl) wgpuBindGroupLayoutRelease(m_convolve_bgl);
-    if (m_brdf_lut_bgl) wgpuBindGroupLayoutRelease(m_brdf_lut_bgl);
+    // m_sampler is NOT released here -- it's owned by the FrameGraph sampler pool
+    if (m_equirect_desc_layout) wgpuBindGroupLayoutRelease(m_equirect_desc_layout);
+    if (m_downsample_desc_layout) wgpuBindGroupLayoutRelease(m_downsample_desc_layout);
+    if (m_convolve_desc_layout) wgpuBindGroupLayoutRelease(m_convolve_desc_layout);
+    if (m_brdf_lut_desc_layout) wgpuBindGroupLayoutRelease(m_brdf_lut_desc_layout);
     m_brdf_lut_view = nullptr;
     m_brdf_lut = nullptr;
     m_sampler = nullptr;
-    m_equirect_bgl = nullptr;
-    m_downsample_bgl = nullptr;
-    m_convolve_bgl = nullptr;
-    m_brdf_lut_bgl = nullptr;
+    m_equirect_desc_layout = nullptr;
+    m_downsample_desc_layout = nullptr;
+    m_convolve_desc_layout = nullptr;
+    m_brdf_lut_desc_layout = nullptr;
     m_equirect_to_cube_pipeline.reset();
     m_downsample_pipeline.reset();
     m_irradiance_pipeline.reset();
@@ -295,33 +289,34 @@ WGPUComputePipeline IblPipelines::prefilter_pipeline() const noexcept {
     return m_prefilter_pipeline->handle();
 }
 
-WGPUBindGroupLayout IblPipelines::equirect_bgl() const noexcept {
-    return m_equirect_bgl;
+WGPUBindGroupLayout IblPipelines::equirect_desc_layout() const noexcept {
+    return m_equirect_desc_layout;
 }
 
-WGPUBindGroupLayout IblPipelines::downsample_bgl() const noexcept {
-    return m_downsample_bgl;
+WGPUBindGroupLayout IblPipelines::downsample_desc_layout() const noexcept {
+    return m_downsample_desc_layout;
 }
 
-WGPUBindGroupLayout IblPipelines::convolve_bgl() const noexcept {
-    return m_convolve_bgl;
+WGPUBindGroupLayout IblPipelines::convolve_desc_layout() const noexcept {
+    return m_convolve_desc_layout;
 }
 
-void IblPipelines::init(const webgpu::Device& device, WGPUQueue queue) {
+void IblPipelines::init(const webgpu::Device& device, WGPUQueue queue, WGPUSampler sampler) {
     PRECONDITION_MSG(!m_initialized, "IblPipelines already initialized");
+    PRECONDITION(sampler != nullptr);
     auto dev = device.handle();
 
     // Bind group layouts
-    m_brdf_lut_bgl = create_brdf_lut_bgl(dev);
-    m_equirect_bgl = create_equirect_bgl(dev);
-    m_downsample_bgl = create_downsample_bgl(dev);
-    m_convolve_bgl = create_convolve_bgl(dev);
+    m_brdf_lut_desc_layout = create_brdf_lut_desc_layout(device);
+    m_equirect_desc_layout = create_equirect_desc_layout(device);
+    m_downsample_desc_layout = create_downsample_desc_layout(device);
+    m_convolve_desc_layout = create_convolve_desc_layout(device);
 
     // Pipelines
     {
         auto wgsl = load_shader("brdf_lut.wgsl");
         auto shader = device.create_shader_module_from_source(wgsl);
-        auto layout = make_pipeline_layout(dev, m_brdf_lut_bgl);
+        auto layout = make_pipeline_layout(dev, m_brdf_lut_desc_layout);
         m_brdf_lut_pipeline = webgpu::ComputePipelineBuilder(device)
                                   .shader(shader)
                                   .entry_point("cs_main")
@@ -332,7 +327,7 @@ void IblPipelines::init(const webgpu::Device& device, WGPUQueue queue) {
     {
         auto wgsl = load_shader("equirect_to_cube.wgsl");
         auto shader = device.create_shader_module_from_source(wgsl);
-        auto layout = make_pipeline_layout(dev, m_equirect_bgl);
+        auto layout = make_pipeline_layout(dev, m_equirect_desc_layout);
         m_equirect_to_cube_pipeline = webgpu::ComputePipelineBuilder(device)
                                           .shader(shader)
                                           .entry_point("cs_main")
@@ -343,7 +338,7 @@ void IblPipelines::init(const webgpu::Device& device, WGPUQueue queue) {
     {
         auto wgsl = load_shader("downsample_cube.wgsl");
         auto shader = device.create_shader_module_from_source(wgsl);
-        auto layout = make_pipeline_layout(dev, m_downsample_bgl);
+        auto layout = make_pipeline_layout(dev, m_downsample_desc_layout);
         m_downsample_pipeline = webgpu::ComputePipelineBuilder(device)
                                     .shader(shader)
                                     .entry_point("cs_main")
@@ -354,7 +349,7 @@ void IblPipelines::init(const webgpu::Device& device, WGPUQueue queue) {
     {
         auto wgsl = load_shader("irradiance_convolve.wgsl");
         auto shader = device.create_shader_module_from_source(wgsl);
-        auto layout = make_pipeline_layout(dev, m_convolve_bgl);
+        auto layout = make_pipeline_layout(dev, m_convolve_desc_layout);
         m_irradiance_pipeline = webgpu::ComputePipelineBuilder(device)
                                     .shader(shader)
                                     .entry_point("cs_main")
@@ -365,7 +360,7 @@ void IblPipelines::init(const webgpu::Device& device, WGPUQueue queue) {
     {
         auto wgsl = load_shader("prefilter_env.wgsl");
         auto shader = device.create_shader_module_from_source(wgsl);
-        auto layout = make_pipeline_layout(dev, m_convolve_bgl);
+        auto layout = make_pipeline_layout(dev, m_convolve_desc_layout);
         m_prefilter_pipeline = webgpu::ComputePipelineBuilder(device)
                                    .shader(shader)
                                    .entry_point("cs_main")
@@ -374,18 +369,8 @@ void IblPipelines::init(const webgpu::Device& device, WGPUQueue queue) {
         wgpuPipelineLayoutRelease(layout);
     }
 
-    // Trilinear clamp sampler
-    {
-        WGPUSamplerDescriptor desc = WGPU_SAMPLER_DESCRIPTOR_INIT;
-        desc.magFilter = WGPUFilterMode_Linear;
-        desc.minFilter = WGPUFilterMode_Linear;
-        desc.mipmapFilter = WGPUMipmapFilterMode_Linear;
-        desc.addressModeU = WGPUAddressMode_ClampToEdge;
-        desc.addressModeV = WGPUAddressMode_ClampToEdge;
-        desc.addressModeW = WGPUAddressMode_ClampToEdge;
-        m_sampler = wgpuDeviceCreateSampler(dev, &desc);
-        CHECK_MSG(m_sampler, "Failed to create IBL sampler");
-    }
+    // Sampler provided externally (shared via FrameGraph sampler pool)
+    m_sampler = sampler;
 
     // Generate BRDF LUT
     generate_brdf_lut(device, queue);
@@ -412,7 +397,7 @@ void IblPipelines::generate_brdf_lut(const webgpu::Device& device, WGPUQueue que
 
     m_brdf_lut_view = create_2d_view(m_brdf_lut, WGPUTextureFormat_RGBA16Float);
 
-    // Uniform buffer — std140 pads to 16 bytes
+    // Uniform buffer -- std140 pads to 16 bytes
     struct alignas(16) Params {
         uint32_t size;
     };
@@ -438,7 +423,7 @@ void IblPipelines::generate_brdf_lut(const webgpu::Device& device, WGPUQueue que
     bg_entries[1].textureView = storage_view;
 
     WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-    bg_desc.layout = m_brdf_lut_bgl;
+    bg_desc.layout = m_brdf_lut_desc_layout;
     bg_desc.entryCount = 2;
     bg_desc.entries = bg_entries;
     auto bg = wgpuDeviceCreateBindGroup(dev, &bg_desc);
@@ -526,7 +511,7 @@ WGPUTextureView IblResources::irradiance_view() const noexcept {
 }
 
 // ---------------------------------------------------------------------------
-// set_environment — full HDR equirect pipeline
+// set_environment -- full HDR equirect pipeline
 // ---------------------------------------------------------------------------
 
 void IblResources::set_environment(const IblPipelines& pipelines, const webgpu::Device& device,
@@ -633,7 +618,7 @@ void IblResources::set_environment(const IblPipelines& pipelines, const webgpu::
 }
 
 // ---------------------------------------------------------------------------
-// set_uniform_environment — solid color 1×1 cubemaps
+// set_uniform_environment -- solid color 1x1 cubemaps
 // ---------------------------------------------------------------------------
 
 void IblResources::set_uniform_environment(const webgpu::Device& device, WGPUQueue queue, float r,
@@ -715,7 +700,7 @@ void IblResources::set_uniform_environment(const webgpu::Device& device, WGPUQue
 }
 
 // ---------------------------------------------------------------------------
-// Equirect → Cubemap
+// Equirect -> Cubemap
 // ---------------------------------------------------------------------------
 
 void IblResources::convert_equirect_to_cubemap(const IblPipelines& pipelines,
@@ -726,7 +711,7 @@ void IblResources::convert_equirect_to_cubemap(const IblPipelines& pipelines,
     // Dispatch one face at a time with a single-layer output view.
     // Writing to multiple array layers via textureStore in a single dispatch
     // silently drops writes to layers > 0 on some D3D12 backends (Dawn/Tint
-    // WGSL→HLSL codegen issue with mixed u32/i32 textureStore coordinates).
+    // WGSL->HLSL codegen issue with mixed u32/i32 textureStore coordinates).
     struct alignas(16) Params {
         uint32_t size;
         uint32_t up_axis;
@@ -766,7 +751,7 @@ void IblResources::convert_equirect_to_cubemap(const IblPipelines& pipelines,
         entries[3].textureView = output_view;
 
         WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-        bg_desc.layout = pipelines.equirect_bgl();
+        bg_desc.layout = pipelines.equirect_desc_layout();
         bg_desc.entryCount = 4;
         bg_desc.entries = entries;
         auto bg = wgpuDeviceCreateBindGroup(dev, &bg_desc);
@@ -838,7 +823,7 @@ void IblResources::generate_env_mipmaps(const IblPipelines& pipelines, const web
             entries[2].textureView = output_view;
 
             WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-            bg_desc.layout = pipelines.downsample_bgl();
+            bg_desc.layout = pipelines.downsample_desc_layout();
             bg_desc.entryCount = 3;
             bg_desc.entries = entries;
             auto bg = wgpuDeviceCreateBindGroup(dev, &bg_desc);
@@ -913,7 +898,7 @@ void IblResources::convolve_irradiance(const IblPipelines& pipelines, const webg
         entries[3].textureView = output_view;
 
         WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-        bg_desc.layout = pipelines.convolve_bgl();
+        bg_desc.layout = pipelines.convolve_desc_layout();
         bg_desc.entryCount = 4;
         bg_desc.entries = entries;
         auto bg = wgpuDeviceCreateBindGroup(dev, &bg_desc);
@@ -993,7 +978,7 @@ void IblResources::prefilter_specular(const IblPipelines& pipelines, const webgp
             entries[3].textureView = output_view;
 
             WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-            bg_desc.layout = pipelines.convolve_bgl();
+            bg_desc.layout = pipelines.convolve_desc_layout();
             bg_desc.entryCount = 4;
             bg_desc.entries = entries;
             auto bg = wgpuDeviceCreateBindGroup(dev, &bg_desc);

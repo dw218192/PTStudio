@@ -31,7 +31,7 @@ void sync_prim_impl(pxr::UsdPrim prim, SyncScope& scope) {
             return;
         }
     }
-    // No adapter handles this prim — remove any stale entry from a prior sync
+    // No adapter handles this prim -- remove any stale entry from a prior sync
     // (e.g. prim type changed from mesh to something unsupported).
     remove_prim(scope, prim.GetPath());
 }
@@ -59,22 +59,21 @@ void remove_prim(SyncScope& scope, const pxr::SdfPath& prim_path) {
     auto& world = scope.world();
     int obj_idx = world.find_object_by_prim(prim_path);
     if (obj_idx >= 0) {
-        scope.free_mesh_slot(scope.object(static_cast<uint32_t>(obj_idx))->mesh_index);
-        scope.free_object_slot(static_cast<uint32_t>(obj_idx));
+        scope.free_mesh(prim_path);
+        scope.free_object(prim_path);
         return;
     }
     int light_idx = world.find_light_by_prim(prim_path);
     if (light_idx >= 0) {
-        auto& light = scope.light(static_cast<uint32_t>(light_idx));
-        if (light->mesh_index != UINT32_MAX) {
-            scope.free_mesh_slot(light->mesh_index);
+        if (world.get_meshes().contains(prim_path)) {
+            scope.free_mesh(prim_path);
         }
-        scope.free_light_slot(static_cast<uint32_t>(light_idx));
+        scope.free_light(prim_path);
         return;
     }
     int cam_idx = world.find_camera_by_prim(prim_path);
     if (cam_idx >= 0) {
-        scope.free_camera_slot(static_cast<uint32_t>(cam_idx));
+        scope.free_camera(prim_path);
     }
 }
 
@@ -83,7 +82,7 @@ RenderWorld populate_from_stage(const pxr::UsdStageRefPtr& stage, TaskProgress& 
 
     size_t total = 0;
     for (const auto& prim : pxr::UsdPrimRange(stage->GetPseudoRoot())) {
-        PTS_UNUSED(prim);
+        UNUSED(prim);
         ++total;
     }
 

@@ -6,7 +6,7 @@ import os
 
 class SlangConan(ConanFile):
     name = "slang"
-    version = "2026.1"
+    version = "2026.5.2"
     package_type = "shared-library"
     settings = "os", "arch"
     license = "Apache-2.0"

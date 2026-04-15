@@ -9,7 +9,8 @@
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/renderer.h>
 #include <core/rendering/sceneLoader.h>
-#include <core/rendering/shaderLoader.h>
+#include <core/rendering/shaderCompiler.h>
+#include <core/rendering/shaderc/shaderLoader.h>
 #include <core/rendering/webgpu/bufferReadback.h>
 #include <core/rendering/webgpu/textureReadback.h>
 #include <core/rendering/webgpu/webgpu.h>
@@ -53,7 +54,7 @@ struct AppConfig {
     int capture_frames = 1;         // frames to render before capture
     std::string renderer_name;      // empty = default (first)
     std::string debug_output_name;  // empty = scene_color
-    std::string camera_target;      // "x,y,z" — empty = default
+    std::string camera_target;      // "x,y,z" -- empty = default
     std::string camera_distance;    // empty = default (3.0)
     std::string camera_yaw;         // degrees, empty = default (0)
     std::string camera_pitch;       // degrees, empty = default (~17)
@@ -147,10 +148,11 @@ struct EditorApplication final : GpuApplication {
     size_t m_active_config_index = 0;
     bool m_editor_passes_enabled = true;
     rendering::ShaderLoader m_shader_loader;
+    std::unique_ptr<rendering::IShaderCompiler> m_shader_compiler;
 
     /// Iterate all passes for lifecycle (setup, imgui, hot-reload, debug targets).
     /// Never used for frame graph recording.
-    /// Iterate all top-level passes. Renderers manage their own children —
+    /// Iterate all top-level passes. Renderers manage their own children --
     /// debug targets, imgui, hot-reload, and texture refs are all forwarded
     /// internally. No sub-pass iteration needed here.
     template <typename Fn>
@@ -207,14 +209,14 @@ struct EditorApplication final : GpuApplication {
     uint32_t m_viewport_height = 0;
     float m_viewport_x = 0.0f;
     float m_viewport_y = 0.0f;
-    rendering::TextureRef m_scene_color_ref;
+    WGPUTextureView m_scene_color_view = nullptr;
 
     // Debug visualization
     bool m_viewport_combo_open =
         false;  // suppresses picking while combo dropdown overlaps viewport
     int m_debug_target_selection = 0;
-    rendering::TextureRef m_active_debug_ref;
-    rendering::TextureRef m_gizmo_overlay_ref;
+    WGPUTextureView m_active_debug_view = nullptr;
+    WGPUTextureView m_gizmo_overlay_view = nullptr;
 
     // Console auto-scroll
     size_t m_last_console_msg_count = 0;

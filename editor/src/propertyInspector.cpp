@@ -117,7 +117,7 @@ bool draw_prim_properties(const pxr::UsdPrim& prim) {
         return any_changed;
     }
 
-    // No adapter found — show basic info
+    // No adapter found -- show basic info
     ImGui::TextUnformatted(prim.GetPath().GetText());
     ImGui::TextDisabled("%s", prim.GetTypeName().GetText());
     return false;

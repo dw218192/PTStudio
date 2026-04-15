@@ -1,5 +1,6 @@
 #include <core/rendering/renderPass.h>
-#include <core/rendering/shaderLoader.h>
+#include <core/rendering/shaderc/shaderLoader.h>
+#include <pxr/usd/sdf/path.h>
 #include <spdlog/spdlog.h>
 
 #include "testApplication.h"
@@ -20,11 +21,6 @@ struct TestPass final : IPass {
     auto name() const noexcept -> std::string_view override {
         return "test";
     }
-    auto is_ready() const noexcept -> bool override {
-        return true;
-    }
-    void do_setup(const webgpu::Device& /*device*/) override {
-    }
 
     // Expose protected members for testing.
     using IPass::get_or_create_pass_data;
@@ -36,11 +32,8 @@ TEST_CASE("get_or_create_pass_data creates entry on first call") {
     TestPass pass{s_test_sl};
     RenderWorld world;
     auto scope = world.begin_sync();
-    auto slot = scope.alloc_mesh_slot();
-    {
-        auto w = scope.write_mesh(slot);
-        PTS_UNUSED(w);
-    }
+    auto slot = scope.alloc_mesh(pxr::SdfPath("/TestMesh0"));
+    scope.mutate_mesh(slot, [](MeshData&) {});
 
     int factory_calls = 0;
     auto& val = pass.get_or_create_pass_data<int>(PassDataKind::Mesh, slot, world, [&]() {
@@ -55,11 +48,8 @@ TEST_CASE("get_or_create_pass_data returns cached value on same version") {
     TestPass pass{s_test_sl};
     RenderWorld world;
     auto scope = world.begin_sync();
-    auto slot = scope.alloc_mesh_slot();
-    {
-        auto w = scope.write_mesh(slot);
-        PTS_UNUSED(w);
-    }
+    auto slot = scope.alloc_mesh(pxr::SdfPath("/TestMesh0"));
+    scope.mutate_mesh(slot, [](MeshData&) {});
 
     int factory_calls = 0;
     auto factory = [&]() {
@@ -78,11 +68,8 @@ TEST_CASE("get_or_create_pass_data re-creates on version change") {
     uint32_t slot;
     {
         auto scope = world.begin_sync();
-        slot = scope.alloc_mesh_slot();
-        {
-            auto w = scope.write_mesh(slot);
-            PTS_UNUSED(w);
-        }
+        slot = scope.alloc_mesh(pxr::SdfPath("/TestMesh0"));
+        scope.mutate_mesh(slot, [](MeshData&) {});
     }
 
     int factory_calls = 0;
@@ -91,11 +78,10 @@ TEST_CASE("get_or_create_pass_data re-creates on version change") {
         return 10;
     });
 
-    // Bump mesh generation via write guard
+    // Bump mesh generation via mutate
     {
         auto scope = world.begin_sync();
-        auto w = scope.write_mesh(slot);
-        PTS_UNUSED(w);
+        scope.mutate_mesh(slot, [](MeshData&) {});
     }
 
     auto& val = pass.get_or_create_pass_data<int>(PassDataKind::Mesh, slot, world, [&]() {
@@ -112,17 +98,11 @@ TEST_CASE("get_or_create_pass_data supports different keys") {
     uint32_t s0, s1;
     {
         auto scope = world.begin_sync();
-        s0 = scope.alloc_mesh_slot();
-        s1 = scope.alloc_mesh_slot();
-        // Bump generation on each via write guard
-        {
-            auto w = scope.write_mesh(s0);
-            PTS_UNUSED(w);
-        }
-        {
-            auto w = scope.write_mesh(s1);
-            PTS_UNUSED(w);
-        }
+        s0 = scope.alloc_mesh(pxr::SdfPath("/TestMesh0"));
+        s1 = scope.alloc_mesh(pxr::SdfPath("/TestMesh1"));
+        // Bump generation on each via mutate
+        scope.mutate_mesh(s0, [](MeshData&) {});
+        scope.mutate_mesh(s1, [](MeshData&) {});
     }
     auto& a =
         pass.get_or_create_pass_data<int>(PassDataKind::Mesh, s0, world, []() { return 100; });
@@ -138,25 +118,19 @@ TEST_CASE("world swap invalidates pass data cache") {
     {
         RenderWorld world;
         auto scope = world.begin_sync();
-        auto slot = scope.alloc_mesh_slot();
-        {
-            auto w = scope.write_mesh(slot);
-            PTS_UNUSED(w);
-        }
+        auto slot = scope.alloc_mesh(pxr::SdfPath("/TestMesh0"));
+        scope.mutate_mesh(slot, [](MeshData&) {});
         pass.get_or_create_pass_data<int>(PassDataKind::Mesh, slot, world, [&]() {
             ++factory_calls;
             return 1;
         });
         CHECK(factory_calls == 1);
     }
-    // Old world destroyed — cache gone. New world must recreate.
+    // Old world destroyed -- cache gone. New world must recreate.
     RenderWorld world2;
     auto scope2 = world2.begin_sync();
-    auto slot2 = scope2.alloc_mesh_slot();
-    {
-        auto w = scope2.write_mesh(slot2);
-        PTS_UNUSED(w);
-    }
+    auto slot2 = scope2.alloc_mesh(pxr::SdfPath("/TestMesh0"));
+    scope2.mutate_mesh(slot2, [](MeshData&) {});
     pass.get_or_create_pass_data<int>(PassDataKind::Mesh, slot2, world2, [&]() {
         ++factory_calls;
         return 99;
@@ -168,11 +142,8 @@ TEST_CASE("get_or_create_pass_data with nullptr factory succeeds on hit") {
     TestPass pass{s_test_sl};
     RenderWorld world;
     auto scope = world.begin_sync();
-    auto slot = scope.alloc_mesh_slot();
-    {
-        auto w = scope.write_mesh(slot);
-        PTS_UNUSED(w);
-    }
+    auto slot = scope.alloc_mesh(pxr::SdfPath("/TestMesh0"));
+    scope.mutate_mesh(slot, [](MeshData&) {});
 
     pass.get_or_create_pass_data<int>(PassDataKind::Mesh, slot, world, []() { return 42; });
     auto& val = pass.get_or_create_pass_data<int>(PassDataKind::Mesh, slot, world, nullptr);

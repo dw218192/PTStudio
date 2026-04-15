@@ -13,7 +13,7 @@ class Device;
 
 namespace pts::rendering {
 
-// IBL constants — shared between IblPipelines and IblResources.
+// IBL constants -- shared between IblPipelines and IblResources.
 static constexpr uint32_t k_env_size = 256;
 static constexpr uint32_t k_irradiance_size = 64;
 static constexpr uint32_t k_brdf_lut_size = 512;
@@ -33,7 +33,8 @@ class IblPipelines {
     IblPipelines& operator=(IblPipelines&&) = delete;
 
     /// Create compute pipelines and generate the BRDF LUT.
-    void init(const webgpu::Device& device, WGPUQueue queue);
+    /// The sampler is provided externally (e.g. from FrameGraph::sampler()).
+    void init(const webgpu::Device& device, WGPUQueue queue, WGPUSampler sampler);
 
     bool is_ready() const noexcept;
 
@@ -46,10 +47,10 @@ class IblPipelines {
     WGPUComputePipeline irradiance_pipeline() const noexcept;
     WGPUComputePipeline prefilter_pipeline() const noexcept;
 
-    // Bind group layout accessors.
-    WGPUBindGroupLayout equirect_bgl() const noexcept;
-    WGPUBindGroupLayout downsample_bgl() const noexcept;
-    WGPUBindGroupLayout convolve_bgl() const noexcept;
+    // Descriptor layout accessors.
+    WGPUBindGroupLayout equirect_desc_layout() const noexcept;
+    WGPUBindGroupLayout downsample_desc_layout() const noexcept;
+    WGPUBindGroupLayout convolve_desc_layout() const noexcept;
 
    private:
     void release();
@@ -61,10 +62,10 @@ class IblPipelines {
     std::optional<webgpu::ComputePipeline> m_prefilter_pipeline;
     std::optional<webgpu::ComputePipeline> m_brdf_lut_pipeline;
 
-    WGPUBindGroupLayout m_equirect_bgl = nullptr;
-    WGPUBindGroupLayout m_downsample_bgl = nullptr;
-    WGPUBindGroupLayout m_convolve_bgl = nullptr;
-    WGPUBindGroupLayout m_brdf_lut_bgl = nullptr;
+    WGPUBindGroupLayout m_equirect_desc_layout = nullptr;
+    WGPUBindGroupLayout m_downsample_desc_layout = nullptr;
+    WGPUBindGroupLayout m_convolve_desc_layout = nullptr;
+    WGPUBindGroupLayout m_brdf_lut_desc_layout = nullptr;
 
     WGPUSampler m_sampler = nullptr;
     WGPUTexture m_brdf_lut = nullptr;

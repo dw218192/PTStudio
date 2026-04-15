@@ -14,7 +14,7 @@ struct Uniforms {
 };
 
 [[vk::binding(0, 0)]]
-ConstantBuffer<Uniforms> u;
+[DynamicBuffer] ConstantBuffer<Uniforms> u;
 
 struct VsOut {
     float4 position : SV_Position;

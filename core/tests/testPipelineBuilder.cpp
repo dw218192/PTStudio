@@ -1,4 +1,6 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+#include <core/rendering/shaderCompiler.h>
+#include <core/rendering/shaderc/shaderLoader.h>
 #include <core/rendering/webgpu/device.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
 #include <doctest/doctest.h>
@@ -17,9 +19,24 @@ auto create_test_logger() -> std::shared_ptr<spdlog::logger> {
     return logger;
 }
 
+// All test cases share the same source shader, routed through the
+// IShaderCompiler interface so tests exercise the production compile path.
 struct TestFixture {
     std::shared_ptr<spdlog::logger> logger = create_test_logger();
     pts::webgpu::Device device = pts::webgpu::Device::create(logger);
+    pts::rendering::ShaderLoader loader{[this] {
+        pts::rendering::ShaderLoader l(logger);
+        l.register_shader("shaders/test/simple.wgsl", "assets/shaders/test/simple.slang",
+                          "shaders/test/simple.wgsl", test_resources::get_resource,
+                          {"vertex_main"});
+        return l;
+    }()};
+    pts::rendering::EmbeddedCompiler compiler{loader};
+
+    auto make_shader() {
+        auto wgsl = compiler.compile(pts::rendering::ShaderKey{"shaders/test/simple.wgsl"});
+        return device.create_shader_module_from_source(wgsl);
+    }
 };
 
 }  // namespace
@@ -27,9 +44,7 @@ struct TestFixture {
 TEST_CASE("RenderPipelineBuilder - depth-only pipeline (no_fragment)") {
     TestFixture f;
 
-    auto shader_source = test_resources::get_resource("shaders/test/simple.wgsl");
-    REQUIRE(shader_source.has_value());
-    auto shader = f.device.create_shader_module_from_source(shader_source.value());
+    auto shader = f.make_shader();
 
     auto pipeline = pts::webgpu::RenderPipelineBuilder(f.device)
                         .shader(shader)
@@ -47,12 +62,10 @@ TEST_CASE("RenderPipelineBuilder - depth-only pipeline (no_fragment)") {
 TEST_CASE("RenderPipelineBuilder - write_mask on multiple color targets") {
     TestFixture f;
 
-    auto shader_source = test_resources::get_resource("shaders/test/simple.wgsl");
-    REQUIRE(shader_source.has_value());
-    auto shader = f.device.create_shader_module_from_source(shader_source.value());
+    auto shader = f.make_shader();
 
     // Verify write_mask builder chain works and auto-expands color targets.
-    // Build as depth-only to avoid needing a fragment shader — write_mask
+    // Build as depth-only to avoid needing a fragment shader -- write_mask
     // configures state that would take effect if a fragment stage were present.
     auto pipeline = pts::webgpu::RenderPipelineBuilder(f.device)
                         .shader(shader)
@@ -74,9 +87,7 @@ TEST_CASE("RenderPipelineBuilder - write_mask on multiple color targets") {
 TEST_CASE("RenderPipelineBuilder - normal pipeline with fragment is unaffected") {
     TestFixture f;
 
-    auto shader_source = test_resources::get_resource("shaders/test/simple.wgsl");
-    REQUIRE(shader_source.has_value());
-    auto shader = f.device.create_shader_module_from_source(shader_source.value());
+    auto shader = f.make_shader();
 
     // The simple shader only has a vertex entry point, so we can't actually
     // build a full pipeline with it (no fragment shader). This test verifies

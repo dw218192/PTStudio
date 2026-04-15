@@ -1,0 +1,10 @@
+# Deps manifest for the standalone (--host-tools-only) build of usdz_pack.
+# Normal native builds add usdz_pack as an inline target in the root
+# CMakeLists.txt, which reuses the root's existing openusd find_package.
+
+[requires]
+openusd/25.11-dev
+
+[generators]
+CMakeToolchain
+CMakeDeps

@@ -82,7 +82,7 @@ class IViewport {
     /**
      * @brief Whether the window should close.
      *
-     * On Emscripten this is a soft flag only — emscripten_set_main_loop keeps
+     * On Emscripten this is a soft flag only -- emscripten_set_main_loop keeps
      * firing regardless. Callers must also check this in their frame function
      * and skip work when true.
      */

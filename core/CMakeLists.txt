@@ -99,7 +99,7 @@ add_library(${lib_name} STATIC ${src_files})
 # WebGPU uses [0,1] depth; tell GLM to generate matching projection matrices
 target_compile_definitions(${lib_name} PUBLIC GLM_FORCE_DEPTH_ZERO_TO_ONE)
 
-# Debug target views (MRT debug outputs, debug dropdown) — stripped in Release
+# Debug target views (MRT debug outputs, debug dropdown) -- stripped in Release
 target_compile_definitions(${lib_name} PUBLIC $<$<CONFIG:Debug>:PTS_DEBUG_VIEWS>)
 
 #Libs linked to the executable
@@ -123,6 +123,8 @@ PUBLIC
 foreach(_mod IN LISTS PTS_USD_MODULES)
 	target_link_libraries(${lib_name} PUBLIC openusd::usd_${_mod})
 endforeach()
+
+target_link_libraries(${lib_name} PUBLIC core::shaderc)
 
 if (NOT EMSCRIPTEN)
 	target_link_libraries(${lib_name}

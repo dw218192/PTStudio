@@ -31,7 +31,7 @@ build:
   prebuild:
     format: {}
     slangc: {}
-    shader_codegen: {}
+    shader_variants_codegen: {}
     usdz: {}
     embed: {}
   postbuild: {}
@@ -53,11 +53,11 @@ agent:
       C++17 codebase. Naming: UpperCamelCase types, snake_case functions/variables,
       m_prefix for private members, k_snake_case for constexpr constants,
       lowerCamelCase.cpp files, snake_case directories.
-      Public API boundaries must be noexcept and return error_code or boost::result —
+      Public API boundaries must be noexcept and return error_code or boost::result --
       never let exceptions escape. Use ABI-safe types only at DLL boundaries
-      (fixed-width ints, POD structs, opaque handles — no std::string/vector).
+      (fixed-width ints, POD structs, opaque handles -- no std::string/vector).
       Prefer Rule of Zero, RAII, string_view/span for non-owning views.
-      Prefer returning values over storing state — e.g. init() returns an
+      Prefer returning values over storing state -- e.g. init() returns an
       error code rather than storing it as a member for the caller to query.
       Use #pragma once, include what you use, forward-declare in headers.
     reviewer: >
@@ -85,6 +85,8 @@ usdz:
       output: "assets/scenes/shadow_test.usdz"
     - input: "assets/scenes/test_cube.usda"
       output: "assets/scenes/test_cube.usdz"
+    - input: "assets/scenes/clustered_lighting_test.usda"
+      output: "assets/scenes/clustered_lighting_test.usdz"
     - input: "assets/scenes/camera.usda"
       output: "assets/scenes/camera.usdz"
     - input: "assets/scenes/kitchen/Kitchen_set.usd"
@@ -94,56 +96,103 @@ slangc:
   search_paths:
     - "core/shaders"
     - "core/shaders/ibl"
+  # Each entry may declare a `metadata: { output, namespace }` block; when
+  # present, pts_shaderc walks the linked reflection in-process and emits the
+  # C++ metadata header (replaces the old shader_codegen.py + reflect.json
+  # detour). Only the base (no-suffix) variant emits metadata -- it is
+  # define-agnostic.
   shaders:
     - input: "assets/shaders/test/*.slang"
       output: "assets/shaders/test/*.wgsl"
     - input: "hello_triangle/shaders/hello_triangle.slang"
       output: "hello_triangle/generated/shaders/hello_triangle.wgsl"
-      reflect: true
+      metadata:
+        output: "hello_triangle/generated/shader_metadata.h"
+        namespace: "hello_triangle_shader"
     - input: "renderers/forward/forward.slang"
       output: "renderers/forward/generated/shaders/forward.wgsl"
-      reflect: true
-    - input: "renderers/forward/forward.slang"
-      output: "renderers/forward/generated/shaders/forward_no_debug.wgsl"
-      defines: ["NO_DEBUG_TARGETS"]
+      metadata:
+        output: "renderers/forward/generated/shader_metadata.h"
+        namespace: "forward_shader"
+      variants:
+        - {}
+        - defines: ["NO_DEBUG_TARGETS"]
+          suffix: "_no_debug"
     - input: "renderers/forward/skybox.slang"
       output: "renderers/forward/generated/shaders/skybox.wgsl"
+      metadata:
+        output: "renderers/forward/generated/skybox_shader_metadata.h"
+        namespace: "skybox_shader"
     - input: "core/shaders/shadow.slang"
       output: "core/generated/shaders/shadow.wgsl"
-      reflect: true
+      metadata:
+        output: "core/generated/shadow_shader_metadata.h"
+        namespace: "shadow_shader"
     - input: "core/shaders/gbuffer.slang"
       output: "core/generated/shaders/gbuffer.wgsl"
-      reflect: true
+      metadata:
+        output: "core/generated/gbuffer_shader_metadata.h"
+        namespace: "gbuffer_shader"
     - input: "core/shaders/ssao.slang"
       output: "core/generated/shaders/ssao.wgsl"
-      reflect: true
-    - input: "core/shaders/ssao_blur.slang"
-      output: "core/generated/shaders/ssao_blur.wgsl"
-      reflect: true
+      metadata:
+        output: "core/generated/ssao_shader_metadata.h"
+        namespace: "ssao_shader"
+    - input: "core/shaders/bilateral_blur.slang"
+      output: "core/generated/shaders/bilateral_blur.wgsl"
+      metadata:
+        output: "core/generated/bilateral_blur_shader_metadata.h"
+        namespace: "bilateral_blur_shader"
+    - input: "core/shaders/contact_shadow.slang"
+      output: "core/generated/shaders/contact_shadow.wgsl"
+      metadata:
+        output: "core/generated/contact_shadow_shader_metadata.h"
+        namespace: "contact_shadow_shader"
     - input: "editor/shaders/picking.slang"
       output: "editor/generated/shaders/picking.wgsl"
-      reflect: true
+      metadata:
+        output: "editor/generated/picking_shader_metadata.h"
+        namespace: "editor_picking_shader"
     - input: "editor/shaders/grid.slang"
       output: "editor/generated/shaders/grid.wgsl"
-      reflect: true
+      metadata:
+        output: "editor/generated/grid_shader_metadata.h"
+        namespace: "editor_grid_shader"
     - input: "editor/shaders/wireframe.slang"
       output: "editor/generated/shaders/wireframe.wgsl"
-      reflect: true
+      metadata:
+        output: "editor/generated/wireframe_shader_metadata.h"
+        namespace: "editor_wireframe_shader"
     - input: "editor/shaders/gizmo.slang"
       output: "editor/generated/shaders/gizmo.wgsl"
-      reflect: true
+      metadata:
+        output: "editor/generated/gizmo_shader_metadata.h"
+        namespace: "editor_gizmo_shader"
     - input: "editor/shaders/lobe.slang"
       output: "editor/generated/shaders/lobe.wgsl"
-      reflect: true
+      metadata:
+        output: "editor/generated/lobe_shader_metadata.h"
+        namespace: "editor_lobe_shader"
     - input: "editor/shaders/tonemapping.slang"
       output: "editor/generated/shaders/tonemapping.wgsl"
-      reflect: true
+      metadata:
+        output: "core/generated/tonemapping_shader_metadata.h"
+        namespace: "tonemapping_shader"
     - input: "editor/shaders/luminance.slang"
       output: "editor/generated/shaders/luminance.wgsl"
+      metadata:
+        output: "core/generated/luminance_shader_metadata.h"
+        namespace: "luminance_shader"
     - input: "renderers/pathtracer/pathtracer.slang"
       output: "editor/generated/shaders/pathtracer.wgsl"
+      metadata:
+        output: "renderers/pathtracer/generated/pathtracer_shader_metadata.h"
+        namespace: "pathtracer_shader"
     - input: "renderers/pathtracer/pt_blit.slang"
       output: "editor/generated/shaders/pt_blit.wgsl"
+      metadata:
+        output: "renderers/pathtracer/generated/pt_blit_shader_metadata.h"
+        namespace: "pt_blit_shader"
     - input: "core/shaders/ibl/brdf_lut.slang"
       output: "core/generated/shaders/brdf_lut.wgsl"
     - input: "core/shaders/ibl/equirect_to_cube.slang"
@@ -155,57 +204,36 @@ slangc:
     - input: "core/shaders/ibl/prefilter_env.slang"
       output: "core/generated/shaders/prefilter_env.wgsl"
 
-shader_codegen:
-  template: "core/templates/shader_metadata.h.j2"
-  shaders:
-    - reflect: "hello_triangle/generated/shaders/hello_triangle.reflect.json"
-      output: "hello_triangle/generated/shader_metadata.h"
-      namespace: "hello_triangle_shader"
-    - reflect: "renderers/forward/generated/shaders/forward.reflect.json"
-      output: "renderers/forward/generated/shader_metadata.h"
-      namespace: "forward_shader"
-    - reflect: "core/generated/shaders/shadow.reflect.json"
-      output: "core/generated/shadow_shader_metadata.h"
-      namespace: "shadow_shader"
-    - reflect: "core/generated/shaders/gbuffer.reflect.json"
-      output: "core/generated/gbuffer_shader_metadata.h"
-      namespace: "gbuffer_shader"
-    - reflect: "core/generated/shaders/ssao.reflect.json"
-      output: "core/generated/ssao_shader_metadata.h"
-      namespace: "ssao_shader"
-    - reflect: "core/generated/shaders/ssao_blur.reflect.json"
-      output: "core/generated/ssao_blur_shader_metadata.h"
-      namespace: "ssao_blur_shader"
-    - reflect: "editor/generated/shaders/picking.reflect.json"
-      output: "editor/generated/picking_shader_metadata.h"
-      namespace: "editor_picking_shader"
-    - reflect: "editor/generated/shaders/grid.reflect.json"
-      output: "editor/generated/grid_shader_metadata.h"
-      namespace: "editor_grid_shader"
-    - reflect: "editor/generated/shaders/wireframe.reflect.json"
-      output: "editor/generated/wireframe_shader_metadata.h"
-      namespace: "editor_wireframe_shader"
-    - reflect: "editor/generated/shaders/gizmo.reflect.json"
-      output: "editor/generated/gizmo_shader_metadata.h"
-      namespace: "editor_gizmo_shader"
-    - reflect: "editor/generated/shaders/lobe.reflect.json"
-      output: "editor/generated/lobe_shader_metadata.h"
-      namespace: "editor_lobe_shader"
-    - reflect: "editor/generated/shaders/tonemapping.reflect.json"
-      output: "editor/generated/tonemapping_shader_metadata.h"
-      namespace: "editor_tonemapping_shader"
+shader_variants_codegen:
+  # Consumes `slangc.shaders[].variants[]` and emits a C++ header describing
+  # every (sorted defines -> filename suffix) registered for embedding.
+  # Consumed by EmbeddedCompiler to map compile(source_key, defines) requests
+  # onto the embedded resource key.
+  output: "core/generated/shader_variants_map.h"
+  namespace: "pts::rendering::variants"
 
 embed:
   template: "core/templates/embedded_resources.h.j2"
+  # Shader entries use "*.wgsl" globs so every variant emitted by the slangc
+  # prebuild (e.g. forward.wgsl + forward_no_debug.wgsl) is auto-included.
+  #
+  # WGSL is only embedded on Emscripten: native always compiles from .slang at
+  # runtime via SlangCompiler. The `input@emscripten` override replaces `input`
+  # when the active platform is emscripten.
+  #
+  # ibl_resources is an exception until iblResources.cpp is plumbed through
+  # IShaderCompiler -- it still reads WGSL from its own embedded namespace on
+  # both platforms.
   resources:
     - input:
-        - "renderers/forward/generated/shaders/forward.wgsl"
-        - "renderers/forward/generated/shaders/forward_no_debug.wgsl"
-        - "renderers/forward/generated/shaders/skybox.wgsl"
+        - "editor/icons/*.*"
+      input@emscripten:
+        - "renderers/forward/generated/shaders/*.wgsl"
         - "core/generated/shaders/shadow.wgsl"
         - "core/generated/shaders/gbuffer.wgsl"
         - "core/generated/shaders/ssao.wgsl"
-        - "core/generated/shaders/ssao_blur.wgsl"
+        - "core/generated/shaders/bilateral_blur.wgsl"
+        - "core/generated/shaders/contact_shadow.wgsl"
         - "editor/generated/shaders/picking.wgsl"
         - "editor/generated/shaders/grid.wgsl"
         - "editor/generated/shaders/wireframe.wgsl"
@@ -227,11 +255,16 @@ embed:
       output: "core/generated/embedded_ibl_shaders.h"
       namespace: "ibl_resources"
     - input:
+        # Test fixture WGSL stays embedded on both platforms so the unit
+        # tests that route through EmbeddedCompiler don't require a .slang
+        # source tree on native.
         - "assets/shaders/test/simple.wgsl"
         - "assets/scenes/test_cube.usda"
       output: "core/tests/generated/embedded_test_resources.h"
       namespace: "test_resources"
     - input:
+        - "hello_triangle/scenes/triangle.usda"
+      input@emscripten:
         - "hello_triangle/generated/shaders/hello_triangle.wgsl"
         - "hello_triangle/scenes/triangle.usda"
       output: "hello_triangle/generated/embedded_resources.h"
@@ -268,7 +301,7 @@ package:
       dest: "deps/usd/"
     - src: "{workspace_root}/assets/scenes/*.usdz"
       dest: "assets/scenes/"
-  # Emscripten package omits conanbuild scripts — Conan .sh scripts use
+  # Emscripten package omits conanbuild scripts -- Conan .sh scripts use
   # hardcoded absolute paths and can't be relocated.  Unit tests only need
   # node (on CI PATH); smoke tests use the browser.
   mappings@emscripten:

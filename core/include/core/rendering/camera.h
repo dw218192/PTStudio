@@ -10,7 +10,7 @@ class OrbitCamera {
    public:
     OrbitCamera();
 
-    // ── Configuration ──
+    // -- Configuration --
     void set_target(glm::vec3 target);
     void set_distance(float distance);
     void set_fov_y(float fov_degrees);
@@ -23,7 +23,7 @@ class OrbitCamera {
     /// Scales near/far planes, distance limits, and movement speed.
     void apply_meters_per_unit(float meters_per_unit);
 
-    // ── Interaction ──
+    // -- Interaction --
     /// Orbit: rotate around target. dx/dy are normalized deltas (e.g. mouse delta / viewport size).
     void orbit(float dx, float dy);
 
@@ -37,11 +37,11 @@ class OrbitCamera {
     /// forward > 0 moves toward the look direction, right > 0 moves rightward, up > 0 moves upward.
     void move(float forward, float right, float up, float dt);
 
-    // ── Output ──
+    // -- Output --
     [[nodiscard]] auto view_matrix() const -> glm::mat4;
     [[nodiscard]] auto projection_matrix(float aspect_ratio) const -> glm::mat4;
 
-    // ── Accessors ──
+    // -- Accessors --
     [[nodiscard]] auto target() const -> glm::vec3;
     [[nodiscard]] auto position() const -> glm::vec3;
     [[nodiscard]] auto distance() const -> float;

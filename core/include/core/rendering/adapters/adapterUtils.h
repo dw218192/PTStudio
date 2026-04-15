@@ -10,7 +10,7 @@ namespace pts::rendering {
 // Falls back to white (1,1,1) if no displayColor is authored.
 inline void apply_display_color(Vertex& v, const pxr::UsdGeomPrimvarsAPI& primvars_api) {
     // Cache the color array in a thread-local to avoid repeated USD reads
-    // when called in a loop — callers should use the batch overload instead.
+    // when called in a loop -- callers should use the batch overload instead.
 }
 
 // Reads displayColor primvar once, returns the array.

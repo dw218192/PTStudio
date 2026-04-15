@@ -1,8 +1,6 @@
 #pragma once
 
 #include <core/rendering/renderPass.h>
-#include <core/rendering/webgpu/pipeline.h>
-#include <core/rendering/webgpu/shader.h>
 #include <core/rendering/webgpu/webgpu.h>
 #include <pxr/usd/sdf/path.h>
 
@@ -10,7 +8,6 @@
 #include <cmath>
 #include <cstdint>
 #include <glm/gtc/constants.hpp>
-#include <variant>
 #include <vector>
 
 namespace pts::editor {
@@ -24,7 +21,7 @@ inline float gizmo_distance_scale(float camera_distance, float world_radius,
     return std::max(1.0f, min_screen_radius * camera_distance / r);
 }
 
-// ── Gizmo geometry generation (inline for testability) ────────────────
+// -- Gizmo geometry generation (inline for testability) ----------------
 
 static constexpr uint32_t k_gizmo_circle_segments = 48;
 
@@ -107,12 +104,11 @@ inline std::vector<glm::vec3> generate_light_verts(const rendering::LightData& l
 
 /// Combined picking + wireframe light gizmo pass.
 /// Submits two frame graph passes:
-///   "editor_picking" — renders mesh objects + light shapes to picking_ids
-///   "editor_gizmos"  — renders light wireframe shapes to scene_color
+///   "editor_picking" -- renders mesh objects + light shapes to picking_ids
+///   "editor_gizmos"  -- renders light wireframe shapes to scene_color
 class EditorPass final : public rendering::IPass {
    public:
     using IPass::IPass;
-    ~EditorPass() override;
 
     EditorPass(const EditorPass&) = delete;
     EditorPass& operator=(const EditorPass&) = delete;
@@ -120,9 +116,7 @@ class EditorPass final : public rendering::IPass {
     EditorPass& operator=(EditorPass&&) = delete;
 
     [[nodiscard]] auto name() const noexcept -> std::string_view override;
-    [[nodiscard]] auto is_ready() const noexcept -> bool override;
 
-    void do_setup(const webgpu::Device& device) override;
     void render(rendering::FrameGraph& fg, const rendering::PassContext& ctx);
 
     /// Resolve a picking ID to its prim path. Returns empty path if invalid.
@@ -140,22 +134,7 @@ class EditorPass final : public rendering::IPass {
         uint32_t vertex_count = 0;
     };
 
-    struct Ready {
-        // Mesh picking pipeline (reuses picking shader)
-        webgpu::ShaderModule picking_shader;
-        webgpu::RenderPipeline picking_pipeline;
-        webgpu::RenderPipeline picking_line_pipeline;  // LineList topology for wireframe picking
-        WGPUBindGroupLayout picking_bind_group_layout = nullptr;
-
-        // Gizmo pipeline (wireframe color overlay for light shapes)
-        webgpu::ShaderModule gizmo_shader;
-        webgpu::RenderPipeline gizmo_color_pipeline;  // scene_color, LineList, blend
-        WGPUBindGroupLayout gizmo_bind_group_layout = nullptr;
-    };
-
-    std::variant<std::monostate, Ready> m_state;
-
-    /// Flat table: picking_id → prim_path. Built each frame in add_to_frame_graph.
+    /// Flat table: picking_id -> prim_path. Built each frame in add_to_frame_graph.
     std::vector<pxr::SdfPath> m_picking_table;
 };
 

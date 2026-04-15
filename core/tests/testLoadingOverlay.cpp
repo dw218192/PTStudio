@@ -38,7 +38,7 @@ TEST_CASE("LoadingOverlay - TrackedTask lambdas are type-erased") {
     status = "almost";
     done = true;
 
-    // Verify lambdas capture correctly — task reports done now
+    // Verify lambdas capture correctly -- task reports done now
     // After next draw() call it would be pruned, but has_active_tasks
     // doesn't prune (only draw does), so it still shows active.
     CHECK(overlay.has_active_tasks());

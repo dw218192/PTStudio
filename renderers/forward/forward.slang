@@ -12,14 +12,13 @@ struct Uniforms {
     float time;
     uint material_index;
     uint light_count;
-    uint _pad1;
-    uint _pad2;
+    float2 viewport_size;
     float3 ibl_dome_modulation;
     uint ibl_mip_count;
 };
 
 [[vk::binding(0, 0)]]
-ConstantBuffer<Uniforms> u;
+[DynamicBuffer] ConstantBuffer<Uniforms> u;
 
 [[vk::binding(1, 0)]]
 StructuredBuffer<Material> materials;
@@ -44,14 +43,18 @@ SamplerState scene_sampler;
 
 // Bind group 1: shadow data
 [[vk::binding(0, 1)]] StructuredBuffer<ShadowInfo> shadow_infos;
-[[vk::binding(1, 1)]] Texture2DArray<float> shadow_map;
-[[vk::binding(2, 1)]] SamplerState shadow_sampler;
+[[vk::binding(1, 1)]] [NonFiltering] Texture2DArray<float> shadow_map;
+[[vk::binding(2, 1)]] [NonFiltering]  SamplerState shadow_sampler;
 
 // Bind group 2: IBL
 [[vk::binding(0, 2)]] TextureCube<float4> ibl_prefiltered;
 [[vk::binding(1, 2)]] TextureCube<float4> ibl_irradiance;
 [[vk::binding(2, 2)]] Texture2D<float4> ibl_brdf_lut;
 [[vk::binding(3, 2)]] SamplerState ibl_sampler;
+
+// Bind group 3: contact shadow
+[[vk::binding(0, 3)]] Texture2D<float4> contact_shadow_tex;
+[[vk::binding(1, 3)]] SamplerState contact_shadow_sampler;
 
 struct VsIn {
     float3 position : POSITION;
@@ -96,8 +99,9 @@ struct FsOut {
 #endif
 
 [shader("fragment")]
-FsOut fs_main(float3 world_normal : NORMAL, float3 world_pos : WORLD_POS,
-              float3 color : COLOR, float2 uv : TEXCOORD) {
+FsOut fs_main(float4 sv_pos : SV_Position, float3 world_normal : NORMAL,
+              float3 world_pos : WORLD_POS, float3 color : COLOR,
+              float2 uv : TEXCOORD) {
     float3 N = normalize(world_normal);
     float3 V = normalize(u.camera_pos - world_pos);
 
@@ -114,6 +118,8 @@ FsOut fs_main(float3 world_normal : NORMAL, float3 world_pos : WORLD_POS,
 
     CookTorranceGGX brdf;
 
+    float2 screen_uv = sv_pos.xy / u.viewport_size;
+
     float3 direct_diffuse, direct_specular;
     float3 lit = evaluate_lighting_ltc(
         brdf,
@@ -122,8 +128,15 @@ FsOut fs_main(float3 world_normal : NORMAL, float3 world_pos : WORLD_POS,
         ltc_mat, ltc_amp, ltc_sampler,
         world_pos, N, V, albedo, mat_metallic, mat_roughness,
         shadow_infos, shadow_map, shadow_sampler,
+        screen_uv,
         direct_diffuse, direct_specular
     );
+
+    // Apply screen-space contact shadows
+    float cs = contact_shadow_tex.Sample(contact_shadow_sampler, screen_uv).r;
+    direct_diffuse *= cs;
+    direct_specular *= cs;
+    lit = direct_diffuse + direct_specular;
 
     float3 ibl_diff, ibl_spec, ibl_prefilt, ibl_brdf_scale;
     float3 ibl = evaluate_ibl(ibl_prefiltered, ibl_irradiance, ibl_brdf_lut, ibl_sampler,

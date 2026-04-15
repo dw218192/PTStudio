@@ -195,7 +195,7 @@ TEST_CASE("AsyncStateMachine - transition is safe with self-referencing args") {
 
     // This passes a reference to data inside the current variant state.
     // Before the fix, emplace would destroy HoldingState (freeing the int)
-    // before constructing ConsumedState — use-after-free.
+    // before constructing ConsumedState -- use-after-free.
     m.transition<ConsumedState>(*holding->value);
 
     CHECK(m.is<ConsumedState>());

@@ -6,6 +6,8 @@
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/sceneLoader.h>
+#include <core/rendering/shaderCompiler.h>
+#include <core/rendering/shaderc/shaderLoader.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
 #include <core/rendering/webgpuContext.h>
 #include <embedded_resources.h>
@@ -46,6 +48,8 @@ class HelloApp : public pts::GpuApplication {
 
    private:
     pts::rendering::RenderWorld m_world;
+    std::unique_ptr<pts::rendering::ShaderLoader> m_shader_loader;
+    std::unique_ptr<pts::rendering::IShaderCompiler> m_shader_compiler;
     std::unique_ptr<pts::rendering::FrameGraph> m_graph;
     std::optional<pts::webgpu::ShaderModule> m_shader;
     std::optional<pts::webgpu::RenderPipeline> m_pipeline;
@@ -65,12 +69,6 @@ class HelloApp : public pts::GpuApplication {
         if (!usda) {
             throw std::runtime_error("missing embedded resource: scenes/triangle.usda");
         }
-        auto shader_src =
-            hello_triangle_resources::get_resource("generated/shaders/hello_triangle.wgsl");
-        if (!shader_src) {
-            throw std::runtime_error(
-                "missing embedded resource: generated/shaders/hello_triangle.wgsl");
-        }
 
         // Load USD stage from embedded resource
         auto layer = pxr::SdfLayer::CreateAnonymous(".usda");
@@ -79,8 +77,16 @@ class HelloApp : public pts::GpuApplication {
         pts::rendering::populate_from_stage(m_world, stage);
         m_world.upload_all_meshes(device);
 
-        // Create shader module
-        m_shader.emplace(device.create_shader_module_from_source(*shader_src));
+        // Route WGSL through IShaderCompiler -- consistent with renderer passes.
+        m_shader_loader = std::make_unique<pts::rendering::ShaderLoader>(
+            get_logging_manager().get_logger_shared("shader_loader"));
+        m_shader_loader->register_shader(
+            "generated/shaders/hello_triangle.wgsl", "hello_triangle/shaders/hello_triangle.slang",
+            "generated/shaders/hello_triangle.wgsl", hello_triangle_resources::get_resource);
+        m_shader_compiler = pts::rendering::make_shader_compiler(*m_shader_loader);
+        auto shader_wgsl = m_shader_compiler->compile(
+            pts::rendering::ShaderKey{"generated/shaders/hello_triangle.wgsl"});
+        m_shader.emplace(device.create_shader_module_from_source(shader_wgsl));
 
         // Create uniform buffer
         m_uniform_buffer = device.create_buffer(sizeof(Uniforms),
@@ -156,35 +162,37 @@ class HelloApp : public pts::GpuApplication {
         m_graph->add_pass("forward")
             .color(ctx.surface_view(), WGPUColor{0.1, 0.1, 0.1, 1.0})
             .present()
-            .execute([&](WGPURenderPassEncoder pass) {
+            .execute([&](pts::rendering::ExecuteContext&, WGPURenderPassEncoder pass) {
                 wgpuRenderPassEncoderSetPipeline(pass, m_pipeline->handle());
-                auto objects = m_world.get_objects();
-                auto meshes = m_world.get_meshes();
-                for (const auto& obj : objects) {
-                    if (!obj.active()) continue;
-                    if (!obj->visible) continue;
+                auto objects = m_world.get_objects().span_raw();
+                auto meshes = m_world.get_meshes().span_raw();
+                for (const auto& entry : objects) {
+                    if (!entry.active) continue;
+                    if (!entry.value.visible) continue;
                     Uniforms uniforms;
-                    uniforms.mvp = vp * obj->transform;
+                    uniforms.mvp = vp * entry.value.transform;
                     uniforms.time = t * m_time_scale;
                     uniforms.rotation = t * m_rotation_speed;
                     wgpuQueueWriteBuffer(device.queue(), m_uniform_buffer.handle(), 0, &uniforms,
                                          sizeof(uniforms));
                     wgpuRenderPassEncoderSetBindGroup(pass, 0, m_bind_group, 0, nullptr);
 
-                    const auto& mesh = meshes[obj->mesh_index];
-                    wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh->vertex_buffer.handle(), 0,
-                                                         mesh->vertex_buffer.size());
-                    wgpuRenderPassEncoderSetIndexBuffer(pass, mesh->index_buffer.handle(),
+                    const auto& mesh = meshes[entry.value.mesh_index].value;
+                    wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh.vertex_buffer.handle(), 0,
+                                                         mesh.vertex_buffer.size());
+                    wgpuRenderPassEncoderSetIndexBuffer(pass, mesh.index_buffer.handle(),
                                                         WGPUIndexFormat_Uint32, 0,
-                                                        mesh->index_buffer.size());
-                    wgpuRenderPassEncoderDrawIndexed(pass, mesh->index_count, 1, 0, 0, 0);
+                                                        mesh.index_buffer.size());
+                    wgpuRenderPassEncoderDrawIndexed(pass, mesh.index_count, 1, 0, 0, 0);
                 }
             });
 
         // ImGui overlay pass (preserves 3D content via Load)
         m_graph->add_pass("imgui")
             .color(ctx.surface_view())
-            .execute([&](WGPURenderPassEncoder pass) { scope.render_into(pass); });
+            .execute([&](pts::rendering::ExecuteContext&, WGPURenderPassEncoder pass) {
+                scope.render_into(pass);
+            });
 
         m_graph->compile();
         m_graph->execute(ctx.encoder());

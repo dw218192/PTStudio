@@ -16,7 +16,7 @@ void InputComponent::set_handler(InputHandler handler) {
 
 void InputComponent::poll(float time, int window_width, int window_height,
                           std::string_view cur_hovered_widget) {
-    // Snapshot and reset scroll delta atomically — poll() consumes accumulated scroll
+    // Snapshot and reset scroll delta atomically -- poll() consumes accumulated scroll
     auto scroll_delta = m_mouse_scroll_delta;
     m_mouse_scroll_delta = glm::vec2{0.0f};
 

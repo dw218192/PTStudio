@@ -4,9 +4,9 @@
 #include <core/profiling.h>
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/passContext.h>
-#include <core/rendering/shaderLoader.h>
-#include <core/rendering/webgpu/pipelineBuilder.h>
+#include <core/rendering/webgpu/device.h>
 #include <imgui.h>
+#include <lobe_shader_metadata.h>
 
 #include <cmath>
 #include <glm/glm.hpp>
@@ -30,90 +30,38 @@ static_assert(sizeof(LobeUniforms) == 112, "LobeUniforms must match shader std14
 static_assert(LobePass::k_uniform_align >= sizeof(LobeUniforms),
               "Alignment must be >= uniform struct size");
 
-LobePass::~LobePass() {
-    if (auto* ready = std::get_if<Ready>(&m_state)) {
-        if (ready->bind_group_layout) {
-            wgpuBindGroupLayoutRelease(ready->bind_group_layout);
-        }
-    }
-}
-
 auto LobePass::name() const noexcept -> std::string_view {
     return "lobe";
 }
 
-auto LobePass::is_ready() const noexcept -> bool {
-    return std::holds_alternative<Ready>(m_state);
-}
-
-void LobePass::do_setup(const webgpu::Device& device) {
-    if (auto* ready = std::get_if<Ready>(&m_state)) {
-        if (ready->bind_group_layout) wgpuBindGroupLayoutRelease(ready->bind_group_layout);
-    }
-
-    auto shader_src = get_shader_loader().load("editor/generated/shaders/lobe.wgsl");
-    auto shader = device.create_shader_module_from_source(shader_src);
-
-    // Create bind group layout with dynamic offset for dual draw
-    WGPUBindGroupLayoutEntry bgl_entry = WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;
-    bgl_entry.binding = 0;
-    bgl_entry.visibility =
-        static_cast<WGPUShaderStage>(WGPUShaderStage_Vertex | WGPUShaderStage_Fragment);
-    bgl_entry.buffer.type = WGPUBufferBindingType_Uniform;
-    bgl_entry.buffer.hasDynamicOffset = true;
-    bgl_entry.buffer.minBindingSize = sizeof(LobeUniforms);
-
-    WGPUBindGroupLayoutDescriptor bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    bgl_desc.entryCount = 1;
-    bgl_desc.entries = &bgl_entry;
-    auto bind_group_layout = wgpuDeviceCreateBindGroupLayout(device.handle(), &bgl_desc);
-
-    WGPUPipelineLayoutDescriptor pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
-    pl_desc.bindGroupLayoutCount = 1;
-    pl_desc.bindGroupLayouts = &bind_group_layout;
-    WGPUPipelineLayout pipeline_layout = wgpuDeviceCreatePipelineLayout(device.handle(), &pl_desc);
-
-    auto pipeline = webgpu::RenderPipelineBuilder(device)
-                        .shader(shader)
-                        .color_format(WGPUTextureFormat_RGBA8Unorm)
-                        .depth_format(WGPUTextureFormat_Depth32Float)
-                        .depth_write(true)
-                        .depth_compare(WGPUCompareFunction_Less)
-                        .cull_mode(WGPUCullMode_None)
-                        .pipeline_layout(pipeline_layout)
-                        .build();
-
-    wgpuPipelineLayoutRelease(pipeline_layout);
-
-    m_state = Ready{
-        std::move(shader),
-        std::move(pipeline),
-        bind_group_layout,
-    };
-}
-
 void LobePass::render(rendering::FrameGraph& fg, const rendering::PassContext& ctx) {
     PTS_ZONE_SCOPED;
-    PRECONDITION(is_ready());
-    auto& ready = std::get<Ready>(m_state);
+    ensure_initialized(ctx.device);
+
+    auto descriptor_layout = fg.bind_group_layout(
+        "lobe/desc", editor_lobe_shader::create_bind_group_layout_0(ctx.device.handle()));
+
+    auto* pipeline_handle = fg.render_pipeline("lobe")
+                                .shader("editor/generated/shaders/lobe.wgsl")
+                                .color_format(WGPUTextureFormat_RGBA8Unorm)
+                                .depth_format(WGPUTextureFormat_Depth32Float)
+                                .depth_write(true)
+                                .depth_compare(WGPUCompareFunction_Less)
+                                .cull_mode(WGPUCullMode_None)
+                                .bind_group_layouts({descriptor_layout})
+                                .build();
 
     // Register uniform buffer (2 aligned slots: specular + diffuse)
     rendering::BufferDesc buf_desc{};
     buf_desc.size = k_uniform_align * 2;
     buf_desc.usage =
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
-    auto uniform_buf_handle = create_buffer(fg, buf_desc, "uniforms");
+    auto uniform_buf_decl = create_buffer(fg, buf_desc, "uniforms");
 
-    // Register bind group
-    rendering::BindGroupEntry entry{};
-    entry.binding = 0;
-    entry.buffer = uniform_buf_handle;
-    entry.buffer_size = sizeof(LobeUniforms);
-
-    rendering::BindGroupDesc bg_desc{};
-    bg_desc.layout = ready.bind_group_layout;
-    bg_desc.entries = {entry};
-    auto bg_handle = create_bind_group(fg, std::move(bg_desc), "bg0");
+    // Register descriptor
+    auto desc_decl = descriptor(fg, descriptor_layout, "desc0")
+                         .buffer(0, uniform_buf_decl, 0, sizeof(LobeUniforms))
+                         .build();
 
     rendering::TextureDesc color_desc;
     color_desc.width = k_texture_size;
@@ -126,9 +74,9 @@ void LobePass::render(rendering::FrameGraph& fg, const rendering::PassContext& c
     depth_desc.height = k_texture_size;
     depth_desc.format = WGPUTextureFormat_Depth32Float;
 
-    auto color = fg.find_or_create("lobe_color", color_desc);
-    auto depth = create_texture(fg, depth_desc, "depth");
-    m_lobe_color_handle = color;
+    auto color_decl = fg.texture("lobe_color", color_desc);
+    auto depth_decl = create_texture(fg, depth_desc, "depth");
+    m_lobe_color_decl = color_decl;
 
     // Fixed camera looking at origin
     auto eye = glm::vec3(0.0f, -2.5f, 1.5f);
@@ -145,54 +93,59 @@ void LobePass::render(rendering::FrameGraph& fg, const rendering::PassContext& c
         glm::vec3(std::cos(el) * std::cos(az), std::cos(el) * std::sin(az), std::sin(el));
 
     auto queue = ctx.queue;
-    auto* pipeline_handle = ready.pipeline.handle();
     auto roughness = m_roughness;
     auto metallic = m_metallic;
     auto scale = m_scale;
     auto show_specular = m_show_specular;
     auto show_diffuse = m_show_diffuse;
 
-    fg.add_pass("lobe").color(color).depth(depth).execute([=, &fg](WGPURenderPassEncoder pass) {
-        auto uniform_buf = fg.get_buffer_ref(uniform_buf_handle).handle();
-        auto bind_group = fg.get_bind_group_ref(bg_handle).handle();
+    fg.add_pass("lobe")
+        .color(color_decl)
+        .depth(depth_decl)
+        .execute([=](rendering::ExecuteContext& exec, WGPURenderPassEncoder pass) {
+            auto uniform_buf = exec.get(uniform_buf_decl).buffer;
+            auto descriptor = exec.get(desc_decl).bind_group;
 
-        // Upload both uniform slots
-        LobeUniforms lu_spec{};
-        lu_spec.mvp = mvp;
-        lu_spec.light_dir = light_dir;
-        lu_spec.roughness = roughness;
-        lu_spec.metallic = metallic;
-        lu_spec.scale = scale;
-        lu_spec.grid_cols = k_grid_cols;
-        lu_spec.grid_rows = k_grid_rows;
-        lu_spec.mode = 0;
+            // Upload both uniform slots
+            LobeUniforms lu_spec{};
+            lu_spec.mvp = mvp;
+            lu_spec.light_dir = light_dir;
+            lu_spec.roughness = roughness;
+            lu_spec.metallic = metallic;
+            lu_spec.scale = scale;
+            lu_spec.grid_cols = k_grid_cols;
+            lu_spec.grid_rows = k_grid_rows;
+            lu_spec.mode = 0;
 
-        LobeUniforms lu_diff = lu_spec;
-        lu_diff.mode = 1;
+            LobeUniforms lu_diff = lu_spec;
+            lu_diff.mode = 1;
 
-        wgpuQueueWriteBuffer(queue, uniform_buf, 0, &lu_spec, sizeof(lu_spec));
-        wgpuQueueWriteBuffer(queue, uniform_buf, k_uniform_align, &lu_diff, sizeof(lu_diff));
+            wgpuQueueWriteBuffer(queue, uniform_buf, 0, &lu_spec, sizeof(lu_spec));
+            wgpuQueueWriteBuffer(queue, uniform_buf, k_uniform_align, &lu_diff, sizeof(lu_diff));
 
-        uint32_t vertex_count = (k_grid_cols - 1) * (k_grid_rows - 1) * 6;
-        wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
+            uint32_t vertex_count = (k_grid_cols - 1) * (k_grid_rows - 1) * 6;
+            wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
 
-        if (show_specular) {
-            uint32_t offset_spec = 0;
-            wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 1, &offset_spec);
-            wgpuRenderPassEncoderDraw(pass, vertex_count, 1, 0, 0);
-        }
+            if (show_specular) {
+                uint32_t offset_spec = 0;
+                wgpuRenderPassEncoderSetBindGroup(pass, 0, descriptor, 1, &offset_spec);
+                wgpuRenderPassEncoderDraw(pass, vertex_count, 1, 0, 0);
+            }
 
-        if (show_diffuse) {
-            uint32_t offset_diff = k_uniform_align;
-            wgpuRenderPassEncoderSetBindGroup(pass, 0, bind_group, 1, &offset_diff);
-            wgpuRenderPassEncoderDraw(pass, vertex_count, 1, 0, 0);
-        }
-    });
+            if (show_diffuse) {
+                uint32_t offset_diff = k_uniform_align;
+                wgpuRenderPassEncoderSetBindGroup(pass, 0, descriptor, 1, &offset_diff);
+                wgpuRenderPassEncoderDraw(pass, vertex_count, 1, 0, 0);
+            }
+        });
 }
 
 void LobePass::update_texture_refs(rendering::FrameGraph& fg) {
-    if (m_lobe_color_handle.is_valid()) {
-        m_lobe_color_ref = fg.get_texture_ref(m_lobe_color_handle);
+    if (m_lobe_color_decl) {
+        auto* compiled = fg.compiled_texture(m_lobe_color_decl);
+        if (compiled) {
+            m_lobe_color_view = compiled->view;
+        }
     }
 }
 
@@ -214,7 +167,7 @@ void LobePass::set_material(float roughness, float metallic) {
 }
 
 void LobePass::draw_imgui() {
-    // No standalone window — lobe is drawn inline via draw_lobe_widget()
+    // No standalone window -- lobe is drawn inline via draw_lobe_widget()
 }
 
 bool LobePass::draw_lobe_widget() {
@@ -228,13 +181,12 @@ bool LobePass::draw_lobe_widget() {
     ImGui::SameLine();
     ImGui::Checkbox("Show Diffuse", &m_show_diffuse);
 
-    if (!m_lobe_color_ref) return changed;
+    if (!m_lobe_color_view) return changed;
 
     auto img_pos = ImGui::GetCursorScreenPos();
     float avail = ImGui::GetContentRegionAvail().x;
     float img_size = std::min(avail, static_cast<float>(k_texture_size));
-    ImGui::Image(reinterpret_cast<ImTextureID>(m_lobe_color_ref.view()),
-                 ImVec2(img_size, img_size));
+    ImGui::Image(reinterpret_cast<ImTextureID>(m_lobe_color_view), ImVec2(img_size, img_size));
 
     // Draw light direction arrow overlaid on the image
     auto eye = glm::vec3(0.0f, -2.5f, 1.5f);

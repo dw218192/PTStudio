@@ -11,9 +11,9 @@ namespace pts::webgpu {
 /// CRTP base providing reusable async WebGPU state machine infrastructure.
 ///
 /// Derived must provide:
-///   - void on_tick()                         — called after event processing each tick
-///   - bool is_pending() const                — true while async callbacks are in flight
-///   - WGPUInstance wgpu_instance() const      — instance handle for event processing
+///   - void on_tick()                         -- called after event processing each tick
+///   - bool is_pending() const                -- true while async callbacks are in flight
+///   - WGPUInstance wgpu_instance() const      -- instance handle for event processing
 template <typename Derived, typename... States>
 class AsyncStateMachine {
    protected:
@@ -49,7 +49,7 @@ class AsyncStateMachine {
     // -- transitions ----------------------------------------------------------
 
     /// Transition to a new state. Safe even when args reference data inside
-    /// the current state — the new state is fully constructed before the old
+    /// the current state -- the new state is fully constructed before the old
     /// one is destroyed.
     template <typename S, typename... Args>
     void transition(Args&&... args) {

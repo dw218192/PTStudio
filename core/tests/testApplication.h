@@ -22,7 +22,7 @@ struct TestDeps {
  * from Application it participates in the Emscripten event loop (needed for
  * WASM tests with PROXY_TO_PTHREAD).
  *
- * Usage — each test translation unit:
+ * Usage -- each test translation unit:
  *   #include "testApplication.h"
  *   TEST_CASE("...") { ... }
  *   PTS_TEST_MAIN()

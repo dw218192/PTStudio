@@ -1,7 +1,8 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+#include <core/rendering/frameGraph.h>
 #include <core/rendering/renderer.h>
 #include <core/rendering/rendererRegistry.h>
-#include <core/rendering/shaderLoader.h>
+#include <core/rendering/shaderc/shaderLoader.h>
 #include <doctest/doctest.h>
 #include <spdlog/spdlog.h>
 
@@ -19,11 +20,6 @@ struct FakePass final : IRenderer {
     auto name() const noexcept -> std::string_view override {
         return "fake";
     }
-    auto is_ready() const noexcept -> bool override {
-        return true;
-    }
-    void do_renderer_setup(const pts::webgpu::Device& /*device*/) override {
-    }
     HdrOutputs do_add_to_frame_graph(FrameGraph& /*fg*/, const PassContext& /*ctx*/) override {
         return {};
     }
@@ -34,34 +30,21 @@ struct AnotherFakePass final : IRenderer {
     auto name() const noexcept -> std::string_view override {
         return "another";
     }
-    auto is_ready() const noexcept -> bool override {
-        return true;
-    }
-    void do_renderer_setup(const pts::webgpu::Device& /*device*/) override {
-    }
     HdrOutputs do_add_to_frame_graph(FrameGraph& /*fg*/, const PassContext& /*ctx*/) override {
         return {};
     }
 };
 
-/// A minimal IPass child (not a renderer — has no children of its own).
+/// A minimal IPass child (not a renderer -- has no children of its own).
 struct FakeChild final : IPass {
     using IPass::IPass;
     auto name() const noexcept -> std::string_view override {
         return "fake_child";
     }
-    auto is_ready() const noexcept -> bool override {
-        return ready;
-    }
-    void do_setup(const pts::webgpu::Device& /*device*/) override {
-        ++setup_count;
-    }
     void draw_imgui() override {
         ++imgui_count;
     }
 
-    bool ready = true;
-    int setup_count = 0;
     int imgui_count = 0;
 };
 
@@ -108,5 +91,5 @@ TEST_CASE("IRenderer::add_pass returns reference and owns child") {
     CHECK(child.name() == "fake_child");
 }
 
-// draw_imgui forwarding is exercised at runtime — ImGui widget state
+// draw_imgui forwarding is exercised at runtime -- ImGui widget state
 // makes it impractical to unit-test without a full render backend.

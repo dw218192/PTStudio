@@ -9,7 +9,7 @@ from pathlib import Path
 from repo_tools.core import is_windows
 
 
-# ── CMake File API Helpers ────────────────────────────────────────────
+# -- CMake File API Helpers --------------------------------------------
 
 
 def _format_workspace_path(root: Path, path: Path) -> str:
@@ -46,7 +46,7 @@ def _load_codemodel(build_dir: Path) -> tuple[dict, Path] | None:
     return codemodel, reply_dir
 
 
-# ── Target Analysis ──────────────────────────────────────────────────
+# -- Target Analysis --------------------------------------------------
 
 
 def _target_has_plugin_sources(target_json: dict, plugins_root: Path) -> bool:
@@ -97,7 +97,7 @@ def _collect_target_compile_info(
     return include_dirs, defines
 
 
-# ── VS Code Generation ───────────────────────────────────────────────
+# -- VS Code Generation -----------------------------------------------
 
 
 def _detect_compiler_path(build_dir: Path) -> str | None:
@@ -368,7 +368,7 @@ def generate_launch_json(
     launch_path.write_text(json.dumps(payload, indent=4) + "\n", encoding="utf-8")
 
 
-# ── Test Target Discovery ────────────────────────────────────────────
+# -- Test Target Discovery --------------------------------------------
 
 
 def _is_test_name(target_name: str) -> bool:

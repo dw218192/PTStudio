@@ -2,17 +2,13 @@
 
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/renderPass.h>
-#include <core/rendering/webgpu/buffer.h>
-#include <core/rendering/webgpu/pipeline.h>
-#include <core/rendering/webgpu/shader.h>
-#include <core/rendering/webgpu/texture.h>
 #include <core/rendering/webgpu/webgpu.h>
 
 #include <cstdint>
-#include <variant>
 
 namespace pts::rendering {
 
+class FallbackPool;
 class ShaderLoader;
 
 /// Screen-space ambient occlusion pass.
@@ -21,8 +17,7 @@ class ShaderLoader;
 /// and bilateral blur.
 class SSAOPass final : public IPass {
    public:
-    explicit SSAOPass(const ShaderLoader& sl);
-    ~SSAOPass() override;
+    using IPass::IPass;
 
     SSAOPass(const SSAOPass&) = delete;
     SSAOPass& operator=(const SSAOPass&) = delete;
@@ -32,20 +27,19 @@ class SSAOPass final : public IPass {
     [[nodiscard]] auto name() const noexcept -> std::string_view override {
         return "ssao";
     }
-    [[nodiscard]] auto is_ready() const noexcept -> bool override;
     [[nodiscard]] auto debug_targets() const noexcept
         -> std::pair<const DebugTarget*, uint32_t> override;
 
     struct Inputs {
-        ResourceHandle depth;
-        ResourceHandle normals;
+        TextureDeclHandle depth;
+        TextureDeclHandle normals;
     };
     struct Outputs {
-        ResourceHandle ssao;
+        TextureDeclHandle ssao;
     };
 
-    void do_setup(const webgpu::Device& device) override;
-    Outputs add_to_frame_graph(FrameGraph& fg, const PassContext& ctx, const Inputs& in);
+    Outputs add_to_frame_graph(FrameGraph& fg, const PassContext& ctx, const Inputs& in,
+                               FallbackPool& fallbacks);
     void draw_imgui() override;
 
     // Tunable parameters (exposed via ImGui)
@@ -57,34 +51,6 @@ class SSAOPass final : public IPass {
 
    private:
     static constexpr uint32_t k_max_kernel_size = 64;
-
-    struct Ready {
-        // AO generation
-        webgpu::ShaderModule gen_shader;
-        webgpu::RenderPipeline gen_pipeline;
-        WGPUBindGroupLayout gen_bgl = nullptr;
-
-        // Blur
-        webgpu::ShaderModule blur_shader;
-        webgpu::RenderPipeline blur_pipeline;
-        WGPUBindGroupLayout blur_bgl = nullptr;
-
-        // Noise texture (4x4 RGBA8Unorm)
-        webgpu::Texture noise_texture;
-        WGPUTextureView noise_view = nullptr;
-
-        // Samplers
-        WGPUSampler depth_sampler = nullptr;   // non-filtering
-        WGPUSampler linear_sampler = nullptr;  // linear filtering
-        WGPUSampler noise_sampler = nullptr;   // repeat wrapping
-
-        // Sample kernel (hemisphere vectors)
-        webgpu::Buffer kernel_buffer;
-    };
-
-    void release_raw_handles();
-
-    std::variant<std::monostate, Ready> m_state;
 };
 
 }  // namespace pts::rendering

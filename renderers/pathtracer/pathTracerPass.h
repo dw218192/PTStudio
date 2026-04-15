@@ -2,21 +2,17 @@
 
 #include <core/rendering/renderer.h>
 #include <core/rendering/webgpu/buffer.h>
-#include <core/rendering/webgpu/pipeline.h>
-#include <core/rendering/webgpu/shader.h>
 #include <core/rendering/webgpu/webgpu.h>
 
 #include <cstdint>
 #include <glm/glm.hpp>
 #include <string_view>
-#include <variant>
 
 namespace pts::editor {
 
 class PathTracerPass final : public rendering::IRenderer {
    public:
     using IRenderer::IRenderer;
-    ~PathTracerPass() override;
 
     PathTracerPass(const PathTracerPass&) = delete;
     PathTracerPass& operator=(const PathTracerPass&) = delete;
@@ -24,9 +20,7 @@ class PathTracerPass final : public rendering::IRenderer {
     PathTracerPass& operator=(PathTracerPass&&) = delete;
 
     [[nodiscard]] auto name() const noexcept -> std::string_view override;
-    [[nodiscard]] auto is_ready() const noexcept -> bool override;
 
-    void do_renderer_setup(const webgpu::Device& device) override;
     void do_draw_imgui() override;
     void draw_viewport_overlay(const ViewportOverlayParams& params) override;
     HdrOutputs do_add_to_frame_graph(rendering::FrameGraph& fg,
@@ -36,23 +30,11 @@ class PathTracerPass final : public rendering::IRenderer {
    private:
     void ensure_pixel_buffers(const webgpu::Device& device, uint32_t width, uint32_t height);
 
-    struct Ready {
-        webgpu::ShaderModule compute_shader;
-        webgpu::ComputePipeline compute_pipeline;
-        webgpu::Buffer uniform_buffer;
-        WGPUBindGroupLayout compute_bgl = nullptr;
-        WGPUBindGroupLayout ibl_bgl = nullptr;
-
-        webgpu::ShaderModule blit_shader;
-        webgpu::RenderPipeline blit_pipeline;
-        WGPUBindGroupLayout blit_bgl = nullptr;
-    };
-
-    std::variant<std::monostate, Ready> m_state;
-
     // Per-pixel buffers
+    webgpu::Buffer m_uniform_buffer;
     webgpu::Buffer m_accum_buffer;
     webgpu::Buffer m_output_buffer;
+    uint64_t m_output_buffer_version = 0;  // bumped when m_output_buffer is recreated
     uint32_t m_pixel_width = 0;
     uint32_t m_pixel_height = 0;
 

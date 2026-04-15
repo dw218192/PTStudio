@@ -1,6 +1,8 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #define NOMINMAX
 #include <core/rendering/halfFloat.h>
+#include <core/rendering/shaderCompiler.h>
+#include <core/rendering/shaderc/shaderLoader.h>
 #include <core/rendering/webgpu/device.h>
 #include <core/rendering/webgpu/pipelineBuilder.h>
 #include <doctest/doctest.h>
@@ -90,7 +92,7 @@ auto readback_buffer(const pts::webgpu::Device& device, WGPUBuffer src, uint64_t
     staging_desc.usage = WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst;
     auto staging = wgpuDeviceCreateBuffer(device.handle(), &staging_desc);
 
-    // Copy src → staging
+    // Copy src -> staging
     WGPUCommandEncoderDescriptor enc_desc = WGPU_COMMAND_ENCODER_DESCRIPTOR_INIT;
     auto encoder = wgpuDeviceCreateCommandEncoder(device.handle(), &enc_desc);
     wgpuCommandEncoderCopyBufferToBuffer(encoder, src, 0, staging, 0, size);
@@ -132,12 +134,22 @@ auto readback_buffer(const pts::webgpu::Device& device, WGPUBuffer src, uint64_t
 struct ComputeFixture {
     std::shared_ptr<spdlog::logger> logger = create_test_logger();
     pts::webgpu::Device device = pts::webgpu::Device::create(logger);
+    pts::rendering::ShaderLoader loader{[this] {
+        pts::rendering::ShaderLoader l(logger);
+        l.register_shader(
+            "editor/generated/shaders/luminance.wgsl", "editor/shaders/luminance.slang",
+            "editor/generated/shaders/luminance.wgsl", editor_resources::get_resource, {"cs_main"});
+        return l;
+    }()};
+    std::unique_ptr<pts::rendering::IShaderCompiler> compiler =
+        pts::rendering::make_shader_compiler(loader);
     pts::webgpu::ShaderModule shader{[&] {
-        auto src = editor_resources::get_resource("editor/generated/shaders/luminance.wgsl");
-        return device.create_shader_module_from_source(*src);
+        auto wgsl =
+            compiler->compile(pts::rendering::ShaderKey{"editor/generated/shaders/luminance.wgsl"});
+        return device.create_shader_module_from_source(wgsl);
     }()};
 
-    WGPUBindGroupLayout bgl = nullptr;
+    WGPUBindGroupLayout desc_layout = nullptr;
     WGPUPipelineLayout pl = nullptr;
     pts::webgpu::ComputePipeline pipeline{[&] {
         WGPUBindGroupLayoutEntry entries[5] = {};
@@ -174,11 +186,11 @@ struct ComputeFixture {
         WGPUBindGroupLayoutDescriptor bgl_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
         bgl_desc.entryCount = 5;
         bgl_desc.entries = entries;
-        bgl = wgpuDeviceCreateBindGroupLayout(device.handle(), &bgl_desc);
+        desc_layout = wgpuDeviceCreateBindGroupLayout(device.handle(), &bgl_desc);
 
         WGPUPipelineLayoutDescriptor pl_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
         pl_desc.bindGroupLayoutCount = 1;
-        pl_desc.bindGroupLayouts = &bgl;
+        pl_desc.bindGroupLayouts = &desc_layout;
         pl = wgpuDeviceCreatePipelineLayout(device.handle(), &pl_desc);
 
         return pts::webgpu::ComputePipelineBuilder(device)
@@ -198,7 +210,7 @@ struct ComputeFixture {
 
     ~ComputeFixture() {
         if (pl) wgpuPipelineLayoutRelease(pl);
-        if (bgl) wgpuBindGroupLayoutRelease(bgl);
+        if (desc_layout) wgpuBindGroupLayoutRelease(desc_layout);
         if (sampler) wgpuSamplerRelease(sampler);
     }
 
@@ -257,7 +269,7 @@ struct ComputeFixture {
         bg_entries[4].textureView = depth_view;
 
         WGPUBindGroupDescriptor bg_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-        bg_desc.layout = bgl;
+        bg_desc.layout = desc_layout;
         bg_desc.entryCount = 5;
         bg_desc.entries = bg_entries;
         auto bind_group = wgpuDeviceCreateBindGroup(device.handle(), &bg_desc);
@@ -298,7 +310,7 @@ struct ComputeFixture {
 TEST_CASE("Auto-exposure: middle gray produces near-zero exposure correction") {
     ComputeFixture fx;
 
-    // Middle gray (0.18) — auto-exposure should compute ~0.0 EV correction
+    // Middle gray (0.18) -- auto-exposure should compute ~0.0 EV correction
     constexpr uint32_t w = 16, h = 16;
     auto tex = create_uniform_hdr_texture(fx.device, w, h, 0.18f, 0.18f, 0.18f);
 
@@ -314,8 +326,8 @@ TEST_CASE("Auto-exposure: middle gray produces near-zero exposure correction") {
     auto result = fx.run(tex, w, h, 2.0f, 1.0f / 60.0f, result_buf);
 
     CHECK(result.frame_count == 1);
-    // Luminance of (0.18, 0.18, 0.18) ≈ 0.18
-    // log2(0.18) ≈ -2.474, ev = -2.474 - log2(0.18) = 0, auto_exposure = 0
+    // Luminance of (0.18, 0.18, 0.18) ~= 0.18
+    // log2(0.18) ~= -2.474, ev = -2.474 - log2(0.18) = 0, auto_exposure = 0
     CHECK(result.auto_exposure == doctest::Approx(0.0f).epsilon(0.15));
 
     wgpuBufferRelease(result_buf);
@@ -325,7 +337,7 @@ TEST_CASE("Auto-exposure: middle gray produces near-zero exposure correction") {
 TEST_CASE("Auto-exposure: bright scene produces negative exposure correction") {
     ComputeFixture fx;
 
-    // Bright scene (10.0 per channel) — should produce negative auto_exposure
+    // Bright scene (10.0 per channel) -- should produce negative auto_exposure
     constexpr uint32_t w = 16, h = 16;
     auto tex = create_uniform_hdr_texture(fx.device, w, h, 10.0f, 10.0f, 10.0f);
 
@@ -340,8 +352,8 @@ TEST_CASE("Auto-exposure: bright scene produces negative exposure correction") {
     auto result = fx.run(tex, w, h, 2.0f, 1.0f / 60.0f, result_buf);
 
     CHECK(result.frame_count == 1);
-    // Luminance = 10.0, log2(10) ≈ 3.322
-    // ev = 3.322 - log2(0.18) ≈ 3.322 + 2.474 ≈ 5.796
+    // Luminance = 10.0, log2(10) ~= 3.322
+    // ev = 3.322 - log2(0.18) ~= 3.322 + 2.474 ~= 5.796
     // auto_exposure = -5.796
     CHECK(result.auto_exposure < -3.0f);
     CHECK(result.auto_exposure > -10.0f);

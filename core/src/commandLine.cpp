@@ -92,8 +92,8 @@ auto CommandLine::get_string(std::string_view name, std::string_view default_val
     -> std::string {
     std::string key(name);
     if (!m_impl->result || !m_impl->registered.count(key)) return std::string(default_value);
-    // Explicitly provided OR has a registered default → as<T>() returns the value.
-    // Not provided AND no registered default → return call-site default.
+    // Explicitly provided OR has a registered default -> as<T>() returns the value.
+    // Not provided AND no registered default -> return call-site default.
     if (m_impl->result->count(key) == 0 && !m_impl->has_default.count(key)) {
         return std::string(default_value);
     }

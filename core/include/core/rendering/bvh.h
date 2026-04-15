@@ -74,7 +74,7 @@ class BVH {
         return m_gpu_nodes;
     }
 
-    /// Scene AABB — just the root node's bounds.
+    /// Scene AABB -- just the root node's bounds.
     [[nodiscard]] AABB scene_bounds() const {
         if (m_nodes.empty()) return {};
         return AABB::from_min_max(m_nodes[0].aabb_min, m_nodes[0].aabb_max);

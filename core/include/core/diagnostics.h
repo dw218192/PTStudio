@@ -89,7 +89,7 @@ inline void print_stacktrace() noexcept {
     } while (0)
 
 // Suppress unused-variable warnings with clear intent.
-#define PTS_UNUSED(x) (void) (x)
+#define UNUSED(x) (void) (x)
 
 // Semantic checks (always-on) - use these for clearer intent
 //

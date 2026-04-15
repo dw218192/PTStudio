@@ -73,7 +73,7 @@ class ImGuiComponent {
 
     /// Widget hovered during the current frame (only valid after begin_window calls).
     [[nodiscard]] auto cur_hovered_widget() const noexcept -> std::string_view;
-    /// Widget hovered during the previous frame (stable — safe to read at any point).
+    /// Widget hovered during the previous frame (stable -- safe to read at any point).
     [[nodiscard]] auto prev_hovered_widget() const noexcept -> std::string_view;
     [[nodiscard]] auto cur_focused_widget() const noexcept -> std::string_view;
 

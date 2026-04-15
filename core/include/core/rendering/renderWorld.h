@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/container/slotMap.h>
 #include <core/diagnostics.h>
 #include <core/rendering/bvh.h>
 #include <core/rendering/iblResources.h>
@@ -64,138 +65,7 @@ struct Light {
 };
 static_assert(sizeof(Light) == 64, "Light must be 64 bytes for GPU alignment");
 
-// --- Slot<T> ---
-
-template <typename T>
-class SlotVector;
-
-template <typename T>
-class Slot {
-   public:
-    const T& data() const {
-        return m_data;
-    }
-    const T* operator->() const {
-        return &m_data;
-    }
-    uint32_t generation() const {
-        return m_generation;
-    }
-    bool active() const {
-        return m_active;
-    }
-    const pxr::SdfPath& get_prim_path() const {
-        return m_prim_path;
-    }
-
-    class WriteGuard {
-       public:
-        T& operator*() {
-            return m_slot->m_data;
-        }
-        T* operator->() {
-            return &m_slot->m_data;
-        }
-        ~WriteGuard() {
-            if (m_slot) ++m_slot->m_generation;
-        }
-        WriteGuard(const WriteGuard&) = delete;
-        WriteGuard& operator=(const WriteGuard&) = delete;
-        WriteGuard(WriteGuard&& o) noexcept : m_slot(o.m_slot) {
-            o.m_slot = nullptr;
-        }
-        WriteGuard& operator=(WriteGuard&&) = delete;
-
-       private:
-        friend class Slot;
-        explicit WriteGuard(Slot& s) : m_slot(&s) {
-        }
-        Slot* m_slot;
-    };
-
-    [[nodiscard]] WriteGuard write() {
-        return WriteGuard{*this};
-    }
-    void activate() {
-        m_active = true;
-        ++m_generation;
-    }
-    void deactivate() {
-        m_active = false;
-        ++m_generation;
-    }
-
-   private:
-    friend class SlotVector<T>;
-    T m_data{};
-    pxr::SdfPath m_prim_path;
-    uint32_t m_generation = 0;
-    bool m_active = false;
-};
-
-// --- SlotVector<T> ---
-
-template <typename T>
-class SlotVector {
-   public:
-    uint32_t alloc() {
-        uint32_t idx;
-        if (!m_free.empty()) {
-            idx = m_free.back();
-            m_free.pop_back();
-            // Reset data to default
-            auto w = m_slots[idx].write();
-            *w = T{};
-        } else {
-            m_slots.push_back(Slot<T>{});
-            idx = static_cast<uint32_t>(m_slots.size() - 1);
-        }
-        m_slots[idx].m_prim_path = pxr::SdfPath();
-        m_slots[idx].activate();
-        return idx;
-    }
-
-    void free(uint32_t i) {
-        PRECONDITION(i < m_slots.size());
-        PRECONDITION(m_slots[i].active());
-        m_slots[i].deactivate();
-        m_free.push_back(i);
-    }
-
-    const Slot<T>& operator[](uint32_t i) const {
-        PRECONDITION(i < m_slots.size());
-        return m_slots[i];
-    }
-
-    typename Slot<T>::WriteGuard write(uint32_t i) {
-        PRECONDITION(i < m_slots.size());
-        return m_slots[i].write();
-    }
-
-    uint32_t size() const {
-        return static_cast<uint32_t>(m_slots.size());
-    }
-
-    boost::span<const Slot<T>> span() const {
-        return {m_slots.data(), m_slots.size()};
-    }
-
-    void set_prim_path(uint32_t i, pxr::SdfPath path) {
-        PRECONDITION(i < m_slots.size());
-        m_slots[i].m_prim_path = std::move(path);
-    }
-
-    void clear() {
-        m_slots.clear();
-        m_free.clear();
-    }
-
-   private:
-    std::vector<Slot<T>> m_slots;
-    std::vector<uint32_t> m_free;
-};
-
-// --- Data structs (plain POD, no version/active — those live in Slot<>) ---
+// --- Data structs ---
 
 struct MeshData {
     webgpu::Buffer vertex_buffer;  // interleaved (pos+normal+color+mat_idx)
@@ -245,8 +115,7 @@ struct CameraData {
     bool orthographic{false};
 };
 
-/// Prim path → slot lookup entry. A single map replaces separate
-/// prim_to_object / prim_to_light maps for better cache locality.
+/// Prim path -> slot lookup entry.
 struct PrimSlot {
     enum class Kind : uint8_t { Object, Light, Camera };
     Kind kind;
@@ -259,8 +128,8 @@ struct ShadowInfo {
     glm::mat4 light_vp{1.0f};  // 64 bytes
     float texel_size = 0.0f;   //  4 bytes
     float normal_bias = 0.0f;  //  4 bytes
-    uint32_t has_shadow = 0;   //  4 bytes — 0 = no shadow, 1 = active
-    uint32_t layer = 0;        //  4 bytes — texture array layer index
+    uint32_t has_shadow = 0;   //  4 bytes -- 0 = no shadow, 1 = active
+    uint32_t layer = 0;        //  4 bytes -- texture array layer index
 };
 static_assert(sizeof(ShadowInfo) == 80, "ShadowInfo must be 80 bytes for GPU alignment");
 
@@ -274,6 +143,12 @@ struct GPUInstance {
     uint32_t material_index{UINT32_MAX};
 };
 static_assert(sizeof(GPUInstance) == 144);
+
+// SlotMap type aliases for world data.
+using ObjectSlotMap = container::SlotMap<pxr::SdfPath, ObjectData>;
+using MeshSlotMap = container::SlotMap<pxr::SdfPath, MeshData>;
+using LightSlotMap = container::SlotMap<pxr::SdfPath, LightData>;
+using CameraSlotMap = container::SlotMap<pxr::SdfPath, CameraData>;
 
 struct RenderWorld;
 struct PreparedSceneData;
@@ -297,31 +172,40 @@ class SyncScope {
         return m_world;
     }
 
-    uint32_t alloc_object_slot();
-    uint32_t alloc_mesh_slot();
-    uint32_t alloc_light_slot();
-    uint32_t alloc_camera_slot();
-    void free_object_slot(uint32_t i);
-    void free_mesh_slot(uint32_t i);
-    void free_light_slot(uint32_t i);
-    void free_camera_slot(uint32_t i);
+    /// Allocate a new slot keyed by prim path. Returns the stable index.
+    uint32_t alloc_object(const pxr::SdfPath& path);
+    uint32_t alloc_mesh(const pxr::SdfPath& path);
+    uint32_t alloc_light(const pxr::SdfPath& path);
+    uint32_t alloc_camera(const pxr::SdfPath& path);
 
-    // Write guards for adapter/sync code.
-    Slot<ObjectData>::WriteGuard write_object(uint32_t i);
-    Slot<MeshData>::WriteGuard write_mesh(uint32_t i);
-    Slot<LightData>::WriteGuard write_light(uint32_t i);
-    Slot<CameraData>::WriteGuard write_camera(uint32_t i);
+    /// Erase a slot by prim path.
+    void free_object(const pxr::SdfPath& path);
+    void free_mesh(const pxr::SdfPath& path);
+    void free_light(const pxr::SdfPath& path);
+    void free_camera(const pxr::SdfPath& path);
 
-    // Read-only accessors through scope (for prim_path lookup etc.)
-    const Slot<ObjectData>& object(uint32_t i) const;
-    const Slot<MeshData>& mesh(uint32_t i) const;
-    const Slot<LightData>& light(uint32_t i) const;
-    const Slot<CameraData>& camera(uint32_t i) const;
+    /// In-place mutation; bumps version after fn returns. Defined after
+    /// RenderWorld below -- non-dependent access to m_world.m_* requires
+    /// the type to be complete at template parse time (Clang enforces,
+    /// MSVC is lenient).
+    template <class Fn>
+    void mutate_object(uint32_t i, Fn&& fn);
+    template <class Fn>
+    void mutate_mesh(uint32_t i, Fn&& fn);
+    template <class Fn>
+    void mutate_light(uint32_t i, Fn&& fn);
+    template <class Fn>
+    void mutate_camera(uint32_t i, Fn&& fn);
+
+    // Read-only accessors by index.
+    const ObjectData& object(uint32_t i) const;
+    const MeshData& mesh(uint32_t i) const;
+    const LightData& light(uint32_t i) const;
+    const CameraData& camera(uint32_t i) const;
 
     Material& material(uint32_t i);
     std::vector<Material>& materials();
     std::unordered_map<std::string, uint32_t>& material_cache();
-    void set_prim_path(uint32_t slot_index, PrimSlot::Kind kind, pxr::SdfPath path);
 
     /// Load a texture from disk, deduplicate by path. Returns layer index
     /// or UINT32_MAX on failure. Bumps texture version.
@@ -336,24 +220,30 @@ struct RenderWorld {
         m_materials.push_back(Material{});
     }
 
-    // Read-only accessors
-    boost::span<const Slot<ObjectData>> get_objects() const;
-    boost::span<const Slot<MeshData>> get_meshes() const;
-    boost::span<const Slot<LightData>> get_lights() const;
-    boost::span<const Slot<CameraData>> get_cameras() const;
+    // Read-only accessors returning const references to SlotMaps.
+    const ObjectSlotMap& get_objects() const;
+    const MeshSlotMap& get_meshes() const;
+    const LightSlotMap& get_lights() const;
+    const CameraSlotMap& get_cameras() const;
     boost::span<const Material> get_materials() const;
 
     int find_object_by_prim(const pxr::SdfPath& path) const;
     int find_light_by_prim(const pxr::SdfPath& path) const;
     int find_camera_by_prim(const pxr::SdfPath& path) const;
 
-    /// Iterate prim slots without exposing the container.
+    /// Iterate all prim slots across objects, lights, and cameras.
     /// fn(const pxr::SdfPath& path, PrimSlot slot)
     template <typename F>
     void for_each_prim(F&& fn) const {
-        for (const auto& [path, slot] : m_prim_slots) {
-            fn(path, slot);
-        }
+        m_objects.for_each([&](const pxr::SdfPath& path, const ObjectData&) {
+            fn(path, PrimSlot{PrimSlot::Kind::Object, m_objects.find(path).index()});
+        });
+        m_lights.for_each([&](const pxr::SdfPath& path, const LightData&) {
+            fn(path, PrimSlot{PrimSlot::Kind::Light, m_lights.find(path).index()});
+        });
+        m_cameras.for_each([&](const pxr::SdfPath& path, const CameraData&) {
+            fn(path, PrimSlot{PrimSlot::Kind::Camera, m_cameras.find(path).index()});
+        });
     }
 
     // GPU buffer management
@@ -411,7 +301,9 @@ struct RenderWorld {
 
     /// Update IBL resources from the current dome light state.
     /// Inits BRDF LUT on first call, then loads HDR or sets uniform color.
-    void update_ibl(const webgpu::Device& device, WGPUQueue queue, UpAxis up_axis = UpAxis::Y);
+    /// The sampler is a trilinear-clamp sampler (e.g. from FrameGraph::sampler()).
+    void update_ibl(const webgpu::Device& device, WGPUQueue queue, WGPUSampler ibl_sampler,
+                    UpAxis up_axis = UpAxis::Y);
 
     IblResources& ibl_resources();
     const IblResources& ibl_resources() const;
@@ -428,7 +320,7 @@ struct RenderWorld {
 
     void clear();
 
-    // Category version counters — bumped by SyncScope when any slot in that
+    // Category version counters -- bumped by SyncScope when any slot in that
     // category changes.  Used internally by IPass::get_or_create_pass_data
     // and prepare_gpu_buffers.  Prefer the pass_data API over reading these
     // directly in renderer code.
@@ -436,41 +328,66 @@ struct RenderWorld {
     uint32_t get_light_version() const;
     uint32_t get_material_version() const;
 
+    /// Per-kind monotonic version accessors. uint64_t to avoid wraparound.
+    /// Dependents (e.g. FG import_buffer with external_version) pass these
+    /// into DepTrackedSlotMap deps so descriptors rebuild on world mutations
+    /// affecting the bound buffers.
+    uint64_t lights_version() const {
+        return m_lights_version;
+    }
+    uint64_t materials_version() const {
+        return m_materials_version;
+    }
+    uint64_t scene_textures_version() const {
+        return m_scene_textures_version;
+    }
+    uint64_t instances_version() const {
+        return m_instances_version;
+    }
+    uint64_t triangles_version() const {
+        return m_triangles_version;
+    }
+    uint64_t bvh_version() const {
+        return m_bvh_version;
+    }
+
    private:
     friend class SyncScope;
 
-    SlotVector<MeshData> m_meshes;
-    SlotVector<ObjectData> m_objects;
+    MeshSlotMap m_meshes;
+    ObjectSlotMap m_objects;
     std::vector<Material> m_materials;
-    SlotVector<LightData> m_lights;
-    SlotVector<CameraData> m_cameras;
+    LightSlotMap m_lights;
+    CameraSlotMap m_cameras;
 
-    /// Material path → material index (deduplication cache).
+    /// Material path -> material index (deduplication cache).
     std::unordered_map<std::string, uint32_t> m_material_cache;
 
-    /// Prim path → slot (object or light). SdfPath has operator< and O(1)
-    /// equality via interned strings.
-    boost::container::flat_map<pxr::SdfPath, PrimSlot> m_prim_slots;
-
     uint32_t m_mesh_version = 0;
-    uint32_t m_light_version = 0;
-    uint32_t m_material_version = 0;
+    // Per-kind monotonic versions. Bumped at mutation points. uint64_t to
+    // avoid wraparound across long sessions.
+    uint64_t m_lights_version = 0;
+    uint64_t m_materials_version = 0;
+    uint64_t m_scene_textures_version = 0;
+    uint64_t m_instances_version = 0;
+    uint64_t m_triangles_version = 0;
+    uint64_t m_bvh_version = 0;
 
     // GPU buffer state
     webgpu::Buffer m_gpu_light_buffer;
     webgpu::Buffer m_gpu_material_buffer;
     uint32_t m_gpu_light_count = 0;
-    uint32_t m_cached_light_version = UINT32_MAX;
-    uint32_t m_cached_material_version = UINT32_MAX;
+    uint64_t m_cached_lights_version = UINT64_MAX;
+    uint64_t m_cached_materials_version = UINT64_MAX;
 
-    // Per-slot generation cache for partial light updates
-    std::vector<uint32_t> m_cached_light_generations;
+    // Per-slot version cache for partial light updates
+    std::vector<uint64_t> m_cached_light_versions;
 
     // Two-level acceleration structure
     struct BlasData {
         BVH bvh;                           // local-space BVH tree
         std::vector<PackedTriangle> tris;  // local-space triangles (BVH-reordered)
-        uint32_t generation = UINT32_MAX;  // mesh slot generation when built
+        uint64_t version = UINT64_MAX;     // mesh slot version when built
     };
     std::unordered_map<uint32_t, BlasData> m_blas_cache;
 
@@ -480,8 +397,7 @@ struct RenderWorld {
     webgpu::Buffer m_gpu_instances;  // GPUInstance array
     uint32_t m_tlas_node_count = 0;
     uint32_t m_instance_count = 0;
-    uint32_t m_transform_version = 0;
-    uint32_t m_cached_transform_version = UINT32_MAX;
+    uint64_t m_cached_instances_version = UINT64_MAX;
     uint32_t m_cached_geometry_version = UINT32_MAX;
 
     // Texture array state
@@ -495,20 +411,38 @@ struct RenderWorld {
     WGPUTexture m_texture_array = nullptr;
     WGPUTextureView m_texture_array_view = nullptr;
     WGPUSampler m_texture_sampler = nullptr;
-    uint32_t m_texture_version = 0;
-    uint32_t m_cached_texture_version = UINT32_MAX;
+    uint64_t m_cached_scene_textures_version = UINT64_MAX;
     uint32_t m_texture_size = 1024;
 
-    // Per-pass data cache — keyed by pass identity (this pointer)
+    // Per-pass data cache -- keyed by pass identity (this pointer)
     std::unordered_map<const void*, PassDataMap> m_pass_data_cache;
 
     // IBL state
     std::unique_ptr<IblPipelines> m_ibl_pipelines;
     IblResources m_ibl;
     std::string m_ibl_env_path;                 // currently loaded HDR path (empty = uniform)
-    uint32_t m_ibl_light_version = UINT32_MAX;  // light version when IBL was last updated
+    uint64_t m_ibl_light_version = UINT64_MAX;  // light version when IBL was last updated
     glm::vec3 m_ibl_uniform_color{-1.0f};       // sentinel: never matches real color
     UpAxis m_ibl_up_axis = UpAxis::Y;           // up axis when IBL was last converted
 };
+
+// SyncScope mutate_* template definitions -- deferred until after
+// RenderWorld is complete (see note at the forward declarations above).
+template <class Fn>
+void SyncScope::mutate_object(uint32_t i, Fn&& fn) {
+    m_world.m_objects.mutate_at(i, std::forward<Fn>(fn));
+}
+template <class Fn>
+void SyncScope::mutate_mesh(uint32_t i, Fn&& fn) {
+    m_world.m_meshes.mutate_at(i, std::forward<Fn>(fn));
+}
+template <class Fn>
+void SyncScope::mutate_light(uint32_t i, Fn&& fn) {
+    m_world.m_lights.mutate_at(i, std::forward<Fn>(fn));
+}
+template <class Fn>
+void SyncScope::mutate_camera(uint32_t i, Fn&& fn) {
+    m_world.m_cameras.mutate_at(i, std::forward<Fn>(fn));
+}
 
 }  // namespace pts::rendering

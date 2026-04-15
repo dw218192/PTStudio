@@ -10,16 +10,20 @@ find_package(doctest REQUIRED)
 # Test executables
 set(TEST_NAMES)
 
-# Non-GPU tests — run on all platforms including Emscripten (via node.js)
+# Non-GPU tests -- run on all platforms including Emscripten (via node.js)
 list(APPEND TEST_NAMES testCommandLine)
 set(testCommandLine_source testCommandLine.cpp)
 set(testCommandLine_libs core)
+
+list(APPEND TEST_NAMES testDepTrackedSlotMap)
+set(testDepTrackedSlotMap_source testDepTrackedSlotMap.cpp)
+set(testDepTrackedSlotMap_libs core)
 
 list(APPEND TEST_NAMES testAsyncStateMachine)
 set(testAsyncStateMachine_source testAsyncStateMachine.cpp)
 set(testAsyncStateMachine_libs core)
 
-# GPU tests — require native WebGPU (Dawn); no browser/node.js GPU access
+# GPU tests -- require native WebGPU (Dawn); no browser/node.js GPU access
 if(NOT EMSCRIPTEN)
     list(APPEND TEST_NAMES testWebGpu)
     set(testWebGpu_source testWebGpu.cpp)
@@ -42,6 +46,10 @@ if(NOT EMSCRIPTEN)
     set(testShadowMapPass_source testShadowMapPass.cpp)
     set(testShadowMapPass_libs core)
 
+    list(APPEND TEST_NAMES testContactShadowPass)
+    set(testContactShadowPass_source testContactShadowPass.cpp)
+    set(testContactShadowPass_libs core)
+
     list(APPEND TEST_NAMES testPipelineBuilder)
     set(testPipelineBuilder_source testPipelineBuilder.cpp)
     set(testPipelineBuilder_libs core)
@@ -59,6 +67,17 @@ if(NOT EMSCRIPTEN)
     set(testGeometricAdapters_source testGeometricAdapters.cpp)
     set(testGeometricAdapters_libs core)
     set(testGeometricAdapters_includes ${CMAKE_CURRENT_SOURCE_DIR}/generated)
+
+    # SlangCompiler - native only (requires libslang)
+    list(APPEND TEST_NAMES testSlangCompiler)
+    set(testSlangCompiler_source testSlangCompiler.cpp)
+    set(testSlangCompiler_libs core)
+    set(testSlangCompiler_includes ${CMAKE_CURRENT_SOURCE_DIR}/generated)
+
+    # SlangMetadata emitter - native only (requires libslang)
+    list(APPEND TEST_NAMES testSlangMetadata)
+    set(testSlangMetadata_source testSlangMetadata.cpp)
+    set(testSlangMetadata_libs core)
 endif()
 
 # PropertyDescriptor / get_properties - no GPU needed, just USD stages

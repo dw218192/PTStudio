@@ -44,9 +44,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
-      # Windows must finish before Emscripten starts (USDZ scene dependency).
-      # max-parallel: 1 ensures sequential execution in platform order.
-      max-parallel: 1
       matrix:
         platform: [windows-x64, emscripten]
         build_type: [Release]
@@ -108,29 +105,18 @@ jobs:
           restore-keys: |
             ${{ matrix.platform }}-conan-${{ hashFiles('conanfile.py') }}
 
-      # Windows prebuild generates USDZ scenes; upload them so the
-      # Emscripten build can embed them in WASM via --embed-file.
-      # usdz_pack is a native host tool that cannot cross-compile to WASM.
-      - name: Download USDZ scenes
+      # usdz_pack is a native host tool that can't cross-compile to WASM.
+      # Emscripten CI builds it natively first (via its own Conan package,
+      # isolated from the root project's Conan graph), then the main build
+      # picks up the generated .usdz scenes from assets/scenes/.
+      - name: Build host tools (native Linux)
         if: matrix.platform == 'emscripten'
-        uses: actions/download-artifact@v4
-        with:
-          name: usdz-scenes
-          path: assets/scenes/
+        run: ./repo build --platform linux-x64 --build-type ${{ matrix.build_type }} --host-tools-only
 
       - name: Build project
         run: ${{ matrix.repo }} build --platform ${{ matrix.platform }} --build-type ${{ matrix.build_type }}
         env:
           PTSTUDIO_GPU_BACKEND: ${{ matrix.platform == 'windows-x64' && 'D3D12' || '' }}
-
-      - name: Upload USDZ scenes
-        if: matrix.platform == 'windows-x64'
-        uses: actions/upload-artifact@v4
-        with:
-          name: usdz-scenes
-          path: assets/scenes/*.usdz
-          if-no-files-found: error
-          retention-days: 3
 
       - name: Package build artifacts
         run: ${{ matrix.repo }} package --platform ${{ matrix.platform }} --build-type ${{ matrix.build_type }}

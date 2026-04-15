@@ -1,7 +1,7 @@
 ---
 name: rotate-branch
 description: After a PR is merged, prune the old dev branch and start a fresh one off develop.
-argument-hint: "[branch name] — defaults to dev/rendering-next"
+argument-hint: "[branch name] -- defaults to dev/rendering-next"
 ---
 
 Rotate a dev branch after its PR has been merged into develop.

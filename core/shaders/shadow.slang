@@ -7,10 +7,10 @@ struct ShadowLightVP {
 };
 
 [[vk::binding(0, 0)]]
-ConstantBuffer<ShadowModel> obj;
+[DynamicBuffer] ConstantBuffer<ShadowModel> obj;
 
 [[vk::binding(1, 0)]]
-ConstantBuffer<ShadowLightVP> light;
+[DynamicBuffer] ConstantBuffer<ShadowLightVP> light;
 
 struct VsIn {
     float3 position : POSITION;

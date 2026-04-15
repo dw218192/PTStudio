@@ -26,7 +26,8 @@ void MaterialAdapter::sync(pxr::UsdPrim prim, SyncScope& scope) {
     auto mat_path = mat_prim.GetPath().GetString();
     auto& cache = scope.material_cache();
     auto it = cache.find(mat_path);
-    if (it == cache.end()) return;  // material not yet in cache — will be resolved on geometry sync
+    if (it == cache.end())
+        return;  // material not yet in cache -- will be resolved on geometry sync
 
     // Re-read properties and texture connections from the UsdPreviewSurface shader
     auto surface = mat_prim.ComputeSurfaceSource();

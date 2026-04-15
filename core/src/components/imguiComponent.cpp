@@ -10,7 +10,7 @@
 
 namespace pts {
 
-// ── FrameScope ──────────────────────────────────────────────────────
+// -- FrameScope ------------------------------------------------------
 
 ImGuiComponent::FrameScope::FrameScope(ImGuiComponent& owner) : m_owner{&owner} {
     m_owner->begin_frame();
@@ -28,7 +28,7 @@ void ImGuiComponent::FrameScope::render_into(WGPURenderPassEncoder pass) {
     m_owner = nullptr;
 }
 
-// ── ImGuiComponent ──────────────────────────────────────────────────
+// -- ImGuiComponent --------------------------------------------------
 
 ImGuiComponent::ImGuiComponent(rendering::IViewport& viewport,
                                rendering::WebGpuContext& webgpu_context,

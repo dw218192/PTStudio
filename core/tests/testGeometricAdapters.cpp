@@ -33,7 +33,7 @@
 
 #include "testApplication.h"
 
-// can_adapt tests — no GPU needed
+// can_adapt tests -- no GPU needed
 
 TEST_CASE("Adapters do not cross-match prim types") {
     auto stage = pxr::UsdStage::CreateInMemory();
@@ -73,26 +73,26 @@ TEST_CASE("populate_from_stage with progress builds RenderWorld") {
     CHECK(!progress.status().empty());
 
     // Both prims should be synced (pseudoroot is not adapted, but the two shapes are)
-    auto objects = world.get_objects();
+    const auto& objects = world.get_objects();
     size_t active_count = 0;
-    for (const auto& obj : objects) {
-        if (obj.active()) ++active_count;
+    for (const auto& e : objects.span_raw()) {
+        if (e.active) ++active_count;
     }
     CHECK(active_count == 2);
 
     // CPU data present, no GPU buffers
-    auto meshes = world.get_meshes();
-    for (const auto& obj : objects) {
-        if (!obj.active()) continue;
-        const auto& mesh = meshes[obj->mesh_index];
-        CHECK(mesh->cpu_vertices.size() > 0);
-        CHECK(mesh->cpu_indices.size() > 0);
-        CHECK(mesh->vertex_buffer.handle() == nullptr);
-        CHECK(mesh->index_buffer.handle() == nullptr);
+    const auto& meshes = world.get_meshes();
+    for (const auto& e : objects.span_raw()) {
+        if (!e.active) continue;
+        const auto& mesh = meshes.at(e.value.mesh_index);
+        CHECK(mesh.cpu_vertices.size() > 0);
+        CHECK(mesh.cpu_indices.size() > 0);
+        CHECK(mesh.vertex_buffer.handle() == nullptr);
+        CHECK(mesh.index_buffer.handle() == nullptr);
     }
 }
 
-// PrimFactory tests — no GPU needed
+// PrimFactory tests -- no GPU needed
 
 TEST_CASE("Geometry adapters each return exactly one factory") {
     CHECK(pts::rendering::CubeAdapter::instance().get_factories().size() == 1);
@@ -171,7 +171,7 @@ TEST_CASE("Registry collects factories from adapters") {
     CHECK(has_lights);
 }
 
-// GPU-dependent tests — sync() uploads mesh data to the GPU
+// GPU-dependent tests -- sync() uploads mesh data to the GPU
 
 #ifndef __EMSCRIPTEN__
 
@@ -191,9 +191,9 @@ struct TestFixture {
     }
 
     const pts::rendering::MeshData& synced_mesh() const {
-        auto objects = world.get_objects();
-        auto meshes = world.get_meshes();
-        return meshes[objects[0]->mesh_index].data();
+        auto& objects = world.get_objects();
+        auto& meshes = world.get_meshes();
+        return meshes.at(objects.at(0).mesh_index);
     }
 };
 
@@ -215,7 +215,7 @@ TEST_CASE("CubeAdapter - basic cube") {
     f.world.upload_all_meshes(f.device);
 
     REQUIRE(f.world.get_objects().size() == 1);
-    CHECK(f.world.get_objects()[0].get_prim_path() == pxr::SdfPath("/Cube"));
+    CHECK(f.world.find_object_by_prim(pxr::SdfPath("/Cube")) >= 0);
     // 36 indices (2 tris per face x 6 faces)
     CHECK(f.synced_mesh().index_count == 36);
     CHECK(f.synced_mesh().cpu_indices.size() == 36);
@@ -331,7 +331,7 @@ TEST_CASE("test_cube.usda Cube prim is adapted by registry") {
     for (auto* adapter : pts::rendering::k_scene_adapters()) {
         if (!adapter->can_adapt(cube_prim)) continue;
         adapter->sync(cube_prim, scope);
-        REQUIRE(f.world.get_objects().size() == 1);
+        CHECK(f.world.get_objects().size() == 1);
         CHECK(f.synced_mesh().index_count > 0);
         adapted = true;
         break;
@@ -348,9 +348,10 @@ TEST_CASE("CPU-only sync populates vertices and indices without GPU buffers") {
     pts::rendering::populate_from_stage(world, stage);
 
     REQUIRE(world.get_objects().size() == 1);
-    CHECK(world.get_objects()[0].get_prim_path() == pxr::SdfPath("/Cube"));
+    CHECK(world.find_object_by_prim(pxr::SdfPath("/Cube")) >= 0);
 
-    auto const& mesh = world.get_meshes()[world.get_objects()[0]->mesh_index].data();
+    auto const& obj = world.get_objects().at(0);
+    auto const& mesh = world.get_meshes().at(obj.mesh_index);
     CHECK(mesh.index_count == 36);
     CHECK(mesh.cpu_indices.size() == 36);
     CHECK(mesh.cpu_vertices.size() > 0);
@@ -371,7 +372,7 @@ TEST_CASE("sync_prim updates existing object") {
     REQUIRE(f.world.get_objects().size() == 1);
     auto initial_version = f.world.get_mesh_version();
 
-    // Re-sync the same prim — should update in place, not add a new object
+    // Re-sync the same prim -- should update in place, not add a new object
     {
         auto scope = f.world.begin_sync();
         pts::rendering::sync_prim(scope, stage, pxr::SdfPath("/Cube"));
@@ -390,8 +391,8 @@ TEST_CASE("remove_prim frees object and mesh slots") {
     pts::rendering::populate_from_stage(f.world, stage);
     f.world.upload_all_meshes(f.device);
 
-    REQUIRE(f.world.get_objects().size() == 1);
-    CHECK(f.world.get_objects()[0].active());
+    REQUIRE(f.world.get_objects().capacity() >= 1);
+    CHECK(f.world.get_objects().active_at(0));
     auto initial_version = f.world.get_mesh_version();
 
     {
@@ -399,7 +400,7 @@ TEST_CASE("remove_prim frees object and mesh slots") {
         pts::rendering::remove_prim(scope, pxr::SdfPath("/Cube"));
     }
 
-    CHECK(!f.world.get_objects()[0].active());
+    CHECK(!f.world.get_objects().active_at(0));
     CHECK(f.world.find_object_by_prim(pxr::SdfPath("/Cube")) == -1);
     CHECK(f.world.get_mesh_version() > initial_version);
 }
@@ -415,14 +416,14 @@ TEST_CASE("sync_prim with invalid path calls remove_prim") {
 
     REQUIRE(f.world.get_objects().size() == 1);
 
-    // Remove from stage, then sync — should remove from world
+    // Remove from stage, then sync -- should remove from world
     stage->RemovePrim(pxr::SdfPath("/Cube"));
     {
         auto scope = f.world.begin_sync();
         pts::rendering::sync_prim(scope, stage, pxr::SdfPath("/Cube"));
     }
 
-    CHECK(!f.world.get_objects()[0].active());
+    CHECK(!f.world.get_objects().active_at(0));
     CHECK(f.world.find_object_by_prim(pxr::SdfPath("/Cube")) == -1);
 }
 
@@ -435,7 +436,7 @@ TEST_CASE("sync_object reads UsdGeomImageable visibility") {
     TestFixture f("test_visibility");
     pts::rendering::populate_from_stage(f.world, stage);
 
-    auto objects = f.world.get_objects();
+    const auto& objects = f.world.get_objects();
     REQUIRE(objects.size() == 2);
 
     int vis_idx = f.world.find_object_by_prim(pxr::SdfPath("/Visible"));
@@ -443,8 +444,8 @@ TEST_CASE("sync_object reads UsdGeomImageable visibility") {
     REQUIRE(vis_idx >= 0);
     REQUIRE(hid_idx >= 0);
 
-    CHECK(objects[static_cast<uint32_t>(vis_idx)]->visible == true);
-    CHECK(objects[static_cast<uint32_t>(hid_idx)]->visible == false);
+    CHECK(objects.at(static_cast<uint32_t>(vis_idx)).visible == true);
+    CHECK(objects.at(static_cast<uint32_t>(hid_idx)).visible == false);
 }
 
 TEST_CASE("visibility updates on re-sync") {
@@ -454,9 +455,8 @@ TEST_CASE("visibility updates on re-sync") {
     TestFixture f("test_visibility_resync");
     pts::rendering::populate_from_stage(f.world, stage);
 
-    auto objects = f.world.get_objects();
-    REQUIRE(objects.size() == 1);
-    CHECK(objects[0]->visible == true);
+    REQUIRE(f.world.get_objects().size() == 1);
+    CHECK(f.world.get_objects().at(0).visible == true);
 
     // Hide the cube and re-sync
     pxr::UsdGeomImageable(cube).GetVisibilityAttr().Set(pxr::UsdGeomTokens->invisible);
@@ -465,8 +465,7 @@ TEST_CASE("visibility updates on re-sync") {
         pts::rendering::sync_prim(scope, stage, pxr::SdfPath("/Cube"));
     }
 
-    objects = f.world.get_objects();
-    CHECK(objects[0]->visible == false);
+    CHECK(f.world.get_objects().at(0).visible == false);
 
     // Make visible again via "inherited"
     pxr::UsdGeomImageable(cube).GetVisibilityAttr().Set(pxr::UsdGeomTokens->inherited);
@@ -475,8 +474,7 @@ TEST_CASE("visibility updates on re-sync") {
         pts::rendering::sync_prim(scope, stage, pxr::SdfPath("/Cube"));
     }
 
-    objects = f.world.get_objects();
-    CHECK(objects[0]->visible == true);
+    CHECK(f.world.get_objects().at(0).visible == true);
 }
 
 // --- GeomSubset material binding tests ---
@@ -496,10 +494,7 @@ pxr::UsdGeomMesh define_quad_fan_mesh(const pxr::UsdStageRefPtr& stage) {
 }
 
 size_t count_active_objects(const pts::rendering::RenderWorld& world) {
-    size_t n = 0;
-    for (const auto& obj : world.get_objects())
-        if (obj.active()) ++n;
-    return n;
+    return world.get_objects().size();
 }
 
 }  // namespace
@@ -508,7 +503,7 @@ TEST_CASE("GeomSubset materialBind creates per-subset objects") {
     auto stage = pxr::UsdStage::CreateInMemory();
     auto mesh = define_quad_fan_mesh(stage);
 
-    // Two subsets, each covering 2 faces — full coverage, no remainder.
+    // Two subsets, each covering 2 faces -- full coverage, no remainder.
     auto sub_a = pxr::UsdGeomSubset::Define(stage, pxr::SdfPath("/Mesh/SubA"));
     sub_a.GetFamilyNameAttr().Set(pxr::TfToken("materialBind"));
     sub_a.GetElementTypeAttr().Set(pxr::TfToken("face"));
@@ -532,26 +527,25 @@ TEST_CASE("GeomSubset materialBind creates per-subset objects") {
     CHECK(world.find_object_by_prim(pxr::SdfPath("/Mesh/SubA")) >= 0);
     CHECK(world.find_object_by_prim(pxr::SdfPath("/Mesh/SubB")) >= 0);
 
-    // Each subset has 2 faces → 2 triangles → 6 indices.
-    auto meshes = world.get_meshes();
-    auto objects = world.get_objects();
-    for (const auto& obj : objects) {
-        if (!obj.active()) continue;
-        CHECK(meshes[obj->mesh_index]->index_count == 6);
-    }
+    // Each subset has 2 faces -> 2 triangles -> 6 indices.
+    const auto& meshes = world.get_meshes();
+    const auto& objects = world.get_objects();
+    objects.for_each([&](const pxr::SdfPath&, const pts::rendering::ObjectData& obj) {
+        CHECK(meshes.at(obj.mesh_index).index_count == 6);
+    });
 
     // Materials should be distinct.
     int ia = world.find_object_by_prim(pxr::SdfPath("/Mesh/SubA"));
     int ib = world.find_object_by_prim(pxr::SdfPath("/Mesh/SubB"));
-    CHECK(objects[static_cast<uint32_t>(ia)]->material_index !=
-          objects[static_cast<uint32_t>(ib)]->material_index);
+    CHECK(objects.at(static_cast<uint32_t>(ia)).material_index !=
+          objects.at(static_cast<uint32_t>(ib)).material_index);
 }
 
 TEST_CASE("GeomSubset with remainder emits mesh-level object for uncovered faces") {
     auto stage = pxr::UsdStage::CreateInMemory();
     auto mesh = define_quad_fan_mesh(stage);
 
-    // One subset covering faces 0,1 — faces 2,3 are remainder.
+    // One subset covering faces 0,1 -- faces 2,3 are remainder.
     auto sub = pxr::UsdGeomSubset::Define(stage, pxr::SdfPath("/Mesh/Sub"));
     sub.GetFamilyNameAttr().Set(pxr::TfToken("materialBind"));
     sub.GetElementTypeAttr().Set(pxr::TfToken("face"));
@@ -568,13 +562,13 @@ TEST_CASE("GeomSubset with remainder emits mesh-level object for uncovered faces
     CHECK(world.find_object_by_prim(pxr::SdfPath("/Mesh/Sub")) >= 0);
     CHECK(world.find_object_by_prim(pxr::SdfPath("/Mesh")) >= 0);
 
-    auto meshes = world.get_meshes();
-    auto objects = world.get_objects();
+    const auto& meshes = world.get_meshes();
+    const auto& objects = world.get_objects();
 
     int sub_idx = world.find_object_by_prim(pxr::SdfPath("/Mesh/Sub"));
     int rem_idx = world.find_object_by_prim(pxr::SdfPath("/Mesh"));
-    CHECK(meshes[objects[static_cast<uint32_t>(sub_idx)]->mesh_index]->index_count == 6);
-    CHECK(meshes[objects[static_cast<uint32_t>(rem_idx)]->mesh_index]->index_count == 6);
+    CHECK(meshes.at(objects.at(static_cast<uint32_t>(sub_idx)).mesh_index).index_count == 6);
+    CHECK(meshes.at(objects.at(static_cast<uint32_t>(rem_idx)).mesh_index).index_count == 6);
 }
 
 TEST_CASE("Mesh without GeomSubsets creates single object (no regression)") {
@@ -587,17 +581,17 @@ TEST_CASE("Mesh without GeomSubsets creates single object (no regression)") {
     CHECK(count_active_objects(world) == 1);
     CHECK(world.find_object_by_prim(pxr::SdfPath("/Mesh")) >= 0);
 
-    auto objects = world.get_objects();
-    auto meshes = world.get_meshes();
-    // 4 faces × 1 tri each = 4 triangles = 12 indices.
-    CHECK(meshes[objects[0]->mesh_index]->index_count == 12);
+    const auto& objects = world.get_objects();
+    const auto& meshes = world.get_meshes();
+    // 4 faces x 1 tri each = 4 triangles = 12 indices.
+    CHECK(meshes.at(objects.at(0).mesh_index).index_count == 12);
 }
 
 TEST_CASE("Non-materialBind subsets are ignored (mesh treated as whole)") {
     auto stage = pxr::UsdStage::CreateInMemory();
     auto mesh = define_quad_fan_mesh(stage);
 
-    // Subset with a different family — should be ignored.
+    // Subset with a different family -- should be ignored.
     auto sub = pxr::UsdGeomSubset::Define(stage, pxr::SdfPath("/Mesh/Sub"));
     sub.GetFamilyNameAttr().Set(pxr::TfToken("someOtherFamily"));
     sub.GetElementTypeAttr().Set(pxr::TfToken("face"));
@@ -606,7 +600,7 @@ TEST_CASE("Non-materialBind subsets are ignored (mesh treated as whole)") {
     pts::rendering::RenderWorld world;
     pts::rendering::populate_from_stage(world, stage);
 
-    // No materialBind subsets → single whole-mesh object.
+    // No materialBind subsets -> single whole-mesh object.
     CHECK(count_active_objects(world) == 1);
     CHECK(world.find_object_by_prim(pxr::SdfPath("/Mesh")) >= 0);
 }

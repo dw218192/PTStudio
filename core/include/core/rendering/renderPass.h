@@ -36,17 +36,14 @@ class IPass {
     virtual ~IPass() = default;
 
     [[nodiscard]] virtual auto name() const noexcept -> std::string_view = 0;
-    [[nodiscard]] virtual auto is_ready() const noexcept -> bool = 0;
 
-    /// Initialize the pass. Creates a named logger via LoggingManager (same
-    /// sinks/pattern as the rest of the application), computes allowed debug
-    /// targets, then calls do_setup().
-    void setup(const webgpu::Device& device);
-
-    /// Called when shaders have been hot-reloaded. Default re-runs setup().
-    virtual void on_shaders_reloaded(const webgpu::Device& device) {
-        setup(device);
-    }
+    /// Lazily initialize the pass: create the per-pass logger and query
+    /// device limits for debug-target gating. Idempotent -- safe to call
+    /// every frame. Passes should invoke it at the top of
+    /// `add_to_frame_graph()` (or equivalent render method). The editor
+    /// application may also call it explicitly before querying
+    /// `effective_debug_targets()` for CLI resolution.
+    virtual void ensure_initialized(const webgpu::Device& device);
 
     /// Draw pass-specific ImGui windows/controls. Called during the UI phase.
     virtual void draw_imgui() {
@@ -107,31 +104,33 @@ class IPass {
         return *m_logger;
     }
 
-    /// Load the pass shader, automatically selecting the no-debug-targets
-    /// variant when the device limit requires it. Shaders that declare debug
-    /// MRT outputs must guard them with `#ifndef NO_DEBUG_TARGETS`.
-    /// The variant is loaded from an embedded resource whose key is derived
-    /// by inserting "_no_debug" before the extension (e.g. forward.wgsl →
-    /// forward_no_debug.wgsl).
-    [[nodiscard]] auto load_pass_shader(std::string_view resource_key) const -> std::string;
+    /// Get-or-build the pass shader module via FrameGraph, automatically
+    /// selecting the no-debug-targets variant when device limits require it.
+    /// Shaders that declare debug MRT outputs must guard them with
+    /// `#ifndef NO_DEBUG_TARGETS`; the variant key is derived by inserting
+    /// "_no_debug" before the extension (e.g. forward.wgsl ->
+    /// forward_no_debug.wgsl). Routing through FrameGraph hits the
+    /// dep-tracked cache so Slang isn't invoked every frame; compilation
+    /// itself flows through the FrameGraph's IShaderCompiler.
+    [[nodiscard]] auto load_pass_shader_module(FrameGraph& fg, std::string_view resource_key) const
+        -> WGPUShaderModule;
 
    protected:
-    virtual void do_setup(const webgpu::Device& device) = 0;
-
-    /// Frame graph resource helpers — auto-namespace by pass name.
-    TextureHandle create_texture(FrameGraph& fg, TextureDesc desc, const char* label = nullptr) {
-        return fg.find_or_create(this, desc, label);
+    /// Frame graph resource helpers -- auto-namespace by pass name.
+    TextureDeclHandle create_texture(FrameGraph& fg, TextureDesc desc,
+                                     const char* label = nullptr) {
+        return fg.texture(this, desc, label);
     }
-    BufferHandle create_buffer(FrameGraph& fg, BufferDesc desc, const char* label = nullptr) {
-        return fg.find_or_create_buffer(this, desc, label);
+    BufferDeclHandle create_buffer(FrameGraph& fg, BufferDesc desc, const char* label = nullptr) {
+        return fg.buffer(this, desc, label);
     }
-    BufferHandle import_buffer(FrameGraph& fg, WGPUBuffer buf, std::size_t size,
-                               const char* label = nullptr) {
-        return fg.import_buffer(this, buf, size, label);
+    BufferDeclHandle import_buffer(FrameGraph& fg, WGPUBuffer buf, std::size_t size,
+                                   uint64_t external_version, const char* label = nullptr) {
+        return fg.import_buffer(this, buf, size, external_version, label);
     }
-    BindGroupHandle create_bind_group(FrameGraph& fg, BindGroupDesc desc,
-                                      const char* label = nullptr) {
-        return fg.find_or_create_bind_group(this, std::move(desc), label);
+    DescriptorBuilder descriptor(FrameGraph& fg, WGPUBindGroupLayout layout,
+                                 const char* label = nullptr) {
+        return fg.descriptor(this, layout, label);
     }
 
     /// Lazily create or return per-entity pass data, cached in the world.
@@ -157,7 +156,7 @@ class IPass {
         return *static_cast<T*>(entry.data.get());
     }
 
-    /// get_or_create_pass_data without factory — asserts that the entry already exists.
+    /// get_or_create_pass_data without factory -- asserts that the entry already exists.
     template <typename T>
     auto get_or_create_pass_data(PassDataKind kind, uint32_t index, const RenderWorld& world,
                                  std::nullptr_t) -> T& {
@@ -170,7 +169,7 @@ class IPass {
         return *static_cast<T*>(it->second.data.get());
     }
 
-    /// Per-category pass data — invalidated when *any* entity in the category changes.
+    /// Per-category pass data -- invalidated when *any* entity in the category changes.
     template <typename T, typename Factory>
     auto get_or_create_pass_data(PassDataKind kind, const RenderWorld& world, Factory&& factory)
         -> T& {
@@ -193,16 +192,17 @@ class IPass {
    private:
     const ShaderLoader* m_shader_loader;
     std::shared_ptr<spdlog::logger> m_logger;
-    uint32_t m_allowed_debug_count = UINT32_MAX;
+    uint32_t m_allowed_debug_count = 0;
+    bool m_initialized = false;
 
     void compute_allowed_debug_targets(const webgpu::Device& device);
 
     static uint32_t entity_version(PassDataKind kind, uint32_t index, const RenderWorld& world) {
         switch (kind) {
             case PassDataKind::Mesh:
-                return world.get_meshes()[index].generation();
+                return static_cast<uint32_t>(world.get_meshes().version_at(index));
             case PassDataKind::Light:
-                return world.get_lights()[index].generation();
+                return static_cast<uint32_t>(world.get_lights().version_at(index));
             case PassDataKind::Material:
                 break;
         }

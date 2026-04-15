@@ -5,7 +5,7 @@
         "tracy/0.13.1#df9689303ecc235fabb3cdd2f29c2332%1767126230.265",
         "stb/cci.20240531#ede183dce303916dab0c1b835df3926a%1720366012.336",
         "spdlog/1.14.1#4fd40d9cbc1978247443a10d2ace58fd%1731353169.75",
-        "slang/2026.1",
+        "slang/2026.5.2",
         "portable-file-dialogs/0.1.0#94186f1cad9eb3e4e80c6a4c566c8c0b%1687984839.056",
         "openusd/25.11-dev",
         "opensubdiv/3.6.0#0287f44ccdd174ca2bb3b98fdcbbf552%1763044571.374",
@@ -28,7 +28,7 @@
         "boost/1.90.0#d5e8defe7355494953be18524a7f135b%1765955095.179"
     ],
     "build_requires": [
-        "slang/2026.1",
+        "slang/2026.5.2",
         "pkgconf/2.1.0#21f96520faf7660b99f872e956d2ac13%1755505630.82",
         "ninja/1.13.2#c8c5dc2a52ed6e4e42a66d75b4717ceb%1764096931.974",
         "meson/1.10.0#60786758ea978964c24525de19603cf4%1768294926.103",

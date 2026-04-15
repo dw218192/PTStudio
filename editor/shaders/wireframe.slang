@@ -2,7 +2,7 @@ struct Uniforms {
     float4x4 mvp;
 };
 
-[[vk::binding(0, 0)]] ConstantBuffer<Uniforms> u;
+[[vk::binding(0, 0)]] [DynamicBuffer] ConstantBuffer<Uniforms> u;
 
 struct VsIn {
     float3 position : POSITION;

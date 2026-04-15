@@ -34,7 +34,7 @@ public static const uint LIGHT_DISK    = 3;
 public static const uint LIGHT_DOME    = 4;
 
 // ---------------------------------------------------------------------------
-// Light sampling — representative point technique (Karis 2013)
+// Light sampling -- representative point technique (Karis 2013)
 // ---------------------------------------------------------------------------
 
 public struct LightSample {
@@ -84,7 +84,7 @@ public float light_area(Light light) {
 }
 
 // ---------------------------------------------------------------------------
-// Representative point sampling (Karis 2013) — free functions
+// Representative point sampling (Karis 2013) -- free functions
 // ---------------------------------------------------------------------------
 
 internal LightSample sample_representative_distant(Light light, float3 N, float3 V, float roughness) {

@@ -4,7 +4,7 @@ struct GBufferUniforms {
 };
 
 [[vk::binding(0, 0)]]
-ConstantBuffer<GBufferUniforms> u;
+[DynamicBuffer] ConstantBuffer<GBufferUniforms> u;
 
 struct VsIn {
     float3 position : POSITION;

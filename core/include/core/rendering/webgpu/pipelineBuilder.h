@@ -24,6 +24,7 @@ class RenderPipelineBuilder {
     explicit RenderPipelineBuilder(const Device& device);
 
     auto shader(const ShaderModule& module) -> RenderPipelineBuilder&;
+    auto shader(WGPUShaderModule module) -> RenderPipelineBuilder&;
     auto vertex_entry(std::string_view name) -> RenderPipelineBuilder&;
     auto fragment_entry(std::string_view name) -> RenderPipelineBuilder&;
     auto color_format(WGPUTextureFormat format, uint32_t index = 0) -> RenderPipelineBuilder&;
@@ -88,6 +89,7 @@ class ComputePipelineBuilder {
     explicit ComputePipelineBuilder(const Device& device);
 
     auto shader(const ShaderModule& module) -> ComputePipelineBuilder&;
+    auto shader(WGPUShaderModule module) -> ComputePipelineBuilder&;
     auto entry_point(std::string_view name) -> ComputePipelineBuilder&;
     auto pipeline_layout(WGPUPipelineLayout layout) -> ComputePipelineBuilder&;
 
