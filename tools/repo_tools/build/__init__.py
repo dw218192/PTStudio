@@ -86,6 +86,18 @@ class BuildTool(RepoTool):
             "conan": {},
         }
 
+    # Path substrings identifying third-party build output (Conan dep cache,
+    # framework venv, framework source). Warnings emitted from these paths
+    # are suppressed in MCP output -- project-local warnings still come
+    # through. Both forward- and back-slash forms covered by testing .conan2
+    # and the framework anchor names, which appear in either layout.
+    _THIRD_PARTY_WARNING_MARKERS = (
+        ".conan2",
+        "_managed",
+        "tools/framework",
+        "tools\\framework",
+    )
+
     def format_mcp_output(
         self, records: list[McpLogRecord], returncode: int
     ) -> str | None:
@@ -93,13 +105,15 @@ class BuildTool(RepoTool):
         lines: list[str] = []
         for r in records:
             msg = r.message
+            lower = msg.lower()
+            is_warning = "warning" in lower or "error" in lower
+            if is_warning and any(m in msg for m in self._THIRD_PARTY_WARNING_MARKERS):
+                continue
             if r.level in ("error", "critical", "warning"):
                 lines.append(msg)
             elif any(k in msg for k in ("[OK]", "[FAIL]", "CMake build", "FAILED")):
                 lines.append(msg)
-            elif r.level == "output" and (
-                "error" in msg.lower() or "warning" in msg.lower()
-            ):
+            elif r.level == "output" and is_warning:
                 lines.append(msg)
         if not lines:
             lines.append("Build completed successfully")
