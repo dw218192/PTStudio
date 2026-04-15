@@ -99,29 +99,40 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
         .vertex_layout<editor_gizmo_shader::VertexLayout>()
         .build();
 
-    auto objects = ctx.world.get_objects();
-    auto lights = ctx.world.get_lights();
-    auto object_count = static_cast<uint32_t>(objects.size());
-    auto light_count = static_cast<uint32_t>(lights.size());
+    const auto& objects = ctx.world.get_objects();
+    const auto& lights = ctx.world.get_lights();
+    auto objects_raw = objects.span_raw();
+    auto lights_raw = lights.span_raw();
+    auto object_count = static_cast<uint32_t>(objects_raw.size());
+    auto light_count = static_cast<uint32_t>(lights_raw.size());
 
     // Collect active lights eligible for gizmo rendering (Dome excluded)
     std::vector<uint32_t> gizmo_light_indices;
     for (uint32_t i = 0; i < light_count; ++i) {
-        if (!lights[i].active()) continue;
-        if (lights[i]->type == rendering::LightData::Type::Dome) continue;
+        if (!lights_raw[i].active) continue;
+        if (lights_raw[i].value.type == rendering::LightData::Type::Dome) continue;
         gizmo_light_indices.push_back(i);
     }
     auto gizmo_count = static_cast<uint32_t>(gizmo_light_indices.size());
 
     // Build picking table: flat mapping from picking_id -> prim_path
+    // Iterate active objects and lights via for_each to get prim paths (keys)
     m_picking_table.clear();
-    m_picking_table.reserve(object_count + gizmo_count);
-    for (uint32_t i = 0; i < object_count; ++i) {
-        m_picking_table.push_back(objects[i].get_prim_path());
-    }
-    for (uint32_t slot = 0; slot < gizmo_count; ++slot) {
-        m_picking_table.push_back(lights[gizmo_light_indices[slot]].get_prim_path());
-    }
+    m_picking_table.resize(object_count, pxr::SdfPath());
+    objects.for_each([&](const pxr::SdfPath& path, const rendering::ObjectData&) {
+        auto idx = objects.find(path).index();
+        if (idx < object_count) m_picking_table[idx] = path;
+    });
+    m_picking_table.resize(object_count + gizmo_count, pxr::SdfPath());
+    lights.for_each([&](const pxr::SdfPath& path, const rendering::LightData&) {
+        auto idx = lights.find(path).index();
+        for (uint32_t slot = 0; slot < gizmo_count; ++slot) {
+            if (gizmo_light_indices[slot] == idx) {
+                m_picking_table[object_count + slot] = path;
+                break;
+            }
+        }
+    });
 
     uint32_t total_picking_slots = object_count + gizmo_count;
 
@@ -172,7 +183,7 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
         uint32_t li = gizmo_light_indices[slot];
         auto& mesh =
             get_or_create_pass_data<GizmoMesh>(rendering::PassDataKind::Light, li, ctx.world, [&] {
-                auto line_verts = generate_light_verts(lights[li].data());
+                auto line_verts = generate_light_verts(lights_raw[li].value);
                 if (line_verts.empty()) return GizmoMesh{};
                 GizmoMesh m;
                 m.vertex_buffer = make_vbuf(line_verts);
@@ -216,35 +227,36 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
         .color(picking_ids_decl)
         .depth(picking_depth_decl)
         .execute([=, &world](rendering::ExecuteContext& exec, WGPURenderPassEncoder pass) {
-            auto objs = world.get_objects();
-            auto meshes = world.get_meshes();
+            auto objs = world.get_objects().span_raw();
+            auto mshs = world.get_meshes().span_raw();
             auto picking_buf = exec.get(picking_buf_decl).buffer;
             auto picking_bg = exec.get(picking_bg_decl).bind_group;
 
             {
                 PTS_ZONE_NAMED("picking uniform upload");
                 for (uint32_t i = 0; i < static_cast<uint32_t>(objs.size()); ++i) {
-                    if (!objs[i].active()) continue;
-                    if (!objs[i]->visible) continue;
+                    if (!objs[i].active) continue;
+                    if (!objs[i].value.visible) continue;
                     PickingUniforms u{};
-                    u.mvp = vp * objs[i]->transform;
+                    u.mvp = vp * objs[i].value.transform;
                     u.object_id = i;
                     wgpuQueueWriteBuffer(queue, picking_buf, i * k_uniform_align, &u, sizeof(u));
                 }
             }
 
             // Light picking uniforms
-            auto lts = world.get_lights();
+            auto lts = world.get_lights().span_raw();
             for (uint32_t slot = 0; slot < static_cast<uint32_t>(gizmo_light_indices_cap.size());
                  ++slot) {
                 uint32_t li = gizmo_light_indices_cap[slot];
                 uint32_t picking_slot = obj_count_cap + slot;
-                auto transform = lts[li]->transform;
+                auto transform = lts[li].value.transform;
                 // Wireframe-only lights need scaled transform to match gizmo visual
-                if (lts[li]->mesh_index == UINT32_MAX) {
+                if (lts[li].value.mesh_index == UINT32_MAX) {
                     glm::vec3 pos = glm::vec3(transform[3]);
                     float dist = glm::length(pos - camera_pos);
-                    float r = (lts[li]->type == rendering::LightData::Type::Distant) ? 0.5f : 0.1f;
+                    float r =
+                        (lts[li].value.type == rendering::LightData::Type::Distant) ? 0.5f : 0.1f;
                     float scale = gizmo_distance_scale(dist, r, k_min_screen_radius);
                     transform = transform * glm::scale(glm::mat4(1.0f), glm::vec3(scale));
                 }
@@ -258,34 +270,34 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
             // Mesh objects
             wgpuRenderPassEncoderSetPipeline(pass, mesh_picking_pl);
             for (uint32_t i = 0; i < static_cast<uint32_t>(objs.size()); ++i) {
-                if (!objs[i].active()) continue;
-                if (!objs[i]->visible) continue;
+                if (!objs[i].active) continue;
+                if (!objs[i].value.visible) continue;
                 uint32_t dyn_offset = i * EditorPass::k_uniform_align;
                 wgpuRenderPassEncoderSetBindGroup(pass, 0, picking_bg, 1, &dyn_offset);
-                const auto& mesh = meshes[objs[i]->mesh_index];
-                wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh->position_buffer.handle(), 0,
-                                                     mesh->position_buffer.size());
-                wgpuRenderPassEncoderSetIndexBuffer(pass, mesh->index_buffer.handle(),
+                const auto& mesh = mshs[objs[i].value.mesh_index].value;
+                wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh.position_buffer.handle(), 0,
+                                                     mesh.position_buffer.size());
+                wgpuRenderPassEncoderSetIndexBuffer(pass, mesh.index_buffer.handle(),
                                                     WGPUIndexFormat_Uint32, 0,
-                                                    mesh->index_buffer.size());
-                wgpuRenderPassEncoderDrawIndexed(pass, mesh->index_count, 1, 0, 0, 0);
+                                                    mesh.index_buffer.size());
+                wgpuRenderPassEncoderDrawIndexed(pass, mesh.index_count, 1, 0, 0, 0);
             }
 
             // Light proxy meshes (same pipeline as mesh objects)
             for (uint32_t slot = 0; slot < static_cast<uint32_t>(gizmo_light_indices_cap.size());
                  ++slot) {
                 uint32_t li = gizmo_light_indices_cap[slot];
-                if (lts[li]->mesh_index == UINT32_MAX) continue;
+                if (lts[li].value.mesh_index == UINT32_MAX) continue;
                 uint32_t picking_slot = obj_count_cap + slot;
                 uint32_t dyn_offset = picking_slot * EditorPass::k_uniform_align;
                 wgpuRenderPassEncoderSetBindGroup(pass, 0, picking_bg, 1, &dyn_offset);
-                const auto& mesh = meshes[lts[li]->mesh_index];
-                wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh->position_buffer.handle(), 0,
-                                                     mesh->position_buffer.size());
-                wgpuRenderPassEncoderSetIndexBuffer(pass, mesh->index_buffer.handle(),
+                const auto& mesh = mshs[lts[li].value.mesh_index].value;
+                wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh.position_buffer.handle(), 0,
+                                                     mesh.position_buffer.size());
+                wgpuRenderPassEncoderSetIndexBuffer(pass, mesh.index_buffer.handle(),
                                                     WGPUIndexFormat_Uint32, 0,
-                                                    mesh->index_buffer.size());
-                wgpuRenderPassEncoderDrawIndexed(pass, mesh->index_count, 1, 0, 0, 0);
+                                                    mesh.index_buffer.size());
+                wgpuRenderPassEncoderDrawIndexed(pass, mesh.index_count, 1, 0, 0, 0);
             }
 
             // Wireframe-only light picking (e.g. Distant) via line-list pipeline
@@ -293,7 +305,7 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
             for (uint32_t slot = 0; slot < static_cast<uint32_t>(gizmo_light_indices_cap.size());
                  ++slot) {
                 uint32_t li = gizmo_light_indices_cap[slot];
-                if (lts[li]->mesh_index != UINT32_MAX) continue;
+                if (lts[li].value.mesh_index != UINT32_MAX) continue;
                 auto& draw = gizmo_draws[slot];
                 if (draw.vertex_count == 0) continue;
                 uint32_t picking_slot = obj_count_cap + slot;
@@ -324,23 +336,24 @@ void EditorPass::render(rendering::FrameGraph& fg, const rendering::PassContext&
             auto gizmo_bg = exec.get(gizmo_bg_decl).bind_group;
 
             // Upload gizmo uniforms
-            auto lts = world.get_lights();
+            auto lts = world.get_lights().span_raw();
             for (uint32_t slot = 0; slot < static_cast<uint32_t>(gizmo_light_indices_cap.size());
                  ++slot) {
                 uint32_t li = gizmo_light_indices_cap[slot];
                 uint32_t picking_slot = obj_count_cap + slot;
-                glm::vec3 light_pos = glm::vec3(lts[li]->transform[3]);
+                const auto& lt = lts[li].value;
+                glm::vec3 light_pos = glm::vec3(lt.transform[3]);
                 float dist = glm::length(light_pos - camera_pos);
                 float light_radius;
-                if (lts[li]->type == rendering::LightData::Type::Rect)
-                    light_radius = std::max(lts[li]->width, lts[li]->height) * 0.5f;
-                else if (lts[li]->type == rendering::LightData::Type::Distant)
+                if (lt.type == rendering::LightData::Type::Rect)
+                    light_radius = std::max(lt.width, lt.height) * 0.5f;
+                else if (lt.type == rendering::LightData::Type::Distant)
                     light_radius = 0.5f;
                 else
-                    light_radius = lts[li]->radius;
+                    light_radius = lt.radius;
                 float scale = gizmo_distance_scale(dist, light_radius, k_min_screen_radius);
                 auto scaled_transform =
-                    lts[li]->transform * glm::scale(glm::mat4(1.0f), glm::vec3(scale));
+                    lt.transform * glm::scale(glm::mat4(1.0f), glm::vec3(scale));
                 bool is_selected = (selected_picking_id == picking_slot);
                 GizmoUniforms gu{};
                 gu.mvp = vp * scaled_transform;

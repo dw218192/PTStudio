@@ -11,7 +11,7 @@ struct SSAOUniforms {
 };
 
 // GBuffer consumer slots (0-3)
-[[vk::binding(0, 0)]] [NonFilterable] Texture2D<float>  depth_tex;
+[[vk::binding(0, 0)]] [NonFiltering] Texture2D<float>  depth_tex;
 [[vk::binding(1, 0)]] [NonFiltering]  SamplerState      depth_sampler;
 [[vk::binding(2, 0)]] Texture2D<float4> normals_tex;
 [[vk::binding(3, 0)]] SamplerState      linear_sampler;

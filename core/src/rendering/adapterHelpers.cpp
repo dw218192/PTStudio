@@ -189,10 +189,11 @@ uint32_t resolve_material(pxr::UsdPrim prim, SyncScope& scope) {
 
 void store_mesh(SyncScope& scope, const std::vector<Vertex>& vertices,
                 const std::vector<uint32_t>& indices, uint32_t mesh_slot) {
-    auto w = scope.write_mesh(mesh_slot);
-    w->cpu_vertices.assign(vertices.begin(), vertices.end());
-    w->cpu_indices.assign(indices.begin(), indices.end());
-    w->index_count = static_cast<uint32_t>(indices.size());
+    scope.mutate_mesh(mesh_slot, [&](MeshData& w) {
+        w.cpu_vertices.assign(vertices.begin(), vertices.end());
+        w.cpu_indices.assign(indices.begin(), indices.end());
+        w.index_count = static_cast<uint32_t>(indices.size());
+    });
 }
 
 void sync_object(pxr::UsdPrim geom_prim, const pxr::SdfPath& obj_path, uint32_t material_index,
@@ -204,24 +205,23 @@ void sync_object(pxr::UsdPrim geom_prim, const pxr::SdfPath& obj_path, uint32_t 
 
     int existing = world.find_object_by_prim(obj_path);
     if (existing >= 0) {
-        auto w = scope.write_object(static_cast<uint32_t>(existing));
-        auto mesh_index = w->mesh_index;
-        w->transform = transform;
-        w->material_index = material_index;
-        w->visible = visible;
+        auto mesh_index = scope.object(static_cast<uint32_t>(existing)).mesh_index;
+        scope.mutate_object(static_cast<uint32_t>(existing), [&](ObjectData& w) {
+            w.transform = transform;
+            w.material_index = material_index;
+            w.visible = visible;
+        });
         store_mesh(scope, vertices, indices, mesh_index);
     } else {
-        auto mesh_slot = scope.alloc_mesh_slot();
-        auto obj_slot = scope.alloc_object_slot();
+        auto mesh_slot = scope.alloc_mesh(obj_path);
+        auto obj_slot = scope.alloc_object(obj_path);
         store_mesh(scope, vertices, indices, mesh_slot);
-        {
-            auto w = scope.write_object(obj_slot);
-            w->mesh_index = mesh_slot;
-            w->transform = transform;
-            w->material_index = material_index;
-            w->visible = visible;
-        }
-        scope.set_prim_path(obj_slot, PrimSlot::Kind::Object, obj_path);
+        scope.mutate_object(obj_slot, [&](ObjectData& w) {
+            w.mesh_index = mesh_slot;
+            w.transform = transform;
+            w.material_index = material_index;
+            w.visible = visible;
+        });
     }
 }
 
@@ -394,48 +394,59 @@ void sync_light(pxr::UsdPrim prim, SyncScope& scope, const LightData& light) {
 
     int existing = world.find_light_by_prim(sdf_path);
     if (existing >= 0) {
-        auto w = scope.write_light(static_cast<uint32_t>(existing));
-        // Preserve mesh_index from the existing slot for reuse
-        auto prev_mesh = w->mesh_index;
-        auto prev_mat = w->material_index;
-        *w = light;
-        w->mesh_index = prev_mesh;
-        w->material_index = prev_mat;
+        auto prev_mesh = scope.light(static_cast<uint32_t>(existing)).mesh_index;
+        auto prev_mat = scope.light(static_cast<uint32_t>(existing)).material_index;
+
+        // Pre-compute proxy mesh resources outside the mutation
+        uint32_t new_mat = prev_mat;
+        uint32_t new_mesh = prev_mesh;
+        std::vector<Vertex> vertices;
+        std::vector<uint32_t> indices;
 
         if (light_type_has_proxy(light.type)) {
-            // Update emissive material
-            w->material_index = resolve_emissive_material(scope, sdf_path.GetString(), light.color,
-                                                          light.intensity);
-
-            // Update proxy mesh in place
-            std::vector<Vertex> vertices;
-            std::vector<uint32_t> indices;
+            new_mat = resolve_emissive_material(scope, sdf_path.GetString(), light.color,
+                                                light.intensity);
             generate_proxy_mesh(light, vertices, indices);
 
-            if (w->mesh_index == UINT32_MAX) {
-                w->mesh_index = scope.alloc_mesh_slot();
+            if (prev_mesh == UINT32_MAX) {
+                new_mesh = scope.alloc_mesh(sdf_path);
             }
-            store_mesh(scope, vertices, indices, w->mesh_index);
+        }
+
+        scope.mutate_light(static_cast<uint32_t>(existing), [&](LightData& w) {
+            w = light;
+            w.mesh_index = new_mesh;
+            w.material_index = new_mat;
+        });
+
+        if (light_type_has_proxy(light.type)) {
+            store_mesh(scope, vertices, indices, new_mesh);
         }
     } else {
-        auto slot = scope.alloc_light_slot();
-        {
-            auto w = scope.write_light(slot);
-            *w = light;
+        auto slot = scope.alloc_light(sdf_path);
 
-            if (light_type_has_proxy(light.type)) {
-                w->material_index = resolve_emissive_material(scope, sdf_path.GetString(),
-                                                              light.color, light.intensity);
+        // Pre-compute proxy mesh resources outside the mutation
+        uint32_t mat_idx = light.material_index;
+        uint32_t mesh_idx = light.mesh_index;
+        std::vector<Vertex> vertices;
+        std::vector<uint32_t> indices;
 
-                std::vector<Vertex> vertices;
-                std::vector<uint32_t> indices;
-                generate_proxy_mesh(light, vertices, indices);
-
-                w->mesh_index = scope.alloc_mesh_slot();
-                store_mesh(scope, vertices, indices, w->mesh_index);
-            }
+        if (light_type_has_proxy(light.type)) {
+            mat_idx = resolve_emissive_material(scope, sdf_path.GetString(), light.color,
+                                                light.intensity);
+            generate_proxy_mesh(light, vertices, indices);
+            mesh_idx = scope.alloc_mesh(sdf_path);
         }
-        scope.set_prim_path(slot, PrimSlot::Kind::Light, sdf_path);
+
+        scope.mutate_light(slot, [&](LightData& w) {
+            w = light;
+            w.material_index = mat_idx;
+            w.mesh_index = mesh_idx;
+        });
+
+        if (light_type_has_proxy(light.type)) {
+            store_mesh(scope, vertices, indices, mesh_idx);
+        }
     }
 }
 
@@ -445,15 +456,10 @@ void sync_camera(pxr::UsdPrim prim, SyncScope& scope, const CameraData& camera) 
 
     int existing = world.find_camera_by_prim(sdf_path);
     if (existing >= 0) {
-        auto w = scope.write_camera(static_cast<uint32_t>(existing));
-        *w = camera;
+        scope.mutate_camera(static_cast<uint32_t>(existing), [&](CameraData& w) { w = camera; });
     } else {
-        auto slot = scope.alloc_camera_slot();
-        {
-            auto w = scope.write_camera(slot);
-            *w = camera;
-        }
-        scope.set_prim_path(slot, PrimSlot::Kind::Camera, sdf_path);
+        auto slot = scope.alloc_camera(sdf_path);
+        scope.mutate_camera(slot, [&](CameraData& w) { w = camera; });
     }
 }
 

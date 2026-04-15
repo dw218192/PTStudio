@@ -21,8 +21,6 @@ constexpr const char* k_pts_attrs_builtins =
     "[__AttributeUsage(_AttributeTargets.Var)]\n"
     "public struct DynamicBufferAttribute {}\n"
     "[__AttributeUsage(_AttributeTargets.Var)]\n"
-    "public struct NonFilterableAttribute {}\n"
-    "[__AttributeUsage(_AttributeTargets.Var)]\n"
     "public struct NonFilteringAttribute {}\n";
 
 void ensure_pts_attrs_registered(slang::IGlobalSession* gs) {

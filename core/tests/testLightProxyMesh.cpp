@@ -141,17 +141,17 @@ TEST_CASE("sync_light creates proxy mesh for rect light") {
 
     int idx = world.find_light_by_prim(pxr::SdfPath("/Light"));
     REQUIRE(idx >= 0);
-    auto& slot = scope.light(static_cast<uint32_t>(idx));
-    CHECK(slot->mesh_index != UINT32_MAX);
-    CHECK(slot->material_index != k_no_material);
+    const auto& ld = scope.light(static_cast<uint32_t>(idx));
+    CHECK(ld.mesh_index != UINT32_MAX);
+    CHECK(ld.material_index != k_no_material);
 
     // Mesh has data
-    auto& mesh = scope.mesh(slot->mesh_index);
-    CHECK(mesh->cpu_vertices.size() == 4);
-    CHECK(mesh->cpu_indices.size() == 6);
+    const auto& mesh = scope.mesh(ld.mesh_index);
+    CHECK(mesh.cpu_vertices.size() == 4);
+    CHECK(mesh.cpu_indices.size() == 6);
 
     // Material is emissive
-    auto& mat = scope.materials()[slot->material_index];
+    auto& mat = scope.materials()[ld.material_index];
     CHECK(mat.diffuse_color == glm::vec3(0, 0, 0));
     CHECK(mat.emissive_color.r == doctest::Approx(5.0f));
     CHECK(mat.emissive_color.g == doctest::Approx(2.5f));
@@ -175,9 +175,9 @@ TEST_CASE("sync_light creates proxy mesh for disk light") {
 
     int idx = world.find_light_by_prim(pxr::SdfPath("/Disk"));
     REQUIRE(idx >= 0);
-    auto& slot = scope.light(static_cast<uint32_t>(idx));
-    CHECK(slot->mesh_index != UINT32_MAX);
-    CHECK(scope.mesh(slot->mesh_index)->cpu_vertices.size() == 50);
+    const auto& ld = scope.light(static_cast<uint32_t>(idx));
+    CHECK(ld.mesh_index != UINT32_MAX);
+    CHECK(scope.mesh(ld.mesh_index).cpu_vertices.size() == 50);
 }
 
 TEST_CASE("sync_light creates proxy mesh for sphere light") {
@@ -197,9 +197,9 @@ TEST_CASE("sync_light creates proxy mesh for sphere light") {
 
     int idx = world.find_light_by_prim(pxr::SdfPath("/Sphere"));
     REQUIRE(idx >= 0);
-    auto& slot = scope.light(static_cast<uint32_t>(idx));
-    CHECK(slot->mesh_index != UINT32_MAX);
-    CHECK(scope.mesh(slot->mesh_index)->cpu_vertices.size() == 153);
+    const auto& ld = scope.light(static_cast<uint32_t>(idx));
+    CHECK(ld.mesh_index != UINT32_MAX);
+    CHECK(scope.mesh(ld.mesh_index).cpu_vertices.size() == 153);
 }
 
 TEST_CASE("sync_light does NOT create proxy mesh for distant light") {
@@ -216,9 +216,9 @@ TEST_CASE("sync_light does NOT create proxy mesh for distant light") {
 
     int idx = world.find_light_by_prim(pxr::SdfPath("/Sun"));
     REQUIRE(idx >= 0);
-    auto& slot = scope.light(static_cast<uint32_t>(idx));
-    CHECK(slot->mesh_index == UINT32_MAX);
-    CHECK(slot->material_index == k_no_material);
+    const auto& ld = scope.light(static_cast<uint32_t>(idx));
+    CHECK(ld.mesh_index == UINT32_MAX);
+    CHECK(ld.material_index == k_no_material);
 }
 
 TEST_CASE("sync_light re-sync updates geometry and material in place") {
@@ -239,8 +239,8 @@ TEST_CASE("sync_light re-sync updates geometry and material in place") {
 
     int idx = world.find_light_by_prim(pxr::SdfPath("/Rect"));
     REQUIRE(idx >= 0);
-    auto mesh_idx = scope.light(static_cast<uint32_t>(idx))->mesh_index;
-    auto mat_idx = scope.light(static_cast<uint32_t>(idx))->material_index;
+    auto mesh_idx = scope.light(static_cast<uint32_t>(idx)).mesh_index;
+    auto mat_idx = scope.light(static_cast<uint32_t>(idx)).material_index;
 
     // Re-sync with different dimensions and color
     light.width = 4.0f;
@@ -250,9 +250,9 @@ TEST_CASE("sync_light re-sync updates geometry and material in place") {
     sync_light(prim, scope, light);
 
     // Mesh slot reused
-    CHECK(scope.light(static_cast<uint32_t>(idx))->mesh_index == mesh_idx);
+    CHECK(scope.light(static_cast<uint32_t>(idx)).mesh_index == mesh_idx);
     // Material index reused (same cache key)
-    CHECK(scope.light(static_cast<uint32_t>(idx))->material_index == mat_idx);
+    CHECK(scope.light(static_cast<uint32_t>(idx)).material_index == mat_idx);
 
     // Material emissive updated
     auto& mat = scope.materials()[mat_idx];
@@ -261,10 +261,10 @@ TEST_CASE("sync_light re-sync updates geometry and material in place") {
     CHECK(mat.emissive_color.b == doctest::Approx(0.0f));
 
     // Geometry updated: verify vertices reflect the new dimensions
-    auto mesh_w = scope.write_mesh(mesh_idx);
-    REQUIRE(!mesh_w->cpu_vertices.empty());
+    const auto& mesh_data = scope.mesh(mesh_idx);
+    REQUIRE(!mesh_data.cpu_vertices.empty());
     float max_x = 0.0f;
-    for (const auto& v : mesh_w->cpu_vertices) max_x = std::max(max_x, std::abs(v.position[0]));
+    for (const auto& v : mesh_data.cpu_vertices) max_x = std::max(max_x, std::abs(v.position[0]));
     CHECK(max_x == doctest::Approx(2.0f));  // half of new width (4.0)
 }
 
@@ -287,7 +287,7 @@ TEST_CASE("remove_prim frees proxy mesh slot for lights") {
 
         int idx = world.find_light_by_prim(pxr::SdfPath("/Light"));
         REQUIRE(idx >= 0);
-        auto mesh_idx = scope.light(static_cast<uint32_t>(idx))->mesh_index;
+        auto mesh_idx = scope.light(static_cast<uint32_t>(idx)).mesh_index;
         REQUIRE(mesh_idx != UINT32_MAX);
 
         // Remove it
@@ -295,7 +295,7 @@ TEST_CASE("remove_prim frees proxy mesh slot for lights") {
 
         CHECK(world.find_light_by_prim(pxr::SdfPath("/Light")) == -1);
         // Mesh slot freed (inactive)
-        CHECK(world.get_meshes()[mesh_idx].active() == false);
+        CHECK(world.get_meshes().active_at(mesh_idx) == false);
     }
 }
 

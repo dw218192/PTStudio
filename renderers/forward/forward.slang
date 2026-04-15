@@ -43,7 +43,7 @@ SamplerState scene_sampler;
 
 // Bind group 1: shadow data
 [[vk::binding(0, 1)]] StructuredBuffer<ShadowInfo> shadow_infos;
-[[vk::binding(1, 1)]] [NonFilterable] Texture2DArray<float> shadow_map;
+[[vk::binding(1, 1)]] [NonFiltering] Texture2DArray<float> shadow_map;
 [[vk::binding(2, 1)]] [NonFiltering]  SamplerState shadow_sampler;
 
 // Bind group 2: IBL

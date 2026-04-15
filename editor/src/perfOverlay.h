@@ -74,29 +74,31 @@ struct PerfOverlay {
     void draw_scene_section(const rendering::RenderWorld& world) const {
         if (!ImGui::CollapsingHeader("Scene", ImGuiTreeNodeFlags_DefaultOpen)) return;
 
-        auto objects = world.get_objects();
-        auto meshes = world.get_meshes();
-        auto lights = world.get_lights();
+        const auto& objects = world.get_objects();
+        const auto& meshes = world.get_meshes();
+        const auto& lights = world.get_lights();
         auto materials = world.get_materials();
+
+        auto objects_raw = objects.span_raw();
+        auto meshes_raw = meshes.span_raw();
 
         uint32_t active_objects = 0;
         uint32_t total_triangles = 0;
-        uint32_t active_lights = 0;
+        uint32_t active_lights = static_cast<uint32_t>(lights.size());
 
-        for (const auto& obj : objects) {
-            if (!obj.active()) continue;
+        for (const auto& entry : objects_raw) {
+            if (!entry.active) continue;
             ++active_objects;
-            if (obj->mesh_index < meshes.size()) {
-                total_triangles += meshes[obj->mesh_index]->index_count / 3;
+            if (entry.value.mesh_index < meshes_raw.size() &&
+                meshes_raw[entry.value.mesh_index].active) {
+                total_triangles += meshes_raw[entry.value.mesh_index].value.index_count / 3;
             }
         }
-        for (const auto& light : lights) {
-            if (light.active()) ++active_lights;
-        }
 
-        ImGui::Text("Objects:   %u / %u", active_objects, static_cast<uint32_t>(objects.size()));
+        ImGui::Text("Objects:   %u / %u", active_objects,
+                    static_cast<uint32_t>(objects.capacity()));
         ImGui::Text("Triangles: %u", total_triangles);
-        ImGui::Text("Lights:    %u / %u", active_lights, static_cast<uint32_t>(lights.size()));
+        ImGui::Text("Lights:    %u / %u", active_lights, static_cast<uint32_t>(lights.capacity()));
         ImGui::Text("Materials: %u", static_cast<uint32_t>(materials.size()));
     }
 

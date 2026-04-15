@@ -28,7 +28,7 @@ RWStructuredBuffer<ExposureResult> result;
 ConstantBuffer<LuminanceParams> params;
 
 [[vk::binding(4, 0)]]
-[NonFilterable] Texture2D<float> depth_input;
+[NonFiltering] Texture2D<float> depth_input;
 
 static const uint k_group_size = 256;
 

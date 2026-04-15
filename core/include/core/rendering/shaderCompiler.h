@@ -73,7 +73,7 @@ class IShaderCompiler {
     }
 
     /// Monotonic revision counter for a source key. FrameGraph uses this as a
-    /// DepTrackedCache dep -- when the revision changes, dependent shader
+    /// DepTrackedSlotMap dep -- when the revision changes, dependent shader
     /// modules and pipelines are rebuilt. Tracked per-source (not per-variant)
     /// since every variant of a source rebuilds together.
     [[nodiscard]] virtual uint64_t source_revision(std::string_view source_key) const = 0;

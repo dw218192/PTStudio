@@ -10,6 +10,7 @@
 #include <core/rendering/shadowMapPass.h>
 #include <core/rendering/webgpu/device.h>
 #include <doctest/doctest.h>
+#include <pxr/usd/sdf/path.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
@@ -140,37 +141,40 @@ TEST_CASE("ShadowMapPass add_to_frame_graph with distant light produces valid ou
     // Add a distant light
     {
         auto scope = world.begin_sync();
-        auto li = scope.alloc_light_slot();
-        auto lw = scope.write_light(li);
-        lw->type = LightData::Type::Distant;
-        lw->direction = glm::vec3(0, -1, 0);
-        lw->color = glm::vec3(1);
-        lw->intensity = 1.0f;
+        auto li = scope.alloc_light(pxr::SdfPath("/TestLight0"));
+        scope.mutate_light(li, [&](LightData& lw) {
+            lw.type = LightData::Type::Distant;
+            lw.direction = glm::vec3(0, -1, 0);
+            lw.color = glm::vec3(1);
+            lw.intensity = 1.0f;
+        });
     }
 
     // Add a mesh with some geometry
     uint32_t mesh_idx;
     {
         auto scope = world.begin_sync();
-        mesh_idx = scope.alloc_mesh_slot();
-        auto mw = scope.write_mesh(mesh_idx);
-        mw->cpu_vertices = {
-            {{-1, -1, -1}, {0, 1, 0}, {1, 1, 1}, {0, 0}},
-            {{1, -1, -1}, {0, 1, 0}, {1, 1, 1}, {1, 0}},
-            {{0, 1, 0}, {0, 1, 0}, {1, 1, 1}, {0.5f, 1}},
-        };
-        mw->cpu_indices = {0, 1, 2};
-        mw->index_count = 3;
+        mesh_idx = scope.alloc_mesh(pxr::SdfPath("/TestMesh0"));
+        scope.mutate_mesh(mesh_idx, [&](MeshData& mw) {
+            mw.cpu_vertices = {
+                {{-1, -1, -1}, {0, 1, 0}, {1, 1, 1}, {0, 0}},
+                {{1, -1, -1}, {0, 1, 0}, {1, 1, 1}, {1, 0}},
+                {{0, 1, 0}, {0, 1, 0}, {1, 1, 1}, {0.5f, 1}},
+            };
+            mw.cpu_indices = {0, 1, 2};
+            mw.index_count = 3;
+        });
     }
     world.upload_all_meshes(device);
 
     // Add an object referencing the mesh
     {
         auto scope = world.begin_sync();
-        auto oi = scope.alloc_object_slot();
-        auto ow = scope.write_object(oi);
-        ow->mesh_index = mesh_idx;
-        ow->transform = glm::mat4(1.0f);
+        auto oi = scope.alloc_object(pxr::SdfPath("/TestObj0"));
+        scope.mutate_object(oi, [&](ObjectData& ow) {
+            ow.mesh_index = mesh_idx;
+            ow.transform = glm::mat4(1.0f);
+        });
     }
 
     world.prepare_gpu_buffers(device, device.queue());
@@ -215,10 +219,11 @@ TEST_CASE("ShadowMapPass caps shadow count at k_max_shadow_maps") {
     {
         auto scope = world.begin_sync();
         for (uint32_t i = 0; i < k_max_shadow_maps + 2; ++i) {
-            auto li = scope.alloc_light_slot();
-            auto lw = scope.write_light(li);
-            lw->type = LightData::Type::Distant;
-            lw->direction = glm::vec3(0, -1, 0);
+            auto li = scope.alloc_light(pxr::SdfPath("/TestLight" + std::to_string(i)));
+            scope.mutate_light(li, [&](LightData& lw) {
+                lw.type = LightData::Type::Distant;
+                lw.direction = glm::vec3(0, -1, 0);
+            });
         }
     }
 
@@ -226,24 +231,26 @@ TEST_CASE("ShadowMapPass caps shadow count at k_max_shadow_maps") {
     uint32_t mesh_idx;
     {
         auto scope = world.begin_sync();
-        mesh_idx = scope.alloc_mesh_slot();
-        auto mw = scope.write_mesh(mesh_idx);
-        mw->cpu_vertices = {
-            {{-1, -1, -1}, {0, 1, 0}, {1, 1, 1}, {0, 0}},
-            {{1, -1, -1}, {0, 1, 0}, {1, 1, 1}, {1, 0}},
-            {{0, 1, 0}, {0, 1, 0}, {1, 1, 1}, {0.5f, 1}},
-        };
-        mw->cpu_indices = {0, 1, 2};
-        mw->index_count = 3;
+        mesh_idx = scope.alloc_mesh(pxr::SdfPath("/TestMesh0"));
+        scope.mutate_mesh(mesh_idx, [&](MeshData& mw) {
+            mw.cpu_vertices = {
+                {{-1, -1, -1}, {0, 1, 0}, {1, 1, 1}, {0, 0}},
+                {{1, -1, -1}, {0, 1, 0}, {1, 1, 1}, {1, 0}},
+                {{0, 1, 0}, {0, 1, 0}, {1, 1, 1}, {0.5f, 1}},
+            };
+            mw.cpu_indices = {0, 1, 2};
+            mw.index_count = 3;
+        });
     }
     world.upload_all_meshes(device);
 
     {
         auto scope = world.begin_sync();
-        auto oi = scope.alloc_object_slot();
-        auto ow = scope.write_object(oi);
-        ow->mesh_index = mesh_idx;
-        ow->transform = glm::mat4(1.0f);
+        auto oi = scope.alloc_object(pxr::SdfPath("/TestObj0"));
+        scope.mutate_object(oi, [&](ObjectData& ow) {
+            ow.mesh_index = mesh_idx;
+            ow.transform = glm::mat4(1.0f);
+        });
     }
 
     world.prepare_gpu_buffers(device, device.queue());
@@ -284,13 +291,11 @@ TEST_CASE("ShadowMapPass skips non-distant lights") {
     // Add only non-distant lights (sphere, rect)
     {
         auto scope = world.begin_sync();
-        auto l1 = scope.alloc_light_slot();
-        auto lw1 = scope.write_light(l1);
-        lw1->type = LightData::Type::Sphere;
+        auto l1 = scope.alloc_light(pxr::SdfPath("/TestLight0"));
+        scope.mutate_light(l1, [&](LightData& lw1) { lw1.type = LightData::Type::Sphere; });
 
-        auto l2 = scope.alloc_light_slot();
-        auto lw2 = scope.write_light(l2);
-        lw2->type = LightData::Type::Rect;
+        auto l2 = scope.alloc_light(pxr::SdfPath("/TestLight1"));
+        scope.mutate_light(l2, [&](LightData& lw2) { lw2.type = LightData::Type::Rect; });
     }
 
     world.prepare_gpu_buffers(device, device.queue());

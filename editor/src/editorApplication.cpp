@@ -593,10 +593,12 @@ void EditorApplication::on_ready() {
 }
 
 auto EditorApplication::compute_active_view(float aspect) const -> ActiveView {
-    auto cameras = m_world.get_cameras();
+    const auto& cameras = m_world.get_cameras();
+    auto cameras_raw = cameras.span_raw();
     uint32_t cam_slot = static_cast<uint32_t>(m_active_camera_index - 1);
-    if (m_active_camera_index > 0 && cam_slot < cameras.size() && cameras[cam_slot].active()) {
-        auto& cam = cameras[cam_slot].data();
+    if (m_active_camera_index > 0 && cam_slot < cameras_raw.size() &&
+        cameras_raw[cam_slot].active) {
+        const auto& cam = cameras_raw[cam_slot].value;
         glm::mat4 proj;
         if (cam.orthographic) {
             float half_h = cam.ortho_height * 0.5f;
@@ -745,7 +747,7 @@ void EditorApplication::render(FrameContext& ctx) {
     process_dirty_prims();
 
     // Hot-reload: ask the compiler for any sources dirty since last poll. The
-    // compiler bumps its per-source revision; FrameGraph's DepTrackedCache
+    // compiler bumps its per-source revision; FrameGraph's DepTrackedSlotMap
     // drops stale shader modules on the next shader()/shader_variant() call,
     // and pipelines rebuild via their shader_module_version dep.
     if (m_shader_compiler) {
@@ -1620,14 +1622,13 @@ auto EditorApplication::draw_scene_viewport() noexcept -> void {
             }
             // Camera submenu
             if (ImGui::BeginMenu("Camera")) {
-                auto cameras = m_world.get_cameras();
+                const auto& cameras = m_world.get_cameras();
                 std::vector<std::pair<std::string, int>> cam_labels;
                 cam_labels.push_back({"Free Camera", 0});
-                for (uint32_t i = 0; i < cameras.size(); ++i) {
-                    if (!cameras[i].active()) continue;
-                    auto name = cameras[i].get_prim_path().GetName();
-                    cam_labels.push_back({std::move(name), static_cast<int>(i + 1)});
-                }
+                cameras.for_each([&](const pxr::SdfPath& path, const rendering::CameraData&) {
+                    auto idx = cameras.find(path).index();
+                    cam_labels.push_back({path.GetName(), static_cast<int>(idx + 1)});
+                });
                 for (auto& [label, idx] : cam_labels) {
                     bool selected = (idx == m_active_camera_index);
                     if (ImGui::MenuItem(label.c_str(), nullptr, selected)) {

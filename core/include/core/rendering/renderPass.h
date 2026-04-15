@@ -200,9 +200,9 @@ class IPass {
     static uint32_t entity_version(PassDataKind kind, uint32_t index, const RenderWorld& world) {
         switch (kind) {
             case PassDataKind::Mesh:
-                return world.get_meshes()[index].generation();
+                return static_cast<uint32_t>(world.get_meshes().version_at(index));
             case PassDataKind::Light:
-                return world.get_lights()[index].generation();
+                return static_cast<uint32_t>(world.get_lights().version_at(index));
             case PassDataKind::Material:
                 break;
         }

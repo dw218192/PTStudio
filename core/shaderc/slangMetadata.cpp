@@ -214,17 +214,10 @@ bool has_dynamic_buffer_attr(slang::IGlobalSession* global_session,
                                     "DynamicBufferAttribute") != nullptr;
 }
 
-bool has_non_filterable_attr(slang::IGlobalSession* global_session,
-                             VariableLayoutReflection* var_layout) {
-    if (!global_session || !var_layout) return false;
-    auto* var = var_layout->getVariable();
-    if (!var) return false;
-    return var->findAttributeByName(reinterpret_cast<SlangSession*>(global_session),
-                                    "NonFilterable") != nullptr ||
-           var->findAttributeByName(reinterpret_cast<SlangSession*>(global_session),
-                                    "NonFilterableAttribute") != nullptr;
-}
-
+// Checks for the shared `[NonFiltering]` attribute. Applied to either a
+// texture (meaning: unfilterable sample type) or a sampler (meaning: non-
+// filtering binding type). The emitter dispatches on the binding kind to
+// apply the correct WebGPU flag.
 bool has_non_filtering_attr(slang::IGlobalSession* global_session,
                             VariableLayoutReflection* var_layout) {
     if (!global_session || !var_layout) return false;
@@ -291,7 +284,7 @@ void classify_bind_entry(slang::IGlobalSession* global_session,
                 return;
             }
             out.texture_sample_type = wgpu_sample_type_for(tl->getResourceResultType());
-            if (has_non_filterable_attr(global_session, var_layout) &&
+            if (has_non_filtering_attr(global_session, var_layout) &&
                 std::string_view(out.texture_sample_type) == "WGPUTextureSampleType_Float") {
                 out.texture_sample_type = "WGPUTextureSampleType_UnfilterableFloat";
             }

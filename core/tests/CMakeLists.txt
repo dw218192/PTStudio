@@ -15,9 +15,9 @@ list(APPEND TEST_NAMES testCommandLine)
 set(testCommandLine_source testCommandLine.cpp)
 set(testCommandLine_libs core)
 
-list(APPEND TEST_NAMES testDepTrackedCache)
-set(testDepTrackedCache_source testDepTrackedCache.cpp)
-set(testDepTrackedCache_libs core)
+list(APPEND TEST_NAMES testDepTrackedSlotMap)
+set(testDepTrackedSlotMap_source testDepTrackedSlotMap.cpp)
+set(testDepTrackedSlotMap_libs core)
 
 list(APPEND TEST_NAMES testAsyncStateMachine)
 set(testAsyncStateMachine_source testAsyncStateMachine.cpp)

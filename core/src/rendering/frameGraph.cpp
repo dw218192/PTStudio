@@ -411,21 +411,19 @@ WGPUBindGroupLayout FrameGraph::bind_group_layout(std::string_view name,
                                                   WGPUBindGroupLayout existing) {
     PTS_ZONE_SCOPED;
     INVARIANT_MSG(existing, "FrameGraph::bind_group_layout: existing layout must be non-null");
-    auto& bgl = m_bgl_cache.get_or_build(
-        name, pts::cache::DepTrackedCache<std::string, WGPUBindGroupLayout>::Span{},
-        [&] { return existing; });
-    if (bgl != existing) {
+    auto bgl_h = m_bgl_cache.get_or_build(name, BglCache::Span{}, [&] { return existing; });
+    if (*bgl_h != existing) {
         // Cache hit on same name but with a different handle: drop the new
         // one -- callers are expected to use a stable name per layout identity.
         wgpuBindGroupLayoutRelease(existing);
     }
-    m_bgl_version_lookup[bgl] = m_bgl_cache.version(name);
-    return bgl;
+    m_bgl_version_lookup[*bgl_h] = m_bgl_cache.version(name);
+    return *bgl_h;
 }
 
 WGPUBindGroupLayout FrameGraph::bind_group_layout(std::string_view name) {
     PTS_ZONE_SCOPED;
-    auto* cached = m_bgl_cache.find(name);
+    auto cached = m_bgl_cache.find(name);
     INVARIANT_MSG(cached,
                   "FrameGraph::bind_group_layout(name): no layout registered under this name; "
                   "the owning pass must register it first via the (name, existing) overload");
@@ -446,7 +444,7 @@ WGPUShaderModule FrameGraph::shader(std::string_view resource_key) {
     // Dep: source revision tracked by the compiler. Bumped by invalidate_shader().
     uint64_t rev = m_compiler->source_revision(resource_key);
     uint64_t deps[] = {rev};
-    return m_shader_cache.get_or_build_with_replace(
+    return *m_shader_cache.get_or_build_with_replace(
         resource_key, ShaderCache::Span{deps, 1},
         [&]() -> WGPUShaderModule {
             auto wgsl = m_compiler->compile(ShaderKey{resource_key, {}});
@@ -473,7 +471,7 @@ WGPUShaderModule FrameGraph::shader_from_wgsl(std::string_view cache_key,
     // frame). When no compiler is attached, skip revision tracking entirely.
     uint64_t rev = m_compiler ? m_compiler->source_revision(cache_key) : 1;
     uint64_t deps[] = {rev};
-    return m_shader_cache.get_or_build_with_replace(
+    return *m_shader_cache.get_or_build_with_replace(
         cache_key, ShaderCache::Span{deps, 1},
         [&]() -> WGPUShaderModule {
             WGPUShaderSourceWGSL wgsl_desc = WGPU_SHADER_SOURCE_WGSL_INIT;
@@ -499,7 +497,7 @@ WGPUShaderModule FrameGraph::shader_variant(std::string_view variant_cache_key,
     // all variants built from it must rebuild.
     uint64_t rev = m_compiler->source_revision(source_resource_key);
     uint64_t deps[] = {rev};
-    return m_shader_cache.get_or_build_with_replace(
+    return *m_shader_cache.get_or_build_with_replace(
         variant_cache_key, ShaderCache::Span{deps, 1},
         [&]() -> WGPUShaderModule {
             auto wgsl = m_compiler->compile(ShaderKey{source_resource_key, defines});
@@ -522,8 +520,8 @@ void FrameGraph::invalidate_shader(std::string_view resource_key) {
     // with a fresh version. Bump the source revision on the compiler so any
     // variants of this source (which use the same source_revision as their
     // dep) rebuild too.
-    if (auto* m = m_shader_cache.find(resource_key)) {
-        if (*m) wgpuShaderModuleRelease(*m);
+    if (auto h = m_shader_cache.find(resource_key)) {
+        if (*h) wgpuShaderModuleRelease(*h);
     }
     m_shader_cache.erase(resource_key);
     if (m_compiler) m_compiler->invalidate(resource_key);
@@ -559,7 +557,7 @@ auto RenderPipelineCacheBuilder::shader_module(WGPUShaderModule module)
     -> RenderPipelineCacheBuilder& {
     m_shader_module = module;
     m_shader_module_version = 0;
-    m_fg.m_shader_cache.for_each([&](const std::string& key, WGPUShaderModule& m) {
+    m_fg.m_shader_cache.for_each([&](const std::string& key, const WGPUShaderModule& m) {
         if (m == module) {
             m_shader_module_version = m_fg.m_shader_cache.version(key);
             m_shader_resource_key = key;
@@ -693,7 +691,7 @@ auto RenderPipelineCacheBuilder::build() -> WGPURenderPipeline {
         deps.push_back(m_fg.bgl_version(bgl));
     }
 
-    return m_fg.m_render_pipeline_cache.get_or_build_with_replace(
+    return *m_fg.m_render_pipeline_cache.get_or_build_with_replace(
         m_name, FrameGraph::RenderPipelineCache::Span{deps.data(), deps.size()},
         [&]() -> WGPURenderPipeline {
             PTS_ZONE_NAMED("render_pipeline build");
@@ -779,7 +777,7 @@ auto ComputePipelineCacheBuilder::shader_module(WGPUShaderModule module)
     -> ComputePipelineCacheBuilder& {
     m_shader_module = module;
     m_shader_module_version = 0;
-    m_fg.m_shader_cache.for_each([&](const std::string& key, WGPUShaderModule& m) {
+    m_fg.m_shader_cache.for_each([&](const std::string& key, const WGPUShaderModule& m) {
         if (m == module) {
             m_shader_module_version = m_fg.m_shader_cache.version(key);
             m_shader_resource_key = key;
@@ -818,7 +816,7 @@ auto ComputePipelineCacheBuilder::build() -> WGPUComputePipeline {
         deps.push_back(m_fg.bgl_version(bgl));
     }
 
-    return m_fg.m_compute_pipeline_cache.get_or_build_with_replace(
+    return *m_fg.m_compute_pipeline_cache.get_or_build_with_replace(
         m_name, FrameGraph::ComputePipelineCache::Span{deps.data(), deps.size()},
         [&]() -> WGPUComputePipeline {
             PTS_ZONE_NAMED("compute_pipeline build");
@@ -863,15 +861,15 @@ ComputePipelineCacheBuilder FrameGraph::compute_pipeline(std::string_view name) 
 }
 
 WGPURenderPipeline FrameGraph::get_render_pipeline(std::string_view name) const {
-    auto* p = m_render_pipeline_cache.find(name);
-    PRECONDITION_MSG(p != nullptr, "get_render_pipeline: pipeline not found in cache");
-    return *p;
+    auto h = m_render_pipeline_cache.find(name);
+    PRECONDITION_MSG(h, "get_render_pipeline: pipeline not found in cache");
+    return *h;
 }
 
 WGPUComputePipeline FrameGraph::get_compute_pipeline(std::string_view name) const {
-    auto* p = m_compute_pipeline_cache.find(name);
-    PRECONDITION_MSG(p != nullptr, "get_compute_pipeline: pipeline not found in cache");
-    return *p;
+    auto h = m_compute_pipeline_cache.find(name);
+    PRECONDITION_MSG(h, "get_compute_pipeline: pipeline not found in cache");
+    return *h;
 }
 
 FallbackPool& FrameGraph::fallback_pool() {
@@ -982,8 +980,8 @@ const Buffer* FrameGraph::compiled_buffer(BufferDeclHandle h) const {
 
 const Descriptor* FrameGraph::compiled_descriptor(DescriptorDeclHandle h) const {
     if (!h) return nullptr;
-    auto* p = m_descriptor_cache.find(h.value);
-    return (p && *p) ? p->get() : nullptr;
+    auto ch = m_descriptor_cache.find(h.value);
+    return (ch && *ch) ? ch->get() : nullptr;
 }
 
 BufferDeclHandle FrameGraph::buffer(std::string_view debug_label, BufferDesc desc,
@@ -1622,7 +1620,7 @@ void FrameGraph::materialize_descriptors() {
                 entry.resource));
         }
 
-        const auto& ptr = m_descriptor_cache.get_or_build_with_replace(
+        const auto& ptr = *m_descriptor_cache.get_or_build_with_replace(
             i, DescriptorCache::Span{deps.data(), deps.size()},
             [&]() -> std::unique_ptr<Descriptor> {
                 std::vector<WGPUBindGroupEntry> wgpu_entries;

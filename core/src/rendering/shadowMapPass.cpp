@@ -48,13 +48,13 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
                                 .build();
 
     // Count shadow-casting distant lights
-    auto lights = ctx.world.get_lights();
+    auto lights = ctx.world.get_lights().span_raw();
     uint32_t shadow_count = 0;
     if (m_enabled) {
         for (uint32_t li = 0; li < static_cast<uint32_t>(lights.size()); ++li) {
-            if (!lights[li].active()) continue;
-            if (lights[li]->type != LightData::Type::Distant) continue;
-            if (!lights[li]->casts_shadow) continue;
+            if (!lights[li].active) continue;
+            if (lights[li].value.type != LightData::Type::Distant) continue;
+            if (!lights[li].value.casts_shadow) continue;
             ++shadow_count;
             if (shadow_count >= k_max_shadow_maps) break;
         }
@@ -107,7 +107,7 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
     auto aabb_min = scene_bounds.min;
     auto aabb_max = scene_bounds.max;
 
-    auto objects = ctx.world.get_objects();
+    auto objects = ctx.world.get_objects().span_raw();
     uint32_t total_slots = static_cast<uint32_t>(objects.size());
 
     // Build one ShadowInfo per light (matching light buffer order)
@@ -115,12 +115,12 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
     uint32_t layer_index = 0;
 
     for (uint32_t li = 0; li < static_cast<uint32_t>(lights.size()); ++li) {
-        if (!lights[li].active()) continue;
-        if (lights[li]->type != LightData::Type::Distant) continue;
-        if (!lights[li]->casts_shadow) continue;
+        if (!lights[li].active) continue;
+        if (lights[li].value.type != LightData::Type::Distant) continue;
+        if (!lights[li].value.casts_shadow) continue;
         if (layer_index >= k_max_shadow_maps) continue;
 
-        auto dir = glm::normalize(lights[li]->direction);
+        auto dir = glm::normalize(lights[li].value.direction);
 
         auto center = (aabb_min + aabb_max) * 0.5f;
         auto half_diag = glm::length(aabb_max - aabb_min) * 0.5f;
@@ -200,12 +200,12 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
 
             // Model matrices (uploaded once, shared across all layers)
             auto model_buf = exec.get(model_buf_decl).buffer;
-            auto objs = world.get_objects();
+            auto objs = world.get_objects().span_raw();
             for (uint32_t oi = 0; oi < static_cast<uint32_t>(objs.size()); ++oi) {
-                if (!objs[oi].active()) continue;
-                if (!objs[oi]->visible) continue;
-                wgpuQueueWriteBuffer(queue, model_buf, oi * k_uniform_align, &objs[oi]->transform,
-                                     sizeof(glm::mat4));
+                if (!objs[oi].active) continue;
+                if (!objs[oi].value.visible) continue;
+                wgpuQueueWriteBuffer(queue, model_buf, oi * k_uniform_align,
+                                     &objs[oi].value.transform, sizeof(glm::mat4));
             }
 
             // Light VP matrices
@@ -222,25 +222,25 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
             .depth(shadow_array, layer)
             .execute([=, &world](ExecuteContext& exec, WGPURenderPassEncoder pass) {
                 auto bg = exec.get(bg_decl).bind_group;
-                auto objs = world.get_objects();
-                auto mesh_slots = world.get_meshes();
+                auto objs = world.get_objects().span_raw();
+                auto mesh_slots = world.get_meshes().span_raw();
                 uint32_t slots = static_cast<uint32_t>(objs.size());
 
                 uint32_t vp_offset = layer * k_uniform_align;
                 wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
                 for (uint32_t i = 0; i < slots; ++i) {
-                    if (!objs[i].active()) continue;
-                    if (!objs[i]->visible) continue;
+                    if (!objs[i].active) continue;
+                    if (!objs[i].value.visible) continue;
                     uint32_t model_offset = i * k_uniform_align;
                     uint32_t dyn_offsets[2] = {model_offset, vp_offset};
                     wgpuRenderPassEncoderSetBindGroup(pass, 0, bg, 2, dyn_offsets);
-                    const auto& mesh = mesh_slots[objs[i]->mesh_index];
-                    wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh->position_buffer.handle(), 0,
-                                                         mesh->position_buffer.size());
-                    wgpuRenderPassEncoderSetIndexBuffer(pass, mesh->index_buffer.handle(),
+                    const auto& mesh = mesh_slots[objs[i].value.mesh_index].value;
+                    wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh.position_buffer.handle(), 0,
+                                                         mesh.position_buffer.size());
+                    wgpuRenderPassEncoderSetIndexBuffer(pass, mesh.index_buffer.handle(),
                                                         WGPUIndexFormat_Uint32, 0,
-                                                        mesh->index_buffer.size());
-                    wgpuRenderPassEncoderDrawIndexed(pass, mesh->index_count, 1, 0, 0, 0);
+                                                        mesh.index_buffer.size());
+                    wgpuRenderPassEncoderDrawIndexed(pass, mesh.index_count, 1, 0, 0, 0);
                 }
             });
     }

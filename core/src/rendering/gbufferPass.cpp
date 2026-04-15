@@ -46,7 +46,7 @@ GBufferPass::Outputs GBufferPass::add_to_frame_graph(FrameGraph& fg, const PassC
                                 .vertex_layout<gbuffer_shader::VertexLayout>()
                                 .build();
 
-    auto objects = ctx.world.get_objects();
+    auto objects = ctx.world.get_objects().span_raw();
     auto total_slots = static_cast<uint32_t>(objects.size());
 
     // Register per-object uniform buffer with frame graph
@@ -87,8 +87,8 @@ GBufferPass::Outputs GBufferPass::add_to_frame_graph(FrameGraph& fg, const PassC
         .color(normals_decl)
         .depth(depth_decl)
         .execute([=, &world](ExecuteContext& exec, WGPURenderPassEncoder pass) {
-            auto objs = world.get_objects();
-            auto meshes = world.get_meshes();
+            auto objs = world.get_objects().span_raw();
+            auto meshes = world.get_meshes().span_raw();
             auto buf = exec.get(uniform_buf_decl).buffer;
             auto bg = exec.get(bg_decl).bind_group;
 
@@ -96,28 +96,28 @@ GBufferPass::Outputs GBufferPass::add_to_frame_graph(FrameGraph& fg, const PassC
             {
                 PTS_ZONE_NAMED("gbuffer uniform upload");
                 for (uint32_t i = 0; i < static_cast<uint32_t>(objs.size()); ++i) {
-                    if (!objs[i].active()) continue;
-                    if (!objs[i]->visible) continue;
+                    if (!objs[i].active) continue;
+                    if (!objs[i].value.visible) continue;
                     GBufferObjectUniforms u{};
-                    u.mvp = proj_mat * view_mat * objs[i]->transform;
-                    u.model_view = view_mat * objs[i]->transform;
+                    u.mvp = proj_mat * view_mat * objs[i].value.transform;
+                    u.model_view = view_mat * objs[i].value.transform;
                     wgpuQueueWriteBuffer(queue, buf, i * k_uniform_align, &u, sizeof(u));
                 }
             }
 
             wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
             for (uint32_t i = 0; i < static_cast<uint32_t>(objs.size()); ++i) {
-                if (!objs[i].active()) continue;
-                if (!objs[i]->visible) continue;
+                if (!objs[i].active) continue;
+                if (!objs[i].value.visible) continue;
                 uint32_t dyn_offset = i * k_uniform_align;
                 wgpuRenderPassEncoderSetBindGroup(pass, 0, bg, 1, &dyn_offset);
-                const auto& mesh = meshes[objs[i]->mesh_index];
-                wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh->vertex_buffer.handle(), 0,
-                                                     mesh->vertex_buffer.size());
-                wgpuRenderPassEncoderSetIndexBuffer(pass, mesh->index_buffer.handle(),
+                const auto& mesh = meshes[objs[i].value.mesh_index].value;
+                wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh.vertex_buffer.handle(), 0,
+                                                     mesh.vertex_buffer.size());
+                wgpuRenderPassEncoderSetIndexBuffer(pass, mesh.index_buffer.handle(),
                                                     WGPUIndexFormat_Uint32, 0,
-                                                    mesh->index_buffer.size());
-                wgpuRenderPassEncoderDrawIndexed(pass, mesh->index_count, 1, 0, 0, 0);
+                                                    mesh.index_buffer.size());
+                wgpuRenderPassEncoderDrawIndexed(pass, mesh.index_count, 1, 0, 0, 0);
             }
         });
 

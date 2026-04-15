@@ -55,8 +55,8 @@ WireframePass::HdrOutputs WireframePass::do_add_to_frame_graph(rendering::FrameG
                                 .vertex_layout<editor_wireframe_shader::VertexLayout>()
                                 .build();
 
-    auto objects = ctx.world.get_objects();
-    auto meshes = ctx.world.get_meshes();
+    auto objects = ctx.world.get_objects().span_raw();
+    auto meshes = ctx.world.get_meshes().span_raw();
     auto object_count = static_cast<uint32_t>(objects.size());
 
     // Register per-object uniform buffer with frame graph
@@ -95,13 +95,13 @@ WireframePass::HdrOutputs WireframePass::do_add_to_frame_graph(rendering::FrameG
     {
         PTS_ZONE_NAMED("wireframe mesh cache");
         for (uint32_t i = 0; i < object_count; ++i) {
-            if (!objects[i].active()) continue;
-            if (!objects[i]->visible) continue;
-            const auto& obj = objects[i];
+            if (!objects[i].active) continue;
+            if (!objects[i].value.visible) continue;
+            const auto& obj = objects[i].value;
             get_or_create_pass_data<WireframeMesh>(
-                rendering::PassDataKind::Mesh, obj->mesh_index, ctx.world, [&]() {
-                    const auto& mesh = meshes[obj->mesh_index];
-                    auto indices = expand_wireframe_indices(mesh->cpu_indices);
+                rendering::PassDataKind::Mesh, obj.mesh_index, ctx.world, [&]() {
+                    const auto& mesh = meshes[obj.mesh_index].value;
+                    auto indices = expand_wireframe_indices(mesh.cpu_indices);
                     auto buf = ctx.device.create_buffer(
                         indices.size() * sizeof(uint32_t),
                         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Index |
@@ -117,33 +117,33 @@ WireframePass::HdrOutputs WireframePass::do_add_to_frame_graph(rendering::FrameG
         .color(color_decl)
         .depth(depth_decl)
         .execute([=, &world](rendering::ExecuteContext& exec, WGPURenderPassEncoder pass) {
-            auto objs = world.get_objects();
-            auto mshs = world.get_meshes();
+            auto objs = world.get_objects().span_raw();
+            auto mshs = world.get_meshes().span_raw();
             auto uniform_buf = exec.get(uniform_buf_decl).buffer;
             auto desc_group = exec.get(bg_decl).bind_group;
 
             {
                 PTS_ZONE_NAMED("wireframe uniform upload");
                 for (uint32_t i = 0; i < static_cast<uint32_t>(objs.size()); ++i) {
-                    if (!objs[i].active()) continue;
-                    if (!objs[i]->visible) continue;
+                    if (!objs[i].active) continue;
+                    if (!objs[i].value.visible) continue;
                     WireframeUniforms u{};
-                    u.mvp = proj_mat * view_mat * objs[i]->transform;
+                    u.mvp = proj_mat * view_mat * objs[i].value.transform;
                     wgpuQueueWriteBuffer(queue, uniform_buf, i * k_uniform_align, &u, sizeof(u));
                 }
             }
 
             wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
             for (uint32_t i = 0; i < static_cast<uint32_t>(objs.size()); ++i) {
-                if (!objs[i].active()) continue;
-                if (!objs[i]->visible) continue;
+                if (!objs[i].active) continue;
+                if (!objs[i].value.visible) continue;
                 uint32_t dyn_offset = i * k_uniform_align;
                 wgpuRenderPassEncoderSetBindGroup(pass, 0, desc_group, 1, &dyn_offset);
-                const auto& mesh = mshs[objs[i]->mesh_index];
+                const auto& mesh = mshs[objs[i].value.mesh_index].value;
                 auto& wf = get_or_create_pass_data<WireframeMesh>(
-                    rendering::PassDataKind::Mesh, objs[i]->mesh_index, world, nullptr);
-                wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh->vertex_buffer.handle(), 0,
-                                                     mesh->vertex_buffer.size());
+                    rendering::PassDataKind::Mesh, objs[i].value.mesh_index, world, nullptr);
+                wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh.vertex_buffer.handle(), 0,
+                                                     mesh.vertex_buffer.size());
                 wgpuRenderPassEncoderSetIndexBuffer(pass, wf.index_buffer.handle(),
                                                     WGPUIndexFormat_Uint32, 0,
                                                     wf.index_buffer.size());

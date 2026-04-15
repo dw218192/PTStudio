@@ -1,6 +1,6 @@
 #pragma once
 
-#include <core/cache/depTrackedCache.h>
+#include <core/container/depTrackedSlotMap.h>
 #include <core/defines.h>
 #include <core/diagnostics.h>
 #include <core/rendering/webgpu/webgpu.h>
@@ -729,7 +729,7 @@ class FrameGraph {
     // Compiled resources -- parallel vectors indexed by handle.value
     std::vector<std::unique_ptr<Texture>> m_compiled_textures;
     std::vector<std::unique_ptr<Buffer>> m_compiled_buffers;
-    // Descriptors live in m_descriptor_cache (DepTrackedCache, keyed by
+    // Descriptors live in m_descriptor_cache (DepTrackedSlotMap, keyed by
     // handle.value) so dep-based invalidation and version tracking are
     // uniform across FG caches.
 
@@ -742,14 +742,15 @@ class FrameGraph {
     std::vector<Pass> m_passes;
 
     using ShaderCache =
-        pts::cache::DepTrackedCache<std::string, WGPUShaderModule, StringViewHash, StringViewEqual>;
-    using BglCache = pts::cache::DepTrackedCache<std::string, WGPUBindGroupLayout, StringViewHash,
-                                                 StringViewEqual>;
-    using RenderPipelineCache = pts::cache::DepTrackedCache<std::string, WGPURenderPipeline,
-                                                            StringViewHash, StringViewEqual>;
-    using ComputePipelineCache = pts::cache::DepTrackedCache<std::string, WGPUComputePipeline,
-                                                             StringViewHash, StringViewEqual>;
-    using DescriptorCache = pts::cache::DepTrackedCache<uint32_t, std::unique_ptr<Descriptor>>;
+        pts::container::DepTrackedSlotMap<std::string, WGPUShaderModule, std::less<>>;
+    using BglCache =
+        pts::container::DepTrackedSlotMap<std::string, WGPUBindGroupLayout, std::less<>>;
+    using RenderPipelineCache =
+        pts::container::DepTrackedSlotMap<std::string, WGPURenderPipeline, std::less<>>;
+    using ComputePipelineCache =
+        pts::container::DepTrackedSlotMap<std::string, WGPUComputePipeline, std::less<>>;
+    using DescriptorCache =
+        pts::container::DepTrackedSlotMap<uint32_t, std::unique_ptr<Descriptor>>;
 
     ShaderCache m_shader_cache;
     BglCache m_bgl_cache;

@@ -4,6 +4,7 @@
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/webgpu/device.h>
 #include <doctest/doctest.h>
+#include <pxr/usd/sdf/path.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
@@ -82,11 +83,12 @@ TEST_CASE("update_ibl with dome light (no texture) produces uniform color IBL") 
     RenderWorld world;
     {
         auto scope = world.begin_sync();
-        auto idx = scope.alloc_light_slot();
-        auto w = scope.write_light(idx);
-        w->type = LightData::Type::Dome;
-        w->color = {1.0f, 0.9f, 0.8f};
-        w->intensity = 0.3f;
+        auto idx = scope.alloc_light(pxr::SdfPath("/TestDome0"));
+        scope.mutate_light(idx, [&](LightData& w) {
+            w.type = LightData::Type::Dome;
+            w.color = {1.0f, 0.9f, 0.8f};
+            w.intensity = 0.3f;
+        });
     }
 
     world.update_ibl(device, device.queue(), sampler);
@@ -106,11 +108,12 @@ TEST_CASE("update_ibl skips when light_version unchanged") {
     RenderWorld world;
     {
         auto scope = world.begin_sync();
-        auto idx = scope.alloc_light_slot();
-        auto w = scope.write_light(idx);
-        w->type = LightData::Type::Dome;
-        w->color = {0.5f, 0.5f, 0.5f};
-        w->intensity = 1.0f;
+        auto idx = scope.alloc_light(pxr::SdfPath("/TestDome0"));
+        scope.mutate_light(idx, [&](LightData& w) {
+            w.type = LightData::Type::Dome;
+            w.color = {0.5f, 0.5f, 0.5f};
+            w.intensity = 1.0f;
+        });
     }
 
     world.update_ibl(device, device.queue(), sampler);
@@ -128,14 +131,14 @@ TEST_CASE("update_ibl transitions from dome to no-dome (black)") {
     auto sampler = create_ibl_sampler(device);
 
     RenderWorld world;
-    uint32_t dome_idx;
     {
         auto scope = world.begin_sync();
-        dome_idx = scope.alloc_light_slot();
-        auto w = scope.write_light(dome_idx);
-        w->type = LightData::Type::Dome;
-        w->color = {1.0f, 1.0f, 1.0f};
-        w->intensity = 1.0f;
+        auto dome_idx = scope.alloc_light(pxr::SdfPath("/TestDome0"));
+        scope.mutate_light(dome_idx, [&](LightData& w) {
+            w.type = LightData::Type::Dome;
+            w.color = {1.0f, 1.0f, 1.0f};
+            w.intensity = 1.0f;
+        });
     }
 
     world.update_ibl(device, device.queue(), sampler);
@@ -144,7 +147,7 @@ TEST_CASE("update_ibl transitions from dome to no-dome (black)") {
     // Remove dome light
     {
         auto scope = world.begin_sync();
-        scope.free_light_slot(dome_idx);
+        scope.free_light(pxr::SdfPath("/TestDome0"));
     }
 
     world.update_ibl(device, device.queue(), sampler);
@@ -161,11 +164,12 @@ TEST_CASE("update_ibl with Z-up produces ready IBL") {
     RenderWorld world;
     {
         auto scope = world.begin_sync();
-        auto idx = scope.alloc_light_slot();
-        auto w = scope.write_light(idx);
-        w->type = LightData::Type::Dome;
-        w->color = {1.0f, 1.0f, 1.0f};
-        w->intensity = 1.0f;
+        auto idx = scope.alloc_light(pxr::SdfPath("/TestDome0"));
+        scope.mutate_light(idx, [&](LightData& w) {
+            w.type = LightData::Type::Dome;
+            w.color = {1.0f, 1.0f, 1.0f};
+            w.intensity = 1.0f;
+        });
     }
 
     world.update_ibl(device, device.queue(), sampler, UpAxis::Z);
@@ -185,11 +189,12 @@ TEST_CASE("clear resets IBL state") {
     RenderWorld world;
     {
         auto scope = world.begin_sync();
-        auto idx = scope.alloc_light_slot();
-        auto w = scope.write_light(idx);
-        w->type = LightData::Type::Dome;
-        w->color = {1.0f, 1.0f, 1.0f};
-        w->intensity = 1.0f;
+        auto idx = scope.alloc_light(pxr::SdfPath("/TestDome0"));
+        scope.mutate_light(idx, [&](LightData& w) {
+            w.type = LightData::Type::Dome;
+            w.color = {1.0f, 1.0f, 1.0f};
+            w.intensity = 1.0f;
+        });
     }
     world.update_ibl(device, device.queue(), sampler);
     CHECK(world.ibl_resources().is_ready());

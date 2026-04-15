@@ -238,15 +238,15 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
     }
     auto* skybox_pipeline_handle = skybox_builder.build();
 
-    auto objects = ctx.world.get_objects();
-    auto object_count = static_cast<uint32_t>(objects.size());
+    auto objs_raw = ctx.world.get_objects().span_raw();
+    auto object_count = static_cast<uint32_t>(objs_raw.size());
 
     // Count proxy lights (lights with active mesh proxies) for uniform buffer sizing
-    auto all_lights = ctx.world.get_lights();
+    auto lights_raw = ctx.world.get_lights().span_raw();
     uint32_t proxy_light_count = 0;
-    for (uint32_t li = 0; li < static_cast<uint32_t>(all_lights.size()); ++li) {
-        if (!all_lights[li].active()) continue;
-        if (all_lights[li]->mesh_index == UINT32_MAX) continue;
+    for (uint32_t li = 0; li < static_cast<uint32_t>(lights_raw.size()); ++li) {
+        if (!lights_raw[li].active) continue;
+        if (lights_raw[li].value.mesh_index == UINT32_MAX) continue;
         ++proxy_light_count;
     }
 
@@ -327,11 +327,11 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
     // and needs color*intensity applied; for uniform domes the cubemap already
     // has color*intensity baked in, so modulation is (1,1,1).
     glm::vec3 dome_mod{1.0f};
-    for (const auto& slot : ctx.world.get_lights()) {
-        if (!slot.active()) continue;
-        if (slot.data().type == rendering::LightData::Type::Dome) {
-            if (!slot.data().env_texture_path.empty()) {
-                dome_mod = slot.data().color * slot.data().intensity;
+    for (const auto& entry : ctx.world.get_lights().span_raw()) {
+        if (!entry.active) continue;
+        if (entry.value.type == rendering::LightData::Type::Dome) {
+            if (!entry.value.env_texture_path.empty()) {
+                dome_mod = entry.value.color * entry.value.intensity;
             }
             break;
         }
@@ -425,8 +425,8 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
         .descriptor(3, bg3_decl);
     pass_builder.depth(depth_decl)
         .execute([=, &world](rendering::ExecuteContext& exec, WGPURenderPassEncoder pass) {
-            auto objs = world.get_objects();
-            auto meshes = world.get_meshes();
+            auto objs = world.get_objects().span_raw();
+            auto meshes_raw = world.get_meshes().span_raw();
 
             auto uniform_buf = exec.get(uniform_buf_decl).buffer;
             auto bg0 = exec.get(bg0_decl).bind_group;
@@ -435,15 +435,15 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
             {
                 PTS_ZONE_NAMED("forward uniform upload");
                 for (uint32_t i = 0; i < static_cast<uint32_t>(objs.size()); ++i) {
-                    if (!objs[i].active()) continue;
-                    if (!objs[i]->visible) continue;
-                    const auto& obj = objs[i];
+                    if (!objs[i].active) continue;
+                    if (!objs[i].value.visible) continue;
+                    const auto& obj = objs[i].value;
                     ForwardUniforms u{};
-                    u.mvp = proj_mat * view_mat * obj->transform;
-                    u.model = obj->transform;
+                    u.mvp = proj_mat * view_mat * obj.transform;
+                    u.model = obj.transform;
                     u.camera_pos = camera_pos;
                     u.time = elapsed_time;
-                    u.material_index = obj->material_index;
+                    u.material_index = obj.material_index;
                     u.light_count = light_count;
                     u.viewport_size = {static_cast<float>(viewport_width),
                                        static_cast<float>(viewport_height)};
@@ -456,21 +456,22 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
             // Upload uniforms for proxy light meshes
             {
                 PTS_ZONE_NAMED("forward proxy light uniform upload");
-                auto light_slots = world.get_lights();
+                auto light_slots = world.get_lights().span_raw();
                 uint32_t proxy_slot = object_count;
                 for (uint32_t li = 0; li < static_cast<uint32_t>(light_slots.size()); ++li) {
-                    if (!light_slots[li].active()) continue;
-                    if (light_slots[li]->mesh_index == UINT32_MAX) continue;
-                    if (!light_slots[li]->visible) {
+                    if (!light_slots[li].active) continue;
+                    if (light_slots[li].value.mesh_index == UINT32_MAX) continue;
+                    if (!light_slots[li].value.visible) {
                         ++proxy_slot;
                         continue;
                     }
+                    const auto& light = light_slots[li].value;
                     ForwardUniforms u{};
-                    u.mvp = proj_mat * view_mat * light_slots[li]->transform;
-                    u.model = light_slots[li]->transform;
+                    u.mvp = proj_mat * view_mat * light.transform;
+                    u.model = light.transform;
                     u.camera_pos = camera_pos;
                     u.time = elapsed_time;
-                    u.material_index = light_slots[li]->material_index;
+                    u.material_index = light.material_index;
                     u.light_count = light_count;
                     u.viewport_size = {static_cast<float>(viewport_width),
                                        static_cast<float>(viewport_height)};
@@ -495,39 +496,39 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
             wgpuRenderPassEncoderSetPipeline(pass, pipeline_handle);
 
             for (uint32_t i = 0; i < static_cast<uint32_t>(objs.size()); ++i) {
-                if (!objs[i].active()) continue;
-                if (!objs[i]->visible) continue;
+                if (!objs[i].active) continue;
+                if (!objs[i].value.visible) continue;
                 uint32_t dyn_offset = i * k_uniform_align;
                 wgpuRenderPassEncoderSetBindGroup(pass, 0, bg0, 1, &dyn_offset);
-                const auto& mesh = meshes[objs[i]->mesh_index];
-                wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh->vertex_buffer.handle(), 0,
-                                                     mesh->vertex_buffer.size());
-                wgpuRenderPassEncoderSetIndexBuffer(pass, mesh->index_buffer.handle(),
+                const auto& mesh = meshes_raw[objs[i].value.mesh_index].value;
+                wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh.vertex_buffer.handle(), 0,
+                                                     mesh.vertex_buffer.size());
+                wgpuRenderPassEncoderSetIndexBuffer(pass, mesh.index_buffer.handle(),
                                                     WGPUIndexFormat_Uint32, 0,
-                                                    mesh->index_buffer.size());
-                wgpuRenderPassEncoderDrawIndexed(pass, mesh->index_count, 1, 0, 0, 0);
+                                                    mesh.index_buffer.size());
+                wgpuRenderPassEncoderDrawIndexed(pass, mesh.index_count, 1, 0, 0, 0);
             }
 
             // Draw light proxy meshes
             {
-                auto light_slots = world.get_lights();
+                auto light_slots = world.get_lights().span_raw();
                 uint32_t proxy_idx = object_count;
                 for (uint32_t li = 0; li < static_cast<uint32_t>(light_slots.size()); ++li) {
-                    if (!light_slots[li].active()) continue;
-                    if (light_slots[li]->mesh_index == UINT32_MAX) continue;
-                    if (!light_slots[li]->visible) {
+                    if (!light_slots[li].active) continue;
+                    if (light_slots[li].value.mesh_index == UINT32_MAX) continue;
+                    if (!light_slots[li].value.visible) {
                         ++proxy_idx;
                         continue;
                     }
                     uint32_t dyn_offset = proxy_idx * k_uniform_align;
                     wgpuRenderPassEncoderSetBindGroup(pass, 0, bg0, 1, &dyn_offset);
-                    const auto& mesh = meshes[light_slots[li]->mesh_index];
-                    wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh->vertex_buffer.handle(), 0,
-                                                         mesh->vertex_buffer.size());
-                    wgpuRenderPassEncoderSetIndexBuffer(pass, mesh->index_buffer.handle(),
+                    const auto& mesh = meshes_raw[light_slots[li].value.mesh_index].value;
+                    wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh.vertex_buffer.handle(), 0,
+                                                         mesh.vertex_buffer.size());
+                    wgpuRenderPassEncoderSetIndexBuffer(pass, mesh.index_buffer.handle(),
                                                         WGPUIndexFormat_Uint32, 0,
-                                                        mesh->index_buffer.size());
-                    wgpuRenderPassEncoderDrawIndexed(pass, mesh->index_count, 1, 0, 0, 0);
+                                                        mesh.index_buffer.size());
+                    wgpuRenderPassEncoderDrawIndexed(pass, mesh.index_count, 1, 0, 0, 0);
                     ++proxy_idx;
                 }
             }

@@ -11,6 +11,7 @@
 #include <core/rendering/shaderc/shaderLoader.h>
 #include <core/rendering/webgpu/device.h>
 #include <doctest/doctest.h>
+#include <pxr/usd/sdf/path.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
@@ -213,12 +214,13 @@ TEST_CASE("ContactShadowPass add_to_frame_graph produces valid output") {
     // Add a distant light so the light buffer is non-empty
     {
         auto scope = world.begin_sync();
-        auto li = scope.alloc_light_slot();
-        auto lw = scope.write_light(li);
-        lw->type = LightData::Type::Distant;
-        lw->direction = glm::vec3(0, -1, 0);
-        lw->color = glm::vec3(1);
-        lw->intensity = 1.0f;
+        auto li = scope.alloc_light(pxr::SdfPath("/TestLight0"));
+        scope.mutate_light(li, [&](LightData& lw) {
+            lw.type = LightData::Type::Distant;
+            lw.direction = glm::vec3(0, -1, 0);
+            lw.color = glm::vec3(1);
+            lw.intensity = 1.0f;
+        });
     }
     world.prepare_gpu_buffers(device, device.queue());
 

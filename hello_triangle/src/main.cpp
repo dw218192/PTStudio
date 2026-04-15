@@ -164,26 +164,26 @@ class HelloApp : public pts::GpuApplication {
             .present()
             .execute([&](pts::rendering::ExecuteContext&, WGPURenderPassEncoder pass) {
                 wgpuRenderPassEncoderSetPipeline(pass, m_pipeline->handle());
-                auto objects = m_world.get_objects();
-                auto meshes = m_world.get_meshes();
-                for (const auto& obj : objects) {
-                    if (!obj.active()) continue;
-                    if (!obj->visible) continue;
+                auto objects = m_world.get_objects().span_raw();
+                auto meshes = m_world.get_meshes().span_raw();
+                for (const auto& entry : objects) {
+                    if (!entry.active) continue;
+                    if (!entry.value.visible) continue;
                     Uniforms uniforms;
-                    uniforms.mvp = vp * obj->transform;
+                    uniforms.mvp = vp * entry.value.transform;
                     uniforms.time = t * m_time_scale;
                     uniforms.rotation = t * m_rotation_speed;
                     wgpuQueueWriteBuffer(device.queue(), m_uniform_buffer.handle(), 0, &uniforms,
                                          sizeof(uniforms));
                     wgpuRenderPassEncoderSetBindGroup(pass, 0, m_bind_group, 0, nullptr);
 
-                    const auto& mesh = meshes[obj->mesh_index];
-                    wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh->vertex_buffer.handle(), 0,
-                                                         mesh->vertex_buffer.size());
-                    wgpuRenderPassEncoderSetIndexBuffer(pass, mesh->index_buffer.handle(),
+                    const auto& mesh = meshes[entry.value.mesh_index].value;
+                    wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh.vertex_buffer.handle(), 0,
+                                                         mesh.vertex_buffer.size());
+                    wgpuRenderPassEncoderSetIndexBuffer(pass, mesh.index_buffer.handle(),
                                                         WGPUIndexFormat_Uint32, 0,
-                                                        mesh->index_buffer.size());
-                    wgpuRenderPassEncoderDrawIndexed(pass, mesh->index_count, 1, 0, 0, 0);
+                                                        mesh.index_buffer.size());
+                    wgpuRenderPassEncoderDrawIndexed(pass, mesh.index_count, 1, 0, 0, 0);
                 }
             });
 

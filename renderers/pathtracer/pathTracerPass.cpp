@@ -127,11 +127,11 @@ PathTracerPass::HdrOutputs PathTracerPass::do_add_to_frame_graph(
     // and needs color*intensity applied; for uniform domes the cubemap already
     // has color*intensity baked in, so modulation is (1,1,1).
     glm::vec3 dome_mod{1.0f};
-    for (const auto& slot : ctx.world.get_lights()) {
-        if (!slot.active()) continue;
-        if (slot.data().type == rendering::LightData::Type::Dome) {
-            if (!slot.data().env_texture_path.empty()) {
-                dome_mod = slot.data().color * slot.data().intensity;
+    for (const auto& entry : ctx.world.get_lights().span_raw()) {
+        if (!entry.active) continue;
+        if (entry.value.type == rendering::LightData::Type::Dome) {
+            if (!entry.value.env_texture_path.empty()) {
+                dome_mod = entry.value.color * entry.value.intensity;
             }
             break;
         }
