@@ -527,18 +527,29 @@ def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> 
                           env_script=conanbuild, cwd=root)
 
         # Phase 2: Execute prebuild steps (may use host tools built above)
+        # In Emscripten builds, skip steps that depend on a native host tool
+        # -- those ran in the preceding `./repo build --host-tools-only`
+        # invocation on the host platform (linux-x64), and the staged host
+        # binary lives in the HOST build dir, not the Emscripten target dir.
         if prebuild_steps:
-            with CommandGroup("Prebuild steps"):
-                execute_build_steps(
-                    root,
-                    config,
-                    tokens,
-                    dimensions,
-                    logs_dir,
-                    prebuild_steps,
-                    "prebuild",
-                    current_tool,
-                )
+            effective_prebuild_steps = prebuild_steps
+            if emscripten_build:
+                effective_prebuild_steps = {
+                    name: cfg for name, cfg in prebuild_steps.items()
+                    if name not in _HOST_TOOL_TARGETS
+                }
+            if effective_prebuild_steps:
+                with CommandGroup("Prebuild steps"):
+                    execute_build_steps(
+                        root,
+                        config,
+                        tokens,
+                        dimensions,
+                        logs_dir,
+                        effective_prebuild_steps,
+                        "prebuild",
+                        current_tool,
+                    )
 
         with CommandGroup("CMake configure", cwd=build_folder, env=build_env) as g:
             configure_log_file = logs_dir / "cmake_configure.log"
