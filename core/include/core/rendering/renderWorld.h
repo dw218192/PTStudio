@@ -184,23 +184,18 @@ class SyncScope {
     void free_light(const pxr::SdfPath& path);
     void free_camera(const pxr::SdfPath& path);
 
-    /// In-place mutation; bumps version after fn returns.
+    /// In-place mutation; bumps version after fn returns. Defined after
+    /// RenderWorld below -- non-dependent access to m_world.m_* requires
+    /// the type to be complete at template parse time (Clang enforces,
+    /// MSVC is lenient).
     template <class Fn>
-    void mutate_object(uint32_t i, Fn&& fn) {
-        m_world.m_objects.mutate_at(i, std::forward<Fn>(fn));
-    }
+    void mutate_object(uint32_t i, Fn&& fn);
     template <class Fn>
-    void mutate_mesh(uint32_t i, Fn&& fn) {
-        m_world.m_meshes.mutate_at(i, std::forward<Fn>(fn));
-    }
+    void mutate_mesh(uint32_t i, Fn&& fn);
     template <class Fn>
-    void mutate_light(uint32_t i, Fn&& fn) {
-        m_world.m_lights.mutate_at(i, std::forward<Fn>(fn));
-    }
+    void mutate_light(uint32_t i, Fn&& fn);
     template <class Fn>
-    void mutate_camera(uint32_t i, Fn&& fn) {
-        m_world.m_cameras.mutate_at(i, std::forward<Fn>(fn));
-    }
+    void mutate_camera(uint32_t i, Fn&& fn);
 
     // Read-only accessors by index.
     const ObjectData& object(uint32_t i) const;
@@ -430,5 +425,24 @@ struct RenderWorld {
     glm::vec3 m_ibl_uniform_color{-1.0f};       // sentinel: never matches real color
     UpAxis m_ibl_up_axis = UpAxis::Y;           // up axis when IBL was last converted
 };
+
+// SyncScope mutate_* template definitions -- deferred until after
+// RenderWorld is complete (see note at the forward declarations above).
+template <class Fn>
+void SyncScope::mutate_object(uint32_t i, Fn&& fn) {
+    m_world.m_objects.mutate_at(i, std::forward<Fn>(fn));
+}
+template <class Fn>
+void SyncScope::mutate_mesh(uint32_t i, Fn&& fn) {
+    m_world.m_meshes.mutate_at(i, std::forward<Fn>(fn));
+}
+template <class Fn>
+void SyncScope::mutate_light(uint32_t i, Fn&& fn) {
+    m_world.m_lights.mutate_at(i, std::forward<Fn>(fn));
+}
+template <class Fn>
+void SyncScope::mutate_camera(uint32_t i, Fn&& fn) {
+    m_world.m_cameras.mutate_at(i, std::forward<Fn>(fn));
+}
 
 }  // namespace pts::rendering
