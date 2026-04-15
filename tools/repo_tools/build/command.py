@@ -285,6 +285,25 @@ def _host_tools_only_build(
             shutil.copy2(built, dest)
             logger.info(f"Staged host tool: {dest} (from {built})")
 
+            # Stage the tool's conanrun script alongside the binary so the
+            # caller (e.g. slangc prebuild step) can source the tool's
+            # isolated runtime env to find its dynamic deps -- critical on
+            # Windows where DLLs are found via PATH. Each host tool has its
+            # own isolated Conan graph, so its conanrun is specific to its
+            # dependency set. Conan's layout can place it at either the
+            # top of tool_out or under `build/generators/`.
+            conanrun_name = "conanrun.bat" if is_win else "conanrun.sh"
+            for loc in (tool_out / conanrun_name,
+                        tool_out / "build" / "generators" / conanrun_name):
+                if loc.exists():
+                    shutil.copy2(loc, bin_dir / conanrun_name)
+                    # Also stage companion files (activate/deactivate, env .sh/.bat)
+                    # so sourcing conanrun works fully.
+                    for companion in loc.parent.glob("conan*"):
+                        if companion.is_file():
+                            shutil.copy2(companion, bin_dir / companion.name)
+                    break
+
     # Run only prebuild steps that map to a host tool (e.g. usdz -> *.usdz).
     host_prebuild_steps = {
         name: cfg for name, cfg in (prebuild_steps or {}).items()

@@ -24,15 +24,32 @@ from repo_tools.core import (
 
 
 def _resolve_pts_shaderc(build_dir: Path) -> Path:
+    """Locate the staged pts_shaderc binary.
+
+    pts_shaderc is a native host tool. In a same-platform build it sits in
+    the current build_dir's bin/. In a cross-compile (e.g. Emscripten
+    target) the host binary lives under a sibling platform's build dir --
+    it was staged there by a preceding `./repo build --host-tools-only`
+    invocation for the host platform. We search both.
+    """
     exe = "pts_shaderc.exe" if sys.platform == "win32" else "pts_shaderc"
+
     direct = build_dir / "bin" / exe
     if direct.exists():
         return direct
-    for candidate in build_dir.rglob(exe):
-        if candidate.is_file() and candidate.stat().st_size > 0:
-            return candidate
+
+    # Fall back to any sibling platform build dir. `_build/<platform>/<cfg>/`
+    # -- two levels up from build_dir is `_build/`, sibling platform dirs
+    # are at the same depth.
+    build_root = build_dir.parent.parent
+    if build_root.is_dir():
+        for candidate in build_root.glob(f"*/{build_dir.name}/bin/{exe}"):
+            if candidate.is_file() and candidate.stat().st_size > 0:
+                return candidate
+
     raise FileNotFoundError(
-        f"pts_shaderc not found under {build_dir}; run `./repo build --host-tools-only` first"
+        f"pts_shaderc not found under {build_dir} or any sibling platform "
+        f"build dir; run `./repo build --host-tools-only` first"
     )
 
 
@@ -81,7 +98,24 @@ class SlangcTool(RepoTool):
 
         build_dir = Path(tokens["build_dir"])
         pts_shaderc = _resolve_pts_shaderc(build_dir)
-        conanrun = build_dir / "conanrun"
+        # Resolve the conanrun env script for pts_shaderc. Windows uses
+        # PATH (not RPATH) for DLL discovery, so sourcing conanrun is
+        # required there to find slang.dll. Linux/macOS get away without
+        # it because Conan bakes RPATH at build time, but we still use
+        # conanrun when present.
+        #
+        # Two candidates, in preference order:
+        #   1. Next to the binary: `<pts_shaderc_dir>/conanrun.*`
+        #      (staged during `--host-tools-only` so cross-compile works)
+        #   2. The current build's main conanrun: `<build_dir>/conanrun.*`
+        #      (present in native same-platform builds)
+        conanrun_suffix = ".bat" if sys.platform == "win32" else ".sh"
+        conanrun: Path | None = None
+        for candidate in (pts_shaderc.parent, build_dir):
+            script = candidate / f"conanrun{conanrun_suffix}"
+            if script.exists():
+                conanrun = candidate / "conanrun"  # ShellCommand appends suffix
+                break
         logs_dir = Path(tokens["logs_root"])
         logs_dir.mkdir(parents=True, exist_ok=True)
 
