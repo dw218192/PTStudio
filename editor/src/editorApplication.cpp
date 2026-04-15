@@ -487,8 +487,8 @@ void EditorApplication::on_ready() {
                                     "core/generated/shaders/ssao.wgsl",
                                     editor_resources::get_resource);
     m_shader_loader.register_shader(
-        "core/generated/shaders/ssao_blur.wgsl", "core/shaders/ssao_blur.slang",
-        "core/generated/shaders/ssao_blur.wgsl", editor_resources::get_resource);
+        "core/generated/shaders/bilateral_blur.wgsl", "core/shaders/bilateral_blur.slang",
+        "core/generated/shaders/bilateral_blur.wgsl", editor_resources::get_resource);
 
     // Register contact shadow shader for hot-reload
     m_shader_loader.register_shader(
@@ -1151,6 +1151,18 @@ auto EditorApplication::draw_add_prim_menu(const pxr::SdfPath* parent,
 
 void EditorApplication::load_stage(pxr::UsdStageRefPtr stage, std::string_view label) {
     INVARIANT_MSG(stage, "load_stage called with null stage");
+
+    // Keep the built-in scene dropdown in sync with the actual loaded stage.
+    // If the label matches a built-in entry we preselect it; otherwise -1 so
+    // ImGui::Combo shows no entry as selected (and clicking any entry becomes
+    // a real switch, not a silent no-op).
+    m_demo_scene_index = -1;
+    for (size_t i = 0; i < m_demo_scene_names.size(); ++i) {
+        if (m_demo_scene_names[i] == label) {
+            m_demo_scene_index = static_cast<int>(i);
+            break;
+        }
+    }
 
     if (m_init_complete) {
         // Async path -- populate in background, finalize in render()

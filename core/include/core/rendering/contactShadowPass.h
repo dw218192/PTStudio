@@ -47,10 +47,13 @@ class ContactShadowPass final : public IPass {
 
     // Tunable parameters (exposed via ImGui)
     bool m_enabled = true;
-    float m_max_distance = 0.5f;
+    float m_max_distance = 0.09f;
     float m_thickness = 0.05f;
     float m_normal_offset = 0.01f;
+    float m_light_offset = 0.005f;
     int m_step_count = 16;
+    bool m_blur = true;
+    float m_blur_depth_threshold = 0.001f;
 };
 
 }  // namespace pts::rendering

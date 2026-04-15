@@ -138,11 +138,11 @@ slangc:
       metadata:
         output: "core/generated/ssao_shader_metadata.h"
         namespace: "ssao_shader"
-    - input: "core/shaders/ssao_blur.slang"
-      output: "core/generated/shaders/ssao_blur.wgsl"
+    - input: "core/shaders/bilateral_blur.slang"
+      output: "core/generated/shaders/bilateral_blur.wgsl"
       metadata:
-        output: "core/generated/ssao_blur_shader_metadata.h"
-        namespace: "ssao_blur_shader"
+        output: "core/generated/bilateral_blur_shader_metadata.h"
+        namespace: "bilateral_blur_shader"
     - input: "core/shaders/contact_shadow.slang"
       output: "core/generated/shaders/contact_shadow.wgsl"
       metadata:
@@ -232,7 +232,7 @@ embed:
         - "core/generated/shaders/shadow.wgsl"
         - "core/generated/shaders/gbuffer.wgsl"
         - "core/generated/shaders/ssao.wgsl"
-        - "core/generated/shaders/ssao_blur.wgsl"
+        - "core/generated/shaders/bilateral_blur.wgsl"
         - "core/generated/shaders/contact_shadow.wgsl"
         - "editor/generated/shaders/picking.wgsl"
         - "editor/generated/shaders/grid.wgsl"

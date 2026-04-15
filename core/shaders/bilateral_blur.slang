@@ -1,10 +1,15 @@
-struct BlurUniforms {
+// Depth-aware 4x4 bilateral blur. Reads a single-channel source texture (.r)
+// and produces a blurred output, rejecting neighbor samples whose depth
+// differs from the center by more than `depth_threshold`.
+
+struct BilateralBlurUniforms {
     float2 texel_size;
-    float2 _pad;
+    float depth_threshold;
+    float _pad;
 };
 
-[[vk::binding(0, 0)]] ConstantBuffer<BlurUniforms> u;
-[[vk::binding(1, 0)]] Texture2D<float4> ssao_tex;
+[[vk::binding(0, 0)]] ConstantBuffer<BilateralBlurUniforms> u;
+[[vk::binding(1, 0)]] Texture2D<float4> input_tex;
 [[vk::binding(2, 0)]] [NonFiltering] Texture2D<float>  depth_tex;
 [[vk::binding(3, 0)]] SamplerState      linear_sampler;
 [[vk::binding(4, 0)]] [NonFiltering]   SamplerState      depth_sampler;
@@ -26,8 +31,8 @@ VsOut vs_main(uint vertex_id : SV_VertexID) {
 [shader("fragment")]
 float4 fs_main(float2 uv : TEXCOORD) : SV_Target0 {
     float center_depth = depth_tex.SampleLevel(depth_sampler, uv, 0).x;
-    float center_ao = ssao_tex.SampleLevel(linear_sampler, uv, 0).r;
-    float result = center_ao;
+    float center_value = input_tex.SampleLevel(linear_sampler, uv, 0).r;
+    float result = center_value;
     float total_weight = 1.0;
 
     // 4x4 bilateral blur
@@ -36,18 +41,17 @@ float4 fs_main(float2 uv : TEXCOORD) : SV_Target0 {
             float2 offset = float2(float(x) + 0.5, float(y) + 0.5) * u.texel_size;
             float2 sample_uv = uv + offset;
 
-            float ao    = ssao_tex.SampleLevel(linear_sampler, sample_uv, 0).r;
-            float d     = depth_tex.SampleLevel(depth_sampler, sample_uv, 0).x;
+            float v = input_tex.SampleLevel(linear_sampler, sample_uv, 0).r;
+            float d = depth_tex.SampleLevel(depth_sampler, sample_uv, 0).x;
 
             // Bilateral weight: reject samples with large depth discontinuity
-            float depth_diff = abs(center_depth - d);
-            float w = (depth_diff < 0.001) ? 1.0 : 0.0;
+            float w = (abs(center_depth - d) < u.depth_threshold) ? 1.0 : 0.0;
 
-            result       += ao * w;
+            result       += v * w;
             total_weight += w;
         }
     }
 
-    float ao = (total_weight > 0.0) ? (result / total_weight) : 1.0;
-    return float4(ao, ao, ao, 1.0);
+    float blurred = (total_weight > 0.0) ? (result / total_weight) : center_value;
+    return float4(blurred, blurred, blurred, 1.0);
 }

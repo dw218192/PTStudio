@@ -1,6 +1,7 @@
 #include <contact_shadow_shader_metadata.h>
 #include <core/diagnostics.h>
 #include <core/profiling.h>
+#include <core/rendering/bilateralBlur.h>
 #include <core/rendering/contactShadowPass.h>
 #include <core/rendering/fallbackPool.h>
 #include <core/rendering/frameGraph.h>
@@ -25,9 +26,9 @@ struct ContactShadowUniforms {
     float max_distance;        // 200: 4
     float thickness;           // 204: 4
     float normal_offset;       // 208: 4
-    int32_t step_count;        // 212: 4
-    uint32_t light_count;      // 216: 4
-    uint32_t _pad;             // 220: 4 -> total 224
+    float light_offset;        // 212: 4
+    int32_t step_count;        // 216: 4
+    uint32_t light_count;      // 220: 4 -> total 224
 };
 static_assert(sizeof(ContactShadowUniforms) == 224,
               "ContactShadowUniforms must match shader std140 layout");
@@ -97,12 +98,6 @@ ContactShadowPass::Outputs ContactShadowPass::add_to_frame_graph(FrameGraph& fg,
                          .external_buffer(5, in.light_buffer, 0, WGPU_WHOLE_SIZE)
                          .build();
 
-    // Consumer descriptor: managed CS texture + sampler
-    auto consumer = descriptor(fg, consumer_bgl, "consumer_desc")
-                        .texture(0, cs_decl)
-                        .sampler(1, fg.sampler(WGPUSamplerBindingType_Filtering))
-                        .build();
-
     // Capture scalars for lambda
     auto queue = ctx.queue;
     auto proj_matrix = ctx.proj_matrix;
@@ -113,6 +108,7 @@ ContactShadowPass::Outputs ContactShadowPass::add_to_frame_graph(FrameGraph& fg,
     auto max_distance = m_max_distance;
     auto thickness = m_thickness;
     auto normal_offset = m_normal_offset;
+    auto light_offset = m_light_offset;
     auto step_count = m_step_count;
 
     fg.add_pass("contact_shadow_gen")
@@ -134,6 +130,7 @@ ContactShadowPass::Outputs ContactShadowPass::add_to_frame_graph(FrameGraph& fg,
             uniforms.max_distance = max_distance;
             uniforms.thickness = thickness;
             uniforms.normal_offset = normal_offset;
+            uniforms.light_offset = light_offset;
             uniforms.step_count = step_count;
             uniforms.light_count = light_count;
             wgpuQueueWriteBuffer(queue, uniform_buf, 0, &uniforms, sizeof(uniforms));
@@ -143,7 +140,25 @@ ContactShadowPass::Outputs ContactShadowPass::add_to_frame_graph(FrameGraph& fg,
             wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
         });
 
-    return {cs_decl, consumer};
+    // Blur must be added AFTER the gen pass so the frame graph sees writes
+    // before reads.
+    auto cs_final_decl = cs_decl;
+    if (m_blur) {
+        BilateralBlurParams blur_params;
+        blur_params.input = cs_decl;
+        blur_params.depth = in.depth;
+        blur_params.output_format = WGPUTextureFormat_R8Unorm;
+        blur_params.depth_threshold = m_blur_depth_threshold;
+        blur_params.debug_label = "contact_shadow/blur";
+        cs_final_decl = add_bilateral_blur(fg, ctx, blur_params);
+    }
+
+    auto consumer = descriptor(fg, consumer_bgl, "consumer_desc")
+                        .texture(0, cs_final_decl)
+                        .sampler(1, fg.sampler(WGPUSamplerBindingType_Filtering))
+                        .build();
+
+    return {cs_final_decl, consumer};
 }
 
 void ContactShadowPass::draw_imgui() {
@@ -151,7 +166,10 @@ void ContactShadowPass::draw_imgui() {
     ImGui::SliderFloat("Max Distance", &m_max_distance, 0.01f, 2.0f);
     ImGui::SliderFloat("Thickness", &m_thickness, 0.001f, 0.2f);
     ImGui::SliderFloat("Normal Offset", &m_normal_offset, 0.0f, 0.1f);
+    ImGui::SliderFloat("Light Offset", &m_light_offset, 0.0f, 0.1f);
     ImGui::SliderInt("Step Count", &m_step_count, 4, 64);
+    ImGui::Checkbox("Blur", &m_blur);
+    ImGui::SliderFloat("Blur Depth Threshold", &m_blur_depth_threshold, 0.00001f, 0.01f, "%.5f");
 }
 
 }  // namespace pts::rendering

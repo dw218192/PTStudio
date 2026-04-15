@@ -34,9 +34,9 @@ struct ContactShadowUniforms {
     max_distance : f32,
     thickness : f32,
     normal_offset : f32,
+    light_offset : f32,
     step_count : i32,
     light_count : u32,
-    _pad : u32,
 }
 
 struct Light {
@@ -204,6 +204,8 @@ TEST_CASE("ContactShadowPass add_to_frame_graph produces valid output") {
     GBufferPass gbuf_pass(loader);
 
     ContactShadowPass cs_pass(loader);
+    cs_pass.m_blur = false;  // Blur is a separate helper; skip it here to
+                             // avoid needing a bilateral_blur.wgsl stub.
 
     EmbeddedCompiler compiler(loader);
     FrameGraph fg(device, logger, &compiler);

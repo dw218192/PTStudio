@@ -9,14 +9,14 @@ struct ContactShadowUniforms {
     float max_distance;
     float thickness;
     float normal_offset;
+    float light_offset;
     int step_count;
     uint light_count;
-    uint _pad;
 };
 
 // GBuffer consumer slots (0-3)
 [[vk::binding(0, 0)]] [NonFiltering] Texture2D<float>  depth_tex;
-[[vk::binding(1, 0)]] [NonFiltering]  SamplerState      depth_sampler;
+[[vk::binding(1, 0)]] [NonFiltering]  SamplerState     depth_sampler;
 [[vk::binding(2, 0)]] Texture2D<float4> normals_tex;
 [[vk::binding(3, 0)]] SamplerState      linear_sampler;
 // ContactShadow-specific (4-5)
@@ -44,13 +44,6 @@ float3 reconstruct_view_pos(float2 uv, float depth) {
     return view.xyz / view.w;
 }
 
-float2 project_to_uv(float3 view_pos) {
-    float4 clip = mul(u.projection, float4(view_pos, 1.0));
-    if (clip.w <= 0.0) return float2(-1.0);
-    clip.xyz /= clip.w;
-    return float2(clip.x * 0.5 + 0.5, 0.5 - clip.y * 0.5);
-}
-
 float3 get_light_direction_view(Light light, float3 frag_view_pos) {
     if (light.type == LIGHT_DISTANT) {
         // Transform light direction to view space (w=0 for direction)
@@ -60,6 +53,11 @@ float3 get_light_direction_view(Light light, float3 frag_view_pos) {
     // Point/area lights: world position -> view space (w=1), then subtract fragment
     float3 light_view_pos = mul(u.view, float4(light.direction_or_pos, 1.0)).xyz;
     return normalize(light_view_pos - frag_view_pos);
+}
+
+// Hash a 2D coordinate to a jitter in [0, 1). Used to break up march banding.
+float hash12(float2 p) {
+    return frac(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453);
 }
 
 [shader("fragment")]
@@ -76,10 +74,8 @@ float4 fs_main(float2 uv : TEXCOORD) : SV_Target0 {
     float n_z = sqrt(max(0.0, 1.0 - n_xy.x * n_xy.x - n_xy.y * n_xy.y));
     float3 normal = normalize(float3(n_xy, n_z));
 
-    // Offset origin along normal to avoid self-shadowing
-    float3 origin = frag_pos + normal * u.normal_offset;
-
     float combined_shadow = 1.0;
+    float jitter = hash12(uv * u.viewport_size);
 
     uint visible_count = get_light_count(u.light_count, uv);
     for (uint iter = 0; iter < visible_count; iter++) {
@@ -91,31 +87,54 @@ float4 fs_main(float2 uv : TEXCOORD) : SV_Target0 {
         float3 to_light = get_light_direction_view(light, frag_pos);
 
         // Skip if light is below the surface
-        if (dot(to_light, normal) <= 0.0) continue;
+        float ndotl = dot(to_light, normal);
+        if (ndotl <= 0.0) continue;
 
-        float step_size = u.max_distance / float(u.step_count);
-        bool occluded = false;
+        // Grazing-angle bias: scale normal offset by (1 - NdotL); additional
+        // light_offset nudges the march start along the light ray to prevent
+        // the first samples from intersecting the originating surface.
+        float normal_bias = u.normal_offset * (1.0 + 2.0 * (1.0 - ndotl));
+        float3 p0_view = frag_pos + normal * normal_bias + to_light * u.light_offset;
+        float3 p1_view = p0_view + to_light * u.max_distance;
 
+        // Project ray endpoints to UV. If either endpoint is behind the
+        // camera we skip; a more robust impl would clip the ray.
+        float4 c0 = mul(u.projection, float4(p0_view, 1.0));
+        float4 c1 = mul(u.projection, float4(p1_view, 1.0));
+        if (c0.w <= 0.0 || c1.w <= 0.0) continue;
+
+        float2 uv0 = float2(c0.x / c0.w * 0.5 + 0.5, 0.5 - c0.y / c0.w * 0.5);
+        float2 uv1 = float2(c1.x / c1.w * 0.5 + 0.5, 0.5 - c1.y / c1.w * 0.5);
+
+        // Under perspective projection, 1/z_view is linear across screen
+        // space, so we interpolate it along the UV-linear march.
+        float inv_z0 = 1.0 / p0_view.z;
+        float inv_z1 = 1.0 / p1_view.z;
+
+        float shadow = 1.0;
         for (int s = 1; s <= u.step_count; s++) {
-            float3 march_pos = origin + to_light * (step_size * float(s));
-
-            float2 sample_uv = project_to_uv(march_pos);
+            float t = (float(s) - jitter) / float(u.step_count);
+            float2 sample_uv = lerp(uv0, uv1, t);
             if (any(sample_uv < 0.0) || any(sample_uv > 1.0)) break;
 
             float sample_depth = depth_tex.SampleLevel(depth_sampler, sample_uv, 0).x;
-            float3 sample_view_pos = reconstruct_view_pos(sample_uv, sample_depth);
+            if (sample_depth >= 1.0) continue;
 
-            float depth_diff = sample_view_pos.z - march_pos.z;
+            float ray_view_z = 1.0 / lerp(inv_z0, inv_z1, t);
+            float sample_view_z = reconstruct_view_pos(sample_uv, sample_depth).z;
+            float depth_diff = sample_view_z - ray_view_z;
+
             if (depth_diff > 0.0 && depth_diff < u.thickness) {
-                occluded = true;
+                // Soft falloff: hits near ray end shadow less (step_fade),
+                // hits near the thickness edge shadow less (thickness_fade).
+                float step_fade = 1.0 - t;
+                float thickness_fade = 1.0 - saturate(depth_diff / u.thickness);
+                shadow = 1.0 - step_fade * thickness_fade;
                 break;
             }
         }
 
-        if (occluded) {
-            combined_shadow = 0.0;
-            break;
-        }
+        combined_shadow = min(combined_shadow, shadow);
     }
 
     return float4(combined_shadow, 0.0, 0.0, 0.0);

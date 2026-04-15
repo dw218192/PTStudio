@@ -1,5 +1,6 @@
 #include <core/diagnostics.h>
 #include <core/profiling.h>
+#include <core/rendering/bilateralBlur.h>
 #include <core/rendering/fallbackPool.h>
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/gbufferPass.h>
@@ -8,7 +9,6 @@
 #include <core/rendering/ssaoPass.h>
 #include <core/rendering/webgpu/device.h>
 #include <imgui.h>
-#include <ssao_blur_shader_metadata.h>
 #include <ssao_shader_metadata.h>
 
 #include <array>
@@ -32,13 +32,6 @@ struct SSAOUniforms {
     uint32_t _pad[2];          // 152: 8  -> total 160
 };
 static_assert(sizeof(SSAOUniforms) == 160, "SSAOUniforms must match shader std140 layout");
-
-// Must match BlurUniforms in ssao_blur.slang.
-struct SSAOBlurUniforms {
-    glm::vec2 texel_size;  // 0: 8
-    float _pad[2];         // 8: 8  -> total 16
-};
-static_assert(sizeof(SSAOBlurUniforms) == 16, "SSAOBlurUniforms must match shader std140 layout");
 
 namespace {
 
@@ -131,22 +124,12 @@ SSAOPass::Outputs SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext
     auto gen_descl = fg.bind_group_layout(
         "ssao/gen", ssao_shader::create_bind_group_layout_0(ctx.device.handle()));
 
-    auto blur_descl = fg.bind_group_layout(
-        "ssao/blur", ssao_blur_shader::create_bind_group_layout_0(ctx.device.handle()));
-
     auto* gen_pipeline = fg.render_pipeline("ssao_gen")
                              .shader("core/generated/shaders/ssao.wgsl")
                              .color_format(WGPUTextureFormat_R8Unorm)
                              .cull_mode(WGPUCullMode_None)
                              .bind_group_layouts({gen_descl})
                              .build();
-
-    auto* blur_pipeline = fg.render_pipeline("ssao_blur")
-                              .shader("core/generated/shaders/ssao_blur.wgsl")
-                              .color_format(WGPUTextureFormat_RGBA8Unorm)
-                              .cull_mode(WGPUCullMode_None)
-                              .bind_group_layouts({blur_descl})
-                              .build();
 
     // -- Frame graph resources --
     TextureDesc r8_desc;
@@ -159,22 +142,11 @@ SSAOPass::Outputs SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext
     auto normals_decl = in.normals;
     auto ssao_raw_decl = create_texture(fg, r8_desc, "ssao_raw");
 
-    TextureDesc ao_desc = r8_desc;
-    ao_desc.format = WGPUTextureFormat_RGBA8Unorm;
-    auto ssao_decl = create_texture(fg, ao_desc, "ssao");
-
-    // Register uniform buffers with frame graph
     BufferDesc gen_buf_desc;
     gen_buf_desc.size = sizeof(SSAOUniforms);
     gen_buf_desc.usage =
         static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
     auto gen_uniform_buf_decl = create_buffer(fg, gen_buf_desc, "gen_uniforms");
-
-    BufferDesc blur_buf_desc;
-    blur_buf_desc.size = sizeof(SSAOBlurUniforms);
-    blur_buf_desc.usage =
-        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
-    auto blur_uniform_buf_decl = create_buffer(fg, blur_buf_desc, "blur_uniforms");
 
     // Look up persistent resources (bumps their last_declared_frame)
     auto kernel_decl = fg.find_buffer("ssao_kernel");
@@ -193,15 +165,6 @@ SSAOPass::Outputs SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext
             .sampler(6, fg.sampler(WGPUSamplerBindingType_NonFiltering, WGPUAddressMode_Repeat))
             .buffer(7, kernel_decl)
             .build();
-
-    // Blur descriptor via DescriptorBuilder
-    auto blur_desc_decl = descriptor(fg, blur_descl, "blur_desc")
-                              .buffer(0, blur_uniform_buf_decl, 0, sizeof(SSAOBlurUniforms))
-                              .texture(1, ssao_raw_decl)
-                              .texture(2, depth_decl)
-                              .sampler(3, fg.sampler(WGPUSamplerBindingType_Filtering))
-                              .sampler(4, fg.sampler(WGPUSamplerBindingType_NonFiltering))
-                              .build();
 
     // Capture scalars for lambdas
     auto queue = ctx.queue;
@@ -241,23 +204,13 @@ SSAOPass::Outputs SSAOPass::add_to_frame_graph(FrameGraph& fg, const PassContext
         });
 
     // -- Pass 2: Bilateral Blur --
-    fg.add_pass("ssao_blur")
-        .read(ssao_raw_decl)
-        .read(depth_decl)
-        .color(ssao_decl)
-        .execute([=](ExecuteContext& exec, WGPURenderPassEncoder pass) {
-            auto blur_uniform_buf = exec.get(blur_uniform_buf_decl).buffer;
-            auto blur_desc = exec.get(blur_desc_decl).bind_group;
-
-            SSAOBlurUniforms blur_u{};
-            blur_u.texel_size = {1.0f / static_cast<float>(viewport_width),
-                                 1.0f / static_cast<float>(viewport_height)};
-            wgpuQueueWriteBuffer(queue, blur_uniform_buf, 0, &blur_u, sizeof(blur_u));
-
-            wgpuRenderPassEncoderSetPipeline(pass, blur_pipeline);
-            wgpuRenderPassEncoderSetBindGroup(pass, 0, blur_desc, 0, nullptr);
-            wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
-        });
+    BilateralBlurParams blur_params;
+    blur_params.input = ssao_raw_decl;
+    blur_params.depth = depth_decl;
+    blur_params.output_format = WGPUTextureFormat_RGBA8Unorm;
+    blur_params.depth_threshold = 0.001f;
+    blur_params.debug_label = "ssao/blur";
+    auto ssao_decl = add_bilateral_blur(fg, ctx, blur_params);
 
     return {ssao_decl};
 }
