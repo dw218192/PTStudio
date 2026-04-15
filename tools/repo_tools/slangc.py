@@ -81,7 +81,13 @@ class SlangcTool(RepoTool):
 
         build_dir = Path(tokens["build_dir"])
         pts_shaderc = _resolve_pts_shaderc(build_dir)
-        conanrun = build_dir / "conanrun"
+        # In --host-tools-only mode (CI Emscripten path), the main build's
+        # conan install hasn't run, so there's no conanrun.sh for the
+        # Release dir. The staged pts_shaderc has its own bundled deps and
+        # can run without it.
+        conanrun_candidate = build_dir / ("conanrun.bat" if sys.platform == "win32"
+                                          else "conanrun.sh")
+        conanrun: Path | None = build_dir / "conanrun" if conanrun_candidate.exists() else None
         logs_dir = Path(tokens["logs_root"])
         logs_dir.mkdir(parents=True, exist_ok=True)
 
