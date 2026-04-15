@@ -135,3 +135,12 @@ These paths are generated or managed by the framework:
 - `tools/framework/` -- contribute upstream instead
 - `tools/framework/_managed/` -- generated venv, lockfile, pyproject
 - `repo`, `repo.cmd`, `repo.ps1` -- generated CLI shims
+
+### Agent Bash Hook: no subshells
+
+The agent allowlist hook denies any command that spawns a second shell -- `bash -c "..."`, `sh -c "..."`, heredocs (`$(cat <<EOF ...)`), etc. The rule isn't about the content; it's about enforcement. The hook matches the outer command string, so anything hidden inside a subshell bypasses allow/deny checks.
+
+Practical consequences:
+- For `gh pr create`, `gh issue create`, or anything wanting a multi-line body, use `--body-file <path>` and stage the body via the `Write` tool. Do NOT use `--body "$(cat <<EOF ... EOF)"` -- it gets denied.
+- For any multi-line string argument, write it to a temp file first.
+- Chained commands with `&&`, `||`, `;`, and pipes are fine (those don't spawn a new shell). Only `$(...)`, backticks, and explicit `bash`/`sh` invocations are blocked.
