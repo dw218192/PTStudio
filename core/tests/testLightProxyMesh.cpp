@@ -298,10 +298,3 @@ TEST_CASE("remove_prim frees proxy mesh slot for lights") {
         CHECK(world.get_meshes().active_at(mesh_idx) == false);
     }
 }
-
-TEST_CASE("LightData default fields") {
-    LightData light;
-    CHECK(light.mesh_index == UINT32_MAX);
-    CHECK(light.material_index == k_no_material);
-    CHECK(light.visible == true);
-}

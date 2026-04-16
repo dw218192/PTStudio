@@ -5,7 +5,6 @@
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
-#include <core/rendering/shaderCompiler.h>
 #include <core/rendering/shaderc/shaderLoader.h>
 #include <core/rendering/shadowMapPass.h>
 #include <core/rendering/webgpu/device.h>
@@ -16,35 +15,13 @@
 
 #include <glm/glm.hpp>
 
+#include "slangTestSupport.h"
+
 using namespace pts::rendering;
 
-// Tracy profiler must be initialized for instrumented code paths (PTS_ZONE_SCOPED).
 TEST_CASE("profiler init" * doctest::test_suite("setup")) {
     PTS_STARTUP_PROFILER();
 }
-
-// Minimal shadow-compatible WGSL: position-only vertex shader, no fragment.
-static constexpr auto k_shadow_wgsl = R"(
-struct ShadowPerObject {
-    light_mvp : mat4x4<f32>,
-}
-@group(0) @binding(0) var<uniform> u : ShadowPerObject;
-
-struct VsIn {
-    @location(0) position : vec3<f32>,
-}
-
-struct VsOut {
-    @builtin(position) position : vec4<f32>,
-}
-
-@vertex
-fn vs_main(input : VsIn) -> VsOut {
-    var output : VsOut;
-    output.position = u.light_mvp * vec4<f32>(input.position, 1.0);
-    return output;
-}
-)";
 
 namespace {
 
@@ -55,13 +32,6 @@ auto make_logger() -> std::shared_ptr<spdlog::logger> {
     }
     logger->set_level(spdlog::level::debug);
     return logger;
-}
-
-auto fake_shader_getter(std::string_view key) -> std::optional<std::string_view> {
-    if (key == "core/generated/shaders/shadow.wgsl") {
-        return k_shadow_wgsl;
-    }
-    return std::nullopt;
 }
 
 // Build+register the shadow consumer BGL the pass expects. In production
@@ -101,12 +71,13 @@ TEST_CASE("ShadowMapPass add_to_frame_graph with no lights returns valid handles
 
     ShaderLoader loader(logger);
     loader.register_shader("core/generated/shaders/shadow.wgsl", "core/shaders/shadow.slang",
-                           "core/generated/shaders/shadow.wgsl", fake_shader_getter, {"vs_main"});
+                           "core/generated/shaders/shadow.wgsl", pts::testing::stub_getter,
+                           {"vs_main"});
 
     ShadowMapPass pass(loader);
 
-    EmbeddedCompiler compiler(loader);
-    FrameGraph fg(device, logger, &compiler);
+    pts::testing::SlangTestCompiler slang(loader, logger, "shadow_no_lights");
+    FrameGraph fg(device, logger, slang.get());
 
     OrbitCamera camera;
     RenderWorld world;
@@ -128,12 +99,13 @@ TEST_CASE("ShadowMapPass add_to_frame_graph with distant light produces valid ou
 
     ShaderLoader loader(logger);
     loader.register_shader("core/generated/shaders/shadow.wgsl", "core/shaders/shadow.slang",
-                           "core/generated/shaders/shadow.wgsl", fake_shader_getter, {"vs_main"});
+                           "core/generated/shaders/shadow.wgsl", pts::testing::stub_getter,
+                           {"vs_main"});
 
     ShadowMapPass pass(loader);
 
-    EmbeddedCompiler compiler(loader);
-    FrameGraph fg(device, logger, &compiler);
+    pts::testing::SlangTestCompiler slang(loader, logger, "shadow_distant");
+    FrameGraph fg(device, logger, slang.get());
 
     OrbitCamera camera;
     RenderWorld world;
@@ -205,12 +177,13 @@ TEST_CASE("ShadowMapPass caps shadow count at k_max_shadow_maps") {
 
     ShaderLoader loader(logger);
     loader.register_shader("core/generated/shaders/shadow.wgsl", "core/shaders/shadow.slang",
-                           "core/generated/shaders/shadow.wgsl", fake_shader_getter, {"vs_main"});
+                           "core/generated/shaders/shadow.wgsl", pts::testing::stub_getter,
+                           {"vs_main"});
 
     ShadowMapPass pass(loader);
 
-    EmbeddedCompiler compiler(loader);
-    FrameGraph fg(device, logger, &compiler);
+    pts::testing::SlangTestCompiler slang(loader, logger, "shadow_max_cap");
+    FrameGraph fg(device, logger, slang.get());
 
     OrbitCamera camera;
     RenderWorld world;
@@ -278,12 +251,13 @@ TEST_CASE("ShadowMapPass skips non-distant lights") {
 
     ShaderLoader loader(logger);
     loader.register_shader("core/generated/shaders/shadow.wgsl", "core/shaders/shadow.slang",
-                           "core/generated/shaders/shadow.wgsl", fake_shader_getter, {"vs_main"});
+                           "core/generated/shaders/shadow.wgsl", pts::testing::stub_getter,
+                           {"vs_main"});
 
     ShadowMapPass pass(loader);
 
-    EmbeddedCompiler compiler(loader);
-    FrameGraph fg(device, logger, &compiler);
+    pts::testing::SlangTestCompiler slang(loader, logger, "shadow_non_distant");
+    FrameGraph fg(device, logger, slang.get());
 
     OrbitCamera camera;
     RenderWorld world;

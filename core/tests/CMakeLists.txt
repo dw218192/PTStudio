@@ -45,10 +45,12 @@ if(NOT EMSCRIPTEN)
     list(APPEND TEST_NAMES testShadowMapPass)
     set(testShadowMapPass_source testShadowMapPass.cpp)
     set(testShadowMapPass_libs core)
+    set(testShadowMapPass_defines PTS_WORKSPACE_ROOT="${CMAKE_SOURCE_DIR}")
 
     list(APPEND TEST_NAMES testContactShadowPass)
     set(testContactShadowPass_source testContactShadowPass.cpp)
     set(testContactShadowPass_libs core)
+    set(testContactShadowPass_defines PTS_WORKSPACE_ROOT="${CMAKE_SOURCE_DIR}")
 
     list(APPEND TEST_NAMES testPipelineBuilder)
     set(testPipelineBuilder_source testPipelineBuilder.cpp)

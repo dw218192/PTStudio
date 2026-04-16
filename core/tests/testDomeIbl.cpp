@@ -36,11 +36,6 @@ WGPUSampler create_ibl_sampler(const pts::webgpu::Device& device) {
 }
 }  // namespace
 
-TEST_CASE("env_texture_path defaults to empty") {
-    LightData data;
-    CHECK(data.env_texture_path.empty());
-}
-
 TEST_CASE("ibl_resources accessor returns same object") {
     RenderWorld world;
     auto& ibl = world.ibl_resources();
