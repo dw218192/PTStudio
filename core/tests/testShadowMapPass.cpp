@@ -115,7 +115,7 @@ TEST_CASE("ShadowMapPass add_to_frame_graph with distant light produces valid ou
     {
         auto scope = world.begin_sync();
         auto li = scope.alloc_light(pxr::SdfPath("/TestLight0"));
-        scope.mutate_light(li, LightField::All & ~LightField::Lifecycle, [&](LightData& lw) {
+        scope.mutate_light(li, LightField::All, [&](LightData& lw) {
             lw.type = LightData::Type::Distant;
             lw.direction = glm::vec3(0, -1, 0);
             lw.color = glm::vec3(1);
@@ -128,7 +128,7 @@ TEST_CASE("ShadowMapPass add_to_frame_graph with distant light produces valid ou
     {
         auto scope = world.begin_sync();
         mesh_idx = scope.alloc_mesh(pxr::SdfPath("/TestMesh0"));
-        scope.mutate_mesh(mesh_idx, MeshField::All & ~MeshField::Lifecycle, [&](MeshData& mw) {
+        scope.mutate_mesh(mesh_idx, MeshField::All, [&](MeshData& mw) {
             mw.cpu_vertices = {
                 {{-1, -1, -1}, {0, 1, 0}, {1, 1, 1}, {0, 0}},
                 {{1, -1, -1}, {0, 1, 0}, {1, 1, 1}, {1, 0}},
@@ -144,7 +144,7 @@ TEST_CASE("ShadowMapPass add_to_frame_graph with distant light produces valid ou
     {
         auto scope = world.begin_sync();
         auto oi = scope.alloc_object(pxr::SdfPath("/TestObj0"));
-        scope.mutate_object(oi, ObjectField::All & ~ObjectField::Lifecycle, [&](ObjectData& ow) {
+        scope.mutate_object(oi, ObjectField::All, [&](ObjectData& ow) {
             ow.mesh_index = mesh_idx;
             ow.transform = glm::mat4(1.0f);
         });
@@ -194,7 +194,7 @@ TEST_CASE("ShadowMapPass caps shadow count at k_max_shadow_maps") {
         auto scope = world.begin_sync();
         for (uint32_t i = 0; i < k_max_shadow_maps + 2; ++i) {
             auto li = scope.alloc_light(pxr::SdfPath("/TestLight" + std::to_string(i)));
-            scope.mutate_light(li, LightField::All & ~LightField::Lifecycle, [&](LightData& lw) {
+            scope.mutate_light(li, LightField::All, [&](LightData& lw) {
                 lw.type = LightData::Type::Distant;
                 lw.direction = glm::vec3(0, -1, 0);
             });
@@ -206,7 +206,7 @@ TEST_CASE("ShadowMapPass caps shadow count at k_max_shadow_maps") {
     {
         auto scope = world.begin_sync();
         mesh_idx = scope.alloc_mesh(pxr::SdfPath("/TestMesh0"));
-        scope.mutate_mesh(mesh_idx, MeshField::All & ~MeshField::Lifecycle, [&](MeshData& mw) {
+        scope.mutate_mesh(mesh_idx, MeshField::All, [&](MeshData& mw) {
             mw.cpu_vertices = {
                 {{-1, -1, -1}, {0, 1, 0}, {1, 1, 1}, {0, 0}},
                 {{1, -1, -1}, {0, 1, 0}, {1, 1, 1}, {1, 0}},
@@ -221,7 +221,7 @@ TEST_CASE("ShadowMapPass caps shadow count at k_max_shadow_maps") {
     {
         auto scope = world.begin_sync();
         auto oi = scope.alloc_object(pxr::SdfPath("/TestObj0"));
-        scope.mutate_object(oi, ObjectField::All & ~ObjectField::Lifecycle, [&](ObjectData& ow) {
+        scope.mutate_object(oi, ObjectField::All, [&](ObjectData& ow) {
             ow.mesh_index = mesh_idx;
             ow.transform = glm::mat4(1.0f);
         });
@@ -270,7 +270,7 @@ TEST_CASE("ShadowMapPass allocates a layer for a rect area light") {
     {
         auto scope = world.begin_sync();
         auto li = scope.alloc_light(pxr::SdfPath("/TestRect"));
-        scope.mutate_light(li, LightField::All & ~LightField::Lifecycle, [&](LightData& lw) {
+        scope.mutate_light(li, LightField::All, [&](LightData& lw) {
             lw.type = LightData::Type::Rect;
             lw.transform = rect_xform;
             lw.width = 2.0f;
@@ -285,7 +285,7 @@ TEST_CASE("ShadowMapPass allocates a layer for a rect area light") {
     {
         auto scope = world.begin_sync();
         mesh_idx = scope.alloc_mesh(pxr::SdfPath("/TestMesh0"));
-        scope.mutate_mesh(mesh_idx, MeshField::All & ~MeshField::Lifecycle, [&](MeshData& mw) {
+        scope.mutate_mesh(mesh_idx, MeshField::All, [&](MeshData& mw) {
             mw.cpu_vertices = {
                 {{-2, 0, -2}, {0, 1, 0}, {1, 1, 1}, {0, 0}},
                 {{2, 0, -2}, {0, 1, 0}, {1, 1, 1}, {1, 0}},
@@ -300,7 +300,7 @@ TEST_CASE("ShadowMapPass allocates a layer for a rect area light") {
     {
         auto scope = world.begin_sync();
         auto oi = scope.alloc_object(pxr::SdfPath("/TestObj0"));
-        scope.mutate_object(oi, ObjectField::All & ~ObjectField::Lifecycle, [&](ObjectData& ow) {
+        scope.mutate_object(oi, ObjectField::All, [&](ObjectData& ow) {
             ow.mesh_index = mesh_idx;
             ow.transform = glm::mat4(1.0f);
         });
@@ -345,11 +345,11 @@ TEST_CASE("ShadowMapPass skips sphere and dome lights") {
     {
         auto scope = world.begin_sync();
         auto l1 = scope.alloc_light(pxr::SdfPath("/TestLight0"));
-        scope.mutate_light(l1, LightField::All & ~LightField::Lifecycle,
+        scope.mutate_light(l1, LightField::All,
                            [&](LightData& lw1) { lw1.type = LightData::Type::Sphere; });
 
         auto l2 = scope.alloc_light(pxr::SdfPath("/TestLight1"));
-        scope.mutate_light(l2, LightField::All & ~LightField::Lifecycle,
+        scope.mutate_light(l2, LightField::All,
                            [&](LightData& lw2) { lw2.type = LightData::Type::Dome; });
     }
 
@@ -394,19 +394,19 @@ TEST_CASE("ShadowMapPass mixes distant, rect, and disk shadow casters") {
     {
         auto scope = world.begin_sync();
         auto ld = scope.alloc_light(pxr::SdfPath("/Distant"));
-        scope.mutate_light(ld, LightField::All & ~LightField::Lifecycle, [&](LightData& lw) {
+        scope.mutate_light(ld, LightField::All, [&](LightData& lw) {
             lw.type = LightData::Type::Distant;
             lw.direction = glm::vec3(0, -1, 0);
         });
 
         auto lr = scope.alloc_light(pxr::SdfPath("/Rect"));
-        scope.mutate_light(lr, LightField::All & ~LightField::Lifecycle, [&](LightData& lw) {
+        scope.mutate_light(lr, LightField::All, [&](LightData& lw) {
             lw.type = LightData::Type::Rect;
             lw.transform = area_xform;
         });
 
         auto ldk = scope.alloc_light(pxr::SdfPath("/Disk"));
-        scope.mutate_light(ldk, LightField::All & ~LightField::Lifecycle, [&](LightData& lw) {
+        scope.mutate_light(ldk, LightField::All, [&](LightData& lw) {
             lw.type = LightData::Type::Disk;
             lw.transform = area_xform;
             lw.radius = 1.0f;
@@ -414,7 +414,7 @@ TEST_CASE("ShadowMapPass mixes distant, rect, and disk shadow casters") {
 
         // Sphere must not consume a layer.
         auto ls = scope.alloc_light(pxr::SdfPath("/Sphere"));
-        scope.mutate_light(ls, LightField::All & ~LightField::Lifecycle, [&](LightData& lw) {
+        scope.mutate_light(ls, LightField::All, [&](LightData& lw) {
             lw.type = LightData::Type::Sphere;
             lw.radius = 0.5f;
         });
@@ -424,7 +424,7 @@ TEST_CASE("ShadowMapPass mixes distant, rect, and disk shadow casters") {
     {
         auto scope = world.begin_sync();
         mesh_idx = scope.alloc_mesh(pxr::SdfPath("/TestMesh0"));
-        scope.mutate_mesh(mesh_idx, MeshField::All & ~MeshField::Lifecycle, [&](MeshData& mw) {
+        scope.mutate_mesh(mesh_idx, MeshField::All, [&](MeshData& mw) {
             mw.cpu_vertices = {
                 {{-1, 0, -1}, {0, 1, 0}, {1, 1, 1}, {0, 0}},
                 {{1, 0, -1}, {0, 1, 0}, {1, 1, 1}, {1, 0}},
@@ -439,7 +439,7 @@ TEST_CASE("ShadowMapPass mixes distant, rect, and disk shadow casters") {
     {
         auto scope = world.begin_sync();
         auto oi = scope.alloc_object(pxr::SdfPath("/TestObj0"));
-        scope.mutate_object(oi, ObjectField::All & ~ObjectField::Lifecycle, [&](ObjectData& ow) {
+        scope.mutate_object(oi, ObjectField::All, [&](ObjectData& ow) {
             ow.mesh_index = mesh_idx;
             ow.transform = glm::mat4(1.0f);
         });

@@ -197,7 +197,7 @@ TEST_CASE("prepare_gpu_buffers creates material buffer from world materials") {
         pts::rendering::Material m{};
         m.diffuse_color = {0.5f, 0.6f, 0.7f};
         m.roughness = 0.8f;
-        mats.push_back(m);
+        mats.insert(m);
     }
 
     world.prepare_gpu_buffers(device, device.queue());
@@ -231,22 +231,18 @@ TEST_CASE("prepare_gpu_buffers uploads active lights") {
     {
         auto scope = world.begin_sync();
         auto l0 = scope.alloc_light(pxr::SdfPath("/TestLight0"));
-        scope.mutate_light(l0,
-                           pts::rendering::LightField::All & ~pts::rendering::LightField::Lifecycle,
-                           [&](pts::rendering::LightData& w) {
-                               w.type = pts::rendering::LightData::Type::Distant;
-                               w.color = {1.0f, 0.0f, 0.0f};
-                               w.intensity = 2.0f;
-                           });
+        scope.mutate_light(l0, pts::rendering::LightField::All, [&](pts::rendering::LightData& w) {
+            w.type = pts::rendering::LightData::Type::Distant;
+            w.color = {1.0f, 0.0f, 0.0f};
+            w.intensity = 2.0f;
+        });
 
         auto l1 = scope.alloc_light(pxr::SdfPath("/TestLight1"));
-        scope.mutate_light(l1,
-                           pts::rendering::LightField::All & ~pts::rendering::LightField::Lifecycle,
-                           [&](pts::rendering::LightData& w) {
-                               w.type = pts::rendering::LightData::Type::Sphere;
-                               w.color = {0.0f, 1.0f, 0.0f};
-                               w.intensity = 3.0f;
-                           });
+        scope.mutate_light(l1, pts::rendering::LightField::All, [&](pts::rendering::LightData& w) {
+            w.type = pts::rendering::LightData::Type::Sphere;
+            w.color = {0.0f, 1.0f, 0.0f};
+            w.intensity = 3.0f;
+        });
     }
 
     world.prepare_gpu_buffers(device, device.queue());
@@ -264,7 +260,7 @@ TEST_CASE("prepare_gpu_buffers skips upload when versions unchanged") {
     {
         auto scope = world.begin_sync();
         auto& mats = scope.materials();
-        mats.push_back(pts::rendering::Material{});
+        mats.insert(pts::rendering::Material{});
     }
 
     world.prepare_gpu_buffers(device, device.queue());
@@ -299,13 +295,11 @@ TEST_CASE("clear resets GPU buffer state") {
     pts::rendering::RenderWorld world;
     {
         auto scope = world.begin_sync();
-        scope.materials().push_back(pts::rendering::Material{});
+        scope.materials().insert(pts::rendering::Material{});
         auto l = scope.alloc_light(pxr::SdfPath("/TestLight0"));
-        scope.mutate_light(l,
-                           pts::rendering::LightField::All & ~pts::rendering::LightField::Lifecycle,
-                           [&](pts::rendering::LightData& w) {
-                               w.type = pts::rendering::LightData::Type::Distant;
-                           });
+        scope.mutate_light(l, pts::rendering::LightField::All, [&](pts::rendering::LightData& w) {
+            w.type = pts::rendering::LightData::Type::Distant;
+        });
     }
 
     world.prepare_gpu_buffers(device, device.queue());
@@ -328,7 +322,7 @@ TEST_CASE("prepare_scene_data populates materials when dirty") {
         pts::rendering::Material m{};
         m.diffuse_color = {0.5f, 0.6f, 0.7f};
         m.roughness = 0.8f;
-        mats.push_back(m);
+        mats.insert(m);
     }
 
     auto data = world.prepare_scene_data();
@@ -357,21 +351,17 @@ TEST_CASE("prepare_scene_data populates active lights") {
     {
         auto scope = world.begin_sync();
         auto l0 = scope.alloc_light(pxr::SdfPath("/TestLight0"));
-        scope.mutate_light(l0,
-                           pts::rendering::LightField::All & ~pts::rendering::LightField::Lifecycle,
-                           [&](pts::rendering::LightData& w) {
-                               w.type = pts::rendering::LightData::Type::Distant;
-                               w.color = {1.0f, 0.0f, 0.0f};
-                               w.intensity = 2.0f;
-                           });
+        scope.mutate_light(l0, pts::rendering::LightField::All, [&](pts::rendering::LightData& w) {
+            w.type = pts::rendering::LightData::Type::Distant;
+            w.color = {1.0f, 0.0f, 0.0f};
+            w.intensity = 2.0f;
+        });
         auto l1 = scope.alloc_light(pxr::SdfPath("/TestLight1"));
-        scope.mutate_light(l1,
-                           pts::rendering::LightField::All & ~pts::rendering::LightField::Lifecycle,
-                           [&](pts::rendering::LightData& w) {
-                               w.type = pts::rendering::LightData::Type::Sphere;
-                               w.color = {0.0f, 1.0f, 0.0f};
-                               w.intensity = 3.0f;
-                           });
+        scope.mutate_light(l1, pts::rendering::LightField::All, [&](pts::rendering::LightData& w) {
+            w.type = pts::rendering::LightData::Type::Sphere;
+            w.color = {0.0f, 1.0f, 0.0f};
+            w.intensity = 3.0f;
+        });
     }
 
     auto data = world.prepare_scene_data();
@@ -383,7 +373,7 @@ TEST_CASE("prepare_scene_data is clean on second call without changes") {
     pts::rendering::RenderWorld world;
     {
         auto scope = world.begin_sync();
-        scope.materials().push_back(pts::rendering::Material{});
+        scope.materials().insert(pts::rendering::Material{});
     }
 
     auto data1 = world.prepare_scene_data();
@@ -404,8 +394,7 @@ TEST_CASE("prepare_scene_data produces geometry for mesh+object") {
         auto scope = world.begin_sync();
 
         auto mesh_slot = scope.alloc_mesh(pxr::SdfPath("/TestMesh0"));
-        scope.mutate_mesh(mesh_slot,
-                          pts::rendering::MeshField::All & ~pts::rendering::MeshField::Lifecycle,
+        scope.mutate_mesh(mesh_slot, pts::rendering::MeshField::All,
                           [&](pts::rendering::MeshData& w) {
                               w.cpu_vertices = {
                                   {{0, 0, 0}, {0, 0, 1}, {1, 1, 1}, {0, 0}},
@@ -418,13 +407,12 @@ TEST_CASE("prepare_scene_data produces geometry for mesh+object") {
                           });
 
         auto obj_slot = scope.alloc_object(pxr::SdfPath("/TestObj0"));
-        scope.mutate_object(
-            obj_slot, pts::rendering::ObjectField::All & ~pts::rendering::ObjectField::Lifecycle,
-            [&](pts::rendering::ObjectData& w) {
-                w.mesh_index = mesh_slot;
-                w.material_index = 0;
-                w.transform = glm::mat4(1.0f);
-            });
+        scope.mutate_object(obj_slot, pts::rendering::ObjectField::All,
+                            [&](pts::rendering::ObjectData& w) {
+                                w.mesh_index = mesh_slot;
+                                w.material_index = 0;
+                                w.transform = glm::mat4(1.0f);
+                            });
     }
 
     auto data = world.prepare_scene_data();

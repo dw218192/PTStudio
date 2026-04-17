@@ -23,6 +23,10 @@ list(APPEND TEST_NAMES testSlotMapDirty)
 set(testSlotMapDirty_source testSlotMapDirty.cpp)
 set(testSlotMapDirty_libs core)
 
+list(APPEND TEST_NAMES testSlotArrayDirty)
+set(testSlotArrayDirty_source testSlotArrayDirty.cpp)
+set(testSlotArrayDirty_libs core)
+
 list(APPEND TEST_NAMES testAsyncStateMachine)
 set(testAsyncStateMachine_source testAsyncStateMachine.cpp)
 set(testAsyncStateMachine_libs core)

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/container/slotArray.h>
 #include <core/container/slotMap.h>
 #include <core/diagnostics.h>
 #include <core/rendering/bvh.h>
@@ -31,6 +32,64 @@ namespace pts::rendering {
 
 static constexpr uint32_t k_no_material = UINT32_MAX;
 static constexpr uint32_t k_default_material = 0;
+
+/// Per-field dirty bits for Material. Used by the materials SlotArray to
+/// notify consumers (GPU buffer rebuild) of targeted changes. The `All`
+/// value covers future fields added below.
+enum class MaterialField : uint32_t {
+    None = 0,
+    Albedo = 1u << 0,        ///< diffuse_color
+    Metallic = 1u << 1,      ///< metallic
+    Roughness = 1u << 2,     ///< roughness
+    Emissive = 1u << 3,      ///< emissive_color
+    Transmission = 1u << 4,  ///< opacity / opacity_threshold
+    Ior = 1u << 5,           ///< ior
+    Textures = 1u << 6,      ///< any texture slot or channel mapping
+    LightIndex = 1u << 7,    ///< light_index stamping from proxy emitters
+    All = ~0u,
+};
+constexpr MaterialField operator|(MaterialField a, MaterialField b) noexcept {
+    return static_cast<MaterialField>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
+}
+constexpr MaterialField operator&(MaterialField a, MaterialField b) noexcept {
+    return static_cast<MaterialField>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b));
+}
+constexpr MaterialField operator~(MaterialField a) noexcept {
+    return static_cast<MaterialField>(~static_cast<uint32_t>(a));
+}
+constexpr MaterialField& operator|=(MaterialField& a, MaterialField b) noexcept {
+    a = a | b;
+    return a;
+}
+constexpr MaterialField& operator&=(MaterialField& a, MaterialField b) noexcept {
+    a = a & b;
+    return a;
+}
+
+/// Per-field dirty bits for scene textures. Textures today are load-once,
+/// never mutated; the single Pixels bit is enough for current needs.
+enum class TextureField : uint32_t {
+    None = 0,
+    Pixels = 1u << 0,  ///< pixel data (RGBA16Float tile)
+    All = ~0u,
+};
+constexpr TextureField operator|(TextureField a, TextureField b) noexcept {
+    return static_cast<TextureField>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
+}
+constexpr TextureField operator&(TextureField a, TextureField b) noexcept {
+    return static_cast<TextureField>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b));
+}
+constexpr TextureField operator~(TextureField a) noexcept {
+    return static_cast<TextureField>(~static_cast<uint32_t>(a));
+}
+constexpr TextureField& operator|=(TextureField& a, TextureField b) noexcept {
+    a = a | b;
+    return a;
+}
+constexpr TextureField& operator&=(TextureField& a, TextureField b) noexcept {
+    a = a & b;
+    return a;
+}
 
 /// 80-byte GPU struct
 struct Material {
@@ -79,13 +138,11 @@ struct MeshData {
     glm::vec3 local_aabb_max{0};
 };
 
-/// Per-field dirty bits for MeshData. The Lifecycle bit is auto-set by
-/// SlotMap on insert/erase (it equals subscription, see SlotMap docs).
-/// Mutators must NOT pass Lifecycle in their `changed` mask -- it is
-/// reserved as the "structural change" signal for consumers.
+/// Per-field dirty bits for MeshData. Insert stamps the new slot with the
+/// full subscription mask automatically (see SlotArray docs); erase queues
+/// an erase event observable via `drain()`'s on_erase callback.
 enum class MeshField : uint32_t {
     None = 0,
-    Lifecycle = 1u << 0,
     Geometry = 1u << 1,    ///< cpu_vertices, cpu_indices, AABB
     GpuBuffers = 1u << 2,  ///< vertex_buffer, index_buffer, position_buffer
     All = ~0u,
@@ -117,7 +174,6 @@ struct ObjectData {
 
 enum class ObjectField : uint32_t {
     None = 0,
-    Lifecycle = 1u << 0,
     Transform = 1u << 1,
     Visibility = 1u << 2,
     MeshIndex = 1u << 3,
@@ -162,7 +218,6 @@ struct LightData {
 
 enum class LightField : uint32_t {
     None = 0,
-    Lifecycle = 1u << 0,
     Transform = 1u << 1,
     Color = 1u << 2,
     Intensity = 1u << 3,
@@ -247,45 +302,29 @@ using MeshSlotMap = container::SlotMap<pxr::SdfPath, MeshData, MeshField>;
 using LightSlotMap = container::SlotMap<pxr::SdfPath, LightData, LightField>;
 using CameraSlotMap = container::SlotMap<pxr::SdfPath, CameraData>;
 
-/// Per-RenderWorld dirty bits for state that doesn't live in a SlotMap
-/// (raw vectors -- materials, scene textures). Mutators OR the relevant
-/// bit; consumers drain via take_world_dirty().
-enum class WorldDirty : uint32_t {
-    None = 0,
-    Materials = 1u << 0,
-    SceneTextures = 1u << 1,
-    All = ~0u,
-};
-constexpr WorldDirty operator|(WorldDirty a, WorldDirty b) noexcept {
-    return static_cast<WorldDirty>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
-}
-constexpr WorldDirty operator&(WorldDirty a, WorldDirty b) noexcept {
-    return static_cast<WorldDirty>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b));
-}
-constexpr WorldDirty operator~(WorldDirty a) noexcept {
-    return static_cast<WorldDirty>(~static_cast<uint32_t>(a));
-}
-constexpr WorldDirty& operator|=(WorldDirty& a, WorldDirty b) noexcept {
-    a = a | b;
-    return a;
-}
-constexpr WorldDirty& operator&=(WorldDirty& a, WorldDirty b) noexcept {
-    a = a & b;
-    return a;
-}
-
 struct RenderWorld;
 struct PreparedSceneData;
 
-/// RAII scope guard for batched sync operations. Marks WorldDirty::Materials
-/// on destruction (materials live in a flat vector and aren't per-slot
-/// tracked, so any scope is treated conservatively as touching them).
-/// SlotMap-resident data (lights/objects/meshes) is tracked per-field via
-/// the `changed` mask passed to mutate_*().
+/// Texture pixel payload stored in the scene textures SlotArray. Kept as a
+/// public type on RenderWorld's namespace so SlotArray template users can
+/// reference it without reaching into RenderWorld's private scope.
+struct SceneTexture {
+    std::vector<uint16_t> pixels;  // RGBA16Float (half-precision)
+    uint32_t width = 0;
+    uint32_t height = 0;
+};
+
+using MaterialSlotArray = container::SlotArray<Material, MaterialField>;
+using TextureSlotArray = container::SlotArray<SceneTexture, TextureField>;
+
+/// RAII scope guard for batched sync operations on a RenderWorld. Per-slot
+/// dirty bits on the SlotArray-backed containers (materials, textures,
+/// lights, objects, meshes) are driven by the `changed` mask passed to
+/// mutate_*() / mutate_at(). No implicit end-of-scope dirty fanout.
 class SyncScope {
    public:
     explicit SyncScope(RenderWorld& world);
-    ~SyncScope();
+    ~SyncScope() = default;
     SyncScope(const SyncScope&) = delete;
     SyncScope& operator=(const SyncScope&) = delete;
     SyncScope(SyncScope&&) = delete;
@@ -312,8 +351,7 @@ class SyncScope {
 
     /// In-place mutation; the `changed` mask declares which fields the
     /// callback touched. Consumers subscribed to those bits will see them
-    /// dirty for this slot. NOTE: do not pass Lifecycle in `changed` --
-    /// that bit is reserved for SlotMap to flag insert/erase.
+    /// dirty for this slot.
     template <class Fn>
     void mutate_object(uint32_t i, ObjectField changed, Fn&& fn);
     template <class Fn>
@@ -324,18 +362,22 @@ class SyncScope {
     template <class Fn>
     void mutate_camera(uint32_t i, Fn&& fn);
 
+    template <class Fn>
+    void mutate_material(uint32_t i, MaterialField changed, Fn&& fn);
+
     // Read-only accessors by index.
     const ObjectData& object(uint32_t i) const;
     const MeshData& mesh(uint32_t i) const;
     const LightData& light(uint32_t i) const;
     const CameraData& camera(uint32_t i) const;
+    const Material& material(uint32_t i) const;
 
-    Material& material(uint32_t i);
-    std::vector<Material>& materials();
+    MaterialSlotArray& materials();
     std::unordered_map<std::string, uint32_t>& material_cache();
 
     /// Load a texture from disk, deduplicate by path. Returns layer index
-    /// or UINT32_MAX on failure. Marks WorldDirty::SceneTextures.
+    /// or UINT32_MAX on failure. Marks the scene texture SlotArray's
+    /// consumers dirty for the new layer.
     uint32_t load_texture(const std::string& resolved_path);
 
    private:
@@ -350,7 +392,12 @@ struct RenderWorld {
     const MeshSlotMap& get_meshes() const;
     const LightSlotMap& get_lights() const;
     const CameraSlotMap& get_cameras() const;
-    boost::span<const Material> get_materials() const;
+    const MaterialSlotArray& get_materials_array() const;
+
+    /// User-material snapshot (skips the reserved default material at
+    /// slot 0). Returned by value -- use `get_materials_array()` for
+    /// zero-copy traversal.
+    std::vector<Material> get_materials() const;
 
     int find_object_by_prim(const pxr::SdfPath& path) const;
     int find_light_by_prim(const pxr::SdfPath& path) const;
@@ -445,15 +492,6 @@ struct RenderWorld {
 
     void clear();
 
-    // --- WorldDirty consumer API (for vector-stored data: materials, textures) ---
-    using WorldConsumerId = uint32_t;
-    WorldConsumerId register_world_consumer(WorldDirty subscription);
-    /// OR `bits` into every consumer's pending mask (gated by subscription).
-    void mark_world_dirty(WorldDirty bits);
-    bool any_world_dirty(WorldConsumerId id, WorldDirty query) const;
-    /// Returns the intersection of pending and query, then clears those bits.
-    WorldDirty take_world_dirty(WorldConsumerId id, WorldDirty query);
-
     // --- Accessors used by FrameGraph::import_buffer external_version. ---
     // These counters are bumped INSIDE prepare_scene_data when the
     // corresponding GPU buffer is rewritten, so descriptor caches that
@@ -484,21 +522,14 @@ struct RenderWorld {
 
     MeshSlotMap m_meshes;
     ObjectSlotMap m_objects;
-    std::vector<Material> m_materials;
+    MaterialSlotArray m_materials;
     LightSlotMap m_lights;
     CameraSlotMap m_cameras;
 
     /// Material path -> material index (deduplication cache).
     std::unordered_map<std::string, uint32_t> m_material_cache;
 
-    // --- WorldDirty consumer state ---
-    struct WorldConsumerState {
-        WorldDirty subscription{WorldDirty::None};
-        WorldDirty pending{WorldDirty::None};
-    };
-    std::vector<WorldConsumerState> m_world_consumers;
-
-    // --- Internal SlotMap consumer ids (registered in register_internal_consumers) ---
+    // --- Internal SlotArray consumer ids (registered in register_internal_consumers) ---
     // Each consumer corresponds to one cached GPU resource maintained by
     // prepare_scene_data / upload_prepared_data.
     LightSlotMap::ConsumerId m_lights_buffer_consumer = 0;
@@ -506,8 +537,8 @@ struct RenderWorld {
     LightSlotMap::ConsumerId m_lights_ibl_consumer = 0;
     ObjectSlotMap::ConsumerId m_objects_tlas_consumer = 0;
     MeshSlotMap::ConsumerId m_meshes_blas_consumer = 0;
-    WorldConsumerId m_materials_consumer = 0;
-    WorldConsumerId m_textures_consumer = 0;
+    MaterialSlotArray::ConsumerId m_materials_consumer = 0;
+    TextureSlotArray::ConsumerId m_textures_consumer = 0;
 
     // --- GPU buffer state ---
     webgpu::Buffer m_gpu_light_buffer;
@@ -538,13 +569,9 @@ struct RenderWorld {
     uint32_t m_tlas_node_count = 0;
     uint32_t m_instance_count = 0;
 
-    // Texture array state
-    struct ImageData {
-        std::vector<uint16_t> pixels;  // RGBA16Float (half-precision)
-        uint32_t width;
-        uint32_t height;
-    };
-    std::vector<ImageData> m_texture_images;
+    // Scene texture state. Stored as a SlotArray so the GPU-upload
+    // consumer uses the same dirty-tracking plumbing as materials.
+    TextureSlotArray m_texture_images;
     std::unordered_map<std::string, uint32_t> m_texture_cache;
     WGPUTexture m_texture_array = nullptr;
     WGPUTextureView m_texture_array_view = nullptr;
@@ -579,6 +606,10 @@ void SyncScope::mutate_light(uint32_t i, LightField changed, Fn&& fn) {
 template <class Fn>
 void SyncScope::mutate_camera(uint32_t i, Fn&& fn) {
     m_world.m_cameras.mutate_at(i, std::forward<Fn>(fn));
+}
+template <class Fn>
+void SyncScope::mutate_material(uint32_t i, MaterialField changed, Fn&& fn) {
+    m_world.m_materials.mutate_at(i, changed, std::forward<Fn>(fn));
 }
 
 }  // namespace pts::rendering

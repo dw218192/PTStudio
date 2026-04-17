@@ -167,7 +167,7 @@ TEST_CASE("SyncScope marks materials dirty once") {
 
     {
         auto scope = world.begin_sync();
-        scope.materials().push_back(Material{});
+        scope.materials().insert(Material{});
     }
     auto data = world.prepare_scene_data();
     CHECK(data.materials_dirty);

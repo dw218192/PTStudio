@@ -10,13 +10,14 @@ using pts::container::SlotMap;
 
 namespace {
 
-/// Test-local field enum + bitmask operators.
+/// Test-local field enum + bitmask operators. Lifecycle is intentionally
+/// absent -- insert/erase are signaled via SlotArray's any_inserts_for /
+/// any_erases_for / drain on_erase callback.
 enum class TestField : uint32_t {
     None = 0,
-    Lifecycle = 1u << 0,
-    A = 1u << 1,
-    B = 1u << 2,
-    C = 1u << 3,
+    A = 1u << 0,
+    B = 1u << 1,
+    C = 1u << 2,
     All = ~0u,
 };
 constexpr TestField operator|(TestField a, TestField b) noexcept {
@@ -35,32 +36,38 @@ constexpr bool has(TestField mask, TestField bit) {
 
 using TestMap = SlotMap<std::string, int, TestField>;
 
+auto noop_update = [](uint32_t, const int&) {};
+auto noop_erase = [](uint32_t) {};
+
 }  // namespace
 
 TEST_CASE("dirty: register_consumer starts fully dirty (forces first-call rebuild)") {
     TestMap map;
     auto cid = map.register_consumer(TestField::A | TestField::B);
-    // Even on an empty map, the consumer's first any_dirty_for hits true so
-    // callers always do their initial rebuild path.
+    // Even on an empty map, the consumer's first call to any_inserts_for
+    // hits true so callers do their initial rebuild path.
+    CHECK(map.any_inserts_for(cid));
     CHECK(map.any_dirty_for(cid, TestField::A | TestField::B));
     CHECK_FALSE(map.any_dirty_for(cid, TestField::C));  // outside subscription
 
-    // Drain clears the synthetic initial dirt; nothing actually iterated.
     int callbacks = 0;
-    map.drain_dirty_for(cid, TestField::All, [&](uint32_t, const int&) { ++callbacks; });
+    map.drain(cid, TestField::All, [&](uint32_t, const int&) { ++callbacks; }, noop_erase);
     CHECK(callbacks == 0);
+    CHECK_FALSE(map.any_inserts_for(cid));
     CHECK_FALSE(map.any_dirty_for(cid, TestField::All));
 }
 
 TEST_CASE("dirty: insert primes per-slot dirty for existing consumer") {
     TestMap map;
-    auto cid = map.register_consumer(TestField::A | TestField::Lifecycle);
+    auto cid = map.register_consumer(TestField::A | TestField::B);
+    map.drain(cid, TestField::All, noop_update, noop_erase);  // clear initial
 
     map.insert("x", 1);
 
-    CHECK(map.any_dirty_for(cid, TestField::Lifecycle));
+    CHECK(map.any_inserts_for(cid));
     CHECK(map.any_dirty_for(cid, TestField::A));
-    CHECK_FALSE(map.any_dirty_for(cid, TestField::B));  // not in subscription
+    CHECK(map.any_dirty_for(cid, TestField::B));
+    CHECK_FALSE(map.any_dirty_for(cid, TestField::C));  // not in subscription
 }
 
 TEST_CASE("dirty: register_consumer after inserts sees existing slots dirty") {
@@ -68,12 +75,11 @@ TEST_CASE("dirty: register_consumer after inserts sees existing slots dirty") {
     map.insert("a", 1);
     map.insert("b", 2);
 
-    auto cid = map.register_consumer(TestField::A | TestField::Lifecycle);
+    auto cid = map.register_consumer(TestField::A);
 
-    CHECK(map.any_dirty_for(cid, TestField::Lifecycle));
+    CHECK(map.any_inserts_for(cid));
     std::vector<uint32_t> drained;
-    map.drain_dirty_for(cid, TestField::Lifecycle,
-                        [&](uint32_t i, const int&) { drained.push_back(i); });
+    map.drain(cid, TestField::A, [&](uint32_t i, const int&) { drained.push_back(i); }, noop_erase);
     CHECK(drained.size() == 2);
 }
 
@@ -82,14 +88,14 @@ TEST_CASE("dirty: mutate ORs only the changed bits gated by subscription") {
     auto cid = map.register_consumer(TestField::A | TestField::B);
 
     auto h = map.insert("x", 0);
-    map.drain_dirty_for(cid, TestField::All, [](uint32_t, const int&) {});  // clear initial
+    map.drain(cid, TestField::All, noop_update, noop_erase);  // clear initial
     REQUIRE_FALSE(map.any_dirty_for(cid, TestField::All));
 
-    // Mutating C alone should NOT mark dirty (C not in subscription)
+    // Mutating C alone should NOT mark dirty (C not in subscription).
     map.mutate(h, TestField::C, [](int& v) { v = 42; });
     CHECK_FALSE(map.any_dirty_for(cid, TestField::All));
 
-    // Mutating A bit should be visible to consumer
+    // Mutating A bit should be visible to consumer.
     map.mutate(h, TestField::A, [](int& v) { v = 7; });
     CHECK(map.any_dirty_for(cid, TestField::A));
     CHECK_FALSE(map.any_dirty_for(cid, TestField::B));
@@ -101,7 +107,7 @@ TEST_CASE("dirty: any_dirty_for reflects aggregate across slots") {
 
     auto h1 = map.insert("a", 1);
     auto h2 = map.insert("b", 2);
-    map.drain_dirty_for(cid, TestField::All, [](uint32_t, const int&) {});
+    map.drain(cid, TestField::All, noop_update, noop_erase);
 
     map.mutate(h1, TestField::A, [](int&) {});
     CHECK(map.any_dirty_for(cid, TestField::A));
@@ -111,40 +117,39 @@ TEST_CASE("dirty: any_dirty_for reflects aggregate across slots") {
     CHECK(map.any_dirty_for(cid, TestField::A | TestField::B));
 }
 
-TEST_CASE("dirty: drain_dirty_for clears only the queried bits") {
+TEST_CASE("dirty: drain clears only the queried bits") {
     TestMap map;
     auto cid = map.register_consumer(TestField::A | TestField::B | TestField::C);
 
     auto h = map.insert("x", 0);
-    map.drain_dirty_for(cid, TestField::All, [](uint32_t, const int&) {});
+    map.drain(cid, TestField::All, noop_update, noop_erase);
 
     map.mutate(h, TestField::A | TestField::B, [](int&) {});
     REQUIRE(map.any_dirty_for(cid, TestField::A));
     REQUIRE(map.any_dirty_for(cid, TestField::B));
 
     int callbacks = 0;
-    map.drain_dirty_for(cid, TestField::A, [&](uint32_t, const int&) { ++callbacks; });
+    map.drain(cid, TestField::A, [&](uint32_t, const int&) { ++callbacks; }, noop_erase);
     CHECK(callbacks == 1);
 
-    // A is cleared, B remains
     CHECK_FALSE(map.any_dirty_for(cid, TestField::A));
     CHECK(map.any_dirty_for(cid, TestField::B));
 }
 
-TEST_CASE("dirty: drain_dirty_for invokes callback with slot index and value") {
+TEST_CASE("dirty: drain invokes callback with slot index and value") {
     TestMap map;
     auto cid = map.register_consumer(TestField::A);
 
     auto h1 = map.insert("a", 100);
     auto h2 = map.insert("b", 200);
-    map.drain_dirty_for(cid, TestField::All, [](uint32_t, const int&) {});
+    map.drain(cid, TestField::All, noop_update, noop_erase);
 
     map.mutate(h1, TestField::A, [](int& v) { v = 111; });
     map.mutate(h2, TestField::A, [](int& v) { v = 222; });
 
     std::vector<std::pair<uint32_t, int>> seen;
-    map.drain_dirty_for(cid, TestField::A,
-                        [&](uint32_t i, const int& v) { seen.emplace_back(i, v); });
+    map.drain(
+        cid, TestField::A, [&](uint32_t i, const int& v) { seen.emplace_back(i, v); }, noop_erase);
 
     CHECK(seen.size() == 2);
     CHECK(seen[0].first == h1.index());
@@ -153,24 +158,44 @@ TEST_CASE("dirty: drain_dirty_for invokes callback with slot index and value") {
     CHECK(seen[1].second == 222);
 }
 
-TEST_CASE("dirty: erase marks slot dirty for consumers (lifecycle observation)") {
+TEST_CASE("dirty: erase queues an erase event surfaced by drain's on_erase") {
     TestMap map;
-    auto cid = map.register_consumer(TestField::Lifecycle);
+    auto cid = map.register_consumer(TestField::A);
 
     auto h = map.insert("x", 1);
-    map.drain_dirty_for(cid, TestField::All, [](uint32_t, const int&) {});
+    map.drain(cid, TestField::All, noop_update, noop_erase);
 
     map.erase("x");
-    CHECK(map.any_dirty_for(cid, TestField::Lifecycle));
+    CHECK(map.any_erases_for(cid));
 
-    // Drained slot is now inactive
-    bool saw_inactive = false;
-    map.drain_dirty_for(cid, TestField::Lifecycle, [&](uint32_t i, const int&) {
-        if (!map.active_at(i)) saw_inactive = true;
-    });
-    CHECK(saw_inactive);
+    std::vector<uint32_t> erased;
+    map.drain(cid, TestField::All, noop_update, [&](uint32_t i) { erased.push_back(i); });
+    CHECK(erased.size() == 1);
+    CHECK(erased[0] == h.index());
+    CHECK_FALSE(map.any_erases_for(cid));
+    CHECK_FALSE(map.active_at(h.index()));
+}
 
-    UNUSED(h);
+TEST_CASE("dirty: drain surfaces erase before update on free-list reuse") {
+    TestMap map;
+    auto cid = map.register_consumer(TestField::A);
+
+    auto h1 = map.insert("a", 1);
+    map.drain(cid, TestField::All, noop_update, noop_erase);
+
+    map.erase("a");
+    auto h2 = map.insert("b", 2);
+    CHECK(h2.index() == h1.index());
+
+    std::vector<std::pair<std::string, uint32_t>> events;
+    map.drain(
+        cid, TestField::All, [&](uint32_t i, const int&) { events.emplace_back("update", i); },
+        [&](uint32_t i) { events.emplace_back("erase", i); });
+    REQUIRE(events.size() == 2);
+    CHECK(events[0].first == "erase");
+    CHECK(events[0].second == h1.index());
+    CHECK(events[1].first == "update");
+    CHECK(events[1].second == h2.index());
 }
 
 TEST_CASE("dirty: two consumers see independent state") {
@@ -179,22 +204,17 @@ TEST_CASE("dirty: two consumers see independent state") {
     auto cid_b = map.register_consumer(TestField::B);
 
     auto h = map.insert("x", 0);
-    // Both consumers see the lifecycle change as their respective subscription bit.
     REQUIRE(map.any_dirty_for(cid_a, TestField::A));
     REQUIRE(map.any_dirty_for(cid_b, TestField::B));
 
-    // Drain consumer A only.
-    map.drain_dirty_for(cid_a, TestField::A, [](uint32_t, const int&) {});
+    map.drain(cid_a, TestField::A, noop_update, noop_erase);
     CHECK_FALSE(map.any_dirty_for(cid_a, TestField::A));
-    // Consumer B still has its bit.
     CHECK(map.any_dirty_for(cid_b, TestField::B));
 
-    // Mutate A bit -- only consumer A subscribed.
     map.mutate(h, TestField::A, [](int&) {});
     CHECK(map.any_dirty_for(cid_a, TestField::A));
 
-    // Consumer B unaffected by A-only mutation.
-    map.drain_dirty_for(cid_b, TestField::B, [](uint32_t, const int&) {});
+    map.drain(cid_b, TestField::B, noop_update, noop_erase);
     CHECK_FALSE(map.any_dirty_for(cid_b, TestField::B));
 }
 
@@ -202,18 +222,16 @@ TEST_CASE("dirty: bits outside query survive drain") {
     TestMap map;
     auto cid = map.register_consumer(TestField::A | TestField::B | TestField::C);
     auto h = map.insert("x", 0);
-    map.drain_dirty_for(cid, TestField::All, [](uint32_t, const int&) {});
+    map.drain(cid, TestField::All, noop_update, noop_erase);
 
     map.mutate(h, TestField::A | TestField::B | TestField::C, [](int&) {});
 
-    // Drain only A; B and C should remain.
-    map.drain_dirty_for(cid, TestField::A, [](uint32_t, const int&) {});
+    map.drain(cid, TestField::A, noop_update, noop_erase);
     CHECK_FALSE(map.any_dirty_for(cid, TestField::A));
     CHECK(map.any_dirty_for(cid, TestField::B));
     CHECK(map.any_dirty_for(cid, TestField::C));
 
-    // Drain B -- only C remains.
-    map.drain_dirty_for(cid, TestField::B, [](uint32_t, const int&) {});
+    map.drain(cid, TestField::B, noop_update, noop_erase);
     CHECK(map.any_dirty_for(cid, TestField::C));
     CHECK_FALSE(map.any_dirty_for(cid, TestField::B));
 }
@@ -223,31 +241,27 @@ TEST_CASE("dirty: subscription mask filters the propagated bits") {
     auto cid = map.register_consumer(TestField::A);  // only A
 
     auto h = map.insert("x", 0);
-    map.drain_dirty_for(cid, TestField::All, [](uint32_t, const int&) {});
+    map.drain(cid, TestField::All, noop_update, noop_erase);
 
-    // Mutate sets A | B | C -- consumer should only see A.
     map.mutate(h, TestField::A | TestField::B | TestField::C, [](int&) {});
 
     int callbacks = 0;
-    map.drain_dirty_for(cid, TestField::All, [&](uint32_t, const int&) { ++callbacks; });
-    CHECK(callbacks == 1);  // one slot, drained once
-
-    // No bits should remain after draining All
+    map.drain(cid, TestField::All, [&](uint32_t, const int&) { ++callbacks; }, noop_erase);
+    CHECK(callbacks == 1);
     CHECK_FALSE(map.any_dirty_for(cid, TestField::All));
 }
 
 TEST_CASE("dirty: per-slot bitmap grows as new slots are inserted") {
     TestMap map;
-    auto cid = map.register_consumer(TestField::A | TestField::Lifecycle);
+    auto cid = map.register_consumer(TestField::A);
     map.insert("a", 1);
-    map.drain_dirty_for(cid, TestField::All, [](uint32_t, const int&) {});
+    map.drain(cid, TestField::All, noop_update, noop_erase);
 
-    // Insert more slots; growth should not crash and new slots should be dirty.
     for (int i = 0; i < 10; ++i) {
         map.insert("k" + std::to_string(i), i);
     }
     int n = 0;
-    map.drain_dirty_for(cid, TestField::Lifecycle, [&](uint32_t, const int&) { ++n; });
+    map.drain(cid, TestField::A, [&](uint32_t, const int&) { ++n; }, noop_erase);
     CHECK(n == 10);
 }
 
@@ -261,34 +275,19 @@ TEST_CASE("dirty: monostate default disables tracking and remains source-compati
 
 TEST_CASE("dirty: clear resets per-slot dirty but keeps consumer registration") {
     TestMap map;
-    auto cid = map.register_consumer(TestField::A | TestField::Lifecycle);
+    auto cid = map.register_consumer(TestField::A);
     map.insert("x", 1);
     map.insert("y", 2);
-    REQUIRE(map.any_dirty_for(cid, TestField::Lifecycle));
+    REQUIRE(map.any_dirty_for(cid, TestField::A));
 
     map.clear();
-    // After clear, per-slot dirty is wiped and aggregate is zero -- the
-    // consumer is still registered, but sees a fresh (clean) map.
     CHECK_FALSE(map.any_dirty_for(cid, TestField::All));
+    CHECK_FALSE(map.any_erases_for(cid));
+    CHECK_FALSE(map.any_inserts_for(cid));
 
-    // Subsequent insert should still propagate to the consumer.
     map.insert("z", 3);
-    CHECK(map.any_dirty_for(cid, TestField::Lifecycle));
-}
-
-TEST_CASE("dirty: free-list slot reuse re-marks lifecycle dirty") {
-    TestMap map;
-    auto cid = map.register_consumer(TestField::Lifecycle);
-
-    auto h = map.insert("a", 1);
-    map.drain_dirty_for(cid, TestField::All, [](uint32_t, const int&) {});
-
-    map.erase("a");
-    map.drain_dirty_for(cid, TestField::Lifecycle, [](uint32_t, const int&) {});
-
-    auto h2 = map.insert("b", 2);
-    CHECK(h2.index() == h.index());  // free-list reuse
-    CHECK(map.any_dirty_for(cid, TestField::Lifecycle));
+    CHECK(map.any_inserts_for(cid));
+    CHECK(map.any_dirty_for(cid, TestField::A));
 }
 
 TEST_CASE("dirty: subscription_for round-trips") {

@@ -180,9 +180,8 @@ uint32_t resolve_material(pxr::UsdPrim prim, SyncScope& scope) {
         }
     }
 
-    auto& materials = scope.materials();
-    auto index = static_cast<uint32_t>(materials.size());
-    materials.push_back(mat);
+    auto handle = scope.materials().insert(mat);
+    auto index = handle.index();
     cache[mat_path] = index;
     return index;
 }
@@ -244,14 +243,13 @@ void sync_object(pxr::UsdPrim prim, SyncScope& scope, std::vector<Vertex>& verti
             auto it = cache.find(cache_key);
             if (it != cache.end()) {
                 material_index = it->second;
-                auto& mat = scope.materials()[material_index];
-                mat.diffuse_color = {colors[0][0], colors[0][1], colors[0][2]};
+                scope.mutate_material(material_index, MaterialField::Albedo, [&](Material& mat) {
+                    mat.diffuse_color = {colors[0][0], colors[0][1], colors[0][2]};
+                });
             } else {
                 Material mat;
                 mat.diffuse_color = {colors[0][0], colors[0][1], colors[0][2]};
-                auto& materials = scope.materials();
-                material_index = static_cast<uint32_t>(materials.size());
-                materials.push_back(mat);
+                material_index = scope.materials().insert(mat).index();
                 cache[cache_key] = material_index;
             }
         } else {
@@ -357,17 +355,15 @@ static uint32_t resolve_emissive_material(SyncScope& scope, const std::string& p
     auto& cache = scope.material_cache();
     auto it = cache.find(cache_key);
     if (it != cache.end()) {
-        auto& mat = scope.materials()[it->second];
-        mat.emissive_color = color * intensity;
+        scope.mutate_material(it->second, MaterialField::Emissive,
+                              [&](Material& m) { m.emissive_color = color * intensity; });
         return it->second;
     }
 
     Material mat;
     mat.diffuse_color = {0, 0, 0};
     mat.emissive_color = color * intensity;
-    auto& materials = scope.materials();
-    auto index = static_cast<uint32_t>(materials.size());
-    materials.push_back(mat);
+    auto index = scope.materials().insert(mat).index();
     cache[cache_key] = index;
     return index;
 }
@@ -420,12 +416,11 @@ void sync_light(pxr::UsdPrim prim, SyncScope& scope, const LightData& light) {
         }
 
         // Whole-light replacement -- treat as touching every field.
-        scope.mutate_light(static_cast<uint32_t>(existing),
-                           LightField::All & ~LightField::Lifecycle, [&](LightData& w) {
-                               w = light;
-                               w.mesh_index = new_mesh;
-                               w.material_index = new_mat;
-                           });
+        scope.mutate_light(static_cast<uint32_t>(existing), LightField::All, [&](LightData& w) {
+            w = light;
+            w.mesh_index = new_mesh;
+            w.material_index = new_mat;
+        });
 
         if (light_type_has_proxy(light.type)) {
             store_mesh(scope, vertices, indices, new_mesh);
@@ -446,7 +441,7 @@ void sync_light(pxr::UsdPrim prim, SyncScope& scope, const LightData& light) {
             mesh_idx = scope.alloc_mesh(sdf_path);
         }
 
-        scope.mutate_light(slot, LightField::All & ~LightField::Lifecycle, [&](LightData& w) {
+        scope.mutate_light(slot, LightField::All, [&](LightData& w) {
             w = light;
             w.material_index = mat_idx;
             w.mesh_index = mesh_idx;

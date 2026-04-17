@@ -37,7 +37,8 @@ void MaterialAdapter::sync(pxr::UsdPrim prim, SyncScope& scope) {
     surface.GetShaderId(&shader_id);
     if (shader_id != pxr::TfToken("UsdPreviewSurface")) return;
 
-    scope.materials()[it->second] = read_preview_surface(surface, scope);
+    auto mat_value = read_preview_surface(surface, scope);
+    scope.mutate_material(it->second, MaterialField::All, [&](Material& m) { m = mat_value; });
 }
 
 }  // namespace pts::rendering

@@ -151,7 +151,7 @@ TEST_CASE("sync_light creates proxy mesh for rect light") {
     CHECK(mesh.cpu_indices.size() == 6);
 
     // Material is emissive
-    auto& mat = scope.materials()[ld.material_index];
+    const auto& mat = scope.material(ld.material_index);
     CHECK(mat.diffuse_color == glm::vec3(0, 0, 0));
     CHECK(mat.emissive_color.r == doctest::Approx(5.0f));
     CHECK(mat.emissive_color.g == doctest::Approx(2.5f));
@@ -255,7 +255,7 @@ TEST_CASE("sync_light re-sync updates geometry and material in place") {
     CHECK(scope.light(static_cast<uint32_t>(idx)).material_index == mat_idx);
 
     // Material emissive updated
-    auto& mat = scope.materials()[mat_idx];
+    const auto& mat = scope.material(mat_idx);
     CHECK(mat.emissive_color.r == doctest::Approx(0.0f));
     CHECK(mat.emissive_color.g == doctest::Approx(3.0f));
     CHECK(mat.emissive_color.b == doctest::Approx(0.0f));

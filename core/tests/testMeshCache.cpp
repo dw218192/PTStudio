@@ -33,7 +33,7 @@ TEST_CASE("get_or_create_pass_data creates entry on first call") {
     RenderWorld world;
     auto scope = world.begin_sync();
     auto slot = scope.alloc_mesh(pxr::SdfPath("/TestMesh0"));
-    scope.mutate_mesh(slot, MeshField::All & ~MeshField::Lifecycle, [](MeshData&) {});
+    scope.mutate_mesh(slot, MeshField::All, [](MeshData&) {});
 
     int factory_calls = 0;
     auto& val = pass.get_or_create_pass_data<int>(PassDataKind::Mesh, slot, world, [&]() {
@@ -49,7 +49,7 @@ TEST_CASE("get_or_create_pass_data returns cached value on same version") {
     RenderWorld world;
     auto scope = world.begin_sync();
     auto slot = scope.alloc_mesh(pxr::SdfPath("/TestMesh0"));
-    scope.mutate_mesh(slot, MeshField::All & ~MeshField::Lifecycle, [](MeshData&) {});
+    scope.mutate_mesh(slot, MeshField::All, [](MeshData&) {});
 
     int factory_calls = 0;
     auto factory = [&]() {
@@ -69,7 +69,7 @@ TEST_CASE("get_or_create_pass_data re-creates on version change") {
     {
         auto scope = world.begin_sync();
         slot = scope.alloc_mesh(pxr::SdfPath("/TestMesh0"));
-        scope.mutate_mesh(slot, MeshField::All & ~MeshField::Lifecycle, [](MeshData&) {});
+        scope.mutate_mesh(slot, MeshField::All, [](MeshData&) {});
     }
 
     int factory_calls = 0;
@@ -81,7 +81,7 @@ TEST_CASE("get_or_create_pass_data re-creates on version change") {
     // Bump mesh generation via mutate
     {
         auto scope = world.begin_sync();
-        scope.mutate_mesh(slot, MeshField::All & ~MeshField::Lifecycle, [](MeshData&) {});
+        scope.mutate_mesh(slot, MeshField::All, [](MeshData&) {});
     }
 
     auto& val = pass.get_or_create_pass_data<int>(PassDataKind::Mesh, slot, world, [&]() {
@@ -101,8 +101,8 @@ TEST_CASE("get_or_create_pass_data supports different keys") {
         s0 = scope.alloc_mesh(pxr::SdfPath("/TestMesh0"));
         s1 = scope.alloc_mesh(pxr::SdfPath("/TestMesh1"));
         // Bump generation on each via mutate
-        scope.mutate_mesh(s0, MeshField::All & ~MeshField::Lifecycle, [](MeshData&) {});
-        scope.mutate_mesh(s1, MeshField::All & ~MeshField::Lifecycle, [](MeshData&) {});
+        scope.mutate_mesh(s0, MeshField::All, [](MeshData&) {});
+        scope.mutate_mesh(s1, MeshField::All, [](MeshData&) {});
     }
     auto& a =
         pass.get_or_create_pass_data<int>(PassDataKind::Mesh, s0, world, []() { return 100; });
@@ -119,7 +119,7 @@ TEST_CASE("world swap invalidates pass data cache") {
         RenderWorld world;
         auto scope = world.begin_sync();
         auto slot = scope.alloc_mesh(pxr::SdfPath("/TestMesh0"));
-        scope.mutate_mesh(slot, MeshField::All & ~MeshField::Lifecycle, [](MeshData&) {});
+        scope.mutate_mesh(slot, MeshField::All, [](MeshData&) {});
         pass.get_or_create_pass_data<int>(PassDataKind::Mesh, slot, world, [&]() {
             ++factory_calls;
             return 1;
@@ -130,7 +130,7 @@ TEST_CASE("world swap invalidates pass data cache") {
     RenderWorld world2;
     auto scope2 = world2.begin_sync();
     auto slot2 = scope2.alloc_mesh(pxr::SdfPath("/TestMesh0"));
-    scope2.mutate_mesh(slot2, MeshField::All & ~MeshField::Lifecycle, [](MeshData&) {});
+    scope2.mutate_mesh(slot2, MeshField::All, [](MeshData&) {});
     pass.get_or_create_pass_data<int>(PassDataKind::Mesh, slot2, world2, [&]() {
         ++factory_calls;
         return 99;
@@ -143,7 +143,7 @@ TEST_CASE("get_or_create_pass_data with nullptr factory succeeds on hit") {
     RenderWorld world;
     auto scope = world.begin_sync();
     auto slot = scope.alloc_mesh(pxr::SdfPath("/TestMesh0"));
-    scope.mutate_mesh(slot, MeshField::All & ~MeshField::Lifecycle, [](MeshData&) {});
+    scope.mutate_mesh(slot, MeshField::All, [](MeshData&) {});
 
     pass.get_or_create_pass_data<int>(PassDataKind::Mesh, slot, world, []() { return 42; });
     auto& val = pass.get_or_create_pass_data<int>(PassDataKind::Mesh, slot, world, nullptr);
