@@ -214,12 +214,12 @@ std::vector<Material> RenderWorld::get_materials() const {
     return out;
 }
 
-const webgpu::Buffer& RenderWorld::light_buffer() const {
-    return m_gpu_light_buffer;
+ImportedBuffer RenderWorld::light_buffer() const noexcept {
+    return m_gpu_light_buffer.imported();
 }
 
-const webgpu::Buffer& RenderWorld::material_buffer() const {
-    return m_gpu_material_buffer;
+ImportedBuffer RenderWorld::material_buffer() const noexcept {
+    return m_gpu_material_buffer.imported();
 }
 
 uint32_t RenderWorld::gpu_light_count() const {
@@ -480,11 +480,6 @@ uint32_t SyncScope::load_texture(const std::string& resolved_path) {
 }
 
 // --- GPU buffer upload ---
-
-namespace {
-constexpr std::size_t k_min_material_buffer_size = sizeof(Material);
-constexpr std::size_t k_min_light_buffer_size = sizeof(Light);  // 48 bytes
-}  // namespace
 
 PreparedSceneData RenderWorld::prepare_scene_data() {
     PTS_ZONE_SCOPED;
@@ -815,94 +810,55 @@ void RenderWorld::upload_prepared_data(const webgpu::Device& device, WGPUQueue q
                                        PreparedSceneData data) {
     PTS_ZONE_SCOPED;
 
+    constexpr auto k_storage_copy_dst =
+        static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
+
     // --- Materials ---
     if (data.materials_dirty) {
-        auto material_count = static_cast<uint32_t>(data.materials.size());
-        auto required_size = std::max(k_min_material_buffer_size,
-                                      static_cast<std::size_t>(material_count) * sizeof(Material));
-
-        if (required_size > m_gpu_material_buffer.size()) {
-            m_gpu_material_buffer = device.create_buffer(
-                required_size,
-                static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
+        if (!m_gpu_material_buffer.is_valid()) {
+            m_gpu_material_buffer = VersionedBuffer<Material>(
+                device.handle(), data.materials.size(), k_storage_copy_dst, "world_materials");
         }
-
-        if (material_count > 0) {
-            wgpuQueueWriteBuffer(queue, m_gpu_material_buffer.handle(), 0, data.materials.data(),
-                                 material_count * sizeof(Material));
-        }
-        ++m_gpu_material_buffer_version;
+        m_gpu_material_buffer.write(queue, data.materials.data(), data.materials.size());
     }
 
     // --- Lights ---
     if (data.lights_dirty) {
-        auto buf_size = std::max(k_min_light_buffer_size, data.gpu_lights.size() * sizeof(Light));
-
-        if (!m_gpu_light_buffer.is_valid() || m_gpu_light_buffer.size() < buf_size) {
-            m_gpu_light_buffer = device.create_buffer(
-                buf_size,
-                static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
+        if (!m_gpu_light_buffer.is_valid()) {
+            m_gpu_light_buffer = VersionedBuffer<Light>(device.handle(), data.gpu_lights.size(),
+                                                        k_storage_copy_dst, "world_lights");
         }
-
-        wgpuQueueWriteBuffer(queue, m_gpu_light_buffer.handle(), 0, data.gpu_lights.data(),
-                             data.gpu_lights.size() * sizeof(Light));
+        m_gpu_light_buffer.write(queue, data.gpu_lights.data(), data.gpu_lights.size());
         m_gpu_light_count = static_cast<uint32_t>(data.gpu_lights.size());
-        ++m_gpu_light_buffer_version;
     } else if (!data.partial_light_updates.empty()) {
         for (const auto& update : data.partial_light_updates) {
-            wgpuQueueWriteBuffer(queue, m_gpu_light_buffer.handle(),
-                                 update.gpu_index * sizeof(Light), &update.data, sizeof(Light));
+            m_gpu_light_buffer.write_at(queue, update.gpu_index, &update.data, 1);
         }
-        ++m_gpu_light_buffer_version;
     }
 
     // --- BVH + geometry ---
     if (data.geometry_dirty) {
-        // Upload concatenated TLAS + BLAS nodes
-        auto node_bytes = std::max(sizeof(BVHNode), data.all_nodes.size() * sizeof(BVHNode));
-        if (!m_gpu_bvh_nodes.is_valid() || m_gpu_bvh_nodes.size() < node_bytes) {
-            m_gpu_bvh_nodes = device.create_buffer(
-                node_bytes,
-                static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
+        if (!m_gpu_bvh_nodes.is_valid()) {
+            m_gpu_bvh_nodes = VersionedBuffer<BVHNode>(device.handle(), data.all_nodes.size(),
+                                                       k_storage_copy_dst, "world_bvh_nodes");
         }
-        if (!data.all_nodes.empty()) {
-            wgpuQueueWriteBuffer(queue, m_gpu_bvh_nodes.handle(), 0, data.all_nodes.data(),
-                                 data.all_nodes.size() * sizeof(BVHNode));
-        }
+        m_gpu_bvh_nodes.write(queue, data.all_nodes.data(), data.all_nodes.size());
 
-        // Upload concatenated triangles
-        auto tri_bytes =
-            std::max(sizeof(PackedTriangle), data.all_tris.size() * sizeof(PackedTriangle));
-        if (!m_gpu_triangles.is_valid() || m_gpu_triangles.size() < tri_bytes) {
-            m_gpu_triangles = device.create_buffer(
-                tri_bytes,
-                static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
+        if (!m_gpu_triangles.is_valid()) {
+            m_gpu_triangles = VersionedBuffer<PackedTriangle>(
+                device.handle(), data.all_tris.size(), k_storage_copy_dst, "world_triangles");
         }
-        if (!data.all_tris.empty()) {
-            wgpuQueueWriteBuffer(queue, m_gpu_triangles.handle(), 0, data.all_tris.data(),
-                                 data.all_tris.size() * sizeof(PackedTriangle));
-        }
+        m_gpu_triangles.write(queue, data.all_tris.data(), data.all_tris.size());
 
-        // Upload instances
-        auto inst_bytes =
-            std::max(sizeof(GPUInstance), data.gpu_instances.size() * sizeof(GPUInstance));
-        if (!m_gpu_instances.is_valid() || m_gpu_instances.size() < inst_bytes) {
-            m_gpu_instances = device.create_buffer(
-                inst_bytes,
-                static_cast<WGPUBufferUsage>(WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst));
+        if (!m_gpu_instances.is_valid()) {
+            m_gpu_instances = VersionedBuffer<GPUInstance>(
+                device.handle(), data.gpu_instances.size(), k_storage_copy_dst, "world_instances");
         }
-        if (!data.gpu_instances.empty()) {
-            wgpuQueueWriteBuffer(queue, m_gpu_instances.handle(), 0, data.gpu_instances.data(),
-                                 data.gpu_instances.size() * sizeof(GPUInstance));
-        }
+        m_gpu_instances.write(queue, data.gpu_instances.data(), data.gpu_instances.size());
 
         m_tlas = std::move(data.tlas);
         m_tlas_node_count = data.tlas_node_count;
         m_instance_count = data.instance_count;
-
-        ++m_gpu_bvh_buffer_version;
-        ++m_gpu_triangle_buffer_version;
-        ++m_gpu_instance_buffer_version;
     }
 
     // --- Texture array ---
@@ -993,8 +949,6 @@ void RenderWorld::upload_prepared_data(const webgpu::Device& device, WGPUQueue q
         sampler_desc.maxAnisotropy = 1;
         m_texture_sampler = wgpuDeviceCreateSampler(device.handle(), &sampler_desc);
         POSTCONDITION(m_texture_sampler);
-
-        ++m_gpu_textures_version;
     }
 }
 
@@ -1007,16 +961,16 @@ AABB RenderWorld::scene_bounds() const {
     return m_tlas.scene_bounds();
 }
 
-const webgpu::Buffer& RenderWorld::bvh_node_buffer() const {
-    return m_gpu_bvh_nodes;
+ImportedBuffer RenderWorld::bvh_node_buffer() const noexcept {
+    return m_gpu_bvh_nodes.imported();
 }
 
-const webgpu::Buffer& RenderWorld::triangle_buffer() const {
-    return m_gpu_triangles;
+ImportedBuffer RenderWorld::triangle_buffer() const noexcept {
+    return m_gpu_triangles.imported();
 }
 
-const webgpu::Buffer& RenderWorld::instance_buffer() const {
-    return m_gpu_instances;
+ImportedBuffer RenderWorld::instance_buffer() const noexcept {
+    return m_gpu_instances.imported();
 }
 
 uint32_t RenderWorld::tlas_node_count() const {

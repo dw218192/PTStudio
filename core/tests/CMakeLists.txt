@@ -50,6 +50,10 @@ if(NOT EMSCRIPTEN)
     set(testMaterialBuffer_source testMaterialBuffer.cpp)
     set(testMaterialBuffer_libs core)
 
+    list(APPEND TEST_NAMES testVersionedBuffer)
+    set(testVersionedBuffer_source testVersionedBuffer.cpp)
+    set(testVersionedBuffer_libs core)
+
     list(APPEND TEST_NAMES testShadowMapPass)
     set(testShadowMapPass_source testShadowMapPass.cpp)
     set(testShadowMapPass_libs core)

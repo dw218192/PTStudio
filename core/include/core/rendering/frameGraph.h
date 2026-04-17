@@ -3,6 +3,7 @@
 #include <core/container/depTrackedSlotMap.h>
 #include <core/defines.h>
 #include <core/diagnostics.h>
+#include <core/rendering/versionedBuffer.h>
 #include <core/rendering/webgpu/webgpu.h>
 
 #include <boost/container_hash/hash.hpp>
@@ -531,9 +532,11 @@ class FrameGraph {
     /// Wrap an externally-owned buffer. Persistent lifetime.
     BufferDeclHandle import_buffer(std::string_view debug_label, WGPUBuffer buf, std::size_t size,
                                    uint64_t external_version);
+    BufferDeclHandle import_buffer(std::string_view debug_label, ImportedBuffer b);
     /// Handle-based update for an imported buffer (avoids string lookup).
     void import_buffer(BufferDeclHandle h, WGPUBuffer buf, std::size_t size,
                        uint64_t external_version);
+    void import_buffer(BufferDeclHandle h, ImportedBuffer b);
 
     void resize(BufferDeclHandle h, BufferDesc new_desc);
 
@@ -553,6 +556,8 @@ class FrameGraph {
     BufferDeclHandle buffer(const IPass* pass, BufferDesc desc, const char* label = nullptr);
     BufferDeclHandle import_buffer(const IPass* pass, WGPUBuffer buf, std::size_t size,
                                    uint64_t external_version, const char* label = nullptr);
+    BufferDeclHandle import_buffer(const IPass* pass, ImportedBuffer b,
+                                   const char* label = nullptr);
 
     PassBuilder add_pass(std::string name);
 

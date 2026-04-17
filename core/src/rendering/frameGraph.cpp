@@ -1083,6 +1083,14 @@ void FrameGraph::import_buffer(BufferDeclHandle h, WGPUBuffer buf, std::size_t s
     decl.external_version = external_version;
 }
 
+BufferDeclHandle FrameGraph::import_buffer(std::string_view debug_label, ImportedBuffer b) {
+    return import_buffer(debug_label, b.handle, b.size_bytes, b.version);
+}
+
+void FrameGraph::import_buffer(BufferDeclHandle h, ImportedBuffer b) {
+    import_buffer(h, b.handle, b.size_bytes, b.version);
+}
+
 void FrameGraph::resize(BufferDeclHandle h, BufferDesc new_desc) {
     PTS_ZONE_SCOPED;
     auto& decl = buf_decl(h);
@@ -1179,6 +1187,11 @@ BufferDeclHandle FrameGraph::import_buffer(const IPass* pass, WGPUBuffer buf, st
                                            uint64_t external_version, const char* label) {
     return import_buffer(make_pass_key(pass, label, ResourceKind::Buffer), buf, size,
                          external_version);
+}
+
+BufferDeclHandle FrameGraph::import_buffer(const IPass* pass, ImportedBuffer b, const char* label) {
+    return import_buffer(make_pass_key(pass, label, ResourceKind::Buffer), b.handle, b.size_bytes,
+                         b.version);
 }
 
 PassBuilder FrameGraph::add_pass(std::string name) {

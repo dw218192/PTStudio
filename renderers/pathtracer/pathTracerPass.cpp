@@ -108,14 +108,14 @@ PathTracerPass::HdrOutputs PathTracerPass::do_add_to_frame_graph(
     }
 
     // Reset accumulation when the scene changes (instance buffer rebuilt)
-    auto current_instance_handle = ctx.world.instance_buffer().handle();
+    auto current_instance_handle = ctx.world.instance_buffer().handle;
     if (current_instance_handle != m_prev_instance_handle) {
         m_frame_count = 0;
         m_prev_instance_handle = current_instance_handle;
     }
 
     // Reset accumulation when the light GPU buffer changes (dome color/intensity/HDR).
-    auto light_ver = ctx.world.light_buffer_version();
+    auto light_ver = ctx.world.light_buffer().version;
     if (light_ver != m_prev_light_version) {
         m_frame_count = 0;
         m_prev_light_version = light_ver;
@@ -151,11 +151,11 @@ PathTracerPass::HdrOutputs PathTracerPass::do_add_to_frame_graph(
     wgpuQueueWriteBuffer(ctx.queue, m_uniform_buffer.handle(), 0, &uniforms, sizeof(uniforms));
 
     // Capture handles for lambdas
-    auto& mat_buf = ctx.world.material_buffer();
-    auto& light_buf = ctx.world.light_buffer();
-    auto& tri_buf = ctx.world.triangle_buffer();
-    auto& inst_buf = ctx.world.instance_buffer();
-    auto& bvh_buf = ctx.world.bvh_node_buffer();
+    auto mat_buf = ctx.world.material_buffer();
+    auto light_buf = ctx.world.light_buffer();
+    auto tri_buf = ctx.world.triangle_buffer();
+    auto inst_buf = ctx.world.instance_buffer();
+    auto bvh_buf = ctx.world.bvh_node_buffer();
     auto width = ctx.viewport_width;
     auto height = ctx.viewport_height;
     auto inst_count = ctx.world.instance_count();
@@ -167,15 +167,15 @@ PathTracerPass::HdrOutputs PathTracerPass::do_add_to_frame_graph(
     auto compute_desc_decl =
         descriptor(fg, compute_desc_layout, "compute_desc")
             .external_buffer(0, m_uniform_buffer.handle(), 0, sizeof(PTUniforms))
-            .external_buffer(1, tri_buf.handle(), 0, WGPU_WHOLE_SIZE)
-            .external_buffer(2, mat_buf.handle(), 0, WGPU_WHOLE_SIZE)
-            .external_buffer(3, light_buf.handle(), 0, WGPU_WHOLE_SIZE)
+            .external_buffer(1, tri_buf.handle, 0, WGPU_WHOLE_SIZE)
+            .external_buffer(2, mat_buf.handle, 0, WGPU_WHOLE_SIZE)
+            .external_buffer(3, light_buf.handle, 0, WGPU_WHOLE_SIZE)
             .external_buffer(4, m_accum_buffer.handle(), 0, WGPU_WHOLE_SIZE)
             .external_buffer(5, m_output_buffer.handle(), 0, WGPU_WHOLE_SIZE)
-            .external_buffer(6, bvh_buf.handle(), 0, WGPU_WHOLE_SIZE)
+            .external_buffer(6, bvh_buf.handle, 0, WGPU_WHOLE_SIZE)
             .external_view(7, scene_tex_view)
             .sampler(8, scene_tex_sampler)
-            .external_buffer(9, inst_buf.handle(), 0, WGPU_WHOLE_SIZE)
+            .external_buffer(9, inst_buf.handle, 0, WGPU_WHOLE_SIZE)
             .build();
 
     // IBL descriptor (slot 1): env cubemap + sampler

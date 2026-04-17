@@ -253,13 +253,10 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
     uint32_t total_slots = object_count + proxy_light_count;
 
     // Import external buffers from RenderWorld
-    auto& light_buf = ctx.world.light_buffer();
-    auto& mat_buf = ctx.world.material_buffer();
+    auto light_buf = ctx.world.light_buffer();
     auto light_count = ctx.world.gpu_light_count();
-    auto light_buf_decl = import_buffer(fg, light_buf.handle(), light_buf.size(),
-                                        ctx.world.light_buffer_version(), "world_lights");
-    auto mat_buf_decl = import_buffer(fg, mat_buf.handle(), mat_buf.size(),
-                                      ctx.world.material_buffer_version(), "world_materials");
+    auto light_buf_decl = import_buffer(fg, light_buf, "world_lights");
+    auto mat_buf_decl = import_buffer(fg, ctx.world.material_buffer(), "world_materials");
 
     auto scene_tex_view = ctx.world.texture_array_view();
     auto scene_tex_sampler = ctx.world.texture_sampler();
@@ -375,7 +372,7 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
     auto* cs_pass = get_pass<rendering::ContactShadowPass>();
     PRECONDITION(cs_pass);
     auto cs_out = cs_pass->add_to_frame_graph(
-        fg, ctx, {gbuf_out.depth, gbuf_out.normals, light_buf.handle(), light_buf.size()},
+        fg, ctx, {gbuf_out.depth, gbuf_out.normals, light_buf.handle, light_buf.size_bytes},
         fg.fallback_pool());
 
     // Descriptor 3: contact shadow (child-owned)

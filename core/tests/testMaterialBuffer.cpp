@@ -202,8 +202,8 @@ TEST_CASE("prepare_gpu_buffers creates material buffer from world materials") {
 
     world.prepare_gpu_buffers(device, device.queue());
 
-    CHECK(world.material_buffer().is_valid());
-    CHECK(world.material_buffer().size() >= sizeof(pts::rendering::Material));
+    CHECK(world.material_buffer().handle != nullptr);
+    CHECK(world.material_buffer().size_bytes >= sizeof(pts::rendering::Material));
 }
 
 TEST_CASE("prepare_gpu_buffers creates light buffer with fallback when no lights") {
@@ -219,7 +219,7 @@ TEST_CASE("prepare_gpu_buffers creates light buffer with fallback when no lights
 
     world.prepare_gpu_buffers(device, device.queue());
 
-    CHECK(world.light_buffer().is_valid());
+    CHECK(world.light_buffer().handle != nullptr);
     CHECK(world.gpu_light_count() == 1);
 }
 
@@ -247,9 +247,9 @@ TEST_CASE("prepare_gpu_buffers uploads active lights") {
 
     world.prepare_gpu_buffers(device, device.queue());
 
-    CHECK(world.light_buffer().is_valid());
+    CHECK(world.light_buffer().handle != nullptr);
     CHECK(world.gpu_light_count() == 2);
-    CHECK(world.light_buffer().size() >= 2 * sizeof(pts::rendering::Light));
+    CHECK(world.light_buffer().size_bytes >= 2 * sizeof(pts::rendering::Light));
 }
 
 TEST_CASE("prepare_gpu_buffers skips upload when versions unchanged") {
@@ -264,13 +264,13 @@ TEST_CASE("prepare_gpu_buffers skips upload when versions unchanged") {
     }
 
     world.prepare_gpu_buffers(device, device.queue());
-    auto mat_buf_handle = world.material_buffer().handle();
-    auto light_buf_handle = world.light_buffer().handle();
+    auto mat_buf_handle = world.material_buffer().handle;
+    auto light_buf_handle = world.light_buffer().handle;
 
     // Call again without changes -- buffers should be reused (same handle)
     world.prepare_gpu_buffers(device, device.queue());
-    CHECK(world.material_buffer().handle() == mat_buf_handle);
-    CHECK(world.light_buffer().handle() == light_buf_handle);
+    CHECK(world.material_buffer().handle == mat_buf_handle);
+    CHECK(world.light_buffer().handle == light_buf_handle);
 }
 
 TEST_CASE("prepare_gpu_buffers creates placeholder texture array when no textures loaded") {
@@ -303,12 +303,12 @@ TEST_CASE("clear resets GPU buffer state") {
     }
 
     world.prepare_gpu_buffers(device, device.queue());
-    CHECK(world.material_buffer().is_valid());
-    CHECK(world.light_buffer().is_valid());
+    CHECK(world.material_buffer().handle != nullptr);
+    CHECK(world.light_buffer().handle != nullptr);
 
     world.clear();
-    CHECK_FALSE(world.material_buffer().is_valid());
-    CHECK_FALSE(world.light_buffer().is_valid());
+    CHECK(world.material_buffer().handle == nullptr);
+    CHECK(world.light_buffer().handle == nullptr);
     CHECK(world.gpu_light_count() == 0);
     CHECK(world.texture_array_view() == nullptr);
     CHECK(world.texture_sampler() == nullptr);

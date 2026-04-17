@@ -6,6 +6,7 @@
 #include <core/rendering/bvh.h>
 #include <core/rendering/iblResources.h>
 #include <core/rendering/packedTriangle.h>
+#include <core/rendering/versionedBuffer.h>
 #include <core/rendering/vertex.h>
 #include <core/rendering/webgpu/buffer.h>
 #include <pxr/usd/sdf/path.h>
@@ -428,8 +429,8 @@ struct RenderWorld {
                               PreparedSceneData data);
 
     void prepare_gpu_buffers(const webgpu::Device& device, WGPUQueue queue);
-    const webgpu::Buffer& light_buffer() const;
-    const webgpu::Buffer& material_buffer() const;
+    ImportedBuffer light_buffer() const noexcept;
+    ImportedBuffer material_buffer() const noexcept;
     uint32_t gpu_light_count() const;
     WGPUTextureView texture_array_view() const;
     WGPUSampler texture_sampler() const;
@@ -438,13 +439,13 @@ struct RenderWorld {
     AABB scene_bounds() const;
 
     /// Concatenated TLAS + BLAS node buffer for GPU traversal.
-    const webgpu::Buffer& bvh_node_buffer() const;
+    ImportedBuffer bvh_node_buffer() const noexcept;
 
     /// Concatenated local-space triangle buffer (ordered by per-mesh BLAS).
-    const webgpu::Buffer& triangle_buffer() const;
+    ImportedBuffer triangle_buffer() const noexcept;
 
     /// GPUInstance array (reordered by TLAS).
-    const webgpu::Buffer& instance_buffer() const;
+    ImportedBuffer instance_buffer() const noexcept;
 
     /// Number of TLAS nodes (first N nodes in the concatenated BVH buffer).
     uint32_t tlas_node_count() const;
@@ -492,29 +493,6 @@ struct RenderWorld {
 
     void clear();
 
-    // --- Accessors used by FrameGraph::import_buffer external_version. ---
-    // These counters are bumped INSIDE prepare_scene_data when the
-    // corresponding GPU buffer is rewritten, so descriptor caches that
-    // depend on the buffer rebuild only when the buffer truly changed.
-    uint64_t light_buffer_version() const {
-        return m_gpu_light_buffer_version;
-    }
-    uint64_t material_buffer_version() const {
-        return m_gpu_material_buffer_version;
-    }
-    uint64_t instance_buffer_version() const {
-        return m_gpu_instance_buffer_version;
-    }
-    uint64_t triangle_buffer_version() const {
-        return m_gpu_triangle_buffer_version;
-    }
-    uint64_t bvh_buffer_version() const {
-        return m_gpu_bvh_buffer_version;
-    }
-    uint64_t scene_textures_version() const {
-        return m_gpu_textures_version;
-    }
-
    private:
     friend class SyncScope;
 
@@ -541,18 +519,12 @@ struct RenderWorld {
     TextureSlotArray::ConsumerId m_textures_consumer = 0;
 
     // --- GPU buffer state ---
-    webgpu::Buffer m_gpu_light_buffer;
-    webgpu::Buffer m_gpu_material_buffer;
+    // VersionedBuffer auto-bumps its internal version on each write, so the
+    // (handle, size, version) triple handed to FrameGraph::import_buffer stays
+    // in sync with the buffer contents without any manual counter plumbing.
+    VersionedBuffer<Light> m_gpu_light_buffer;
+    VersionedBuffer<Material> m_gpu_material_buffer;
     uint32_t m_gpu_light_count = 0;
-
-    // External-version counters for FrameGraph::import_buffer. Bumped
-    // inside prepare_scene_data when the corresponding buffer is rewritten.
-    uint64_t m_gpu_light_buffer_version = 0;
-    uint64_t m_gpu_material_buffer_version = 0;
-    uint64_t m_gpu_instance_buffer_version = 0;
-    uint64_t m_gpu_triangle_buffer_version = 0;
-    uint64_t m_gpu_bvh_buffer_version = 0;
-    uint64_t m_gpu_textures_version = 0;
 
     // Two-level acceleration structure
     struct BlasData {
@@ -562,10 +534,10 @@ struct RenderWorld {
     };
     std::unordered_map<uint32_t, BlasData> m_blas_cache;
 
-    BVH m_tlas;                      // world-space TLAS
-    webgpu::Buffer m_gpu_bvh_nodes;  // concatenated TLAS + BLAS nodes
-    webgpu::Buffer m_gpu_triangles;  // concatenated local-space triangles
-    webgpu::Buffer m_gpu_instances;  // GPUInstance array
+    BVH m_tlas;                                       // world-space TLAS
+    VersionedBuffer<BVHNode> m_gpu_bvh_nodes;         // concatenated TLAS + BLAS nodes
+    VersionedBuffer<PackedTriangle> m_gpu_triangles;  // concatenated local-space triangles
+    VersionedBuffer<GPUInstance> m_gpu_instances;     // GPUInstance array
     uint32_t m_tlas_node_count = 0;
     uint32_t m_instance_count = 0;
 

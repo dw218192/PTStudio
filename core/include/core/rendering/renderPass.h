@@ -128,6 +128,9 @@ class IPass {
                                    uint64_t external_version, const char* label = nullptr) {
         return fg.import_buffer(this, buf, size, external_version, label);
     }
+    BufferDeclHandle import_buffer(FrameGraph& fg, ImportedBuffer b, const char* label = nullptr) {
+        return fg.import_buffer(this, b, label);
+    }
     DescriptorBuilder descriptor(FrameGraph& fg, WGPUBindGroupLayout layout,
                                  const char* label = nullptr) {
         return fg.descriptor(this, layout, label);
