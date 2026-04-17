@@ -141,6 +141,11 @@ list(APPEND TEST_NAMES testWorker)
 set(testWorker_source testWorker.cpp)
 set(testWorker_libs core)
 
+# InPlacePimpl CRTP utility - header-only, no GPU needed
+list(APPEND TEST_NAMES testInPlacePimpl)
+set(testInPlacePimpl_source testInPlacePimpl.cpp)
+set(testInPlacePimpl_libs core)
+
 # LoadingOverlay - no GPU needed, tests non-draw logic
 list(APPEND TEST_NAMES testLoadingOverlay)
 set(testLoadingOverlay_source testLoadingOverlay.cpp)

@@ -1,16 +1,20 @@
 #pragma once
 
 #include <core/defines.h>
+#include <core/inPlacePimpl.h>
 
-#include <memory>
+#include <cstddef>
 #include <optional>
 #include <string>
 #include <string_view>
 
 namespace pts {
 
+struct CommandLineImpl;
+
 /// CLI argument parser (wraps cxxopts).
-class CommandLine {
+class CommandLine final
+    : private InPlacePimpl<CommandLine, CommandLineImpl, 1024, alignof(std::max_align_t)> {
    public:
     NO_COPY_MOVE(CommandLine);
 
@@ -46,10 +50,6 @@ class CommandLine {
 
     /// Query whether an option was explicitly provided on the command line.
     [[nodiscard]] auto has(std::string_view name) const -> bool;
-
-   private:
-    struct Impl;
-    std::unique_ptr<Impl> m_impl;
 };
 
 }  // namespace pts

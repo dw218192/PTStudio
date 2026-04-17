@@ -112,10 +112,10 @@ struct SourceEntry {
 }  // namespace
 
 // ---------------------------------------------------------------------------
-// SlangCompiler::Impl
+// SlangCompilerImpl
 // ---------------------------------------------------------------------------
 
-struct SlangCompiler::Impl {
+struct SlangCompilerImpl {
     const ShaderLoader* loader;
     std::shared_ptr<spdlog::logger> logger;
     std::filesystem::path cache_dir;
@@ -299,36 +299,43 @@ struct SlangCompiler::Impl {
     }
 };
 
+static_assert(sizeof(SlangCompilerImpl) <= 2048,
+              "SlangCompiler in-place PIMPL buffer too small -- grow Size");
+static_assert(alignof(SlangCompilerImpl) <= 16,
+              "SlangCompiler in-place PIMPL alignment too weak -- grow Align");
+
 // ---------------------------------------------------------------------------
 // SlangCompiler
 // ---------------------------------------------------------------------------
 
 SlangCompiler::SlangCompiler(const ShaderLoader& loader, std::shared_ptr<spdlog::logger> logger,
                              std::filesystem::path cache_dir, std::filesystem::path workspace_root,
-                             std::filesystem::path search_path, IShaderCompiler* error_fallback)
-    : m_impl(std::make_unique<Impl>()) {
-    m_impl->loader = &loader;
-    m_impl->logger = std::move(logger);
-    m_impl->cache_dir = std::move(cache_dir);
-    m_impl->workspace_root = std::move(workspace_root);
-    m_impl->search_path = std::move(search_path);
-    m_impl->error_fallback = error_fallback;
+                             std::filesystem::path search_path, IShaderCompiler* error_fallback) {
+    construct();
+    impl().loader = &loader;
+    impl().logger = std::move(logger);
+    impl().cache_dir = std::move(cache_dir);
+    impl().workspace_root = std::move(workspace_root);
+    impl().search_path = std::move(search_path);
+    impl().error_fallback = error_fallback;
 
     std::error_code ec;
-    std::filesystem::create_directories(m_impl->cache_dir, ec);
+    std::filesystem::create_directories(impl().cache_dir, ec);
 
-    auto hr = slang::createGlobalSession(m_impl->global_session.writeRef());
-    INVARIANT_MSG(SLANG_SUCCEEDED(hr) && m_impl->global_session,
+    auto hr = slang::createGlobalSession(impl().global_session.writeRef());
+    INVARIANT_MSG(SLANG_SUCCEEDED(hr) && impl().global_session,
                   "Failed to create Slang global session");
-    if (auto* tag = m_impl->global_session->getBuildTagString()) {
-        m_impl->slang_version = tag;
+    if (auto* tag = impl().global_session->getBuildTagString()) {
+        impl().slang_version = tag;
     }
 }
 
-SlangCompiler::~SlangCompiler() = default;
+SlangCompiler::~SlangCompiler() {
+    destroy();
+}
 
 std::string SlangCompiler::compile(const ShaderKey& key) {
-    return m_impl->do_compile(key);
+    return impl().do_compile(key);
 }
 
 std::vector<std::string> SlangCompiler::poll_dirty() {
@@ -336,12 +343,12 @@ std::vector<std::string> SlangCompiler::poll_dirty() {
     // Snapshot keys under entries_mutex; check each entry under its own lock.
     std::vector<std::string> keys;
     {
-        std::lock_guard<std::mutex> lock(m_impl->entries_mutex);
-        keys.reserve(m_impl->entries.size());
-        for (auto& [k, _] : m_impl->entries) keys.push_back(k);
+        std::lock_guard<std::mutex> lock(impl().entries_mutex);
+        keys.reserve(impl().entries.size());
+        for (auto& [k, _] : impl().entries) keys.push_back(k);
     }
     for (auto& key : keys) {
-        auto* entry = m_impl->find_entry(key);
+        auto* entry = impl().find_entry(key);
         if (!entry) continue;
         std::lock_guard<std::mutex> lock(entry->mutex);
         bool is_dirty = false;
@@ -365,20 +372,20 @@ std::vector<std::string> SlangCompiler::poll_dirty() {
         }
     }
     if (!dirty.empty()) {
-        m_impl->logger->info("Shader change detected: {} source(s) dirty", dirty.size());
+        impl().logger->info("Shader change detected: {} source(s) dirty", dirty.size());
     }
     return dirty;
 }
 
 uint64_t SlangCompiler::source_revision(std::string_view source_key) const {
-    auto* entry = m_impl->find_entry(source_key);
+    auto* entry = impl().find_entry(source_key);
     if (!entry) return 1;
     std::lock_guard<std::mutex> lock(entry->mutex);
     return entry->revision;
 }
 
 void SlangCompiler::invalidate(std::string_view source_key) {
-    auto& entry = m_impl->get_or_create_entry(source_key);
+    auto& entry = impl().get_or_create_entry(source_key);
     std::lock_guard<std::mutex> lock(entry.mutex);
     entry.variants.clear();
     ++entry.revision;
