@@ -52,7 +52,11 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
                                 .depth_write(true)
                                 .depth_compare(WGPUCompareFunction_Less)
                                 .cull_mode(WGPUCullMode_Front)
-                                .depth_bias(0, 0.0f)
+                                // Rasterizer-level slope-scale bias keeps grazing-angle
+                                // receivers from self-shadowing. Constant=1 pushes every
+                                // shadowed fragment one ulp away; slope=2 scales with
+                                // depth gradient (|dz/dx|, |dz/dy|).
+                                .depth_bias(1, 2.0f)
                                 .vertex_buffer({12, WGPUVertexStepMode_Vertex, {pos_attr}})
                                 .bind_group_layouts({desc_layout})
                                 .build();
@@ -137,7 +141,9 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
 
         infos[li].light_vp = proj.vp;
         infos[li].texel_size = 1.0f / static_cast<float>(m_resolution);
-        infos[li].normal_bias = 0.0f;
+        // Shader-side offset along the receiver normal to counter PCF bleeding
+        // at sharp creases. Small world-space value; scene-scale-dependent.
+        infos[li].normal_bias = 0.02f;
         infos[li].has_shadow = 1;
         infos[li].layer = layer_index;
         infos[li].light_near = proj.near_plane;

@@ -73,16 +73,19 @@ LightProjection compute_area_light_vp(const LightData& light, const glm::vec3& a
     constexpr float k_fov_y_rad = glm::radians(90.0f);
     auto light_proj = glm::perspective(k_fov_y_rad, 1.0f, near_plane, far_plane);
 
-    // Effective world-space light radius. Rect uses half-extent magnitude so
-    // the penumbra scale matches the LTC representative-point convention in
-    // light.slang (sqrt of half-extents product).
+    // Effective world-space light radius for the isotropic PCSS kernel.
+    // For rect lights we take the larger half-extent; this is a conservative
+    // isotropic approximation -- the penumbra is actually anisotropic, but
+    // representing that needs a 2D light-space oriented kernel (follow-up).
+    // Using the geometric mean sqrt(hw*hh) dramatically underestimates
+    // penumbra on elongated rects (e.g. 6x1 -> 0.61 vs real ~3.0).
     float light_radius = 0.0f;
     if (light.type == LightData::Type::Disk) {
         light_radius = std::max(light.radius, 0.0f);
     } else if (light.type == LightData::Type::Rect) {
         float hw = std::max(light.width, 0.0f) * 0.5f;
         float hh = std::max(light.height, 0.0f) * 0.5f;
-        light_radius = std::sqrt(hw * hh);
+        light_radius = std::max(hw, hh);
     }
     float light_size_uv = light_radius / (2.0f * std::tan(k_fov_y_rad * 0.5f));
 

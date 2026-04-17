@@ -104,7 +104,7 @@ TEST_CASE("compute_area_light_vp produces perspective with radius-based light_si
     CHECK(proj.light_size_uv == doctest::Approx(expected).epsilon(1e-4));
 }
 
-TEST_CASE("compute_area_light_vp uses sqrt(half-extents) for rect lights") {
+TEST_CASE("compute_area_light_vp uses max(half-extents) for rect lights") {
     glm::vec3 aabb_min(-2.0f, 0.0f, -2.0f);
     glm::vec3 aabb_max(2.0f, 4.0f, 2.0f);
 
@@ -117,8 +117,9 @@ TEST_CASE("compute_area_light_vp uses sqrt(half-extents) for rect lights") {
 
     LightProjection proj = compute_area_light_vp(light, aabb_min, aabb_max);
 
-    // Effective radius = sqrt((w/2) * (h/2)) = sqrt(1 * 2) = sqrt(2).
-    float effective_radius = std::sqrt(1.0f * 2.0f);
+    // Effective radius = max(w/2, h/2) = max(1, 2) = 2. Conservative isotropic
+    // approximation that avoids the elongated-rect underestimation.
+    float effective_radius = 2.0f;
     float expected = effective_radius / 2.0f;
     CHECK(proj.light_size_uv == doctest::Approx(expected).epsilon(1e-4));
 }
