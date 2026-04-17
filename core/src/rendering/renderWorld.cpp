@@ -1059,14 +1059,23 @@ void RenderWorld::update_transforms(const pxr::UsdStageRefPtr& stage,
             if (!prim.IsValid()) return;
             auto xf = compute_world_transform(prim);
             auto h = m_lights.find(path);
+            bool has_proxy_mesh = false;
             m_lights.mutate(h, [&](LightData& light) {
                 light.transform = xf;
                 if (light.type == LightData::Type::Distant) {
                     glm::vec4 local_dir(0.0f, 0.0f, -1.0f, 0.0f);
                     light.direction = glm::normalize(glm::vec3(xf * local_dir));
                 }
+                has_proxy_mesh = (light.mesh_index != UINT32_MAX);
             });
             ++m_lights_version;
+            // Lights with proxy meshes (rect/disk/sphere emitters) appear as
+            // instances in the path tracer TLAS. The instance transform is
+            // copied from light.transform during rebuild, so we must bump
+            // m_instances_version for the rebuild to actually run.
+            if (has_proxy_mesh) {
+                ++m_instances_version;
+            }
         });
 
         // Update cameras
