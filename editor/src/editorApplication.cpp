@@ -12,6 +12,7 @@
 #include <core/rendering/renderer.h>
 #include <core/rendering/rendererRegistry.h>
 #include <core/rendering/sceneLoader.h>
+#include <core/rendering/stageSave.h>
 #include <core/rendering/webgpuContext.h>
 #include <core/rendering/windowing.h>
 #include <core/worker.h>
@@ -38,7 +39,6 @@
 #include <pxr/usd/usdShade/material.h>
 #include <pxr/usd/usdShade/materialBindingAPI.h>
 #include <pxr/usd/usdShade/shader.h>
-#include <pxr/usd/usdUtils/usdzPackage.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 #include <stb_image_write.h>
 
@@ -1284,16 +1284,11 @@ void EditorApplication::open_scene_dialog() {
 
 void EditorApplication::save_scene_dialog() {
 #ifdef __EMSCRIPTEN__
-    auto flat = m_stage->Flatten();
-    CHECK_MSG(flat, "Failed to flatten stage for USDZ export");
-    bool exported = flat->Export("/tmp/_export.usda");
-    CHECK_MSG(exported, "Failed to export flattened stage to temp file");
+    std::string const out_path = "/tmp/_pts_export.usdz";
+    bool const saved = pts::rendering::save_stage(m_stage, out_path);
+    CHECK_MSG(saved, "Failed to save stage for USDZ download");
 
-    bool packaged = pxr::UsdUtilsCreateNewUsdzPackage(pxr::SdfAssetPath("/tmp/_export.usda"),
-                                                      "/tmp/_export.usdz");
-    CHECK_MSG(packaged, "Failed to create USDZ package");
-
-    std::FILE* f = std::fopen("/tmp/_export.usdz", "rb");
+    std::FILE* f = std::fopen(out_path.c_str(), "rb");
     CHECK_MSG(f, "Failed to open USDZ temp file for reading");
     std::fseek(f, 0, SEEK_END);
     auto const nbytes = std::ftell(f);
@@ -1314,37 +1309,19 @@ void EditorApplication::save_scene_dialog() {
     }, bytes.data(), bytes.size());
     // clang-format on
 
-    std::remove("/tmp/_export.usda");
-    std::remove("/tmp/_export.usdz");
+    std::remove(out_path.c_str());
     log(LogLevel::Info, "USDZ download triggered");
 #else
-    ImGui::FileDialogueAsync(
-        ImGui::FileDialogueMode::Save, ".usdz,.usda,.usdc,.usd",
-        [this](ImGui::FileDialogueResult result) {
-            if (result.name.empty()) return;
-            auto const& path = result.name;
-            bool const is_usdz = path.size() >= 5 && path.compare(path.size() - 5, 5, ".usdz") == 0;
-            if (is_usdz) {
-                auto tmp_path = std::filesystem::temp_directory_path() / "_pts_export.usda";
-                auto tmp = tmp_path.string();
-                auto flat = m_stage->Flatten();
-                CHECK_MSG(flat, "Failed to flatten stage for USDZ export");
-                bool exported = flat->Export(tmp);
-                CHECK_MSG(exported, "Failed to export flattened stage");
-                bool ok = pxr::UsdUtilsCreateNewUsdzPackage(pxr::SdfAssetPath(tmp), path);
-                std::filesystem::remove(tmp_path);
-                if (ok)
-                    log(LogLevel::Info, "Saved scene to {}", path);
-                else
-                    log(LogLevel::Error, "Failed to create USDZ package for {}", path);
-            } else {
-                bool ok = m_stage->GetRootLayer()->Export(path);
-                if (ok)
-                    log(LogLevel::Info, "Saved scene to {}", path);
-                else
-                    log(LogLevel::Error, "Failed to save scene to {}", path);
-            }
-        });
+    ImGui::FileDialogueAsync(ImGui::FileDialogueMode::Save, ".usdz,.usda,.usdc,.usd",
+                             [this](ImGui::FileDialogueResult result) {
+                                 if (result.name.empty()) return;
+                                 if (pts::rendering::save_stage(m_stage, result.name)) {
+                                     log(LogLevel::Info, "Saved scene to {}", result.name);
+                                 } else {
+                                     log(LogLevel::Error, "Failed to save scene to {}",
+                                         result.name);
+                                 }
+                             });
 #endif
 }
 

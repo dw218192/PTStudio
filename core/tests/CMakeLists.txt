@@ -166,6 +166,17 @@ list(APPEND TEST_NAMES testTextureResolution)
 set(testTextureResolution_source testTextureResolution.cpp)
 set(testTextureResolution_libs core OpenEXR::OpenEXR)
 
+# USDZ save relocalization. Native-only: the Emscripten node test runner
+# decodes subprocess stdout as cp1252 on Windows hosts, and USD's verbose
+# dependency-resolution warnings during UsdUtilsCreateNewUsdzPackage
+# contain bytes that don't round-trip -- the helper itself works fine on
+# WASM (editorSmoke_* covers the editor's emscripten save flow).
+if(NOT EMSCRIPTEN)
+    list(APPEND TEST_NAMES testUsdzSaveRelocalize)
+    set(testUsdzSaveRelocalize_source testUsdzSaveRelocalize.cpp)
+    set(testUsdzSaveRelocalize_libs core)
+endif()
+
 
 function(add_core_test target_name)
     message(STATUS "Building test: ${target_name}")
