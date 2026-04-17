@@ -4,6 +4,7 @@
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/shaderc/shaderLoader.h>
+#include <core/rendering/shadowLightProjection.h>
 #include <core/rendering/shadowMapPass.h>
 #include <core/rendering/webgpu/device.h>
 #include <imgui.h>
@@ -21,60 +22,6 @@ namespace {
 bool casts_shadow_map(LightData::Type type) {
     return type == LightData::Type::Distant || type == LightData::Type::Rect ||
            type == LightData::Type::Disk;
-}
-
-glm::mat4 compute_distant_light_vp(const LightData& light, const glm::vec3& aabb_min,
-                                   const glm::vec3& aabb_max) {
-    auto dir = glm::normalize(light.direction);
-
-    auto center = (aabb_min + aabb_max) * 0.5f;
-    auto half_diag = glm::length(aabb_max - aabb_min) * 0.5f;
-
-    auto up = glm::vec3(0, 1, 0);
-    if (std::abs(glm::dot(dir, up)) > 0.99f) up = glm::vec3(1, 0, 0);
-
-    auto light_view = glm::lookAt(center - dir * half_diag, center, up);
-
-    glm::vec3 ls_min(std::numeric_limits<float>::max());
-    glm::vec3 ls_max(std::numeric_limits<float>::lowest());
-    for (int c = 0; c < 8; ++c) {
-        glm::vec3 corner((c & 1) ? aabb_max.x : aabb_min.x, (c & 2) ? aabb_max.y : aabb_min.y,
-                         (c & 4) ? aabb_max.z : aabb_min.z);
-        glm::vec3 ls_pt = glm::vec3(light_view * glm::vec4(corner, 1.0f));
-        ls_min = glm::min(ls_min, ls_pt);
-        ls_max = glm::max(ls_max, ls_pt);
-    }
-
-    auto ortho_proj = glm::ortho(ls_min.x, ls_max.x, ls_min.y, ls_max.y, -ls_max.z, -ls_min.z);
-    return ortho_proj * light_view;
-}
-
-// Perspective VP for rect/disk area lights. Position is the translation column
-// of the light transform; forward is local -Z in world space; up is local +Y.
-// Far plane is the furthest distance from the light to any scene-AABB corner,
-// giving an "influence range" that covers all potential shadow receivers.
-glm::mat4 compute_area_light_vp(const LightData& light, const glm::vec3& aabb_min,
-                                const glm::vec3& aabb_max) {
-    glm::vec3 position(light.transform[3]);
-    glm::vec3 forward = glm::normalize(-glm::vec3(light.transform[2]));
-    glm::vec3 up = glm::normalize(glm::vec3(light.transform[1]));
-    if (std::abs(glm::dot(forward, up)) > 0.99f) {
-        up = (std::abs(forward.y) > 0.9f) ? glm::vec3(0.0f, 0.0f, 1.0f)
-                                          : glm::vec3(0.0f, 1.0f, 0.0f);
-    }
-
-    float far_plane = 0.0f;
-    for (int c = 0; c < 8; ++c) {
-        glm::vec3 corner((c & 1) ? aabb_max.x : aabb_min.x, (c & 2) ? aabb_max.y : aabb_min.y,
-                         (c & 4) ? aabb_max.z : aabb_min.z);
-        far_plane = std::max(far_plane, glm::length(corner - position));
-    }
-    INVARIANT(far_plane > 0.0f);
-    float near_plane = std::max(0.001f, far_plane * 0.01f);
-
-    auto light_view = glm::lookAt(position, position + forward, up);
-    auto light_proj = glm::perspective(glm::radians(90.0f), 1.0f, near_plane, far_plane);
-    return light_proj * light_view;
 }
 
 }  // namespace
@@ -184,15 +131,19 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
         if (!light.casts_shadow) continue;
         if (layer_index >= k_max_shadow_maps) continue;
 
-        glm::mat4 light_vp = (light.type == LightData::Type::Distant)
-                                 ? compute_distant_light_vp(light, aabb_min, aabb_max)
-                                 : compute_area_light_vp(light, aabb_min, aabb_max);
+        LightProjection proj = (light.type == LightData::Type::Distant)
+                                   ? compute_distant_light_vp(light, aabb_min, aabb_max)
+                                   : compute_area_light_vp(light, aabb_min, aabb_max);
 
-        infos[li].light_vp = light_vp;
+        infos[li].light_vp = proj.vp;
         infos[li].texel_size = 1.0f / static_cast<float>(m_resolution);
         infos[li].normal_bias = 0.0f;
         infos[li].has_shadow = 1;
         infos[li].layer = layer_index;
+        infos[li].light_near = proj.near_plane;
+        infos[li].light_far = proj.far_plane;
+        infos[li].light_size_uv = proj.light_size_uv;
+        infos[li].projection_type = proj.projection_type;
         ++layer_index;
     }
     INVARIANT(layer_index == shadow_count);

@@ -144,6 +144,11 @@ list(APPEND TEST_NAMES testBvh)
 set(testBvh_source testBvh.cpp)
 set(testBvh_libs core)
 
+# Shadow sampling math - no GPU needed, mirrors shadow_sampling.slang
+list(APPEND TEST_NAMES testShadowSampling)
+set(testShadowSampling_source testShadowSampling.cpp)
+set(testShadowSampling_libs core)
+
 # Texture resolution from UsdShade graph - works on all platforms
 list(APPEND TEST_NAMES testTextureResolution)
 set(testTextureResolution_source testTextureResolution.cpp)

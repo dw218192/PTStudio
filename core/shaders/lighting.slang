@@ -38,7 +38,8 @@ float3 evaluate_lighting_ltc<B : IBRDF>(
             float4 light_clip = mul(si.light_vp, float4(offset_pos, 1.0));
             float3 ndc = light_clip.xyz / light_clip.w;
             float3 shadow_uv = float3(ndc.x * 0.5 + 0.5, -ndc.y * 0.5 + 0.5, ndc.z);
-            shadow_vis = compute_shadow_pcf(shadow_map, shadow_sampler, shadow_uv, si.layer, si.texel_size);
+            shadow_vis = compute_shadow_pcss(
+                shadow_map, shadow_sampler, shadow_uv, si, screen_uv);
         }
 
         if (light.type == LIGHT_RECT || light.type == LIGHT_DISK) {
