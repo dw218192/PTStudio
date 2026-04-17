@@ -4,14 +4,15 @@
 // translation units cannot accidentally take a dependency on it.
 #ifndef __EMSCRIPTEN__
 
-#include <core/inPlacePimpl.h>
 #include <core/rendering/shaderCompiler.h>
 
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace spdlog {
@@ -21,7 +22,6 @@ class logger;
 namespace pts::rendering {
 
 class ShaderLoader;
-struct SlangCompilerImpl;
 
 /// libslang-backed IShaderCompiler with on-disk cache + mtime watcher.
 ///
@@ -39,8 +39,7 @@ struct SlangCompilerImpl;
 ///   On compile failure, logs a warning and delegates to `error_fallback`
 ///   (typically EmbeddedCompiler). Never throws; exceptions at the ABI
 ///   boundary are a spec violation.
-class SlangCompiler final : public IShaderCompiler,
-                            private pts::InPlacePimpl<SlangCompiler, SlangCompilerImpl, 2048, 16> {
+class SlangCompiler final : public IShaderCompiler {
    public:
     SlangCompiler(const ShaderLoader& loader, std::shared_ptr<spdlog::logger> logger,
                   std::filesystem::path cache_dir, std::filesystem::path workspace_root,
@@ -57,6 +56,10 @@ class SlangCompiler final : public IShaderCompiler,
     [[nodiscard]] uint64_t source_revision(std::string_view source_key) const override;
 
     void invalidate(std::string_view source_key) override;
+
+   private:
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
 };
 
 }  // namespace pts::rendering
