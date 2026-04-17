@@ -189,7 +189,7 @@ uint32_t resolve_material(pxr::UsdPrim prim, SyncScope& scope) {
 
 void store_mesh(SyncScope& scope, const std::vector<Vertex>& vertices,
                 const std::vector<uint32_t>& indices, uint32_t mesh_slot) {
-    scope.mutate_mesh(mesh_slot, [&](MeshData& w) {
+    scope.mutate_mesh(mesh_slot, MeshField::Geometry, [&](MeshData& w) {
         w.cpu_vertices.assign(vertices.begin(), vertices.end());
         w.cpu_indices.assign(indices.begin(), indices.end());
         w.index_count = static_cast<uint32_t>(indices.size());
@@ -206,22 +206,28 @@ void sync_object(pxr::UsdPrim geom_prim, const pxr::SdfPath& obj_path, uint32_t 
     int existing = world.find_object_by_prim(obj_path);
     if (existing >= 0) {
         auto mesh_index = scope.object(static_cast<uint32_t>(existing)).mesh_index;
-        scope.mutate_object(static_cast<uint32_t>(existing), [&](ObjectData& w) {
-            w.transform = transform;
-            w.material_index = material_index;
-            w.visible = visible;
-        });
+        scope.mutate_object(
+            static_cast<uint32_t>(existing),
+            ObjectField::Transform | ObjectField::MaterialIndex | ObjectField::Visibility,
+            [&](ObjectData& w) {
+                w.transform = transform;
+                w.material_index = material_index;
+                w.visible = visible;
+            });
         store_mesh(scope, vertices, indices, mesh_index);
     } else {
         auto mesh_slot = scope.alloc_mesh(obj_path);
         auto obj_slot = scope.alloc_object(obj_path);
         store_mesh(scope, vertices, indices, mesh_slot);
-        scope.mutate_object(obj_slot, [&](ObjectData& w) {
-            w.mesh_index = mesh_slot;
-            w.transform = transform;
-            w.material_index = material_index;
-            w.visible = visible;
-        });
+        scope.mutate_object(obj_slot,
+                            ObjectField::MeshIndex | ObjectField::Transform |
+                                ObjectField::MaterialIndex | ObjectField::Visibility,
+                            [&](ObjectData& w) {
+                                w.mesh_index = mesh_slot;
+                                w.transform = transform;
+                                w.material_index = material_index;
+                                w.visible = visible;
+                            });
     }
 }
 
@@ -413,11 +419,13 @@ void sync_light(pxr::UsdPrim prim, SyncScope& scope, const LightData& light) {
             }
         }
 
-        scope.mutate_light(static_cast<uint32_t>(existing), [&](LightData& w) {
-            w = light;
-            w.mesh_index = new_mesh;
-            w.material_index = new_mat;
-        });
+        // Whole-light replacement -- treat as touching every field.
+        scope.mutate_light(static_cast<uint32_t>(existing),
+                           LightField::All & ~LightField::Lifecycle, [&](LightData& w) {
+                               w = light;
+                               w.mesh_index = new_mesh;
+                               w.material_index = new_mat;
+                           });
 
         if (light_type_has_proxy(light.type)) {
             store_mesh(scope, vertices, indices, new_mesh);
@@ -438,7 +446,7 @@ void sync_light(pxr::UsdPrim prim, SyncScope& scope, const LightData& light) {
             mesh_idx = scope.alloc_mesh(sdf_path);
         }
 
-        scope.mutate_light(slot, [&](LightData& w) {
+        scope.mutate_light(slot, LightField::All & ~LightField::Lifecycle, [&](LightData& w) {
             w = light;
             w.material_index = mat_idx;
             w.mesh_index = mesh_idx;

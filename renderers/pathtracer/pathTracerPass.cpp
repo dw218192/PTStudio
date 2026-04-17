@@ -114,8 +114,8 @@ PathTracerPass::HdrOutputs PathTracerPass::do_add_to_frame_graph(
         m_prev_instance_handle = current_instance_handle;
     }
 
-    // Reset accumulation when lights change (dome color/intensity/HDR)
-    auto light_ver = ctx.world.get_light_version();
+    // Reset accumulation when the light GPU buffer changes (dome color/intensity/HDR).
+    auto light_ver = ctx.world.light_buffer_version();
     if (light_ver != m_prev_light_version) {
         m_frame_count = 0;
         m_prev_light_version = light_ver;

@@ -1,5 +1,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <core/diagnostics.h>
+#include <core/profiling.h>
+#include <core/rendering/preparedSceneData.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/vertex.h>
 #include <doctest/doctest.h>
@@ -9,6 +11,12 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 using namespace pts::rendering;
+
+// Tracy 0.13.1 with TRACY_DELAYED_INIT requires explicit profiler startup
+// before any ZoneScoped fires (prepare_scene_data uses PTS_ZONE_SCOPED).
+TEST_CASE("profiler init" * doctest::test_suite("setup")) {
+    PTS_STARTUP_PROFILER();
+}
 
 TEST_CASE("alloc returns sequential indices on empty world") {
     RenderWorld world;
@@ -152,26 +160,20 @@ TEST_CASE("active flag is false after free, true after re-alloc") {
     CHECK(world.get_lights().active_at(l2));
 }
 
-TEST_CASE("SyncScope bumps mesh_version once") {
+TEST_CASE("SyncScope marks materials dirty once") {
     RenderWorld world;
-    auto initial = world.get_mesh_version();
-    {
-        auto scope = world.begin_sync();
-        scope.alloc_object(pxr::SdfPath("/A"));
-        scope.alloc_object(pxr::SdfPath("/B"));
-        scope.alloc_mesh(pxr::SdfPath("/M"));
-    }
-    CHECK(world.get_mesh_version() == initial + 1);
-}
+    // First prepare to drain initial dirt.
+    (void) world.prepare_scene_data();
 
-TEST_CASE("SyncScope bumps material_version once") {
-    RenderWorld world;
-    auto initial = world.get_material_version();
     {
         auto scope = world.begin_sync();
         scope.materials().push_back(Material{});
     }
-    CHECK(world.get_material_version() == initial + 1);
+    auto data = world.prepare_scene_data();
+    CHECK(data.materials_dirty);
+
+    auto data2 = world.prepare_scene_data();
+    CHECK_FALSE(data2.materials_dirty);
 }
 
 TEST_CASE("version-based tracking") {
@@ -187,7 +189,8 @@ TEST_CASE("version-based tracking") {
         auto scope = world.begin_sync();
         auto l = scope.alloc_light(pxr::SdfPath("/L"));
         auto ver_before = world.get_lights().version_at(l);
-        scope.mutate_light(l, [](LightData& ld) { ld.color = glm::vec3(1.0f, 0.0f, 0.0f); });
+        scope.mutate_light(l, LightField::Color,
+                           [](LightData& ld) { ld.color = glm::vec3(1.0f, 0.0f, 0.0f); });
         CHECK(world.get_lights().version_at(l) > ver_before);
     }
 
@@ -212,7 +215,7 @@ TEST_CASE("Mesh cpu_vertices can be populated via SyncScope") {
     v.position[1] = 2.0f;
     v.position[2] = 3.0f;
 
-    scope.mutate_mesh(m, [&](MeshData& mesh) {
+    scope.mutate_mesh(m, MeshField::Geometry, [&](MeshData& mesh) {
         mesh.cpu_vertices = {v};
         mesh.cpu_indices = {0};
     });
@@ -227,7 +230,7 @@ TEST_CASE("free_mesh clears mesh data") {
     auto scope = world.begin_sync();
     auto m = scope.alloc_mesh(pxr::SdfPath("/Mesh"));
 
-    scope.mutate_mesh(m, [](MeshData& mesh) {
+    scope.mutate_mesh(m, MeshField::Geometry, [](MeshData& mesh) {
         mesh.cpu_vertices = {Vertex{}};
         mesh.cpu_indices = {0};
     });
@@ -237,6 +240,59 @@ TEST_CASE("free_mesh clears mesh data") {
     auto raw = world.get_meshes().span_raw();
     CHECK(raw[m].value.cpu_vertices.empty());
     CHECK(raw[m].value.cpu_indices.empty());
+}
+
+// Regression: commit 83351f2 added a `if (has_proxy_mesh) ++m_instances_version`
+// hack inside update_transforms because mutating a light's transform did not
+// otherwise dirty the TLAS. With per-field dirty tracking, the TLAS lights
+// consumer subscribes to LightField::Transform, so a Transform mutation alone
+// must trigger a TLAS geometry rebuild on the next prepare_scene_data() --
+// no special-case needed.
+TEST_CASE("Light transform change dirties TLAS geometry (proxy emitter)") {
+    RenderWorld world;
+    Vertex v{};
+    v.position[0] = 1.0f;
+
+    // Set up a light with a proxy mesh.
+    {
+        auto scope = world.begin_sync();
+        auto mesh_idx = scope.alloc_mesh(pxr::SdfPath("/L/proxy"));
+        scope.mutate_mesh(mesh_idx, MeshField::Geometry, [&](MeshData& mw) {
+            mw.cpu_vertices = {v, v, v};
+            mw.cpu_indices = {0, 1, 2};
+            mw.local_aabb_min = glm::vec3(0);
+            mw.local_aabb_max = glm::vec3(1);
+        });
+        auto l = scope.alloc_light(pxr::SdfPath("/L"));
+        scope.mutate_light(l,
+                           LightField::Type | LightField::MeshIndex | LightField::Transform |
+                               LightField::Visibility,
+                           [&](LightData& lw) {
+                               lw.type = LightData::Type::Rect;
+                               lw.mesh_index = mesh_idx;
+                               lw.visible = true;
+                               lw.transform = glm::mat4(1.0f);
+                           });
+    }
+
+    // Drain initial dirt.
+    (void) world.prepare_scene_data();
+
+    // Move the light. With the new dirty-tracking scheme, this should
+    // dirty the TLAS lights consumer and trigger a geometry rebuild on the
+    // next prepare. The pre-refactor code required an explicit
+    // ++m_instances_version inside the update_transforms branch handling
+    // proxy meshes; no longer needed.
+    {
+        auto scope = world.begin_sync();
+        auto idx = static_cast<uint32_t>(world.find_light_by_prim(pxr::SdfPath("/L")));
+        scope.mutate_light(idx, LightField::Transform, [](LightData& lw) {
+            lw.transform[3] = glm::vec4(5.0f, 0.0f, 0.0f, 1.0f);
+        });
+    }
+
+    auto data = world.prepare_scene_data();
+    CHECK(data.geometry_dirty);
 }
 
 // --- to_light() orientation vector tests ---

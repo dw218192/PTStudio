@@ -111,7 +111,7 @@ TEST_CASE("ContactShadowPass add_to_frame_graph produces valid output") {
     {
         auto scope = world.begin_sync();
         auto li = scope.alloc_light(pxr::SdfPath("/TestLight0"));
-        scope.mutate_light(li, [&](LightData& lw) {
+        scope.mutate_light(li, LightField::All & ~LightField::Lifecycle, [&](LightData& lw) {
             lw.type = LightData::Type::Distant;
             lw.direction = glm::vec3(0, -1, 0);
             lw.color = glm::vec3(1);

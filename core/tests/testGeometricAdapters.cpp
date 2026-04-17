@@ -370,7 +370,7 @@ TEST_CASE("sync_prim updates existing object") {
     f.world.upload_all_meshes(f.device);
 
     REQUIRE(f.world.get_objects().size() == 1);
-    auto initial_version = f.world.get_mesh_version();
+    auto initial_version = f.world.get_meshes().version_at(0);
 
     // Re-sync the same prim -- should update in place, not add a new object
     {
@@ -379,7 +379,7 @@ TEST_CASE("sync_prim updates existing object") {
     }
 
     CHECK(f.world.get_objects().size() == 1);
-    CHECK(f.world.get_mesh_version() > initial_version);
+    CHECK(f.world.get_meshes().version_at(0) > initial_version);
 }
 
 TEST_CASE("remove_prim frees object and mesh slots") {
@@ -393,7 +393,6 @@ TEST_CASE("remove_prim frees object and mesh slots") {
 
     REQUIRE(f.world.get_objects().capacity() >= 1);
     CHECK(f.world.get_objects().active_at(0));
-    auto initial_version = f.world.get_mesh_version();
 
     {
         auto scope = f.world.begin_sync();
@@ -402,7 +401,6 @@ TEST_CASE("remove_prim frees object and mesh slots") {
 
     CHECK(!f.world.get_objects().active_at(0));
     CHECK(f.world.find_object_by_prim(pxr::SdfPath("/Cube")) == -1);
-    CHECK(f.world.get_mesh_version() > initial_version);
 }
 
 TEST_CASE("sync_prim with invalid path calls remove_prim") {

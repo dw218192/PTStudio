@@ -9,6 +9,7 @@
 #include <functional>
 #include <type_traits>
 #include <utility>
+#include <variant>
 
 namespace pts::container {
 
@@ -31,7 +32,7 @@ class DepTrackedSlotMap {
         bool dirty = false;
     };
 
-    using InnerMap = SlotMap<K, Tracked, Compare>;
+    using InnerMap = SlotMap<K, Tracked, std::monostate, Compare>;
 
     struct Handle {
         typename InnerMap::Handle m_inner;

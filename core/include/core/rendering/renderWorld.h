@@ -19,6 +19,7 @@
 #include <glm/glm.hpp>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
@@ -78,12 +79,68 @@ struct MeshData {
     glm::vec3 local_aabb_max{0};
 };
 
+/// Per-field dirty bits for MeshData. The Lifecycle bit is auto-set by
+/// SlotMap on insert/erase (it equals subscription, see SlotMap docs).
+/// Mutators must NOT pass Lifecycle in their `changed` mask -- it is
+/// reserved as the "structural change" signal for consumers.
+enum class MeshField : uint32_t {
+    None = 0,
+    Lifecycle = 1u << 0,
+    Geometry = 1u << 1,    ///< cpu_vertices, cpu_indices, AABB
+    GpuBuffers = 1u << 2,  ///< vertex_buffer, index_buffer, position_buffer
+    All = ~0u,
+};
+constexpr MeshField operator|(MeshField a, MeshField b) noexcept {
+    return static_cast<MeshField>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
+}
+constexpr MeshField operator&(MeshField a, MeshField b) noexcept {
+    return static_cast<MeshField>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b));
+}
+constexpr MeshField operator~(MeshField a) noexcept {
+    return static_cast<MeshField>(~static_cast<uint32_t>(a));
+}
+constexpr MeshField& operator|=(MeshField& a, MeshField b) noexcept {
+    a = a | b;
+    return a;
+}
+constexpr MeshField& operator&=(MeshField& a, MeshField b) noexcept {
+    a = a & b;
+    return a;
+}
+
 struct ObjectData {
     uint32_t mesh_index = 0;
     uint32_t material_index{k_no_material};
     glm::mat4 transform{1.0f};
     bool visible{true};
 };
+
+enum class ObjectField : uint32_t {
+    None = 0,
+    Lifecycle = 1u << 0,
+    Transform = 1u << 1,
+    Visibility = 1u << 2,
+    MeshIndex = 1u << 3,
+    MaterialIndex = 1u << 4,
+    All = ~0u,
+};
+constexpr ObjectField operator|(ObjectField a, ObjectField b) noexcept {
+    return static_cast<ObjectField>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
+}
+constexpr ObjectField operator&(ObjectField a, ObjectField b) noexcept {
+    return static_cast<ObjectField>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b));
+}
+constexpr ObjectField operator~(ObjectField a) noexcept {
+    return static_cast<ObjectField>(~static_cast<uint32_t>(a));
+}
+constexpr ObjectField& operator|=(ObjectField& a, ObjectField b) noexcept {
+    a = a | b;
+    return a;
+}
+constexpr ObjectField& operator&=(ObjectField& a, ObjectField b) noexcept {
+    a = a & b;
+    return a;
+}
 
 struct LightData {
     enum class Type { Distant, Sphere, Rect, Disk, Dome };
@@ -102,6 +159,40 @@ struct LightData {
     uint32_t material_index{k_no_material};  // emissive material index
     bool visible{true};                      // USD visibility for proxy mesh
 };
+
+enum class LightField : uint32_t {
+    None = 0,
+    Lifecycle = 1u << 0,
+    Transform = 1u << 1,
+    Color = 1u << 2,
+    Intensity = 1u << 3,
+    Type = 1u << 4,
+    Visibility = 1u << 5,
+    CastsShadow = 1u << 6,
+    MeshIndex = 1u << 7,
+    MaterialIndex = 1u << 8,
+    EnvTexture = 1u << 9,
+    Direction = 1u << 10,
+    Geometry = 1u << 11,  ///< angle, radius, width, height
+    All = ~0u,
+};
+constexpr LightField operator|(LightField a, LightField b) noexcept {
+    return static_cast<LightField>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
+}
+constexpr LightField operator&(LightField a, LightField b) noexcept {
+    return static_cast<LightField>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b));
+}
+constexpr LightField operator~(LightField a) noexcept {
+    return static_cast<LightField>(~static_cast<uint32_t>(a));
+}
+constexpr LightField& operator|=(LightField& a, LightField b) noexcept {
+    a = a | b;
+    return a;
+}
+constexpr LightField& operator&=(LightField& a, LightField b) noexcept {
+    a = a & b;
+    return a;
+}
 
 /// Convert a LightData to a GPU-ready Light struct.
 Light to_light(const LightData& slot);
@@ -149,18 +240,48 @@ struct GPUInstance {
 };
 static_assert(sizeof(GPUInstance) == 144);
 
-// SlotMap type aliases for world data.
-using ObjectSlotMap = container::SlotMap<pxr::SdfPath, ObjectData>;
-using MeshSlotMap = container::SlotMap<pxr::SdfPath, MeshData>;
-using LightSlotMap = container::SlotMap<pxr::SdfPath, LightData>;
+// SlotMap type aliases for world data. Lights/objects/meshes carry per-field
+// dirty masks; cameras don't (they aren't multiplexed across cache consumers).
+using ObjectSlotMap = container::SlotMap<pxr::SdfPath, ObjectData, ObjectField>;
+using MeshSlotMap = container::SlotMap<pxr::SdfPath, MeshData, MeshField>;
+using LightSlotMap = container::SlotMap<pxr::SdfPath, LightData, LightField>;
 using CameraSlotMap = container::SlotMap<pxr::SdfPath, CameraData>;
+
+/// Per-RenderWorld dirty bits for state that doesn't live in a SlotMap
+/// (raw vectors -- materials, scene textures). Mutators OR the relevant
+/// bit; consumers drain via take_world_dirty().
+enum class WorldDirty : uint32_t {
+    None = 0,
+    Materials = 1u << 0,
+    SceneTextures = 1u << 1,
+    All = ~0u,
+};
+constexpr WorldDirty operator|(WorldDirty a, WorldDirty b) noexcept {
+    return static_cast<WorldDirty>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
+}
+constexpr WorldDirty operator&(WorldDirty a, WorldDirty b) noexcept {
+    return static_cast<WorldDirty>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b));
+}
+constexpr WorldDirty operator~(WorldDirty a) noexcept {
+    return static_cast<WorldDirty>(~static_cast<uint32_t>(a));
+}
+constexpr WorldDirty& operator|=(WorldDirty& a, WorldDirty b) noexcept {
+    a = a | b;
+    return a;
+}
+constexpr WorldDirty& operator&=(WorldDirty& a, WorldDirty b) noexcept {
+    a = a & b;
+    return a;
+}
 
 struct RenderWorld;
 struct PreparedSceneData;
 
-/// RAII scope guard for batched sync operations. Bumps mesh_version
-/// on destruction. All sync_object/remove_prim calls must happen
-/// within a live SyncScope.
+/// RAII scope guard for batched sync operations. Marks WorldDirty::Materials
+/// on destruction (materials live in a flat vector and aren't per-slot
+/// tracked, so any scope is treated conservatively as touching them).
+/// SlotMap-resident data (lights/objects/meshes) is tracked per-field via
+/// the `changed` mask passed to mutate_*().
 class SyncScope {
    public:
     explicit SyncScope(RenderWorld& world);
@@ -189,16 +310,17 @@ class SyncScope {
     void free_light(const pxr::SdfPath& path);
     void free_camera(const pxr::SdfPath& path);
 
-    /// In-place mutation; bumps version after fn returns. Defined after
-    /// RenderWorld below -- non-dependent access to m_world.m_* requires
-    /// the type to be complete at template parse time (Clang enforces,
-    /// MSVC is lenient).
+    /// In-place mutation; the `changed` mask declares which fields the
+    /// callback touched. Consumers subscribed to those bits will see them
+    /// dirty for this slot. NOTE: do not pass Lifecycle in `changed` --
+    /// that bit is reserved for SlotMap to flag insert/erase.
     template <class Fn>
-    void mutate_object(uint32_t i, Fn&& fn);
+    void mutate_object(uint32_t i, ObjectField changed, Fn&& fn);
     template <class Fn>
-    void mutate_mesh(uint32_t i, Fn&& fn);
+    void mutate_mesh(uint32_t i, MeshField changed, Fn&& fn);
     template <class Fn>
-    void mutate_light(uint32_t i, Fn&& fn);
+    void mutate_light(uint32_t i, LightField changed, Fn&& fn);
+    /// Cameras don't drive cached GPU state, so they don't take a mask.
     template <class Fn>
     void mutate_camera(uint32_t i, Fn&& fn);
 
@@ -213,7 +335,7 @@ class SyncScope {
     std::unordered_map<std::string, uint32_t>& material_cache();
 
     /// Load a texture from disk, deduplicate by path. Returns layer index
-    /// or UINT32_MAX on failure. Bumps texture version.
+    /// or UINT32_MAX on failure. Marks WorldDirty::SceneTextures.
     uint32_t load_texture(const std::string& resolved_path);
 
    private:
@@ -221,9 +343,7 @@ class SyncScope {
 };
 
 struct RenderWorld {
-    RenderWorld() {
-        m_materials.push_back(Material{});
-    }
+    RenderWorld();
 
     // Read-only accessors returning const references to SlotMaps.
     const ObjectSlotMap& get_objects() const;
@@ -325,39 +445,42 @@ struct RenderWorld {
 
     void clear();
 
-    // Category version counters -- bumped by SyncScope when any slot in that
-    // category changes.  Used internally by IPass::get_or_create_pass_data
-    // and prepare_gpu_buffers.  Prefer the pass_data API over reading these
-    // directly in renderer code.
-    uint32_t get_mesh_version() const;
-    uint32_t get_light_version() const;
-    uint32_t get_material_version() const;
+    // --- WorldDirty consumer API (for vector-stored data: materials, textures) ---
+    using WorldConsumerId = uint32_t;
+    WorldConsumerId register_world_consumer(WorldDirty subscription);
+    /// OR `bits` into every consumer's pending mask (gated by subscription).
+    void mark_world_dirty(WorldDirty bits);
+    bool any_world_dirty(WorldConsumerId id, WorldDirty query) const;
+    /// Returns the intersection of pending and query, then clears those bits.
+    WorldDirty take_world_dirty(WorldConsumerId id, WorldDirty query);
 
-    /// Per-kind monotonic version accessors. uint64_t to avoid wraparound.
-    /// Dependents (e.g. FG import_buffer with external_version) pass these
-    /// into DepTrackedSlotMap deps so descriptors rebuild on world mutations
-    /// affecting the bound buffers.
-    uint64_t lights_version() const {
-        return m_lights_version;
+    // --- Accessors used by FrameGraph::import_buffer external_version. ---
+    // These counters are bumped INSIDE prepare_scene_data when the
+    // corresponding GPU buffer is rewritten, so descriptor caches that
+    // depend on the buffer rebuild only when the buffer truly changed.
+    uint64_t light_buffer_version() const {
+        return m_gpu_light_buffer_version;
     }
-    uint64_t materials_version() const {
-        return m_materials_version;
+    uint64_t material_buffer_version() const {
+        return m_gpu_material_buffer_version;
+    }
+    uint64_t instance_buffer_version() const {
+        return m_gpu_instance_buffer_version;
+    }
+    uint64_t triangle_buffer_version() const {
+        return m_gpu_triangle_buffer_version;
+    }
+    uint64_t bvh_buffer_version() const {
+        return m_gpu_bvh_buffer_version;
     }
     uint64_t scene_textures_version() const {
-        return m_scene_textures_version;
-    }
-    uint64_t instances_version() const {
-        return m_instances_version;
-    }
-    uint64_t triangles_version() const {
-        return m_triangles_version;
-    }
-    uint64_t bvh_version() const {
-        return m_bvh_version;
+        return m_gpu_textures_version;
     }
 
    private:
     friend class SyncScope;
+
+    void register_internal_consumers();
 
     MeshSlotMap m_meshes;
     ObjectSlotMap m_objects;
@@ -368,25 +491,37 @@ struct RenderWorld {
     /// Material path -> material index (deduplication cache).
     std::unordered_map<std::string, uint32_t> m_material_cache;
 
-    uint32_t m_mesh_version = 0;
-    // Per-kind monotonic versions. Bumped at mutation points. uint64_t to
-    // avoid wraparound across long sessions.
-    uint64_t m_lights_version = 0;
-    uint64_t m_materials_version = 0;
-    uint64_t m_scene_textures_version = 0;
-    uint64_t m_instances_version = 0;
-    uint64_t m_triangles_version = 0;
-    uint64_t m_bvh_version = 0;
+    // --- WorldDirty consumer state ---
+    struct WorldConsumerState {
+        WorldDirty subscription{WorldDirty::None};
+        WorldDirty pending{WorldDirty::None};
+    };
+    std::vector<WorldConsumerState> m_world_consumers;
 
-    // GPU buffer state
+    // --- Internal SlotMap consumer ids (registered in register_internal_consumers) ---
+    // Each consumer corresponds to one cached GPU resource maintained by
+    // prepare_scene_data / upload_prepared_data.
+    LightSlotMap::ConsumerId m_lights_buffer_consumer = 0;
+    LightSlotMap::ConsumerId m_lights_tlas_consumer = 0;
+    LightSlotMap::ConsumerId m_lights_ibl_consumer = 0;
+    ObjectSlotMap::ConsumerId m_objects_tlas_consumer = 0;
+    MeshSlotMap::ConsumerId m_meshes_blas_consumer = 0;
+    WorldConsumerId m_materials_consumer = 0;
+    WorldConsumerId m_textures_consumer = 0;
+
+    // --- GPU buffer state ---
     webgpu::Buffer m_gpu_light_buffer;
     webgpu::Buffer m_gpu_material_buffer;
     uint32_t m_gpu_light_count = 0;
-    uint64_t m_cached_lights_version = UINT64_MAX;
-    uint64_t m_cached_materials_version = UINT64_MAX;
 
-    // Per-slot version cache for partial light updates
-    std::vector<uint64_t> m_cached_light_versions;
+    // External-version counters for FrameGraph::import_buffer. Bumped
+    // inside prepare_scene_data when the corresponding buffer is rewritten.
+    uint64_t m_gpu_light_buffer_version = 0;
+    uint64_t m_gpu_material_buffer_version = 0;
+    uint64_t m_gpu_instance_buffer_version = 0;
+    uint64_t m_gpu_triangle_buffer_version = 0;
+    uint64_t m_gpu_bvh_buffer_version = 0;
+    uint64_t m_gpu_textures_version = 0;
 
     // Two-level acceleration structure
     struct BlasData {
@@ -402,8 +537,6 @@ struct RenderWorld {
     webgpu::Buffer m_gpu_instances;  // GPUInstance array
     uint32_t m_tlas_node_count = 0;
     uint32_t m_instance_count = 0;
-    uint64_t m_cached_instances_version = UINT64_MAX;
-    uint32_t m_cached_geometry_version = UINT32_MAX;
 
     // Texture array state
     struct ImageData {
@@ -416,7 +549,6 @@ struct RenderWorld {
     WGPUTexture m_texture_array = nullptr;
     WGPUTextureView m_texture_array_view = nullptr;
     WGPUSampler m_texture_sampler = nullptr;
-    uint64_t m_cached_scene_textures_version = UINT64_MAX;
     uint32_t m_texture_size = 1024;
 
     // Per-pass data cache -- keyed by pass identity (this pointer)
@@ -425,25 +557,24 @@ struct RenderWorld {
     // IBL state
     std::unique_ptr<IblPipelines> m_ibl_pipelines;
     IblResources m_ibl;
-    std::string m_ibl_env_path;                 // currently loaded HDR path (empty = uniform)
-    uint64_t m_ibl_light_version = UINT64_MAX;  // light version when IBL was last updated
-    glm::vec3 m_ibl_uniform_color{-1.0f};       // sentinel: never matches real color
-    UpAxis m_ibl_up_axis = UpAxis::Y;           // up axis when IBL was last converted
+    std::string m_ibl_env_path;            // currently loaded HDR path (empty = uniform)
+    glm::vec3 m_ibl_uniform_color{-1.0f};  // sentinel: never matches real color
+    UpAxis m_ibl_up_axis = UpAxis::Y;      // up axis when IBL was last converted
 };
 
 // SyncScope mutate_* template definitions -- deferred until after
 // RenderWorld is complete (see note at the forward declarations above).
 template <class Fn>
-void SyncScope::mutate_object(uint32_t i, Fn&& fn) {
-    m_world.m_objects.mutate_at(i, std::forward<Fn>(fn));
+void SyncScope::mutate_object(uint32_t i, ObjectField changed, Fn&& fn) {
+    m_world.m_objects.mutate_at(i, changed, std::forward<Fn>(fn));
 }
 template <class Fn>
-void SyncScope::mutate_mesh(uint32_t i, Fn&& fn) {
-    m_world.m_meshes.mutate_at(i, std::forward<Fn>(fn));
+void SyncScope::mutate_mesh(uint32_t i, MeshField changed, Fn&& fn) {
+    m_world.m_meshes.mutate_at(i, changed, std::forward<Fn>(fn));
 }
 template <class Fn>
-void SyncScope::mutate_light(uint32_t i, Fn&& fn) {
-    m_world.m_lights.mutate_at(i, std::forward<Fn>(fn));
+void SyncScope::mutate_light(uint32_t i, LightField changed, Fn&& fn) {
+    m_world.m_lights.mutate_at(i, changed, std::forward<Fn>(fn));
 }
 template <class Fn>
 void SyncScope::mutate_camera(uint32_t i, Fn&& fn) {

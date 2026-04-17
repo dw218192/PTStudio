@@ -30,6 +30,37 @@
 
 namespace pts::rendering {
 
+namespace {
+
+// Field-mask shorthands for the registered consumers. Lifecycle is the
+// "structural change" bit -- SlotMap auto-sets it on insert/erase.
+//
+// LightField subscriptions:
+//   light buffer: every field that affects to_light() output, plus Lifecycle
+//                 (so insert/erase trigger a full rebuild + buffer resize).
+constexpr LightField k_light_buffer_fields =
+    LightField::Lifecycle | LightField::Transform | LightField::Color | LightField::Intensity |
+    LightField::Type | LightField::Direction | LightField::Geometry | LightField::MaterialIndex;
+
+//   tlas (lights): proxy-mesh emitter geometry -- only transform/visibility/
+//                  mesh_index/material_index affect the TLAS instance set.
+constexpr LightField k_light_tlas_fields = LightField::Lifecycle | LightField::Transform |
+                                           LightField::Visibility | LightField::MeshIndex |
+                                           LightField::MaterialIndex;
+
+//   ibl: dome-light state (type, color, intensity, env texture).
+constexpr LightField k_light_ibl_fields = LightField::Lifecycle | LightField::Type |
+                                          LightField::Color | LightField::Intensity |
+                                          LightField::EnvTexture;
+
+constexpr ObjectField k_object_tlas_fields = ObjectField::Lifecycle | ObjectField::Transform |
+                                             ObjectField::Visibility | ObjectField::MeshIndex |
+                                             ObjectField::MaterialIndex;
+
+constexpr MeshField k_mesh_blas_fields = MeshField::Lifecycle | MeshField::Geometry;
+
+}  // namespace
+
 // --- to_light ---
 
 Light to_light(const LightData& slot) {
@@ -60,16 +91,66 @@ Light to_light(const LightData& slot) {
     return l;
 }
 
+// --- RenderWorld lifecycle ---
+
+RenderWorld::RenderWorld() {
+    m_materials.push_back(Material{});
+    register_internal_consumers();
+}
+
+void RenderWorld::register_internal_consumers() {
+    m_lights_buffer_consumer = m_lights.register_consumer(k_light_buffer_fields);
+    m_lights_tlas_consumer = m_lights.register_consumer(k_light_tlas_fields);
+    m_lights_ibl_consumer = m_lights.register_consumer(k_light_ibl_fields);
+    m_objects_tlas_consumer = m_objects.register_consumer(k_object_tlas_fields);
+    m_meshes_blas_consumer = m_meshes.register_consumer(k_mesh_blas_fields);
+    m_materials_consumer = register_world_consumer(WorldDirty::Materials);
+    m_textures_consumer = register_world_consumer(WorldDirty::SceneTextures);
+}
+
+// --- WorldDirty consumer machinery ---
+
+RenderWorld::WorldConsumerId RenderWorld::register_world_consumer(WorldDirty subscription) {
+    WorldConsumerState state;
+    state.subscription = subscription;
+    // New consumers see existing state as fully dirty -- their first drain
+    // will produce a complete rebuild.
+    state.pending = subscription;
+    m_world_consumers.push_back(state);
+    return static_cast<WorldConsumerId>(m_world_consumers.size() - 1);
+}
+
+void RenderWorld::mark_world_dirty(WorldDirty bits) {
+    for (auto& c : m_world_consumers) {
+        c.pending |= (bits & c.subscription);
+    }
+}
+
+bool RenderWorld::any_world_dirty(WorldConsumerId id, WorldDirty query) const {
+    PRECONDITION(id < m_world_consumers.size());
+    return static_cast<uint32_t>(m_world_consumers[id].pending & query) != 0;
+}
+
+WorldDirty RenderWorld::take_world_dirty(WorldConsumerId id, WorldDirty query) {
+    PRECONDITION(id < m_world_consumers.size());
+    auto& c = m_world_consumers[id];
+    auto taken = c.pending & query;
+    c.pending = c.pending & ~query;
+    return taken;
+}
+
 // --- SyncScope ---
 
 SyncScope::SyncScope(RenderWorld& world) : m_world(world) {
 }
 
 SyncScope::~SyncScope() {
-    ++m_world.m_mesh_version;
-    ++m_world.m_lights_version;
-    ++m_world.m_materials_version;
-    ++m_world.m_instances_version;
+    // Materials are stored in a flat vector and aren't per-slot tracked --
+    // we conservatively flag them dirty after every scope (preserves the
+    // pre-refactor "always rebuild materials" behavior). Per-slot SlotMap
+    // dirty bits handle lights/objects/meshes; load_texture marks textures
+    // explicitly.
+    m_world.mark_world_dirty(WorldDirty::Materials);
 }
 
 SyncScope RenderWorld::begin_sync() {
@@ -161,18 +242,6 @@ const CameraSlotMap& RenderWorld::get_cameras() const {
 boost::span<const Material> RenderWorld::get_materials() const {
     // Skip the reserved default material at index 0.
     return {m_materials.data() + 1, m_materials.size() - 1};
-}
-
-uint32_t RenderWorld::get_mesh_version() const {
-    return m_mesh_version;
-}
-
-uint32_t RenderWorld::get_light_version() const {
-    return static_cast<uint32_t>(m_lights_version);
-}
-
-uint32_t RenderWorld::get_material_version() const {
-    return static_cast<uint32_t>(m_materials_version);
 }
 
 const webgpu::Buffer& RenderWorld::light_buffer() const {
@@ -437,7 +506,7 @@ uint32_t SyncScope::load_texture(const std::string& resolved_path) {
 
     m_world.m_texture_images.push_back(std::move(img));
     m_world.m_texture_cache[resolved_path] = index;
-    ++m_world.m_scene_textures_version;
+    m_world.mark_world_dirty(WorldDirty::SceneTextures);
     return index;
 }
 
@@ -453,18 +522,25 @@ PreparedSceneData RenderWorld::prepare_scene_data() {
     PreparedSceneData data;
 
     // --- Materials ---
-    if (m_materials_version != m_cached_materials_version) {
+    if (any_world_dirty(m_materials_consumer, WorldDirty::Materials)) {
         data.materials = m_materials;
         data.materials_dirty = true;
-        m_cached_materials_version = m_materials_version;
+        take_world_dirty(m_materials_consumer, WorldDirty::Materials);
     }
 
     // --- Lights ---
     auto lights_raw = m_lights.span_raw();
     auto lights_cap = static_cast<uint32_t>(m_lights.capacity());
 
-    if (m_lights_version != m_cached_lights_version) {
-        // Structural change -- full rebuild
+    // Lifecycle bit signals structural change (insert/erase). When set,
+    // we do a full rebuild; otherwise, emit per-slot partial updates.
+    bool lights_structurally_dirty =
+        m_lights.any_dirty_for(m_lights_buffer_consumer, LightField::Lifecycle);
+    bool lights_field_dirty = m_lights.any_dirty_for(
+        m_lights_buffer_consumer, k_light_buffer_fields & ~LightField::Lifecycle);
+
+    if (lights_structurally_dirty) {
+        // Full rebuild
         for (const auto& entry : lights_raw) {
             if (!entry.active) continue;
             data.gpu_lights.push_back(to_light(entry.value));
@@ -481,25 +557,25 @@ PreparedSceneData RenderWorld::prepare_scene_data() {
         }
 
         data.lights_dirty = true;
-        m_cached_lights_version = m_lights_version;
-
-        // Snapshot all versions
-        m_cached_light_versions.resize(lights_cap);
-        for (uint32_t i = 0; i < lights_cap; ++i) {
-            m_cached_light_versions[i] = lights_raw[i].version;
-        }
-    } else {
-        // Partial update: compare per-slot version vs cached
+        // Drain ALL bits (including field bits we'd otherwise emit as partials)
+        // since the full upload reflects every current value.
+        m_lights.drain_dirty_for(m_lights_buffer_consumer, k_light_buffer_fields,
+                                 [](uint32_t, const LightData&) {});
+    } else if (lights_field_dirty) {
+        // Partial updates: GPU buffer is dense (active slots only).
+        // Compute gpu_idx by counting active slots up to i.
         uint32_t gpu_idx = 0;
+        std::vector<uint32_t> slot_to_gpu(lights_cap, UINT32_MAX);
         for (uint32_t i = 0; i < lights_cap; ++i) {
             if (!lights_raw[i].active) continue;
-            if (i < static_cast<uint32_t>(m_cached_light_versions.size()) &&
-                lights_raw[i].version != m_cached_light_versions[i]) {
-                data.partial_light_updates.push_back({gpu_idx, to_light(lights_raw[i].value)});
-                m_cached_light_versions[i] = lights_raw[i].version;
-            }
-            ++gpu_idx;
+            slot_to_gpu[i] = gpu_idx++;
         }
+        m_lights.drain_dirty_for(
+            m_lights_buffer_consumer, k_light_buffer_fields & ~LightField::Lifecycle,
+            [&](uint32_t i, const LightData& ld) {
+                if (slot_to_gpu[i] == UINT32_MAX) return;
+                data.partial_light_updates.push_back({slot_to_gpu[i], to_light(ld)});
+            });
     }
 
     // --- Stamp light_index on proxy materials ---
@@ -571,9 +647,18 @@ PreparedSceneData RenderWorld::prepare_scene_data() {
                           });
         bool any_blas_dirty = !dirty_meshes.empty();
 
+        // Drain mesh BLAS dirty bits -- the cache version snapshot above is
+        // the authoritative gate, but consume the bits so future builds
+        // don't re-evaluate already-built BLAS.
+        m_meshes.drain_dirty_for(m_meshes_blas_consumer, k_mesh_blas_fields,
+                                 [](uint32_t, const MeshData&) {});
+
         // Step 2: Build instance array + TLAS
-        bool need_rebuild = any_blas_dirty || m_instances_version != m_cached_instances_version ||
-                            m_mesh_version != m_cached_geometry_version;
+        bool tlas_objects_dirty =
+            m_objects.any_dirty_for(m_objects_tlas_consumer, k_object_tlas_fields);
+        bool tlas_lights_dirty =
+            m_lights.any_dirty_for(m_lights_tlas_consumer, k_light_tlas_fields);
+        bool need_rebuild = any_blas_dirty || tlas_objects_dirty || tlas_lights_dirty;
 
         if (need_rebuild) {
             // Collect instances and their world-space AABBs
@@ -702,23 +787,22 @@ PreparedSceneData RenderWorld::prepare_scene_data() {
             data.instance_count = inst_count;
             data.geometry_dirty = true;
 
-            m_cached_instances_version = m_instances_version;
-            m_cached_geometry_version = m_mesh_version;
-            // Geometry rebuild bumps triangles/bvh. Instances also bump
-            // (scene topology changed).
-            ++m_triangles_version;
-            ++m_bvh_version;
+            // Drain TLAS-related dirty bits.
+            m_objects.drain_dirty_for(m_objects_tlas_consumer, k_object_tlas_fields,
+                                      [](uint32_t, const ObjectData&) {});
+            m_lights.drain_dirty_for(m_lights_tlas_consumer, k_light_tlas_fields,
+                                     [](uint32_t, const LightData&) {});
         }
     }
 
     // --- Texture array ---
-    if (m_scene_textures_version != m_cached_scene_textures_version) {
+    if (any_world_dirty(m_textures_consumer, WorldDirty::SceneTextures)) {
         data.texture_size = m_texture_size;
         for (const auto& img : m_texture_images) {
             data.texture_layers.push_back({img.pixels.data(), img.width, img.height});
         }
         data.textures_dirty = true;
-        m_cached_scene_textures_version = m_scene_textures_version;
+        take_world_dirty(m_textures_consumer, WorldDirty::SceneTextures);
     }
 
     return data;
@@ -744,6 +828,7 @@ void RenderWorld::upload_prepared_data(const webgpu::Device& device, WGPUQueue q
             wgpuQueueWriteBuffer(queue, m_gpu_material_buffer.handle(), 0, data.materials.data(),
                                  material_count * sizeof(Material));
         }
+        ++m_gpu_material_buffer_version;
     }
 
     // --- Lights ---
@@ -759,11 +844,13 @@ void RenderWorld::upload_prepared_data(const webgpu::Device& device, WGPUQueue q
         wgpuQueueWriteBuffer(queue, m_gpu_light_buffer.handle(), 0, data.gpu_lights.data(),
                              data.gpu_lights.size() * sizeof(Light));
         m_gpu_light_count = static_cast<uint32_t>(data.gpu_lights.size());
-    } else {
+        ++m_gpu_light_buffer_version;
+    } else if (!data.partial_light_updates.empty()) {
         for (const auto& update : data.partial_light_updates) {
             wgpuQueueWriteBuffer(queue, m_gpu_light_buffer.handle(),
                                  update.gpu_index * sizeof(Light), &update.data, sizeof(Light));
         }
+        ++m_gpu_light_buffer_version;
     }
 
     // --- BVH + geometry ---
@@ -809,6 +896,10 @@ void RenderWorld::upload_prepared_data(const webgpu::Device& device, WGPUQueue q
         m_tlas = std::move(data.tlas);
         m_tlas_node_count = data.tlas_node_count;
         m_instance_count = data.instance_count;
+
+        ++m_gpu_bvh_buffer_version;
+        ++m_gpu_triangle_buffer_version;
+        ++m_gpu_instance_buffer_version;
     }
 
     // --- Texture array ---
@@ -899,6 +990,8 @@ void RenderWorld::upload_prepared_data(const webgpu::Device& device, WGPUQueue q
         sampler_desc.maxAnisotropy = 1;
         m_texture_sampler = wgpuDeviceCreateSampler(device.handle(), &sampler_desc);
         POSTCONDITION(m_texture_sampler);
+
+        ++m_gpu_textures_version;
     }
 }
 
@@ -940,7 +1033,7 @@ void RenderWorld::upload_all_meshes(const webgpu::Device& device) {
 
         PRECONDITION(!mesh.cpu_indices.empty());
 
-        m_meshes.mutate_at(i, [&](MeshData& w) {
+        m_meshes.mutate_at(i, MeshField::GpuBuffers | MeshField::Geometry, [&](MeshData& w) {
             w.vertex_buffer = device.create_buffer(
                 mesh.cpu_vertices.size() * sizeof(Vertex),
                 static_cast<WGPUBufferUsage>(WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst));
@@ -989,15 +1082,6 @@ void RenderWorld::clear() {
     m_gpu_light_buffer = {};
     m_gpu_material_buffer = {};
     m_gpu_light_count = 0;
-    m_cached_lights_version = UINT64_MAX;
-    m_cached_materials_version = UINT64_MAX;
-    m_cached_light_versions.clear();
-    m_lights_version = 0;
-    m_materials_version = 0;
-    m_instances_version = 0;
-    m_triangles_version = 0;
-    m_bvh_version = 0;
-    m_scene_textures_version = 0;
 
     // Two-level BVH state
     m_blas_cache.clear();
@@ -1007,8 +1091,6 @@ void RenderWorld::clear() {
     m_gpu_instances = {};
     m_tlas_node_count = 0;
     m_instance_count = 0;
-    m_cached_instances_version = UINT64_MAX;
-    m_cached_geometry_version = UINT32_MAX;
 
     // Texture state
     m_texture_images.clear();
@@ -1026,12 +1108,18 @@ void RenderWorld::clear() {
         wgpuSamplerRelease(m_texture_sampler);
         m_texture_sampler = nullptr;
     }
-    m_cached_scene_textures_version = UINT64_MAX;
+
+    // After clear, every consumer should see a fresh population on the next
+    // sync. Re-prime world consumers' pending bits to their full subscription
+    // (SlotMap consumers re-prime naturally via on_lifecycle_change on the
+    // first insert).
+    for (auto& c : m_world_consumers) {
+        c.pending = c.subscription;
+    }
 
     // IBL state
     m_ibl = {};
     m_ibl_env_path.clear();
-    m_ibl_light_version = UINT64_MAX;
     m_ibl_uniform_color = glm::vec3(-1.0f);
     m_ibl_up_axis = UpAxis::Y;
 }
@@ -1048,34 +1136,34 @@ void RenderWorld::update_transforms(const pxr::UsdStageRefPtr& stage,
             if (!prim.IsValid()) return;
             auto xf = compute_world_transform(prim);
             auto h = m_objects.find(path);
-            m_objects.mutate(h, [&](ObjectData& obj) { obj.transform = xf; });
-            ++m_instances_version;
+            m_objects.mutate(h, ObjectField::Transform,
+                             [&](ObjectData& obj) { obj.transform = xf; });
         });
 
-        // Update lights
+        // Update lights. Transform changes propagate to the light buffer
+        // consumer (LightField::Transform) AND to the TLAS consumer (which
+        // also subscribes to LightField::Transform). The proxy-mesh hack
+        // from commit 83351f2 -- bumping m_instances_version explicitly
+        // when has_proxy_mesh -- is no longer needed: the TLAS consumer's
+        // subscription naturally captures Transform mutations.
         m_lights.for_each([&](const pxr::SdfPath& path, const LightData&) {
             if (!path.HasPrefix(dirty_path)) return;
             auto prim = stage->GetPrimAtPath(path);
             if (!prim.IsValid()) return;
             auto xf = compute_world_transform(prim);
             auto h = m_lights.find(path);
-            bool has_proxy_mesh = false;
-            m_lights.mutate(h, [&](LightData& light) {
+            // For Distant lights we also recompute direction from the new xform.
+            auto changed = LightField::Transform;
+            if (h->type == LightData::Type::Distant) {
+                changed |= LightField::Direction;
+            }
+            m_lights.mutate(h, changed, [&](LightData& light) {
                 light.transform = xf;
                 if (light.type == LightData::Type::Distant) {
                     glm::vec4 local_dir(0.0f, 0.0f, -1.0f, 0.0f);
                     light.direction = glm::normalize(glm::vec3(xf * local_dir));
                 }
-                has_proxy_mesh = (light.mesh_index != UINT32_MAX);
             });
-            ++m_lights_version;
-            // Lights with proxy meshes (rect/disk/sphere emitters) appear as
-            // instances in the path tracer TLAS. The instance transform is
-            // copied from light.transform during rebuild, so we must bump
-            // m_instances_version for the rebuild to actually run.
-            if (has_proxy_mesh) {
-                ++m_instances_version;
-            }
         });
 
         // Update cameras
@@ -1115,8 +1203,11 @@ void RenderWorld::update_ibl(const webgpu::Device& device, WGPUQueue queue, WGPU
         m_ibl_pipelines->init(device, queue, ibl_sampler);
     }
 
-    // Only re-evaluate when lights change
-    if (m_ibl_light_version == m_lights_version) return;
+    // Re-evaluate when dome-light state changes (Type/Color/Intensity/EnvTexture)
+    // or when up_axis changes.
+    bool lights_dirty = m_lights.any_dirty_for(m_lights_ibl_consumer, k_light_ibl_fields);
+    bool axis_changed = (up_axis != m_ibl_up_axis);
+    if (!lights_dirty && !axis_changed) return;
 
     // Find first dome light
     const LightData* dome = nullptr;
@@ -1129,19 +1220,30 @@ void RenderWorld::update_ibl(const webgpu::Device& device, WGPUQueue queue, WGPU
         }
     }
 
+    auto drain_dome_dirty = [&]() {
+        m_lights.drain_dirty_for(m_lights_ibl_consumer, k_light_ibl_fields,
+                                 [](uint32_t, const LightData&) {});
+    };
+
     if (!dome) {
         // No dome light -- black ambient
-        if (m_ibl_env_path.empty() && m_ibl_uniform_color == glm::vec3(0.0f)) return;
+        if (m_ibl_env_path.empty() && m_ibl_uniform_color == glm::vec3(0.0f)) {
+            drain_dome_dirty();
+            return;
+        }
         m_ibl.set_uniform_environment(device, queue, 0.0f, 0.0f, 0.0f);
         m_ibl_env_path.clear();
         m_ibl_uniform_color = glm::vec3(0.0f);
-        m_ibl_light_version = m_lights_version;
+        drain_dome_dirty();
         return;
     }
 
     if (!dome->env_texture_path.empty()) {
         // HDR environment map
-        if (dome->env_texture_path == m_ibl_env_path && up_axis == m_ibl_up_axis) return;
+        if (dome->env_texture_path == m_ibl_env_path && up_axis == m_ibl_up_axis) {
+            drain_dome_dirty();
+            return;
+        }
 
         auto asset = pxr::ArGetResolver().OpenAsset(pxr::ArResolvedPath(dome->env_texture_path));
         if (!asset) {
@@ -1174,14 +1276,17 @@ void RenderWorld::update_ibl(const webgpu::Device& device, WGPUQueue queue, WGPU
     } else {
         // Uniform color environment: dome color * intensity
         glm::vec3 c = dome->color * dome->intensity;
-        if (m_ibl_env_path.empty() && m_ibl_uniform_color == c) return;
+        if (m_ibl_env_path.empty() && m_ibl_uniform_color == c) {
+            drain_dome_dirty();
+            return;
+        }
 
         m_ibl.set_uniform_environment(device, queue, c.r, c.g, c.b);
         m_ibl_env_path.clear();
         m_ibl_uniform_color = c;
     }
 
-    m_ibl_light_version = m_lights_version;
+    drain_dome_dirty();
 }
 
 }  // namespace pts::rendering

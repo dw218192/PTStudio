@@ -169,26 +169,6 @@ class IPass {
         return *static_cast<T*>(it->second.data.get());
     }
 
-    /// Per-category pass data -- invalidated when *any* entity in the category changes.
-    template <typename T, typename Factory>
-    auto get_or_create_pass_data(PassDataKind kind, const RenderWorld& world, Factory&& factory)
-        -> T& {
-        auto version = category_version(kind, world);
-        auto key = make_category_key(kind);
-        auto& map = const_cast<RenderWorld&>(world).pass_data_for(this);
-        auto it = map.find(key);
-        if (it == map.end()) {
-            it = map.emplace(key, RenderWorld::PassDataEntry{}).first;
-        }
-        auto& entry = it->second;
-        if (entry.version != version || !entry.data) {
-            entry.data = RenderWorld::ErasedPtr(new T(std::forward<Factory>(factory)()),
-                                                [](void* p) { delete static_cast<T*>(p); });
-            entry.version = version;
-        }
-        return *static_cast<T*>(entry.data.get());
-    }
-
    private:
     const ShaderLoader* m_shader_loader;
     std::shared_ptr<spdlog::logger> m_logger;
@@ -209,24 +189,8 @@ class IPass {
         INVARIANT_MSG(false, "per-entity version not supported for this PassDataKind");
     }
 
-    static uint32_t category_version(PassDataKind kind, const RenderWorld& world) {
-        switch (kind) {
-            case PassDataKind::Mesh:
-                return world.get_mesh_version();
-            case PassDataKind::Light:
-                return world.get_light_version();
-            case PassDataKind::Material:
-                return world.get_material_version();
-        }
-        INVARIANT_MSG(false, "unknown PassDataKind");
-    }
-
     static uint64_t make_key(PassDataKind kind, uint32_t index) {
         return (static_cast<uint64_t>(kind) << 32) | index;
-    }
-
-    static uint64_t make_category_key(PassDataKind kind) {
-        return (static_cast<uint64_t>(kind) << 32) | UINT32_MAX;
     }
 };
 

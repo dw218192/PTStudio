@@ -257,9 +257,9 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
     auto& mat_buf = ctx.world.material_buffer();
     auto light_count = ctx.world.gpu_light_count();
     auto light_buf_decl = import_buffer(fg, light_buf.handle(), light_buf.size(),
-                                        ctx.world.lights_version(), "world_lights");
+                                        ctx.world.light_buffer_version(), "world_lights");
     auto mat_buf_decl = import_buffer(fg, mat_buf.handle(), mat_buf.size(),
-                                      ctx.world.materials_version(), "world_materials");
+                                      ctx.world.material_buffer_version(), "world_materials");
 
     auto scene_tex_view = ctx.world.texture_array_view();
     auto scene_tex_sampler = ctx.world.texture_sampler();
