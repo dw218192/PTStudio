@@ -48,6 +48,7 @@ class ShadowMapPass final : public IPass {
 
    private:
     bool m_enabled = true;
+    bool m_pcss = true;
     static constexpr uint32_t k_uniform_align = 256;
     uint32_t m_resolution = k_default_shadow_resolution;
 };

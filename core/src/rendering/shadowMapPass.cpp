@@ -148,7 +148,7 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
         infos[li].layer = layer_index;
         infos[li].light_near = proj.near_plane;
         infos[li].light_far = proj.far_plane;
-        infos[li].light_size_uv = proj.light_size_uv;
+        infos[li].light_size_uv = m_pcss ? proj.light_size_uv : 0.0f;
         infos[li].projection_type = proj.projection_type;
         ++layer_index;
     }
@@ -256,6 +256,7 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
 
 void ShadowMapPass::draw_imgui() {
     ImGui::Checkbox("Enabled", &m_enabled);
+    ImGui::Checkbox("PCSS", &m_pcss);
 }
 
 }  // namespace pts::rendering

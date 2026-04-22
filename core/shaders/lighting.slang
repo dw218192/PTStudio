@@ -36,10 +36,18 @@ float3 evaluate_lighting_ltc<B : IBRDF>(
         if (si.has_shadow != 0) {
             float3 offset_pos = P + N * si.normal_bias;
             float4 light_clip = mul(si.light_vp, float4(offset_pos, 1.0));
-            float3 ndc = light_clip.xyz / light_clip.w;
-            float3 shadow_uv = float3(ndc.x * 0.5 + 0.5, -ndc.y * 0.5 + 0.5, ndc.z);
-            shadow_vis = compute_shadow_pcss(
-                shadow_map, shadow_sampler, shadow_uv, si, screen_uv);
+            // Skip shadow for points behind the light (w <= 0 flips the
+            // perspective divide) or outside the shadow frustum UV range.
+            if (light_clip.w > 0.0) {
+                float3 ndc = light_clip.xyz / light_clip.w;
+                float3 shadow_uv = float3(ndc.x * 0.5 + 0.5, -ndc.y * 0.5 + 0.5, ndc.z);
+                if (shadow_uv.x >= 0.0 && shadow_uv.x <= 1.0 &&
+                    shadow_uv.y >= 0.0 && shadow_uv.y <= 1.0 &&
+                    shadow_uv.z >= 0.0 && shadow_uv.z <= 1.0) {
+                    shadow_vis = compute_shadow_pcss(
+                        shadow_map, shadow_sampler, shadow_uv, si, screen_uv);
+                }
+            }
         }
 
         if (light.type == LIGHT_RECT || light.type == LIGHT_DISK) {

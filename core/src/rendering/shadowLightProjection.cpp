@@ -60,6 +60,26 @@ LightProjection compute_area_light_vp(const LightData& light, const glm::vec3& a
                                           : glm::vec3(0.0f, 1.0f, 0.0f);
     }
 
+    // Effective world-space light radius (isotropic approximation).
+    // For rect lights we take the larger half-extent; this is conservative --
+    // the penumbra is actually anisotropic, but representing that needs a 2D
+    // light-space oriented kernel (follow-up).
+    float light_radius = 0.0f;
+    if (light.type == LightData::Type::Disk) {
+        light_radius = std::max(light.radius, 0.0f);
+    } else if (light.type == LightData::Type::Rect) {
+        float hw = std::max(light.width, 0.0f) * 0.5f;
+        float hh = std::max(light.height, 0.0f) * 0.5f;
+        light_radius = std::max(hw, hh);
+    }
+
+    // 120-deg FOV covers +-tan(60)=+-1.73 at unit depth, giving good
+    // hemisphere coverage for area light shadows without a cubemap.
+    // Compared to 90-deg this loses ~1.7x texel density but eliminates
+    // the hard frustum cutoff at grazing angles.
+    constexpr float k_fov_y_rad = glm::radians(120.0f);
+    float half_tan = std::tan(k_fov_y_rad * 0.5f);
+
     float far_plane = 0.0f;
     for (int c = 0; c < 8; ++c) {
         glm::vec3 corner((c & 1) ? aabb_max.x : aabb_min.x, (c & 2) ? aabb_max.y : aabb_min.y,
@@ -70,24 +90,9 @@ LightProjection compute_area_light_vp(const LightData& light, const glm::vec3& a
     float near_plane = std::max(0.001f, far_plane * 0.01f);
 
     auto light_view = glm::lookAt(position, position + forward, up);
-    constexpr float k_fov_y_rad = glm::radians(90.0f);
     auto light_proj = glm::perspective(k_fov_y_rad, 1.0f, near_plane, far_plane);
 
-    // Effective world-space light radius for the isotropic PCSS kernel.
-    // For rect lights we take the larger half-extent; this is a conservative
-    // isotropic approximation -- the penumbra is actually anisotropic, but
-    // representing that needs a 2D light-space oriented kernel (follow-up).
-    // Using the geometric mean sqrt(hw*hh) dramatically underestimates
-    // penumbra on elongated rects (e.g. 6x1 -> 0.61 vs real ~3.0).
-    float light_radius = 0.0f;
-    if (light.type == LightData::Type::Disk) {
-        light_radius = std::max(light.radius, 0.0f);
-    } else if (light.type == LightData::Type::Rect) {
-        float hw = std::max(light.width, 0.0f) * 0.5f;
-        float hh = std::max(light.height, 0.0f) * 0.5f;
-        light_radius = std::max(hw, hh);
-    }
-    float light_size_uv = light_radius / (2.0f * std::tan(k_fov_y_rad * 0.5f));
+    float light_size_uv = light_radius / (2.0f * half_tan);
 
     LightProjection out;
     out.vp = light_proj * light_view;
