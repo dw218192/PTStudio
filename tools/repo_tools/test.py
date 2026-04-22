@@ -12,6 +12,8 @@ from repo_tools.core import (
     McpLogRecord,
     RepoTool,
     ToolContext,
+    invoke_tool,
+    log_section,
     logger,
     to_cmake_build_type,
 )
@@ -96,5 +98,29 @@ class TestTool(RepoTool):
                 logger.error(f"Cannot run {platform_id} binaries on this host")
             sys.exit(1)
 
-        sys.exit(_run_tests(context, bool(args.get("verbose")),
-                            from_package=bool(args.get("from_package"))))
+        tests_rc = _run_tests(context, bool(args.get("verbose")),
+                              from_package=bool(args.get("from_package")))
+
+        # Image-diff is a native-only post-step. Emscripten uses the browser
+        # to run tests and has no host-side PNG capture; skip there.
+        # Also skip when running from a package (no committed GT next to
+        # the built artifacts) and when core tests already failed.
+        run_image_diff = (
+            tests_rc == 0
+            and platform_id != "emscripten"
+            and not bool(args.get("from_package"))
+        )
+        if run_image_diff:
+            with log_section("image-diff"):
+                try:
+                    invoke_tool(
+                        "image-diff",
+                        tokens=ctx.tokens,
+                        config=ctx.config,
+                        dimensions=ctx.dimensions,
+                    )
+                except SystemExit as exc:
+                    if exc.code:
+                        tests_rc = int(exc.code) if isinstance(exc.code, int) else 1
+
+        sys.exit(tests_rc)

@@ -764,6 +764,12 @@ class LaunchTool(RepoTool):
             "Bare --profile opens the GUI viewer with auto-connect. "
             "--profile trace.tracy uses headless capture with auto-save.",
         )(cmd)
+        cmd = click.option(
+            "--from-package",
+            is_flag=True,
+            default=None,
+            help="Launch from packaged artifacts instead of build dir (CI)",
+        )(cmd)
         return cmd
 
     def default_args(self, tokens: dict[str, str]) -> dict[str, Any]:
@@ -773,6 +779,7 @@ class LaunchTool(RepoTool):
             "env": (),
             "interactive": False,
             "profile": None,
+            "from_package": False,
         }
 
     def execute(self, ctx: ToolContext, args: dict[str, Any]) -> None:
@@ -794,10 +801,18 @@ class LaunchTool(RepoTool):
             "workspace_root": str(root),
             "build_dir": ctx.tokens["build_dir"],
             "conan_deps_root": ctx.tokens["conan_deps_root"],
+            "package_dir": ctx.tokens["package_dir"],
             "platform": platform_id,
             "build_type": build_type,
             "logs_root": ctx.tokens["logs_root"],
         }
+
+        # CI path: everything is in the package dir.  Override build_dir so
+        # executable discovery and env-script resolution point at the package.
+        if args.get("from_package"):
+            pkg = Path(context["package_dir"])
+            context["build_dir"] = str(pkg / build_type)
+            context["conan_deps_root"] = str(pkg / "deps")
 
         build_dir = Path(context["build_dir"])
 

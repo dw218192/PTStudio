@@ -192,6 +192,60 @@ jobs:
           retention-days: 3
 
   # =============================================================================
+  # Image diff (non-blocking, windows-x64 only)
+  # =============================================================================
+
+  image-diff:
+    name: Image diff (windows-x64, Release)
+    runs-on: windows-latest
+    needs: build
+    continue-on-error: true
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          lfs: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Bootstrap build environment
+        run: .\tools\framework\bootstrap.ps1
+
+      - name: Cache Python dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            tools/framework/_managed/venv
+            tools/framework/_managed/cache
+          key: windows-latest-python-${{ hashFiles('tools/framework/pyproject.toml') }}
+          restore-keys: |
+            windows-latest-python-
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-windows-x64-Release
+          path: _package/windows-x64/
+
+      - name: Run image-diff
+        run: .\repo.cmd image-diff --from-package --platform windows-x64 --build-type Release
+
+      - name: Upload image-diff outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-diff-windows-x64-Release
+          path: _test_captures/
+          retention-days: 7
+
+  # =============================================================================
   # Deploy to GitHub Pages (develop branch only)
   # =============================================================================
 

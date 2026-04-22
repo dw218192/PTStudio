@@ -18,6 +18,15 @@ repo:
     - cmake==3.31.1
     - jinja2==3.1.6
     - InquirerPy==0.3.4
+    # flip-evaluator's nbflip.pyd uses nanobind->numpy for evaluate()/load()
+    # but the wheel does NOT declare numpy/Pillow as runtime deps. Without
+    # them the pyd silently abort()s when called directly. List them here
+    # so image-diff's Python-API path and the debug-image-diff skill both
+    # work after a clean ./repo init.
+    - flip-evaluator==1.7
+    - numpy>=2.0
+    - Pillow>=10.0
+    - pytest>=7.0
 
 build:
   windowing: "glfw"
@@ -48,6 +57,7 @@ agent:
     - "Follows naming conventions: UpperCamelCase types, snake_case methods/vars, m_ private members, k_snake_case constants, lowerCamelCase files"
     - "Never hide errors with silent fallbacks, empty catch blocks, or swallowed return codes."
     - "Never disable or skip unit tests without explicit justification."
+    - "For renderer/shader/lighting/asset-pipeline changes, run `./repo image-diff` and confirm no case's FLIP score has regressed beyond its committed baseline. If a score improves, document it; if it regresses, fix the cause or justify the change explicitly."
   prompts:
     common: >
       C++17 codebase. Naming: UpperCamelCase types, snake_case functions/variables,
@@ -70,6 +80,35 @@ agent:
       Reject vacuous tests: tests that only assert default member initializers,
       sizeof() (use static_assert in headers instead), or trivial constructor
       behavior. A test must exercise a non-trivial code path to justify its existence.
+
+image_diff:
+  # Metric is max over per-tile mean FLIP. Whole-image mean drowns localized
+  # regressions (e.g. a wrong shadow in a mostly-black scene) in the
+  # error-free background; tile-max is the geometric generalization that
+  # surfaces them. tile_size is in pixels.
+  tile_size: 64
+  default_threshold: 0.25        # max tile-mean FLIP; fail if above
+  gt_dir: "tests/golden/gt"      # committed ground-truth PNGs
+  out_dir: "_test_captures"      # capture + heatmap output (gitignored)
+  gt_bake:
+    renderer: "Path Trace"
+    frames: 4096                 # spp/frames used when baking GT
+  # Per-case thresholds are set just above each case's current tile-max
+  # so real regressions surface, while known Forward/PT differences don't.
+  # Measured scores against committed GT (2026-04 Forward render):
+  cases:
+    - name: area_light_pcss
+      scene: "assets/scenes/area_light_test.usda"
+      camera: "/Root/Camera_3"
+      renderer: Forward
+      gt: "area_light_pcss.png"
+      threshold: 0.30
+    - name: brdf_ibl
+      scene: "assets/scenes/brdf_test.usda"
+      camera: "/Root/Camera"
+      renderer: Forward
+      gt: "brdf_ibl.png"
+      threshold: 0.30
 
 usdz:
   scenes:
