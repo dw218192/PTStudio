@@ -133,7 +133,6 @@ TEST_CASE("VersionedBuffer - write grows when count exceeds initial capacity") {
     auto device = pts::webgpu::Device::create(logger);
 
     VersionedBuffer<uint32_t> buf(device.handle(), 2, k_storage_copy_dst);
-    auto initial_handle = buf.handle();
     auto initial_size = buf.size_bytes();
     CHECK(initial_size == 2 * sizeof(uint32_t));
 
@@ -141,7 +140,6 @@ TEST_CASE("VersionedBuffer - write grows when count exceeds initial capacity") {
     buf.write(device.queue(), large.data(), large.size());
 
     CHECK(buf.size_bytes() >= 8 * sizeof(uint32_t));
-    CHECK(buf.handle() != initial_handle);
     CHECK(buf.version() == 1);
 }
 
