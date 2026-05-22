@@ -18,6 +18,8 @@ float3 evaluate_lighting_ltc<B : IBRDF>(
     Texture2DArray<float> shadow_map,
     SamplerState shadow_sampler,
     float2 screen_uv,
+    uint accumulated_shadow_light_index,
+    float accumulated_shadow_vis,
     out float3 direct_diffuse, out float3 direct_specular
 ) {
     direct_diffuse = float3(0.0);
@@ -33,7 +35,11 @@ float3 evaluate_lighting_ltc<B : IBRDF>(
 
         float shadow_vis = 1.0;
         ShadowInfo si = shadow_infos[i];
-        if (si.has_shadow != 0) {
+        if (i == accumulated_shadow_light_index) {
+            // POC: this light's visibility is supplied by the temporal
+            // accumulation pass. Frustum guards live in that pass's shader.
+            shadow_vis = accumulated_shadow_vis;
+        } else if (si.has_shadow != 0) {
             float3 offset_pos = P + N * si.normal_bias;
             float4 light_clip = mul(si.light_vp, float4(offset_pos, 1.0));
             // Skip shadow for points behind the light (w <= 0 flips the
@@ -44,8 +50,18 @@ float3 evaluate_lighting_ltc<B : IBRDF>(
                 if (shadow_uv.x >= 0.0 && shadow_uv.x <= 1.0 &&
                     shadow_uv.y >= 0.0 && shadow_uv.y <= 1.0 &&
                     shadow_uv.z >= 0.0 && shadow_uv.z <= 1.0) {
+                    // frame=0: deterministic per-pixel rotation. Inline
+                    // lighting has no temporal accumulator, so jitter would
+                    // just add per-frame noise with nothing to average it.
+                    // grad=0: receiver-plane bias not yet plumbed through the
+                    // forward pass (would require hoisting ddx/ddy(world_pos)
+                    // in fs_main and passing into evaluate_lighting_ltc). The
+                    // primary shadow caster uses the accumulated_visibility
+                    // path above, so this inline branch is bypassed for the
+                    // test scene; secondary shadow casters still need bias.
                     shadow_vis = compute_shadow_pcss(
-                        shadow_map, shadow_sampler, shadow_uv, si, screen_uv);
+                        shadow_map, shadow_sampler, shadow_uv, si, screen_uv,
+                        0u, float2(0.0, 0.0));
                 }
             }
         }

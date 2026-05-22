@@ -2,6 +2,7 @@
 
 #include <core/rendering/renderer.h>
 #include <core/rendering/shadowMapPass.h>
+#include <core/rendering/temporalStorage.h>
 #include <core/rendering/webgpu/webgpu.h>
 
 #include <cstdint>
@@ -25,6 +26,9 @@ class ForwardPass final : public rendering::IRenderer {
     HdrOutputs do_add_to_frame_graph(rendering::FrameGraph& fg,
                                      const rendering::PassContext& ctx) override;
     static constexpr uint32_t k_uniform_align = 256;
+
+   private:
+    rendering::TemporalStorageManager m_temporal_storage;
 };
 
 }  // namespace pts::editor

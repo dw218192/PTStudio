@@ -120,7 +120,7 @@ struct SlangCompiler::Impl {
     std::shared_ptr<spdlog::logger> logger;
     std::filesystem::path cache_dir;
     std::filesystem::path workspace_root;
-    std::filesystem::path search_path;
+    std::vector<std::filesystem::path> search_paths;
     IShaderCompiler* error_fallback;
     std::string slang_version;
 
@@ -267,7 +267,7 @@ struct SlangCompiler::Impl {
         SlangCompileOutput out;
         {
             std::lock_guard<std::mutex> gs_lock(global_session_mutex);
-            out = run_slang(global_session.get(), search_path, slang_path, loaded->entry_points,
+            out = run_slang(global_session.get(), search_paths, slang_path, loaded->entry_points,
                             key.defines);
         }
         if (!out.success) {
@@ -305,13 +305,14 @@ struct SlangCompiler::Impl {
 
 SlangCompiler::SlangCompiler(const ShaderLoader& loader, std::shared_ptr<spdlog::logger> logger,
                              std::filesystem::path cache_dir, std::filesystem::path workspace_root,
-                             std::filesystem::path search_path, IShaderCompiler* error_fallback)
+                             std::vector<std::filesystem::path> search_paths,
+                             IShaderCompiler* error_fallback)
     : m_impl(std::make_unique<Impl>()) {
     m_impl->loader = &loader;
     m_impl->logger = std::move(logger);
     m_impl->cache_dir = std::move(cache_dir);
     m_impl->workspace_root = std::move(workspace_root);
-    m_impl->search_path = std::move(search_path);
+    m_impl->search_paths = std::move(search_paths);
     m_impl->error_fallback = error_fallback;
 
     std::error_code ec;

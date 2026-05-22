@@ -103,6 +103,10 @@ image_diff:
       renderer: Forward
       gt: "area_light_pcss.png"
       threshold: 0.30
+      # Temporal visibility EMA needs ~30-60 frames to converge from a cold
+      # zero history. The pass uses blend_weight=0.05, so after ~60 frames
+      # the new sample contribution stabilizes at ~95% of steady state.
+      frames: 60
     - name: brdf_ibl
       scene: "assets/scenes/brdf_test.usda"
       camera: "/Root/Camera"
@@ -135,6 +139,7 @@ slangc:
   search_paths:
     - "core/shaders"
     - "core/shaders/ibl"
+    - "core/shaders/shadow"
   # Each entry may declare a `metadata: { output, namespace }` block; when
   # present, pts_shaderc walks the linked reflection in-process and emits the
   # C++ metadata header (replaces the old shader_codegen.py + reflect.json
@@ -162,11 +167,11 @@ slangc:
       metadata:
         output: "renderers/forward/generated/skybox_shader_metadata.h"
         namespace: "skybox_shader"
-    - input: "core/shaders/shadow.slang"
-      output: "core/generated/shaders/shadow.wgsl"
+    - input: "core/shaders/shadow/shadow_map.slang"
+      output: "core/generated/shaders/shadow/shadow_map.wgsl"
       metadata:
-        output: "core/generated/shadow_shader_metadata.h"
-        namespace: "shadow_shader"
+        output: "core/generated/shadow_map_shader_metadata.h"
+        namespace: "shadow_map_shader"
     - input: "core/shaders/gbuffer.slang"
       output: "core/generated/shaders/gbuffer.wgsl"
       metadata:
@@ -187,6 +192,11 @@ slangc:
       metadata:
         output: "core/generated/contact_shadow_shader_metadata.h"
         namespace: "contact_shadow_shader"
+    - input: "core/shaders/shadow/temporal.slang"
+      output: "core/generated/shaders/shadow/temporal.wgsl"
+      metadata:
+        output: "core/generated/shadow_temporal_shader_metadata.h"
+        namespace: "shadow_temporal_shader"
     - input: "editor/shaders/picking.slang"
       output: "editor/generated/shaders/picking.wgsl"
       metadata:
@@ -268,11 +278,12 @@ embed:
         - "editor/icons/*.*"
       input@emscripten:
         - "renderers/forward/generated/shaders/*.wgsl"
-        - "core/generated/shaders/shadow.wgsl"
+        - "core/generated/shaders/shadow/shadow_map.wgsl"
         - "core/generated/shaders/gbuffer.wgsl"
         - "core/generated/shaders/ssao.wgsl"
         - "core/generated/shaders/bilateral_blur.wgsl"
         - "core/generated/shaders/contact_shadow.wgsl"
+        - "core/generated/shaders/shadow/temporal.wgsl"
         - "editor/generated/shaders/picking.wgsl"
         - "editor/generated/shaders/grid.wgsl"
         - "editor/generated/shaders/wireframe.wgsl"

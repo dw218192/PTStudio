@@ -26,6 +26,11 @@ class Case:
     renderer: str
     gt: Path
     threshold: float
+    # Number of frames to render before the capture frame. Temporal
+    # accumulation passes (e.g. shadow visibility EMA) need history to
+    # warm up before the capture is representative; bump this per-case
+    # in config.yaml as needed.
+    frames: int = 1
 
 
 @dataclass(frozen=True)
@@ -106,6 +111,7 @@ def load_image_diff_config(
             renderer=str(_require(entry, "renderer", name)),
             gt=gt_dir / str(_require(entry, "gt", name)),
             threshold=float(entry.get("threshold", default_threshold)),
+            frames=int(entry.get("frames", 1)),
         ))
     return ImageDiffConfig(
         tile_size=tile_size,

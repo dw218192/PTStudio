@@ -93,9 +93,10 @@ namespace {
 class NativeShaderCompiler final : public IShaderCompiler {
    public:
     NativeShaderCompiler(const ShaderLoader& loader, std::filesystem::path cache_dir,
-                         std::filesystem::path workspace_root, std::filesystem::path search_path)
+                         std::filesystem::path workspace_root,
+                         std::vector<std::filesystem::path> search_paths)
         : m_slang(loader, loader.logger(), std::move(cache_dir), std::move(workspace_root),
-                  std::move(search_path), /*error_fallback=*/nullptr) {
+                  std::move(search_paths), /*error_fallback=*/nullptr) {
     }
 
     std::string compile(const ShaderKey& key) override {
@@ -139,9 +140,17 @@ std::unique_ptr<IShaderCompiler> make_shader_compiler(const ShaderLoader& loader
 #endif
     fs::path cache_dir = exe_dir / "shader_cache";
     fs::path workspace_root = PTS_WORKSPACE_ROOT;
-    fs::path search_path = workspace_root / "core" / "shaders";
+    // libslang resolves `import` by module basename across all session search
+    // paths. Add the shader root plus every nested directory so shaders in
+    // subfolders (shadow/, ibl/, future technique folders) are importable
+    // without a per-folder registration.
+    fs::path shader_root = workspace_root / "core" / "shaders";
+    std::vector<fs::path> search_paths{shader_root};
+    for (const auto& entry : fs::recursive_directory_iterator(shader_root, ec)) {
+        if (entry.is_directory()) search_paths.push_back(entry.path());
+    }
     return std::make_unique<NativeShaderCompiler>(
-        loader, std::move(cache_dir), std::move(workspace_root), std::move(search_path));
+        loader, std::move(cache_dir), std::move(workspace_root), std::move(search_paths));
 #endif
 }
 

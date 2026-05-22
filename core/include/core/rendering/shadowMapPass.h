@@ -38,7 +38,6 @@ class ShadowMapPass final : public IPass {
     struct Outputs {
         TextureDeclHandle shadow_array;
         BufferDeclHandle shadow_info;
-        DescriptorDeclHandle consumer_desc;
     };
     Outputs add_to_frame_graph(FrameGraph& fg, const PassContext& ctx, const Inputs&);
 

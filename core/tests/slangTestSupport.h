@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace pts::testing {
 
@@ -34,7 +35,8 @@ struct SlangTestCompiler {
         : cache_dir(unique_cache_dir(tag)) {
         std::filesystem::path workspace(PTS_WORKSPACE_ROOT);
         compiler = std::make_unique<pts::rendering::SlangCompiler>(
-            loader, std::move(logger), cache_dir, workspace, workspace, nullptr);
+            loader, std::move(logger), cache_dir, workspace,
+            std::vector<std::filesystem::path>{workspace}, nullptr);
     }
 
     ~SlangTestCompiler() {

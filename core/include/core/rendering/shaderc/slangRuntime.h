@@ -31,9 +31,9 @@ struct SlangCompileOutput {
 ///
 /// Shared by SlangCompiler (runtime) and pts_shaderc (build-time CLI).
 /// Enforces column-major matrix layout and the canonical search path order
-/// (source dir first, configured path second) to match slangc CLI defaults.
+/// (source dir first, then the configured paths) to match slangc CLI defaults.
 SlangCompileOutput run_slang(slang::IGlobalSession* global_session,
-                             const std::filesystem::path& search_path,
+                             boost::span<const std::filesystem::path> search_paths,
                              const std::filesystem::path& slang_source,
                              const std::vector<std::string>& entry_points,
                              boost::span<const std::string_view> defines,

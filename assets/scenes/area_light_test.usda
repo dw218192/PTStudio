@@ -89,6 +89,7 @@ def Xform "Root"
         float inputs:height = 3
         float inputs:intensity = 10.9
         float inputs:width = 3
+        custom float pts:shadow:pcss:softness = 2.0
         float3 xformOp:rotateXYZ = (-90, 0, 0)
         matrix4d xformOp:transform = ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 1.5, 5, 1) )
         double3 xformOp:translate = (0, 3, 0)

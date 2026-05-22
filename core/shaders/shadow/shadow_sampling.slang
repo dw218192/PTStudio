@@ -88,9 +88,24 @@ public float linearize_depth(float ndc_z, float near_plane, float far_plane, uin
     return (near_plane * far_plane) / max(denom, 1e-6);
 }
 
-// Simple interleaved gradient noise for per-pixel rotation of the Poisson disk.
-internal float pcss_noise(float2 frag_uv) {
-    return frac(sin(dot(frag_uv, float2(12.9898, 78.233))) * 43758.5453);
+// Per-pixel, per-frame hash for rotating the Poisson disk. Returns [0, 1).
+//
+// The classic `frac(sin(dot(uv, K)) * M)` hash bands visibly because `sin` is
+// continuous and adjacent pixels' outputs are correlated -- even after the
+// big multiply, small input deltas leave structure. We use a Wang/PCG-style
+// integer hash instead: quantize uv to a fixed grid, fold in `frame` with a
+// large prime, then run three bit-mixing rounds. Each pixel and each frame
+// produces a fully decorrelated value.
+internal float pcss_noise(float2 frag_uv, uint frame) {
+    uint x = uint(frag_uv.x * 4096.0);
+    uint y = uint(frag_uv.y * 4096.0);
+    uint h = x * 0x27d4eb2du ^ y * 0x165667b1u ^ frame * 0x9e3779b9u;
+    h ^= h >> 16;
+    h *= 0x85ebca6bu;
+    h ^= h >> 13;
+    h *= 0xc2b2ae35u;
+    h ^= h >> 16;
+    return float(h & 0x00ffffffu) / float(0x01000000u);
 }
 
 internal float2x2 pcss_rotation(float theta) {
@@ -113,21 +128,28 @@ public float pcss_blocker_search(
     float2 shadow_uv,
     uint layer,
     float receiver_ndc,
+    float2 receiver_plane_grad,
     float search_radius_uv,
     float near_plane,
     float far_plane,
     uint projection_type,
-    float2 rotation_seed
+    float2 rotation_seed,
+    uint frame
 ) {
-    float2x2 rot = pcss_rotation(pcss_noise(rotation_seed) * 6.2831853);
+    float2x2 rot = pcss_rotation(pcss_noise(rotation_seed, frame) * 6.2831853);
     float total = 0.0;
     float count = 0.0;
     for (uint i = 0; i < k_pcss_blocker_taps; ++i) {
         float2 offset = mul(rot, k_poisson_disk_16[i]) * search_radius_uv;
         float sampled_ndc = shadow_map.SampleLevel(
             shadow_sampler, float3(shadow_uv + offset, float(layer)), 0).x;
-        // Classify in NDC (monotonic). Linearize only on hit.
-        if (sampled_ndc < receiver_ndc) {
+        // Receiver-plane depth bias: extrapolate the receiver's own depth to
+        // the tap's UV via a first-order Taylor expansion. Required for
+        // perspective shadow maps where the receiver plane's NDC depth varies
+        // across the search disk -- without this, floor pixels at other UVs
+        // misregister as blockers and pull blocker_lin toward the near plane.
+        float predicted_ndc = receiver_ndc + dot(receiver_plane_grad, offset);
+        if (sampled_ndc < predicted_ndc) {
             total += linearize_depth(sampled_ndc, near_plane, far_plane, projection_type);
             count += 1.0;
         }
@@ -156,16 +178,20 @@ public float pcss_pcf_variable(
     float2 shadow_uv,
     uint layer,
     float ref_ndc_depth,
+    float2 receiver_plane_grad,
     float kernel_uv,
-    float2 rotation_seed
+    float2 rotation_seed,
+    uint frame
 ) {
-    float2x2 rot = pcss_rotation(pcss_noise(rotation_seed) * 6.2831853);
+    float2x2 rot = pcss_rotation(pcss_noise(rotation_seed, frame) * 6.2831853);
     float shadow = 0.0;
     for (uint i = 0; i < k_pcss_pcf_taps; ++i) {
         float2 offset = mul(rot, k_poisson_disk_16[i]) * kernel_uv;
         float sampled = shadow_map.SampleLevel(
             shadow_sampler, float3(shadow_uv + offset, float(layer)), 0).x;
-        shadow += (ref_ndc_depth <= sampled) ? 1.0 : 0.0;
+        // Receiver-plane bias: see pcss_blocker_search for rationale.
+        float predicted = ref_ndc_depth + dot(receiver_plane_grad, offset);
+        shadow += (predicted <= sampled) ? 1.0 : 0.0;
     }
     return shadow / float(k_pcss_pcf_taps);
 }
@@ -178,7 +204,9 @@ public float compute_shadow_pcss(
     SamplerState shadow_sampler,
     float3 shadow_coord,
     ShadowInfo si,
-    float2 rotation_seed
+    float2 rotation_seed,
+    uint frame,
+    float2 receiver_plane_grad
 ) {
     if (si.light_size_uv <= 0.0) {
         return compute_shadow_pcf(shadow_map, shadow_sampler, shadow_coord, si.layer, si.texel_size);
@@ -194,17 +222,65 @@ public float compute_shadow_pcss(
 
     float blocker_lin = pcss_blocker_search(
         shadow_map, shadow_sampler, shadow_coord.xy, si.layer, shadow_coord.z,
-        search_radius_uv, si.light_near, si.light_far, si.projection_type, rotation_seed);
+        receiver_plane_grad,
+        search_radius_uv, si.light_near, si.light_far, si.projection_type,
+        rotation_seed, frame);
     if (blocker_lin < 0.0) {
         return 1.0;  // no blockers -> fully lit
     }
 
     float penumbra_uv = pcss_penumbra_uv(
         receiver_lin, blocker_lin, si.light_size_uv, si.projection_type);
-    // Clamp to at least 1 texel so we don't degenerate to a single tap.
+    // Floor the penumbra at a small fraction of light_size_uv. The classic
+    // PCSS formula collapses to zero for degenerate geometry (blocker and
+    // receiver sharing view-z, e.g. a chest top above a floor under a
+    // horizontally-facing area light), in which case the formula has no
+    // information about the actual area-light visibility integral. The
+    // floor encodes "a sensible minimum penumbra for an area light of this
+    // size" -- non-physical, but it lets `light_size_uv` (and hence
+    // shadow_pcss_softness) drive a meaningful softness even when the
+    // PCSS formula degenerates.
+    penumbra_uv = max(penumbra_uv, si.light_size_uv * 0.05);
     penumbra_uv = max(penumbra_uv, si.texel_size);
 
     return pcss_pcf_variable(
         shadow_map, shadow_sampler, shadow_coord.xy, si.layer, shadow_coord.z,
-        penumbra_uv, rotation_seed);
+        receiver_plane_grad,
+        penumbra_uv, rotation_seed, frame);
+}
+
+/// Compute dz/duv (NDC depth gradient w.r.t. shadow UV) for the receiver
+/// plane, given the screen-space derivatives of shadow_uv. The caller passes
+/// `ddx(shadow_uv)` / `ddy(shadow_uv)` directly and is responsible for ensuring
+/// they are evaluated under uniform control flow.
+public float2 compute_receiver_plane_grad(float3 ddx_shadow_uv, float3 ddy_shadow_uv) {
+    // Chain rule:
+    //   dz/dx = dz/du * du/dx + dz/dv * dv/dx
+    //   dz/dy = dz/du * du/dy + dz/dv * dv/dy
+    //
+    // This is a 2x2 linear system:
+    //   [ddx_z]   [ddx_u ddx_v] [dz/du]
+    //   [ddy_z] = [ddy_u ddy_v] [dz/dv]
+    //
+    // Solve it by explicitly inverting the 2x2 Jacobian
+
+    float ddx_u = ddx_shadow_uv.x;
+    float ddy_u = ddy_shadow_uv.x;
+    float ddx_v = ddx_shadow_uv.y;
+    float ddy_v = ddy_shadow_uv.y;
+    float ddx_z = ddx_shadow_uv.z;
+    float ddy_z = ddy_shadow_uv.z;
+
+    float det = ddx_u * ddy_v - ddy_u * ddx_v;
+    if (abs(det) < 1e-8) {
+        return float2(0.0, 0.0);
+    }
+    float2 grad;
+    grad.x = ( ddx_z * ddy_v - ddy_z * ddx_v) / det;
+    grad.y = (-ddx_z * ddy_u + ddy_z * ddx_u) / det;
+
+    // Clamp to keep silhouette pixels (where ddx/ddy span across a depth
+    // discontinuity, so the linear extrapolation is wildly wrong) from
+    // injecting huge offsets into the depth comparison.
+    return clamp(grad, -1.0, 1.0);
 }

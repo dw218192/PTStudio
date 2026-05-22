@@ -40,6 +40,7 @@ LightProjection compute_distant_light_vp(const LightData& light, const glm::vec3
     // light.slang's `radians(light.angle * 0.5)` convention.
     float half_angle_rad = glm::radians(std::max(light.angle, 0.0f) * 0.5f);
     float light_size_uv = (ortho_width > 0.0f) ? (std::tan(half_angle_rad) / ortho_width) : 0.0f;
+    light_size_uv *= std::max(light.shadow_pcss_softness, 0.0f);
 
     LightProjection out;
     out.vp = ortho_proj * light_view;
@@ -93,6 +94,7 @@ LightProjection compute_area_light_vp(const LightData& light, const glm::vec3& a
     auto light_proj = glm::perspective(k_fov_y_rad, 1.0f, near_plane, far_plane);
 
     float light_size_uv = light_radius / (2.0f * half_tan);
+    light_size_uv *= std::max(light.shadow_pcss_softness, 0.0f);
 
     LightProjection out;
     out.vp = light_proj * light_view;

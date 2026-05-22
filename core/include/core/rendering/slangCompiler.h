@@ -43,7 +43,7 @@ class SlangCompiler final : public IShaderCompiler {
    public:
     SlangCompiler(const ShaderLoader& loader, std::shared_ptr<spdlog::logger> logger,
                   std::filesystem::path cache_dir, std::filesystem::path workspace_root,
-                  std::filesystem::path search_path, IShaderCompiler* error_fallback);
+                  std::vector<std::filesystem::path> search_paths, IShaderCompiler* error_fallback);
     ~SlangCompiler() override;
 
     SlangCompiler(const SlangCompiler&) = delete;

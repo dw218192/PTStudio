@@ -16,6 +16,7 @@
 #include <core/rendering/shaderc/shaderLoader.h>
 #include <core/rendering/shadowMapPass.h>
 #include <core/rendering/ssaoPass.h>
+#include <core/rendering/temporalVisibilityPass.h>
 #include <core/rendering/webgpu/device.h>
 #include <renderers/forward/generated/shader_metadata.h>
 #include <renderers/forward/generated/skybox_shader_metadata.h>
@@ -34,6 +35,7 @@ ForwardPass::ForwardPass(const rendering::ShaderLoader& sl) : IRenderer(sl) {
     add_pass<rendering::ShadowMapPass>(sl);
     add_pass<rendering::SSAOPass>(sl);
     add_pass<rendering::ContactShadowPass>(sl);
+    add_pass<rendering::TemporalVisibilityPass>(sl);
 }
 
 struct ForwardUniforms {
@@ -46,8 +48,12 @@ struct ForwardUniforms {
     glm::vec2 viewport_size;
     glm::vec3 ibl_dome_modulation;
     uint32_t ibl_mip_count;
+    uint32_t accumulated_shadow_light_index;
+    uint32_t _pad0;
+    uint32_t _pad1;
+    uint32_t _pad2;
 };
-static_assert(sizeof(ForwardUniforms) == 176, "ForwardUniforms must match shader std140 layout");
+static_assert(sizeof(ForwardUniforms) == 192, "ForwardUniforms must match shader std140 layout");
 static_assert(ForwardPass::k_uniform_align >= sizeof(ForwardUniforms),
               "Alignment must be >= uniform struct size");
 
@@ -288,8 +294,10 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
                           .sampler(7, scene_tex_sampler)
                           .build();
 
-    // Descriptor 1: shadow (child-owned)
-    PRECONDITION(shadow_out.consumer_desc);
+    // Descriptor 1: shadow + accumulated visibility. Built here (not in
+    // ShadowMapPass) because both shadow outputs and the temporal visibility
+    // output share a single bind group -- WebGPU's default maxBindGroups is 4,
+    // so we can't split visibility into its own group.
 
     rendering::TextureDesc color_desc;
     color_desc.width = ctx.viewport_width;
@@ -378,6 +386,57 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
     // Descriptor 3: contact shadow (child-owned)
     PRECONDITION(cs_out.consumer_desc);
 
+    // Temporal visibility accumulation (POC: first shadow-casting light only).
+    // Find the first light with has_shadow != 0 -- ShadowMapPass writes one
+    // ShadowInfo entry per light slot in light-buffer order, so that index
+    // matches the shader's `i` in the lighting loop.
+    uint32_t accumulated_shadow_light_index = UINT32_MAX;
+    {
+        auto light_slots = ctx.world.get_lights().span_raw();
+        uint32_t buffer_index = 0;
+        for (uint32_t li = 0; li < static_cast<uint32_t>(light_slots.size()); ++li) {
+            if (!light_slots[li].active) {
+                continue;
+            }
+            const auto& light = light_slots[li].value;
+            bool casts = (light.type == rendering::LightData::Type::Distant ||
+                          light.type == rendering::LightData::Type::Rect ||
+                          light.type == rendering::LightData::Type::Disk) &&
+                         light.casts_shadow;
+            if (casts) {
+                accumulated_shadow_light_index = buffer_index;
+                break;
+            }
+            ++buffer_index;
+        }
+    }
+
+    auto* temporal_vis_pass = get_pass<rendering::TemporalVisibilityPass>();
+    PRECONDITION(temporal_vis_pass);
+    auto temporal_vis_out = temporal_vis_pass->add_to_frame_graph(
+        fg, ctx,
+        {gbuf_out.depth, shadow_out.shadow_array, shadow_out.shadow_info,
+         accumulated_shadow_light_index},
+        m_temporal_storage);
+
+    // Build the merged shadow + visibility descriptor. When the temporal
+    // visibility pass is disabled or has no eligible light, bind a 1x1 white
+    // fallback view -- the lighting shader gates on
+    // accumulated_shadow_light_index so the sampled value is unused, but the
+    // pipeline still requires a binding at slot 3.
+    auto desc1_bld = descriptor(fg, shadow_consumer_bgl, "desc1")
+                         .buffer(0, shadow_out.shadow_info)
+                         .texture(1, shadow_out.shadow_array)
+                         .sampler(2, fg.sampler(WGPUSamplerBindingType_NonFiltering));
+    if (temporal_vis_out.accumulated_visibility) {
+        desc1_bld.texture(3, temporal_vis_out.accumulated_visibility);
+    } else {
+        auto fallback_vis_view =
+            fg.fallback_pool().view(WGPUTextureFormat_R16Float, WGPUTextureViewDimension_2D);
+        desc1_bld.external_view(3, fallback_vis_view);
+    }
+    auto desc1_decl = desc1_bld.sampler(4, fg.sampler(WGPUSamplerBindingType_Filtering)).build();
+
     // Skybox uniform buffer + descriptor
     rendering::BufferDesc skybox_buf_desc;
     skybox_buf_desc.size = sizeof(SkyboxUniforms);
@@ -405,12 +464,14 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
     auto viewport_width = ctx.viewport_width;
     auto viewport_height = ctx.viewport_height;
 
-    auto desc1_decl = shadow_out.consumer_desc;
     auto desc3_decl = cs_out.consumer_desc;
 
     auto pass_builder = fg.add_pass("forward").color(color_decl).read(shadow_out.shadow_array);
     if (cs_out.contact_shadow) {
         pass_builder.read(cs_out.contact_shadow);
+    }
+    if (temporal_vis_out.accumulated_visibility) {
+        pass_builder.read(temporal_vis_out.accumulated_visibility);
     }
     for (uint32_t i = 0; i < eff_debug_count; ++i) {
         pass_builder.color(debug_decls[i]);
@@ -446,6 +507,7 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
                                        static_cast<float>(viewport_height)};
                     u.ibl_dome_modulation = ibl_ready ? dome_mod : glm::vec3{0.0f};
                     u.ibl_mip_count = rendering::k_prefilter_mip_count;
+                    u.accumulated_shadow_light_index = accumulated_shadow_light_index;
                     wgpuQueueWriteBuffer(queue, uniform_buf, i * k_uniform_align, &u, sizeof(u));
                 }
             }
@@ -474,6 +536,7 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
                                        static_cast<float>(viewport_height)};
                     u.ibl_dome_modulation = ibl_ready ? dome_mod : glm::vec3{0.0f};
                     u.ibl_mip_count = rendering::k_prefilter_mip_count;
+                    u.accumulated_shadow_light_index = accumulated_shadow_light_index;
                     wgpuQueueWriteBuffer(queue, uniform_buf, proxy_slot * k_uniform_align, &u,
                                          sizeof(u));
                     ++proxy_slot;

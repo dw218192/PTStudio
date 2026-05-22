@@ -9,7 +9,7 @@ namespace pts::rendering {
 
 /// Projection metadata for a shadow-casting light. Mirrors the CPU-side
 /// inputs used to populate ShadowInfo (see renderWorld.h) and the runtime
-/// sampling math in core/shaders/shadow_sampling.slang.
+/// sampling math in core/shaders/shadow/shadow_sampling.slang.
 ///
 /// `light_size_uv` semantics (matching the shader):
 ///   * Ortho (distant): tan(half_angle) / ortho_width

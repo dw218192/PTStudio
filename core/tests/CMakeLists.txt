@@ -64,6 +64,11 @@ if(NOT EMSCRIPTEN)
     set(testContactShadowPass_libs core)
     set(testContactShadowPass_defines PTS_WORKSPACE_ROOT="${CMAKE_SOURCE_DIR}")
 
+    list(APPEND TEST_NAMES testTemporalVisibilityPass)
+    set(testTemporalVisibilityPass_source testTemporalVisibilityPass.cpp)
+    set(testTemporalVisibilityPass_libs core)
+    set(testTemporalVisibilityPass_defines PTS_WORKSPACE_ROOT="${CMAKE_SOURCE_DIR}")
+
     list(APPEND TEST_NAMES testPipelineBuilder)
     set(testPipelineBuilder_source testPipelineBuilder.cpp)
     set(testPipelineBuilder_libs core)

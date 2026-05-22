@@ -150,7 +150,7 @@ def _run_case(
         case,
         capture_path=capture,
         renderer=case.renderer,
-        frames=1,
+        frames=case.frames,
         from_package=from_package,
     )
     run_launch(

@@ -71,9 +71,9 @@ TEST_CASE("ShadowMapPass add_to_frame_graph with no lights returns valid handles
     auto device = pts::webgpu::Device::create(logger);
 
     ShaderLoader loader(logger);
-    loader.register_shader("core/generated/shaders/shadow.wgsl", "core/shaders/shadow.slang",
-                           "core/generated/shaders/shadow.wgsl", pts::testing::stub_getter,
-                           {"vs_main"});
+    loader.register_shader(
+        "core/generated/shaders/shadow/shadow_map.wgsl", "core/shaders/shadow/shadow_map.slang",
+        "core/generated/shaders/shadow/shadow_map.wgsl", pts::testing::stub_getter, {"vs_main"});
 
     ShadowMapPass pass(loader);
 
@@ -99,9 +99,9 @@ TEST_CASE("ShadowMapPass add_to_frame_graph with distant light produces valid ou
     auto device = pts::webgpu::Device::create(logger);
 
     ShaderLoader loader(logger);
-    loader.register_shader("core/generated/shaders/shadow.wgsl", "core/shaders/shadow.slang",
-                           "core/generated/shaders/shadow.wgsl", pts::testing::stub_getter,
-                           {"vs_main"});
+    loader.register_shader(
+        "core/generated/shaders/shadow/shadow_map.wgsl", "core/shaders/shadow/shadow_map.slang",
+        "core/generated/shaders/shadow/shadow_map.wgsl", pts::testing::stub_getter, {"vs_main"});
 
     ShadowMapPass pass(loader);
 
@@ -177,9 +177,9 @@ TEST_CASE("ShadowMapPass caps shadow count at k_max_shadow_maps") {
     auto device = pts::webgpu::Device::create(logger);
 
     ShaderLoader loader(logger);
-    loader.register_shader("core/generated/shaders/shadow.wgsl", "core/shaders/shadow.slang",
-                           "core/generated/shaders/shadow.wgsl", pts::testing::stub_getter,
-                           {"vs_main"});
+    loader.register_shader(
+        "core/generated/shaders/shadow/shadow_map.wgsl", "core/shaders/shadow/shadow_map.slang",
+        "core/generated/shaders/shadow/shadow_map.wgsl", pts::testing::stub_getter, {"vs_main"});
 
     ShadowMapPass pass(loader);
 
@@ -251,9 +251,9 @@ TEST_CASE("ShadowMapPass allocates a layer for a rect area light") {
     auto device = pts::webgpu::Device::create(logger);
 
     ShaderLoader loader(logger);
-    loader.register_shader("core/generated/shaders/shadow.wgsl", "core/shaders/shadow.slang",
-                           "core/generated/shaders/shadow.wgsl", pts::testing::stub_getter,
-                           {"vs_main"});
+    loader.register_shader(
+        "core/generated/shaders/shadow/shadow_map.wgsl", "core/shaders/shadow/shadow_map.slang",
+        "core/generated/shaders/shadow/shadow_map.wgsl", pts::testing::stub_getter, {"vs_main"});
 
     ShadowMapPass pass(loader);
 
@@ -329,9 +329,9 @@ TEST_CASE("ShadowMapPass skips sphere and dome lights") {
     auto device = pts::webgpu::Device::create(logger);
 
     ShaderLoader loader(logger);
-    loader.register_shader("core/generated/shaders/shadow.wgsl", "core/shaders/shadow.slang",
-                           "core/generated/shaders/shadow.wgsl", pts::testing::stub_getter,
-                           {"vs_main"});
+    loader.register_shader(
+        "core/generated/shaders/shadow/shadow_map.wgsl", "core/shaders/shadow/shadow_map.slang",
+        "core/generated/shaders/shadow/shadow_map.wgsl", pts::testing::stub_getter, {"vs_main"});
 
     ShadowMapPass pass(loader);
 
@@ -377,9 +377,9 @@ TEST_CASE("ShadowMapPass mixes distant, rect, and disk shadow casters") {
     auto device = pts::webgpu::Device::create(logger);
 
     ShaderLoader loader(logger);
-    loader.register_shader("core/generated/shaders/shadow.wgsl", "core/shaders/shadow.slang",
-                           "core/generated/shaders/shadow.wgsl", pts::testing::stub_getter,
-                           {"vs_main"});
+    loader.register_shader(
+        "core/generated/shaders/shadow/shadow_map.wgsl", "core/shaders/shadow/shadow_map.slang",
+        "core/generated/shaders/shadow/shadow_map.wgsl", pts::testing::stub_getter, {"vs_main"});
 
     ShadowMapPass pass(loader);
 

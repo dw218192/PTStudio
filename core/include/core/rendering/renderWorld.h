@@ -210,6 +210,16 @@ struct LightData {
     float radius{0.0f};
     float width{1.0f};
     float height{1.0f};
+    // Non-physical multiplier on PCSS penumbra width for this light. 1.0 =
+    // use the physical light radius derived from `angle`/`radius`/`width`/
+    // `height`; >1 softens shadows (effective light larger than physical);
+    // <1 sharpens. Implemented as a scale on `light_size_uv` at projection
+    // time, so it affects both the blocker-search radius and the PCF kernel
+    // size uniformly. Has no effect on LTC lighting -- shadows only.
+    // Authored in USD as the custom attribute `pts:shadow:pcss:softness`;
+    // we expect future RT shadows to have their own knob (e.g.
+    // `pts:shadow:rt:softness`) rather than reusing this one.
+    float shadow_pcss_softness{1.0f};
     bool casts_shadow{true};          // from UsdLuxShadowAPI inputs:shadow:enable
     std::string env_texture_path;     // resolved path to HDR environment map (dome lights only)
     uint32_t mesh_index{UINT32_MAX};  // proxy mesh slot (UINT32_MAX = none)

@@ -8,7 +8,7 @@
 #include <core/rendering/shadowMapPass.h>
 #include <core/rendering/webgpu/device.h>
 #include <imgui.h>
-#include <shadow_shader_metadata.h>
+#include <shadow_map_shader_metadata.h>
 
 #include <algorithm>
 #include <cmath>
@@ -32,12 +32,7 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
     ensure_initialized(ctx.device);
 
     auto desc_layout = fg.bind_group_layout(
-        "shadow_map/desc", shadow_shader::create_bind_group_layout_0(ctx.device.handle()));
-    // Consumer layout is registered up-front by the owning renderer (e.g. forwardPass)
-    // using its own shader's reflection, since the shape of the consumer-side
-    // descriptor is a property of how downstream passes read shadow output, not of
-    // shadow.slang.
-    auto consumer_bgl = fg.bind_group_layout("shadow_map/consumer");
+        "shadow_map/desc", shadow_map_shader::create_bind_group_layout_0(ctx.device.handle()));
 
     // Position-only vertex layout: stride=12, one Float32x3 at offset 0, location 0
     WGPUVertexAttribute pos_attr{};
@@ -46,7 +41,7 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
     pos_attr.shaderLocation = 0;
 
     auto* pipeline_handle = fg.render_pipeline("shadow_map")
-                                .shader("core/generated/shaders/shadow.wgsl")
+                                .shader("core/generated/shaders/shadow/shadow_map.wgsl")
                                 .no_fragment()
                                 .depth_format(WGPUTextureFormat_Depth32Float)
                                 .depth_write(true)
@@ -108,12 +103,7 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
                 wgpuQueueWriteBuffer(queue, buf, 0, infos.data(),
                                      infos.size() * sizeof(ShadowInfo));
             });
-        auto consumer = descriptor(fg, consumer_bgl, "consumer_desc")
-                            .buffer(0, shadow_info_buf)
-                            .texture(1, shadow_array)
-                            .sampler(2, fg.sampler(WGPUSamplerBindingType_NonFiltering))
-                            .build();
-        return {shadow_array, shadow_info_buf, consumer};
+        return {shadow_array, shadow_info_buf};
     }
 
     // Scene AABB from TLAS root (built by RenderWorld::prepare_gpu_buffers)
@@ -246,12 +236,7 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
             });
     }
 
-    auto consumer = descriptor(fg, consumer_bgl, "consumer_desc")
-                        .buffer(0, shadow_info_buf)
-                        .texture(1, shadow_array)
-                        .sampler(2, fg.sampler(WGPUSamplerBindingType_NonFiltering))
-                        .build();
-    return {shadow_array, shadow_info_buf, consumer};
+    return {shadow_array, shadow_info_buf};
 }
 
 void ShadowMapPass::draw_imgui() {

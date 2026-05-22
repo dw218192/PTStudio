@@ -473,9 +473,10 @@ void EditorApplication::on_ready() {
         "editor/generated/shaders/pt_blit.wgsl", editor_resources::get_resource);
 
     // Register shadow shader for hot-reload (vertex-only: no fragment stage)
-    m_shader_loader.register_shader(
-        "core/generated/shaders/shadow.wgsl", "core/shaders/shadow.slang",
-        "core/generated/shaders/shadow.wgsl", editor_resources::get_resource, {"vs_main"});
+    m_shader_loader.register_shader("core/generated/shaders/shadow/shadow_map.wgsl",
+                                    "core/shaders/shadow/shadow_map.slang",
+                                    "core/generated/shaders/shadow/shadow_map.wgsl",
+                                    editor_resources::get_resource, {"vs_main"});
 
     // Register gbuffer shader for hot-reload
     m_shader_loader.register_shader(
@@ -494,6 +495,11 @@ void EditorApplication::on_ready() {
     m_shader_loader.register_shader(
         "core/generated/shaders/contact_shadow.wgsl", "core/shaders/contact_shadow.slang",
         "core/generated/shaders/contact_shadow.wgsl", editor_resources::get_resource);
+
+    // Register temporal visibility shader for hot-reload
+    m_shader_loader.register_shader(
+        "core/generated/shaders/shadow/temporal.wgsl", "core/shaders/shadow/temporal.slang",
+        "core/generated/shaders/shadow/temporal.wgsl", editor_resources::get_resource);
 
     // Create editor passes (always-on, independent of renderer choice).
     // Resources (BGLs, pipelines, shaders) are created lazily on the first
