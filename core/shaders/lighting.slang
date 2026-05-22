@@ -2,7 +2,6 @@ import brdf;
 import light;
 import light_iteration;
 import ltc;
-import shadow_sampling;
 
 // ---------------------------------------------------------------------------
 // Lighting evaluation -- LTC for rect/disk area lights (forward renderer)
@@ -14,12 +13,9 @@ float3 evaluate_lighting_ltc<B : IBRDF>(
     Texture2D<float4> ltc_mat, Texture2D<float2> ltc_amp, SamplerState ltc_sampler,
     float3 P, float3 N, float3 V,
     float3 base_color, float metallic, float roughness,
-    StructuredBuffer<ShadowInfo> shadow_infos,
-    Texture2DArray<float> shadow_map,
-    SamplerState shadow_sampler,
     float2 screen_uv,
-    uint accumulated_shadow_light_index,
-    float accumulated_shadow_vis,
+    uint shadow_light_index,
+    float resolved_shadow_vis,
     out float3 direct_diffuse, out float3 direct_specular
 ) {
     direct_diffuse = float3(0.0);
@@ -33,38 +29,12 @@ float3 evaluate_lighting_ltc<B : IBRDF>(
 
         if (light.type == LIGHT_DOME) continue;
 
-        float shadow_vis = 1.0;
-        ShadowInfo si = shadow_infos[i];
-        if (i == accumulated_shadow_light_index) {
-            // POC: this light's visibility is supplied by the temporal
-            // accumulation pass. Frustum guards live in that pass's shader.
-            shadow_vis = accumulated_shadow_vis;
-        } else if (si.has_shadow != 0) {
-            float3 offset_pos = P + N * si.normal_bias;
-            float4 light_clip = mul(si.light_vp, float4(offset_pos, 1.0));
-            // Skip shadow for points behind the light (w <= 0 flips the
-            // perspective divide) or outside the shadow frustum UV range.
-            if (light_clip.w > 0.0) {
-                float3 ndc = light_clip.xyz / light_clip.w;
-                float3 shadow_uv = float3(ndc.x * 0.5 + 0.5, -ndc.y * 0.5 + 0.5, ndc.z);
-                if (shadow_uv.x >= 0.0 && shadow_uv.x <= 1.0 &&
-                    shadow_uv.y >= 0.0 && shadow_uv.y <= 1.0 &&
-                    shadow_uv.z >= 0.0 && shadow_uv.z <= 1.0) {
-                    // frame=0: deterministic per-pixel rotation. Inline
-                    // lighting has no temporal accumulator, so jitter would
-                    // just add per-frame noise with nothing to average it.
-                    // grad=0: receiver-plane bias not yet plumbed through the
-                    // forward pass (would require hoisting ddx/ddy(world_pos)
-                    // in fs_main and passing into evaluate_lighting_ltc). The
-                    // primary shadow caster uses the accumulated_visibility
-                    // path above, so this inline branch is bypassed for the
-                    // test scene; secondary shadow casters still need bias.
-                    shadow_vis = compute_shadow_pcss(
-                        shadow_map, shadow_sampler, shadow_uv, si, screen_uv,
-                        0u, float2(0.0, 0.0));
-                }
-            }
-        }
+        // Single-light shadow scope: the one shadow-casting light's visibility
+        // is supplied by the resolved shadow-visibility texture (gen + resolve
+        // pipeline; frustum guards live in the gen pass). Every other light --
+        // including secondary shadow casters -- renders unshadowed; multi-light
+        // shadows are deferred to clustered lighting.
+        float shadow_vis = (i == shadow_light_index) ? resolved_shadow_vis : 1.0;
 
         if (light.type == LIGHT_RECT || light.type == LIGHT_DISK) {
             float3 diff, spec;
