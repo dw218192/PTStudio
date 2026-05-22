@@ -16,6 +16,16 @@ patterns = [
 ]
 
 [[allow]]
+name = "force_push"
+override_deny = true
+patterns = [
+    # --force-with-lease only: refuses if the remote moved unexpectedly,
+    # so it is safe for rewriting history on personal dev branches.
+    # Bare --force / -f stays denied.
+    'git\s+push\s.*--force-with-lease',
+]
+
+[[allow]]
 name = "image_convert"
 commands = ["ffmpeg"]
 
