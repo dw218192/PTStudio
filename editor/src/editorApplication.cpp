@@ -496,10 +496,15 @@ void EditorApplication::on_ready() {
         "core/generated/shaders/contact_shadow.wgsl", "core/shaders/contact_shadow.slang",
         "core/generated/shaders/contact_shadow.wgsl", editor_resources::get_resource);
 
-    // Register temporal visibility shader for hot-reload
-    m_shader_loader.register_shader(
-        "core/generated/shaders/shadow/temporal.wgsl", "core/shaders/shadow/temporal.slang",
-        "core/generated/shaders/shadow/temporal.wgsl", editor_resources::get_resource);
+    // Register shadow-visibility gen/resolve shaders for hot-reload
+    m_shader_loader.register_shader("core/generated/shaders/shadow/shadow_visibility.wgsl",
+                                    "core/shaders/shadow/shadow_visibility.slang",
+                                    "core/generated/shaders/shadow/shadow_visibility.wgsl",
+                                    editor_resources::get_resource);
+    m_shader_loader.register_shader("core/generated/shaders/shadow/temporal_resolve.wgsl",
+                                    "core/shaders/shadow/temporal_resolve.slang",
+                                    "core/generated/shaders/shadow/temporal_resolve.wgsl",
+                                    editor_resources::get_resource);
 
     // Create editor passes (always-on, independent of renderer choice).
     // Resources (BGLs, pipelines, shaders) are created lazily on the first

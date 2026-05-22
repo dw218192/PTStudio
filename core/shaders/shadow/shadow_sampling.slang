@@ -284,3 +284,56 @@ public float2 compute_receiver_plane_grad(float3 ddx_shadow_uv, float3 ddy_shado
     // injecting huge offsets into the depth comparison.
     return clamp(grad, -1.0, 1.0);
 }
+
+// ---------------------------------------------------------------------------
+// Temporal resolve math -- EMA accumulation + neighborhood variance clamp.
+//
+// The gen/resolve shadow-visibility split keeps the per-frame PCSS in one pass
+// (shadow_visibility.slang) and the temporal accumulation in another
+// (temporal_resolve.slang). These helpers are the resolve math, kept here so
+// there is a single home for the visibility arithmetic.
+// ---------------------------------------------------------------------------
+
+/// Gather the 3x3 neighborhood of a single-channel texture around `uv` and
+/// return its mean and standard deviation. `texel` is 1.0 / texture_size.
+public void neighborhood_visibility_stats(
+    Texture2D<float> tex,
+    SamplerState samp,
+    float2 uv,
+    float2 texel,
+    out float mean,
+    out float stddev
+) {
+    float sum = 0.0;
+    float sum_sq = 0.0;
+    for (int y = -1; y <= 1; ++y) {
+        for (int x = -1; x <= 1; ++x) {
+            float v = tex.SampleLevel(samp, uv + float2(float(x), float(y)) * texel, 0).x;
+            sum += v;
+            sum_sq += v * v;
+        }
+    }
+    mean = sum / 9.0;
+    // max(., 0) guards a tiny negative from floating-point cancellation.
+    float variance = max(sum_sq / 9.0 - mean * mean, 0.0);
+    stddev = sqrt(variance);
+}
+
+/// Clamp a history sample to the neighborhood window
+/// [mean - gamma*stddev, mean + gamma*stddev]. Rejects stale history that
+/// diverges from the current frame's local visibility distribution -- the
+/// core ghosting suppressor for temporal accumulation under camera motion.
+/// A larger `gamma` widens the window (weaker clamp, more ghosting).
+public float clamp_history_to_neighborhood(
+    float history, float mean, float stddev, float gamma
+) {
+    float lo = mean - gamma * stddev;
+    float hi = mean + gamma * stddev;
+    return clamp(history, lo, hi);
+}
+
+/// Exponential moving average blend. `alpha` is the weight of the current
+/// sample; alpha = 1 takes `curr` directly (cold-start bootstrap).
+public float temporal_ema_blend(float curr, float history, float alpha) {
+    return alpha * curr + (1.0 - alpha) * history;
+}

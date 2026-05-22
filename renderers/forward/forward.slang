@@ -3,7 +3,6 @@ import brdf;
 import ibl;
 import light;
 import material_sampling;
-import shadow_sampling;
 
 struct Uniforms {
     float4x4 mvp;
@@ -15,7 +14,7 @@ struct Uniforms {
     float2 viewport_size;
     float3 ibl_dome_modulation;
     uint ibl_mip_count;
-    uint accumulated_shadow_light_index;  // UINT32_MAX = none, else index into shadow_infos
+    uint shadow_light_index;  // UINT32_MAX = none, else index into the light buffer
     uint _pad0;
     uint _pad1;
     uint _pad2;
@@ -45,20 +44,16 @@ Texture2DArray<float4> scene_textures;
 [[vk::binding(7, 0)]]
 SamplerState scene_sampler;
 
-// Bind group 1: shadow data + accumulated visibility
+// Bind group 1: resolved shadow visibility
 //
-// Accumulated visibility is folded into the shadow-data group rather than
-// living in its own group because WebGPU's default maxBindGroups is 4 and
-// the forward pipeline already uses groups 0-3. Slots 3-4 hold the temporal
-// PCSS accumulation output for the first shadow-casting light (single-light
-// POC, see temporalVisibilityPass.h); when no shadow-casting light exists,
-// these are bound to a 1x1 fallback view and the lighting shader gates the
-// sample on accumulated_shadow_light_index.
-[[vk::binding(0, 1)]] StructuredBuffer<ShadowInfo> shadow_infos;
-[[vk::binding(1, 1)]] [NonFiltering] Texture2DArray<float> shadow_map;
-[[vk::binding(2, 1)]] [NonFiltering]  SamplerState shadow_sampler;
-[[vk::binding(3, 1)]] Texture2D<float> accumulated_visibility_tex;
-[[vk::binding(4, 1)]] SamplerState     accumulated_visibility_sampler;
+// The resolved-visibility texture (gen + resolve shadow pipeline) gets its own
+// bind group rather than being merged into group 0 because WebGPU's default
+// maxBindGroups is 4 and the forward pipeline already uses groups 0-3. It
+// carries the per-pixel visibility for the single shadow-casting light; when
+// no shadow-casting light exists it is bound to a 1x1 fallback view and the
+// lighting shader gates the sample on shadow_light_index.
+[[vk::binding(0, 1)]] Texture2D<float> resolved_visibility_tex;
+[[vk::binding(1, 1)]] SamplerState     resolved_visibility_sampler;
 
 // Bind group 2: IBL
 [[vk::binding(0, 2)]] TextureCube<float4> ibl_prefiltered;
@@ -135,15 +130,15 @@ FsOut fs_main(float4 sv_pos : SV_Position, float3 world_normal : NORMAL,
     float2 screen_uv = sv_pos.xy / u.viewport_size;
 
     float3 direct_diffuse, direct_specular;
-    // Sample once; if there's no shadow-casting light bound to the temporal
-    // pass (UINT32_MAX), the fallback view's pixel value is meaningless --
-    // lighting.slang gates on the same index so the value is unused in that
-    // case, but force it to 1.0 here as a defensive guard against NaNs from
-    // R16Float fallback views.
-    float accumulated_vis = 1.0;
-    if (u.accumulated_shadow_light_index != 0xFFFFFFFFu) {
-        accumulated_vis = accumulated_visibility_tex.SampleLevel(
-            accumulated_visibility_sampler, screen_uv, 0).x;
+    // Sample the resolved shadow visibility once. When there is no
+    // shadow-casting light (UINT32_MAX) the fallback view's value is
+    // meaningless -- lighting.slang gates on the same index so it is unused,
+    // but force 1.0 here as a defensive guard against NaNs from a fallback
+    // R16Float view.
+    float resolved_vis = 1.0;
+    if (u.shadow_light_index != 0xFFFFFFFFu) {
+        resolved_vis = resolved_visibility_tex.SampleLevel(
+            resolved_visibility_sampler, screen_uv, 0).x;
     }
     float3 lit = evaluate_lighting_ltc(
         brdf,
@@ -151,10 +146,9 @@ FsOut fs_main(float4 sv_pos : SV_Position, float3 world_normal : NORMAL,
         u.light_count,
         ltc_mat, ltc_amp, ltc_sampler,
         world_pos, N, V, albedo, mat_metallic, mat_roughness,
-        shadow_infos, shadow_map, shadow_sampler,
         screen_uv,
-        u.accumulated_shadow_light_index,
-        accumulated_vis,
+        u.shadow_light_index,
+        resolved_vis,
         direct_diffuse, direct_specular
     );
 

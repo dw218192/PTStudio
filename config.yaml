@@ -192,11 +192,16 @@ slangc:
       metadata:
         output: "core/generated/contact_shadow_shader_metadata.h"
         namespace: "contact_shadow_shader"
-    - input: "core/shaders/shadow/temporal.slang"
-      output: "core/generated/shaders/shadow/temporal.wgsl"
+    - input: "core/shaders/shadow/shadow_visibility.slang"
+      output: "core/generated/shaders/shadow/shadow_visibility.wgsl"
       metadata:
-        output: "core/generated/shadow_temporal_shader_metadata.h"
-        namespace: "shadow_temporal_shader"
+        output: "core/generated/shadow_visibility_shader_metadata.h"
+        namespace: "shadow_visibility_shader"
+    - input: "core/shaders/shadow/temporal_resolve.slang"
+      output: "core/generated/shaders/shadow/temporal_resolve.wgsl"
+      metadata:
+        output: "core/generated/temporal_resolve_shader_metadata.h"
+        namespace: "temporal_resolve_shader"
     - input: "editor/shaders/picking.slang"
       output: "editor/generated/shaders/picking.wgsl"
       metadata:
@@ -283,7 +288,8 @@ embed:
         - "core/generated/shaders/ssao.wgsl"
         - "core/generated/shaders/bilateral_blur.wgsl"
         - "core/generated/shaders/contact_shadow.wgsl"
-        - "core/generated/shaders/shadow/temporal.wgsl"
+        - "core/generated/shaders/shadow/shadow_visibility.wgsl"
+        - "core/generated/shaders/shadow/temporal_resolve.wgsl"
         - "editor/generated/shaders/picking.wgsl"
         - "editor/generated/shaders/grid.wgsl"
         - "editor/generated/shaders/wireframe.wgsl"
