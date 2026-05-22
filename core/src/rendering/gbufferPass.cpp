@@ -9,22 +9,25 @@
 #include <gbuffer_shader_metadata.h>
 
 #include <glm/glm.hpp>
+#include <vector>
 
 namespace pts::rendering {
 
 struct GBufferObjectUniforms {
     glm::mat4 mvp;
     glm::mat4 model_view;
+    glm::mat4 prev_mvp;
 };
-static_assert(sizeof(GBufferObjectUniforms) == 128,
+static_assert(sizeof(GBufferObjectUniforms) == 192,
               "GBufferObjectUniforms must match shader std140 layout");
 
 static constexpr IPass::DebugTarget k_debug_targets[] = {
     {"Normals", "scene_normals"},
+    {"Motion", "scene_motion"},
 };
 
 auto GBufferPass::debug_targets() const noexcept -> std::pair<const DebugTarget*, uint32_t> {
-    return {k_debug_targets, 1};
+    return {k_debug_targets, 2};
 }
 
 GBufferPass::Outputs GBufferPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx,
@@ -38,6 +41,7 @@ GBufferPass::Outputs GBufferPass::add_to_frame_graph(FrameGraph& fg, const PassC
     auto* pipeline_handle = fg.render_pipeline("gbuffer")
                                 .shader("core/generated/shaders/gbuffer.wgsl")
                                 .color_format(WGPUTextureFormat_RG16Float, 0)
+                                .color_format(WGPUTextureFormat_RG16Float, 1)
                                 .depth_format(WGPUTextureFormat_Depth32Float)
                                 .depth_write(true)
                                 .depth_compare(WGPUCompareFunction_LessEqual)
@@ -75,16 +79,56 @@ GBufferPass::Outputs GBufferPass::add_to_frame_graph(FrameGraph& fg, const PassC
     normals_desc.format = WGPUTextureFormat_RG16Float;
     normals_desc.clear_color = {0, 0, 0, 0};
 
+    TextureDesc motion_desc;
+    motion_desc.width = ctx.viewport_width;
+    motion_desc.height = ctx.viewport_height;
+    motion_desc.format = WGPUTextureFormat_RG16Float;
+    // Skybox / cleared pixels have no surface motion -- clear to zero so
+    // consumers that sample (uv + motion) read back the same uv.
+    motion_desc.clear_color = {0, 0, 0, 0};
+
     auto depth_decl = create_texture(fg, depth_desc, "depth");
     auto normals_decl = create_texture(fg, normals_desc, "normals");
+    auto motion_decl = create_texture(fg, motion_desc, "motion");
 
     auto view_mat = ctx.view_matrix;
     auto proj_mat = ctx.proj_matrix;
+
+    // Build per-slot prev_mvp using last frame's transforms + view/proj. New
+    // / re-activated slots fall back to current transforms (motion = 0) so
+    // there's no stale-state artifact on the first frame they appear.
+    glm::mat4 prev_view = m_prev_camera_valid ? m_prev_view : view_mat;
+    glm::mat4 prev_proj = m_prev_camera_valid ? m_prev_proj : proj_mat;
+    std::vector<glm::mat4> prev_mvps(total_slots, glm::mat4(1.0f));
+    for (uint32_t i = 0; i < total_slots; ++i) {
+        if (!objects[i].active) continue;
+        if (!objects[i].value.visible) continue;
+        const bool prev_known =
+            m_prev_camera_valid && i < m_prev_objects.size() && m_prev_objects[i].valid;
+        glm::mat4 prev_xform =
+            prev_known ? m_prev_objects[i].transform : objects[i].value.transform;
+        prev_mvps[i] = prev_proj * prev_view * prev_xform;
+    }
+
+    // Snapshot current state for next frame. Inactive / invisible slots get
+    // valid = false so they're treated as "new" if they turn on later.
+    m_prev_objects.assign(total_slots, PrevObjectState{});
+    for (uint32_t i = 0; i < total_slots; ++i) {
+        if (!objects[i].active) continue;
+        if (!objects[i].value.visible) continue;
+        m_prev_objects[i].transform = objects[i].value.transform;
+        m_prev_objects[i].valid = true;
+    }
+    m_prev_view = view_mat;
+    m_prev_proj = proj_mat;
+    m_prev_camera_valid = true;
+
     auto queue = ctx.queue;
     const auto& world = ctx.world;
 
     fg.add_pass("gbuffer")
         .color(normals_decl)
+        .color(motion_decl)
         .depth(depth_decl)
         .execute([=, &world](ExecuteContext& exec, WGPURenderPassEncoder pass) {
             auto objs = world.get_objects().span_raw();
@@ -101,6 +145,7 @@ GBufferPass::Outputs GBufferPass::add_to_frame_graph(FrameGraph& fg, const PassC
                     GBufferObjectUniforms u{};
                     u.mvp = proj_mat * view_mat * objs[i].value.transform;
                     u.model_view = view_mat * objs[i].value.transform;
+                    u.prev_mvp = prev_mvps[i];
                     wgpuQueueWriteBuffer(queue, buf, i * k_uniform_align, &u, sizeof(u));
                 }
             }
@@ -121,7 +166,7 @@ GBufferPass::Outputs GBufferPass::add_to_frame_graph(FrameGraph& fg, const PassC
             }
         });
 
-    return {depth_decl, normals_decl};
+    return {depth_decl, normals_decl, motion_decl};
 }
 
 }  // namespace pts::rendering

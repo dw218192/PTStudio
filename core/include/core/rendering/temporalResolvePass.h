@@ -12,12 +12,14 @@ class TemporalStorageManager;
 
 /// Temporal resolve pass (the "resolve" half of the gen/resolve shadow
 /// pipeline). Reads the raw per-frame visibility texture from
-/// ShadowVisibilityPass plus the previous frame's resolved history, applies a
-/// 3x3 neighborhood variance clamp to the history sample, then EMA-blends it
+/// ShadowVisibilityPass plus the previous frame's resolved history,
+/// reprojects the history with the G-buffer motion vector, applies a 3x3
+/// neighborhood variance clamp to the history sample, then EMA-blends it
 /// with the raw sample. The result ping-pongs through TemporalStorageManager.
 ///
-/// History is sampled at the same screen UV -- motion-vector reprojection is a
-/// separate ticket (motion-vector-reprojection).
+/// Motion vector convention: motion = prev_uv - curr_uv (see gbuffer.slang).
+/// Pixels whose reprojected UV falls outside [0,1] bypass the history blend
+/// and emit only the raw sample (alpha = 1 path).
 class TemporalResolvePass final : public IPass {
    public:
     using IPass::IPass;
@@ -36,6 +38,10 @@ class TemporalResolvePass final : public IPass {
     struct Inputs {
         /// Raw per-frame visibility from ShadowVisibilityPass.
         TextureDeclHandle raw_visibility;
+        /// Screen-space motion vectors (RG16Float, prev_uv - curr_uv) from
+        /// GBufferPass. When invalid the pass falls back to same-UV history
+        /// sampling -- useful for tests that don't run the full pre-pass set.
+        TextureDeclHandle motion;
     };
     struct Outputs {
         /// Resolved visibility (R16Float). When the pass is disabled this is

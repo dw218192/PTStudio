@@ -415,14 +415,15 @@ ForwardPass::HdrOutputs ForwardPass::do_add_to_frame_graph(rendering::FrameGraph
         fg, ctx,
         {gbuf_out.depth, shadow_out.shadow_array, shadow_out.shadow_info, shadow_light_index});
 
-    // Resolve: temporal EMA + neighborhood variance clamp. When the resolve
-    // pass is disabled it passes the raw texture through unchanged.
+    // Resolve: temporal EMA + variance clamp + motion-vector reprojection.
+    // When the resolve pass is disabled it passes the raw texture through
+    // unchanged.
     auto* resolve_pass = get_pass<rendering::TemporalResolvePass>();
     PRECONDITION(resolve_pass);
     rendering::TextureDeclHandle visibility_decl;
     if (raw_vis_out.raw_visibility) {
-        auto resolved_out = resolve_pass->add_to_frame_graph(fg, ctx, {raw_vis_out.raw_visibility},
-                                                             m_temporal_storage);
+        auto resolved_out = resolve_pass->add_to_frame_graph(
+            fg, ctx, {raw_vis_out.raw_visibility, gbuf_out.motion}, m_temporal_storage);
         visibility_decl = resolved_out.resolved_visibility;
         INVARIANT(visibility_decl);  // valid raw input -> valid resolved output
     }

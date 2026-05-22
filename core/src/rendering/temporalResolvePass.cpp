@@ -39,6 +39,11 @@ TemporalResolvePass::Outputs TemporalResolvePass::add_to_frame_graph(
         return {in.raw_visibility};
     }
 
+    // Motion vectors are required for reprojection. The gen pass + gbuffer
+    // pass are paired in any renderer that uses temporal resolve, so missing
+    // motion here means the caller wired the graph wrong -- fail loud.
+    PRECONDITION(in.motion);
+
     auto internal_bgl = fg.bind_group_layout(
         "temporal_resolve/internal",
         temporal_resolve_shader::create_bind_group_layout_0(ctx.device.handle()));
@@ -77,6 +82,8 @@ TemporalResolvePass::Outputs TemporalResolvePass::add_to_frame_graph(
                          .texture(2, pp.read)
                          .sampler(3, fg.sampler(WGPUSamplerBindingType_Filtering))
                          .buffer(4, uniform_buf_decl, 0, sizeof(TemporalResolveUniforms))
+                         .texture(5, in.motion)
+                         .sampler(6, fg.sampler(WGPUSamplerBindingType_NonFiltering))
                          .build();
 
     auto queue = ctx.queue;
@@ -89,6 +96,7 @@ TemporalResolvePass::Outputs TemporalResolvePass::add_to_frame_graph(
     fg.add_pass("temporal_resolve")
         .read(in.raw_visibility)
         .read(pp.read)
+        .read(in.motion)
         .color(pp.write)
         .execute([=](ExecuteContext& exec, WGPURenderPassEncoder pass) {
             auto uniform_buf = exec.get(uniform_buf_decl).buffer;

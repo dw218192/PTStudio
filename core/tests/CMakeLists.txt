@@ -54,6 +54,11 @@ if(NOT EMSCRIPTEN)
     set(testVersionedBuffer_source testVersionedBuffer.cpp)
     set(testVersionedBuffer_libs core)
 
+    list(APPEND TEST_NAMES testGBufferPass)
+    set(testGBufferPass_source testGBufferPass.cpp)
+    set(testGBufferPass_libs core)
+    set(testGBufferPass_defines PTS_WORKSPACE_ROOT="${CMAKE_SOURCE_DIR}")
+
     list(APPEND TEST_NAMES testShadowMapPass)
     set(testShadowMapPass_source testShadowMapPass.cpp)
     set(testShadowMapPass_libs core)

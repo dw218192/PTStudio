@@ -322,16 +322,25 @@ TEST_CASE("TemporalResolvePass produces a persistent ping-pong resolved texture"
     depth_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment |
                                                      WGPUTextureUsage_TextureBinding);
 
+    TextureDesc motion_desc;
+    motion_desc.width = 320;
+    motion_desc.height = 240;
+    motion_desc.format = WGPUTextureFormat_RG16Float;
+    motion_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment |
+                                                      WGPUTextureUsage_TextureBinding);
+
     TemporalStorageManager storage;
 
     // Frame 0: gen -> resolve.
     fg.begin_frame();
     auto shadow_out = shadow_pass.add_to_frame_graph(fg, ctx, {});
     auto depth_decl = fg.texture("test_depth", depth_desc);
+    auto motion_decl = fg.texture("test_motion", motion_desc);
     auto raw_f0 = gen_pass.add_to_frame_graph(
         fg, ctx, {depth_decl, shadow_out.shadow_array, shadow_out.shadow_info, 0u});
     REQUIRE(bool(raw_f0.raw_visibility));
-    auto resolved_f0 = resolve_pass.add_to_frame_graph(fg, ctx, {raw_f0.raw_visibility}, storage);
+    auto resolved_f0 =
+        resolve_pass.add_to_frame_graph(fg, ctx, {raw_f0.raw_visibility, motion_decl}, storage);
     REQUIRE(bool(resolved_f0.resolved_visibility));
 
     fg.compile();
@@ -347,10 +356,12 @@ TEST_CASE("TemporalResolvePass produces a persistent ping-pong resolved texture"
     fg.begin_frame();
     auto shadow_out_f1 = shadow_pass.add_to_frame_graph(fg, ctx, {});
     auto depth_decl_f1 = fg.texture("test_depth", depth_desc);
+    auto motion_decl_f1 = fg.texture("test_motion", motion_desc);
     auto raw_f1 = gen_pass.add_to_frame_graph(
         fg, ctx, {depth_decl_f1, shadow_out_f1.shadow_array, shadow_out_f1.shadow_info, 0u});
     REQUIRE(bool(raw_f1.raw_visibility));
-    auto resolved_f1 = resolve_pass.add_to_frame_graph(fg, ctx, {raw_f1.raw_visibility}, storage);
+    auto resolved_f1 =
+        resolve_pass.add_to_frame_graph(fg, ctx, {raw_f1.raw_visibility, motion_decl_f1}, storage);
     REQUIRE(bool(resolved_f1.resolved_visibility));
     CHECK(resolved_f1.resolved_visibility != resolved_f0.resolved_visibility);
 }
