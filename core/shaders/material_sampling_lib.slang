@@ -1,4 +1,4 @@
-import light;
+import light_lib;
 
 public static const uint k_invalid_tex = 0xFFFFFFFF;
 

@@ -1,8 +1,8 @@
 // LTC (Linearly Transformed Cosines) area light evaluation.
 // Reference: Heitz et al., "Real-Time Polygonal-Light Shading with LTC", SIGGRAPH 2016
 
-import brdf;
-import light;
+import brdf_lib;
+import light_lib;
 
 // ---------------------------------------------------------------------------
 // LTC utilities

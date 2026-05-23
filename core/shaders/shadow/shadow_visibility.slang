@@ -7,7 +7,7 @@
 // ray-traced or SDF shadow technique replaces only this pass; the downstream
 // temporal_resolve pass consumes its output unchanged.
 
-import shadow_sampling;
+import shadow_sampling_lib;
 
 struct ShadowVisibilityUniforms {
     float4x4 inv_view_proj;   // 0:   64
@@ -71,7 +71,7 @@ float4 fs_main(float2 uv : TEXCOORD) : SV_Target0 {
 
     float visibility = 1.0;
 
-    // Mirror lighting.slang's frustum guards: skip projection for points
+    // Mirror lighting_lib.slang's frustum guards: skip projection for points
     // behind the light or outside the [0,1]^3 shadow frustum. ClampToEdge on
     // the shadow sampler turns out-of-frustum samples into false shadows,
     // so we MUST gate before calling compute_shadow_pcss.

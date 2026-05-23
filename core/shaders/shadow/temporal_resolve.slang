@@ -11,7 +11,7 @@
 //
 // Output: R16Float resolved visibility in [0, 1].
 
-import shadow_sampling;
+import shadow_sampling_lib;
 
 struct TemporalResolveUniforms {
     float2 viewport_size;  // 0:  8

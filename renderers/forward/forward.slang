@@ -1,8 +1,8 @@
-import lighting;
-import brdf;
-import ibl;
-import light;
-import material_sampling;
+import lighting_lib;
+import brdf_lib;
+import ibl_lib;
+import light_lib;
+import material_sampling_lib;
 
 struct Uniforms {
     float4x4 mvp;
@@ -132,7 +132,7 @@ FsOut fs_main(float4 sv_pos : SV_Position, float3 world_normal : NORMAL,
     float3 direct_diffuse, direct_specular;
     // Sample the resolved shadow visibility once. When there is no
     // shadow-casting light (UINT32_MAX) the fallback view's value is
-    // meaningless -- lighting.slang gates on the same index so it is unused,
+    // meaningless -- lighting_lib.slang gates on the same index so it is unused,
     // but force 1.0 here as a defensive guard against NaNs from a fallback
     // R16Float view.
     float resolved_vis = 1.0;

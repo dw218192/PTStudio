@@ -1,5 +1,5 @@
-import light;
-import light_iteration;
+import light_lib;
+import light_iteration_lib;
 
 struct ContactShadowUniforms {
     float4x4 projection;

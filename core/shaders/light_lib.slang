@@ -1,5 +1,5 @@
-import brdf;
-import sampling;
+import brdf_lib;
+import sampling_lib;
 
 public struct Material {
     public float3 diffuse_color;

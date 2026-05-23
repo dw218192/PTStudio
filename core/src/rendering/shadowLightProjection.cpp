@@ -37,7 +37,7 @@ LightProjection compute_distant_light_vp(const LightData& light, const glm::vec3
     auto ortho_proj = glm::ortho(ls_min.x, ls_max.x, ls_min.y, ls_max.y, near_plane, far_plane);
 
     // light.angle is in degrees (UsdLuxDistantLight.inputs:angle), matching
-    // light.slang's `radians(light.angle * 0.5)` convention.
+    // light_lib.slang's `radians(light.angle * 0.5)` convention.
     float half_angle_rad = glm::radians(std::max(light.angle, 0.0f) * 0.5f);
     float light_size_uv = (ortho_width > 0.0f) ? (std::tan(half_angle_rad) / ortho_width) : 0.0f;
     light_size_uv *= std::max(light.shadow_pcss_softness, 0.0f);

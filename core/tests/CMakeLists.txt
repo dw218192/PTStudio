@@ -166,7 +166,7 @@ list(APPEND TEST_NAMES testBvh)
 set(testBvh_source testBvh.cpp)
 set(testBvh_libs core)
 
-# Shadow sampling math - no GPU needed, mirrors shadow_sampling.slang
+# Shadow sampling math - no GPU needed, mirrors shadow_sampling_lib.slang
 list(APPEND TEST_NAMES testShadowSampling)
 set(testShadowSampling_source testShadowSampling.cpp)
 set(testShadowSampling_libs core)

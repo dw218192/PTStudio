@@ -1,7 +1,7 @@
 // GGX specular prefilter for split-sum IBL.
 // Dispatched once per face with a single-layer output view (see equirect_to_cube.slang).
-import brdf;
-import ibl_sampling;
+import brdf_lib;
+import ibl_sampling_lib;
 
 struct PrefilterParams {
     uint size;

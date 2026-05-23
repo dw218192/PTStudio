@@ -1,7 +1,7 @@
-import brdf;
-import light;
-import light_iteration;
-import ltc;
+import brdf_lib;
+import light_lib;
+import light_iteration_lib;
+import ltc_lib;
 
 // ---------------------------------------------------------------------------
 // Lighting evaluation -- LTC for rect/disk area lights (forward renderer)
