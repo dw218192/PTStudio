@@ -246,12 +246,16 @@ jobs:
           retention-days: 7
 
   # =============================================================================
-  # Deploy to GitHub Pages (develop branch only)
+  # Deploy to GitHub Pages (main branch only)
+  #
+  # main is the showcase branch -- the README links the live demo, so the
+  # deployed site must match the code a visitor is reading. develop can run
+  # ahead without flipping the public demo back and forth.
   # =============================================================================
 
   deploy-pages:
     name: Deploy to GitHub Pages
-    if: github.ref == 'refs/heads/develop' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     needs: [build, test]
     runs-on: ubuntu-latest
     permissions:
