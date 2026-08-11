@@ -9,23 +9,69 @@ import subprocess
 import urllib.request
 from pathlib import Path
 
-from repo_tools.core import ShellCommand, find_venv_executable, logger
+from repo_tools.core import ShellCommand, find_venv_executable, is_windows, logger
 
 
 # -- Conan Profile ----------------------------------------------------
 
 
+# Pinned Windows default profile.
+#
+# 'conan profile detect' is not deterministic on Windows: if a MinGW toolchain
+# is earlier on PATH than MSVC (which is the case on GitHub's windows-latest
+# runners), it detects compiler=gcc. Dawn's Windows sources then fail to build
+# -- src/tint/utils/file/tmpfile_windows.cc uses MSVC CRT macros (_SH_DENYNO,
+# _S_IREAD, _S_IWRITE) that MinGW's headers do not define.
+#
+# This only bites on a cold Conan cache, because a warm cache never rebuilds
+# Dawn from source -- which is why it stayed hidden until the CI cache expired.
+#
+# The values mirror what 'conan profile detect' produces on a developer machine
+# with VS 2022, so pinning them does not change package IDs or invalidate an
+# existing local cache. ninja is a tool_requires so the generator is guaranteed
+# to be present rather than assumed.
+_WINDOWS_DEFAULT_PROFILE = """\
+[settings]
+arch=x86_64
+compiler=msvc
+compiler.cppstd=17
+compiler.runtime=dynamic
+compiler.version=194
+os=Windows
+
+[tool_requires]
+ninja/1.13.2
+
+[conf]
+tools.cmake.cmaketoolchain:generator=Ninja
+"""
+
+
 def ensure_conan_profile() -> None:
-    """Ensure Conan profiles exist, run detect if needed."""
+    """Ensure Conan profiles exist, writing or detecting a default if not.
+
+    An existing profile directory is left completely alone -- this only
+    populates a cold CONAN_HOME.
+    """
     conan_home = Path(os.environ.get("CONAN_HOME", Path.home() / ".conan2"))
     profile_dir = conan_home / "profiles"
 
-    if not profile_dir.exists() or not any(profile_dir.iterdir()):
-        logger.info("No Conan profiles found. Running 'conan profile detect'...")
-        conan_exe = find_venv_executable("conan")
-        subprocess.run([conan_exe, "profile", "detect"], check=True)
-    else:
+    if profile_dir.exists() and any(profile_dir.iterdir()):
         logger.info("Conan profiles already exist.")
+        return
+
+    if is_windows():
+        # Pinned rather than detected -- see _WINDOWS_DEFAULT_PROFILE.
+        logger.info("No Conan profiles found. Writing pinned Windows profile...")
+        profile_dir.mkdir(parents=True, exist_ok=True)
+        (profile_dir / "default").write_text(
+            _WINDOWS_DEFAULT_PROFILE, encoding="utf-8"
+        )
+        return
+
+    logger.info("No Conan profiles found. Running 'conan profile detect'...")
+    conan_exe = find_venv_executable("conan")
+    subprocess.run([conan_exe, "profile", "detect"], check=True)
 
 
 # -- Emscripten Helpers -----------------------------------------------
