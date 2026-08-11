@@ -49,7 +49,16 @@ jobs:
         build_type: [Release]
         include:
           - platform: windows-x64
-            os: windows-latest
+            # Pinned, NOT windows-latest. windows-latest moved to the
+            # windows-2025-vs2026 image, whose MSVC 14.51 cannot build the
+            # pinned Dawn: Dawn's vendored SPIRV-Tools compiles with /WX, and
+            # 14.51 raises a new C5232 (recursive operator== in C++20) in
+            # util/small_vector.h that older MSVC did not.
+            # windows-2022 also matches the VS 2022 developers build with, so
+            # CI and local resolve to the same Conan package IDs.
+            # Revisit when Dawn is upgraded to a SPIRV-Tools that is clean
+            # under MSVC 14.51.
+            os: windows-2022
             shell: pwsh
             bootstrap: .\tools\framework\bootstrap.ps1
             repo: .\repo.cmd
@@ -144,7 +153,8 @@ jobs:
         build_type: [Release]
         include:
           - platform: windows-x64
-            os: windows-latest
+            # Match the build job's runner -- see the note there.
+            os: windows-2022
             shell: pwsh
             bootstrap: .\tools\framework\bootstrap.ps1
             repo: .\repo.cmd
@@ -197,7 +207,8 @@ jobs:
 
   image-diff:
     name: Image diff (windows-x64, Release)
-    runs-on: windows-latest
+    # Match the build job's runner -- see the note there.
+    runs-on: windows-2022
     needs: build
     continue-on-error: true
     defaults:
@@ -224,9 +235,9 @@ jobs:
           path: |
             tools/framework/_managed/venv
             tools/framework/_managed/cache
-          key: windows-latest-python-${{ hashFiles('tools/framework/pyproject.toml') }}
+          key: windows-2022-python-${{ hashFiles('tools/framework/pyproject.toml') }}
           restore-keys: |
-            windows-latest-python-
+            windows-2022-python-
 
       - name: Download build artifacts
         uses: actions/download-artifact@v4
