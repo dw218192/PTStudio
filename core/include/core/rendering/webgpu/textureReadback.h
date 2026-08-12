@@ -13,6 +13,10 @@ namespace texture_readback {
 struct IdleState {};
 struct CopyingState {};
 struct MappedState {};
+/// Terminal: buffer mapping failed (typically because the device was lost).
+/// Distinct from Idle so callers cannot mistake a failure for "nothing in
+/// flight" and silently re-issue the readback forever.
+struct FailedState {};
 }  // namespace texture_readback
 
 /// Async full-texture readback from GPU to CPU.
@@ -23,7 +27,8 @@ struct MappedState {};
 ///   4. Call try_read() -- returns pixel data when ready
 class TextureReadback
     : public AsyncStateMachine<TextureReadback, texture_readback::IdleState,
-                               texture_readback::CopyingState, texture_readback::MappedState> {
+                               texture_readback::CopyingState, texture_readback::MappedState,
+                               texture_readback::FailedState> {
    public:
     using AsyncStateMachine::tick;
 
@@ -47,6 +52,10 @@ class TextureReadback
 
     /// True if a readback is in flight (copy issued or mapping).
     [[nodiscard]] bool is_pending() const;
+
+    /// True if the readback failed and will never produce pixels. Terminal --
+    /// the readback must not be re-issued against the same (dead) device.
+    [[nodiscard]] bool has_failed() const;
 
     // CRTP interface
     void on_tick();

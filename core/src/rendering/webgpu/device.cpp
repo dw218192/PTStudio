@@ -7,6 +7,7 @@
 
 #include <cstdlib>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <thread>
 
@@ -204,6 +205,10 @@ void Device::start_device_request() {
                                        WGPUStringView message, void*, void*) {
         const char* reason_str = "Unknown";
         pts::LogLevel level = pts::LogLevel::Error;
+        // Destroyed is our own teardown; CallbackCancelled is instance shutdown.
+        // Anything else means the device died under us and every subsequent GPU
+        // operation will silently fail.
+        bool fatal = true;
         switch (reason) {
             case WGPUDeviceLostReason_Unknown:
                 reason_str = "Unknown";
@@ -211,9 +216,11 @@ void Device::start_device_request() {
             case WGPUDeviceLostReason_Destroyed:
                 reason_str = "Destroyed";
                 level = pts::LogLevel::Info;
+                fatal = false;
                 break;
             case WGPUDeviceLostReason_CallbackCancelled:
                 reason_str = "CallbackCancelled";
+                fatal = false;
                 break;
             case WGPUDeviceLostReason_FailedCreation:
                 reason_str = "FailedCreation";
@@ -221,10 +228,19 @@ void Device::start_device_request() {
             default:
                 break;
         }
+        auto const message_view = message.data ? std::string_view(message.data, message.length)
+                                               : std::string_view("(no message)");
         pts::log_or_cerr(k_webgpu_logger_name, level,
-                         "[WebGPU Device Lost] Reason: {}, Message: {}", reason_str,
-                         message.data ? std::string_view(message.data, message.length)
-                                      : std::string_view("(no message)"));
+                         "[WebGPU Device Lost] Reason: {}, Message: {}", reason_str, message_view);
+
+        // Fail loud. Continuing past an unexpected device loss leaves every
+        // readback pending forever, which turns into a silent infinite retry
+        // rather than an error (this is what hung CI for 6h per run).
+        if (fatal) {
+            std::string const panic_msg = std::string("WebGPU device lost (") + reason_str +
+                                          "): " + std::string(message_view);
+            PANIC(panic_msg.c_str());
+        }
     };
     device_descriptor.deviceLostCallbackInfo = device_lost_callback;
 

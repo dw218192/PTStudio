@@ -695,6 +695,11 @@ void EditorApplication::render(FrameContext& ctx) {
     bool const capture_mode = m_app_config.is_capture_mode();
     if (!m_scene_load_task) ++m_frame_count;
 
+    // A failed readback is terminal -- never retry it. Re-requesting against a
+    // dead device spins forever instead of reporting the failure.
+    CHECK_MSG(!m_capture_readback.has_failed(),
+              "Capture readback failed (device lost or buffer unmappable)");
+
     // -- Capture readback: tick the async state machine and save when ready --
     if (m_capture_readback.is_pending()) {
         m_capture_readback.tick();
