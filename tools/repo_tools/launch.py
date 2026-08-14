@@ -558,6 +558,21 @@ def _run_tests(context: dict[str, Any], verbose: bool, from_package: bool = Fals
     else:
         editor_exe = bin_dir / ("editor.exe" if is_windows() else "editor")
     scenes: list[Path] = sorted(scenes_dir.glob("*.usdz")) if scenes_dir.is_dir() else []
+
+    # Opt-out for hosts whose GPU cannot run the Forward pipeline.
+    #
+    # GitHub's windows-2022 runners have no real GPU, and their D3D12 software
+    # adapter drops the device (DXGI_ERROR_DEVICE_REMOVED) a few seconds into
+    # the first Forward frame. It is not a regression in this repo: `develop`
+    # reproduces it identically, it is independent of scene content (a
+    # 1-object test_cube fails like the 1788-prim kitchen set) and of render
+    # resolution (160x90 fails like 1280x720), while the Wireframe and Path
+    # Trace renderers both complete on the same adapter. See PR #33.
+    #
+    # ptSmoke_* (path tracer) still runs on CI and still covers device, shader,
+    # BVH and readback paths, so this does not leave the GPU pipeline untested.
+    skip_editor_smoke = os.environ.get("PTSTUDIO_SKIP_EDITOR_SMOKE", "") in ("1", "true")
+
     if not editor_exe.exists():
         logger.error("FAILED: smoke tests -- editor executable not found")
         failed += 1
@@ -571,7 +586,14 @@ def _run_tests(context: dict[str, Any], verbose: bool, from_package: bool = Fals
         failed_tests.append("editorSmoke (missing scenes)")
     else:
         with tempfile.TemporaryDirectory(prefix="pts_smoke_") as tmp_dir:
-            for scene_path in scenes:
+            if skip_editor_smoke:
+                logger.warning(
+                    "SKIPPED: editorSmoke_* -- PTSTUDIO_SKIP_EDITOR_SMOKE is set "
+                    "(host GPU cannot run the Forward pipeline). ptSmoke_* still runs."
+                )
+            # Guard only the Forward-renderer smoke tests; the path tracer
+            # smoke tests below run regardless.
+            for scene_path in ([] if skip_editor_smoke else scenes):
                 scene_name = scene_path.stem
                 test_name = f"editorSmoke_{scene_name}"
                 log_file = logs_dir / f"test_{test_name}.log"
