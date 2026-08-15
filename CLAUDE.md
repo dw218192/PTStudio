@@ -8,7 +8,7 @@ Uses the [repokit](tools/framework/README.md) framework. See that README for CLI
 
 **Local Conan recipes** in `tools/conan/` are auto-discovered and exported before each build. Changing a recipe invalidates the Conan cache for that package.
 
-**Lock files**: `conan_glfw.lock` (native), `conan_emscripten.lock` (wasm). Regenerate with `./repo build -u`.
+**Lock files**: `conan_glfw.lock` (native), `conan_emscripten.lock` (wasm). Regenerate with `pixi run build -u`.
 
 ### Conan `full_deploy` Invariant
 
@@ -41,7 +41,7 @@ The `embed` prebuild step generates C++ headers with `get_resource(key)` lookup.
 
 Two distinct kinds of build-time tools, under different trees:
 
-- **Python tools** live in `tools/repo_tools/` and are invoked by the repo CLI framework (`./repo <tool>`). Examples: `format`, `slangc` (Python wrapper over libslang), `shader_codegen`, `embed`, `clean`, `test`, `build`, `package`, `publish`, `usdz` (driver that invokes the `usdz_pack` binary). These run in the repo's managed venv -- no compilation needed, just Python imports.
+- **Python tools** live in `tools/repo_tools/` and are invoked via pixi (`pixi run repo <tool>`). Examples: `format`, `slangc` (Python wrapper over libslang), `shader_codegen`, `embed`, `clean`, `test`, `build`, `package`, `publish`, `usdz` (driver that invokes the `usdz_pack` binary). These run in the pixi environment -- no compilation needed, just Python imports.
 - **C++ tools** live in `tools/conan/<tool>/` as standalone Conan packages. Examples: `usdz_pack` (wraps `UsdUtilsCreateNewUsdzPackage` from OpenUSD). Each has its own `conanfile.py` + `CMakeLists.txt` and builds into a native executable. These can't cross-compile to WASM, so Emscripten builds consume the scenes/outputs they produce rather than invoking them directly.
 
 Python tools run anywhere Python does. C++ tools need a native toolchain matching the host OS.
@@ -54,7 +54,7 @@ C++ build-time tools (currently `usdz_pack`) can be built on Linux via Docker fo
 
 First build takes ~30-40 min (OpenUSD + TBB + OpenSubdiv compiled from source). Subsequent builds reuse the `pts-conan-cache` Docker volume and finish in seconds on a cache hit. The `pts-managed` volume overlays `tools/framework/_managed/` so Windows Python/venv artifacts on the bind-mounted workspace don't collide with the Linux ones. Requires Docker Desktop or Docker Engine.
 
-For CI, `./repo build --host-tools-only` does the same on the Linux runner directly -- builds each C++ host tool via its own Conan package (isolated from the root project's Conan graph) and runs only the prebuild steps that depend on those tools (e.g. `usdz` packaging). The Emscripten job runs this before the cross-build so it has freshly-generated `.usdz` scenes to `--embed-file`.
+For CI, `pixi run build --host-tools-only` does the same on the Linux runner directly -- builds each C++ host tool via its own Conan package (isolated from the root project's Conan graph) and runs only the prebuild steps that depend on those tools (e.g. `usdz` packaging). The Emscripten job runs this before the cross-build so it has freshly-generated `.usdz` scenes to `--embed-file`.
 
 ### Tracy Profiler (debug builds only)
 
@@ -65,7 +65,7 @@ Tracy 0.13.1's static `s_profiler` deadlocks at process exit on Windows if `<thr
 Use `--capture-and-quit` to verify rendering changes without manual inspection:
 
 ```
-./repo launch editor --capture-and-quit[=output.png] [--usd scene.usda] [--frames 5] \
+pixi run launch editor --capture-and-quit[=output.png] [--usd scene.usda] [--frames 5] \
                      [--renderer Forward] [--debug-output "Direct Diffuse"] \
                      [--usd-override override.usda]
 ```
@@ -78,7 +78,7 @@ Use `--capture-and-quit` to verify rendering changes without manual inspection:
 
 ## Verification
 
-Never declare a feature "working" based on build/test passing alone. For runtime behavior (rendering, hot-reload, UI), always launch the application (`./repo launch editor`) and verify visually or via log output before concluding and committing. Add diagnostic logging when needed to confirm correctness -- guessing at root causes from code alone leads to wasted cycles. `./repo launch editor` returns the editor's log output directly -- use it.
+Never declare a feature "working" based on build/test passing alone. For runtime behavior (rendering, hot-reload, UI), always launch the application (`pixi run launch editor`) and verify visually or via log output before concluding and committing. Add diagnostic logging when needed to confirm correctness -- guessing at root causes from code alone leads to wasted cycles. `pixi run launch editor` returns the editor's log output directly -- use it.
 
 ## Debug MRT Targets & Device Limits
 
@@ -115,26 +115,30 @@ Default visibility is `public`, but once ANY declaration uses an explicit modifi
 
 ## Repo tooling
 
-This project uses [repokit](tools/framework/README.md) for general project tooling (e.g. build, test, format).
+**pixi drives the tooling.** It owns the environment and the task entry points;
+it replaced repokit's bootstrap scripts, generated venv, and `./repo` shim.
+repokit is deprecated upstream, so only the driver moved -- the tool
+implementations are unchanged.
 
-- **CLI**: `./repo <command>` (or `repo.cmd` on Windows). Run `./repo --help` to discover commands.
-- **Config**: `config.yaml` at the project root.
-- **Framework path**: `tools/framework/`
+- **Tasks**: `pixi run build|test|fmt|lint|check|package|publish|image-diff|launch`.
+  Extra args are forwarded: `pixi run build --platform emscripten --build-type Release`.
+- **Everything else**: `pixi run repo <tool>` reaches the full CLI
+  (`slangc`, `embed`, `usdz`, `clean`, `context`, ...). `pixi run repo --help` lists it.
+- **Config**: `pixi.toml` (environment + tasks), `config.yaml` (tool config, unchanged).
+- **Never** use `./repo`, `repo.cmd`, or `bootstrap.sh` -- those are gone.
 
-### Contributing to the framework
-1. `cd tools/framework && git fetch origin && git switch main && git pull --ff-only origin main`
-2. Make changes, bump the version in `pyproject.toml`, add a `CHANGELOG.md` entry
-3. Commit, push, and wait for CI to pass (CI auto-tags `v<version>` from `pyproject.toml`)
-4. Back in this project: `cd tools/framework && git checkout v<new-version>`
-5. Commit the submodule pointer update
+Layout:
+
+- `tasks/` -- pixi task entry points; `tasks/repo.py` is the dispatcher that
+  puts both tool trees on `sys.path` and hands over to the CLI
+- `tools/repo_tools/` -- project-owned tools (build, slangc, launch, image-diff, ...)
+- `tools/framework/repo_tools/` -- repokit, imported as a plain library
 
 ### Do not edit
 
-These paths are generated or managed by the framework:
-
-- `tools/framework/` -- contribute upstream instead
-- `tools/framework/_managed/` -- generated venv, lockfile, pyproject
-- `repo`, `repo.cmd`, `repo.ps1` -- generated CLI shims
+- `tools/framework/` -- deprecated upstream; prefer porting anything you need
+  into `tools/repo_tools/` or `tasks/` rather than changing the submodule
+- `.pixi/` -- pixi's generated environment (`pixi.lock` IS committed)
 
 ### Agent Bash Hook: no subshells
 

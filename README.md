@@ -86,10 +86,11 @@ Shaders are authored once in **Slang** and compiled to WGSL at build time. Scene
 ## Build
 
 ```bash
-bash tools/framework/bootstrap.sh   # one-time: sets up the hermetic tool environment
-./repo build
-./repo test
+pixi run build
+pixi run test
 ```
+
+[pixi](https://pixi.sh) brings its own Python and the whole toolchain (Conan, CMake, Ninja, clang-format), so there is nothing to bootstrap first.
 
 ## Documentation
 
