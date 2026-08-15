@@ -79,42 +79,24 @@ This is where most of the work went.
 - **Shader-driven descriptors** -- bind group layouts are generated from Slang reflection data rather than hand-written and kept in sync by hope.
 - **Async scene preparation** -- USD stage traversal and CPU-side data prep run off the render thread, feeding an immutable `PreparedSceneData` snapshot to the renderer.
 
-## The shader and asset pipeline
+## Pipeline in one paragraph
 
-Shaders are authored once in **Slang** and compiled to WGSL at build time, with reflection JSON emitted alongside for descriptor generation. Build-time preprocessor variants are declared in `config.yaml` and code-generated into a C++ registry -- for example, a `_no_debug` variant of each scene shader that drops the debug MRT outputs when the device's `maxColorAttachmentBytesPerSample` budget can't fit them (which happens under RenderDoc and NSight). On native, uncached variants are recompiled through libslang at runtime; on the web, the precompiled variants are embedded in the binary.
-
-Scenes are **OpenUSD** stages. The full USD runtime -- including plugin discovery, schema registration, and TBB -- is static-linked into the WASM build, which required solving a genuinely unpleasant set of problems around constructor dead-stripping and static-init ordering (written up in `CLAUDE.md`). Scenes are packaged to USDZ at build time by a native host tool and embedded into the web build.
-
-## Verifying that it actually works
-
-Rendering regressions are silent and easy to ship, so correctness is enforced mechanically:
-
-- **Golden-image regression suite** -- reference images are baked with the path tracer at 4096 spp, and the forward renderer is diffed against them using **FLIP**, a perceptual metric. The score is the *maximum over per-tile mean* FLIP rather than the whole-image mean, because a whole-image average lets a badly wrong shadow in a mostly-dark scene hide in the error-free background.
-- **Headless capture** -- `./repo launch editor --capture-and-quit` renders a scene to PNG with no window, optionally selecting a camera, renderer, or named debug target. Every rendering change gets verified against a picture, not against a green build.
-- **Full CI matrix** -- format check, native and Emscripten builds, and tests on both, run on every push. The image diff runs alongside them as a non-blocking signal, so a perceptual regression is visible without a threshold wobble being able to block a merge.
+Shaders are authored once in **Slang** and compiled to WGSL at build time. Scenes are **OpenUSD** stages, packaged to USDZ at build time and embedded into the web build -- the full USD runtime, TBB included, is static-linked into WASM. Correctness is checked mechanically: golden images baked with the path tracer at 4096 spp, diffed against the forward renderer with a perceptual **FLIP** metric, plus headless PNG capture so every rendering change is verified against a picture rather than a green build.
 
 ## Build
 
 ```bash
 bash tools/framework/bootstrap.sh   # one-time: sets up the hermetic tool environment
-./repo build                        # native
+./repo build
 ./repo test
 ```
 
-Web build:
+## Documentation
 
-```bash
-./repo build --platform emscripten --build-type Release
-```
+- [Building](docs/building.md) -- prerequisites, web builds, Conan and tooling
+- [Pipeline and verification](docs/pipeline.md) -- Slang/WGSL, USD assets, image-diff, headless capture
+- [Known issues](docs/known-issues.md) -- open gaps and limitations, with evidence
 
-Only Release is supported for Emscripten -- Debug WASM binaries exceed 1 GB and are impractical.
+## Status and known gaps
 
-Run `./repo --help` for the full command set (build, test, format, package, publish, image-diff, launch, and the shader/asset prebuild tools).
-
-### Prerequisites
-
-- A C++17 toolchain (MSVC, Clang, or GCC)
-- A GPU driver with Vulkan or D3D12 support (Windows and Linux are the tested native targets)
-- Python 3.12+ (the bootstrap script handles the rest)
-
-Dependencies are managed with Conan; packages not on Conan Center are built from local recipes in `tools/conan/`. Lock files are committed for reproducible builds.
+This is a hobby project, and it has rough edges worth naming rather than hiding. The largest: the Forward renderer drops the D3D12 device on GPU-less software adapters (pre-existing, so CI runs the path-tracer smoke tests instead), and the image-diff suite currently exceeds its thresholds against path-traced ground truth. Clustered lighting is not implemented -- the forward path loops over every light. All of it, with the measurements behind each claim, is in [docs/known-issues.md](docs/known-issues.md).
