@@ -1,5 +1,5 @@
-import brdf;
-import ibl_sampling;
+import brdf_lib;
+import ibl_sampling_lib;
 
 struct BrdfLutParams {
     uint size;

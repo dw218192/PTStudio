@@ -1,10 +1,12 @@
 #pragma once
 
+#include <core/container/slotArray.h>
 #include <core/container/slotMap.h>
 #include <core/diagnostics.h>
 #include <core/rendering/bvh.h>
 #include <core/rendering/iblResources.h>
 #include <core/rendering/packedTriangle.h>
+#include <core/rendering/versionedBuffer.h>
 #include <core/rendering/vertex.h>
 #include <core/rendering/webgpu/buffer.h>
 #include <pxr/usd/sdf/path.h>
@@ -19,6 +21,7 @@
 #include <glm/glm.hpp>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
@@ -30,6 +33,64 @@ namespace pts::rendering {
 
 static constexpr uint32_t k_no_material = UINT32_MAX;
 static constexpr uint32_t k_default_material = 0;
+
+/// Per-field dirty bits for Material. Used by the materials SlotArray to
+/// notify consumers (GPU buffer rebuild) of targeted changes. The `All`
+/// value covers future fields added below.
+enum class MaterialField : uint32_t {
+    None = 0,
+    Albedo = 1u << 0,        ///< diffuse_color
+    Metallic = 1u << 1,      ///< metallic
+    Roughness = 1u << 2,     ///< roughness
+    Emissive = 1u << 3,      ///< emissive_color
+    Transmission = 1u << 4,  ///< opacity / opacity_threshold
+    Ior = 1u << 5,           ///< ior
+    Textures = 1u << 6,      ///< any texture slot or channel mapping
+    LightIndex = 1u << 7,    ///< light_index stamping from proxy emitters
+    All = ~0u,
+};
+constexpr MaterialField operator|(MaterialField a, MaterialField b) noexcept {
+    return static_cast<MaterialField>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
+}
+constexpr MaterialField operator&(MaterialField a, MaterialField b) noexcept {
+    return static_cast<MaterialField>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b));
+}
+constexpr MaterialField operator~(MaterialField a) noexcept {
+    return static_cast<MaterialField>(~static_cast<uint32_t>(a));
+}
+constexpr MaterialField& operator|=(MaterialField& a, MaterialField b) noexcept {
+    a = a | b;
+    return a;
+}
+constexpr MaterialField& operator&=(MaterialField& a, MaterialField b) noexcept {
+    a = a & b;
+    return a;
+}
+
+/// Per-field dirty bits for scene textures. Textures today are load-once,
+/// never mutated; the single Pixels bit is enough for current needs.
+enum class TextureField : uint32_t {
+    None = 0,
+    Pixels = 1u << 0,  ///< pixel data (RGBA16Float tile)
+    All = ~0u,
+};
+constexpr TextureField operator|(TextureField a, TextureField b) noexcept {
+    return static_cast<TextureField>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
+}
+constexpr TextureField operator&(TextureField a, TextureField b) noexcept {
+    return static_cast<TextureField>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b));
+}
+constexpr TextureField operator~(TextureField a) noexcept {
+    return static_cast<TextureField>(~static_cast<uint32_t>(a));
+}
+constexpr TextureField& operator|=(TextureField& a, TextureField b) noexcept {
+    a = a | b;
+    return a;
+}
+constexpr TextureField& operator&=(TextureField& a, TextureField b) noexcept {
+    a = a & b;
+    return a;
+}
 
 /// 80-byte GPU struct
 struct Material {
@@ -78,12 +139,65 @@ struct MeshData {
     glm::vec3 local_aabb_max{0};
 };
 
+/// Per-field dirty bits for MeshData. Insert stamps the new slot with the
+/// full subscription mask automatically (see SlotArray docs); erase queues
+/// an erase event observable via `drain()`'s on_erase callback.
+enum class MeshField : uint32_t {
+    None = 0,
+    Geometry = 1u << 1,    ///< cpu_vertices, cpu_indices, AABB
+    GpuBuffers = 1u << 2,  ///< vertex_buffer, index_buffer, position_buffer
+    All = ~0u,
+};
+constexpr MeshField operator|(MeshField a, MeshField b) noexcept {
+    return static_cast<MeshField>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
+}
+constexpr MeshField operator&(MeshField a, MeshField b) noexcept {
+    return static_cast<MeshField>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b));
+}
+constexpr MeshField operator~(MeshField a) noexcept {
+    return static_cast<MeshField>(~static_cast<uint32_t>(a));
+}
+constexpr MeshField& operator|=(MeshField& a, MeshField b) noexcept {
+    a = a | b;
+    return a;
+}
+constexpr MeshField& operator&=(MeshField& a, MeshField b) noexcept {
+    a = a & b;
+    return a;
+}
+
 struct ObjectData {
     uint32_t mesh_index = 0;
     uint32_t material_index{k_no_material};
     glm::mat4 transform{1.0f};
     bool visible{true};
 };
+
+enum class ObjectField : uint32_t {
+    None = 0,
+    Transform = 1u << 1,
+    Visibility = 1u << 2,
+    MeshIndex = 1u << 3,
+    MaterialIndex = 1u << 4,
+    All = ~0u,
+};
+constexpr ObjectField operator|(ObjectField a, ObjectField b) noexcept {
+    return static_cast<ObjectField>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
+}
+constexpr ObjectField operator&(ObjectField a, ObjectField b) noexcept {
+    return static_cast<ObjectField>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b));
+}
+constexpr ObjectField operator~(ObjectField a) noexcept {
+    return static_cast<ObjectField>(~static_cast<uint32_t>(a));
+}
+constexpr ObjectField& operator|=(ObjectField& a, ObjectField b) noexcept {
+    a = a | b;
+    return a;
+}
+constexpr ObjectField& operator&=(ObjectField& a, ObjectField b) noexcept {
+    a = a & b;
+    return a;
+}
 
 struct LightData {
     enum class Type { Distant, Sphere, Rect, Disk, Dome };
@@ -96,12 +210,55 @@ struct LightData {
     float radius{0.0f};
     float width{1.0f};
     float height{1.0f};
+    // Non-physical multiplier on PCSS penumbra width for this light. 1.0 =
+    // use the physical light radius derived from `angle`/`radius`/`width`/
+    // `height`; >1 softens shadows (effective light larger than physical);
+    // <1 sharpens. Implemented as a scale on `light_size_uv` at projection
+    // time, so it affects both the blocker-search radius and the PCF kernel
+    // size uniformly. Has no effect on LTC lighting -- shadows only.
+    // Authored in USD as the custom attribute `pts:shadow:pcss:softness`;
+    // we expect future RT shadows to have their own knob (e.g.
+    // `pts:shadow:rt:softness`) rather than reusing this one.
+    float shadow_pcss_softness{1.0f};
     bool casts_shadow{true};          // from UsdLuxShadowAPI inputs:shadow:enable
     std::string env_texture_path;     // resolved path to HDR environment map (dome lights only)
     uint32_t mesh_index{UINT32_MAX};  // proxy mesh slot (UINT32_MAX = none)
     uint32_t material_index{k_no_material};  // emissive material index
     bool visible{true};                      // USD visibility for proxy mesh
 };
+
+enum class LightField : uint32_t {
+    None = 0,
+    Transform = 1u << 1,
+    Color = 1u << 2,
+    Intensity = 1u << 3,
+    Type = 1u << 4,
+    Visibility = 1u << 5,
+    CastsShadow = 1u << 6,
+    MeshIndex = 1u << 7,
+    MaterialIndex = 1u << 8,
+    EnvTexture = 1u << 9,
+    Direction = 1u << 10,
+    Geometry = 1u << 11,  ///< angle, radius, width, height
+    All = ~0u,
+};
+constexpr LightField operator|(LightField a, LightField b) noexcept {
+    return static_cast<LightField>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
+}
+constexpr LightField operator&(LightField a, LightField b) noexcept {
+    return static_cast<LightField>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b));
+}
+constexpr LightField operator~(LightField a) noexcept {
+    return static_cast<LightField>(~static_cast<uint32_t>(a));
+}
+constexpr LightField& operator|=(LightField& a, LightField b) noexcept {
+    a = a | b;
+    return a;
+}
+constexpr LightField& operator&=(LightField& a, LightField b) noexcept {
+    a = a & b;
+    return a;
+}
 
 /// Convert a LightData to a GPU-ready Light struct.
 Light to_light(const LightData& slot);
@@ -122,16 +279,21 @@ struct PrimSlot {
     uint32_t index;
 };
 
-/// 80-byte per-light shadow info (one entry per light in the light buffer).
-/// Lights without shadows have has_shadow == 0.
+/// 96-byte per-light shadow info (one entry per light in the light buffer).
+/// Lights without shadows have has_shadow == 0. The near/far planes and
+/// light_size_uv feed PCSS soft-shadow sampling (shadow_sampling_lib.slang).
 struct ShadowInfo {
-    glm::mat4 light_vp{1.0f};  // 64 bytes
-    float texel_size = 0.0f;   //  4 bytes
-    float normal_bias = 0.0f;  //  4 bytes
-    uint32_t has_shadow = 0;   //  4 bytes -- 0 = no shadow, 1 = active
-    uint32_t layer = 0;        //  4 bytes -- texture array layer index
+    glm::mat4 light_vp{1.0f};      // 64 bytes
+    float texel_size = 0.0f;       //  4 bytes
+    float normal_bias = 0.0f;      //  4 bytes
+    uint32_t has_shadow = 0;       //  4 bytes -- 0 = no shadow, 1 = active
+    uint32_t layer = 0;            //  4 bytes -- texture array layer index
+    float light_near = 0.0f;       //  4 bytes -- light-space near plane (for linear-depth recon)
+    float light_far = 0.0f;        //  4 bytes -- light-space far plane
+    float light_size_uv = 0.0f;    //  4 bytes -- PCSS light size (see shadow_sampling_lib.slang)
+    uint32_t projection_type = 0;  //  4 bytes -- 0 = ortho (distant), 1 = perspective (area)
 };
-static_assert(sizeof(ShadowInfo) == 80, "ShadowInfo must be 80 bytes for GPU alignment");
+static_assert(sizeof(ShadowInfo) == 96, "ShadowInfo must be 96 bytes for GPU alignment");
 
 /// Per-instance data for two-level BVH traversal on the GPU.
 struct GPUInstance {
@@ -144,22 +306,36 @@ struct GPUInstance {
 };
 static_assert(sizeof(GPUInstance) == 144);
 
-// SlotMap type aliases for world data.
-using ObjectSlotMap = container::SlotMap<pxr::SdfPath, ObjectData>;
-using MeshSlotMap = container::SlotMap<pxr::SdfPath, MeshData>;
-using LightSlotMap = container::SlotMap<pxr::SdfPath, LightData>;
+// SlotMap type aliases for world data. Lights/objects/meshes carry per-field
+// dirty masks; cameras don't (they aren't multiplexed across cache consumers).
+using ObjectSlotMap = container::SlotMap<pxr::SdfPath, ObjectData, ObjectField>;
+using MeshSlotMap = container::SlotMap<pxr::SdfPath, MeshData, MeshField>;
+using LightSlotMap = container::SlotMap<pxr::SdfPath, LightData, LightField>;
 using CameraSlotMap = container::SlotMap<pxr::SdfPath, CameraData>;
 
 struct RenderWorld;
 struct PreparedSceneData;
 
-/// RAII scope guard for batched sync operations. Bumps mesh_version
-/// on destruction. All sync_object/remove_prim calls must happen
-/// within a live SyncScope.
+/// Texture pixel payload stored in the scene textures SlotArray. Kept as a
+/// public type on RenderWorld's namespace so SlotArray template users can
+/// reference it without reaching into RenderWorld's private scope.
+struct SceneTexture {
+    std::vector<uint16_t> pixels;  // RGBA16Float (half-precision)
+    uint32_t width = 0;
+    uint32_t height = 0;
+};
+
+using MaterialSlotArray = container::SlotArray<Material, MaterialField>;
+using TextureSlotArray = container::SlotArray<SceneTexture, TextureField>;
+
+/// RAII scope guard for batched sync operations on a RenderWorld. Per-slot
+/// dirty bits on the SlotArray-backed containers (materials, textures,
+/// lights, objects, meshes) are driven by the `changed` mask passed to
+/// mutate_*() / mutate_at(). No implicit end-of-scope dirty fanout.
 class SyncScope {
    public:
     explicit SyncScope(RenderWorld& world);
-    ~SyncScope();
+    ~SyncScope() = default;
     SyncScope(const SyncScope&) = delete;
     SyncScope& operator=(const SyncScope&) = delete;
     SyncScope(SyncScope&&) = delete;
@@ -184,31 +360,35 @@ class SyncScope {
     void free_light(const pxr::SdfPath& path);
     void free_camera(const pxr::SdfPath& path);
 
-    /// In-place mutation; bumps version after fn returns. Defined after
-    /// RenderWorld below -- non-dependent access to m_world.m_* requires
-    /// the type to be complete at template parse time (Clang enforces,
-    /// MSVC is lenient).
+    /// In-place mutation; the `changed` mask declares which fields the
+    /// callback touched. Consumers subscribed to those bits will see them
+    /// dirty for this slot.
     template <class Fn>
-    void mutate_object(uint32_t i, Fn&& fn);
+    void mutate_object(uint32_t i, ObjectField changed, Fn&& fn);
     template <class Fn>
-    void mutate_mesh(uint32_t i, Fn&& fn);
+    void mutate_mesh(uint32_t i, MeshField changed, Fn&& fn);
     template <class Fn>
-    void mutate_light(uint32_t i, Fn&& fn);
+    void mutate_light(uint32_t i, LightField changed, Fn&& fn);
+    /// Cameras don't drive cached GPU state, so they don't take a mask.
     template <class Fn>
     void mutate_camera(uint32_t i, Fn&& fn);
+
+    template <class Fn>
+    void mutate_material(uint32_t i, MaterialField changed, Fn&& fn);
 
     // Read-only accessors by index.
     const ObjectData& object(uint32_t i) const;
     const MeshData& mesh(uint32_t i) const;
     const LightData& light(uint32_t i) const;
     const CameraData& camera(uint32_t i) const;
+    const Material& material(uint32_t i) const;
 
-    Material& material(uint32_t i);
-    std::vector<Material>& materials();
+    MaterialSlotArray& materials();
     std::unordered_map<std::string, uint32_t>& material_cache();
 
     /// Load a texture from disk, deduplicate by path. Returns layer index
-    /// or UINT32_MAX on failure. Bumps texture version.
+    /// or UINT32_MAX on failure. Marks the scene texture SlotArray's
+    /// consumers dirty for the new layer.
     uint32_t load_texture(const std::string& resolved_path);
 
    private:
@@ -216,16 +396,19 @@ class SyncScope {
 };
 
 struct RenderWorld {
-    RenderWorld() {
-        m_materials.push_back(Material{});
-    }
+    RenderWorld();
 
     // Read-only accessors returning const references to SlotMaps.
     const ObjectSlotMap& get_objects() const;
     const MeshSlotMap& get_meshes() const;
     const LightSlotMap& get_lights() const;
     const CameraSlotMap& get_cameras() const;
-    boost::span<const Material> get_materials() const;
+    const MaterialSlotArray& get_materials_array() const;
+
+    /// User-material snapshot (skips the reserved default material at
+    /// slot 0). Returned by value -- use `get_materials_array()` for
+    /// zero-copy traversal.
+    std::vector<Material> get_materials() const;
 
     int find_object_by_prim(const pxr::SdfPath& path) const;
     int find_light_by_prim(const pxr::SdfPath& path) const;
@@ -256,8 +439,8 @@ struct RenderWorld {
                               PreparedSceneData data);
 
     void prepare_gpu_buffers(const webgpu::Device& device, WGPUQueue queue);
-    const webgpu::Buffer& light_buffer() const;
-    const webgpu::Buffer& material_buffer() const;
+    ImportedBuffer light_buffer() const noexcept;
+    ImportedBuffer material_buffer() const noexcept;
     uint32_t gpu_light_count() const;
     WGPUTextureView texture_array_view() const;
     WGPUSampler texture_sampler() const;
@@ -266,13 +449,13 @@ struct RenderWorld {
     AABB scene_bounds() const;
 
     /// Concatenated TLAS + BLAS node buffer for GPU traversal.
-    const webgpu::Buffer& bvh_node_buffer() const;
+    ImportedBuffer bvh_node_buffer() const noexcept;
 
     /// Concatenated local-space triangle buffer (ordered by per-mesh BLAS).
-    const webgpu::Buffer& triangle_buffer() const;
+    ImportedBuffer triangle_buffer() const noexcept;
 
     /// GPUInstance array (reordered by TLAS).
-    const webgpu::Buffer& instance_buffer() const;
+    ImportedBuffer instance_buffer() const noexcept;
 
     /// Number of TLAS nodes (first N nodes in the concatenated BVH buffer).
     uint32_t tlas_node_count() const;
@@ -320,68 +503,38 @@ struct RenderWorld {
 
     void clear();
 
-    // Category version counters -- bumped by SyncScope when any slot in that
-    // category changes.  Used internally by IPass::get_or_create_pass_data
-    // and prepare_gpu_buffers.  Prefer the pass_data API over reading these
-    // directly in renderer code.
-    uint32_t get_mesh_version() const;
-    uint32_t get_light_version() const;
-    uint32_t get_material_version() const;
-
-    /// Per-kind monotonic version accessors. uint64_t to avoid wraparound.
-    /// Dependents (e.g. FG import_buffer with external_version) pass these
-    /// into DepTrackedSlotMap deps so descriptors rebuild on world mutations
-    /// affecting the bound buffers.
-    uint64_t lights_version() const {
-        return m_lights_version;
-    }
-    uint64_t materials_version() const {
-        return m_materials_version;
-    }
-    uint64_t scene_textures_version() const {
-        return m_scene_textures_version;
-    }
-    uint64_t instances_version() const {
-        return m_instances_version;
-    }
-    uint64_t triangles_version() const {
-        return m_triangles_version;
-    }
-    uint64_t bvh_version() const {
-        return m_bvh_version;
-    }
-
    private:
     friend class SyncScope;
 
+    void register_internal_consumers();
+
     MeshSlotMap m_meshes;
     ObjectSlotMap m_objects;
-    std::vector<Material> m_materials;
+    MaterialSlotArray m_materials;
     LightSlotMap m_lights;
     CameraSlotMap m_cameras;
 
     /// Material path -> material index (deduplication cache).
     std::unordered_map<std::string, uint32_t> m_material_cache;
 
-    uint32_t m_mesh_version = 0;
-    // Per-kind monotonic versions. Bumped at mutation points. uint64_t to
-    // avoid wraparound across long sessions.
-    uint64_t m_lights_version = 0;
-    uint64_t m_materials_version = 0;
-    uint64_t m_scene_textures_version = 0;
-    uint64_t m_instances_version = 0;
-    uint64_t m_triangles_version = 0;
-    uint64_t m_bvh_version = 0;
+    // --- Internal SlotArray consumer ids (registered in register_internal_consumers) ---
+    // Each consumer corresponds to one cached GPU resource maintained by
+    // prepare_scene_data / upload_prepared_data.
+    LightSlotMap::ConsumerId m_lights_buffer_consumer = 0;
+    LightSlotMap::ConsumerId m_lights_tlas_consumer = 0;
+    LightSlotMap::ConsumerId m_lights_ibl_consumer = 0;
+    ObjectSlotMap::ConsumerId m_objects_tlas_consumer = 0;
+    MeshSlotMap::ConsumerId m_meshes_blas_consumer = 0;
+    MaterialSlotArray::ConsumerId m_materials_consumer = 0;
+    TextureSlotArray::ConsumerId m_textures_consumer = 0;
 
-    // GPU buffer state
-    webgpu::Buffer m_gpu_light_buffer;
-    webgpu::Buffer m_gpu_material_buffer;
+    // --- GPU buffer state ---
+    // VersionedBuffer auto-bumps its internal version on each write, so the
+    // (handle, size, version) triple handed to FrameGraph::import_buffer stays
+    // in sync with the buffer contents without any manual counter plumbing.
+    VersionedBuffer<Light> m_gpu_light_buffer;
+    VersionedBuffer<Material> m_gpu_material_buffer;
     uint32_t m_gpu_light_count = 0;
-    uint64_t m_cached_lights_version = UINT64_MAX;
-    uint64_t m_cached_materials_version = UINT64_MAX;
-
-    // Per-slot version cache for partial light updates
-    std::vector<uint64_t> m_cached_light_versions;
 
     // Two-level acceleration structure
     struct BlasData {
@@ -391,27 +544,20 @@ struct RenderWorld {
     };
     std::unordered_map<uint32_t, BlasData> m_blas_cache;
 
-    BVH m_tlas;                      // world-space TLAS
-    webgpu::Buffer m_gpu_bvh_nodes;  // concatenated TLAS + BLAS nodes
-    webgpu::Buffer m_gpu_triangles;  // concatenated local-space triangles
-    webgpu::Buffer m_gpu_instances;  // GPUInstance array
+    BVH m_tlas;                                       // world-space TLAS
+    VersionedBuffer<BVHNode> m_gpu_bvh_nodes;         // concatenated TLAS + BLAS nodes
+    VersionedBuffer<PackedTriangle> m_gpu_triangles;  // concatenated local-space triangles
+    VersionedBuffer<GPUInstance> m_gpu_instances;     // GPUInstance array
     uint32_t m_tlas_node_count = 0;
     uint32_t m_instance_count = 0;
-    uint64_t m_cached_instances_version = UINT64_MAX;
-    uint32_t m_cached_geometry_version = UINT32_MAX;
 
-    // Texture array state
-    struct ImageData {
-        std::vector<uint16_t> pixels;  // RGBA16Float (half-precision)
-        uint32_t width;
-        uint32_t height;
-    };
-    std::vector<ImageData> m_texture_images;
+    // Scene texture state. Stored as a SlotArray so the GPU-upload
+    // consumer uses the same dirty-tracking plumbing as materials.
+    TextureSlotArray m_texture_images;
     std::unordered_map<std::string, uint32_t> m_texture_cache;
     WGPUTexture m_texture_array = nullptr;
     WGPUTextureView m_texture_array_view = nullptr;
     WGPUSampler m_texture_sampler = nullptr;
-    uint64_t m_cached_scene_textures_version = UINT64_MAX;
     uint32_t m_texture_size = 1024;
 
     // Per-pass data cache -- keyed by pass identity (this pointer)
@@ -420,29 +566,32 @@ struct RenderWorld {
     // IBL state
     std::unique_ptr<IblPipelines> m_ibl_pipelines;
     IblResources m_ibl;
-    std::string m_ibl_env_path;                 // currently loaded HDR path (empty = uniform)
-    uint64_t m_ibl_light_version = UINT64_MAX;  // light version when IBL was last updated
-    glm::vec3 m_ibl_uniform_color{-1.0f};       // sentinel: never matches real color
-    UpAxis m_ibl_up_axis = UpAxis::Y;           // up axis when IBL was last converted
+    std::string m_ibl_env_path;            // currently loaded HDR path (empty = uniform)
+    glm::vec3 m_ibl_uniform_color{-1.0f};  // sentinel: never matches real color
+    UpAxis m_ibl_up_axis = UpAxis::Y;      // up axis when IBL was last converted
 };
 
 // SyncScope mutate_* template definitions -- deferred until after
 // RenderWorld is complete (see note at the forward declarations above).
 template <class Fn>
-void SyncScope::mutate_object(uint32_t i, Fn&& fn) {
-    m_world.m_objects.mutate_at(i, std::forward<Fn>(fn));
+void SyncScope::mutate_object(uint32_t i, ObjectField changed, Fn&& fn) {
+    m_world.m_objects.mutate_at(i, changed, std::forward<Fn>(fn));
 }
 template <class Fn>
-void SyncScope::mutate_mesh(uint32_t i, Fn&& fn) {
-    m_world.m_meshes.mutate_at(i, std::forward<Fn>(fn));
+void SyncScope::mutate_mesh(uint32_t i, MeshField changed, Fn&& fn) {
+    m_world.m_meshes.mutate_at(i, changed, std::forward<Fn>(fn));
 }
 template <class Fn>
-void SyncScope::mutate_light(uint32_t i, Fn&& fn) {
-    m_world.m_lights.mutate_at(i, std::forward<Fn>(fn));
+void SyncScope::mutate_light(uint32_t i, LightField changed, Fn&& fn) {
+    m_world.m_lights.mutate_at(i, changed, std::forward<Fn>(fn));
 }
 template <class Fn>
 void SyncScope::mutate_camera(uint32_t i, Fn&& fn) {
     m_world.m_cameras.mutate_at(i, std::forward<Fn>(fn));
+}
+template <class Fn>
+void SyncScope::mutate_material(uint32_t i, MaterialField changed, Fn&& fn) {
+    m_world.m_materials.mutate_at(i, changed, std::forward<Fn>(fn));
 }
 
 }  // namespace pts::rendering

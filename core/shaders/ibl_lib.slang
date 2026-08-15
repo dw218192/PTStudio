@@ -1,4 +1,4 @@
-import brdf;
+import brdf_lib;
 
 public float3 evaluate_ibl(
     TextureCube<float4> prefiltered_env,

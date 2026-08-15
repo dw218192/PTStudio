@@ -89,6 +89,7 @@ def Xform "Root"
         float inputs:height = 3
         float inputs:intensity = 10.9
         float inputs:width = 3
+        custom float pts:shadow:pcss:softness = 2.0
         float3 xformOp:rotateXYZ = (-90, 0, 0)
         matrix4d xformOp:transform = ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 1.5, 5, 1) )
         double3 xformOp:translate = (0, 3, 0)
@@ -119,7 +120,7 @@ def Xform "Root"
         prepend references = @../models/treasure_chest/treasure_chest_2k.usdc@
     )
     {
-        matrix4d xformOp:transform = ( (2, 0, 0, 0), (0, -8.742277657347586e-8, -2, 0), (0, 2, -8.742277657347586e-8, 0), (-1.5735167264938354, -0.000006509742888738401, 1.4944231510162354, 1) )
+        matrix4d xformOp:transform = ( (2, 0, 0, 0), (0, -8.742277657347586e-8, -2, 0), (0, 2, -8.742277657347586e-8, 0), (-1.5735167264938354, -0.000006509742888738401, 2.320242166519165, 1) )
         uniform token[] xformOpOrder = ["xformOp:transform"]
     }
 
@@ -130,6 +131,16 @@ def Xform "Root"
         float horizontalAperture = 36
         float verticalAperture = 24
         matrix4d xformOp:transform = ( (-0.8309236764907837, -0, 0.5563863515853882, -0), (0.2934468388557434, 0.8496073484420776, 0.4382420778274536, 0), (-0.4727099537849426, 0.5274155139923096, -0.705958902835846, 0), (-4.250411033630371, 3.229863405227661, -0.32273444533348083, 1) )
+        uniform token[] xformOpOrder = ["xformOp:transform"]
+    }
+
+    def Camera "Camera_3"
+    {
+        float2 clippingRange = (0.01, 2000)
+        float focalLength = 20.78461
+        float horizontalAperture = 36
+        float verticalAperture = 24
+        matrix4d xformOp:transform = ( (-0.9999094009399414, -0, -0.013462770730257034, 0), (-0.012226470746099949, 0.418603777885437, 0.9080867171287537, 0), (0.005635566543787718, 0.9081690907478333, -0.4185658395290375, -0), (-1.3760416507720947, 6.1562180519104, -0.2757954001426697, 1) )
         uniform token[] xformOpOrder = ["xformOp:transform"]
     }
 }

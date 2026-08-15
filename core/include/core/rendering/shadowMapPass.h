@@ -8,10 +8,14 @@
 
 namespace pts::rendering {
 
-inline constexpr uint32_t k_max_shadow_maps = 4;
+inline constexpr uint32_t k_max_shadow_maps = 8;
 inline constexpr uint32_t k_default_shadow_resolution = 2048;
 
-/// Renders depth maps for shadow-casting distant lights.
+/// Renders depth maps for shadow-casting lights.
+/// Distant lights use an orthographic projection fit to the scene AABB.
+/// Rect/disk area lights use a perspective projection from the light's
+/// position along its local -Z, with far plane derived from the scene AABB.
+/// Sphere and dome lights do not cast shadow maps.
 class ShadowMapPass final : public IPass {
    public:
     using IPass::IPass;
@@ -34,7 +38,6 @@ class ShadowMapPass final : public IPass {
     struct Outputs {
         TextureDeclHandle shadow_array;
         BufferDeclHandle shadow_info;
-        DescriptorDeclHandle consumer_desc;
     };
     Outputs add_to_frame_graph(FrameGraph& fg, const PassContext& ctx, const Inputs&);
 
@@ -44,6 +47,7 @@ class ShadowMapPass final : public IPass {
 
    private:
     bool m_enabled = true;
+    bool m_pcss = true;
     static constexpr uint32_t k_uniform_align = 256;
     uint32_t m_resolution = k_default_shadow_resolution;
 };

@@ -4,10 +4,11 @@
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/shaderc/shaderLoader.h>
+#include <core/rendering/shadowLightProjection.h>
 #include <core/rendering/shadowMapPass.h>
 #include <core/rendering/webgpu/device.h>
 #include <imgui.h>
-#include <shadow_shader_metadata.h>
+#include <shadow_map_shader_metadata.h>
 
 #include <algorithm>
 #include <cmath>
@@ -16,18 +17,22 @@
 
 namespace pts::rendering {
 
+namespace {
+
+bool casts_shadow_map(LightData::Type type) {
+    return type == LightData::Type::Distant || type == LightData::Type::Rect ||
+           type == LightData::Type::Disk;
+}
+
+}  // namespace
+
 ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx,
                                                          const Inputs&) {
     PTS_ZONE_SCOPED;
     ensure_initialized(ctx.device);
 
     auto desc_layout = fg.bind_group_layout(
-        "shadow_map/desc", shadow_shader::create_bind_group_layout_0(ctx.device.handle()));
-    // Consumer layout is registered up-front by the owning renderer (e.g. forwardPass)
-    // using its own shader's reflection, since the shape of the consumer-side
-    // descriptor is a property of how downstream passes read shadow output, not of
-    // shadow.slang.
-    auto consumer_bgl = fg.bind_group_layout("shadow_map/consumer");
+        "shadow_map/desc", shadow_map_shader::create_bind_group_layout_0(ctx.device.handle()));
 
     // Position-only vertex layout: stride=12, one Float32x3 at offset 0, location 0
     WGPUVertexAttribute pos_attr{};
@@ -36,24 +41,28 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
     pos_attr.shaderLocation = 0;
 
     auto* pipeline_handle = fg.render_pipeline("shadow_map")
-                                .shader("core/generated/shaders/shadow.wgsl")
+                                .shader("core/generated/shaders/shadow/shadow_map.wgsl")
                                 .no_fragment()
                                 .depth_format(WGPUTextureFormat_Depth32Float)
                                 .depth_write(true)
                                 .depth_compare(WGPUCompareFunction_Less)
                                 .cull_mode(WGPUCullMode_Front)
-                                .depth_bias(0, 0.0f)
+                                // Rasterizer-level slope-scale bias keeps grazing-angle
+                                // receivers from self-shadowing. Constant=1 pushes every
+                                // shadowed fragment one ulp away; slope=2 scales with
+                                // depth gradient (|dz/dx|, |dz/dy|).
+                                .depth_bias(1, 2.0f)
                                 .vertex_buffer({12, WGPUVertexStepMode_Vertex, {pos_attr}})
                                 .bind_group_layouts({desc_layout})
                                 .build();
 
-    // Count shadow-casting distant lights
+    // Count shadow-casting lights (distant + rect/disk area lights).
     auto lights = ctx.world.get_lights().span_raw();
     uint32_t shadow_count = 0;
     if (m_enabled) {
         for (uint32_t li = 0; li < static_cast<uint32_t>(lights.size()); ++li) {
             if (!lights[li].active) continue;
-            if (lights[li].value.type != LightData::Type::Distant) continue;
+            if (!casts_shadow_map(lights[li].value.type)) continue;
             if (!lights[li].value.casts_shadow) continue;
             ++shadow_count;
             if (shadow_count >= k_max_shadow_maps) break;
@@ -94,12 +103,7 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
                 wgpuQueueWriteBuffer(queue, buf, 0, infos.data(),
                                      infos.size() * sizeof(ShadowInfo));
             });
-        auto consumer = descriptor(fg, consumer_bgl, "consumer_desc")
-                            .buffer(0, shadow_info_buf)
-                            .texture(1, shadow_array)
-                            .sampler(2, fg.sampler(WGPUSamplerBindingType_NonFiltering))
-                            .build();
-        return {shadow_array, shadow_info_buf, consumer};
+        return {shadow_array, shadow_info_buf};
     }
 
     // Scene AABB from TLAS root (built by RenderWorld::prepare_gpu_buffers)
@@ -116,39 +120,26 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
 
     for (uint32_t li = 0; li < static_cast<uint32_t>(lights.size()); ++li) {
         if (!lights[li].active) continue;
-        if (lights[li].value.type != LightData::Type::Distant) continue;
-        if (!lights[li].value.casts_shadow) continue;
+        const auto& light = lights[li].value;
+        if (!casts_shadow_map(light.type)) continue;
+        if (!light.casts_shadow) continue;
         if (layer_index >= k_max_shadow_maps) continue;
 
-        auto dir = glm::normalize(lights[li].value.direction);
+        LightProjection proj = (light.type == LightData::Type::Distant)
+                                   ? compute_distant_light_vp(light, aabb_min, aabb_max)
+                                   : compute_area_light_vp(light, aabb_min, aabb_max);
 
-        auto center = (aabb_min + aabb_max) * 0.5f;
-        auto half_diag = glm::length(aabb_max - aabb_min) * 0.5f;
-
-        // Choose up vector that isn't parallel to direction
-        auto up = glm::vec3(0, 1, 0);
-        if (std::abs(glm::dot(dir, up)) > 0.99f) up = glm::vec3(1, 0, 0);
-
-        auto light_view = glm::lookAt(center - dir * half_diag, center, up);
-
-        // Transform all 8 AABB corners into light space to find bounds
-        glm::vec3 ls_min(std::numeric_limits<float>::max());
-        glm::vec3 ls_max(std::numeric_limits<float>::lowest());
-        for (int c = 0; c < 8; ++c) {
-            glm::vec3 corner((c & 1) ? aabb_max.x : aabb_min.x, (c & 2) ? aabb_max.y : aabb_min.y,
-                             (c & 4) ? aabb_max.z : aabb_min.z);
-            glm::vec3 ls_pt = glm::vec3(light_view * glm::vec4(corner, 1.0f));
-            ls_min = glm::min(ls_min, ls_pt);
-            ls_max = glm::max(ls_max, ls_pt);
-        }
-
-        auto ortho_proj = glm::ortho(ls_min.x, ls_max.x, ls_min.y, ls_max.y, -ls_max.z, -ls_min.z);
-
-        infos[li].light_vp = ortho_proj * light_view;
+        infos[li].light_vp = proj.vp;
         infos[li].texel_size = 1.0f / static_cast<float>(m_resolution);
-        infos[li].normal_bias = 0.0f;
+        // Shader-side offset along the receiver normal to counter PCF bleeding
+        // at sharp creases. Small world-space value; scene-scale-dependent.
+        infos[li].normal_bias = 0.02f;
         infos[li].has_shadow = 1;
         infos[li].layer = layer_index;
+        infos[li].light_near = proj.near_plane;
+        infos[li].light_far = proj.far_plane;
+        infos[li].light_size_uv = m_pcss ? proj.light_size_uv : 0.0f;
+        infos[li].projection_type = proj.projection_type;
         ++layer_index;
     }
     INVARIANT(layer_index == shadow_count);
@@ -245,16 +236,12 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
             });
     }
 
-    auto consumer = descriptor(fg, consumer_bgl, "consumer_desc")
-                        .buffer(0, shadow_info_buf)
-                        .texture(1, shadow_array)
-                        .sampler(2, fg.sampler(WGPUSamplerBindingType_NonFiltering))
-                        .build();
-    return {shadow_array, shadow_info_buf, consumer};
+    return {shadow_array, shadow_info_buf};
 }
 
 void ShadowMapPass::draw_imgui() {
     ImGui::Checkbox("Enabled", &m_enabled);
+    ImGui::Checkbox("PCSS", &m_pcss);
 }
 
 }  // namespace pts::rendering

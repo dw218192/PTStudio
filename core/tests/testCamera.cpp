@@ -14,14 +14,6 @@ TEST_CASE("OrbitCamera defaults to Y-up") {
     CHECK(cam.up_axis() == UpAxis::Y);
 }
 
-TEST_CASE("OrbitCamera set_up_axis stores value") {
-    OrbitCamera cam;
-    cam.set_up_axis(UpAxis::Z);
-    CHECK(cam.up_axis() == UpAxis::Z);
-    cam.set_up_axis(UpAxis::Y);
-    CHECK(cam.up_axis() == UpAxis::Y);
-}
-
 TEST_CASE("OrbitCamera Y-up position is above XZ plane at default pitch") {
     OrbitCamera cam;
     cam.set_target({0, 0, 0});

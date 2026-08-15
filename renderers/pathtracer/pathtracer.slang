@@ -1,9 +1,9 @@
-import bvh;
-import lighting;
-import brdf;
-import light;
-import material_sampling;
-import sampling;
+import bvh_lib;
+import lighting_lib;
+import brdf_lib;
+import light_lib;
+import material_sampling_lib;
+import sampling_lib;
 
 // -- Scene data --------------------------------------------------
 

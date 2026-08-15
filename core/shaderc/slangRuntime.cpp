@@ -34,7 +34,7 @@ void ensure_pts_attrs_registered(slang::IGlobalSession* gs) {
 }  // namespace
 
 SlangCompileOutput run_slang(slang::IGlobalSession* global_session,
-                             const std::filesystem::path& search_path,
+                             boost::span<const std::filesystem::path> search_paths,
                              const std::filesystem::path& slang_source,
                              const std::vector<std::string>& entry_points,
                              boost::span<const std::string_view> defines,
@@ -51,11 +51,21 @@ SlangCompileOutput run_slang(slang::IGlobalSession* global_session,
     // Match CLI slangc default: column-major matrix layout
     session_desc.defaultMatrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR;
 
-    auto search_str = search_path.string();
-    auto source_dir_str = slang_source.parent_path().string();
-    const char* search_paths[] = {source_dir_str.c_str(), search_str.c_str()};
-    session_desc.searchPaths = search_paths;
-    session_desc.searchPathCount = 2;
+    // Source file's own directory first (matches slangc CLI default), then
+    // every configured search path in order.
+    std::vector<std::string> search_storage;
+    search_storage.reserve(search_paths.size() + 1);
+    search_storage.push_back(slang_source.parent_path().string());
+    for (const auto& sp : search_paths) {
+        search_storage.push_back(sp.string());
+    }
+    std::vector<const char*> search_ptrs;
+    search_ptrs.reserve(search_storage.size());
+    for (const auto& s : search_storage) {
+        search_ptrs.push_back(s.c_str());
+    }
+    session_desc.searchPaths = search_ptrs.data();
+    session_desc.searchPathCount = static_cast<SlangInt>(search_ptrs.size());
 
     std::vector<std::string> define_storage(defines.begin(), defines.end());
     std::vector<slang::PreprocessorMacroDesc> macros;

@@ -41,7 +41,6 @@ struct Args {
     std::filesystem::path output;
     std::filesystem::path metadata_output;
     std::string metadata_namespace;
-    std::filesystem::path search_path;
     std::vector<std::string> defines;
     std::vector<std::string> entries;
     std::vector<std::filesystem::path> extra_search_paths;
@@ -98,9 +97,6 @@ Args parse_args(int argc, char** argv) {
         die("--metadata requires --namespace");
     }
 
-    if (!a.extra_search_paths.empty()) {
-        a.search_path = a.extra_search_paths.front();
-    }
     return a;
 }
 
@@ -173,8 +169,8 @@ int main(int argc, char** argv) {
     defines_view.reserve(a.defines.size());
     for (const auto& d : a.defines) defines_view.emplace_back(d);
 
-    SlangCompileOutput result = run_slang(global_session.get(), a.search_path, a.source, a.entries,
-                                          defines_view, a.metadata_namespace);
+    SlangCompileOutput result = run_slang(global_session.get(), a.extra_search_paths, a.source,
+                                          a.entries, defines_view, a.metadata_namespace);
 
     if (!result.diagnostics.empty()) {
         std::fwrite(result.diagnostics.data(), 1, result.diagnostics.size(), stderr);

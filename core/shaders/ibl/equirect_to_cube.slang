@@ -4,7 +4,7 @@
 // textureStore to texture_storage_2d_array silently drops writes to
 // array layers > 0 (Slang emits mixed u32/i32 textureStore coordinates
 // that some HLSL compilers mishandle).
-import ibl_sampling;
+import ibl_sampling_lib;
 
 struct EquirectParams {
     uint size;

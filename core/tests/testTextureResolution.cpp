@@ -304,7 +304,7 @@ TEST_CASE("resolve_material with textures populates material correctly") {
     auto idx = pts::rendering::resolve_material(prim, scope);
     REQUIRE(idx != pts::rendering::k_no_material);
 
-    auto& mat = scope.materials()[idx];
+    const auto& mat = scope.material(idx);
     CHECK(mat.diffuse_tex != UINT32_MAX);
     CHECK(mat.metallic_tex != UINT32_MAX);
     CHECK(mat.roughness_tex != UINT32_MAX);
@@ -383,9 +383,10 @@ TEST_CASE("Full pipeline: textured material through populate_from_stage") {
     pts::rendering::populate_from_stage(world, stage);
 
     REQUIRE(world.get_objects().size() == 1);
-    REQUIRE(world.get_materials().size() == 1);
+    auto mats = world.get_materials();
+    REQUIRE(mats.size() == 1);
 
-    auto& mat = world.get_materials()[0];
+    const auto& mat = mats[0];
     CHECK(mat.diffuse_tex != UINT32_MAX);
     CHECK(mat.metallic_tex != UINT32_MAX);
     CHECK(mat.normal_tex != UINT32_MAX);

@@ -49,7 +49,16 @@ jobs:
         build_type: [Release]
         include:
           - platform: windows-x64
-            os: windows-latest
+            # Pinned, NOT windows-latest. windows-latest moved to the
+            # windows-2025-vs2026 image, whose MSVC 14.51 cannot build the
+            # pinned Dawn: Dawn's vendored SPIRV-Tools compiles with /WX, and
+            # 14.51 raises a new C5232 (recursive operator== in C++20) in
+            # util/small_vector.h that older MSVC did not.
+            # windows-2022 also matches the VS 2022 developers build with, so
+            # CI and local resolve to the same Conan package IDs.
+            # Revisit when Dawn is upgraded to a SPIRV-Tools that is clean
+            # under MSVC 14.51.
+            os: windows-2022
             shell: pwsh
             bootstrap: .\tools\framework\bootstrap.ps1
             repo: .\repo.cmd
@@ -144,7 +153,8 @@ jobs:
         build_type: [Release]
         include:
           - platform: windows-x64
-            os: windows-latest
+            # Match the build job's runner -- see the note there.
+            os: windows-2022
             shell: pwsh
             bootstrap: .\tools\framework\bootstrap.ps1
             repo: .\repo.cmd
@@ -182,6 +192,12 @@ jobs:
         run: ${{ matrix.repo }} test --platform ${{ matrix.platform }} --build-type ${{ matrix.build_type }} --from-package
         env:
           PTSTUDIO_GPU_BACKEND: ${{ matrix.platform == 'windows-x64' && 'D3D12' || '' }}
+          # The windows runners' D3D12 software adapter drops the device a few
+          # seconds into the first Forward frame. Pre-existing and not specific
+          # to this repo's current code -- `develop` reproduces it identically.
+          # See the note in tools/repo_tools/launch.py. ptSmoke_* (path tracer)
+          # still runs here and still covers the GPU pipeline end to end.
+          PTSTUDIO_SKIP_EDITOR_SMOKE: ${{ matrix.platform == 'windows-x64' && '1' || '' }}
 
       - name: Upload test results
         if: always()
@@ -192,12 +208,71 @@ jobs:
           retention-days: 3
 
   # =============================================================================
-  # Deploy to GitHub Pages (develop branch only)
+  # Image diff (non-blocking, windows-x64 only)
+  # =============================================================================
+
+  image-diff:
+    name: Image diff (windows-x64, Release)
+    # Match the build job's runner -- see the note there.
+    runs-on: windows-2022
+    needs: build
+    continue-on-error: true
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          lfs: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Bootstrap build environment
+        run: .\tools\framework\bootstrap.ps1
+
+      - name: Cache Python dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            tools/framework/_managed/venv
+            tools/framework/_managed/cache
+          key: windows-2022-python-${{ hashFiles('tools/framework/pyproject.toml') }}
+          restore-keys: |
+            windows-2022-python-
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-windows-x64-Release
+          path: _package/windows-x64/
+
+      - name: Run image-diff
+        run: .\repo.cmd image-diff --from-package --platform windows-x64 --build-type Release
+
+      - name: Upload image-diff outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-diff-windows-x64-Release
+          path: _test_captures/
+          retention-days: 7
+
+  # =============================================================================
+  # Deploy to GitHub Pages (main branch only)
+  #
+  # main is the showcase branch -- the README links the live demo, so the
+  # deployed site must match the code a visitor is reading. develop can run
+  # ahead without flipping the public demo back and forth.
   # =============================================================================
 
   deploy-pages:
     name: Deploy to GitHub Pages
-    if: github.ref == 'refs/heads/develop' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     needs: [build, test]
     runs-on: ubuntu-latest
     permissions:

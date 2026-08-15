@@ -38,7 +38,8 @@ SlangCompileOutput compile(const fs::path& dir, const std::string& slang_src) {
 
     std::vector<std::string> entries;  // auto-discover
     std::vector<std::string_view> defines;
-    return run_slang(gs.get(), dir, path, entries,
+    std::vector<std::filesystem::path> search_paths{dir};
+    return run_slang(gs.get(), search_paths, path, entries,
                      boost::span<const std::string_view>(defines.data(), defines.size()),
                      "test_shader");
 }

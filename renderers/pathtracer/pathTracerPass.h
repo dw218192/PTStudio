@@ -41,7 +41,7 @@ class PathTracerPass final : public rendering::IRenderer {
     // Camera / scene change detection
     glm::mat4 m_prev_vp{0.0f};
     WGPUBuffer m_prev_instance_handle = nullptr;
-    uint32_t m_prev_light_version = UINT32_MAX;
+    uint64_t m_prev_light_version = UINT64_MAX;
     uint32_t m_frame_count = 0;
 };
 

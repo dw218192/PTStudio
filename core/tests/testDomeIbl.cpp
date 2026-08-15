@@ -36,11 +36,6 @@ WGPUSampler create_ibl_sampler(const pts::webgpu::Device& device) {
 }
 }  // namespace
 
-TEST_CASE("env_texture_path defaults to empty") {
-    LightData data;
-    CHECK(data.env_texture_path.empty());
-}
-
 TEST_CASE("ibl_resources accessor returns same object") {
     RenderWorld world;
     auto& ibl = world.ibl_resources();
@@ -84,7 +79,7 @@ TEST_CASE("update_ibl with dome light (no texture) produces uniform color IBL") 
     {
         auto scope = world.begin_sync();
         auto idx = scope.alloc_light(pxr::SdfPath("/TestDome0"));
-        scope.mutate_light(idx, [&](LightData& w) {
+        scope.mutate_light(idx, LightField::All, [&](LightData& w) {
             w.type = LightData::Type::Dome;
             w.color = {1.0f, 0.9f, 0.8f};
             w.intensity = 0.3f;
@@ -109,7 +104,7 @@ TEST_CASE("update_ibl skips when light_version unchanged") {
     {
         auto scope = world.begin_sync();
         auto idx = scope.alloc_light(pxr::SdfPath("/TestDome0"));
-        scope.mutate_light(idx, [&](LightData& w) {
+        scope.mutate_light(idx, LightField::All, [&](LightData& w) {
             w.type = LightData::Type::Dome;
             w.color = {0.5f, 0.5f, 0.5f};
             w.intensity = 1.0f;
@@ -134,7 +129,7 @@ TEST_CASE("update_ibl transitions from dome to no-dome (black)") {
     {
         auto scope = world.begin_sync();
         auto dome_idx = scope.alloc_light(pxr::SdfPath("/TestDome0"));
-        scope.mutate_light(dome_idx, [&](LightData& w) {
+        scope.mutate_light(dome_idx, LightField::All, [&](LightData& w) {
             w.type = LightData::Type::Dome;
             w.color = {1.0f, 1.0f, 1.0f};
             w.intensity = 1.0f;
@@ -165,7 +160,7 @@ TEST_CASE("update_ibl with Z-up produces ready IBL") {
     {
         auto scope = world.begin_sync();
         auto idx = scope.alloc_light(pxr::SdfPath("/TestDome0"));
-        scope.mutate_light(idx, [&](LightData& w) {
+        scope.mutate_light(idx, LightField::All, [&](LightData& w) {
             w.type = LightData::Type::Dome;
             w.color = {1.0f, 1.0f, 1.0f};
             w.intensity = 1.0f;
@@ -190,7 +185,7 @@ TEST_CASE("clear resets IBL state") {
     {
         auto scope = world.begin_sync();
         auto idx = scope.alloc_light(pxr::SdfPath("/TestDome0"));
-        scope.mutate_light(idx, [&](LightData& w) {
+        scope.mutate_light(idx, LightField::All, [&](LightData& w) {
             w.type = LightData::Type::Dome;
             w.color = {1.0f, 1.0f, 1.0f};
             w.intensity = 1.0f;

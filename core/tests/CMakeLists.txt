@@ -19,6 +19,14 @@ list(APPEND TEST_NAMES testDepTrackedSlotMap)
 set(testDepTrackedSlotMap_source testDepTrackedSlotMap.cpp)
 set(testDepTrackedSlotMap_libs core)
 
+list(APPEND TEST_NAMES testSlotMapDirty)
+set(testSlotMapDirty_source testSlotMapDirty.cpp)
+set(testSlotMapDirty_libs core)
+
+list(APPEND TEST_NAMES testSlotArrayDirty)
+set(testSlotArrayDirty_source testSlotArrayDirty.cpp)
+set(testSlotArrayDirty_libs core)
+
 list(APPEND TEST_NAMES testAsyncStateMachine)
 set(testAsyncStateMachine_source testAsyncStateMachine.cpp)
 set(testAsyncStateMachine_libs core)
@@ -42,13 +50,29 @@ if(NOT EMSCRIPTEN)
     set(testMaterialBuffer_source testMaterialBuffer.cpp)
     set(testMaterialBuffer_libs core)
 
+    list(APPEND TEST_NAMES testVersionedBuffer)
+    set(testVersionedBuffer_source testVersionedBuffer.cpp)
+    set(testVersionedBuffer_libs core)
+
+    list(APPEND TEST_NAMES testGBufferPass)
+    set(testGBufferPass_source testGBufferPass.cpp)
+    set(testGBufferPass_libs core)
+    set(testGBufferPass_defines PTS_WORKSPACE_ROOT="${CMAKE_SOURCE_DIR}")
+
     list(APPEND TEST_NAMES testShadowMapPass)
     set(testShadowMapPass_source testShadowMapPass.cpp)
     set(testShadowMapPass_libs core)
+    set(testShadowMapPass_defines PTS_WORKSPACE_ROOT="${CMAKE_SOURCE_DIR}")
 
     list(APPEND TEST_NAMES testContactShadowPass)
     set(testContactShadowPass_source testContactShadowPass.cpp)
     set(testContactShadowPass_libs core)
+    set(testContactShadowPass_defines PTS_WORKSPACE_ROOT="${CMAKE_SOURCE_DIR}")
+
+    list(APPEND TEST_NAMES testShadowVisibilityPipeline)
+    set(testShadowVisibilityPipeline_source testShadowVisibilityPipeline.cpp)
+    set(testShadowVisibilityPipeline_libs core)
+    set(testShadowVisibilityPipeline_defines PTS_WORKSPACE_ROOT="${CMAKE_SOURCE_DIR}")
 
     list(APPEND TEST_NAMES testPipelineBuilder)
     set(testPipelineBuilder_source testPipelineBuilder.cpp)
@@ -142,10 +166,26 @@ list(APPEND TEST_NAMES testBvh)
 set(testBvh_source testBvh.cpp)
 set(testBvh_libs core)
 
+# Shadow sampling math - no GPU needed, mirrors shadow_sampling_lib.slang
+list(APPEND TEST_NAMES testShadowSampling)
+set(testShadowSampling_source testShadowSampling.cpp)
+set(testShadowSampling_libs core)
+
 # Texture resolution from UsdShade graph - works on all platforms
 list(APPEND TEST_NAMES testTextureResolution)
 set(testTextureResolution_source testTextureResolution.cpp)
 set(testTextureResolution_libs core OpenEXR::OpenEXR)
+
+# USDZ save relocalization. Native-only: the Emscripten node test runner
+# decodes subprocess stdout as cp1252 on Windows hosts, and USD's verbose
+# dependency-resolution warnings during UsdUtilsCreateNewUsdzPackage
+# contain bytes that don't round-trip -- the helper itself works fine on
+# WASM (editorSmoke_* covers the editor's emscripten save flow).
+if(NOT EMSCRIPTEN)
+    list(APPEND TEST_NAMES testUsdzSaveRelocalize)
+    set(testUsdzSaveRelocalize_source testUsdzSaveRelocalize.cpp)
+    set(testUsdzSaveRelocalize_libs core)
+endif()
 
 
 function(add_core_test target_name)

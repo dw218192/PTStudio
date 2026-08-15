@@ -62,7 +62,7 @@ struct SlangFixture {
         workspace_root = tmp_dir / "workspace";
         fs::create_directories(workspace_root);
         compiler = std::make_unique<SlangCompiler>(loader, test_logger(), cache_dir, workspace_root,
-                                                   workspace_root, nullptr);
+                                                   std::vector<fs::path>{workspace_root}, nullptr);
     }
     ~SlangFixture() {
         compiler.reset();

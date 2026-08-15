@@ -1,4 +1,4 @@
-import brdf;
+import brdf_lib;
 
 // ---------------------------------------------------------------------------
 // Hammersley quasi-random sequence

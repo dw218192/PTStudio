@@ -9,23 +9,141 @@ import subprocess
 import urllib.request
 from pathlib import Path
 
-from repo_tools.core import ShellCommand, find_venv_executable, logger
+from repo_tools.core import ShellCommand, find_venv_executable, is_windows, logger
 
 
 # -- Conan Profile ----------------------------------------------------
 
 
+# Map a Visual Studio major version to the Conan 'msvc' compiler.version.
+# VS 2022 is split: 17.0-17.9 ship the 19.3x toolset, 17.10+ ship 19.4x.
+# See https://docs.conan.io/2/reference/config_files/settings.html
+_VS_MAJOR_TO_MSVC = {
+    "15": "191",  # VS 2017
+    "16": "192",  # VS 2019
+    "18": "195",  # VS 2026
+}
+
+
+def _msvc_version_for(vs_version: str) -> str | None:
+    """Map a full vswhere installationVersion (e.g. '17.14.37516.0') to msvc."""
+    parts = vs_version.split(".")
+    major = parts[0]
+    if major == "17":
+        minor = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+        return "194" if minor >= 10 else "193"
+    return _VS_MAJOR_TO_MSVC.get(major)
+
+
+def _detect_vs_msvc_version() -> str | None:
+    """Return the Conan msvc compiler.version for the installed Visual Studio.
+
+    Queries vswhere directly rather than trusting 'conan profile detect', which
+    silently falls back to another compiler when it cannot recognise the
+    installed VS. Returns None when no VS with the C++ toolset is found.
+    """
+    program_files = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
+    vswhere = Path(program_files) / "Microsoft Visual Studio" / "Installer" / "vswhere.exe"
+    if not vswhere.exists():
+        return None
+
+    try:
+        result = subprocess.run(
+            [
+                str(vswhere),
+                "-latest",
+                "-products",
+                "*",
+                "-requires",
+                "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+                "-property",
+                "installationVersion",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+    version = result.stdout.strip()
+    if not version:
+        return None
+
+    msvc_version = _msvc_version_for(version)
+    if msvc_version is None:
+        logger.warning(f"Unrecognised Visual Studio version: {version}")
+        return None
+
+    logger.info(f"Detected Visual Studio {version} (msvc {msvc_version})")
+    return msvc_version
+
+
+def _windows_default_profile(msvc_version: str) -> str:
+    """Build the pinned Windows default profile for a given msvc version.
+
+    Values otherwise mirror what 'conan profile detect' produces on a developer
+    machine with VS 2022, so a matching toolchain yields identical package IDs
+    and does not invalidate an existing cache.
+    """
+    return f"""\
+[settings]
+arch=x86_64
+compiler=msvc
+compiler.cppstd=17
+compiler.runtime=dynamic
+compiler.version={msvc_version}
+os=Windows
+
+[conf]
+tools.cmake.cmaketoolchain:generator=Ninja
+"""
+
+
 def ensure_conan_profile() -> None:
-    """Ensure Conan profiles exist, run detect if needed."""
+    """Ensure Conan profiles exist, writing or detecting a default if not.
+
+    An existing profile directory is left completely alone -- this only
+    populates a cold CONAN_HOME.
+
+    On Windows the profile is pinned to MSVC rather than detected. Conan's
+    'profile detect' resolves compiler=gcc whenever it cannot recognise the
+    installed Visual Studio and a MinGW/GCC toolchain is on PATH -- which is
+    the case on GitHub's runners. Dawn then fails to build, because
+    src/tint/utils/file/tmpfile_windows.cc uses MSVC CRT macros (_SH_DENYNO,
+    _S_IREAD, _S_IWRITE) that GCC's headers do not define. That only bites on a
+    cold cache, since a warm one never rebuilds Dawn from source.
+
+    The VS version is looked up at runtime rather than hardcoded, so this keeps
+    working when the runner image moves to a new Visual Studio (it moved from
+    VS 2022 to VS 2026 in 2026-08, which is what surfaced this).
+    """
     conan_home = Path(os.environ.get("CONAN_HOME", Path.home() / ".conan2"))
     profile_dir = conan_home / "profiles"
 
-    if not profile_dir.exists() or not any(profile_dir.iterdir()):
-        logger.info("No Conan profiles found. Running 'conan profile detect'...")
-        conan_exe = find_venv_executable("conan")
-        subprocess.run([conan_exe, "profile", "detect"], check=True)
-    else:
+    if profile_dir.exists() and any(profile_dir.iterdir()):
         logger.info("Conan profiles already exist.")
+        return
+
+    if is_windows():
+        msvc_version = _detect_vs_msvc_version()
+        if msvc_version is not None:
+            logger.info("No Conan profiles found. Writing pinned Windows profile...")
+            profile_dir.mkdir(parents=True, exist_ok=True)
+            (profile_dir / "default").write_text(
+                _windows_default_profile(msvc_version), encoding="utf-8"
+            )
+            return
+        # No usable Visual Studio -- fall through and let Conan decide, rather
+        # than pinning a toolchain that is not installed.
+        logger.warning(
+            "No Visual Studio with the C++ toolset found; falling back to "
+            "'conan profile detect'."
+        )
+
+    logger.info("No Conan profiles found. Running 'conan profile detect'...")
+    conan_exe = find_venv_executable("conan")
+    subprocess.run([conan_exe, "profile", "detect"], check=True)
 
 
 # -- Emscripten Helpers -----------------------------------------------

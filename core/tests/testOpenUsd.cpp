@@ -378,10 +378,11 @@ TEST_CASE("Material extraction from UsdPreviewSurface") {
     world.upload_all_meshes(device);
 
     REQUIRE(world.get_objects().size() == 1);
-    REQUIRE(world.get_materials().size() == 1);
+    auto mats = world.get_materials();
+    REQUIRE(mats.size() == 1);
     CHECK(world.get_objects().at(0).material_index == 1);
 
-    auto& mat = world.get_materials()[0];
+    const auto& mat = mats[0];
     CHECK(mat.diffuse_color.x == doctest::Approx(0.8f));
     CHECK(mat.diffuse_color.y == doctest::Approx(0.2f));
     CHECK(mat.diffuse_color.z == doctest::Approx(0.1f));
@@ -490,11 +491,12 @@ TEST_CASE("Prim with displayColor creates material from displayColor") {
     world.upload_all_meshes(device);
 
     REQUIRE(world.get_objects().size() == 1);
-    REQUIRE(world.get_materials().size() == 1);
+    auto mats = world.get_materials();
+    REQUIRE(mats.size() == 1);
     auto mat_idx = world.get_objects().at(0).material_index;
     CHECK(mat_idx == 1);
 
-    auto& mat = world.get_materials()[0];
+    const auto& mat = mats[0];
     CHECK(mat.diffuse_color.x == doctest::Approx(0.8f));
     CHECK(mat.diffuse_color.y == doctest::Approx(0.2f));
     CHECK(mat.diffuse_color.z == doctest::Approx(0.1f));
@@ -527,8 +529,11 @@ TEST_CASE("Re-syncing displayColor prim reuses cached material") {
     pts::rendering::populate_from_stage(world, stage);
     world.upload_all_meshes(device);
 
-    REQUIRE(world.get_materials().size() == 1);
-    CHECK(world.get_materials()[0].diffuse_color.x == doctest::Approx(0.8f));
+    {
+        auto mats = world.get_materials();
+        REQUIRE(mats.size() == 1);
+        CHECK(mats[0].diffuse_color.x == doctest::Approx(0.8f));
+    }
 
     // Change displayColor and re-sync the prim
     color_pv.Set(pxr::VtVec3fArray{{0.1f, 0.9f, 0.3f}});
@@ -538,10 +543,11 @@ TEST_CASE("Re-syncing displayColor prim reuses cached material") {
     }
 
     // Material count should not grow -- cached slot is reused
-    REQUIRE(world.get_materials().size() == 1);
-    CHECK(world.get_materials()[0].diffuse_color.x == doctest::Approx(0.1f));
-    CHECK(world.get_materials()[0].diffuse_color.y == doctest::Approx(0.9f));
-    CHECK(world.get_materials()[0].diffuse_color.z == doctest::Approx(0.3f));
+    auto mats = world.get_materials();
+    REQUIRE(mats.size() == 1);
+    CHECK(mats[0].diffuse_color.x == doctest::Approx(0.1f));
+    CHECK(mats[0].diffuse_color.y == doctest::Approx(0.9f));
+    CHECK(mats[0].diffuse_color.z == doctest::Approx(0.3f));
 
     spdlog::drop("test_display_resync");
 }
@@ -581,9 +587,10 @@ TEST_CASE("Bound material takes precedence over displayColor") {
     REQUIRE(world.get_objects().size() == 1);
     auto mat_idx = world.get_objects().at(0).material_index;
     REQUIRE(mat_idx > pts::rendering::k_default_material);
-    REQUIRE(static_cast<std::size_t>(mat_idx - 1) < world.get_materials().size());
+    auto mats = world.get_materials();
+    REQUIRE(static_cast<std::size_t>(mat_idx - 1) < mats.size());
     // Bound material wins -- displayColor is ignored
-    auto& mat = world.get_materials()[mat_idx - 1];
+    const auto& mat = mats[mat_idx - 1];
     CHECK(mat.diffuse_color.x == doctest::Approx(0.0f));
     CHECK(mat.diffuse_color.y == doctest::Approx(0.5f));
     CHECK(mat.diffuse_color.z == doctest::Approx(1.0f));

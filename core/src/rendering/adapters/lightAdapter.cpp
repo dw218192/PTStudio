@@ -95,6 +95,17 @@ void LightAdapter::sync(pxr::UsdPrim prim, SyncScope& scope) {
         light.casts_shadow = enable;
     }
 
+    // Custom non-standard attribute: pts:shadow:pcss:softness.
+    // Default 1.0 means use physical light dimensions; >1 softens, <1 sharpens.
+    // Named with the algorithm in the path so future RT shadows can have their
+    // own knob (pts:shadow:rt:softness) without ambiguity.
+    if (auto attr = prim.GetAttribute(pxr::TfToken("pts:shadow:pcss:softness"))) {
+        float softness = 1.0f;
+        if (attr.Get(&softness)) {
+            light.shadow_pcss_softness = softness;
+        }
+    }
+
     // Visibility
     auto vis = pxr::UsdGeomImageable(prim).ComputeVisibility();
     light.visible = (vis != pxr::UsdGeomTokens->invisible);

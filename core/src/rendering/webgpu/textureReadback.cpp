@@ -130,9 +130,13 @@ void TextureReadback::on_tick() {
         map_cb.callback = [](WGPUMapAsyncStatus status, WGPUStringView, void* self_ptr, void*) {
             auto* self = static_cast<TextureReadback*>(self_ptr);
             if (status != WGPUMapAsyncStatus_Success) {
+                // Do NOT fall back to Idle. Callers gate re-requests on
+                // is_pending(), so an Idle-on-failure reset reads as "nothing in
+                // flight" and the caller re-issues the readback every frame --
+                // an unbounded retry loop that never surfaces the error.
                 wgpuBufferRelease(self->m_buffer);
                 self->m_buffer = nullptr;
-                self->transition<IdleState>();
+                self->transition<FailedState>();
             }
         };
         map_cb.userdata1 = this;
@@ -149,6 +153,10 @@ void TextureReadback::on_tick() {
 
 bool TextureReadback::is_pending() const {
     return is<CopyingState>();
+}
+
+bool TextureReadback::has_failed() const {
+    return is<FailedState>();
 }
 
 WGPUInstance TextureReadback::wgpu_instance() const {
