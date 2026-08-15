@@ -1,146 +1,260 @@
 #pragma once
 
-#include <core/legacy/archive.h>
-#include <core/legacy/callbackList.h>
-#include <core/legacy/camera.h>
-#include <core/legacy/scene.h>
-#include <core/logging.h>
-#include <gl_utils/glTexture.h>
+#include <core/gpuApplication.h>
+#include <core/imgui/loadingOverlay.h>
+#include <core/inputAction.h>
+#include <core/rendering/camera.h>
+#include <core/rendering/frameGraph.h>
+#include <core/rendering/preparedSceneData.h>
+#include <core/rendering/renderWorld.h>
+#include <core/rendering/renderer.h>
+#include <core/rendering/sceneLoader.h>
+#include <core/rendering/shaderCompiler.h>
+#include <core/rendering/shaderc/shaderLoader.h>
+#include <core/rendering/webgpu/bufferReadback.h>
+#include <core/rendering/webgpu/textureReadback.h>
+#include <core/rendering/webgpu/webgpu.h>
+#include <core/worker.h>
+#include <pxr/base/tf/notice.h>
+#include <pxr/base/tf/weakBase.h>
+#include <pxr/usd/sdf/path.h>
+#include <pxr/usd/usd/notice.h>
+#include <pxr/usd/usd/stage.h>
 #include <spdlog/sinks/ringbuffer_sink.h>
 
-#include <array>
-#include <cstdlib>
-#include <iostream>
+#include <boost/core/span.hpp>
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <vector>
 
-#include "editorRenderer.h"
-#include "glfwApplication.h"
-#include "imgui/includes.h"
-#include "inputAction.h"
+#include "perfOverlay.h"
 
-namespace PTS::Editor {
-constexpr auto k_init_move_sensitivity = 5.0f;
-constexpr auto k_init_rot_sensitivity = 60.0f;
-constexpr auto k_object_select_mouse_time = 1.0f;
-constexpr auto k_default_renderer_idx = 0;
+namespace pts {
+class ImGuiComponent;
+class InputComponent;
+}  // namespace pts
 
-struct EditorApplication final : GLFWApplication {
+namespace pts::rendering {
+class IPass;
+}  // namespace pts::rendering
+namespace pts::editor {
+class EditorPass;
+class GridPass;
+class LobePass;
+}  // namespace pts::editor
+
+namespace pts::editor {
+
+struct AppConfig {
+    std::string capture_output;     // empty = no capture mode
+    std::string usd_path;           // empty = embedded default
+    std::string usd_override_path;  // empty = no override layer
+    int capture_frames = 1;         // frames to render before capture
+    std::string renderer_name;      // empty = default (first)
+    std::string debug_output_name;  // empty = scene_color
+    std::string camera_target;      // "x,y,z" -- empty = default
+    std::string camera_distance;    // empty = default (3.0)
+    std::string camera_yaw;         // degrees, empty = default (0)
+    std::string camera_pitch;       // degrees, empty = default (~17)
+    std::string camera_fov;         // degrees, empty = default (60)
+    std::string camera_prim_path;   // scene camera prim name, empty = free camera
+
+    [[nodiscard]] bool is_capture_mode() const {
+        return !capture_output.empty();
+    }
+};
+
+struct EditorApplication final : GpuApplication {
     NO_COPY_MOVE(EditorApplication);
 
-    auto add_renderer(std::unique_ptr<Renderer> renderer) noexcept -> void;
-    auto loop(float dt) -> void override;
-    auto quit(int code) -> void override;
-    /**
-     * @brief Checks a result returned from some function. Prints the error and Terminates the
-     * program on error.
-     * @tparam T Type of the real return value
-     * @tparam E Type of the error return value
-     * @param res the result
-     * @return The real return value if no error
-     */
-    template <typename T, typename E>
-    static constexpr auto check_error(tl::expected<T, E> const& res) -> decltype(auto);
-    template <typename T, typename E>
-    static constexpr auto check_error(tl::expected<T, E>&& res) -> decltype(auto);
+    EditorApplication(std::string_view name, pts::LoggingManager& logging_manager);
+    ~EditorApplication() override;
+
+    void register_args(CommandLine& cli) override;
+    [[nodiscard]] auto process_args(const CommandLine& cli) -> ErrorCode override;
 
    protected:
-    auto on_begin_first_loop() -> void override;
+    void on_ready() override;
+    void update(float dt) override;
+    void render(FrameContext& ctx) override;
 
-   public:
-    EditorApplication(std::string_view name, RenderConfig config,
-                      pts::LoggingManager& logging_manager);
-    ~EditorApplication() override = default;
+   private:
+    struct ActiveView {
+        glm::mat4 view_matrix;
+        glm::mat4 proj_matrix;
+        glm::vec3 camera_position;
+    };
+    ActiveView compute_active_view(float aspect) const;
 
-    auto create_input_actions() noexcept -> void;
-    auto wrap_mouse_pos() noexcept -> void;
+    void setup_docking_layout();
+    void create_renderer(size_t index);
+    void create_input_actions() noexcept;
+    void wrap_mouse_pos() noexcept;
+
+    // Scene I/O
+    void load_stage(pxr::UsdStageRefPtr stage, std::string_view label);
+    void activate_stage();
+    void open_scene_dialog();
+    void save_scene_dialog();
+
+    // Capture
+    void save_capture_png(boost::span<const uint8_t> pixels, uint32_t width, uint32_t height,
+                          std::string_view path);
 
     // imgui rendering
-    auto draw_scene_panel() noexcept -> void;
-    auto draw_object_panel() noexcept -> void;
-    auto draw_scene_viewport(TextureHandle render_buf) noexcept -> void;
-    auto draw_console_panel() const noexcept -> void;
-
+    void draw_scene_panel() noexcept;
+    void draw_inspector_panel() noexcept;
+    void draw_prim_tree(const pxr::UsdPrim& prim);
+    void draw_scene_viewport() noexcept;
+    void draw_console_panel() noexcept;
     // events
-    auto on_scene_opened(Scene& scene) -> void;
-    auto on_render_config_change(RenderConfig const& conf) -> void;
-    auto on_mouse_leave_scene_viewport() noexcept -> void;
-    auto on_mouse_enter_scene_viewport() noexcept -> void;
+    void on_mouse_leave_scene_viewport() noexcept;
+    void on_mouse_enter_scene_viewport() noexcept;
 
-    // other helpers
-    auto try_select_object() noexcept -> void;
-    auto handle_input(InputEvent const& event) noexcept -> void override;
-    auto on_remove_object(Ref<SceneObject> obj) -> void;
-    auto on_add_oject(Ref<SceneObject> obj) -> void;
-    auto get_cur_renderer() noexcept -> Renderer&;
+    void handle_input(InputEvent const& event) noexcept;
 
-    std::string m_console_text;
+    // Components
+    std::unique_ptr<ImGuiComponent> m_imgui;
+    std::unique_ptr<InputComponent> m_input;
+
+    AppConfig m_app_config;
+    rendering::StageSettings m_stage_settings;
+    bool m_init_complete{false};
+
     std::shared_ptr<spdlog::sinks::ringbuffer_sink_mt> m_console_log_sink;
-    pts::LoggingManager* m_logging_manager;
-
-    // rendering
-    RenderConfig m_config;
-    Scene m_scene;
-    Camera m_cam;
 
     // input handling
     std::vector<InputAction> m_input_actions;
 
-    // rendering
-    std::vector<std::unique_ptr<Renderer>> m_renderers;
-    std::unique_ptr<Archive> m_archive;
+    bool m_first_frame{true};
 
-    struct ControlState {
-        using ObjChangeCallback = std::function<void(ObserverPtr<SceneObject>)>;
+    // Rendering
+    std::unique_ptr<rendering::FrameGraph> m_frame_graph;
+    rendering::OrbitCamera m_camera;
+    int m_active_camera_index = 0;  // 0 = free camera, 1..N = scene cameras
+    rendering::RenderWorld m_world;
 
-        auto set_cur_obj(ObserverPtr<SceneObject> obj) noexcept -> void;
-        auto get_cur_obj() const noexcept {
-            return m_cur_obj;
-        }
+    // Async CPU scene preparation
+    struct CpuPrepJob {};
+    std::unique_ptr<Worker<CpuPrepJob, rendering::PreparedSceneData>> m_prep_worker;
+    bool m_first_prep{true};
 
-        auto get_on_selected_obj_change_callback_list() -> auto& {
-            return m_on_selected_obj_change_callback_list;
-        }
+    std::unique_ptr<rendering::IRenderer> m_renderer_pass;
+    std::unique_ptr<GridPass> m_grid_pass;
+    std::unique_ptr<EditorPass> m_editor_pass;
+    std::unique_ptr<LobePass> m_lobe_pass;
+    size_t m_active_config_index = 0;
+    bool m_editor_passes_enabled = true;
+    rendering::ShaderLoader m_shader_loader;
+    std::unique_ptr<rendering::IShaderCompiler> m_shader_compiler;
 
-        float move_sensitivity = k_init_move_sensitivity;
-        float rot_sensitivity = k_init_rot_sensitivity;
-        std::array<char, 1024> obj_name_buf{};
-        bool is_outside_view{false};
-        int cur_renderer_idx{k_default_renderer_idx};
+    /// Iterate all passes for lifecycle (setup, imgui, hot-reload, debug targets).
+    /// Never used for frame graph recording.
+    /// Iterate all top-level passes. Renderers manage their own children --
+    /// debug targets, imgui, hot-reload, and texture refs are all forwarded
+    /// internally. No sub-pass iteration needed here.
+    template <typename Fn>
+    void for_each_pass(Fn&& fn) {
+        if (m_renderer_pass) fn(*m_renderer_pass);
+        if (m_grid_pass) fn(*m_grid_pass);
+        if (m_editor_pass) fn(*m_editor_pass);
+        if (m_lobe_pass) fn(*m_lobe_pass);
+    }
 
-        struct GizmoState {
-            ImGuizmo::OPERATION op{ImGuizmo::OPERATION::TRANSLATE};
-            ImGuizmo::MODE mode{ImGuizmo::MODE::WORLD};
-            bool snap{false};
-            glm::vec3 snap_scale{1.0};
-        } gizmo_state{};
+    // USD stage + change tracking
+    pxr::UsdStageRefPtr m_stage;
 
-        bool unlimited_fps{true};
-        int is_changing_scene_cam{0};
+    struct StageListener : pxr::TfWeakBase {
+        using Callback = void (*)(void*, const pxr::UsdNotice::ObjectsChanged&);
+        void* ctx{};
+        Callback cb{};
+        void handle(const pxr::UsdNotice::ObjectsChanged& notice,
+                    const pxr::UsdStageWeakPtr& sender);
+    };
 
-       private:
-        ObserverPtr<SceneObject> m_cur_obj{nullptr};
-        CallbackList<void(ObserverPtr<SceneObject>)> m_on_selected_obj_change_callback_list;
-    } m_control_state;
+    StageListener m_stage_listener;
+    pxr::TfNotice::Key m_listener_key;
+
+    void register_stage_listener();
+    void revoke_stage_listener();
+    void on_objects_changed(const pxr::UsdNotice::ObjectsChanged& notice);
+    void process_dirty_prims();
+    void normalize_xform_ops(const pxr::SdfPath& prim_path);
+    pxr::SdfPath find_unique_prim_path(std::string_view base_name,
+                                       const pxr::SdfPath* parent = nullptr);
+    auto draw_add_prim_menu(const pxr::SdfPath* parent = nullptr,
+                            const glm::vec3* spawn_pos = nullptr) noexcept -> void;
+    void ensure_default_light();
+
+    std::vector<pxr::SdfPath> m_resync_paths;
+    std::vector<pxr::SdfPath> m_dirty_xform_paths;
+
+    // Selection & gizmo
+    pxr::SdfPath m_selected_prim;
+    bool m_scroll_to_selected{false};
+    pxr::SdfPath m_xform_normalized_prim;  // last prim whose xform was normalized for gizmo
+    pxr::SdfPath m_lobe_bound_prim;        // tracks which prim's material is loaded in lobe viewer
+    enum class GizmoOp { Translate, Rotate, Scale };
+    GizmoOp m_gizmo_op = GizmoOp::Translate;
+
+    // Inline rename state
+    pxr::SdfPath m_renaming_prim;
+    char m_rename_buf[256]{};
+    bool m_rename_focus_set = false;
+
+    // Viewport tracking
+    uint32_t m_viewport_width = 0;
+    uint32_t m_viewport_height = 0;
+    float m_viewport_x = 0.0f;
+    float m_viewport_y = 0.0f;
+    WGPUTextureView m_scene_color_view = nullptr;
+
+    // Debug visualization
+    bool m_viewport_combo_open =
+        false;  // suppresses picking while combo dropdown overlaps viewport
+    int m_debug_target_selection = 0;
+    WGPUTextureView m_active_debug_view = nullptr;
+    WGPUTextureView m_gizmo_overlay_view = nullptr;
+
+    // Console auto-scroll
+    size_t m_last_console_msg_count = 0;
+
+    // Viewport context menu
+    bool m_rmb_dragged = false;            // true if right-click has moved beyond threshold
+    bool m_open_viewport_context = false;  // deferred popup open (set in input, read in draw)
+    glm::vec2 m_rmb_press_pos{0, 0};       // screen pos at right-click press
+    glm::vec3 m_context_menu_world_pos{0, 0, 0};  // 3D spawn point for context menu
+
+    // GPU picking
+    webgpu::BufferReadback m_picking_readback;
+    bool m_pick_requested = false;
+    uint32_t m_pick_x = 0;
+    uint32_t m_pick_y = 0;
+
+    // Performance overlay
+    PerfOverlay m_perf_overlay;
+
+    // Capture mode state
+    int m_frame_count = 0;
+    webgpu::TextureReadback m_capture_readback;
+    uint32_t m_capture_width = 0;
+    uint32_t m_capture_height = 0;
+    bool m_screenshot_pending{false};
+
+    // Async scene loading
+    std::unique_ptr<pts::OneShotTask<rendering::RenderWorld>> m_scene_load_task;
+    pxr::UsdStageRefPtr m_pending_stage;
+
+    std::vector<std::string> m_demo_scene_paths;
+    std::vector<std::string> m_demo_scene_names;
+    int m_demo_scene_index = 0;
+#ifdef __EMSCRIPTEN__
+    std::string m_memfs_path;  // last uploaded file in MEMFS, for cleanup
+#endif
+
+    // Loading overlay
+    pts::LoadingOverlay m_loading_overlay;
 };
-
-template <typename T, typename E>
-constexpr auto EditorApplication::check_error(tl::expected<T, E> const& res) -> decltype(auto) {
-    if (!res) {
-        std::cerr << res.error() << std::endl;
-        std::exit(-1);
-    }
-    if constexpr (!std::is_void_v<T>) {
-        return res.value();
-    }
-}
-
-template <typename T, typename E>
-constexpr auto EditorApplication::check_error(tl::expected<T, E>&& res) -> decltype(auto) {
-    if (!res) {
-        std::cerr << res.error() << std::endl;
-        std::exit(-1);
-    }
-    if constexpr (!std::is_void_v<T>) {
-        return std::move(res).value();
-    }
-}
-}  // namespace PTS::Editor
+}  // namespace pts::editor

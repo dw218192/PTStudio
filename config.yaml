@@ -1,0 +1,367 @@
+repo:
+  tokens:
+    platform:
+      - windows-x64
+      - linux-x64
+      - emscripten
+    build_type:
+      - Debug
+      - Release
+      - RelWithDebInfo
+    build_root: {value: "{workspace_root}/_build", path: true}
+    logs_root: {value: "{workspace_root}/_logs", path: true}
+    build_dir: {value: "{build_root}/{platform}/{build_type}", path: true}
+    conan_deps_root: {value: "{build_root}/{platform}/deps", path: true}
+    package_dir: {value: "{workspace_root}/_package/{platform}", path: true}
+  extra_deps:
+    - conan==2.22.2
+    - cmake==3.31.1
+    - jinja2==3.1.6
+    - InquirerPy==0.3.4
+    # flip-evaluator's nbflip.pyd uses nanobind->numpy for evaluate()/load()
+    # but the wheel does NOT declare numpy/Pillow as runtime deps. Without
+    # them the pyd silently abort()s when called directly. List them here
+    # so image-diff's Python-API path and the debug-image-diff skill both
+    # work after a clean ./repo init.
+    - flip-evaluator==1.7
+    - numpy>=2.0
+    - Pillow>=10.0
+    - pytest>=7.0
+
+build:
+  windowing: "glfw"
+  usd_modules:
+    - usdGeom
+    - usdShade
+    - usdLux
+    - usdUtils
+    - geomUtil
+    - hd
+  prebuild:
+    format: {}
+    slangc: {}
+    shader_variants_codegen: {}
+    usdz: {}
+    embed: {}
+  postbuild: {}
+  conan:
+    local_recipes: "tools/conan"
+
+agent:
+  allowlist_extra: "allowlist_extra.toml"
+  required_criteria+:
+    - "Build succeeds (repo_build) for both the native and emscripten platforms and all build types"
+    - "All existing tests pass (repo_test) for both the native and emscripten platforms and all build types"
+    - "If there is a new feature, it must have tests that cover the code path"
+    - "Fail loud: use macros in <core/diagnostics.h> instead of silent null checks, fallbacks, or defensive state management."
+    - "Follows naming conventions: UpperCamelCase types, snake_case methods/vars, m_ private members, k_snake_case constants, lowerCamelCase files"
+    - "Never hide errors with silent fallbacks, empty catch blocks, or swallowed return codes."
+    - "Never disable or skip unit tests without explicit justification."
+    - "For renderer/shader/lighting/asset-pipeline changes, run `./repo image-diff` and confirm no case's FLIP score has regressed beyond its committed baseline. If a score improves, document it; if it regresses, fix the cause or justify the change explicitly."
+  prompts:
+    common: >
+      C++17 codebase. Naming: UpperCamelCase types, snake_case functions/variables,
+      m_prefix for private members, k_snake_case for constexpr constants,
+      lowerCamelCase.cpp files, snake_case directories.
+      Public API boundaries must be noexcept and return error_code or boost::result --
+      never let exceptions escape. Use ABI-safe types only at DLL boundaries
+      (fixed-width ints, POD structs, opaque handles -- no std::string/vector).
+      Prefer Rule of Zero, RAII, string_view/span for non-owning views.
+      Prefer returning values over storing state -- e.g. init() returns an
+      error code rather than storing it as a member for the caller to query.
+      Use #pragma once, include what you use, forward-declare in headers.
+    reviewer: >
+      Watch for regressions: run the full test suite, not just new tests.
+      Flag scope creep, drive-by refactors, or formatting outside touched functions.
+      Diff against the base branch (not just HEAD) to catch accumulated drift.
+      Reject self-testing mock tests: tests that define local stubs of the system
+      under test and assert against those stubs are worthless. Every test must call
+      real production code. If that's not feasible, don't add the test.
+      Reject vacuous tests: tests that only assert default member initializers,
+      sizeof() (use static_assert in headers instead), or trivial constructor
+      behavior. A test must exercise a non-trivial code path to justify its existence.
+
+image_diff:
+  # Metric is max over per-tile mean FLIP. Whole-image mean drowns localized
+  # regressions (e.g. a wrong shadow in a mostly-black scene) in the
+  # error-free background; tile-max is the geometric generalization that
+  # surfaces them. tile_size is in pixels.
+  tile_size: 64
+  default_threshold: 0.25        # max tile-mean FLIP; fail if above
+  gt_dir: "tests/golden/gt"      # committed ground-truth PNGs
+  out_dir: "_test_captures"      # capture + heatmap output (gitignored)
+  gt_bake:
+    renderer: "Path Trace"
+    frames: 4096                 # spp/frames used when baking GT
+  # Per-case thresholds are set just above each case's current tile-max
+  # so real regressions surface, while known Forward/PT differences don't.
+  # Measured scores against committed GT (2026-04 Forward render):
+  cases:
+    - name: area_light_pcss
+      scene: "assets/scenes/area_light_test.usda"
+      camera: "/Root/Camera_3"
+      renderer: Forward
+      gt: "area_light_pcss.png"
+      threshold: 0.30
+      # Temporal visibility EMA needs ~30-60 frames to converge from a cold
+      # zero history. The pass uses blend_weight=0.05, so after ~60 frames
+      # the new sample contribution stabilizes at ~95% of steady state.
+      frames: 60
+    - name: brdf_ibl
+      scene: "assets/scenes/brdf_test.usda"
+      camera: "/Root/Camera"
+      renderer: Forward
+      gt: "brdf_ibl.png"
+      threshold: 0.30
+
+usdz:
+  scenes:
+    - input: "assets/scenes/primitives.usda"
+      output: "assets/scenes/primitives.usdz"
+    - input: "assets/scenes/area_light_test.usda"
+      output: "assets/scenes/area_light_test.usdz"
+    - input: "assets/scenes/glass_test.usda"
+      output: "assets/scenes/glass_test.usdz"
+    - input: "assets/scenes/brdf_test.usda"
+      output: "assets/scenes/brdf_test.usdz"
+    - input: "assets/scenes/shadow_test.usda"
+      output: "assets/scenes/shadow_test.usdz"
+    - input: "assets/scenes/test_cube.usda"
+      output: "assets/scenes/test_cube.usdz"
+    - input: "assets/scenes/clustered_lighting_test.usda"
+      output: "assets/scenes/clustered_lighting_test.usdz"
+    - input: "assets/scenes/camera.usda"
+      output: "assets/scenes/camera.usdz"
+    - input: "assets/scenes/kitchen/Kitchen_set.usd"
+      output: "assets/scenes/kitchen_set.usdz"
+
+slangc:
+  search_paths:
+    - "core/shaders"
+    - "core/shaders/ibl"
+    - "core/shaders/shadow"
+  # Each entry may declare a `metadata: { output, namespace }` block; when
+  # present, pts_shaderc walks the linked reflection in-process and emits the
+  # C++ metadata header (replaces the old shader_codegen.py + reflect.json
+  # detour). Only the base (no-suffix) variant emits metadata -- it is
+  # define-agnostic.
+  shaders:
+    - input: "assets/shaders/test/*.slang"
+      output: "assets/shaders/test/*.wgsl"
+    - input: "hello_triangle/shaders/hello_triangle.slang"
+      output: "hello_triangle/generated/shaders/hello_triangle.wgsl"
+      metadata:
+        output: "hello_triangle/generated/shader_metadata.h"
+        namespace: "hello_triangle_shader"
+    - input: "renderers/forward/forward.slang"
+      output: "renderers/forward/generated/shaders/forward.wgsl"
+      metadata:
+        output: "renderers/forward/generated/shader_metadata.h"
+        namespace: "forward_shader"
+      variants:
+        - {}
+        - defines: ["NO_DEBUG_TARGETS"]
+          suffix: "_no_debug"
+    - input: "renderers/forward/skybox.slang"
+      output: "renderers/forward/generated/shaders/skybox.wgsl"
+      metadata:
+        output: "renderers/forward/generated/skybox_shader_metadata.h"
+        namespace: "skybox_shader"
+    - input: "core/shaders/shadow/shadow_map.slang"
+      output: "core/generated/shaders/shadow/shadow_map.wgsl"
+      metadata:
+        output: "core/generated/shadow_map_shader_metadata.h"
+        namespace: "shadow_map_shader"
+    - input: "core/shaders/gbuffer.slang"
+      output: "core/generated/shaders/gbuffer.wgsl"
+      metadata:
+        output: "core/generated/gbuffer_shader_metadata.h"
+        namespace: "gbuffer_shader"
+    - input: "core/shaders/ssao.slang"
+      output: "core/generated/shaders/ssao.wgsl"
+      metadata:
+        output: "core/generated/ssao_shader_metadata.h"
+        namespace: "ssao_shader"
+    - input: "core/shaders/bilateral_blur.slang"
+      output: "core/generated/shaders/bilateral_blur.wgsl"
+      metadata:
+        output: "core/generated/bilateral_blur_shader_metadata.h"
+        namespace: "bilateral_blur_shader"
+    - input: "core/shaders/contact_shadow.slang"
+      output: "core/generated/shaders/contact_shadow.wgsl"
+      metadata:
+        output: "core/generated/contact_shadow_shader_metadata.h"
+        namespace: "contact_shadow_shader"
+    - input: "core/shaders/shadow/shadow_visibility.slang"
+      output: "core/generated/shaders/shadow/shadow_visibility.wgsl"
+      metadata:
+        output: "core/generated/shadow_visibility_shader_metadata.h"
+        namespace: "shadow_visibility_shader"
+    - input: "core/shaders/shadow/temporal_resolve.slang"
+      output: "core/generated/shaders/shadow/temporal_resolve.wgsl"
+      metadata:
+        output: "core/generated/temporal_resolve_shader_metadata.h"
+        namespace: "temporal_resolve_shader"
+    - input: "editor/shaders/picking.slang"
+      output: "editor/generated/shaders/picking.wgsl"
+      metadata:
+        output: "editor/generated/picking_shader_metadata.h"
+        namespace: "editor_picking_shader"
+    - input: "editor/shaders/grid.slang"
+      output: "editor/generated/shaders/grid.wgsl"
+      metadata:
+        output: "editor/generated/grid_shader_metadata.h"
+        namespace: "editor_grid_shader"
+    - input: "editor/shaders/wireframe.slang"
+      output: "editor/generated/shaders/wireframe.wgsl"
+      metadata:
+        output: "editor/generated/wireframe_shader_metadata.h"
+        namespace: "editor_wireframe_shader"
+    - input: "editor/shaders/gizmo.slang"
+      output: "editor/generated/shaders/gizmo.wgsl"
+      metadata:
+        output: "editor/generated/gizmo_shader_metadata.h"
+        namespace: "editor_gizmo_shader"
+    - input: "editor/shaders/lobe.slang"
+      output: "editor/generated/shaders/lobe.wgsl"
+      metadata:
+        output: "editor/generated/lobe_shader_metadata.h"
+        namespace: "editor_lobe_shader"
+    - input: "editor/shaders/tonemapping.slang"
+      output: "editor/generated/shaders/tonemapping.wgsl"
+      metadata:
+        output: "core/generated/tonemapping_shader_metadata.h"
+        namespace: "tonemapping_shader"
+    - input: "editor/shaders/luminance.slang"
+      output: "editor/generated/shaders/luminance.wgsl"
+      metadata:
+        output: "core/generated/luminance_shader_metadata.h"
+        namespace: "luminance_shader"
+    - input: "renderers/pathtracer/pathtracer.slang"
+      output: "editor/generated/shaders/pathtracer.wgsl"
+      metadata:
+        output: "renderers/pathtracer/generated/pathtracer_shader_metadata.h"
+        namespace: "pathtracer_shader"
+    - input: "renderers/pathtracer/pt_blit.slang"
+      output: "editor/generated/shaders/pt_blit.wgsl"
+      metadata:
+        output: "renderers/pathtracer/generated/pt_blit_shader_metadata.h"
+        namespace: "pt_blit_shader"
+    - input: "core/shaders/ibl/brdf_lut.slang"
+      output: "core/generated/shaders/brdf_lut.wgsl"
+    - input: "core/shaders/ibl/equirect_to_cube.slang"
+      output: "core/generated/shaders/equirect_to_cube.wgsl"
+    - input: "core/shaders/ibl/irradiance_convolve.slang"
+      output: "core/generated/shaders/irradiance_convolve.wgsl"
+    - input: "core/shaders/ibl/downsample_cube.slang"
+      output: "core/generated/shaders/downsample_cube.wgsl"
+    - input: "core/shaders/ibl/prefilter_env.slang"
+      output: "core/generated/shaders/prefilter_env.wgsl"
+
+shader_variants_codegen:
+  # Consumes `slangc.shaders[].variants[]` and emits a C++ header describing
+  # every (sorted defines -> filename suffix) registered for embedding.
+  # Consumed by EmbeddedCompiler to map compile(source_key, defines) requests
+  # onto the embedded resource key.
+  output: "core/generated/shader_variants_map.h"
+  namespace: "pts::rendering::variants"
+
+embed:
+  template: "core/templates/embedded_resources.h.j2"
+  # Shader entries use "*.wgsl" globs so every variant emitted by the slangc
+  # prebuild (e.g. forward.wgsl + forward_no_debug.wgsl) is auto-included.
+  #
+  # WGSL is only embedded on Emscripten: native always compiles from .slang at
+  # runtime via SlangCompiler. The `input@emscripten` override replaces `input`
+  # when the active platform is emscripten.
+  #
+  # ibl_resources is an exception until iblResources.cpp is plumbed through
+  # IShaderCompiler -- it still reads WGSL from its own embedded namespace on
+  # both platforms.
+  resources:
+    - input:
+        - "editor/icons/*.*"
+      input@emscripten:
+        - "renderers/forward/generated/shaders/*.wgsl"
+        - "core/generated/shaders/shadow/shadow_map.wgsl"
+        - "core/generated/shaders/gbuffer.wgsl"
+        - "core/generated/shaders/ssao.wgsl"
+        - "core/generated/shaders/bilateral_blur.wgsl"
+        - "core/generated/shaders/contact_shadow.wgsl"
+        - "core/generated/shaders/shadow/shadow_visibility.wgsl"
+        - "core/generated/shaders/shadow/temporal_resolve.wgsl"
+        - "editor/generated/shaders/picking.wgsl"
+        - "editor/generated/shaders/grid.wgsl"
+        - "editor/generated/shaders/wireframe.wgsl"
+        - "editor/generated/shaders/gizmo.wgsl"
+        - "editor/generated/shaders/lobe.wgsl"
+        - "editor/generated/shaders/tonemapping.wgsl"
+        - "editor/generated/shaders/luminance.wgsl"
+        - "editor/generated/shaders/pathtracer.wgsl"
+        - "editor/generated/shaders/pt_blit.wgsl"
+        - "editor/icons/*.*"
+      output: "editor/generated/embedded_resources.h"
+      namespace: "editor_resources"
+    - input:
+        - "core/generated/shaders/brdf_lut.wgsl"
+        - "core/generated/shaders/downsample_cube.wgsl"
+        - "core/generated/shaders/equirect_to_cube.wgsl"
+        - "core/generated/shaders/irradiance_convolve.wgsl"
+        - "core/generated/shaders/prefilter_env.wgsl"
+      output: "core/generated/embedded_ibl_shaders.h"
+      namespace: "ibl_resources"
+    - input:
+        # Test fixture WGSL stays embedded on both platforms so the unit
+        # tests that route through EmbeddedCompiler don't require a .slang
+        # source tree on native.
+        - "assets/shaders/test/simple.wgsl"
+        - "assets/scenes/test_cube.usda"
+      output: "core/tests/generated/embedded_test_resources.h"
+      namespace: "test_resources"
+    - input:
+        - "hello_triangle/scenes/triangle.usda"
+      input@emscripten:
+        - "hello_triangle/generated/shaders/hello_triangle.wgsl"
+        - "hello_triangle/scenes/triangle.usda"
+      output: "hello_triangle/generated/embedded_resources.h"
+      namespace: "hello_triangle_resources"
+
+clean:
+  groups:
+    generated:
+      - "re:^(core|editor|hello_triangle|renderers)/.*generated$"
+    build:
+      - "{workspace_root}/_build"
+    logs:
+      - "{workspace_root}/_logs"
+    deploy:
+      - "{workspace_root}/_package"
+      - "{workspace_root}/_deploy"
+    cmake:
+      - "{workspace_root}/CMakeUserPresets.json"
+
+publish:
+  output_dir: "{workspace_root}/_deploy"
+  input_dir: "{package_dir}/{build_type}/bin"
+
+package:
+  output_dir: "{package_dir}"
+  mappings:
+    - src: "{build_dir}/bin/**/*"
+      dest: "{build_type}/bin/"
+    - src: "{build_dir}/conanbuild*"
+      dest: "{build_type}/"
+    - src: "{conan_deps_root}/*.dll"
+      dest: "deps/"
+    - src: "{conan_deps_root}/usd/**/*"
+      dest: "deps/usd/"
+    - src: "{workspace_root}/assets/scenes/*.usdz"
+      dest: "assets/scenes/"
+  # Emscripten package omits conanbuild scripts -- Conan .sh scripts use
+  # hardcoded absolute paths and can't be relocated.  Unit tests only need
+  # node (on CI PATH); smoke tests use the browser.
+  mappings@emscripten:
+    - src: "{build_dir}/bin/**/*"
+      dest: "{build_type}/bin/"
+    - src: "{workspace_root}/assets/scenes/*.usdz"
+      dest: "assets/scenes/"

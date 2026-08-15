@@ -1,0 +1,267 @@
+#usda 1.0
+(
+    defaultPrim = "Root"
+    upAxis = "Y"
+)
+
+def Xform "Root"
+{
+    # ── Materials ──
+
+    def Scope "Materials"
+    {
+        def Material "GroundMat"
+        {
+            token outputs:surface.connect = </Root/Materials/GroundMat/Shader.outputs:surface>
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.35, 0.35, 0.35)
+                float inputs:metallic = 0.0
+                float inputs:roughness = 0.8
+                token outputs:surface
+            }
+        }
+
+        def Material "WallMat"
+        {
+            token outputs:surface.connect = </Root/Materials/WallMat/Shader.outputs:surface>
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.6, 0.58, 0.55)
+                float inputs:metallic = 0.0
+                float inputs:roughness = 0.7
+                token outputs:surface
+            }
+        }
+
+        def Material "RedMat"
+        {
+            token outputs:surface.connect = </Root/Materials/RedMat/Shader.outputs:surface>
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.15, 0.1)
+                float inputs:metallic = 0.0
+                float inputs:roughness = 0.3
+                token outputs:surface
+            }
+        }
+
+        def Material "BlueMat"
+        {
+            token outputs:surface.connect = </Root/Materials/BlueMat/Shader.outputs:surface>
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.1, 0.2, 0.8)
+                float inputs:metallic = 0.3
+                float inputs:roughness = 0.2
+                token outputs:surface
+            }
+        }
+
+        def Material "WhiteMat"
+        {
+            token outputs:surface.connect = </Root/Materials/WhiteMat/Shader.outputs:surface>
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.9, 0.9, 0.9)
+                float inputs:metallic = 0.8
+                float inputs:roughness = 0.15
+                token outputs:surface
+            }
+        }
+
+        def Material "GreenMat"
+        {
+            token outputs:surface.connect = </Root/Materials/GreenMat/Shader.outputs:surface>
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.15, 0.7, 0.2)
+                float inputs:metallic = 0.0
+                float inputs:roughness = 0.5
+                token outputs:surface
+            }
+        }
+    }
+
+    # ── Geometry ──
+
+    def Mesh "Ground" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        token orientation = "rightHanded"
+        point3f[] points = [(-5, 0, -5), (5, 0, -5), (5, 0, 5), (-5, 0, 5)]
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)]
+        token subdivisionScheme = "none"
+        rel material:binding = </Root/Materials/GroundMat>
+    }
+
+    def Mesh "BackWall" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        token orientation = "rightHanded"
+        point3f[] points = [(-5, 0, -5), (5, 0, -5), (5, 5, -5), (-5, 5, -5)]
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)]
+        token subdivisionScheme = "none"
+        rel material:binding = </Root/Materials/WallMat>
+    }
+
+    # Occluder objects on the ground
+    def Cube "CubeA" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double size = 0.8
+        double3 xformOp:translate = (-2.5, 0.4, -1.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </Root/Materials/RedMat>
+    }
+
+    def Cube "CubeB" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double size = 0.6
+        double3 xformOp:translate = (1.0, 0.3, 0.5)
+        float3 xformOp:rotateXYZ = (0, 35, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+        rel material:binding = </Root/Materials/BlueMat>
+    }
+
+    def Sphere "SphereA" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 0.4
+        double3 xformOp:translate = (0.0, 0.4, -2.0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </Root/Materials/WhiteMat>
+    }
+
+    def Sphere "SphereB" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double radius = 0.35
+        double3 xformOp:translate = (-1.0, 0.35, 0.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+        rel material:binding = </Root/Materials/GreenMat>
+    }
+
+    def Cube "TallBox" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        double size = 1.0
+        double3 xformOp:translate = (3.0, 0.8, -3.0)
+        double3 xformOp:scale = (0.5, 1.6, 0.5)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        rel material:binding = </Root/Materials/WallMat>
+    }
+
+    # ── Lights ──
+    # 8x8 grid of lights, alternating point (SphereLight) and area (RectLight).
+    # Grid spans X=[-4, 4], Z=[-4, 4] with 1.14m spacing.
+    # Heights vary by row (0.8m to 2.8m). Colors cycle through warm/cool palette.
+
+    def Xform "Lights"
+    {
+        # Row 0 (z = -4.0, height = 0.8)
+        def SphereLight "L_0_0" { float inputs:intensity = 30; color3f inputs:color = (1.0, 0.85, 0.6); float inputs:radius = 0.05; double3 xformOp:translate = (-4.0, 0.8, -4.0); uniform token[] xformOpOrder = ["xformOp:translate"]; }
+        def RectLight "L_0_1" { float inputs:intensity = 120; color3f inputs:color = (0.6, 0.85, 1.0); float inputs:width = 0.3; float inputs:height = 0.3; double3 xformOp:translate = (-2.86, 0.8, -4.0); float3 xformOp:rotateXYZ = (-90, 0, 0); uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]; }
+        def SphereLight "L_0_2" { float inputs:intensity = 25; color3f inputs:color = (1.0, 0.5, 0.3); float inputs:radius = 0.05; double3 xformOp:translate = (-1.71, 0.8, -4.0); uniform token[] xformOpOrder = ["xformOp:translate"]; }
+        def RectLight "L_0_3" { float inputs:intensity = 100; color3f inputs:color = (0.4, 1.0, 0.6); float inputs:width = 0.25; float inputs:height = 0.25; double3 xformOp:translate = (-0.57, 0.8, -4.0); float3 xformOp:rotateXYZ = (-90, 0, 0); uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]; }
+        def SphereLight "L_0_4" { float inputs:intensity = 35; color3f inputs:color = (1.0, 0.9, 0.7); float inputs:radius = 0.05; double3 xformOp:translate = (0.57, 0.8, -4.0); uniform token[] xformOpOrder = ["xformOp:translate"]; }
+        def RectLight "L_0_5" { float inputs:intensity = 110; color3f inputs:color = (0.8, 0.4, 1.0); float inputs:width = 0.35; float inputs:height = 0.2; double3 xformOp:translate = (1.71, 0.8, -4.0); float3 xformOp:rotateXYZ = (-90, 0, 0); uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]; }
+        def SphereLight "L_0_6" { float inputs:intensity = 28; color3f inputs:color = (0.3, 0.7, 1.0); float inputs:radius = 0.05; double3 xformOp:translate = (2.86, 0.8, -4.0); uniform token[] xformOpOrder = ["xformOp:translate"]; }
+        def RectLight "L_0_7" { float inputs:intensity = 130; color3f inputs:color = (1.0, 0.3, 0.3); float inputs:width = 0.3; float inputs:height = 0.3; double3 xformOp:translate = (4.0, 0.8, -4.0); float3 xformOp:rotateXYZ = (-90, 0, 0); uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]; }
+
+        # Row 1 (z = -2.86, height = 1.1)
+        def RectLight "L_1_0" { float inputs:intensity = 100; color3f inputs:color = (1.0, 0.6, 0.8); float inputs:width = 0.3; float inputs:height = 0.15; double3 xformOp:translate = (-4.0, 1.1, -2.86); float3 xformOp:rotateXYZ = (-90, 0, 0); uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]; }
+        def SphereLight "L_1_1" { float inputs:intensity = 32; color3f inputs:color = (0.9, 0.9, 0.5); float inputs:radius = 0.05; double3 xformOp:translate = (-2.86, 1.1, -2.86); uniform token[] xformOpOrder = ["xformOp:translate"]; }
+        def RectLight "L_1_2" { float inputs:intensity = 140; color3f inputs:color = (0.5, 0.8, 1.0); float inputs:width = 0.4; float inputs:height = 0.2; double3 xformOp:translate = (-1.71, 1.1, -2.86); float3 xformOp:rotateXYZ = (-90, 0, 0); uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]; }
+        def SphereLight "L_1_3" { float inputs:intensity = 40; color3f inputs:color = (1.0, 0.4, 0.2); float inputs:radius = 0.05; double3 xformOp:translate = (-0.57, 1.1, -2.86); uniform token[] xformOpOrder = ["xformOp:translate"]; }
+        def RectLight "L_1_4" { float inputs:intensity = 90; color3f inputs:color = (0.3, 1.0, 0.9); float inputs:width = 0.25; float inputs:height = 0.25; double3 xformOp:translate = (0.57, 1.1, -2.86); float3 xformOp:rotateXYZ = (-90, 0, 0); uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]; }
+        def SphereLight "L_1_5" { float inputs:intensity = 30; color3f inputs:color = (0.7, 0.3, 0.9); float inputs:radius = 0.05; double3 xformOp:translate = (1.71, 1.1, -2.86); uniform token[] xformOpOrder = ["xformOp:translate"]; }
+        def RectLight "L_1_6" { float inputs:intensity = 115; color3f inputs:color = (1.0, 0.7, 0.4); float inputs:width = 0.35; float inputs:height = 0.35; double3 xformOp:translate = (2.86, 1.1, -2.86); float3 xformOp:rotateXYZ = (-90, 0, 0); uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]; }
+        def SphereLight "L_1_7" { float inputs:intensity = 26; color3f inputs:color = (0.4, 0.6, 1.0); float inputs:radius = 0.05; double3 xformOp:translate = (4.0, 1.1, -2.86); uniform token[] xformOpOrder = ["xformOp:translate"]; }
+
+        # Row 2 (z = -1.71, height = 1.5)
+        def SphereLight "L_2_0" { float inputs:intensity = 35; color3f inputs:color = (1.0, 0.95, 0.8); float inputs:radius = 0.05; double3 xformOp:translate = (-4.0, 1.5, -1.71); uniform token[] xformOpOrder = ["xformOp:translate"]; }
+        def RectLight "L_2_1" { float inputs:intensity = 125; color3f inputs:color = (0.9, 0.3, 0.5); float inputs:width = 0.3; float inputs:height = 0.3; double3 xformOp:translate = (-2.86, 1.5, -1.71); float3 xformOp:rotateXYZ = (-90, 0, 0); uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]; }
+        def SphereLight "L_2_2" { float inputs:intensity = 30; color3f inputs:color = (0.5, 1.0, 0.5); float inputs:radius = 0.05; double3 xformOp:translate = (-1.71, 1.5, -1.71); uniform token[] xformOpOrder = ["xformOp:translate"]; }
+        def RectLight "L_2_3" { float inputs:intensity = 105; color3f inputs:color = (0.3, 0.5, 1.0); float inputs:width = 0.2; float inputs:height = 0.4; double3 xformOp:translate = (-0.57, 1.5, -1.71); float3 xformOp:rotateXYZ = (-90, 0, 0); uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]; }
+        def SphereLight "L_2_4" { float inputs:intensity = 38; color3f inputs:color = (1.0, 0.6, 0.2); float inputs:radius = 0.05; double3 xformOp:translate = (0.57, 1.5, -1.71); uniform token[] xformOpOrder = ["xformOp:translate"]; }
+        def RectLight "L_2_5" { float inputs:intensity = 95; color3f inputs:color = (0.7, 1.0, 0.3); float inputs:width = 0.3; float inputs:height = 0.2; double3 xformOp:translate = (1.71, 1.5, -1.71); float3 xformOp:rotateXYZ = (-90, 0, 0); uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]; }
+        def SphereLight "L_2_6" { float inputs:intensity = 28; color3f inputs:color = (0.8, 0.3, 0.8); float inputs:radius = 0.05; double3 xformOp:translate = (2.86, 1.5, -1.71); uniform token[] xformOpOrder = ["xformOp:translate"]; }
+        def RectLight "L_2_7" { float inputs:intensity = 110; color3f inputs:color = (1.0, 0.8, 0.5); float inputs:width = 0.25; float inputs:height = 0.25; double3 xformOp:translate = (4.0, 1.5, -1.71); float3 xformOp:rotateXYZ = (-90, 0, 0); uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]; }
+
+        # Row 3 (z = -0.57, height = 1.8)
+        def RectLight "L_3_0" { float inputs:intensity = 130; color3f inputs:color = (1.0, 0.4, 0.4); float inputs:width = 0.35; float inputs:height = 0.2; double3 xformOp:translate = (-4.0, 1.8, -0.57); float3 xformOp:rotateXYZ = (-90, 0, 0); uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]; }
+        def SphereLight "L_3_1" { float inputs:intensity = 33; color3f inputs:color = (0.4, 0.9, 1.0); float inputs:radius = 0.05; double3 xformOp:translate = (-2.86, 1.8, -0.57); uniform token[] xformOpOrder = ["xformOp:translate"]; }
+        def RectLight "L_3_2" { float inputs:intensity = 100; color3f inputs:color = (0.9, 0.9, 0.4); float inputs:width = 0.3; float inputs:height = 0.3; double3 xformOp:translate = (-1.71, 1.8, -0.57); float3 xformOp:rotateXYZ = (-90, 0, 0); uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]; }
+        def SphereLight "L_3_3" { float inputs:intensity = 42; color3f inputs:color = (1.0, 0.3, 0.7); float inputs:radius = 0.05; double3 xformOp:translate = (-0.57, 1.8, -0.57); uniform token[] xformOpOrder = ["xformOp:translate"]; }
+        def RectLight "L_3_4" { float inputs:intensity = 120; color3f inputs:color = (0.3, 0.8, 0.4); float inputs:width = 0.4; float inputs:height = 0.15; double3 xformOp:translate = (0.57, 1.8, -0.57); float3 xformOp:rotateXYZ = (-90, 0, 0); uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]; }
+        def SphereLight "L_3_5" { float inputs:intensity = 36; color3f inputs:color = (0.6, 0.4, 1.0); float inputs:radius = 0.05; double3 xformOp:translate = (1.71, 1.8, -0.57); uniform token[] xformOpOrder = ["xformOp:translate"]; }
+        def RectLight "L_3_6" { float inputs:intensity = 105; color3f inputs:color = (1.0, 0.5, 0.2); float inputs:width = 0.3; float inputs:height = 0.3; double3 xformOp:translate = (2.86, 1.8, -0.57); float3 xformOp:rotateXYZ = (-90, 0, 0); uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]; }
+        def SphereLight "L_3_7" { float inputs:intensity = 29; color3f inputs:color = (0.5, 1.0, 0.8); float inputs:radius = 0.05; double3 xformOp:translate = (4.0, 1.8, -0.57); uniform token[] xformOpOrder = ["xformOp:translate"]; }
+
+        # Row 4 (z = 0.57, height = 2.1)
+        def SphereLight "L_4_0" { float inputs:intensity = 30; color3f inputs:color = (1.0, 0.7, 0.3); float inputs:radius = 0.05; double3 xformOp:translate = (-4.0, 2.1, 0.57); uniform token[] xformOpOrder = ["xformOp:translate"]; }
+        def RectLight "L_4_1" { float inputs:intensity = 115; color3f inputs:color = (0.4, 0.6, 1.0); float inputs:width = 0.25; float inputs:height = 0.35; double3 xformOp:translate = (-2.86, 2.1, 0.57); float3 xformOp:rotateXYZ = (-90, 0, 0); uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]; }
+        def SphereLight "L_4_2" { float inputs:intensity = 34; color3f inputs:color = (0.9, 0.4, 0.4); float inputs:radius = 0.05; double3 xformOp:translate = (-1.71, 2.1, 0.57); uniform token[] xformOpOrder = ["xformOp:translate"]; }
+        def RectLight "L_4_3" { float inputs:intensity = 135; color3f inputs:color = (0.3, 1.0, 0.7); float inputs:width = 0.3; float inputs:height = 0.3; double3 xformOp:translate = (-0.57, 2.1, 0.57); float3 xformOp:rotateXYZ = (-90, 0, 0); uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]; }
+        def SphereLight "L_4_4" { float inputs:intensity = 40; color3f inputs:color = (0.8, 0.8, 0.3); float inputs:radius = 0.05; double3 xformOp:translate = (0.57, 2.1, 0.57); uniform token[] xformOpOrder = ["xformOp:translate"]; }
+        def RectLight "L_4_5" { float inputs:intensity = 100; color3f inputs:color = (1.0, 0.3, 0.8); float inputs:width = 0.35; float inputs:height = 0.2; double3 xformOp:translate = (1.71, 2.1, 0.57); float3 xformOp:rotateXYZ = (-90, 0, 0); uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]; }
+        def SphereLight "L_4_6" { float inputs:intensity = 27; color3f inputs:color = (0.3, 0.9, 0.6); float inputs:radius = 0.05; double3 xformOp:translate = (2.86, 2.1, 0.57); uniform token[] xformOpOrder = ["xformOp:translate"]; }
+        def RectLight "L_4_7" { float inputs:intensity = 120; color3f inputs:color = (0.9, 0.6, 0.3); float inputs:width = 0.3; float inputs:height = 0.3; double3 xformOp:translate = (4.0, 2.1, 0.57); float3 xformOp:rotateXYZ = (-90, 0, 0); uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]; }
+
+        # Row 5 (z = 1.71, height = 2.3)
+        def RectLight "L_5_0" { float inputs:intensity = 110; color3f inputs:color = (0.7, 0.3, 1.0); float inputs:width = 0.3; float inputs:height = 0.2; double3 xformOp:translate = (-4.0, 2.3, 1.71); float3 xformOp:rotateXYZ = (-90, 0, 0); uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]; }
+        def SphereLight "L_5_1" { float inputs:intensity = 38; color3f inputs:color = (1.0, 0.9, 0.5); float inputs:radius = 0.05; double3 xformOp:translate = (-2.86, 2.3, 1.71); uniform token[] xformOpOrder = ["xformOp:translate"]; }
+        def RectLight "L_5_2" { float inputs:intensity = 95; color3f inputs:color = (0.4, 0.8, 0.9); float inputs:width = 0.25; float inputs:height = 0.4; double3 xformOp:translate = (-1.71, 2.3, 1.71); float3 xformOp:rotateXYZ = (-90, 0, 0); uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]; }
+        def SphereLight "L_5_3" { float inputs:intensity = 31; color3f inputs:color = (1.0, 0.5, 0.5); float inputs:radius = 0.05; double3 xformOp:translate = (-0.57, 2.3, 1.71); uniform token[] xformOpOrder = ["xformOp:translate"]; }
+        def RectLight "L_5_4" { float inputs:intensity = 125; color3f inputs:color = (0.5, 1.0, 0.3); float inputs:width = 0.3; float inputs:height = 0.3; double3 xformOp:translate = (0.57, 2.3, 1.71); float3 xformOp:rotateXYZ = (-90, 0, 0); uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]; }
+        def SphereLight "L_5_5" { float inputs:intensity = 35; color3f inputs:color = (0.3, 0.5, 0.9); float inputs:radius = 0.05; double3 xformOp:translate = (1.71, 2.3, 1.71); uniform token[] xformOpOrder = ["xformOp:translate"]; }
+        def RectLight "L_5_6" { float inputs:intensity = 100; color3f inputs:color = (0.9, 0.8, 0.3); float inputs:width = 0.35; float inputs:height = 0.25; double3 xformOp:translate = (2.86, 2.3, 1.71); float3 xformOp:rotateXYZ = (-90, 0, 0); uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]; }
+        def SphereLight "L_5_7" { float inputs:intensity = 29; color3f inputs:color = (1.0, 0.4, 0.6); float inputs:radius = 0.05; double3 xformOp:translate = (4.0, 2.3, 1.71); uniform token[] xformOpOrder = ["xformOp:translate"]; }
+
+        # Row 6 (z = 2.86, height = 2.6)
+        def SphereLight "L_6_0" { float inputs:intensity = 32; color3f inputs:color = (0.6, 1.0, 0.8); float inputs:radius = 0.05; double3 xformOp:translate = (-4.0, 2.6, 2.86); uniform token[] xformOpOrder = ["xformOp:translate"]; }
+        def RectLight "L_6_1" { float inputs:intensity = 140; color3f inputs:color = (1.0, 0.3, 0.5); float inputs:width = 0.4; float inputs:height = 0.2; double3 xformOp:translate = (-2.86, 2.6, 2.86); float3 xformOp:rotateXYZ = (-90, 0, 0); uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]; }
+        def SphereLight "L_6_2" { float inputs:intensity = 36; color3f inputs:color = (0.4, 0.4, 1.0); float inputs:radius = 0.05; double3 xformOp:translate = (-1.71, 2.6, 2.86); uniform token[] xformOpOrder = ["xformOp:translate"]; }
+        def RectLight "L_6_3" { float inputs:intensity = 105; color3f inputs:color = (0.8, 1.0, 0.4); float inputs:width = 0.3; float inputs:height = 0.3; double3 xformOp:translate = (-0.57, 2.6, 2.86); float3 xformOp:rotateXYZ = (-90, 0, 0); uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]; }
+        def SphereLight "L_6_4" { float inputs:intensity = 34; color3f inputs:color = (1.0, 0.6, 0.6); float inputs:radius = 0.05; double3 xformOp:translate = (0.57, 2.6, 2.86); uniform token[] xformOpOrder = ["xformOp:translate"]; }
+        def RectLight "L_6_5" { float inputs:intensity = 115; color3f inputs:color = (0.3, 0.7, 0.5); float inputs:width = 0.25; float inputs:height = 0.35; double3 xformOp:translate = (1.71, 2.6, 2.86); float3 xformOp:rotateXYZ = (-90, 0, 0); uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]; }
+        def SphereLight "L_6_6" { float inputs:intensity = 28; color3f inputs:color = (0.9, 0.5, 0.9); float inputs:radius = 0.05; double3 xformOp:translate = (2.86, 2.6, 2.86); uniform token[] xformOpOrder = ["xformOp:translate"]; }
+        def RectLight "L_6_7" { float inputs:intensity = 130; color3f inputs:color = (0.5, 0.9, 1.0); float inputs:width = 0.3; float inputs:height = 0.3; double3 xformOp:translate = (4.0, 2.6, 2.86); float3 xformOp:rotateXYZ = (-90, 0, 0); uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]; }
+
+        # Row 7 (z = 4.0, height = 2.8)
+        def RectLight "L_7_0" { float inputs:intensity = 120; color3f inputs:color = (1.0, 0.7, 0.3); float inputs:width = 0.35; float inputs:height = 0.25; double3 xformOp:translate = (-4.0, 2.8, 4.0); float3 xformOp:rotateXYZ = (-90, 0, 0); uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]; }
+        def SphereLight "L_7_1" { float inputs:intensity = 33; color3f inputs:color = (0.3, 0.6, 1.0); float inputs:radius = 0.05; double3 xformOp:translate = (-2.86, 2.8, 4.0); uniform token[] xformOpOrder = ["xformOp:translate"]; }
+        def RectLight "L_7_2" { float inputs:intensity = 100; color3f inputs:color = (1.0, 0.4, 0.7); float inputs:width = 0.3; float inputs:height = 0.3; double3 xformOp:translate = (-1.71, 2.8, 4.0); float3 xformOp:rotateXYZ = (-90, 0, 0); uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]; }
+        def SphereLight "L_7_3" { float inputs:intensity = 37; color3f inputs:color = (0.7, 1.0, 0.4); float inputs:radius = 0.05; double3 xformOp:translate = (-0.57, 2.8, 4.0); uniform token[] xformOpOrder = ["xformOp:translate"]; }
+        def RectLight "L_7_4" { float inputs:intensity = 110; color3f inputs:color = (0.9, 0.3, 0.3); float inputs:width = 0.25; float inputs:height = 0.4; double3 xformOp:translate = (0.57, 2.8, 4.0); float3 xformOp:rotateXYZ = (-90, 0, 0); uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]; }
+        def SphereLight "L_7_5" { float inputs:intensity = 31; color3f inputs:color = (0.5, 0.8, 0.5); float inputs:radius = 0.05; double3 xformOp:translate = (1.71, 2.8, 4.0); uniform token[] xformOpOrder = ["xformOp:translate"]; }
+        def RectLight "L_7_6" { float inputs:intensity = 125; color3f inputs:color = (0.4, 0.3, 1.0); float inputs:width = 0.3; float inputs:height = 0.3; double3 xformOp:translate = (2.86, 2.8, 4.0); float3 xformOp:rotateXYZ = (-90, 0, 0); uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]; }
+        def SphereLight "L_7_7" { float inputs:intensity = 39; color3f inputs:color = (1.0, 0.8, 0.6); float inputs:radius = 0.05; double3 xformOp:translate = (4.0, 2.8, 4.0); uniform token[] xformOpOrder = ["xformOp:translate"]; }
+    }
+
+    # Low-intensity dome for minimal ambient fill
+    def DomeLight "Ambient"
+    {
+        float inputs:intensity = 0.3
+        color3f inputs:color = (0.4, 0.45, 0.5)
+    }
+}

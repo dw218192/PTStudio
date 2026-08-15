@@ -9,44 +9,49 @@ file(GLOB_RECURSE src_files
 	${CMAKE_CURRENT_SOURCE_DIR}/src/include/*.*
 	${CMAKE_CURRENT_SOURCE_DIR}/src/include/imgui/*.*
 )
-#GLOB resource files
-file(GLOB_RECURSE res_files 
-	${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.*
-	${CMAKE_CURRENT_SOURCE_DIR}/icons/*.*
-)
+list(FILTER src_files EXCLUDE REGEX "editorRenderer")
+list(FILTER src_files EXCLUDE REGEX "forwardPass")
 
 #Executable
 add_executable(${exec_name} ${src_files})
-
-#Embedded resources
-cmrc_add_resource_library(${exec_name}_resources
-	ALIAS ${exec_name}::rc
-	${res_files}
-)
 
 #Libs linked to the executable
 target_link_libraries(${exec_name}
 PRIVATE
 	$<BUILD_INTERFACE:developer_flags>
 	core
-	gl_utils
-	glfw
-	imguizmo
-	ImGuiColorTextEdit
-	Boost::stacktrace
-	Boost::stacktrace_from_exception
-	Boost::program_options
-	#renderers
-	vulkan_raytracer
-	#resourcers
-	${exec_name}::rc
+	renderer_forward
+	renderer_pathtracer
+	imguizmo::imguizmo
+	stb::stb
 )
+if (MSVC)
+	target_compile_options(${exec_name} PRIVATE /bigobj)
+endif()
 
 target_include_directories(${exec_name}
 PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}/src/include
+	${CMAKE_CURRENT_SOURCE_DIR}/src
+	${CMAKE_CURRENT_SOURCE_DIR}/generated
+	${CMAKE_SOURCE_DIR}  # For generated headers (core/generated, editor/generated)
 )
 
 install(TARGETS ${exec_name}
 	RUNTIME DESTINATION ${PROJECT_BINARY_DIR}
 )
+
+# Embed all .usdz scene files into MEMFS for Emscripten builds
+# Paths mirror native layout so the same DemoScene::path works on both platforms
+if(EMSCRIPTEN)
+	file(GLOB _usdz_scenes "${CMAKE_SOURCE_DIR}/assets/scenes/*.usdz")
+	foreach(_scene ${_usdz_scenes})
+		file(RELATIVE_PATH _rel "${CMAKE_SOURCE_DIR}" "${_scene}")
+		target_link_options(${exec_name} PRIVATE
+			"SHELL:--embed-file ${_scene}@/${_rel}")
+	endforeach()
+endif()
+
+if(CORE_BUILD_TESTS)
+	add_subdirectory(tests)
+endif()

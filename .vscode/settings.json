@@ -1,4 +1,12 @@
 {
+    "files.watcherExclude": {
+        "_build/**/deps/**": true,
+        "_build/**/bin/**": true
+    },
+    "C_Cpp.files.exclude": {
+        "_build/**/deps/**": true
+    },
+    "C_Cpp.intelliSenseEngine": "Tag Parser",
     "cmake.configureOnOpen": false,
     "cmake.configureOnEdit": false,
     "cmake.buildDirectory": "${workspaceFolder}/build",

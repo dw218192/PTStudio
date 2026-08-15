@@ -1,0 +1,668 @@
+#usda 1.0
+(
+    defaultPrim = "Root"
+    metersPerUnit = 1
+    upAxis = "Y"
+)
+
+def Xform "Root"
+{
+    def Scope "Materials"
+    {
+        def Material "Ground"
+        {
+            token outputs:surface.connect = </Root/Materials/Ground/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.18, 0.18, 0.18)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.9
+                token outputs:surface
+            }
+        }
+
+        def Material "R0_M0"
+        {
+            token outputs:surface.connect = </Root/Materials/R0_M0/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.2, 0.2)
+                float inputs:metallic = 0
+                float inputs:roughness = 0
+                token outputs:surface
+            }
+        }
+
+        def Material "R0_M25"
+        {
+            token outputs:surface.connect = </Root/Materials/R0_M25/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.2, 0.2)
+                float inputs:metallic = 0.25
+                float inputs:roughness = 0
+                token outputs:surface
+            }
+        }
+
+        def Material "R0_M50"
+        {
+            token outputs:surface.connect = </Root/Materials/R0_M50/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.2, 0.2)
+                float inputs:metallic = 0.5
+                float inputs:roughness = 0
+                token outputs:surface
+            }
+        }
+
+        def Material "R0_M75"
+        {
+            token outputs:surface.connect = </Root/Materials/R0_M75/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.2, 0.2)
+                float inputs:metallic = 0.75
+                float inputs:roughness = 0
+                token outputs:surface
+            }
+        }
+
+        def Material "R0_M100"
+        {
+            token outputs:surface.connect = </Root/Materials/R0_M100/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.2, 0.2)
+                float inputs:metallic = 1
+                float inputs:roughness = 0
+                token outputs:surface
+            }
+        }
+
+        def Material "R25_M0"
+        {
+            token outputs:surface.connect = </Root/Materials/R25_M0/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.2, 0.2)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.25
+                token outputs:surface
+            }
+        }
+
+        def Material "R25_M25"
+        {
+            token outputs:surface.connect = </Root/Materials/R25_M25/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.2, 0.2)
+                float inputs:metallic = 0.25
+                float inputs:roughness = 0.25
+                token outputs:surface
+            }
+        }
+
+        def Material "R25_M50"
+        {
+            token outputs:surface.connect = </Root/Materials/R25_M50/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.2, 0.2)
+                float inputs:metallic = 0.5
+                float inputs:roughness = 0.25
+                token outputs:surface
+            }
+        }
+
+        def Material "R25_M75"
+        {
+            token outputs:surface.connect = </Root/Materials/R25_M75/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.2, 0.2)
+                float inputs:metallic = 0.75
+                float inputs:roughness = 0.25
+                token outputs:surface
+            }
+        }
+
+        def Material "R25_M100"
+        {
+            token outputs:surface.connect = </Root/Materials/R25_M100/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.2, 0.2)
+                float inputs:metallic = 1
+                float inputs:roughness = 0.25
+                token outputs:surface
+            }
+        }
+
+        def Material "R50_M0"
+        {
+            token outputs:surface.connect = </Root/Materials/R50_M0/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.2, 0.2)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.5
+                token outputs:surface
+            }
+        }
+
+        def Material "R50_M25"
+        {
+            token outputs:surface.connect = </Root/Materials/R50_M25/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.2, 0.2)
+                float inputs:metallic = 0.25
+                float inputs:roughness = 0.5
+                token outputs:surface
+            }
+        }
+
+        def Material "R50_M50"
+        {
+            token outputs:surface.connect = </Root/Materials/R50_M50/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.2, 0.2)
+                float inputs:metallic = 0.5
+                float inputs:roughness = 0.5
+                token outputs:surface
+            }
+        }
+
+        def Material "R50_M75"
+        {
+            token outputs:surface.connect = </Root/Materials/R50_M75/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.2, 0.2)
+                float inputs:metallic = 0.75
+                float inputs:roughness = 0.5
+                token outputs:surface
+            }
+        }
+
+        def Material "R50_M100"
+        {
+            token outputs:surface.connect = </Root/Materials/R50_M100/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.2, 0.2)
+                float inputs:metallic = 1
+                float inputs:roughness = 0.5
+                token outputs:surface
+            }
+        }
+
+        def Material "R75_M0"
+        {
+            token outputs:surface.connect = </Root/Materials/R75_M0/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.2, 0.2)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.75
+                token outputs:surface
+            }
+        }
+
+        def Material "R75_M25"
+        {
+            token outputs:surface.connect = </Root/Materials/R75_M25/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.2, 0.2)
+                float inputs:metallic = 0.25
+                float inputs:roughness = 0.75
+                token outputs:surface
+            }
+        }
+
+        def Material "R75_M50"
+        {
+            token outputs:surface.connect = </Root/Materials/R75_M50/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.2, 0.2)
+                float inputs:metallic = 0.5
+                float inputs:roughness = 0.75
+                token outputs:surface
+            }
+        }
+
+        def Material "R75_M75"
+        {
+            token outputs:surface.connect = </Root/Materials/R75_M75/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.2, 0.2)
+                float inputs:metallic = 0.75
+                float inputs:roughness = 0.75
+                token outputs:surface
+            }
+        }
+
+        def Material "R75_M100"
+        {
+            token outputs:surface.connect = </Root/Materials/R75_M100/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.2, 0.2)
+                float inputs:metallic = 1
+                float inputs:roughness = 0.75
+                token outputs:surface
+            }
+        }
+
+        def Material "R100_M0"
+        {
+            token outputs:surface.connect = </Root/Materials/R100_M0/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.2, 0.2)
+                float inputs:metallic = 0
+                float inputs:roughness = 1
+                token outputs:surface
+            }
+        }
+
+        def Material "R100_M25"
+        {
+            token outputs:surface.connect = </Root/Materials/R100_M25/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.2, 0.2)
+                float inputs:metallic = 0.25
+                float inputs:roughness = 1
+                token outputs:surface
+            }
+        }
+
+        def Material "R100_M50"
+        {
+            token outputs:surface.connect = </Root/Materials/R100_M50/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.2, 0.2)
+                float inputs:metallic = 0.5
+                float inputs:roughness = 1
+                token outputs:surface
+            }
+        }
+
+        def Material "R100_M75"
+        {
+            token outputs:surface.connect = </Root/Materials/R100_M75/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.2, 0.2)
+                float inputs:metallic = 0.75
+                float inputs:roughness = 1
+                token outputs:surface
+            }
+        }
+
+        def Material "R100_M100"
+        {
+            token outputs:surface.connect = </Root/Materials/R100_M100/Shader.outputs:surface>
+
+            def Shader "Shader"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.2, 0.2)
+                float inputs:metallic = 1
+                float inputs:roughness = 1
+                token outputs:surface
+            }
+        }
+    }
+
+    def Mesh "Ground" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 3, 2, 1]
+        rel material:binding = </Root/Materials/Ground>
+        normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)]
+        token orientation = "rightHanded"
+        point3f[] points = [(-8, 0, -8), (8, 0, -8), (8, 0, 8), (-8, 0, 8)]
+        token subdivisionScheme = "none"
+    }
+
+    def Sphere "S_R0_M0" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Root/Materials/R0_M0>
+        double radius = 0.8
+        double3 xformOp:translate = (-5, 0.8, 5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Sphere "S_R0_M25" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Root/Materials/R0_M25>
+        double radius = 0.8
+        double3 xformOp:translate = (-2.5, 0.8, 5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Sphere "S_R0_M50" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Root/Materials/R0_M50>
+        double radius = 0.8
+        double3 xformOp:translate = (0, 0.8, 5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Sphere "S_R0_M75" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Root/Materials/R0_M75>
+        double radius = 0.8
+        double3 xformOp:translate = (2.5, 0.8, 5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Sphere "S_R0_M100" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Root/Materials/R0_M100>
+        double radius = 0.8
+        double3 xformOp:translate = (5, 0.8, 5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Sphere "S_R25_M0" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Root/Materials/R25_M0>
+        double radius = 0.8
+        double3 xformOp:translate = (-5, 0.8, 2.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Sphere "S_R25_M25" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Root/Materials/R25_M25>
+        double radius = 0.8
+        double3 xformOp:translate = (-2.5, 0.8, 2.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Sphere "S_R25_M50" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Root/Materials/R25_M50>
+        double radius = 0.8
+        double3 xformOp:translate = (0, 0.8, 2.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Sphere "S_R25_M75" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Root/Materials/R25_M75>
+        double radius = 0.8
+        double3 xformOp:translate = (2.5, 0.8, 2.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Sphere "S_R25_M100" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Root/Materials/R25_M100>
+        double radius = 0.8
+        double3 xformOp:translate = (5, 0.8, 2.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Sphere "S_R50_M0" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Root/Materials/R50_M0>
+        double radius = 0.8
+        double3 xformOp:translate = (-5, 0.8, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Sphere "S_R50_M25" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Root/Materials/R50_M25>
+        double radius = 0.8
+        double3 xformOp:translate = (-2.5, 0.8, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Sphere "S_R50_M50" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Root/Materials/R50_M50>
+        double radius = 0.8
+        double3 xformOp:translate = (0, 0.8, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Sphere "S_R50_M75" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Root/Materials/R50_M75>
+        double radius = 0.8
+        double3 xformOp:translate = (2.5, 0.8, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Sphere "S_R50_M100" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Root/Materials/R50_M100>
+        double radius = 0.8
+        double3 xformOp:translate = (5, 0.8, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Sphere "S_R75_M0" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Root/Materials/R75_M0>
+        double radius = 0.8
+        double3 xformOp:translate = (-5, 0.8, -2.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Sphere "S_R75_M25" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Root/Materials/R75_M25>
+        double radius = 0.8
+        double3 xformOp:translate = (-2.5, 0.8, -2.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Sphere "S_R75_M50" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Root/Materials/R75_M50>
+        double radius = 0.8
+        double3 xformOp:translate = (0, 0.8, -2.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Sphere "S_R75_M75" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Root/Materials/R75_M75>
+        double radius = 0.8
+        double3 xformOp:translate = (2.5, 0.8, -2.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Sphere "S_R75_M100" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Root/Materials/R75_M100>
+        double radius = 0.8
+        double3 xformOp:translate = (5, 0.8, -2.5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Sphere "S_R100_M0" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Root/Materials/R100_M0>
+        double radius = 0.8
+        double3 xformOp:translate = (-5, 0.8, -5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Sphere "S_R100_M25" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Root/Materials/R100_M25>
+        double radius = 0.8
+        double3 xformOp:translate = (-2.5, 0.8, -5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Sphere "S_R100_M50" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Root/Materials/R100_M50>
+        double radius = 0.8
+        double3 xformOp:translate = (0, 0.8, -5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Sphere "S_R100_M75" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Root/Materials/R100_M75>
+        double radius = 0.8
+        double3 xformOp:translate = (2.5, 0.8, -5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Sphere "S_R100_M100" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Root/Materials/R100_M100>
+        double radius = 0.8
+        double3 xformOp:translate = (5, 0.8, -5)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def DomeLight "FillLight"
+    {
+        color3f inputs:color = (1, 1, 1)
+        float inputs:intensity = 1
+        asset inputs:texture:file = @../hdr/pav_studio_03_2k.hdr@
+    }
+
+    def Camera "TopDown"
+    {
+        float2 clippingRange = (0.1, 100)
+        float horizontalAperture = 200
+        token projection = "orthographic"
+        float verticalAperture = 150
+        float3 xformOp:rotateXYZ = (-90, 0, 0)
+        double3 xformOp:translate = (0, 20, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+    }
+
+    def Camera "Camera"
+    {
+        float2 clippingRange = (0.1, 1000)
+        float focalLength = 20.78461
+        float horizontalAperture = 36
+        float verticalAperture = 24
+        matrix4d xformOp:transform = ( (0.9154939651489258, 1.4901161193847656e-8, 0.40233176946640015, -0), (0.23449599742889404, 0.8125852346420288, -0.5335886478424072, 0), (-0.32692885398864746, 0.5828423500061035, 0.7439168095588684, -0), (-4.603414058685303, 8.206875801086426, 10.474930763244629, 1) )
+        uniform token[] xformOpOrder = ["xformOp:transform"]
+    }
+}
+

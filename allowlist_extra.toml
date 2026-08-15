@@ -1,0 +1,43 @@
+# Project-specific allowlist extensions.
+# Merged with the framework default (allowlist_default.toml) at agent launch.
+
+[[allow]]
+name = "diagnostics"
+commands = ["handle64", "handle"]
+
+[[allow]]
+name = "safe_git_rewrite"
+override_deny = true
+patterns = [
+    'git\s+commit\s.*--amend',          # amend last commit (local only)
+    'git\s+reset\s+--soft\b',           # soft reset (keeps working tree)
+    'git\s+rebase\s+--(continue|abort|skip)', # rebase recovery
+    'git\s+stash\b',                    # stash / stash pop
+]
+
+[[allow]]
+name = "force_push"
+override_deny = true
+patterns = [
+    # --force-with-lease only: refuses if the remote moved unexpectedly,
+    # so it is safe for rewriting history on personal dev branches.
+    # Bare --force / -f stays denied.
+    'git\s+push\s.*--force-with-lease',
+]
+
+[[allow]]
+name = "image_convert"
+commands = ["ffmpeg"]
+
+[[allow]]
+name = "docker"
+commands = ["docker"]
+
+[[allow]]
+name = "framework_contrib"
+override_deny = true
+commands = ["cmd.exe", "bash"]
+patterns = [
+    'mklink\s+/J\b',                    # create junction for test driver
+    'bootstrap\.sh\b',                  # bootstrap test driver
+]

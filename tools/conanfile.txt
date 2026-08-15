@@ -1,0 +1,13 @@
+# Minimal dependency list for the standalone (--host-tools-only) build of the
+# in-tree host tools under tools/. Not a Conan *package* — just a dep manifest
+# consumed by `conan install` so a plain CMake build of tools/ + core/shaderc/
+# can resolve slang, boost_headers, and spdlog.
+
+[requires]
+slang/2026.5.2
+boost/[>=0]
+spdlog/[>=1.14]
+
+[generators]
+CMakeToolchain
+CMakeDeps
