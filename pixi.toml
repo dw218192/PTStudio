@@ -1,0 +1,57 @@
+[workspace]
+name = "ptstudio"
+channels = ["conda-forge"]
+platforms = ["win-64", "linux-64"]
+
+# pixi owns the tool environment. It replaces repokit's bootstrap scripts and
+# its generated venv under tools/framework/_managed/ -- pixi brings its own
+# Python, so there is nothing to bootstrap before `pixi run <task>`.
+#
+# The tool *implementations* still live in tools/repo_tools/ (project) and
+# tools/framework/repo_tools/ (repokit, imported as a plain library). Only the
+# driver changed.
+
+[dependencies]
+python = "3.12.*"
+# The Conan profiles select the Ninja generator. Previously this was whatever
+# happened to be on the system PATH; pin it here so the toolchain is part of
+# the declared environment.
+ninja = ">=1.11"
+
+[pypi-dependencies]
+# repokit core
+click = ">=8.0"
+pyyaml = ">=6.0"
+colorama = ">=0.4"
+bashlex = ">=0.18"
+pygments = ">=2.16"
+# formatting / linting
+clang-format = ">=19.0"
+ruff = ">=0.4"
+# build + asset tooling (versions pinned to match the previous managed venv)
+conan = "==2.22.2"
+cmake = "==3.31.1"
+jinja2 = "==3.1.6"
+InquirerPy = "==0.3.4"
+# flip-evaluator's nbflip.pyd uses nanobind->numpy for evaluate()/load() but the
+# wheel does not declare numpy/Pillow as runtime deps; without them it aborts.
+flip-evaluator = "==1.7"
+numpy = ">=2.0"
+pillow = ">=10.0"
+pytest = ">=7.0"
+
+[tasks]
+# Canonical task names (the template's contract).
+build = "python tasks/build.py"
+test = "python tasks/test.py"
+fmt = "python tasks/fmt.py"
+lint = "python tasks/lint.py"
+check = { depends-on = ["lint", "test"] }
+
+# Project tools, dispatched to the same driver. `pixi run repo --help` lists
+# everything, including tools not given a shortcut here.
+repo = "python tasks/repo.py"
+launch = "python tasks/repo.py launch"
+package = "python tasks/repo.py package"
+publish = "python tasks/repo.py publish"
+image-diff = "python tasks/repo.py image-diff"
