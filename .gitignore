@@ -23,6 +23,9 @@ build/
 tools/pyproject.toml
 tools/uv.lock
 
+# pixi (pixi.lock IS committed -- it is the reproducibility record)
+.pixi/
+
 # User-local Claude settings
 .claude/settings.local.json
 repo.ps1
