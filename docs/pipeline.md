@@ -50,7 +50,7 @@ hide in the error-free background. Cases, thresholds and the GT bake settings
 live under `image_diff:` in `config.yaml`.
 
 ```bash
-./repo image-diff
+pixi run image-diff
 ```
 
 A failing case after a raster change is treated as a raster/GT quality gap to
@@ -61,7 +61,7 @@ divergence disappear. Current failures are recorded in
 ### Headless capture
 
 ```
-./repo launch editor --capture-and-quit[=output.png] [--usd scene.usda] [--frames 5] \
+pixi run launch editor --capture-and-quit[=output.png] [--usd scene.usda] [--frames 5] \
                      [--renderer Forward] [--debug-output "Direct Diffuse"] \
                      [--camera /Root/Camera] [--usd-override override.usda]
 ```
@@ -71,6 +71,18 @@ or named debug target. Captures default to `_captures/<timestamp>.png`; output
 is 1280x720 RGBA8 and excludes editor-only passes (grid, gizmo, overlay).
 Every rendering change gets verified against a picture, not against a green
 build.
+
+When a camera or scene has changed, capture a temporary matching path-traced
+reference and compare it without replacing the committed golden:
+
+```bash
+pixi run launch editor --usd assets/scenes/area_light_test.usda --camera /Root/Camera_3 --renderer "Path Trace" --frames 1024 --capture-and-quit=_test_captures/area_camera3_pt.png
+pixi run image-diff --case area_light_pcss --reference _test_captures/area_camera3_pt.png
+```
+
+Add `--capture path/to/existing.png` to compare an existing screenshot without
+launching again. Both options require `--case`. The JSON summary records the
+reference used; the committed thresholds still apply.
 
 Native demo selection opens USDA sources when available. Saving a plain layer
 rebases its asset paths without extracting duplicates; imports from USDZ keep

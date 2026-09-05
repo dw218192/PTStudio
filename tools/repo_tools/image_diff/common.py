@@ -1,7 +1,7 @@
 """Shared helpers for ``image-diff`` and ``bake-gt`` tools.
 
 Loads the ``image_diff`` section of ``config.yaml`` into typed dataclasses,
-resolves paths, and runs the editor via the ``./repo launch`` entrypoint.
+resolves paths, and runs the editor via the Pixi task entrypoint.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from repo_tools.core import is_windows, logger
+from repo_tools.core import logger
 
 
 @dataclass(frozen=True)
@@ -85,7 +85,7 @@ def load_image_diff_config(
 
     bake_raw = _require(section, "gt_bake", "image_diff")
     if not isinstance(bake_raw, dict):
-        raise ValueError("image_diff.gt_bake must be a mapping")
+        raise TypeError("image_diff.gt_bake must be a mapping")
     bake = BakeConfig(
         renderer=str(_require(bake_raw, "renderer", "image_diff.gt_bake")),
         frames=int(_require(bake_raw, "frames", "image_diff.gt_bake")),
@@ -99,7 +99,7 @@ def load_image_diff_config(
     seen_names: set[str] = set()
     for idx, entry in enumerate(cases_raw):
         if not isinstance(entry, dict):
-            raise ValueError(f"image_diff.cases[{idx}] must be a mapping")
+            raise TypeError(f"image_diff.cases[{idx}] must be a mapping")
         name = str(_require(entry, "name", f"image_diff.cases[{idx}]"))
         if name in seen_names:
             raise ValueError(f"image_diff.cases: duplicate case name '{name}'")
@@ -167,23 +167,14 @@ def run_launch(
     build_type: str,
     log_file: Path | None = None,
 ) -> None:
-    """Shell out to ``./repo launch`` with *launch_args*.
-
-    Uses the top-level ``./repo`` shim so the ``launch`` tool resolves its
-    own Conan env and runtime DLLs -- we must not re-implement that here
-    (see ticket: "no duplication of launch logic").
-    """
-    shim = workspace_root / ("repo.cmd" if is_windows() else "repo")
-    if not shim.exists():
-        raise FileNotFoundError(
-            f"./repo shim not found at {shim}; bootstrap the framework first"
-        )
-    cmd = [str(shim), "--build-type", build_type, "launch", *launch_args]
+    """Reuse launch's Conan environment and DLL setup in the Pixi interpreter."""
+    dispatcher = workspace_root / "tasks" / "repo.py"
+    cmd = [sys.executable, str(dispatcher), "--build-type", build_type, "launch", *launch_args]
     # MSYS on Windows rewrites /Root/... paths to backslashed Windows paths
     # when handing CLI args to native exes. Disable that for camera prim
     # paths so the editor sees "/Root/Camera" verbatim.
     env = {**os.environ, "MSYS_NO_PATHCONV": "1"}
-    logger.info(f"$ {shim.name} launch {' '.join(launch_args)}")
+    logger.info(f"$ pixi run launch --build-type {build_type} {' '.join(launch_args)}")
     if log_file is not None:
         log_file.parent.mkdir(parents=True, exist_ok=True)
         with open(log_file, "w", encoding="utf-8", errors="replace") as f:
@@ -203,7 +194,7 @@ def run_launch(
             proc.wait()
         rc = proc.returncode
     else:
-        rc = subprocess.run(cmd, env=env).returncode
+        rc = subprocess.run(cmd, env=env, check=False).returncode
     if rc != 0:
         raise RuntimeError(
             f"launch editor failed (exit {rc}) -- args: {launch_args}"
@@ -214,14 +205,13 @@ def require_flip_evaluator() -> Any:
     """Import ``flip_evaluator`` or fail loud.
 
     We do NOT try to ``pip install`` on the fly -- the dep is declared in
-    ``repo.extra_deps`` and should have been pulled in by ``./repo init``.
+    ``pixi.toml`` and installed by Pixi before this task runs.
     """
     try:
         import flip_evaluator  # type: ignore[import-not-found]
     except ImportError as exc:
         raise RuntimeError(
             "flip-evaluator is not installed. The image-diff suite requires it. "
-            "Ensure 'flip-evaluator' is listed in config.yaml under "
-            "repo.extra_deps and run './repo init' to install it."
+            "Run 'pixi install' to install the dependencies from pixi.toml."
         ) from exc
     return flip_evaluator

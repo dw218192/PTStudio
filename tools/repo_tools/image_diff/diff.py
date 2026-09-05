@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -62,6 +62,7 @@ class CaseResult:
     worst_tile: WorstTile
     capture: Path
     heatmap: Path
+    reference: Path
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -75,6 +76,7 @@ class CaseResult:
             "mean_flip": self.mean_flip,
             "capture": str(self.capture),
             "heatmap": str(self.heatmap),
+            "reference": str(self.reference),
         }
 
 
@@ -132,18 +134,19 @@ def _run_case(
     build_type: str,
     logs_dir: Path,
     from_package: bool,
+    existing_capture: Path | None = None,
 ) -> CaseResult:
     """Capture, diff, and return the result for a single case."""
     if not case.gt.exists():
         raise FileNotFoundError(
             f"image-diff: ground truth missing for case '{case.name}': "
-            f"{case.gt}\n  Bake it with: ./repo bake-gt --case {case.name}"
+            f"{case.gt}\n  Bake it with: pixi run repo bake-gt --case {case.name}"
         )
     cfg.out_dir.mkdir(parents=True, exist_ok=True)
-    capture = cfg.out_dir / f"{case.name}.png"
+    capture = existing_capture or cfg.out_dir / f"{case.name}.png"
     # Remove any stale capture so a failed editor run can't masquerade as
     # a pass from a previous run.
-    if capture.exists():
+    if existing_capture is None and capture.exists():
         capture.unlink()
 
     launch_args = build_editor_args(
@@ -153,12 +156,13 @@ def _run_case(
         frames=case.frames,
         from_package=from_package,
     )
-    run_launch(
-        workspace_root,
-        launch_args,
-        build_type=build_type,
-        log_file=logs_dir / f"image_diff_capture_{case.name}.log",
-    )
+    if existing_capture is None:
+        run_launch(
+            workspace_root,
+            launch_args,
+            build_type=build_type,
+            log_file=logs_dir / f"image_diff_capture_{case.name}.log",
+        )
     if not capture.exists():
         raise RuntimeError(
             f"image-diff: capture was not produced for case '{case.name}' "
@@ -193,6 +197,7 @@ def _run_case(
         worst_tile=worst,
         capture=capture,
         heatmap=heatmap,
+        reference=case.gt,
     )
 
 
@@ -232,6 +237,14 @@ class ImageDiffTool(RepoTool):
 
     def setup(self, cmd: click.Command) -> click.Command:
         cmd = click.option(
+            "--reference", type=click.Path(exists=True, dir_okay=False, path_type=Path),
+            help="Use a temporary reference for --case without changing committed GT.",
+        )(cmd)
+        cmd = click.option(
+            "--capture", type=click.Path(exists=True, dir_okay=False, path_type=Path),
+            help="Compare an existing capture for --case instead of launching the editor.",
+        )(cmd)
+        cmd = click.option(
             "--case",
             "case_name",
             type=str,
@@ -265,6 +278,14 @@ class ImageDiffTool(RepoTool):
 
         case_name = args.get("case_name")
         cases = select_cases(cfg, case_name)
+        reference = args.get("reference")
+        capture = args.get("capture")
+        if (reference or capture) and not case_name:
+            raise click.UsageError("--reference and --capture require --case")
+        if reference:
+            cases = [replace(case, gt=Path(reference).resolve()) for case in cases]
+        if capture:
+            capture = Path(capture).resolve()
 
         build_type_override = args.get("config")
         if build_type_override:
@@ -281,7 +302,7 @@ class ImageDiffTool(RepoTool):
             with log_section(f"image-diff: {case.name}"):
                 results.append(_run_case(
                     case, cfg, ctx.workspace_root, build_type, logs_dir,
-                    from_package,
+                    from_package, capture,
                 ))
 
         summary_path = cfg.out_dir / "summary.json"
