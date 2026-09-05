@@ -89,7 +89,7 @@ def Xform "Root"
         float inputs:height = 3
         float inputs:intensity = 10.9
         float inputs:width = 3
-        custom float pts:shadow:pcss:softness = 2.0
+        custom float pts:shadow:pcss:softness = 0.65
         float3 xformOp:rotateXYZ = (-90, 0, 0)
         matrix4d xformOp:transform = ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 1.5, 5, 1) )
         double3 xformOp:translate = (0, 3, 0)
@@ -140,7 +140,7 @@ def Xform "Root"
         float focalLength = 20.78461
         float horizontalAperture = 36
         float verticalAperture = 24
-        matrix4d xformOp:transform = ( (-0.9999094009399414, -0, -0.013462770730257034, 0), (-0.012226470746099949, 0.418603777885437, 0.9080867171287537, 0), (0.005635566543787718, 0.9081690907478333, -0.4185658395290375, -0), (-1.3760416507720947, 6.1562180519104, -0.2757954001426697, 1) )
+        matrix4d xformOp:transform = ( (-0.9997198581695557, 0.02257397212088108, -0.007121462840586901, 0), (0.005217005033046007, 0.5035878419876099, 0.8639285564422607, 0), (0.023088589310646057, 0.8636497259140015, -0.5035646557807922, 0), (-1.3760416507720947, 6.306000232696533, -4.435999870300293, 1) )
         uniform token[] xformOpOrder = ["xformOp:transform"]
     }
 }

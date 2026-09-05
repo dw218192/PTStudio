@@ -8,13 +8,14 @@
 
 namespace pts::rendering {
 
+// Cap shadow-casting lights; each area light occupies six array layers.
 inline constexpr uint32_t k_max_shadow_maps = 8;
 inline constexpr uint32_t k_default_shadow_resolution = 2048;
 
 /// Renders depth maps for shadow-casting lights.
 /// Distant lights use an orthographic projection fit to the scene AABB.
-/// Rect/disk area lights use a perspective projection from the light's
-/// position along its local -Z, with far plane derived from the scene AABB.
+/// Rect/disk area lights use six perspective cube faces from one representative
+/// point, with far plane derived from the scene AABB.
 /// Sphere and dome lights do not cast shadow maps.
 class ShadowMapPass final : public IPass {
    public:

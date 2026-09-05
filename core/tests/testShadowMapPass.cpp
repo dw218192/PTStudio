@@ -246,7 +246,7 @@ TEST_CASE("ShadowMapPass caps shadow count at k_max_shadow_maps") {
     CHECK(shadow_tex->layer_views.size() == k_max_shadow_maps);
 }
 
-TEST_CASE("ShadowMapPass allocates a layer for a rect area light") {
+TEST_CASE("ShadowMapPass allocates six faces for a rect area light") {
     auto logger = make_logger();
     auto device = pts::webgpu::Device::create(logger);
 
@@ -321,7 +321,7 @@ TEST_CASE("ShadowMapPass allocates a layer for a rect area light") {
     fg.compile();
     const auto* shadow_tex = fg.compiled_texture(out.shadow_array);
     REQUIRE(shadow_tex != nullptr);
-    CHECK(shadow_tex->layer_views.size() == 1);
+    CHECK(shadow_tex->layer_views.size() == 6);
 }
 
 TEST_CASE("ShadowMapPass skips sphere and dome lights") {
@@ -457,8 +457,8 @@ TEST_CASE("ShadowMapPass mixes distant, rect, and disk shadow casters") {
     fg.compile();
     const auto* shadow_tex = fg.compiled_texture(out.shadow_array);
     REQUIRE(shadow_tex != nullptr);
-    // Distant + Rect + Disk = 3 shadow layers; sphere is skipped.
-    CHECK(shadow_tex->layer_views.size() == 3);
+    // Distant + two area-light cubes; sphere is skipped.
+    CHECK(shadow_tex->layer_views.size() == 13);
 }
 
 #endif  // !__EMSCRIPTEN__

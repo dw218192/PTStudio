@@ -3,7 +3,7 @@
 Open gaps and limitations, with the evidence behind each one. Kept here rather
 than in the README so the front page stays a showcase and this stays honest.
 
-Last updated: 2026-08-15 (at the `develop` -> `main` merge).
+Last updated: 2026-09-05 (area-light capture results; other entries from the August merge).
 
 ---
 
@@ -85,7 +85,7 @@ cycles.
 
 **Status:** open.
 
-Measured locally against the committed GT:
+August baseline, measured locally against the committed GT:
 
 | Case | Score (max tile-mean FLIP) | Threshold |
 |---|---|---|
@@ -96,9 +96,25 @@ Roughly 2x over. Thresholds were **not** raised and GT was **not** rebaked:
 per project convention a failing image-diff after raster changes is a raster
 quality gap to fix at the source, not something to mask by moving the goalposts.
 
-Plausibly shares a cause with the shadow work, since the divergence arrived
-with the same commits. Investigate with `./repo image-diff` and the FLIP
-heatmaps in `_test_captures/`.
+The September camera-3 edit changes the area-light composition, so the current
+committed-GT score (0.97845) also measures camera mismatch. The BRDF score remains
+0.75854. Neither committed reference nor threshold was changed.
+
+For the area-shadow iteration, a temporary 1024-frame PT capture uses the edited
+camera and repaired source asset references. Against that matching reference:
+
+| Camera-3 capture | Mean FLIP | Max tile-mean FLIP |
+|---|---|---|
+| Old disk PCSS, after asset repair and derivative-guard fix | 0.22050 | 0.86377 |
+| Cube PCSS, emitter-shaped filter, softness 0.65 | 0.08255 | 0.51984 |
+
+The far-end bands and finite-frustum clipping are addressed, but the remaining
+penumbra and indirect-lighting differences still exceed 0.3. Captures with the
+emitter at x = -8 / +8 and camera yaw at -12 / +12 degrees retain coverage; a
+continuous 0.2-degree-per-frame camera rotation was also captured. These checks
+do not establish a frame-time budget or eliminate all temporal sampling noise.
+Use `pixi run image-diff` and the temporary-reference workflow in
+[pipeline.md](pipeline.md#headless-capture) to continue the comparison.
 
 ---
 

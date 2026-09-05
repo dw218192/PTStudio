@@ -1,4 +1,4 @@
-/// Per-light shadow info (must match C++ ShadowInfo, 96 bytes).
+/// Per-light shadow info (must match C++ ShadowInfo, 144 bytes).
 /// One entry per light. Lights without shadows have has_shadow == 0.
 public struct ShadowInfo {
     public float4x4 light_vp;        // 64 bytes
@@ -9,7 +9,10 @@ public struct ShadowInfo {
     public float light_near;         //  4 bytes -- light-space near plane
     public float light_far;          //  4 bytes -- light-space far plane
     public float light_size_uv;      //  4 bytes -- PCSS light size (see below)
-    public uint projection_type;     //  4 bytes -- 0 = ortho, 1 = perspective
+    public uint projection_type;     //  4 bytes -- 0 = ortho, 1 = perspective, 2 = cube
+    public float4 light_position;    // xyz = cube origin, w = disk (1) or rect (0)
+    public float4 light_u;           // xyz = emitter world-space half-axis
+    public float4 light_v;           // xyz = emitter world-space half-axis
 };
 
 // Non-PCSS baseline: 5x5 PCF with manual depth comparison.
@@ -43,10 +46,11 @@ public float compute_shadow_pcf(
 // Semantics of `light_size_uv` (computed CPU-side in shadowMapPass):
 //   * Ortho (distant): tan(half_angle) / ortho_width. Penumbra formula:
 //       penumbra_uv = light_size_uv * (d_r - d_b) / d_b
-//   * Perspective (rect/disk): light_radius / (2 * tan(fov/2)).
+//   * Legacy perspective: light_radius / (2 * tan(fov/2)).
 //     Penumbra formula (depth-dependent because UV scale shrinks with depth):
 //       penumbra_uv = light_size_uv * (d_r - d_b) / (d_b * d_r)
 //
+// Rect/disk lights now use area_shadow_lib's world-space cube filter instead.
 // Both d_r (receiver) and d_b (blocker) are LIGHT-SPACE LINEAR depths
 // reconstructed from the shadow map's stored NDC depth via `linearize_depth`.
 // ---------------------------------------------------------------------------
@@ -272,7 +276,11 @@ public float2 compute_receiver_plane_grad(float3 ddx_shadow_uv, float3 ddy_shado
     float ddy_z = ddy_shadow_uv.z;
 
     float det = ddx_u * ddy_v - ddy_u * ddx_v;
-    if (abs(det) < 1e-8) {
+    // Use a relative degeneracy test: the determinant scales with screen
+    // resolution and distance. An absolute cutoff disables bias in bands on
+    // distant receivers and changes those bands when the camera rotates.
+    float scale = length(ddx_shadow_uv.xy) * length(ddy_shadow_uv.xy);
+    if (abs(det) <= max(scale * 1e-5, 1e-20)) {
         return float2(0.0, 0.0);
     }
     float2 grad;

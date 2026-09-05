@@ -59,23 +59,31 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
     // Count shadow-casting lights (distant + rect/disk area lights).
     auto lights = ctx.world.get_lights().span_raw();
     uint32_t shadow_count = 0;
+    uint32_t map_count = 0;
+    bool has_distant = false;
     if (m_enabled) {
         for (uint32_t li = 0; li < static_cast<uint32_t>(lights.size()); ++li) {
             if (!lights[li].active) continue;
             if (!casts_shadow_map(lights[li].value.type)) continue;
             if (!lights[li].value.casts_shadow) continue;
+            map_count += lights[li].value.type == LightData::Type::Distant ? 1u : 6u;
+            has_distant |= lights[li].value.type == LightData::Type::Distant;
             ++shadow_count;
             if (shadow_count >= k_max_shadow_maps) break;
         }
     }
 
     // Always ensure at least 1 layer for downstream descriptors
-    uint32_t layer_count = std::max(shadow_count, 1u);
+    uint32_t layer_count = std::max(map_count, 1u);
+    // A 1024 cube has comparable angular density to the old 2048 / 120-deg
+    // map, with complete coverage in 24 MiB. Preserve distant-light density
+    // when both kinds share the array.
+    uint32_t resolution = has_distant ? m_resolution : std::max(m_resolution / 2, 1u);
 
     // Register shadow texture array with frame graph
     TextureDesc shadow_tex_desc;
-    shadow_tex_desc.width = m_resolution;
-    shadow_tex_desc.height = m_resolution;
+    shadow_tex_desc.width = resolution;
+    shadow_tex_desc.height = resolution;
     shadow_tex_desc.array_layers = layer_count;
     shadow_tex_desc.format = WGPUTextureFormat_Depth32Float;
     shadow_tex_desc.usage = static_cast<WGPUTextureUsage>(WGPUTextureUsage_RenderAttachment |
@@ -117,20 +125,22 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
     // Build one ShadowInfo per light (matching light buffer order)
     std::vector<ShadowInfo> infos(lights.size());
     uint32_t layer_index = 0;
+    uint32_t light_count = 0;
+    std::vector<glm::mat4> layer_vps;
 
     for (uint32_t li = 0; li < static_cast<uint32_t>(lights.size()); ++li) {
         if (!lights[li].active) continue;
         const auto& light = lights[li].value;
         if (!casts_shadow_map(light.type)) continue;
         if (!light.casts_shadow) continue;
-        if (layer_index >= k_max_shadow_maps) continue;
+        if (light_count >= k_max_shadow_maps) continue;
 
         LightProjection proj = (light.type == LightData::Type::Distant)
                                    ? compute_distant_light_vp(light, aabb_min, aabb_max)
                                    : compute_area_light_vp(light, aabb_min, aabb_max);
 
         infos[li].light_vp = proj.vp;
-        infos[li].texel_size = 1.0f / static_cast<float>(m_resolution);
+        infos[li].texel_size = 1.0f / static_cast<float>(resolution);
         // Shader-side offset along the receiver normal to counter PCF bleeding
         // at sharp creases. Small world-space value; scene-scale-dependent.
         infos[li].normal_bias = 0.02f;
@@ -140,9 +150,26 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
         infos[li].light_far = proj.far_plane;
         infos[li].light_size_uv = m_pcss ? proj.light_size_uv : 0.0f;
         infos[li].projection_type = proj.projection_type;
-        ++layer_index;
+        ++light_count;
+        if (light.type == LightData::Type::Distant) {
+            layer_vps.push_back(proj.vp);
+            ++layer_index;
+        } else {
+            float softness = m_pcss ? std::max(light.shadow_pcss_softness, 0.0f) : 0.0f;
+            float hu = light.type == LightData::Type::Disk ? light.radius : light.width * 0.5f;
+            float hv = light.type == LightData::Type::Disk ? light.radius : light.height * 0.5f;
+            infos[li].light_position = glm::vec4(glm::vec3(light.transform[3]),
+                                                 light.type == LightData::Type::Disk ? 1.0f : 0.0f);
+            infos[li].light_u =
+                glm::vec4(glm::vec3(light.transform[0]) * std::max(hu, 0.0f) * softness, 0);
+            infos[li].light_v =
+                glm::vec4(glm::vec3(light.transform[1]) * std::max(hv, 0.0f) * softness, 0);
+            for (uint32_t face = 0; face < 6; ++face)
+                layer_vps.push_back(compute_area_light_vp(light, aabb_min, aabb_max, face).vp);
+            layer_index += 6;
+        }
     }
-    INVARIANT(layer_index == shadow_count);
+    INVARIANT(layer_index == map_count);
 
     // Model buffer: one model matrix per object (shared across all layers)
     uint64_t model_buf_size =
@@ -167,14 +194,6 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
                          .buffer(0, model_buf_decl, 0, 64)
                          .buffer(1, vp_buf_decl, 0, 64)
                          .build();
-
-    // Extract per-layer view-projection matrices
-    std::vector<glm::mat4> layer_vps;
-    layer_vps.reserve(layer_index);
-    for (uint32_t li = 0; li < static_cast<uint32_t>(lights.size()); ++li) {
-        if (infos[li].has_shadow) layer_vps.push_back(infos[li].light_vp);
-    }
-    INVARIANT(layer_vps.size() == layer_index);
 
     auto queue = ctx.queue;
     const auto& world = ctx.world;

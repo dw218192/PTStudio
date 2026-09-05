@@ -8,6 +8,7 @@
 // temporal_resolve pass consumes its output unchanged.
 
 import shadow_sampling_lib;
+import area_shadow_lib;
 
 struct ShadowVisibilityUniforms {
     float4x4 inv_view_proj;   // 0:   64
@@ -47,6 +48,25 @@ float3 reconstruct_world_pos(float2 uv, float depth) {
     return world.xyz / world.w;
 }
 
+// Select neighbors on the receiver's side of a silhouette. A two-pixel
+// baseline reduces depth reconstruction noise at the far end of the view;
+// quad derivatives alone can span unrelated objects and flicker on rotation.
+float3 receiver_normal(float2 uv, float depth, float3 position) {
+    float2 dx = float2(2.0 / u.viewport_size.x, 0.0);
+    float2 dy = float2(0.0, 2.0 / u.viewport_size.y);
+    float left = depth_tex.SampleLevel(depth_sampler, uv - dx, 0).x;
+    float right = depth_tex.SampleLevel(depth_sampler, uv + dx, 0).x;
+    float top = depth_tex.SampleLevel(depth_sampler, uv - dy, 0).x;
+    float bottom = depth_tex.SampleLevel(depth_sampler, uv + dy, 0).x;
+    float3 tangent = abs(left - depth) < abs(right - depth)
+        ? position - reconstruct_world_pos(uv - dx, left)
+        : reconstruct_world_pos(uv + dx, right) - position;
+    float3 bitangent = abs(top - depth) < abs(bottom - depth)
+        ? position - reconstruct_world_pos(uv - dy, top)
+        : reconstruct_world_pos(uv + dy, bottom) - position;
+    return normalize(cross(bitangent, tangent));
+}
+
 [shader("fragment")]
 float4 fs_main(float2 uv : TEXCOORD) : SV_Target0 {
     float depth = depth_tex.SampleLevel(depth_sampler, uv, 0).x;
@@ -67,6 +87,13 @@ float4 fs_main(float2 uv : TEXCOORD) : SV_Target0 {
     // Background pixels have no receiver geometry -> fully lit.
     if (depth >= 1.0) {
         return float4(1.0, 0, 0, 0);
+    }
+
+    if (si.has_shadow != 0 && si.projection_type == 2u) {
+        float3 normal = receiver_normal(uv, depth, world_pos);
+        float visibility = compute_area_shadow(shadow_map, si, world_pos, normal,
+                                                uv * u.viewport_size, u.frame_index);
+        return float4(visibility, 0, 0, 0);
     }
 
     float visibility = 1.0;

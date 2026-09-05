@@ -13,13 +13,13 @@ namespace pts::rendering {
 ///
 /// `light_size_uv` semantics (matching the shader):
 ///   * Ortho (distant): tan(half_angle) / ortho_width
-///   * Perspective (rect/disk): light_radius / (2 * tan(fov/2))
+///   * Cube (rect/disk): unused; emitter half-axes in ShadowInfo drive PCSS
 struct LightProjection {
     glm::mat4 vp{1.0f};
     float near_plane = 0.0f;
     float far_plane = 0.0f;
     float light_size_uv = 0.0f;
-    uint32_t projection_type = 0;  // 0 = ortho, 1 = perspective
+    uint32_t projection_type = 0;  // 0 = ortho, 1 = perspective, 2 = cube
 };
 
 /// Orthographic VP fit to the scene AABB in light space. `light.angle`
@@ -27,11 +27,10 @@ struct LightProjection {
 LightProjection compute_distant_light_vp(const LightData& light, const glm::vec3& aabb_min,
                                          const glm::vec3& aabb_max);
 
-/// Perspective VP (90 deg FOV, 1:1 aspect) from the light's position along
-/// local -Z. `light.radius` (disk) or `light.width`/`light.height` (rect)
-/// feed light_size_uv.
+/// One 90-degree cube face from the area light's center. Faces are ordered
+/// +X, -X, +Y, -Y, +Z, -Z; filtering reprojects every tap across face edges.
 LightProjection compute_area_light_vp(const LightData& light, const glm::vec3& aabb_min,
-                                      const glm::vec3& aabb_max);
+                                      const glm::vec3& aabb_max, uint32_t face = 0);
 
 /// Reconstruct light-space linear depth from stored NDC z in [0, 1].
 /// Matches the shader's `linearize_depth` and assumes GLM_FORCE_DEPTH_ZERO_TO_ONE.

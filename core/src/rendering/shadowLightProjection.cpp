@@ -52,56 +52,29 @@ LightProjection compute_distant_light_vp(const LightData& light, const glm::vec3
 }
 
 LightProjection compute_area_light_vp(const LightData& light, const glm::vec3& aabb_min,
-                                      const glm::vec3& aabb_max) {
+                                      const glm::vec3& aabb_max, uint32_t face) {
+    PRECONDITION(face < 6);
+    // Six conventional perspective maps retain coverage at grazing angles.
+    // The point being approximated stays at the emitter center as it moves.
+    static const glm::vec3 directions[] = {{1, 0, 0},  {-1, 0, 0}, {0, 1, 0},
+                                           {0, -1, 0}, {0, 0, 1},  {0, 0, -1}};
+    static const glm::vec3 ups[] = {{0, -1, 0}, {0, -1, 0}, {0, 0, 1},
+                                    {0, 0, -1}, {0, -1, 0}, {0, -1, 0}};
     glm::vec3 position(light.transform[3]);
-    glm::vec3 forward = glm::normalize(-glm::vec3(light.transform[2]));
-    glm::vec3 up = glm::normalize(glm::vec3(light.transform[1]));
-    if (std::abs(glm::dot(forward, up)) > 0.99f) {
-        up = (std::abs(forward.y) > 0.9f) ? glm::vec3(0.0f, 0.0f, 1.0f)
-                                          : glm::vec3(0.0f, 1.0f, 0.0f);
-    }
-
-    // Effective world-space light radius (isotropic approximation).
-    // For rect lights we take the larger half-extent; this is conservative --
-    // the penumbra is actually anisotropic, but representing that needs a 2D
-    // light-space oriented kernel (follow-up).
-    float light_radius = 0.0f;
-    if (light.type == LightData::Type::Disk) {
-        light_radius = std::max(light.radius, 0.0f);
-    } else if (light.type == LightData::Type::Rect) {
-        float hw = std::max(light.width, 0.0f) * 0.5f;
-        float hh = std::max(light.height, 0.0f) * 0.5f;
-        light_radius = std::max(hw, hh);
-    }
-
-    // 120-deg FOV covers +-tan(60)=+-1.73 at unit depth, giving good
-    // hemisphere coverage for area light shadows without a cubemap.
-    // Compared to 90-deg this loses ~1.7x texel density but eliminates
-    // the hard frustum cutoff at grazing angles.
-    constexpr float k_fov_y_rad = glm::radians(120.0f);
-    float half_tan = std::tan(k_fov_y_rad * 0.5f);
-
-    float far_plane = 0.0f;
+    float far_plane = 0.01f;
     for (int c = 0; c < 8; ++c) {
         glm::vec3 corner((c & 1) ? aabb_max.x : aabb_min.x, (c & 2) ? aabb_max.y : aabb_min.y,
                          (c & 4) ? aabb_max.z : aabb_min.z);
         far_plane = std::max(far_plane, glm::length(corner - position));
     }
-    INVARIANT(far_plane > 0.0f);
-    float near_plane = std::max(0.001f, far_plane * 0.01f);
-
-    auto light_view = glm::lookAt(position, position + forward, up);
-    auto light_proj = glm::perspective(k_fov_y_rad, 1.0f, near_plane, far_plane);
-
-    float light_size_uv = light_radius / (2.0f * half_tan);
-    light_size_uv *= std::max(light.shadow_pcss_softness, 0.0f);
-
+    float near_plane = std::max(0.001f, far_plane * 0.0001f);
+    auto view = glm::lookAt(position, position + directions[face], ups[face]);
+    auto proj = glm::perspective(glm::radians(90.0f), 1.0f, near_plane, far_plane);
     LightProjection out;
-    out.vp = light_proj * light_view;
+    out.vp = proj * view;
     out.near_plane = near_plane;
     out.far_plane = far_plane;
-    out.light_size_uv = light_size_uv;
-    out.projection_type = 1;
+    out.projection_type = 2;
     return out;
 }
 

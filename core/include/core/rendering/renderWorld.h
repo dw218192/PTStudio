@@ -279,7 +279,7 @@ struct PrimSlot {
     uint32_t index;
 };
 
-/// 96-byte per-light shadow info (one entry per light in the light buffer).
+/// 144-byte per-light shadow info (one entry per light in the light buffer).
 /// Lights without shadows have has_shadow == 0. The near/far planes and
 /// light_size_uv feed PCSS soft-shadow sampling (shadow_sampling_lib.slang).
 struct ShadowInfo {
@@ -291,9 +291,12 @@ struct ShadowInfo {
     float light_near = 0.0f;       //  4 bytes -- light-space near plane (for linear-depth recon)
     float light_far = 0.0f;        //  4 bytes -- light-space far plane
     float light_size_uv = 0.0f;    //  4 bytes -- PCSS light size (see shadow_sampling_lib.slang)
-    uint32_t projection_type = 0;  //  4 bytes -- 0 = ortho (distant), 1 = perspective (area)
+    uint32_t projection_type = 0;  //  4 bytes -- 0 = ortho, 1 = perspective, 2 = cube
+    glm::vec4 light_position{0};   // xyz = cube origin, w = disk (1) or rect (0)
+    glm::vec4 light_u{0};          // xyz = emitter world-space half-axis, softness included
+    glm::vec4 light_v{0};          // xyz = emitter world-space half-axis, softness included
 };
-static_assert(sizeof(ShadowInfo) == 96, "ShadowInfo must be 96 bytes for GPU alignment");
+static_assert(sizeof(ShadowInfo) == 144, "ShadowInfo must be 144 bytes for GPU alignment");
 
 /// Per-instance data for two-level BVH traversal on the GPU.
 struct GPUInstance {

@@ -84,6 +84,28 @@ Add `--capture path/to/existing.png` to compare an existing screenshot without
 launching again. Both options require `--case`. The JSON summary records the
 reference used; the committed thresholds still apply.
 
+### Area-light shadow approximation
+
+Rect and disk shadows use a depth cube at the emitter center. Every PCSS tap
+selects its own cube face, retaining coverage when a light moves sideways.
+Area-only scenes use six 1024-square faces (24 MiB); arrays shared with distant
+lights retain their 2048-square resolution. The current forward lighting path
+still resolves visibility for one light.
+
+The filter uses 32 blocker taps and 64 visibility taps, with a stratified
+emitter-shaped kernel and temporal sample shifts. Depth comparisons intersect
+the receiver plane at the actual texel center. Geometric normals come from
+nearby depth samples chosen to avoid crossing silhouettes. Samples are weighted
+by the emitter's diffuse geometric contribution, including the receiver horizon.
+
+This remains a single-point PCSS approximation: hidden blockers and surfaces
+not seen from the emitter center cannot be recovered, specular visibility shares
+the diffuse estimate, and broad kernels can leak light. The scene's artistic
+`pts:shadow:pcss:softness` control scales the emitter axes; `area_light_test` now
+uses 0.65 instead of the old disk filter's 2.0. Camera 3's edited transform is
+preserved. [PCSS reference](https://developer.download.nvidia.com/assets/gamedev/docs/PCSS_Integration.pdf)
+and [cube shadow-map reference](https://developer.nvidia.com/gpugems/gpugems/part-ii-lighting-and-shadows/chapter-12-omnidirectional-shadow-mapping).
+
 Native demo selection opens USDA sources when available. Saving a plain layer
 rebases its asset paths without extracting duplicates; imports from USDZ keep
 references into the original package, which must remain available. USDZ export
