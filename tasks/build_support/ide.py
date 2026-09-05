@@ -6,8 +6,7 @@ import json
 import os
 from pathlib import Path
 
-from repo_tools.core import is_windows
-
+from tasks.utils import is_windows
 
 # -- CMake File API Helpers --------------------------------------------
 
@@ -31,18 +30,14 @@ def _load_codemodel(build_dir: Path) -> tuple[dict, Path] | None:
     reply_dir = build_dir / ".cmake" / "api" / "v1" / "reply"
     if not reply_dir.exists():
         return None
-    index_files = sorted(
-        reply_dir.glob("index-*.json"), key=lambda p: p.stat().st_mtime
-    )
+    index_files = sorted(reply_dir.glob("index-*.json"), key=lambda p: p.stat().st_mtime)
     if not index_files:
         return None
     index = json.loads(index_files[-1].read_text(encoding="utf-8"))
     codemodel_info = index.get("reply", {}).get("codemodel-v2")
     if not codemodel_info:
         return None
-    codemodel = json.loads(
-        (reply_dir / codemodel_info["jsonFile"]).read_text(encoding="utf-8")
-    )
+    codemodel = json.loads((reply_dir / codemodel_info["jsonFile"]).read_text(encoding="utf-8"))
     return codemodel, reply_dir
 
 
@@ -82,9 +77,7 @@ def _collect_target_compile_info(
                     (reply_dir / target["jsonFile"]).read_text(encoding="utf-8")
                 )
             elif include_plugins:
-                candidate = json.loads(
-                    (reply_dir / target["jsonFile"]).read_text(encoding="utf-8")
-                )
+                candidate = json.loads((reply_dir / target["jsonFile"]).read_text(encoding="utf-8"))
                 if _target_has_plugin_sources(candidate, plugins_root):
                     target_json = candidate
             if target_json is None:
@@ -227,9 +220,7 @@ def generate_launch_json(
     env_entries = []
     for key, value in env_vars.items():
         if key.upper() == "PATH":
-            env_entries.append(
-                {"name": key, "value": f"{value}{path_separator}${{env:PATH}}"}
-            )
+            env_entries.append({"name": key, "value": f"{value}{path_separator}${{env:PATH}}"})
         else:
             env_entries.append({"name": key, "value": value})
 
@@ -259,25 +250,30 @@ def generate_launch_json(
             # the correct working directory and environment.
             cap_file = root / "_build" / "editor.cap"
             path_value = env_vars.get("PATH", "")
-            env_str = ""
-            if path_value:
-                env_str = f"PATH={path_value}"
             cap_content = {
                 "rdocCaptureSettings": 1,
                 "settings": {
                     "autoConnect": True,
                     "commandLine": "",
                     "environment": [
-                        e for e in [
-                            {"separator": "Platform style",
-                             "type": "Prepend",
-                             "variable": "PATH",
-                             "value": path_value} if path_value else None,
-                            {"separator": "Platform style",
-                             "type": "Set",
-                             "variable": "PTSTUDIO_GPU_BACKEND",
-                             "value": "Vulkan"},
-                        ] if e is not None
+                        e
+                        for e in [
+                            {
+                                "separator": "Platform style",
+                                "type": "Prepend",
+                                "variable": "PATH",
+                                "value": path_value,
+                            }
+                            if path_value
+                            else None,
+                            {
+                                "separator": "Platform style",
+                                "type": "Set",
+                                "variable": "PTSTUDIO_GPU_BACKEND",
+                                "value": "Vulkan",
+                            },
+                        ]
+                        if e is not None
                     ],
                     "executable": str(editor_path),
                     "inject": False,
@@ -299,9 +295,7 @@ def generate_launch_json(
                 },
             }
             cap_file.parent.mkdir(parents=True, exist_ok=True)
-            cap_file.write_text(
-                json.dumps(cap_content, indent=4) + "\n", encoding="utf-8"
-            )
+            cap_file.write_text(json.dumps(cap_content, indent=4) + "\n", encoding="utf-8")
 
             launch_configs.append(
                 {
@@ -355,9 +349,7 @@ def generate_launch_json(
 
     names_to_replace = {config["name"] for config in launch_configs}
     configurations = [
-        config
-        for config in configurations
-        if config.get("name") not in names_to_replace
+        config for config in configurations if config.get("name") not in names_to_replace
     ]
     configurations.extend(launch_configs)
 

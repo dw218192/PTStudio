@@ -66,7 +66,7 @@ that changed underneath a fixed `develop`:
 ### Workaround in place
 
 `editorSmoke_*` is gated behind `PTSTUDIO_SKIP_EDITOR_SMOKE`, set for
-`windows-x64` in CI (see `tools/repo_tools/launch.py` and
+`windows-x64` in CI (see `tasks/launch.py` and
 `.github/workflows/ci.yml`). `ptSmoke_*` (path tracer) still runs there and
 still covers device, shader, BVH and readback end to end. Local runs are
 unaffected: unset gives 50 tests, set gives 41.

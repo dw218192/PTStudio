@@ -1,9 +1,32 @@
-"""Shared helpers for `tasks/*.py`.
+"""Configuration and subprocess helpers shared by the Pixi task modules."""
 
-pixi puts `tasks/` first on sys.path when running a task, so scripts can
-`from utils import run`.
-"""
+from .process import (
+    CommandGroup,
+    ShellCommand,
+    detect_platform_identifier,
+    find_executable,
+    is_windows,
+    log_section,
+    logger,
+    remove_tree_with_retries,
+    sanitized_subprocess_env,
+    to_cmake_build_type,
+)
+from .project import ProjectContext, TokenFormatter, glob_paths, resolve_path
 
-from .proc import run
-
-__all__ = ["run"]
+__all__ = [
+    "CommandGroup",
+    "ShellCommand",
+    "ProjectContext",
+    "TokenFormatter",
+    "detect_platform_identifier",
+    "find_executable",
+    "glob_paths",
+    "is_windows",
+    "log_section",
+    "logger",
+    "remove_tree_with_retries",
+    "resolve_path",
+    "sanitized_subprocess_env",
+    "to_cmake_build_type",
+]

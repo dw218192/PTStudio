@@ -98,8 +98,8 @@ Turn 1/3 -- CI run <id> -- 2 checks failed
 For each actionable failure:
 1. Read the failing file
 2. Apply the fix
-3. Build locally: `./repo build`
-4. Test locally: `./repo test`
+3. Build locally: `pixi run build`
+4. Test locally: `pixi run test`
 
 ### 5. Push
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import http.server
+import io
 import os
 import shutil
 import subprocess
@@ -12,7 +13,6 @@ import threading
 import time
 import webbrowser
 import zipfile
-import io
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -21,17 +21,17 @@ from urllib.request import urlopen
 
 import click
 
-from repo_tools.build.conan import load_conan_env
-from repo_tools.core import (
-    RepoTool,
+from tasks.build_support.conan import load_conan_env
+from tasks.utils import (
+    ProjectContext,
     ShellCommand,
-    ToolContext,
     detect_platform_identifier,
     is_windows,
     log_section,
     logger,
     to_cmake_build_type,
 )
+from tasks.utils.project import load_context, project_options
 
 # Tracy release to download -- update when upgrading tracy Conan package
 _TRACY_VERSION = "0.13.1"
@@ -155,7 +155,6 @@ def _resolve_env_script(build_dir: Path, is_emscripten: bool) -> Path | None:
     return resolved if resolved.exists() else None
 
 
-
 def _find_browser() -> tuple[Path, list[str]] | None:
     """Find a browser executable and return (path, isolation_args).
 
@@ -184,10 +183,12 @@ def _find_browser() -> tuple[Path, list[str]] | None:
         chrome_dirs: list[Path] = []
         if localappdata:
             chrome_dirs.append(Path(localappdata) / "Google/Chrome/Application")
-        chrome_dirs.extend([
-            Path("C:/Program Files/Google/Chrome/Application"),
-            Path("C:/Program Files (x86)/Google/Chrome/Application"),
-        ])
+        chrome_dirs.extend(
+            [
+                Path("C:/Program Files/Google/Chrome/Application"),
+                Path("C:/Program Files (x86)/Google/Chrome/Application"),
+            ]
+        )
         for d in chrome_dirs:
             search.append((d / "chrome.exe", _chromium_args))
         for exe, args in search:
@@ -243,7 +244,8 @@ class _WasmHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             if _WasmHandler.server_ref:
                 threading.Thread(
-                    target=_WasmHandler.server_ref.shutdown, daemon=True,
+                    target=_WasmHandler.server_ref.shutdown,
+                    daemon=True,
                 ).start()
             return
 
@@ -251,7 +253,7 @@ class _WasmHandler(http.server.SimpleHTTPRequestHandler):
             # Format: ^out^SEQ^message or ^err^SEQ^message
             try:
                 i = data.index("^", 5)
-                msg = data[i + 1:]
+                msg = data[i + 1 :]
             except ValueError:
                 msg = data[5:]
             if _WasmHandler.capture_buffer is not None:
@@ -302,6 +304,7 @@ def _serve_emscripten(
 
     def make_handler(*a: Any, **kw: Any) -> _WasmHandler:
         return _WasmHandler(*a, directory=serve_dir, **kw)
+
     try:
         server = http.server.ThreadingHTTPServer(("localhost", port), make_handler)
     except OSError as e:
@@ -394,7 +397,9 @@ def _serve_emscripten(
     _WasmHandler.capture_buffer = None
 
     return subprocess.CompletedProcess(
-        args=[str(html_path)], returncode=exit_code, stdout=stdout,
+        args=[str(html_path)],
+        returncode=exit_code,
+        stdout=stdout,
     )
 
 
@@ -418,7 +423,9 @@ def _run_executable(
 
     # Interactive Emscripten launch -- bypass batch wrapping entirely
     if is_emscripten and not capture_output:
-        html_path = exe_path.with_suffix(".html") if exe_path.suffix.lower() != ".html" else exe_path
+        html_path = (
+            exe_path.with_suffix(".html") if exe_path.suffix.lower() != ".html" else exe_path
+        )
         logger.info(f"Launching {html_path.name} in browser")
         return _serve_emscripten(html_path, args=args)
 
@@ -448,8 +455,11 @@ def _run_executable(
     try:
         if capture_output:
             return sc.run(
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True, encoding="utf-8", errors="replace",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
             )
         return sc.run()
     except KeyboardInterrupt:
@@ -503,7 +513,7 @@ def _run_tests(context: dict[str, Any], verbose: bool, from_package: bool = Fals
     test_executables = _discover_executables(test_dir, is_emscripten)
     if not test_executables:
         logger.error(f"No test executables found in: {test_dir}")
-        logger.info("Build the project first: ./repo build")
+        logger.info("Build the project first: pixi run build")
         return 1
 
     logger.info(f"Found {len(test_executables)} test executable(s)")
@@ -571,7 +581,10 @@ def _run_tests(context: dict[str, Any], verbose: bool, from_package: bool = Fals
     #
     # ptSmoke_* (path tracer) still runs on CI and still covers device, shader,
     # BVH and readback paths, so this does not leave the GPU pipeline untested.
-    skip_editor_smoke = os.environ.get("PTSTUDIO_SKIP_EDITOR_SMOKE", "") in ("1", "true")
+    skip_editor_smoke = os.environ.get("PTSTUDIO_SKIP_EDITOR_SMOKE", "") in (
+        "1",
+        "true",
+    )
 
     if not editor_exe.exists():
         logger.error("FAILED: smoke tests -- editor executable not found")
@@ -580,7 +593,7 @@ def _run_tests(context: dict[str, Any], verbose: bool, from_package: bool = Fals
     elif not scenes:
         logger.error(
             "FAILED: smoke tests -- no .usdz scene files in "
-            f"{scenes_dir}. Run './repo build' to generate them."
+            f"{scenes_dir}. Run 'pixi run build' to generate them."
         )
         failed += 1
         failed_tests.append("editorSmoke (missing scenes)")
@@ -593,7 +606,7 @@ def _run_tests(context: dict[str, Any], verbose: bool, from_package: bool = Fals
                 )
             # Guard only the Forward-renderer smoke tests; the path tracer
             # smoke tests below run regardless.
-            for scene_path in ([] if skip_editor_smoke else scenes):
+            for scene_path in [] if skip_editor_smoke else scenes:
                 scene_name = scene_path.stem
                 test_name = f"editorSmoke_{scene_name}"
                 log_file = logs_dir / f"test_{test_name}.log"
@@ -610,14 +623,18 @@ def _run_tests(context: dict[str, Any], verbose: bool, from_package: bool = Fals
                     em_capture = f"/tmp/{scene_name}.png"
                     smoke_args = [
                         f"--capture-and-quit={em_capture}",
-                        "--frames", "3",
-                        "--usd", usd_arg,
+                        "--frames",
+                        "3",
+                        "--usd",
+                        usd_arg,
                     ]
                 else:
                     smoke_args = [
                         f"--capture-and-quit={capture_path}",
-                        "--frames", "3",
-                        "--usd", usd_arg,
+                        "--frames",
+                        "3",
+                        "--usd",
+                        usd_arg,
                     ]
                 with log_section(f"Test: {test_name}"):
                     try:
@@ -653,9 +670,7 @@ def _run_tests(context: dict[str, Any], verbose: bool, from_package: bool = Fals
                                 sys.stdout.write("\n")
 
                         if result.returncode != 0:
-                            logger.error(
-                                f"FAILED: {test_name} (exit code: {result.returncode})"
-                            )
+                            logger.error(f"FAILED: {test_name} (exit code: {result.returncode})")
                             failed += 1
                             failed_tests.append(test_name)
                         elif not is_emscripten and not capture_path.exists():
@@ -686,9 +701,12 @@ def _run_tests(context: dict[str, Any], verbose: bool, from_package: bool = Fals
                     capture_path = Path(tmp_dir) / f"pt_{scene_name}.png"
                     smoke_args = [
                         f"--capture-and-quit={capture_path}",
-                        "--frames", "5",
-                        "--usd", str(scene_path),
-                        "--renderer", "Path Trace",
+                        "--frames",
+                        "5",
+                        "--usd",
+                        str(scene_path),
+                        "--renderer",
+                        "Path Trace",
                     ]
                     with log_section(f"Test: {test_name}"):
                         try:
@@ -701,7 +719,7 @@ def _run_tests(context: dict[str, Any], verbose: bool, from_package: bool = Fals
                             with open(log_file, "w", encoding="utf-8", errors="replace") as f:
                                 f.write(f"Test: {test_name}\n")
                                 f.write(f"Scene: {scene_path}\n")
-                                f.write(f"Renderer: Path Trace\n")
+                                f.write("Renderer: Path Trace\n")
                                 f.write(f"Capture: {capture_path}\n")
                                 f.write(f"Exit code: {result.returncode}\n")
                                 f.write("=" * 70 + "\n")
@@ -747,189 +765,202 @@ def _run_tests(context: dict[str, Any], verbose: bool, from_package: bool = Fals
     return 0
 
 
-class LaunchTool(RepoTool):
-    name = "launch"
-    help = "Launch executables"
-
-    def setup(self, cmd: click.Command) -> click.Command:
-        cmd = click.argument(
-            "executable",
-            required=False,
-            default=None,
-        )(cmd)
-        cmd = click.option(
-            "-c", "--config",
-            type=click.Choice(
-                ["debug", "release", "relwithdebinfo", "minsizerel"],
-                case_sensitive=False,
-            ),
-            default=None,
-            help="Build configuration (overrides --build-type)",
-        )(cmd)
-        cmd = click.option(
-            "--env",
-            multiple=True,
-            help="Environment override (KEY=VALUE). Repeatable.",
-        )(cmd)
-        cmd = click.option(
-            "-i", "--interactive",
-            is_flag=True,
-            default=None,
-            help="Interactive menu to select executable",
-        )(cmd)
-        cmd = click.option(
-            "--profile",
-            is_flag=False,
-            flag_value="viewer",
-            default=None,
-            help="Launch Tracy profiler (Windows only). "
-            "Bare --profile opens the GUI viewer with auto-connect. "
-            "--profile trace.tracy uses headless capture with auto-save.",
-        )(cmd)
-        cmd = click.option(
-            "--from-package",
-            is_flag=True,
-            default=None,
-            help="Launch from packaged artifacts instead of build dir (CI)",
-        )(cmd)
-        return cmd
-
-    def default_args(self, tokens: dict[str, str]) -> dict[str, Any]:
-        return {
+def run(ctx: ProjectContext, args: dict[str, Any]) -> None:
+    args = ctx.arguments(
+        "launch",
+        {
             "executable": "editor",
             "config": None,
             "env": (),
             "interactive": False,
             "profile": None,
             "from_package": False,
-        }
+        },
+        args,
+    )
+    root = ctx.workspace_root
 
-    def execute(self, ctx: ToolContext, args: dict[str, Any]) -> None:
-        root = ctx.workspace_root
+    # Support both --config (command-specific) and --build-type (group-level).
+    # --config takes precedence when explicitly provided.
+    config_val = args.get("config")
+    if config_val:
+        build_type = to_cmake_build_type(config_val)
+    else:
+        build_type = ctx.dimensions.get("build_type", "Debug")
 
-        # Support both --config (tool-specific) and --build-type (group-level).
-        # --config takes precedence when explicitly provided.
-        config_val = args.get("config")
-        if config_val:
-            build_type = to_cmake_build_type(config_val)
+    platform_id = ctx.dimensions.get("platform", "")
+    is_emscripten = platform_id == "emscripten"
+
+    # Build a minimal context dict from tokens for helper functions
+    context: dict[str, Any] = {
+        "workspace_root": str(root),
+        "build_dir": ctx.tokens["build_dir"],
+        "conan_deps_root": ctx.tokens["conan_deps_root"],
+        "package_dir": ctx.tokens["package_dir"],
+        "platform": platform_id,
+        "build_type": build_type,
+        "logs_root": ctx.tokens["logs_root"],
+    }
+
+    # CI path: everything is in the package dir.  Override build_dir so
+    # executable discovery and env-script resolution point at the package.
+    if args.get("from_package"):
+        pkg = Path(context["package_dir"])
+        context["build_dir"] = str(pkg / build_type)
+        context["conan_deps_root"] = str(pkg / "deps")
+
+    build_dir = Path(context["build_dir"])
+
+    # Apply --env overrides to the process environment so they propagate
+    # through the shell-wrapped command.
+    env_val = args.get("env")
+    if env_val:
+        for item in env_val:
+            text = str(item).strip()
+            if "=" in text:
+                key, value = text.split("=", 1)
+                os.environ[key] = value
+
+    # Check if we can run
+    if not _can_run(context):
+        if is_emscripten:
+            logger.error("emsdk not found. Build with --platform emscripten first.")
         else:
-            build_type = ctx.dimensions.get("build_type", "Debug")
+            logger.error(f"Cannot run {context['platform']} binaries on this host")
+            logger.info(f"Host platform: {detect_platform_identifier()}")
+        sys.exit(1)
 
-        platform_id = ctx.dimensions.get("platform", "")
-        is_emscripten = platform_id == "emscripten"
+    # Run single executable
+    bin_dir = build_dir / "bin"
+    exe_paths = _discover_executables(bin_dir, is_emscripten)
 
-        # Build a minimal context dict from tokens for helper functions
-        context: dict[str, Any] = {
-            "workspace_root": str(root),
-            "build_dir": ctx.tokens["build_dir"],
-            "conan_deps_root": ctx.tokens["conan_deps_root"],
-            "package_dir": ctx.tokens["package_dir"],
-            "platform": platform_id,
-            "build_type": build_type,
-            "logs_root": ctx.tokens["logs_root"],
-        }
+    if not exe_paths:
+        logger.error(f"No executables found in: {bin_dir}")
+        logger.info("Build the project first: pixi run build")
+        sys.exit(1)
 
-        # CI path: everything is in the package dir.  Override build_dir so
-        # executable discovery and env-script resolution point at the package.
-        if args.get("from_package"):
-            pkg = Path(context["package_dir"])
-            context["build_dir"] = str(pkg / build_type)
-            context["conan_deps_root"] = str(pkg / "deps")
-
-        build_dir = Path(context["build_dir"])
-
-        # Apply --env overrides to the process environment so they propagate
-        # through the shell-wrapped command.
-        env_val = args.get("env")
-        if env_val:
-            for item in env_val:
-                text = str(item).strip()
-                if "=" in text:
-                    key, value = text.split("=", 1)
-                    os.environ[key] = value
-
-        # Check if we can run
-        if not _can_run(context):
-            if is_emscripten:
-                logger.error("emsdk not found. Build with --platform emscripten first.")
-            else:
-                logger.error(f"Cannot run {context['platform']} binaries on this host")
-                logger.info(f"Host platform: {detect_platform_identifier()}")
-            sys.exit(1)
-
-        # Run single executable
-        bin_dir = build_dir / "bin"
-        exe_paths = _discover_executables(bin_dir, is_emscripten)
-
-        if not exe_paths:
-            logger.error(f"No executables found in: {bin_dir}")
-            logger.info("Build the project first: ./repo build")
-            sys.exit(1)
-
-        # Interactive mode
-        if args.get("interactive"):
-            target_exe = _interactive_select(exe_paths)
-            if target_exe is None:
-                logger.info("No executable selected.")
-                sys.exit(0)
-        else:
-            executable_name = args.get("executable") or "editor"
-            target_exe = None
-            for exe in exe_paths:
-                if exe.stem == executable_name:
-                    target_exe = exe
-                    break
-
+    # Interactive mode
+    if args.get("interactive"):
+        target_exe = _interactive_select(exe_paths)
         if target_exe is None:
-            executable_name = args.get("executable") or "editor"
-            logger.error(f"Executable not found: {executable_name}")
-            logger.info("Available executables:")
-            for exe in exe_paths:
-                logger.info(f"  {exe.stem}")
-            sys.exit(1)
+            logger.info("No executable selected.")
+            sys.exit(0)
+    else:
+        executable_name = args.get("executable") or "editor"
+        target_exe = None
+        for exe in exe_paths:
+            if exe.stem == executable_name:
+                target_exe = exe
+                break
 
-        tracy_proc: subprocess.Popen | None = None
-        profile_val = args.get("profile")
-        if profile_val is not None:
-            if sys.platform != "win32":
-                raise RuntimeError(
-                    "Tracy profiler pre-built binaries are only available for Windows. "
-                    "On Linux/macOS, build from source: "
-                    "https://github.com/wolfpld/tracy"
-                )
-            tracy_dir = _ensure_tracy_viewer(root).parent
-            if profile_val == "viewer":
-                # GUI viewer with auto-connect
-                tracy_exe = tracy_dir / "tracy-profiler.exe"
-                tracy_proc = subprocess.Popen([str(tracy_exe), "-a", "127.0.0.1"])
-                logger.info("Tracy viewer started (auto-connect to 127.0.0.1)")
-            else:
-                # Headless capture with auto-save
-                tracy_exe = tracy_dir / "tracy-capture.exe"
-                out_path = Path(profile_val)
-                out_path.parent.mkdir(parents=True, exist_ok=True)
-                tracy_proc = subprocess.Popen(
-                    [str(tracy_exe), "-a", "127.0.0.1", "-o", str(out_path), "-f"],
-                )
-                logger.info(f"Tracy capture started -> {out_path}")
+    if target_exe is None:
+        executable_name = args.get("executable") or "editor"
+        logger.error(f"Executable not found: {executable_name}")
+        logger.info("Available executables:")
+        for exe in exe_paths:
+            logger.info(f"  {exe.stem}")
+        sys.exit(1)
 
-        try:
-            result = _run_executable(target_exe, ctx.passthrough_args, context)
-        except KeyboardInterrupt:
-            result = subprocess.CompletedProcess(args=[], returncode=0)
-        finally:
-            if tracy_proc is not None and tracy_proc.poll() is None:
-                if profile_val != "viewer":
-                    # tracy-capture exits on its own after the app disconnects;
-                    # wait for it to flush the trace file.
-                    logger.info("Waiting for Tracy capture to finish writing...")
-                    try:
-                        tracy_proc.wait(timeout=30)
-                        logger.info("Tracy capture finished")
-                    except subprocess.TimeoutExpired:
-                        logger.warning("Tracy capture timed out, terminating")
-                        tracy_proc.terminate()
-                else:
+    tracy_proc: subprocess.Popen | None = None
+    profile_val = args.get("profile")
+    if profile_val is not None:
+        if sys.platform != "win32":
+            raise RuntimeError(
+                "Tracy profiler pre-built binaries are only available for Windows. "
+                "On Linux/macOS, build from source: "
+                "https://github.com/wolfpld/tracy"
+            )
+        tracy_dir = _ensure_tracy_viewer(root).parent
+        if profile_val == "viewer":
+            # GUI viewer with auto-connect
+            tracy_exe = tracy_dir / "tracy-profiler.exe"
+            tracy_proc = subprocess.Popen([str(tracy_exe), "-a", "127.0.0.1"])
+            logger.info("Tracy viewer started (auto-connect to 127.0.0.1)")
+        else:
+            # Headless capture with auto-save
+            tracy_exe = tracy_dir / "tracy-capture.exe"
+            out_path = Path(profile_val)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            tracy_proc = subprocess.Popen(
+                [str(tracy_exe), "-a", "127.0.0.1", "-o", str(out_path), "-f"],
+            )
+            logger.info(f"Tracy capture started -> {out_path}")
+
+    try:
+        result = _run_executable(target_exe, ctx.passthrough_args, context)
+    except KeyboardInterrupt:
+        result = subprocess.CompletedProcess(args=[], returncode=0)
+    finally:
+        if tracy_proc is not None and tracy_proc.poll() is None:
+            if profile_val != "viewer":
+                # tracy-capture exits on its own after the app disconnects;
+                # wait for it to flush the trace file.
+                logger.info("Waiting for Tracy capture to finish writing...")
+                try:
+                    tracy_proc.wait(timeout=30)
+                    logger.info("Tracy capture finished")
+                except subprocess.TimeoutExpired:
+                    logger.warning("Tracy capture timed out, terminating")
                     tracy_proc.terminate()
+            else:
+                tracy_proc.terminate()
 
-        sys.exit(result.returncode)
+    sys.exit(result.returncode)
+
+
+@click.command(
+    name="launch",
+    help="Launch executables",
+    context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
+)
+@project_options
+@click.argument(
+    "executable",
+    required=False,
+    default=None,
+)
+@click.option(
+    "-c",
+    "--config",
+    type=click.Choice(
+        ["debug", "release", "relwithdebinfo", "minsizerel"],
+        case_sensitive=False,
+    ),
+    default=None,
+    help="Build configuration (overrides --build-type)",
+)
+@click.option(
+    "--env",
+    multiple=True,
+    help="Environment override (KEY=VALUE). Repeatable.",
+)
+@click.option(
+    "-i",
+    "--interactive",
+    is_flag=True,
+    default=None,
+    help="Interactive menu to select executable",
+)
+@click.option(
+    "--profile",
+    is_flag=False,
+    flag_value="viewer",
+    default=None,
+    help="Launch Tracy profiler (Windows only). "
+    "Bare --profile opens the GUI viewer with auto-connect. "
+    "--profile trace.tracy uses headless capture with auto-save.",
+)
+@click.option(
+    "--from-package",
+    is_flag=True,
+    default=None,
+    help="Launch from packaged artifacts instead of build dir (CI)",
+)
+@click.pass_context
+def main(cli: click.Context, platform: str, build_type: str, **args: Any) -> None:
+    context = load_context(platform, args.get("config") or build_type, passthrough=cli.args)
+    run(context, args)
+
+
+if __name__ == "__main__":
+    main()

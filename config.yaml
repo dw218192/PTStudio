@@ -1,32 +1,9 @@
-repo:
-  tokens:
-    platform:
-      - windows-x64
-      - linux-x64
-      - emscripten
-    build_type:
-      - Debug
-      - Release
-      - RelWithDebInfo
-    build_root: {value: "{workspace_root}/_build", path: true}
-    logs_root: {value: "{workspace_root}/_logs", path: true}
-    build_dir: {value: "{build_root}/{platform}/{build_type}", path: true}
-    conan_deps_root: {value: "{build_root}/{platform}/deps", path: true}
-    package_dir: {value: "{workspace_root}/_package/{platform}", path: true}
-  extra_deps:
-    - conan==2.22.2
-    - cmake==3.31.1
-    - jinja2==3.1.6
-    - InquirerPy==0.3.4
-    # flip-evaluator's nbflip.pyd uses nanobind->numpy for evaluate()/load()
-    # but the wheel does NOT declare numpy/Pillow as runtime deps. Without
-    # them the pyd silently abort()s when called directly. List them here
-    # so image-diff's Python-API path and the debug-image-diff skill both
-    # work after a clean ./repo init.
-    - flip-evaluator==1.7
-    - numpy>=2.0
-    - Pillow>=10.0
-    - pytest>=7.0
+paths:
+  build_root: "{workspace_root}/_build"
+  logs_root: "{workspace_root}/_logs"
+  build_dir: "{build_root}/{platform}/{build_type}"
+  conan_deps_root: "{build_root}/{platform}/deps"
+  package_dir: "{workspace_root}/_package/{platform}"
 
 build:
   windowing: "glfw"
@@ -37,49 +14,8 @@ build:
     - usdUtils
     - geomUtil
     - hd
-  prebuild:
-    format: {}
-    slangc: {}
-    shader_variants_codegen: {}
-    usdz: {}
-    embed: {}
-  postbuild: {}
   conan:
     local_recipes: "tools/conan"
-
-agent:
-  allowlist_extra: "allowlist_extra.toml"
-  required_criteria+:
-    - "Build succeeds (repo_build) for both the native and emscripten platforms and all build types"
-    - "All existing tests pass (repo_test) for both the native and emscripten platforms and all build types"
-    - "If there is a new feature, it must have tests that cover the code path"
-    - "Fail loud: use macros in <core/diagnostics.h> instead of silent null checks, fallbacks, or defensive state management."
-    - "Follows naming conventions: UpperCamelCase types, snake_case methods/vars, m_ private members, k_snake_case constants, lowerCamelCase files"
-    - "Never hide errors with silent fallbacks, empty catch blocks, or swallowed return codes."
-    - "Never disable or skip unit tests without explicit justification."
-    - "For renderer/shader/lighting/asset-pipeline changes, run `./repo image-diff` and confirm no case's FLIP score has regressed beyond its committed baseline. If a score improves, document it; if it regresses, fix the cause or justify the change explicitly."
-  prompts:
-    common: >
-      C++17 codebase. Naming: UpperCamelCase types, snake_case functions/variables,
-      m_prefix for private members, k_snake_case for constexpr constants,
-      lowerCamelCase.cpp files, snake_case directories.
-      Public API boundaries must be noexcept and return error_code or boost::result --
-      never let exceptions escape. Use ABI-safe types only at DLL boundaries
-      (fixed-width ints, POD structs, opaque handles -- no std::string/vector).
-      Prefer Rule of Zero, RAII, string_view/span for non-owning views.
-      Prefer returning values over storing state -- e.g. init() returns an
-      error code rather than storing it as a member for the caller to query.
-      Use #pragma once, include what you use, forward-declare in headers.
-    reviewer: >
-      Watch for regressions: run the full test suite, not just new tests.
-      Flag scope creep, drive-by refactors, or formatting outside touched functions.
-      Diff against the base branch (not just HEAD) to catch accumulated drift.
-      Reject self-testing mock tests: tests that define local stubs of the system
-      under test and assert against those stubs are worthless. Every test must call
-      real production code. If that's not feasible, don't add the test.
-      Reject vacuous tests: tests that only assert default member initializers,
-      sizeof() (use static_assert in headers instead), or trivial constructor
-      behavior. A test must exercise a non-trivial code path to justify its existence.
 
 image_diff:
   # Metric is max over per-tile mean FLIP. Whole-image mean drowns localized
@@ -327,6 +263,9 @@ embed:
       namespace: "hello_triangle_resources"
 
 clean:
+  paths:
+    - "{build_dir}/logs"
+    - "{workspace_root}/tasks/**/__pycache__"
   groups:
     generated:
       - "re:^(core|editor|hello_triangle|renderers)/.*generated$"

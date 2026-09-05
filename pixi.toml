@@ -3,13 +3,7 @@ name = "ptstudio"
 channels = ["conda-forge"]
 platforms = ["win-64", "linux-64"]
 
-# pixi owns the tool environment. It replaces repokit's bootstrap scripts and
-# its generated venv under tools/framework/_managed/ -- pixi brings its own
-# Python, so there is nothing to bootstrap before `pixi run <task>`.
-#
-# The tool *implementations* still live in tools/repo_tools/ (project) and
-# tools/framework/repo_tools/ (repokit, imported as a plain library). Only the
-# driver changed.
+# Pixi owns the Python environment and all project task entry points.
 
 [dependencies]
 python = "3.12.*"
@@ -19,12 +13,10 @@ python = "3.12.*"
 ninja = ">=1.11"
 
 [pypi-dependencies]
-# repokit core
+# Task command-line interfaces and configuration
 click = ">=8.0"
 pyyaml = ">=6.0"
 colorama = ">=0.4"
-bashlex = ">=0.18"
-pygments = ">=2.16"
 # formatting / linting
 clang-format = ">=19.0"
 ruff = ">=0.4"
@@ -41,17 +33,19 @@ pillow = ">=10.0"
 pytest = ">=7.0"
 
 [tasks]
-# Canonical task names (the template's contract).
-build = "python tasks/build.py"
-test = "python tasks/test.py"
-fmt = "python tasks/fmt.py"
-lint = "python tasks/lint.py"
-check = { depends-on = ["lint", "test"] }
-
-# Project tools, dispatched to the same driver. `pixi run repo --help` lists
-# everything, including tools not given a shortcut here.
-repo = "python tasks/repo.py"
-launch = "python tasks/repo.py launch"
-package = "python tasks/repo.py package"
-publish = "python tasks/repo.py publish"
-image-diff = "python tasks/repo.py image-diff"
+build = "python -m tasks.build"
+test = "python -m tasks.test"
+fmt = "python -m tasks.fmt"
+lint = "python -m tasks.lint"
+check = { depends-on = ["lint", "test-tasks", "test"] }
+launch = "python -m tasks.launch"
+package = "python -m tasks.package"
+publish = "python -m tasks.publish"
+image-diff = "python -m tasks.image_diff"
+bake-gt = "python -m tasks.bake_gt"
+slangc = "python -m tasks.slangc"
+shader-variants-codegen = "python -m tasks.shader_variants_codegen"
+embed = "python -m tasks.embed"
+usdz = "python -m tasks.usdz"
+clean = "python -m tasks.clean"
+test-tasks = "python -m pytest tasks/tests"

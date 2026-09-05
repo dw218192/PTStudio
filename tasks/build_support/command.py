@@ -9,12 +9,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from repo_tools.core import (
+from tasks.utils import (
     CommandGroup,
-    ToolContext,
-    find_venv_executable,
-    get_tool,
-    invoke_tool,
+    ProjectContext,
+    find_executable,
     logger,
     remove_tree_with_retries,
     sanitized_subprocess_env,
@@ -37,75 +35,19 @@ from .ide import (
 )
 
 
-# -- Prebuild / Postbuild Steps ---------------------------------------
+def prepare_assets(ctx: ProjectContext, *, host_only: bool = False) -> None:
+    """Run the project's asset generation in dependency order."""
+    from tasks import embed, fmt, shader_variants_codegen, slangc, usdz
 
-
-def execute_build_steps(
-    _root: Path,
-    config: dict,
-    tokens: dict[str, str],
-    dimensions: dict[str, str],
-    _logs_dir: Path,
-    steps_config: dict,
-    step_type: str,
-    current_tool: str,
-) -> None:
-    """Execute prebuild or postbuild steps defined in config.
-
-    Args:
-        root: Repository root path
-        config: Full configuration dictionary
-        tokens: Token dictionary for invoke_tool
-        dimensions: Dimension values for invoke_tool
-        logs_dir: Logs directory path
-        steps_config: Dictionary of build steps from config
-        step_type: Either "prebuild" or "postbuild" for logging
-        current_tool: Name of the current tool (to prevent recursion)
-    """
-    if not steps_config:
+    if host_only:
+        usdz.run(ctx, {})
+        slangc.run(ctx, {})
         return
-
-    for step_name, step_config in steps_config.items():
-        if not isinstance(step_config, dict):
-            logger.warning(
-                f"Skipping invalid {step_type} step '{step_name}': not a dict"
-            )
-            continue
-
-        repo_tool = step_config.get("repo_tool", step_name)
-        if not repo_tool:
-            logger.warning(
-                f"Skipping {step_type} step '{step_name}': missing 'repo_tool'"
-            )
-            continue
-        step_args_value = step_config.get("args")
-        if step_args_value is None:
-            step_args_value = {
-                key: value for key, value in step_config.items() if key != "repo_tool"
-            }
-
-        tool = get_tool(repo_tool)
-        if tool is None:
-            logger.error(f"  [FAIL] Unknown repo tool: {repo_tool}")
-            raise RuntimeError(
-                f"Unknown repo tool '{repo_tool}' in {step_type} step '{step_name}'"
-            )
-        if repo_tool == current_tool:
-            logger.error(
-                f"  [FAIL] Cannot call '{repo_tool}' tool from {step_type} steps (would cause recursion)"
-            )
-            raise RuntimeError(
-                f"{step_type} step '{step_name}' cannot use '{repo_tool}' tool"
-            )
-
-        logger.info(f"Running {step_type} step: {step_name} (tool: {repo_tool})")
-
-        try:
-            invoke_tool(repo_tool, tokens, config, dimensions=dimensions, extra_args=step_args_value)
-            logger.info(f"  [OK] {step_name} completed")
-        except Exception as e:
-            logger.error(f"  [FAIL] {step_name} failed: {e}")
-            raise RuntimeError(f"{step_type} step '{step_name}' failed") from e
+    fmt.run(ctx, {})
+    slangc.run(ctx, {})
+    shader_variants_codegen.run(ctx, {})
+    usdz.run(ctx, {})
+    embed.run(ctx, {})
 
 
 # -- Helpers ----------------------------------------------------------
@@ -134,7 +76,7 @@ def _host_package_names(lock_file: Path) -> list[str]:
 #             `conanfile.txt` for its minimum dep set and a `CMakeLists.txt`
 #             that builds the target.
 _HOST_TOOL_TARGETS: dict[str, dict[str, str]] = {
-    "usdz":   {"target": "usdz_pack",   "dir": "tools/conan/usdz_pack"},
+    "usdz": {"target": "usdz_pack", "dir": "tools/conan/usdz_pack"},
     "slangc": {"target": "pts_shaderc", "dir": "tools"},
 }
 
@@ -182,11 +124,7 @@ def _host_tools_only_build(
     build_type: str,
     conan_profile: str,
     conan_config: dict,
-    prebuild_steps: dict,
-    config: dict,
-    tokens: dict,
-    dimensions: dict,
-    current_tool: str,
+    ctx: ProjectContext,
     build_env: dict,
 ) -> None:
     """Build host tools standalone without the root project Conan graph.
@@ -203,7 +141,7 @@ def _host_tools_only_build(
     ensure_conan_profile()
     export_local_conan_recipes(root, logs_dir, conan_config)
 
-    conan_exe = find_venv_executable("conan")
+    conan_exe = find_executable("conan")
     bin_dir = build_dir / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
 
@@ -211,8 +149,6 @@ def _host_tools_only_build(
 
     with CommandGroup("Host tools (isolated)", cwd=build_folder, env=build_env) as g:
         for prebuild_name, spec in _HOST_TOOL_TARGETS.items():
-            if prebuild_name not in prebuild_steps:
-                continue
             target_name = spec["target"]
             tool_dir = root / spec["dir"]
             exe_name = f"{target_name}.exe" if is_win else target_name
@@ -229,13 +165,17 @@ def _host_tools_only_build(
 
             g.run(
                 [
-                    conan_exe, "install", str(tool_dir),
+                    conan_exe,
+                    "install",
+                    str(tool_dir),
                     "--build=missing",
                     f"--output-folder={tool_out}",
                     f"--profile:host={conan_profile}",
                     f"--profile:build={conan_profile}",
-                    "-s", "compiler.cppstd=17",
-                    "-s", f"build_type={build_type}",
+                    "-s",
+                    "compiler.cppstd=17",
+                    "-s",
+                    f"build_type={build_type}",
                 ],
                 log_file=logs_dir / f"conan_install_{target_name}.log",
             )
@@ -248,15 +188,17 @@ def _host_tools_only_build(
             if not toolchain.exists():
                 hits = list(tool_out.rglob("conan_toolchain.cmake"))
                 if not hits:
-                    raise RuntimeError(
-                        f"conan_toolchain.cmake not generated under {tool_out}"
-                    )
+                    raise RuntimeError(f"conan_toolchain.cmake not generated under {tool_out}")
                 toolchain = hits[0]
 
             cmake_build = tool_out / "cmake-build"
             g.run(
                 [
-                    "cmake", "-S", str(tool_dir), "-B", str(cmake_build),
+                    "cmake",
+                    "-S",
+                    str(tool_dir),
+                    "-B",
+                    str(cmake_build),
                     f"-DCMAKE_TOOLCHAIN_FILE={toolchain}",
                     f"-DCMAKE_BUILD_TYPE={build_type}",
                 ],
@@ -264,9 +206,13 @@ def _host_tools_only_build(
             )
             g.run(
                 [
-                    "cmake", "--build", str(cmake_build),
-                    "--target", target_name,
-                    "--config", build_type,
+                    "cmake",
+                    "--build",
+                    str(cmake_build),
+                    "--target",
+                    target_name,
+                    "--config",
+                    build_type,
                 ],
                 log_file=logs_dir / f"cmake_build_{target_name}.log",
             )
@@ -277,9 +223,7 @@ def _host_tools_only_build(
                     built = candidate
                     break
             if built is None:
-                raise RuntimeError(
-                    f"Built host tool '{exe_name}' not found under {cmake_build}"
-                )
+                raise RuntimeError(f"Built host tool '{exe_name}' not found under {cmake_build}")
             shutil.copy2(built, dest)
             logger.info(f"Staged host tool: {dest} (from {built})")
 
@@ -291,8 +235,10 @@ def _host_tools_only_build(
             # dependency set. Conan's layout can place it at either the
             # top of tool_out or under `build/generators/`.
             conanrun_name = "conanrun.bat" if is_win else "conanrun.sh"
-            for loc in (tool_out / conanrun_name,
-                        tool_out / "build" / "generators" / conanrun_name):
+            for loc in (
+                tool_out / conanrun_name,
+                tool_out / "build" / "generators" / conanrun_name,
+            ):
                 if loc.exists():
                     shutil.copy2(loc, bin_dir / conanrun_name)
                     # Also stage companion files (activate/deactivate, env .sh/.bat)
@@ -302,17 +248,8 @@ def _host_tools_only_build(
                             shutil.copy2(companion, bin_dir / companion.name)
                     break
 
-    # Run only prebuild steps that map to a host tool (e.g. usdz -> *.usdz).
-    host_prebuild_steps = {
-        name: cfg for name, cfg in (prebuild_steps or {}).items()
-        if name in _HOST_TOOL_TARGETS
-    }
-    if host_prebuild_steps:
-        with CommandGroup("Prebuild steps (host-tools-only)"):
-            execute_build_steps(
-                root, config, tokens, dimensions, logs_dir,
-                host_prebuild_steps, "prebuild", current_tool,
-            )
+    with CommandGroup("Generate assets with host tools"):
+        prepare_assets(ctx, host_only=True)
 
     logger.info("Host-tools-only build complete")
 
@@ -320,8 +257,8 @@ def _host_tools_only_build(
 # -- Main Build Logic -------------------------------------------------
 
 
-def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> None:
-    """Meta-meta-build system implementation.
+def build_command(ctx: ProjectContext, args: dict[str, Any]) -> None:
+    """Configure dependencies, generate assets, and build with CMake.
 
     1. Configure the project
        - fetch dependencies with conan
@@ -331,15 +268,14 @@ def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> 
     3. Generate vscode launch configurations for the project
     """
     root = ctx.workspace_root
-    config = ctx.config
     tokens = ctx.tokens
     dimensions = ctx.dimensions
 
-    # Platform is already determined by the framework
+    # Build selectors come from this command's CLI options.
     platform_id = dimensions.get("platform", "")
     build_type = dimensions.get("build_type", "Debug")
 
-    # Derive paths from the token system (resolved by the framework)
+    # Paths are expanded from the project configuration.
     build_root = Path(tokens["build_root"])
     build_folder = build_root / platform_id
     build_dir = Path(tokens["build_dir"])
@@ -351,8 +287,6 @@ def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> 
     conan_deps_root = Path(tokens["conan_deps_root"])
 
     conan_config = args.get("conan") or {}
-    prebuild_steps = args.get("prebuild") or {}
-    postbuild_steps = args.get("postbuild") or {}
 
     conan_profile = args.get("conan_profile", "default")
 
@@ -373,9 +307,16 @@ def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> 
         build_folder.mkdir(parents=True, exist_ok=True)
         build_env = sanitized_subprocess_env()
         _host_tools_only_build(
-            root, build_dir, build_folder, conan_deps_root, logs_dir,
-            build_type, conan_profile, conan_config, prebuild_steps,
-            config, tokens, dimensions, current_tool, build_env,
+            root,
+            build_dir,
+            build_folder,
+            conan_deps_root,
+            logs_dir,
+            build_type,
+            conan_profile,
+            conan_config,
+            ctx,
+            build_env,
         )
         return
 
@@ -405,7 +346,7 @@ def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> 
 
     preset_name = _cmake_preset_name(build_type, emscripten_build)
 
-    # Prevent the repo-tool venv from contaminating Conan/CMake subprocesses
+    # Isolate inherited Python overrides for Conan/CMake subprocesses.
     build_env = sanitized_subprocess_env()
 
     if args.get("build_only"):
@@ -413,7 +354,7 @@ def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> 
         logger.info(f"Building with configuration: {build_type}")
 
         conanbuild = build_dir / "conanbuild"
-        cmake_exe = find_venv_executable("cmake")
+        cmake_exe = find_executable("cmake")
 
         with CommandGroup("CMake build", env=build_env) as g:
             build_log_file = logs_dir / "cmake_build.log"
@@ -432,16 +373,16 @@ def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> 
         should_create_lock = args.get("update_lock") or not lock_file.exists()
 
         # Emscripten flags override the default host profile settings/conf
-        emscripten_flags = get_emscripten_conan_flags(root, build_folder) if emscripten_build else []
+        emscripten_flags = (
+            get_emscripten_conan_flags(root, build_folder) if emscripten_build else []
+        )
 
-        conan_exe = find_venv_executable("conan")
+        conan_exe = find_executable("conan")
         with CommandGroup("Conan dependencies", cwd=build_folder, env=build_env) as g:
             local_recipe_names = get_local_recipe_names(root, conan_config)
             if should_create_lock:
                 if args.get("update_lock"):
-                    logger.info(
-                        "Update lock flag (-u) detected. Regenerating lock file..."
-                    )
+                    logger.info("Update lock flag (-u) detected. Regenerating lock file...")
                 else:
                     logger.info("Lock file not found. Generating new lock file...")
                 lock_log_file = logs_dir / f"conan_lock_create_{windowing}.log"
@@ -525,23 +466,40 @@ def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> 
         conanbuild = build_dir / "conanbuild"
 
         # Phase 1: configure + build host tools needed by prebuild steps
-        host_tools = [t for t in (prebuild_steps or {}) if t in _HOST_TOOL_TARGETS]
+        host_tools = list(_HOST_TOOL_TARGETS)
         if host_tools and not emscripten_build:
             with CommandGroup("Host tools", cwd=build_folder, env=build_env) as g:
-                cmake_exe = find_venv_executable("cmake")
+                cmake_exe = find_executable("cmake")
                 ensure_cmake_file_api_query(build_folder / build_type)
                 configure_args = [
-                    cmake_exe, "--preset", preset_name, "-S", str(root),
+                    cmake_exe,
+                    "--preset",
+                    preset_name,
+                    "-S",
+                    str(root),
                 ]
                 if usd_modules:
                     configure_args.append(f"-DPTS_USD_MODULES={';'.join(usd_modules)}")
-                g.run(configure_args, log_file=logs_dir / "cmake_configure_tools.log",
-                      env_script=conanbuild)
+                g.run(
+                    configure_args,
+                    log_file=logs_dir / "cmake_configure_tools.log",
+                    env_script=conanbuild,
+                )
                 for tool_name in host_tools:
                     target = _HOST_TOOL_TARGETS[tool_name]["target"]
-                    g.run([cmake_exe, "--build", "--preset", preset_name, "--target", target],
-                          log_file=logs_dir / f"cmake_build_{target}.log",
-                          env_script=conanbuild, cwd=root)
+                    g.run(
+                        [
+                            cmake_exe,
+                            "--build",
+                            "--preset",
+                            preset_name,
+                            "--target",
+                            target,
+                        ],
+                        log_file=logs_dir / f"cmake_build_{target}.log",
+                        env_script=conanbuild,
+                        cwd=root,
+                    )
 
             # Mirror the --host-tools-only layout: stage the Conan env
             # scripts next to the built host-tool binaries so downstream
@@ -554,23 +512,12 @@ def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> 
                 if script.is_file():
                     shutil.copy2(script, bin_dir / script.name)
 
-        # Phase 2: Execute prebuild steps (may use host tools built above)
-        if prebuild_steps:
-            with CommandGroup("Prebuild steps"):
-                execute_build_steps(
-                    root,
-                    config,
-                    tokens,
-                    dimensions,
-                    logs_dir,
-                    prebuild_steps,
-                    "prebuild",
-                    current_tool,
-                )
+        with CommandGroup("Generate assets"):
+            prepare_assets(ctx)
 
         with CommandGroup("CMake configure", cwd=build_folder, env=build_env) as g:
             configure_log_file = logs_dir / "cmake_configure.log"
-            cmake_exe = find_venv_executable("cmake")
+            cmake_exe = find_executable("cmake")
             ensure_cmake_file_api_query(build_folder / build_type)
 
             cmake_args = [
@@ -598,19 +545,6 @@ def build_command(ctx: ToolContext, args: dict[str, Any], current_tool: str) -> 
                 # Build presets require CMakeUserPresets.json at project root
                 g.run(build_args, log_file=build_log_file, env_script=conanbuild, cwd=root)
 
-            # Execute postbuild steps
-            if postbuild_steps:
-                with CommandGroup("Postbuild steps"):
-                    execute_build_steps(
-                        root,
-                        config,
-                        tokens,
-                        dimensions,
-                        logs_dir,
-                        postbuild_steps,
-                        "postbuild",
-                        current_tool,
-                    )
         else:
             logger.info("Configure only mode (-c): Skipping build step")
 

@@ -77,8 +77,8 @@ For each actionable comment:
 
 After all fixes:
 ```bash
-./repo build
-./repo test
+pixi run build
+pixi run test
 ```
 
 If build or test fails, diagnose and fix before proceeding.
@@ -107,5 +107,5 @@ gh api repos/{owner}/{repo}/pulls/{number}/comments/{comment_id}/replies \
 - If a suggestion conflicts with project conventions (CLAUDE.md), skip it
   and explain why
 - Group related fixes into a single commit, not one commit per comment
-- Run `./repo launch editor --capture-and-quit` if any GPU/rendering code
+- Run `pixi run launch editor --capture-and-quit` if any GPU/rendering code
   was changed

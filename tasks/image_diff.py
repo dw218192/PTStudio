@@ -16,15 +16,7 @@ from typing import Any
 
 import click
 
-from repo_tools.core import (
-    RepoTool,
-    ToolContext,
-    log_section,
-    logger,
-    to_cmake_build_type,
-)
-
-from .common import (
+from tasks.image_diff_support import (
     Case,
     ImageDiffConfig,
     build_editor_args,
@@ -33,6 +25,13 @@ from .common import (
     run_launch,
     select_cases,
 )
+from tasks.utils import (
+    ProjectContext,
+    log_section,
+    logger,
+    to_cmake_build_type,
+)
+from tasks.utils.project import load_context, project_options
 
 
 @dataclass
@@ -99,13 +98,19 @@ def _compute_tile_max(err: Any, tile_size: int) -> tuple[float, WorstTile]:
             if tm > best_mean:
                 best_mean = tm
                 worst = WorstTile(
-                    x=x0, y=y0, w=x1 - x0, h=y1 - y0, mean=tm,
+                    x=x0,
+                    y=y0,
+                    w=x1 - x0,
+                    h=y1 - y0,
+                    mean=tm,
                 )
     return best_mean, worst
 
 
 def _write_heatmap(
-    heatmap_rgb: Any, worst: WorstTile, out_path: Path,
+    heatmap_rgb: Any,
+    worst: WorstTile,
+    out_path: Path,
 ) -> None:
     """Save *heatmap_rgb* (H, W, 3) float32 to PNG with the worst-tile bbox.
 
@@ -140,7 +145,7 @@ def _run_case(
     if not case.gt.exists():
         raise FileNotFoundError(
             f"image-diff: ground truth missing for case '{case.name}': "
-            f"{case.gt}\n  Bake it with: pixi run repo bake-gt --case {case.name}"
+            f"{case.gt}\n  Bake it with: pixi run bake-gt --case {case.name}"
         )
     cfg.out_dir.mkdir(parents=True, exist_ok=True)
     capture = existing_capture or cfg.out_dir / f"{case.name}.png"
@@ -165,14 +170,16 @@ def _run_case(
         )
     if not capture.exists():
         raise RuntimeError(
-            f"image-diff: capture was not produced for case '{case.name}' "
-            f"(expected {capture})"
+            f"image-diff: capture was not produced for case '{case.name}' (expected {capture})"
         )
 
     flip = require_flip_evaluator()
     # Raw error map for tile scoring.
     err_raw, mean_flip, _ = flip.evaluate(
-        str(case.gt), str(capture), "LDR", applyMagma=False,
+        str(case.gt),
+        str(capture),
+        "LDR",
+        applyMagma=False,
     )
     # err_raw shape: (H, W, 1) float32, values in [0, 1].
     err2d = err_raw[..., 0]
@@ -182,7 +189,11 @@ def _run_case(
     # API doesn't expose both outputs in a single invocation, and the cost
     # is negligible (one FLIP pass per case).
     heatmap_rgb, _, _ = flip.evaluate(
-        str(case.gt), str(capture), "LDR", applyMagma=True, computeMeanError=False,
+        str(case.gt),
+        str(capture),
+        "LDR",
+        applyMagma=True,
+        computeMeanError=False,
     )
     heatmap = cfg.out_dir / f"{case.name}.diff.png"
     _write_heatmap(heatmap_rgb, worst, heatmap)
@@ -202,7 +213,9 @@ def _run_case(
 
 
 def _write_summary(
-    summary_path: Path, results: list[CaseResult], tile_size: int,
+    summary_path: Path,
+    results: list[CaseResult],
+    tile_size: int,
 ) -> None:
     summary = {
         "tile_size": tile_size,
@@ -213,7 +226,8 @@ def _write_summary(
     }
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     summary_path.write_text(
-        json.dumps(summary, indent=2) + "\n", encoding="utf-8",
+        json.dumps(summary, indent=2) + "\n",
+        encoding="utf-8",
     )
 
 
@@ -231,89 +245,101 @@ def _print_results(results: list[CaseResult]) -> None:
         logger.info(line)
 
 
-class ImageDiffTool(RepoTool):
-    name = "image-diff"
-    help = "Diff renderer captures against golden GT via FLIP"
+def run(ctx: ProjectContext, args: dict[str, Any]) -> None:
+    # Fail loud if the dep is missing, up front rather than mid-loop.
+    args = ctx.arguments(
+        "image-diff", {"case_name": None, "config": None, "from_package": False}, args
+    )
+    require_flip_evaluator()
+    cfg = load_image_diff_config(ctx.workspace_root, ctx.config)
 
-    def setup(self, cmd: click.Command) -> click.Command:
-        cmd = click.option(
-            "--reference", type=click.Path(exists=True, dir_okay=False, path_type=Path),
-            help="Use a temporary reference for --case without changing committed GT.",
-        )(cmd)
-        cmd = click.option(
-            "--capture", type=click.Path(exists=True, dir_okay=False, path_type=Path),
-            help="Compare an existing capture for --case instead of launching the editor.",
-        )(cmd)
-        cmd = click.option(
-            "--case",
-            "case_name",
-            type=str,
-            default=None,
-            help="Run only the named case (default: all cases)",
-        )(cmd)
-        cmd = click.option(
-            "-c", "--config",
-            type=click.Choice(
-                ["debug", "release", "relwithdebinfo", "minsizerel"],
-                case_sensitive=False,
-            ),
-            default=None,
-            help="Build configuration (overrides --build-type)",
-        )(cmd)
-        cmd = click.option(
-            "--from-package",
-            is_flag=True,
-            default=None,
-            help="Capture from packaged artifacts instead of build dir (CI)",
-        )(cmd)
-        return cmd
+    case_name = args.get("case_name")
+    cases = select_cases(cfg, case_name)
+    reference = args.get("reference")
+    capture = args.get("capture")
+    if (reference or capture) and not case_name:
+        raise click.UsageError("--reference and --capture require --case")
+    if reference:
+        cases = [replace(case, gt=Path(reference).resolve()) for case in cases]
+    if capture:
+        capture = Path(capture).resolve()
 
-    def default_args(self, tokens: dict[str, str]) -> dict[str, Any]:
-        return {"case_name": None, "config": None, "from_package": False}
+    build_type_override = args.get("config")
+    if build_type_override:
+        build_type = to_cmake_build_type(build_type_override)
+    else:
+        build_type = ctx.dimensions.get("build_type", "Debug")
 
-    def execute(self, ctx: ToolContext, args: dict[str, Any]) -> None:
-        # Fail loud if the dep is missing, up front rather than mid-loop.
-        require_flip_evaluator()
-        cfg = load_image_diff_config(ctx.workspace_root, ctx.config)
+    logs_dir = Path(ctx.tokens["logs_root"])
+    cfg.out_dir.mkdir(parents=True, exist_ok=True)
 
-        case_name = args.get("case_name")
-        cases = select_cases(cfg, case_name)
-        reference = args.get("reference")
-        capture = args.get("capture")
-        if (reference or capture) and not case_name:
-            raise click.UsageError("--reference and --capture require --case")
-        if reference:
-            cases = [replace(case, gt=Path(reference).resolve()) for case in cases]
-        if capture:
-            capture = Path(capture).resolve()
-
-        build_type_override = args.get("config")
-        if build_type_override:
-            build_type = to_cmake_build_type(build_type_override)
-        else:
-            build_type = ctx.dimensions.get("build_type", "Debug")
-
-        logs_dir = Path(ctx.tokens["logs_root"])
-        cfg.out_dir.mkdir(parents=True, exist_ok=True)
-
-        from_package = bool(args.get("from_package"))
-        results: list[CaseResult] = []
-        for case in cases:
-            with log_section(f"image-diff: {case.name}"):
-                results.append(_run_case(
-                    case, cfg, ctx.workspace_root, build_type, logs_dir,
-                    from_package, capture,
-                ))
-
-        summary_path = cfg.out_dir / "summary.json"
-        _write_summary(summary_path, results, cfg.tile_size)
-        _print_results(results)
-        logger.info(f"Summary written to {summary_path}")
-
-        failed = [r for r in results if not r.passed]
-        if failed:
-            logger.error(
-                f"image-diff: {len(failed)} of {len(results)} case(s) exceeded "
-                f"threshold"
+    from_package = bool(args.get("from_package"))
+    results: list[CaseResult] = []
+    for case in cases:
+        with log_section(f"image-diff: {case.name}"):
+            results.append(
+                _run_case(
+                    case,
+                    cfg,
+                    ctx.workspace_root,
+                    build_type,
+                    logs_dir,
+                    from_package,
+                    capture,
+                )
             )
-            sys.exit(1)
+
+    summary_path = cfg.out_dir / "summary.json"
+    _write_summary(summary_path, results, cfg.tile_size)
+    _print_results(results)
+    logger.info(f"Summary written to {summary_path}")
+
+    failed = [r for r in results if not r.passed]
+    if failed:
+        logger.error(f"image-diff: {len(failed)} of {len(results)} case(s) exceeded threshold")
+        sys.exit(1)
+
+
+@click.command(name="image-diff", help="Diff renderer captures against golden GT via FLIP")
+@project_options
+@click.option(
+    "--reference",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Use a temporary reference for --case without changing committed GT.",
+)
+@click.option(
+    "--capture",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Compare an existing capture for --case instead of launching the editor.",
+)
+@click.option(
+    "--case",
+    "case_name",
+    type=str,
+    default=None,
+    help="Run only the named case (default: all cases)",
+)
+@click.option(
+    "-c",
+    "--config",
+    type=click.Choice(
+        ["debug", "release", "relwithdebinfo", "minsizerel"],
+        case_sensitive=False,
+    ),
+    default=None,
+    help="Build configuration (overrides --build-type)",
+)
+@click.option(
+    "--from-package",
+    is_flag=True,
+    default=None,
+    help="Capture from packaged artifacts instead of build dir (CI)",
+)
+@click.pass_context
+def main(cli: click.Context, platform: str, build_type: str, **args: Any) -> None:
+    context = load_context(platform, args.get("config") or build_type, passthrough=cli.args)
+    run(context, args)
+
+
+if __name__ == "__main__":
+    main()

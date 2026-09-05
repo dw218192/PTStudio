@@ -1,7 +1,7 @@
 """Shared helpers for ``image-diff`` and ``bake-gt`` tools.
 
 Loads the ``image_diff`` section of ``config.yaml`` into typed dataclasses,
-resolves paths, and runs the editor via the Pixi task entrypoint.
+resolves paths, and runs the editor via the direct launch task.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from repo_tools.core import logger
+from tasks.utils import logger
 
 
 @dataclass(frozen=True)
@@ -60,7 +60,8 @@ def _require(cfg: dict[str, Any], key: str, where: str) -> Any:
 
 
 def load_image_diff_config(
-    workspace_root: Path, config: dict[str, Any],
+    workspace_root: Path,
+    config: dict[str, Any],
 ) -> ImageDiffConfig:
     """Parse ``config['image_diff']`` into :class:`ImageDiffConfig`.
 
@@ -70,15 +71,11 @@ def load_image_diff_config(
     """
     section = config.get("image_diff")
     if not isinstance(section, dict):
-        raise KeyError(
-            "image_diff: missing top-level 'image_diff' section in config.yaml"
-        )
+        raise KeyError("image_diff: missing top-level 'image_diff' section in config.yaml")
 
     tile_size = int(section.get("tile_size", 64))
     if tile_size <= 0:
-        raise ValueError(
-            f"image_diff.tile_size must be positive (got {tile_size})"
-        )
+        raise ValueError(f"image_diff.tile_size must be positive (got {tile_size})")
     default_threshold = float(_require(section, "default_threshold", "image_diff"))
     gt_dir = workspace_root / str(_require(section, "gt_dir", "image_diff"))
     out_dir = workspace_root / str(_require(section, "out_dir", "image_diff"))
@@ -104,15 +101,17 @@ def load_image_diff_config(
         if name in seen_names:
             raise ValueError(f"image_diff.cases: duplicate case name '{name}'")
         seen_names.add(name)
-        cases.append(Case(
-            name=name,
-            scene=workspace_root / str(_require(entry, "scene", name)),
-            camera=str(_require(entry, "camera", name)),
-            renderer=str(_require(entry, "renderer", name)),
-            gt=gt_dir / str(_require(entry, "gt", name)),
-            threshold=float(entry.get("threshold", default_threshold)),
-            frames=int(entry.get("frames", 1)),
-        ))
+        cases.append(
+            Case(
+                name=name,
+                scene=workspace_root / str(_require(entry, "scene", name)),
+                camera=str(_require(entry, "camera", name)),
+                renderer=str(_require(entry, "renderer", name)),
+                gt=gt_dir / str(_require(entry, "gt", name)),
+                threshold=float(entry.get("threshold", default_threshold)),
+                frames=int(entry.get("frames", 1)),
+            )
+        )
     return ImageDiffConfig(
         tile_size=tile_size,
         default_threshold=default_threshold,
@@ -153,10 +152,14 @@ def build_editor_args(
     args += [
         "editor",
         f"--capture-and-quit={capture_path}",
-        "--frames", str(frames),
-        "--usd", str(case.scene),
-        "--camera", case.camera,
-        "--renderer", renderer,
+        "--frames",
+        str(frames),
+        "--usd",
+        str(case.scene),
+        "--camera",
+        case.camera,
+        "--renderer",
+        renderer,
     ]
     return args
 
@@ -168,8 +171,14 @@ def run_launch(
     log_file: Path | None = None,
 ) -> None:
     """Reuse launch's Conan environment and DLL setup in the Pixi interpreter."""
-    dispatcher = workspace_root / "tasks" / "repo.py"
-    cmd = [sys.executable, str(dispatcher), "--build-type", build_type, "launch", *launch_args]
+    cmd = [
+        sys.executable,
+        "-m",
+        "tasks.launch",
+        "--build-type",
+        build_type,
+        *launch_args,
+    ]
     # MSYS on Windows rewrites /Root/... paths to backslashed Windows paths
     # when handing CLI args to native exes. Disable that for camera prim
     # paths so the editor sees "/Root/Camera" verbatim.
@@ -180,6 +189,7 @@ def run_launch(
         with open(log_file, "w", encoding="utf-8", errors="replace") as f:
             proc = subprocess.Popen(
                 cmd,
+                cwd=workspace_root,
                 env=env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -194,11 +204,9 @@ def run_launch(
             proc.wait()
         rc = proc.returncode
     else:
-        rc = subprocess.run(cmd, env=env, check=False).returncode
+        rc = subprocess.run(cmd, cwd=workspace_root, env=env, check=False).returncode
     if rc != 0:
-        raise RuntimeError(
-            f"launch editor failed (exit {rc}) -- args: {launch_args}"
-        )
+        raise RuntimeError(f"launch editor failed (exit {rc}) -- args: {launch_args}")
 
 
 def require_flip_evaluator() -> Any:

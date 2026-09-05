@@ -1,8 +1,7 @@
 """Tests for shader_variants_codegen._collect_variants."""
 
 import pytest
-
-from repo_tools.shader_variants_codegen import _collect_variants
+from tasks.shader_variants_codegen import _collect_variants
 
 
 def _config(shaders):
@@ -27,31 +26,37 @@ class TestCollectVariants:
         # Top-level defines with no explicit variants: the base output
         # (suffix="") is compiled WITH those defines, so EmbeddedCompiler
         # must map `defines=['FOO']` back to the base source_key.
-        shaders = [{
-            "input": "a.slang",
-            "output": "a.wgsl",
-            "defines": ["FOO"],
-        }]
+        shaders = [
+            {
+                "input": "a.slang",
+                "output": "a.wgsl",
+                "defines": ["FOO"],
+            }
+        ]
         assert _collect_variants(_config(shaders)) == [("FOO\n", "")]
 
     def test_single_variant_with_defines(self):
-        shaders = [{
-            "input": "forward.slang",
-            "output": "forward.wgsl",
-            "variants": [
-                {},
-                {"defines": ["NO_DEBUG_TARGETS"], "suffix": "_no_debug"},
-            ],
-        }]
+        shaders = [
+            {
+                "input": "forward.slang",
+                "output": "forward.wgsl",
+                "variants": [
+                    {},
+                    {"defines": ["NO_DEBUG_TARGETS"], "suffix": "_no_debug"},
+                ],
+            }
+        ]
         result = _collect_variants(_config(shaders))
         assert result == [("NO_DEBUG_TARGETS\n", "_no_debug")]
 
     def test_canonical_defines_sorted(self):
-        shaders = [{
-            "variants": [
-                {"defines": ["BETA", "ALPHA"], "suffix": "_x"},
-            ],
-        }]
+        shaders = [
+            {
+                "variants": [
+                    {"defines": ["BETA", "ALPHA"], "suffix": "_x"},
+                ],
+            }
+        ]
         result = _collect_variants(_config(shaders))
         assert result == [("ALPHA\nBETA\n", "_x")]
 
@@ -72,12 +77,14 @@ class TestCollectVariants:
         assert result == [("FOO\n", "_foo")]
 
     def test_conflicting_suffix_raises(self):
-        shaders = [{
-            "variants": [
-                {"defines": ["FOO"], "suffix": "_foo"},
-                {"defines": ["FOO"], "suffix": "_bar"},
-            ],
-        }]
+        shaders = [
+            {
+                "variants": [
+                    {"defines": ["FOO"], "suffix": "_foo"},
+                    {"defines": ["FOO"], "suffix": "_bar"},
+                ],
+            }
+        ]
         with pytest.raises(ValueError, match="conflicting"):
             _collect_variants(_config(shaders))
 

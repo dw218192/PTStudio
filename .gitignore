@@ -14,21 +14,16 @@ __pycache__/
 # Generated embedded resources
 **/generated/
 
-# repokit
+# Local build/tool artifacts
 _tools/
-repo
-repo.cmd
 _agent/
 build/
-tools/pyproject.toml
-tools/uv.lock
 
 # pixi (pixi.lock IS committed -- it is the reproducibility record)
 .pixi/
 
 # User-local Claude settings
 .claude/settings.local.json
-repo.ps1
 config.local.yaml
 
 # Tracy profiling data

@@ -14,7 +14,7 @@ crop + stitch at the hotspot.
 
 1. **Run the suspect case only.** Do not re-run all cases.
 
-       ./repo image-diff --case <name>
+       pixi run image-diff --case <name>
 
 2. **Read _test_captures/summary.json** for the failing case. Note:
    - score vs threshold
@@ -26,10 +26,10 @@ crop + stitch at the hotspot.
    with bbox (X,Y,W,H) = (864,352,128,128):
 
        SK=.claude/skills/debug-image-diff/scripts
-       ./repo python -- $SK/imgcrop.py _test_captures/<name>.png --box 864,352,128,128 -o /tmp/cap.png
-       ./repo python -- $SK/imgcrop.py tests/golden/gt/<name>.png --box 864,352,128,128 -o /tmp/gt.png
-       ./repo python -- $SK/imgcrop.py _test_captures/<name>.diff.png --box 864,352,128,128 -o /tmp/heat.png
-       ./repo python -- $SK/imggrid.py /tmp/gt.png /tmp/cap.png /tmp/heat.png -a --labels gt,capture,flip -o /tmp/tri.png
+       pixi run python $SK/imgcrop.py _test_captures/<name>.png --box 864,352,128,128 -o /tmp/cap.png
+       pixi run python $SK/imgcrop.py tests/golden/gt/<name>.png --box 864,352,128,128 -o /tmp/gt.png
+       pixi run python $SK/imgcrop.py _test_captures/<name>.diff.png --box 864,352,128,128 -o /tmp/heat.png
+       pixi run python $SK/imggrid.py /tmp/gt.png /tmp/cap.png /tmp/heat.png -a --labels gt,capture,flip -o /tmp/tri.png
 
    Then Read /tmp/tri.png.
 
@@ -41,7 +41,7 @@ crop + stitch at the hotspot.
      report back with a clear description of what is wrong at the hotspot.
      Do NOT silently bump the threshold.
    - **Intentional renderer change** approved by the user: rebake GT with
-     ./repo bake-gt --case <name>, rerun image-diff, confirm pass.
+     pixi run bake-gt --case <name>, rerun image-diff, confirm pass.
    - **Noise / minor drift** (sub-percent score, no visual issue):
      propose a specific threshold bump in config.yaml with before/after
      scores and one line of justification.
@@ -51,4 +51,4 @@ crop + stitch at the hotspot.
 - scripts/imggrid.py IMG IMG [IMG ...] -o OUT [-a] [--direction horizontal|vertical] [--labels a,b,c]
 - scripts/imgcrop.py IMG --box X,Y,W,H -o OUT
 
-Both are Pillow-only and self-contained. Invoke via ./repo python -- <script> ...
+Both are Pillow-only and self-contained. Invoke via pixi run python <script> ...

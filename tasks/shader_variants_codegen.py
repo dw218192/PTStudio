@@ -10,17 +10,16 @@ sorted, each define followed by '\\n'.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
 import click
 
-from repo_tools.core import (
-    RepoTool,
-    ToolContext,
+from tasks.utils import (
+    ProjectContext,
     logger,
     resolve_path,
 )
+from tasks.utils.project import load_context, project_options
 
 
 def _canonical_defines(defines: list[str]) -> str:
@@ -39,10 +38,12 @@ def _collect_variants(config: dict) -> list[tuple[str, str]]:
             )
         variants = shader.get("variants")
         if variants is None:
-            variants = [{
-                "defines": list(shader.get("defines", [])),
-                "suffix": "",
-            }]
+            variants = [
+                {
+                    "defines": list(shader.get("defines", [])),
+                    "suffix": "",
+                }
+            ]
         for variant in variants:
             if not isinstance(variant, dict):
                 raise ValueError(
@@ -95,9 +96,7 @@ def _render_header(namespace: str, variants: list[tuple[str, str]]) -> str:
     else:
         lines: list[str] = []
         for canon, suffix in variants:
-            lines.append(
-                f'    {{"{_escape_c_string(canon)}", "{_escape_c_string(suffix)}"}},'
-            )
+            lines.append(f'    {{"{_escape_c_string(canon)}", "{_escape_c_string(suffix)}"}},')
         entries_block = "\n".join(lines) + "\n"
         size = len(variants)
 
@@ -128,55 +127,57 @@ def _compute_manifest(variants: list[tuple[str, str]], namespace: str) -> str:
     return json.dumps({"namespace": namespace, "variants": variants}, sort_keys=True)
 
 
-class ShaderVariantsCodegenTool(RepoTool):
-    name = "shader_variants_codegen"
-    help = "Emit a C++ header of registered shader variants"
+def run(ctx: ProjectContext, args: dict[str, Any]) -> None:
+    args = ctx.arguments("shader_variants_codegen", {"force": False}, args)
+    root = ctx.workspace_root
+    config = ctx.config
+    tokens = ctx.tokens
 
-    def setup(self, cmd: click.Command) -> click.Command:
-        cmd = click.option(
-            "-f",
-            "--force",
-            is_flag=True,
-            default=None,
-            help="Regenerate even if the variant set is unchanged",
-        )(cmd)
-        return cmd
+    output_value = args.get("output")
+    if not output_value:
+        raise ValueError("shader_variants_codegen: 'output' must be set in config.yaml")
+    namespace = str(args.get("namespace", "pts::rendering::variants"))
 
-    def default_args(self, tokens: dict[str, str]) -> dict[str, Any]:
-        return {"force": False}
+    variants = _collect_variants(config)
+    output_path = resolve_path(root, str(output_value), tokens)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    def execute(self, ctx: ToolContext, args: dict[str, Any]) -> None:
-        root = ctx.workspace_root
-        config = ctx.config
-        tokens = ctx.tokens
+    manifest_path = output_path.with_suffix(output_path.suffix + ".manifest")
+    manifest = _compute_manifest(variants, namespace)
 
-        output_value = args.get("output")
-        if not output_value:
-            raise ValueError(
-                "shader_variants_codegen: 'output' must be set in config.yaml"
-            )
-        namespace = str(args.get("namespace", "pts::rendering::variants"))
+    force = bool(args.get("force", False))
+    if (
+        not force
+        and output_path.exists()
+        and manifest_path.exists()
+        and manifest_path.read_text(encoding="utf-8") == manifest
+    ):
+        logger.info(f"Skipping up-to-date: {output_path}")
+        return
 
-        variants = _collect_variants(config)
-        output_path = resolve_path(root, str(output_value), tokens)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+    header = _render_header(namespace, variants)
+    output_path.write_text(header, encoding="utf-8")
+    manifest_path.write_text(manifest, encoding="utf-8")
+    logger.info(f"shader_variants_codegen wrote {len(variants)} variant(s) to {output_path}")
 
-        manifest_path = output_path.with_suffix(output_path.suffix + ".manifest")
-        manifest = _compute_manifest(variants, namespace)
 
-        force = bool(args.get("force", False))
-        if (
-            not force
-            and output_path.exists()
-            and manifest_path.exists()
-            and manifest_path.read_text(encoding="utf-8") == manifest
-        ):
-            logger.info(f"Skipping up-to-date: {output_path}")
-            return
+@click.command(
+    name="shader-variants-codegen",
+    help="Emit a C++ header of registered shader variants",
+)
+@project_options
+@click.option(
+    "-f",
+    "--force",
+    is_flag=True,
+    default=None,
+    help="Regenerate even if the variant set is unchanged",
+)
+@click.pass_context
+def main(cli: click.Context, platform: str, build_type: str, **args: Any) -> None:
+    context = load_context(platform, args.get("config") or build_type, passthrough=cli.args)
+    run(context, args)
 
-        header = _render_header(namespace, variants)
-        output_path.write_text(header, encoding="utf-8")
-        manifest_path.write_text(manifest, encoding="utf-8")
-        logger.info(
-            f"shader_variants_codegen wrote {len(variants)} variant(s) to {output_path}"
-        )
+
+if __name__ == "__main__":
+    main()

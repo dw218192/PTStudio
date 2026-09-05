@@ -39,8 +39,11 @@ are impractical.
 Tasks forward extra arguments, e.g.
 `pixi run build --platform emscripten --build-type Release`.
 
-`pixi run repo --help` reaches the full command set, including tools without a
-task shortcut (`slangc`, `embed`, `usdz`, `clean`, `context`, ...).
+Asset-generation and maintenance tasks are also direct commands:
+`pixi run slangc`, `pixi run shader-variants-codegen`, `pixi run embed`,
+`pixi run usdz`, `pixi run bake-gt`, and `pixi run clean`.
+Use `pixi task list` to list tasks and `pixi run <task> --help` for options.
+`pixi run test-tasks` checks the Python task implementations.
 
 ## Prerequisites
 
@@ -55,7 +58,7 @@ Dependencies are managed with Conan. Packages not on Conan Center are built
 from local recipes in `tools/conan/`, which are auto-discovered and exported
 before each build -- changing a recipe invalidates the Conan cache for that
 package. Lock files (`conan_glfw.lock` for native, `conan_emscripten.lock` for
-wasm) are committed for reproducible builds; regenerate with `./repo build -u`.
+wasm) are committed for reproducible builds; regenerate with `pixi run build -u`.
 
 On Windows with a cold `CONAN_HOME`, the default profile is written pinned to
 MSVC rather than detected. `conan profile detect` is not deterministic there:
@@ -63,29 +66,33 @@ with a GCC toolchain on PATH and a Visual Studio it does not recognise, it
 resolves `compiler=gcc`, and Dawn then fails on MSVC-only CRT macros. The
 Visual Studio version is looked up through `vswhere` at runtime so this keeps
 working across runner and toolchain migrations. See
-`tools/repo_tools/build/conan.py`.
+`tasks/build_support/conan.py`.
 
-## Tooling
+## Task implementation
 
-pixi owns the environment and the task entry points (`pixi.toml` +
-`tasks/*.py`). It replaced repokit's bootstrap scripts, its generated venv
-under `tools/framework/_managed/`, and the generated `./repo` shim -- repokit
-itself is deprecated upstream, so only the driver moved; the tool
-implementations are unchanged and still read `config.yaml` at the repo root.
+Each task in `pixi.toml` directly runs a module under `tasks/`, for example
+`python -m tasks.build`. There is no umbrella command or dynamic command
+registry. `tasks/utils/` contains shared configuration and subprocess helpers;
+`tasks/build_support/` contains Conan and CMake support.
 
-- `tasks/repo.py` puts both tool trees on `sys.path` and hands over to the
-  existing CLI. It is the pixi-era replacement for the `./repo` shim.
-- `tools/repo_tools/` holds the project-owned tools.
-- `tools/framework/repo_tools/` is repokit, now imported as a plain library
-  rather than bootstrapped.
+`config.yaml` holds asset lists, package mappings, and build settings. The
+`paths` mapping defines output paths; `{platform}` and `{build_type}` expand
+from the command's options. Optional `config.local.yaml` values override the
+project settings. Platform-specific keys such as `mappings@emscripten` retain
+their existing behavior.
 
-Build-time tools come in two flavours:
+The build calls formatting, shader compilation, variant generation, USDZ
+packaging, and embedding directly, in that order. Native host binaries are
+built before the asset steps. `--build-only` skips configuration and asset
+generation; `--host-tools-only` builds native helpers for the web build.
 
-- **Python tools** in `tools/repo_tools/`, invoked as `./repo <tool>` -- they
-  run in the managed venv and need no compilation.
-- **C++ tools** in `tools/conan/<tool>/` as standalone Conan packages (e.g.
-  `usdz_pack`). These cannot cross-compile to WASM, so Emscripten builds
-  consume the outputs they produce rather than invoking them directly.
+After changing the Python environment, run the full `pixi run build` for each
+platform/configuration once to regenerate CMake's cached executable paths.
+Existing `--build-only` directories can still point at a removed environment.
+
+- **Python tasks** run inside Pixi and need no compilation.
+- **C++ tools** in `tools/conan/<tool>/` are standalone Conan packages (for
+  example `usdz_pack`). Emscripten consumes their generated outputs.
 
 For platform-specific build gotchas (OpenUSD + TBB on Emscripten, the Conan
 `full_deploy` invariant, Tracy's shutdown deadlock), see `CLAUDE.md`.

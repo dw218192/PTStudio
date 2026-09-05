@@ -9,8 +9,7 @@ import subprocess
 import urllib.request
 from pathlib import Path
 
-from repo_tools.core import ShellCommand, find_venv_executable, is_windows, logger
-
+from tasks.utils import ShellCommand, find_executable, is_windows, logger
 
 # -- Conan Profile ----------------------------------------------------
 
@@ -137,12 +136,11 @@ def ensure_conan_profile() -> None:
         # No usable Visual Studio -- fall through and let Conan decide, rather
         # than pinning a toolchain that is not installed.
         logger.warning(
-            "No Visual Studio with the C++ toolset found; falling back to "
-            "'conan profile detect'."
+            "No Visual Studio with the C++ toolset found; falling back to 'conan profile detect'."
         )
 
     logger.info("No Conan profiles found. Running 'conan profile detect'...")
-    conan_exe = find_venv_executable("conan")
+    conan_exe = find_executable("conan")
     subprocess.run([conan_exe, "profile", "detect"], check=True)
 
 
@@ -215,9 +213,7 @@ def _parse_conanfile_metadata(conanfile_path: Path) -> tuple[str | None, str | N
     """Extract name and version from a conanfile.py by parsing class attributes."""
     content = conanfile_path.read_text(encoding="utf-8")
     name_match = re.search(r'^\s*name\s*=\s*["\']([^"\']+)["\']', content, re.MULTILINE)
-    version_match = re.search(
-        r'^\s*version\s*=\s*["\']([^"\']+)["\']', content, re.MULTILINE
-    )
+    version_match = re.search(r'^\s*version\s*=\s*["\']([^"\']+)["\']', content, re.MULTILINE)
     name = name_match.group(1) if name_match else None
     version = version_match.group(1) if version_match else None
     return name, version
@@ -252,9 +248,7 @@ def ensure_emdawnwebgpu_port(root: Path, build_folder: Path) -> Path:
 
     # Download from Dawn releases into a temp file, then rename atomically
     # to avoid leaving a partial file on interrupted downloads.
-    url = (
-        f"https://github.com/google/dawn/releases/download/{tag}/{filename}"
-    )
+    url = f"https://github.com/google/dawn/releases/download/{tag}/{filename}"
     logger.info(f"Downloading emdawnwebgpu port ({tag})...")
     build_folder.mkdir(parents=True, exist_ok=True)
     tmp_file = port_file.with_suffix(".tmp")
@@ -264,9 +258,7 @@ def ensure_emdawnwebgpu_port(root: Path, build_folder: Path) -> Path:
         tmp_file.replace(port_file)
     except Exception as e:
         tmp_file.unlink(missing_ok=True)
-        raise RuntimeError(
-            f"Failed to download emdawnwebgpu port from {url}: {e}"
-        ) from e
+        raise RuntimeError(f"Failed to download emdawnwebgpu port from {url}: {e}") from e
 
     logger.info(f"emdawnwebgpu port file saved: {port_file.name}")
     return port_file
@@ -327,7 +319,7 @@ def export_local_conan_recipes(root: Path, logs_dir: Path, conan_config: dict) -
     if not recipes:
         return
 
-    conan_exe = find_venv_executable("conan")
+    conan_exe = find_executable("conan")
     for recipe in recipes:
         if not isinstance(recipe, dict):
             logger.warning(f"Skipping invalid recipe entry (not a dict): {recipe}")
@@ -342,18 +334,18 @@ def export_local_conan_recipes(root: Path, logs_dir: Path, conan_config: dict) -
             continue
         recipe_dir = root / str(path_value)
         if not recipe_dir.exists():
-            logger.warning(
-                f"Skipping invalid recipe entry (path does not exist): {recipe}"
-            )
+            logger.warning(f"Skipping invalid recipe entry (path does not exist): {recipe}")
             continue
         export_log_file = logs_dir / f"conan_export_{name}.log"
-        ShellCommand([
-            conan_exe,
-            "export",
-            str(recipe_dir),
-            f"--name={name}",
-            f"--version={version}",
-        ]).exec(log_file=export_log_file)
+        ShellCommand(
+            [
+                conan_exe,
+                "export",
+                str(recipe_dir),
+                f"--name={name}",
+                f"--version={version}",
+            ]
+        ).exec(log_file=export_log_file)
 
 
 def get_local_recipe_names(root: Path, conan_config: dict) -> set[str]:
@@ -366,9 +358,7 @@ def get_local_recipe_names(root: Path, conan_config: dict) -> set[str]:
     return names
 
 
-def strip_local_recipe_revisions(
-    lock_file: Path, local_recipe_names: set[str]
-) -> None:
+def strip_local_recipe_revisions(lock_file: Path, local_recipe_names: set[str]) -> None:
     """Strip revisions and timestamps from local recipe entries in the lock file.
 
     Local recipes are exported on each build, so their revisions are not stable.
@@ -404,8 +394,7 @@ def strip_local_recipe_revisions(
         with open(lock_file, "w") as f:
             json.dump(lock_data, f, indent=4)
         logger.info(
-            "Stripped local recipe revisions in lock file: "
-            f"{', '.join(sorted(local_recipe_names))}"
+            f"Stripped local recipe revisions in lock file: {', '.join(sorted(local_recipe_names))}"
         )
 
 

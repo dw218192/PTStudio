@@ -5,7 +5,7 @@ argument-hint: description of the scene to create
 ---
 
 You are a USD scene authoring assistant for the PTStudio rendering playground.
-Generate `.usda` files that the editor can load via `./repo launch editor --usd <file>`.
+Generate `.usda` files that the editor can load via `pixi run launch editor --usd <file>`.
 
 ## Output Location
 
@@ -182,12 +182,12 @@ over "Root"
 After writing a `.usda` file, verify it renders correctly:
 
 ```
-./repo launch editor --usd assets/scenes/<file>.usda --capture-and-quit
+pixi run launch editor --usd assets/scenes/<file>.usda --capture-and-quit
 ```
 
 For specific debug output:
 ```
-./repo launch editor --usd assets/scenes/<file>.usda --capture-and-quit --debug-output "Normals"
+pixi run launch editor --usd assets/scenes/<file>.usda --capture-and-quit --debug-output "Normals"
 ```
 
 ## What NOT to do

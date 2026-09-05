@@ -3,8 +3,8 @@
 from pathlib import Path
 
 from PIL import Image
-from repo_tools.image_diff.diff import _run_case
-from repo_tools.image_diff.common import BakeConfig, Case, ImageDiffConfig
+from tasks.image_diff import _run_case
+from tasks.image_diff_support import BakeConfig, Case, ImageDiffConfig
 
 
 def test_existing_capture_is_preserved_and_compared(tmp_path: Path):

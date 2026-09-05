@@ -21,8 +21,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Set up pixi
         uses: prefix-dev/setup-pixi@v0.10.1
@@ -32,6 +30,9 @@ jobs:
 
       - name: Check code formatting
         run: pixi run lint
+
+      - name: Check Python tasks
+        run: pixi run test-tasks
 
   # =============================================================================
   # Build (platform x build_type matrix)
@@ -71,8 +72,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Set up pixi
         uses: prefix-dev/setup-pixi@v0.10.1
@@ -149,8 +148,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Set up pixi
         uses: prefix-dev/setup-pixi@v0.10.1
@@ -171,7 +168,7 @@ jobs:
           # The windows runners' D3D12 software adapter drops the device a few
           # seconds into the first Forward frame. Pre-existing and not specific
           # to this repo's current code -- `develop` reproduces it identically.
-          # See the note in tools/repo_tools/launch.py. ptSmoke_* (path tracer)
+          # See the note in tasks/launch.py. ptSmoke_* (path tracer)
           # still runs here and still covers the GPU pipeline end to end.
           PTSTUDIO_SKIP_EDITOR_SMOKE: ${{ matrix.platform == 'windows-x64' && '1' || '' }}
 
@@ -200,7 +197,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           lfs: true
 
       - name: Set up pixi
@@ -249,8 +245,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Set up pixi
         uses: prefix-dev/setup-pixi@v0.10.1

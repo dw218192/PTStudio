@@ -14,14 +14,13 @@ from typing import Any
 import click
 from jinja2 import Environment
 
-from repo_tools.core import (
-    RepoTool,
-    ToolContext,
+from tasks.utils import (
+    ProjectContext,
     glob_paths,
     logger,
     resolve_path,
 )
-
+from tasks.utils.project import load_context, project_options
 
 _jinja_env = Environment(trim_blocks=True, lstrip_blocks=True, keep_trailing_newline=True)
 
@@ -43,7 +42,6 @@ class ResourceData:
     content: str = ""
     delimiter: str = ""
     hex_data: str = ""
-
 
 
 def _find_common_ancestor(paths: list[Path]) -> Path:
@@ -225,93 +223,90 @@ def _resolve_resource_groups(
     return resolved
 
 
-class EmbedTool(RepoTool):
-    name = "embed"
-    help = "Embed resources as C++ headers"
+def run(ctx: ProjectContext, args: dict[str, Any]) -> None:
+    """Embed resources as C++ headers."""
+    args = ctx.arguments("embed", {"force": False}, args)
+    root = ctx.workspace_root
+    config = ctx.config
+    tokens = ctx.tokens
 
-    def setup(self, cmd: click.Command) -> click.Command:
-        cmd = click.option(
-            "-f",
-            "--force",
-            is_flag=True,
-            default=None,
-            help="Regenerate all resources even if up to date",
-        )(cmd)
-        return cmd
+    resource_groups = _resolve_resource_groups(root, config, tokens, args)
+    if not resource_groups:
+        logger.info("No resources configured for embedding.")
+        return
 
-    def default_args(self, tokens: dict[str, str]) -> dict[str, Any]:
-        return {
-            "force": False,
-        }
+    # Get template path from args or config (required)
+    embed_config = config.get("embed", {})
+    template_path_str = args.get("template", None)
+    if template_path_str is None:
+        template_path_str = embed_config.get("template")
+    if not template_path_str:
+        raise ValueError("Template path not specified. Set 'template' in embed config.")
+    template_path = root / template_path_str
+    if not template_path.exists():
+        raise FileNotFoundError(f"Template not found: {template_path}")
 
-    def execute(self, ctx: ToolContext, args: dict[str, Any]) -> None:
-        """Embed resources as C++ headers."""
-        root = ctx.workspace_root
-        config = ctx.config
-        tokens = ctx.tokens
+    # Centralize manifests in build directory
+    build_dir = tokens["build_dir"]
+    manifest_dir = Path(build_dir) / "embed"
+    manifest_dir.mkdir(parents=True, exist_ok=True)
 
-        resource_groups = _resolve_resource_groups(root, config, tokens, args)
-        if not resource_groups:
-            logger.info("No resources configured for embedding.")
-            return
+    embedded = 0
+    skipped = 0
 
-        # Get template path from args or config (required)
-        embed_config = config.get("embed", {})
-        template_path_str = args.get("template", None)
-        if template_path_str is None:
-            template_path_str = embed_config.get("template")
-        if not template_path_str:
-            raise ValueError(
-                "Template path not specified. Set 'template' in embed config."
-            )
-        template_path = root / template_path_str
-        if not template_path.exists():
-            raise FileNotFoundError(f"Template not found: {template_path}")
+    for group in resource_groups:
+        input_files = group["input_files"]
+        output_path = group["output"]
+        namespace = group["namespace"]
+        base_path = group["base_path"]
 
-        # Centralize manifests in build directory
-        build_dir = tokens["build_dir"]
-        manifest_dir = Path(build_dir) / "embed"
-        manifest_dir.mkdir(parents=True, exist_ok=True)
+        # Use output path relative to root for unique manifest name
+        rel_output = output_path.relative_to(root)
+        manifest_name = str(rel_output).replace("/", "_").replace("\\", "_") + ".manifest.json"
+        manifest_path = manifest_dir / manifest_name
+        needs_regen, current_hashes = _needs_regeneration(
+            input_files, output_path, manifest_path, args.get("force", False)
+        )
 
-        embedded = 0
-        skipped = 0
+        if not needs_regen:
+            logger.info(f"Skipping up-to-date: {output_path}")
+            skipped += 1
+            continue
 
-        for group in resource_groups:
-            input_files = group["input_files"]
-            output_path = group["output"]
-            namespace = group["namespace"]
-            base_path = group["base_path"]
+        logger.info(f"Embedding {len(input_files)} resource(s) -> {output_path}")
 
-            # Use output path relative to root for unique manifest name
-            rel_output = output_path.relative_to(root)
-            manifest_name = (
-                str(rel_output).replace("/", "_").replace("\\", "_") + ".manifest.json"
-            )
-            manifest_path = manifest_dir / manifest_name
-            needs_regen, current_hashes = _needs_regeneration(
-                input_files, output_path, manifest_path, args.get("force", False)
-            )
+        _generate_embedded_header(
+            input_files,
+            output_path,
+            namespace,
+            base_path,
+            template_path,
+        )
 
-            if not needs_regen:
-                logger.info(f"Skipping up-to-date: {output_path}")
-                skipped += 1
-                continue
+        if not current_hashes:
+            current_hashes = {str(f): _compute_file_hash(f) for f in input_files}
+        _save_manifest(manifest_path, {"hashes": current_hashes})
+        embedded += 1
 
-            logger.info(f"Embedding {len(input_files)} resource(s) -> {output_path}")
+    logger.info(f"embed generated {embedded} header(s)")
+    if skipped:
+        logger.info(f"embed skipped {skipped} up-to-date header(s)")
 
-            _generate_embedded_header(
-                input_files,
-                output_path,
-                namespace,
-                base_path,
-                template_path,
-            )
 
-            if not current_hashes:
-                current_hashes = {str(f): _compute_file_hash(f) for f in input_files}
-            _save_manifest(manifest_path, {"hashes": current_hashes})
-            embedded += 1
+@click.command(name="embed", help="Embed resources as C++ headers")
+@project_options
+@click.option(
+    "-f",
+    "--force",
+    is_flag=True,
+    default=None,
+    help="Regenerate all resources even if up to date",
+)
+@click.pass_context
+def main(cli: click.Context, platform: str, build_type: str, **args: Any) -> None:
+    context = load_context(platform, args.get("config") or build_type, passthrough=cli.args)
+    run(context, args)
 
-        logger.info(f"embed generated {embedded} header(s)")
-        if skipped:
-            logger.info(f"embed skipped {skipped} up-to-date header(s)")
+
+if __name__ == "__main__":
+    main()

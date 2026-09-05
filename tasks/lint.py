@@ -1,19 +1,16 @@
-#!/usr/bin/env python3
-"""`pixi run lint` -- check formatting without modifying files.
+"""Check source formatting."""
 
-Delegates to the repo tooling CLI; see tasks/repo.py.
-Extra arguments are forwarded, e.g.:
+import click
 
-    pixi run lint --platform emscripten --build-type Release
-"""
+from tasks import fmt
+from tasks.utils.project import load_context, project_options
 
-import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+@click.command(help="Check source formatting without modifying files")
+@project_options
+def main(platform: str, build_type: str) -> None:
+    fmt.run(load_context(platform, build_type), {"verify": True})
 
-from repo import main  # noqa: E402
 
 if __name__ == "__main__":
-    sys.argv = [sys.argv[0], *"format --verify".split(), *sys.argv[1:]]
-    sys.exit(main())
+    main()

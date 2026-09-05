@@ -4,7 +4,7 @@ C++17 scene editor with WebGPU rendering. Builds natively (Windows/Linux via Daw
 
 ## Build System
 
-Uses the [repokit](tools/framework/README.md) framework. See that README for CLI usage, `config.yaml` schema, tokens, and dimensions.
+Pixi runs the Python task modules under `tasks/` directly. See [docs/building.md](docs/building.md) for commands and configuration.
 
 **Local Conan recipes** in `tools/conan/` are auto-discovered and exported before each build. Changing a recipe invalidates the Conan cache for that package.
 
@@ -31,7 +31,7 @@ Static-linking OpenUSD via Conan on Emscripten has several non-obvious failure m
 
 ### Prebuild Tool Config
 
-Tool configs (slangc, shader_codegen, embed) live at the top level of `config.yaml`. The `build.prebuild` section just lists the tools to run (as empty dicts `{}`). When invoked -- whether standalone or as a prebuild step -- `invoke_tool` reads the top-level config via `config.get(tool_name, {})`.
+Asset settings (slangc, shader_variants_codegen, embed, usdz) live at the top level of `config.yaml`. `tasks/build_support/command.py` calls their Python functions directly in dependency order. Each is also an independent Pixi task; there is no registry or configurable prebuild/postbuild dispatcher.
 
 ### Embed Tool Resource Keys
 
@@ -41,20 +41,14 @@ The `embed` prebuild step generates C++ headers with `get_resource(key)` lookup.
 
 Two distinct kinds of build-time tools, under different trees:
 
-- **Python tools** live in `tools/repo_tools/` and are invoked via pixi (`pixi run repo <tool>`). Examples: `format`, `slangc` (Python wrapper over libslang), `shader_codegen`, `embed`, `clean`, `test`, `build`, `package`, `publish`, `usdz` (driver that invokes the `usdz_pack` binary). These run in the pixi environment -- no compilation needed, just Python imports.
+- **Python tasks** live in `tasks/` and run directly as `pixi run <task>`. Examples: `fmt`, `slangc`, `shader-variants-codegen`, `embed`, `clean`, `test`, `build`, `package`, `publish`, and `usdz`. They use the Pixi environment and need no compilation.
 - **C++ tools** live in `tools/conan/<tool>/` as standalone Conan packages. Examples: `usdz_pack` (wraps `UsdUtilsCreateNewUsdzPackage` from OpenUSD). Each has its own `conanfile.py` + `CMakeLists.txt` and builds into a native executable. These can't cross-compile to WASM, so Emscripten builds consume the scenes/outputs they produce rather than invoking them directly.
 
 Python tools run anywhere Python does. C++ tools need a native toolchain matching the host OS.
 
-### Linux Tool Builds (Docker)
+### Linux Host Tools
 
-C++ build-time tools (currently `usdz_pack`) can be built on Linux via Docker for local CI-matching iteration:
-
-    bash tools/docker/build-tools.sh
-
-First build takes ~30-40 min (OpenUSD + TBB + OpenSubdiv compiled from source). Subsequent builds reuse the `pts-conan-cache` Docker volume and finish in seconds on a cache hit. The `pts-managed` volume overlays `tools/framework/_managed/` so Windows Python/venv artifacts on the bind-mounted workspace don't collide with the Linux ones. Requires Docker Desktop or Docker Engine.
-
-For CI, `pixi run build --host-tools-only` does the same on the Linux runner directly -- builds each C++ host tool via its own Conan package (isolated from the root project's Conan graph) and runs only the prebuild steps that depend on those tools (e.g. `usdz` packaging). The Emscripten job runs this before the cross-build so it has freshly-generated `.usdz` scenes to `--embed-file`.
+`pixi run build --host-tools-only` builds each C++ host tool through its own Conan package, isolated from the root project's graph, then generates USDZ scenes and shaders. CI runs this natively on Linux before the Emscripten build so the generated assets are available for embedding.
 
 ### Tracy Profiler (debug builds only)
 
@@ -113,38 +107,19 @@ Default visibility is `public`, but once ANY declaration uses an explicit modifi
 - emdawnwebgpu async APIs are JS Promises; synchronous busy-wait loops deadlock on Emscripten
 - **ASCII-only source.** No Unicode in source files (`.cpp`, `.h`, `.slang`, `.py`, `.yaml`, etc.). Use `->`, `<-`, `--`, `...`, `|`, `-`, `+` instead of arrows, em dashes, ellipsis, box drawing. Applies to code and comments alike. Exception: test data / assets where the Unicode is the thing under test.
 
-## Repo tooling
+## Pixi tasks
 
-**pixi drives the tooling.** It owns the environment and the task entry points;
-it replaced repokit's bootstrap scripts, generated venv, and `./repo` shim.
-repokit is deprecated upstream, so only the driver moved -- the tool
-implementations are unchanged.
+- Tasks: `pixi run build|test|fmt|lint|check|package|publish|image-diff|launch`.
+- Asset tasks: `pixi run slangc|shader-variants-codegen|embed|usdz|bake-gt`.
+- Maintenance: `pixi run clean`; task tests: `pixi run test-tasks`.
+- List tasks with `pixi task list`; use `pixi run <task> --help` for options.
+- Each task is an independent module under `tasks/`. Shared helpers live under `tasks/utils/` and `tasks/build_support/`.
+- Settings: `pixi.toml` owns dependencies and commands; `config.yaml` owns paths, build settings, asset lists, and package mappings. Local overrides use `config.local.yaml`.
+- `pixi run test` runs native checks followed by image comparisons. `pixi run test-tasks` tests Python task behavior. `fmt` and `lint` cover C++ plus the Python task sources.
+- Do not edit `.pixi/`, which is generated. `pixi.lock` is committed.
 
-- **Tasks**: `pixi run build|test|fmt|lint|check|package|publish|image-diff|launch`.
-  Extra args are forwarded: `pixi run build --platform emscripten --build-type Release`.
-- **Everything else**: `pixi run repo <tool>` reaches the full CLI
-  (`slangc`, `embed`, `usdz`, `clean`, `context`, ...). `pixi run repo --help` lists it.
-- **Config**: `pixi.toml` (environment + tasks), `config.yaml` (tool config, unchanged).
-- **Never** use `./repo`, `repo.cmd`, or `bootstrap.sh` -- those are gone.
+### Review expectations
 
-Layout:
+Run the relevant native and Emscripten checks where the toolchains are available. Report missing dependencies and known image-threshold failures explicitly. For renderer changes, run image-diff, document improvements, and justify any regression; do not raise thresholds to hide one.
 
-- `tasks/` -- pixi task entry points; `tasks/repo.py` is the dispatcher that
-  puts both tool trees on `sys.path` and hands over to the CLI
-- `tools/repo_tools/` -- project-owned tools (build, slangc, launch, image-diff, ...)
-- `tools/framework/repo_tools/` -- repokit, imported as a plain library
-
-### Do not edit
-
-- `tools/framework/` -- deprecated upstream; prefer porting anything you need
-  into `tools/repo_tools/` or `tasks/` rather than changing the submodule
-- `.pixi/` -- pixi's generated environment (`pixi.lock` IS committed)
-
-### Agent Bash Hook: no subshells
-
-The agent allowlist hook denies any command that spawns a second shell -- `bash -c "..."`, `sh -c "..."`, heredocs (`$(cat <<EOF ...)`), etc. The rule isn't about the content; it's about enforcement. The hook matches the outer command string, so anything hidden inside a subshell bypasses allow/deny checks.
-
-Practical consequences:
-- For `gh pr create`, `gh issue create`, or anything wanting a multi-line body, use `--body-file <path>` and stage the body via the `Write` tool. Do NOT use `--body "$(cat <<EOF ... EOF)"` -- it gets denied.
-- For any multi-line string argument, write it to a temp file first.
-- Chained commands with `&&`, `||`, `;`, and pipes are fine (those don't spawn a new shell). Only `$(...)`, backticks, and explicit `bash`/`sh` invocations are blocked.
+Tests should exercise production code and meaningful behavior. Public API boundaries use error codes or `boost::result` and must not leak exceptions; DLL interfaces use ABI-safe types. Prefer Rule of Zero, RAII, and `string_view`/`span` for non-owning views.
