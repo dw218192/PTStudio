@@ -7,6 +7,7 @@
 #include <pxr/usd/sdf/zipFile.h>
 #include <pxr/usd/usd/prim.h>
 #include <pxr/usd/usd/primRange.h>
+#include <pxr/usd/usd/references.h>
 #include <pxr/usd/usd/stage.h>
 #include <pxr/usd/usdGeom/mesh.h>
 #include <pxr/usd/usdGeom/xform.h>
@@ -140,7 +141,7 @@ fs::path make_scratch_dir(const std::string& label) {
 
 }  // namespace
 
-TEST_CASE("save_stage relocalizes USDZ-backed stage to .usda with sibling assets") {
+TEST_CASE("save_stage preserves USDZ dependencies without extracting sibling assets") {
     auto scratch = make_scratch_dir("usda");
     auto src_usda = build_source_usda(scratch / "src");
     auto src_usdz = package_to_usdz(src_usda, scratch);
@@ -157,15 +158,7 @@ TEST_CASE("save_stage relocalizes USDZ-backed stage to .usda with sibling assets
     REQUIRE(fs::exists(out_usda));
 
     auto assets_dir = out_dir / "scene.assets";
-    CHECK(fs::exists(assets_dir));
-
-    // At least one bucket subdirectory should exist (usdzPackage buckets
-    // into numeric folders).
-    bool has_bucket_file = false;
-    for (auto const& entry : fs::recursive_directory_iterator(assets_dir)) {
-        if (entry.is_regular_file()) has_bucket_file = true;
-    }
-    CHECK(has_bucket_file);
+    CHECK_FALSE(fs::exists(assets_dir));
 
     // Re-open the saved .usda and confirm every asset path resolves to an
     // on-disk file via the default ArResolver.
@@ -174,10 +167,9 @@ TEST_CASE("save_stage relocalizes USDZ-backed stage to .usda with sibling assets
     CHECK(!pts::rendering::is_usdz_backed(out_stage));
     CHECK(path_resolves_to_file_on_disk(out_stage));
 
-    // Authored paths in the saved layer should reference the sibling
-    // <stem>.assets/ directory, not the original bundle layout.
+    // Paths point inside the original package, relative to the new layer.
     for (auto const& p : collect_asset_paths(out_stage)) {
-        CHECK(p.find("scene.assets/") == 0);
+        CHECK(p.find("../packaged.usdz[") == 0);
     }
 
     std::error_code ec;
@@ -226,6 +218,41 @@ TEST_CASE("save_stage relocalizes USDZ-backed stage to .usdz without nesting") {
     fs::remove_all(scratch, ec);
 }
 
+TEST_CASE("plain save preserves nested model textures and edits across repeated saves") {
+    auto scratch = make_scratch_dir("nested");
+    auto model = build_source_usda(scratch / "model");
+    auto root = pxr::UsdStage::CreateNew((scratch / "root.usda").string());
+    REQUIRE(root);
+    auto instance = pxr::UsdGeomXform::Define(root, pxr::SdfPath("/Instance"));
+    REQUIRE(
+        instance.GetPrim().GetReferences().AddReference("model/scene.usda", pxr::SdfPath("/Root")));
+    REQUIRE(root->GetRootLayer()->Save());
+    root.Reset();
+    auto package = package_to_usdz(scratch / "root.usda", scratch);
+    auto stage = pxr::UsdStage::Open(package.string());
+    REQUIRE(stage);
+    auto edited = stage->GetPrimAtPath(pxr::SdfPath("/Instance"));
+    auto marker = edited.CreateAttribute(pxr::TfToken("test:edit"), pxr::SdfValueTypeNames->Int);
+    REQUIRE(marker.Set(42));
+    fs::create_directories(scratch / "saved");
+    auto out = scratch / "saved" / "edited.usda";
+    REQUIRE(pts::rendering::save_stage(stage, out.string()));
+    auto reopened = pxr::UsdStage::Open(out.string());
+    REQUIRE(reopened);
+    CHECK(collect_asset_paths(reopened).size() == 2);
+    CHECK(path_resolves_to_file_on_disk(reopened));
+    int value = 0;
+    REQUIRE(reopened->GetPrimAtPath(pxr::SdfPath("/Instance"))
+                .GetAttribute(pxr::TfToken("test:edit"))
+                .Get(&value));
+    CHECK(value == 42);
+    REQUIRE(pts::rendering::save_stage(reopened, out.string()));
+    CHECK_FALSE(fs::exists(scratch / "saved" / "edited.assets"));
+    CHECK(path_resolves_to_file_on_disk(reopened));
+    std::error_code ec;
+    fs::remove_all(scratch, ec);
+}
+
 TEST_CASE("save_stage leaves non-USDZ-backed stages unchanged") {
     auto scratch = make_scratch_dir("noop");
     auto src_usda = build_source_usda(scratch / "src");
@@ -241,16 +268,13 @@ TEST_CASE("save_stage leaves non-USDZ-backed stages unchanged") {
     // No sibling assets/ directory is produced for a plain-layer stage.
     CHECK_FALSE(fs::exists(scratch / "out.assets"));
 
-    // Output should round-trip via Export: compare against a direct
-    // GetRootLayer()->Export reference.
-    auto reference = scratch / "ref.usda";
-    REQUIRE(src_stage->GetRootLayer()->Export(reference.string()));
-
-    auto read_all = [](const fs::path& p) {
-        std::ifstream in(p, std::ios::binary);
-        return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    };
-    CHECK(read_all(out_usda) == read_all(reference));
+    // Save As rebases dependencies to the new directory without modifying
+    // their original authored paths in the live stage.
+    auto saved = pxr::UsdStage::Open(out_usda.string());
+    REQUIRE(saved);
+    CHECK(path_resolves_to_file_on_disk(saved));
+    for (auto const& p : collect_asset_paths(saved)) CHECK(p.find("src/tex/") == 0);
+    for (auto const& p : collect_asset_paths(src_stage)) CHECK(p.find("tex/") == 0);
 
     std::error_code ec;
     fs::remove_all(scratch, ec);
@@ -299,10 +323,10 @@ TEST_CASE("save_stage fails loudly and leaves no partial output on extraction er
 
     auto out_dir = scratch / "out";
     fs::create_directories(out_dir);
-    auto out_usda = out_dir / "scene.usda";
+    auto out_usdz = out_dir / "scene.usdz";
 
-    CHECK_FALSE(pts::rendering::save_stage(src_stage, out_usda.string()));
-    CHECK_FALSE(fs::exists(out_usda));
+    CHECK_FALSE(pts::rendering::save_stage(src_stage, out_usdz.string()));
+    CHECK_FALSE(fs::exists(out_usdz));
 
     std::error_code ec;
     fs::remove_all(scratch, ec);

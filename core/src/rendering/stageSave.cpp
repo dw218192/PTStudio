@@ -1,6 +1,7 @@
 #include <core/diagnostics.h>
 #include <core/rendering/stageSave.h>
 #include <pxr/usd/ar/asset.h>
+#include <pxr/usd/ar/packageUtils.h>
 #include <pxr/usd/ar/resolvedPath.h>
 #include <pxr/usd/ar/resolver.h>
 #include <pxr/usd/sdf/assetPath.h>
@@ -50,6 +51,34 @@ void remove_dir(const fs::path& p) {
 void remove_file(const fs::path& p) {
     std::error_code ec;
     fs::remove(p, ec);
+}
+
+// Plain layers retain their dependency graph. Rebase paths, including USDZ
+// package-relative paths, instead of copying only the root's direct assets
+// (which loses textures referenced from a bundled model layer).
+bool export_layer(const pxr::SdfLayerHandle& src, const fs::path& out) {
+    auto work = pxr::SdfLayer::CreateAnonymous("save.usda");
+    INVARIANT(work);
+    work->TransferContent(src);
+    auto directory = fs::absolute(out).parent_path();
+    pxr::UsdUtilsModifyAssetPaths(work, [&](const std::string& authored) {
+        if (authored.empty()) return authored;
+        auto absolute = src->ComputeAbsolutePath(authored);
+        auto parts = pxr::ArSplitPackageRelativePathOuter(absolute);
+        auto outer = fs::u8path(parts.first);
+        // Resolver identifiers (and anonymous-layer paths) need not be local
+        // filesystem paths. Preserve them instead of interpreting them as one.
+        if (!outer.is_absolute()) return absolute;
+        auto relative = outer.lexically_relative(directory);
+        auto rebased = relative.empty() ? outer.generic_string() : relative.generic_string();
+        return parts.second.empty() ? rebased
+                                    : pxr::ArJoinPackageRelativePath(rebased, parts.second);
+    });
+    if (!work->Export(out.string())) {
+        spdlog::error("[save_stage] Export failed: {}", out.string());
+        return false;
+    }
+    return true;
 }
 
 /// Walk every asset path in `src`, extract the referenced bytes via the asset
@@ -163,13 +192,10 @@ bool save_stage(const pxr::UsdStageRefPtr& stage, const std::string& out_path) {
     fs::path const out = fs::u8path(out_path);
     bool const dest_is_usdz = is_usdz_extension(out);
 
+    if (!dest_is_usdz) return export_layer(stage->GetRootLayer(), out);
+
     if (!is_usdz_backed(stage)) {
-        if (dest_is_usdz) return export_nonusdz_to_usdz(stage, out_path);
-        if (!stage->GetRootLayer()->Export(out_path)) {
-            spdlog::error("[save_stage] GetRootLayer()->Export failed: {}", out_path);
-            return false;
-        }
-        return true;
+        return export_nonusdz_to_usdz(stage, out_path);
     }
 
     // USDZ-backed: extract bundled assets individually (USD has no one-liner
@@ -177,31 +203,20 @@ bool save_stage(const pxr::UsdStageRefPtr& stage, const std::string& out_path) {
     // `.usdz[...]` package paths), rewrite the root layer's paths to point at
     // the extracted files, then write the destination format.
     std::string const stem = out.stem().string();
-    fs::path const assets_dir =
-        dest_is_usdz ? unique_tmp_dir("_pts_pack_") : (out.parent_path() / (stem + ".assets"));
-    std::string const path_prefix = dest_is_usdz ? std::string{} : (stem + ".assets");
+    fs::path const assets_dir = unique_tmp_dir("_pts_pack_");
 
     std::error_code ec;
     fs::create_directories(assets_dir, ec);
     if (ec) {
         spdlog::error("[save_stage] mkdir {}: {}", assets_dir.string(), ec.message());
-        if (dest_is_usdz) remove_dir(assets_dir);
-        return false;
-    }
-
-    auto work = extract_and_rewrite(stage->GetRootLayer(), assets_dir, path_prefix);
-    if (!work) {
         remove_dir(assets_dir);
         return false;
     }
 
-    if (!dest_is_usdz) {
-        if (!work->Export(out_path)) {
-            spdlog::error("[save_stage] Export rewritten layer failed: {}", out_path);
-            remove_dir(assets_dir);
-            return false;
-        }
-        return true;
+    auto work = extract_and_rewrite(stage->GetRootLayer(), assets_dir, {});
+    if (!work) {
+        remove_dir(assets_dir);
+        return false;
     }
 
     // .usdz destination: zip the extracted assets + rewritten root layer.

@@ -89,7 +89,17 @@ static void discover_demo_scenes(std::vector<std::string>& paths, std::vector<st
     names.clear();
     std::error_code ec;
     for (auto& entry : std::filesystem::directory_iterator(k_demo_scenes_dir, ec)) {
-        if (entry.path().extension() == ".usdz") {
+        auto ext = entry.path().extension();
+#ifdef __EMSCRIPTEN__
+        bool include = ext == ".usdz";
+#else
+        // Edit the source layer when available. The packaged demo has
+        // rewritten dependency paths and may lag behind source edits.
+        auto source = entry.path();
+        source.replace_extension(".usda");
+        bool include = ext == ".usda" || (ext == ".usdz" && !std::filesystem::exists(source));
+#endif
+        if (include) {
             paths.push_back(entry.path().string());
             names.push_back(display_name_from_path(entry.path()));
         }

@@ -72,6 +72,11 @@ is 1280x720 RGBA8 and excludes editor-only passes (grid, gizmo, overlay).
 Every rendering change gets verified against a picture, not against a green
 build.
 
+Native demo selection opens USDA sources when available. Saving a plain layer
+rebases its asset paths without extracting duplicates; imports from USDZ keep
+references into the original package, which must remain available. USDZ export
+continues to produce a packaged asset.
+
 ### CI
 
 Format check, native and Emscripten builds, and tests on both, on every push.
