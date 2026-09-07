@@ -166,9 +166,14 @@ list(APPEND TEST_NAMES testBvh)
 set(testBvh_source testBvh.cpp)
 set(testBvh_libs core)
 
-# Shadow sampling math - no GPU needed, mirrors shadow_sampling_lib.slang
+# GPU-independent shader algorithms compiled from Slang, plus upload types.
+list(APPEND TEST_NAMES testShaderPure)
+set(testShaderPure_source shader/testShaderPure.cpp)
+set(testShaderPure_libs core_shader_pure glm::glm)
+
+# Shadow projection math - calls the generated Slang depth helper.
 list(APPEND TEST_NAMES testShadowSampling)
-set(testShadowSampling_source testShadowSampling.cpp)
+set(testShadowSampling_source shader/testShadowSampling.cpp)
 set(testShadowSampling_libs core)
 
 # Texture resolution from UsdShade graph - works on all platforms

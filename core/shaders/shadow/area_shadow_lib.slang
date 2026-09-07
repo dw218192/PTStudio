@@ -2,6 +2,8 @@
 // Cube faces remove the spotlight-frustum cutoff. All sampling is in world
 // space so the emitter kernel and receiver plane remain continuous at seams.
 import shadow_sampling_lib;
+import shadow_types;
+import shadow_pure;
 
 internal uint cube_face(float3 d) {
     float3 a = abs(d);

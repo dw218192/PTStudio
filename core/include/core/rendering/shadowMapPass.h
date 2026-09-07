@@ -2,8 +2,8 @@
 
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/renderPass.h>
-#include <core/rendering/shadowData.h>
 #include <core/rendering/webgpu/webgpu.h>
+#include <core/shader_types.h>
 
 #include <array>
 #include <cstdint>

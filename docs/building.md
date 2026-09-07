@@ -86,6 +86,72 @@ packaging, and embedding directly, in that order. Native host binaries are
 built before the asset steps. `--build-only` skips configuration and asset
 generation; `--host-tools-only` builds native helpers for the web build.
 
+### Sharing Slang algorithms and buffer types with C++
+
+Slang is the source of truth for shader algorithms and shadow buffer types.
+`core/shaders/host/shader_pure.slang` exports a small C++ callable API with
+`export __extern_cpp` wrappers around the production shader functions. Add
+wrappers here when another helper needs CPU use or testing; keep its algorithm
+in the module imported by the GPU shader. Scalar inputs and explicit output
+parameters keep the interface independent of GLM and Slang's CPU vector ABI.
+
+Use the `_pure` suffix for GPU-independent shader logic exposed to C++ and
+covered by CPU unit tests. These functions operate on explicit inputs without
+GPU resources or shader-stage operations. `shadow_pure.slang` is one such
+module; `shader_pure.slang` collects the C++ exports. Keep algorithm tests under
+`core/tests/shader/`.
+
+The `cpp_header` option on a `slangc.shaders` entry generates C++ source and a
+header through libslang. The generated code includes Slang's portable prelude
+and is built as `core_shader_pure`, including on Emscripten. Consumers include
+`<core/shader_pure.h>` and link that target (also exposed by `core`). Executing
+the helpers needs neither a GPU nor libslang. `testShaderPure` exercises the
+actual generated algorithms; `testShadowSampling` uses generated depth math
+when validating C++ projection construction.
+
+For Slang 2026.5.2, the emitted artifacts adapt the bundled prelude's platform
+detection and half-type selection for Emscripten. The WebAssembly target uses
+Slang's software-half fallback because this emsdk cannot compile `_Float16`.
+This adaptation is limited to support code; shader algorithms stay unchanged.
+
+The `types` option selects Slang structs by name and generates C++ GPU upload
+structs from their actual WGSL buffer layouts. This is separate from generating
+callable C++ functions with `cpp_header`. For example:
+
+```yaml
+types:
+  names: [ShadowInfo, ShadowVisibilityUniforms]
+  output: "core/generated/include/core/shader_types.h"
+  namespace: "pts::rendering"
+```
+
+The generator finds each named struct in reflected buffer layouts and emits
+its nested type dependencies automatically. Shader binding names are irrelevant
+to selection; renaming a binding does not change the generated types. Nested
+structs can also be selected directly. A requested type must occur in a reflected
+buffer layout; missing names fail generation.
+
+The C++ struct builder records each reflected field once. That model drives GLM
+declarations, explicit padding, alignment, size/offset assertions, and structural
+layout comparisons. Application tests do not need to repeat the shader's layout
+constants. Currently it supports 32-bit float/signed/unsigned scalars, packed
+vectors, packed column-major float matrices, nested structs, and fixed arrays
+whose element stride matches C++. Unsupported layouts (including matrices or
+arrays that need conversion) fail generation with a diagnostic. Express padded
+columns/elements explicitly in Slang or extend the generator before using such
+layouts. Every reflected use of an emitted type is checked; conflicting layouts
+for that name also fail.
+Generated upload fields are value-initialized; set application-specific
+defaults such as identity transforms explicitly when constructing upload data.
+
+`pixi run slangc` regenerates these outputs along with WGSL. Its dependency
+records include transitive imports/includes and the compiler tool; changing
+compile options or the Slang version, or deleting any output header, also
+invalidates the output. Generated files remain untracked. Use a normal build
+after shader changes; `--build-only` intentionally skips asset generation.
+GPU execution and image tests remain necessary for texture behavior, bindings,
+matrix transfer, derivatives, and numerical differences between targets.
+
 After changing the Python environment, run the full `pixi run build` for each
 platform/configuration once to regenerate CMake's cached executable paths.
 Existing `--build-only` directories can still point at a removed environment.

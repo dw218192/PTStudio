@@ -82,6 +82,9 @@ slangc:
   # detour). Only the base (no-suffix) variant emits metadata -- it is
   # define-agnostic.
   shaders:
+    - input: "core/shaders/host/shader_pure.slang"
+      output: "core/generated/shader_pure.cpp"
+      cpp_header: "core/generated/include/core/shader_pure.h"
     - input: "assets/shaders/test/*.slang"
       output: "assets/shaders/test/*.wgsl"
     - input: "hello_triangle/shaders/hello_triangle.slang"
@@ -130,6 +133,10 @@ slangc:
         namespace: "contact_shadow_shader"
     - input: "core/shaders/shadow/shadow_visibility.slang"
       output: "core/generated/shaders/shadow/shadow_visibility.wgsl"
+      types:
+        names: [ShadowInfo, ShadowVisibilityUniforms]
+        output: "core/generated/include/core/shader_types.h"
+        namespace: "pts::rendering"
       metadata:
         output: "core/generated/shadow_visibility_shader_metadata.h"
         namespace: "shadow_visibility_shader"

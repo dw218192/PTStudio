@@ -9,6 +9,7 @@
 
 import shadow_sampling_lib;
 import area_shadow_lib;
+import shadow_types;
 
 // Bind group 0
 [[vk::binding(0, 0)]] [NonFiltering] Texture2D<float> depth_tex;

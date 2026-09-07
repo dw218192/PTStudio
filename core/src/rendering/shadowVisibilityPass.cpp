@@ -4,9 +4,9 @@
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/shaderc/shaderLoader.h>
-#include <core/rendering/shadowData.h>
 #include <core/rendering/shadowVisibilityPass.h>
 #include <core/rendering/webgpu/device.h>
+#include <core/shader_types.h>
 #include <imgui.h>
 #include <shadow_visibility_shader_metadata.h>
 

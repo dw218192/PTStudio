@@ -1,4 +1,5 @@
-#include "../../include/core/rendering/shadowData.h"
+import shadow_types;
+import shadow_pure;
 
 // Non-PCSS baseline: 5x5 PCF with manual depth comparison.
 public float compute_shadow_pcf(

@@ -6,10 +6,10 @@
 #include <core/rendering/bvh.h>
 #include <core/rendering/iblResources.h>
 #include <core/rendering/packedTriangle.h>
-#include <core/rendering/shadowData.h>
 #include <core/rendering/versionedBuffer.h>
 #include <core/rendering/vertex.h>
 #include <core/rendering/webgpu/buffer.h>
+#include <core/shader_types.h>
 #include <pxr/usd/sdf/path.h>
 #include <pxr/usd/usd/stage.h>
 #include <webgpu/webgpu.h>

@@ -2,11 +2,15 @@
 #define NOMINMAX
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/shadowMapPass.h>
+#include <core/shader_pure.h>
 #include <doctest/doctest.h>
 
 #include <glm/gtc/matrix_transform.hpp>
 
 using namespace pts::rendering;
+
+// The implementation is compiled from the production Slang depth helper.
+static constexpr auto linearize_shadow_depth = pts_linearize_shadow_depth;
 
 TEST_CASE("linearize_shadow_depth round-trips ortho NDC") {
     // glm::ortho (ZO): ndc = (view_dist - near) / (far - near).

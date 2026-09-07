@@ -2,6 +2,17 @@ cmake_minimum_required(VERSION 3.19 FATAL_ERROR)
 
 set(lib_name "core")
 
+# Built by pts_shaderc during the asset phase, including for Emscripten.
+# The generated implementation contains its own portable Slang C++ prelude;
+# consumers do not need libslang or a shader compiler at runtime.
+set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/generated/shader_pure.cpp PROPERTIES GENERATED TRUE)
+add_library(core_shader_pure STATIC ${CMAKE_CURRENT_SOURCE_DIR}/generated/shader_pure.cpp)
+target_compile_features(core_shader_pure PUBLIC cxx_std_17)
+target_include_directories(core_shader_pure PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/generated/include)
+if(EMSCRIPTEN)
+    target_compile_options(core_shader_pure PRIVATE -pthread)
+endif()
+
 # ============================================================================
 # imgui_backends - compiles imgui backends using Conan's imgui package
 # ============================================================================
@@ -125,6 +136,7 @@ foreach(_mod IN LISTS PTS_USD_MODULES)
 endforeach()
 
 target_link_libraries(${lib_name} PUBLIC core::shaderc)
+target_link_libraries(${lib_name} PUBLIC core_shader_pure)
 
 if (NOT EMSCRIPTEN)
 	target_link_libraries(${lib_name}
