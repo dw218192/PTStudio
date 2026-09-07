@@ -149,17 +149,17 @@ TEST_CASE("SlangCompiler poll_dirty detects source file mtime change") {
 TEST_CASE("SlangCompiler poll_dirty flags all dependents when shared header changes") {
     SlangFixture f("dep_capture");
     // Shared header, two shaders include it.
-    auto header = write_temp_slang(f.workspace_root, "shared.slang",
+    auto header = write_temp_slang(f.workspace_root / "include", "shared.h",
                                    "float4 tint() { return float4(1.0, 0.5, 0.25, 1.0); }\n");
     write_temp_slang(f.workspace_root, "a.slang", std::string(R"(
-#include "shared.slang"
+#include "include/shared.h"
 struct VSIn { float3 pos : POSITION; };
 struct VSOut { float4 pos : SV_Position; float4 col; };
 [shader("vertex")]
 VSOut vs_main(VSIn i) { VSOut o; o.pos = float4(i.pos, 1.0); o.col = tint(); return o; }
 )"));
     write_temp_slang(f.workspace_root, "b.slang", std::string(R"(
-#include "shared.slang"
+#include "include/shared.h"
 struct VSIn { float3 pos : POSITION; };
 struct VSOut { float4 pos : SV_Position; float4 col; };
 [shader("vertex")]

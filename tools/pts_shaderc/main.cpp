@@ -102,11 +102,14 @@ Args parse_args(int argc, char** argv) {
 
 // -- Staleness check --
 //
-// Mirrors the pre-refactor slangc.py logic: rebuild when the output is
-// missing, when the source or any sibling `.slang` module in the source
-// directory has a newer mtime, or when any `.slang` file in a search path is
-// newer. Also invalidates when a requested metadata header is absent or
-// older than the WGSL output.
+// Track Slang's transitive dependencies, including shared C++/Slang headers.
+// Also scan module directories to detect changes in import resolution.
+std::filesystem::path dependency_file(const std::filesystem::path& output) {
+    auto path = output;
+    path += ".deps";
+    return path;
+}
+
 bool needs_compile(const std::filesystem::path& source, const std::filesystem::path& output,
                    const std::filesystem::path& metadata_output,
                    const std::vector<std::filesystem::path>& search_paths, bool force) {
@@ -115,6 +118,18 @@ bool needs_compile(const std::filesystem::path& source, const std::filesystem::p
     if (!std::filesystem::exists(output, ec)) return true;
     auto out_mtime = std::filesystem::last_write_time(output, ec);
     if (ec) return true;
+
+    std::ifstream dependencies(dependency_file(output));
+    if (!dependencies) return true;
+    std::string dependency;
+    bool has_dependencies = false;
+    while (std::getline(dependencies, dependency)) {
+        if (dependency.empty()) return true;
+        has_dependencies = true;
+        auto mt = std::filesystem::last_write_time(dependency, ec);
+        if (ec || mt > out_mtime) return true;
+    }
+    if (dependencies.bad() || !has_dependencies) return true;
 
     auto scan_dir = [&](const std::filesystem::path& dir) -> bool {
         if (!std::filesystem::is_directory(dir, ec)) return false;
@@ -186,5 +201,10 @@ int main(int argc, char** argv) {
         if (result.metadata_header.empty()) die("metadata emission failed");
         write_text_atomic(a.metadata_output, result.metadata_header);
     }
+    std::string dependencies;
+    for (const auto& path : result.dependencies) {
+        dependencies += std::filesystem::absolute(path).generic_string() + '\n';
+    }
+    write_text_atomic(dependency_file(a.output), dependencies);
     return 0;
 }
