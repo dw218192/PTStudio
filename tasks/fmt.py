@@ -33,7 +33,7 @@ def _git_tracked_files(root: Path, extensions: set[str]) -> list[Path] | None:
         if not entry:
             continue
         p = root / entry
-        if p.suffix in extensions:
+        if p.suffix in extensions and p.is_file():
             files.append(p)
     return files
 
