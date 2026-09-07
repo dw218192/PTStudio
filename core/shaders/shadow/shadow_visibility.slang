@@ -10,15 +10,6 @@
 import shadow_sampling_lib;
 import area_shadow_lib;
 
-struct ShadowVisibilityUniforms {
-    float4x4 inv_view_proj;   // 0:   64
-    float2 viewport_size;     // 64:  8
-    uint shadow_light_index;  // 72:  4 -- index into shadow_infos
-    uint frame_index;         // 76:  4 -- jitters the per-pixel PCSS rotation
-                              //          so the temporal_resolve EMA has a
-                              //          stochastic signal to average.
-};                            // total: 80
-
 // Bind group 0
 [[vk::binding(0, 0)]] [NonFiltering] Texture2D<float> depth_tex;
 [[vk::binding(1, 0)]] [NonFiltering] SamplerState     depth_sampler;

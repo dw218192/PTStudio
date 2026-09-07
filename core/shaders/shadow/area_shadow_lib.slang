@@ -50,7 +50,7 @@ internal float area_blocker(Texture2DArray<float> map, ShadowInfo si,
     float receiver_depth = plane / denom;
     float z = map.Load(int4(texel, int(si.layer + face), 0)).x;
     if (z >= 1.0 || receiver_depth <= si.light_near) return -1.0;
-    float blocker_depth = linearize_depth(z, si.light_near, si.light_far, 1u);
+    float blocker_depth = linearize_shadow_depth(z, si.light_near, si.light_far, 1u);
     // Small precision bias, independent of filter radius. Plane correction
     // already handles the large slope contribution at wide PCSS radii.
     float bias = max(0.0002, receiver_depth * si.texel_size * 0.25);

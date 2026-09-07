@@ -1,19 +1,4 @@
-/// Per-light shadow info (must match C++ ShadowInfo, 144 bytes).
-/// One entry per light. Lights without shadows have has_shadow == 0.
-public struct ShadowInfo {
-    public float4x4 light_vp;        // 64 bytes
-    public float texel_size;         //  4 bytes
-    public float normal_bias;        //  4 bytes
-    public uint has_shadow;          //  4 bytes -- 0 = inactive, 1 = active
-    public uint layer;               //  4 bytes -- shadow map array layer
-    public float light_near;         //  4 bytes -- light-space near plane
-    public float light_far;          //  4 bytes -- light-space far plane
-    public float light_size_uv;      //  4 bytes -- PCSS light size (see below)
-    public uint projection_type;     //  4 bytes -- 0 = ortho, 1 = perspective, 2 = cube
-    public float4 light_position;    // xyz = cube origin, w = disk (1) or rect (0)
-    public float4 light_u;           // xyz = emitter world-space half-axis
-    public float4 light_v;           // xyz = emitter world-space half-axis
-};
+#include "../../include/core/rendering/shadowData.h"
 
 // Non-PCSS baseline: 5x5 PCF with manual depth comparison.
 public float compute_shadow_pcf(
@@ -52,7 +37,7 @@ public float compute_shadow_pcf(
 //
 // Rect/disk lights now use area_shadow_lib's world-space cube filter instead.
 // Both d_r (receiver) and d_b (blocker) are LIGHT-SPACE LINEAR depths
-// reconstructed from the shadow map's stored NDC depth via `linearize_depth`.
+// reconstructed from the shadow map's stored NDC depth via `linearize_shadow_depth`.
 // ---------------------------------------------------------------------------
 
 // Shared knobs
@@ -79,18 +64,6 @@ public static const float2 k_poisson_disk_16[16] = {
     float2( 0.19984126,   0.78641367),
     float2( 0.14383161,  -0.14100790)
 };
-
-// Reconstruct light-space linear depth from NDC z in [0,1].
-// Matches glm::ortho / glm::perspective with GLM_FORCE_DEPTH_ZERO_TO_ONE.
-public float linearize_depth(float ndc_z, float near_plane, float far_plane, uint projection_type) {
-    if (projection_type == 0u) {
-        // Ortho: ndc_z = (view_dist - near) / (far - near)
-        return near_plane + ndc_z * (far_plane - near_plane);
-    }
-    // Perspective: ndc_z = far/(far-near) - (far*near)/((far-near)*view_dist)
-    float denom = far_plane - ndc_z * (far_plane - near_plane);
-    return (near_plane * far_plane) / max(denom, 1e-6);
-}
 
 // Per-pixel, per-frame hash for rotating the Poisson disk. Returns [0, 1).
 //
@@ -154,7 +127,7 @@ public float pcss_blocker_search(
         // misregister as blockers and pull blocker_lin toward the near plane.
         float predicted_ndc = receiver_ndc + dot(receiver_plane_grad, offset);
         if (sampled_ndc < predicted_ndc) {
-            total += linearize_depth(sampled_ndc, near_plane, far_plane, projection_type);
+            total += linearize_shadow_depth(sampled_ndc, near_plane, far_plane, projection_type);
             count += 1.0;
         }
     }
@@ -216,7 +189,7 @@ public float compute_shadow_pcss(
         return compute_shadow_pcf(shadow_map, shadow_sampler, shadow_coord, si.layer, si.texel_size);
     }
 
-    float receiver_lin = linearize_depth(
+    float receiver_lin = linearize_shadow_depth(
         shadow_coord.z, si.light_near, si.light_far, si.projection_type);
 
     // Blocker search kernel: the portion of the light that can cast a shadow

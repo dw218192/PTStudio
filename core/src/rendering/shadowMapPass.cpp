@@ -4,7 +4,6 @@
 #include <core/rendering/passContext.h>
 #include <core/rendering/renderWorld.h>
 #include <core/rendering/shaderc/shaderLoader.h>
-#include <core/rendering/shadowLightProjection.h>
 #include <core/rendering/shadowMapPass.h>
 #include <core/rendering/webgpu/device.h>
 #include <imgui.h>
@@ -14,17 +13,105 @@
 #include <cmath>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <limits>
 
 namespace pts::rendering {
 
 namespace {
 
-bool casts_shadow_map(LightData::Type type) {
-    return type == LightData::Type::Distant || type == LightData::Type::Rect ||
-           type == LightData::Type::Disk;
+ShadowProjection distant_projection(const LightData& light, const glm::vec3& aabb_min,
+                                    const glm::vec3& aabb_max, float softness) {
+    auto dir = glm::normalize(light.direction);
+    auto center = (aabb_min + aabb_max) * 0.5f;
+    auto half_diag = glm::length(aabb_max - aabb_min) * 0.5f;
+
+    auto up = glm::vec3(0, 1, 0);
+    if (std::abs(glm::dot(dir, up)) > 0.99f) up = glm::vec3(1, 0, 0);
+    auto light_view = glm::lookAt(center - dir * half_diag, center, up);
+
+    glm::vec3 ls_min(std::numeric_limits<float>::max());
+    glm::vec3 ls_max(std::numeric_limits<float>::lowest());
+    for (int c = 0; c < 8; ++c) {
+        glm::vec3 corner((c & 1) ? aabb_max.x : aabb_min.x, (c & 2) ? aabb_max.y : aabb_min.y,
+                         (c & 4) ? aabb_max.z : aabb_min.z);
+        auto ls_pt = glm::vec3(light_view * glm::vec4(corner, 1.0f));
+        ls_min = glm::min(ls_min, ls_pt);
+        ls_max = glm::max(ls_max, ls_pt);
+    }
+
+    ShadowProjection out;
+    auto& info = out.info;
+    info.light_near = -ls_max.z;
+    info.light_far = -ls_min.z;
+    auto proj = glm::ortho(ls_min.x, ls_max.x, ls_min.y, ls_max.y, info.light_near, info.light_far);
+    info.light_vp = proj * light_view;
+    float ortho_width = ls_max.x - ls_min.x;
+    if (ortho_width > 0.0f) {
+        float half_angle = glm::radians(std::max(light.angle, 0.0f) * 0.5f);
+        info.light_size_uv = std::tan(half_angle) / ortho_width * softness;
+    }
+    info.has_shadow = 1;
+    out.layer_vps[0] = info.light_vp;
+    out.layer_count = 1;
+    return out;
+}
+
+ShadowProjection area_projection(const LightData& light, const glm::vec3& aabb_min,
+                                 const glm::vec3& aabb_max, float softness, glm::vec2 half_size,
+                                 bool disk) {
+    // One representative point, with six faces to retain grazing-angle coverage.
+    static const glm::vec3 directions[] = {{1, 0, 0},  {-1, 0, 0}, {0, 1, 0},
+                                           {0, -1, 0}, {0, 0, 1},  {0, 0, -1}};
+    static const glm::vec3 ups[] = {{0, -1, 0}, {0, -1, 0}, {0, 0, 1},
+                                    {0, 0, -1}, {0, -1, 0}, {0, -1, 0}};
+    glm::vec3 position(light.transform[3]);
+    ShadowProjection out;
+    auto& info = out.info;
+    info.light_far = 0.01f;
+    for (int c = 0; c < 8; ++c) {
+        glm::vec3 corner((c & 1) ? aabb_max.x : aabb_min.x, (c & 2) ? aabb_max.y : aabb_min.y,
+                         (c & 4) ? aabb_max.z : aabb_min.z);
+        info.light_far = std::max(info.light_far, glm::length(corner - position));
+    }
+    info.light_near = std::max(0.001f, info.light_far * 0.0001f);
+    auto proj = glm::perspective(glm::radians(90.0f), 1.0f, info.light_near, info.light_far);
+    out.layer_count = 6;
+    for (uint32_t face = 0; face < out.layer_count; ++face) {
+        auto view = glm::lookAt(position, position + directions[face], ups[face]);
+        out.layer_vps[face] = proj * view;
+    }
+    info.light_vp = out.layer_vps[0];
+    info.projection_type = 2;
+    info.has_shadow = 1;
+    info.light_position = glm::vec4(position, static_cast<float>(disk));
+    info.light_u =
+        glm::vec4(glm::vec3(light.transform[0]) * std::max(half_size.x, 0.0f) * softness, 0);
+    info.light_v =
+        glm::vec4(glm::vec3(light.transform[1]) * std::max(half_size.y, 0.0f) * softness, 0);
+    return out;
 }
 
 }  // namespace
+
+ShadowProjection compute_shadow_projection(const LightData& light, const glm::vec3& aabb_min,
+                                           const glm::vec3& aabb_max, bool pcss) {
+    if (!light.casts_shadow) return {};
+    float softness = pcss ? std::max(light.shadow_pcss_softness, 0.0f) : 0.0f;
+    switch (light.type) {
+        case LightData::Type::Distant:
+            return distant_projection(light, aabb_min, aabb_max, softness);
+        case LightData::Type::Rect:
+            return area_projection(light, aabb_min, aabb_max, softness,
+                                   {light.width * 0.5f, light.height * 0.5f}, false);
+        case LightData::Type::Disk:
+            return area_projection(light, aabb_min, aabb_max, softness, glm::vec2(light.radius),
+                                   true);
+        case LightData::Type::Sphere:
+        case LightData::Type::Dome:
+            return {};
+    }
+    UNREACHABLE();
+}
 
 ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const PassContext& ctx,
                                                          const Inputs&) {
@@ -56,20 +143,27 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
                                 .bind_group_layouts({desc_layout})
                                 .build();
 
-    // Count shadow-casting lights (distant + rect/disk area lights).
     auto lights = ctx.world.get_lights().span_raw();
+    auto info_count = std::max(uint32_t(1), static_cast<uint32_t>(lights.size()));
+    std::vector<ShadowInfo> infos(info_count);
+    std::vector<glm::mat4> layer_vps;
+    auto scene_bounds = ctx.world.scene_bounds();
     uint32_t shadow_count = 0;
     uint32_t map_count = 0;
     bool has_distant = false;
     if (m_enabled) {
         for (uint32_t li = 0; li < static_cast<uint32_t>(lights.size()); ++li) {
             if (!lights[li].active) continue;
-            if (!casts_shadow_map(lights[li].value.type)) continue;
-            if (!lights[li].value.casts_shadow) continue;
-            map_count += lights[li].value.type == LightData::Type::Distant ? 1u : 6u;
-            has_distant |= lights[li].value.type == LightData::Type::Distant;
-            ++shadow_count;
-            if (shadow_count >= k_max_shadow_maps) break;
+            auto projection = compute_shadow_projection(lights[li].value, scene_bounds.min,
+                                                        scene_bounds.max, m_pcss);
+            if (projection.layer_count == 0) continue;
+            infos[li] = projection.info;
+            infos[li].layer = map_count;
+            layer_vps.insert(layer_vps.end(), projection.layer_vps.begin(),
+                             projection.layer_vps.begin() + projection.layer_count);
+            map_count += projection.layer_count;
+            has_distant |= projection.info.projection_type == 0;
+            if (++shadow_count >= k_max_shadow_maps) break;
         }
     }
 
@@ -92,7 +186,6 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
     auto shadow_array = create_texture(fg, shadow_tex_desc, "shadow_depth_array");
 
     // Register shadow info buffer (one ShadowInfo per light, minimum 1)
-    auto info_count = std::max(uint32_t(1), static_cast<uint32_t>(lights.size()));
     uint64_t info_bytes = static_cast<uint64_t>(info_count) * sizeof(ShadowInfo);
     BufferDesc info_buf_desc;
     info_buf_desc.size = info_bytes;
@@ -103,10 +196,9 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
     if (shadow_count == 0) {
         // Upload all-inactive ShadowInfo entries
         auto queue = ctx.queue;
-        auto empty_infos = std::vector<ShadowInfo>(info_count);
         fg.add_pass("shadow_info_upload")
-            .execute([queue, shadow_info_buf, infos = std::move(empty_infos)](
-                         ExecuteContext& exec, WGPUComputePassEncoder) {
+            .execute([queue, shadow_info_buf, infos = std::move(infos)](ExecuteContext& exec,
+                                                                        WGPUComputePassEncoder) {
                 auto buf = exec.get(shadow_info_buf).buffer;
                 wgpuQueueWriteBuffer(queue, buf, 0, infos.data(),
                                      infos.size() * sizeof(ShadowInfo));
@@ -114,62 +206,14 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
         return {shadow_array, shadow_info_buf};
     }
 
-    // Scene AABB from TLAS root (built by RenderWorld::prepare_gpu_buffers)
-    auto scene_bounds = ctx.world.scene_bounds();
-    auto aabb_min = scene_bounds.min;
-    auto aabb_max = scene_bounds.max;
-
+    for (auto& info : infos) {
+        if (!info.has_shadow) continue;
+        info.texel_size = 1.0f / static_cast<float>(resolution);
+        // World-space normal offset limits PCF bleeding at sharp creases.
+        info.normal_bias = 0.02f;
+    }
     auto objects = ctx.world.get_objects().span_raw();
     uint32_t total_slots = static_cast<uint32_t>(objects.size());
-
-    // Build one ShadowInfo per light (matching light buffer order)
-    std::vector<ShadowInfo> infos(lights.size());
-    uint32_t layer_index = 0;
-    uint32_t light_count = 0;
-    std::vector<glm::mat4> layer_vps;
-
-    for (uint32_t li = 0; li < static_cast<uint32_t>(lights.size()); ++li) {
-        if (!lights[li].active) continue;
-        const auto& light = lights[li].value;
-        if (!casts_shadow_map(light.type)) continue;
-        if (!light.casts_shadow) continue;
-        if (light_count >= k_max_shadow_maps) continue;
-
-        LightProjection proj = (light.type == LightData::Type::Distant)
-                                   ? compute_distant_light_vp(light, aabb_min, aabb_max)
-                                   : compute_area_light_vp(light, aabb_min, aabb_max);
-
-        infos[li].light_vp = proj.vp;
-        infos[li].texel_size = 1.0f / static_cast<float>(resolution);
-        // Shader-side offset along the receiver normal to counter PCF bleeding
-        // at sharp creases. Small world-space value; scene-scale-dependent.
-        infos[li].normal_bias = 0.02f;
-        infos[li].has_shadow = 1;
-        infos[li].layer = layer_index;
-        infos[li].light_near = proj.near_plane;
-        infos[li].light_far = proj.far_plane;
-        infos[li].light_size_uv = m_pcss ? proj.light_size_uv : 0.0f;
-        infos[li].projection_type = proj.projection_type;
-        ++light_count;
-        if (light.type == LightData::Type::Distant) {
-            layer_vps.push_back(proj.vp);
-            ++layer_index;
-        } else {
-            float softness = m_pcss ? std::max(light.shadow_pcss_softness, 0.0f) : 0.0f;
-            float hu = light.type == LightData::Type::Disk ? light.radius : light.width * 0.5f;
-            float hv = light.type == LightData::Type::Disk ? light.radius : light.height * 0.5f;
-            infos[li].light_position = glm::vec4(glm::vec3(light.transform[3]),
-                                                 light.type == LightData::Type::Disk ? 1.0f : 0.0f);
-            infos[li].light_u =
-                glm::vec4(glm::vec3(light.transform[0]) * std::max(hu, 0.0f) * softness, 0);
-            infos[li].light_v =
-                glm::vec4(glm::vec3(light.transform[1]) * std::max(hv, 0.0f) * softness, 0);
-            for (uint32_t face = 0; face < 6; ++face)
-                layer_vps.push_back(compute_area_light_vp(light, aabb_min, aabb_max, face).vp);
-            layer_index += 6;
-        }
-    }
-    INVARIANT(layer_index == map_count);
 
     // Model buffer: one model matrix per object (shared across all layers)
     uint64_t model_buf_size =
@@ -182,7 +226,7 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
 
     // Light VP buffer: one VP matrix per shadow layer
     uint64_t vp_buf_size =
-        std::max(uint64_t(1), static_cast<uint64_t>(layer_index)) * k_uniform_align;
+        std::max(uint64_t(1), static_cast<uint64_t>(map_count)) * k_uniform_align;
     BufferDesc vp_buf_desc;
     vp_buf_desc.size = vp_buf_size;
     vp_buf_desc.usage =
@@ -200,7 +244,7 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
 
     // Upload shadow info + model matrices + light VPs in a single compute pass
     fg.add_pass("shadow_upload")
-        .execute([queue, shadow_info_buf, model_buf_decl, vp_buf_decl, layer_index,
+        .execute([queue, shadow_info_buf, model_buf_decl, vp_buf_decl, map_count,
                   infos = std::move(infos), layer_vps = std::move(layer_vps),
                   &world](ExecuteContext& exec, WGPUComputePassEncoder) {
             // Shadow info buffer
@@ -220,14 +264,14 @@ ShadowMapPass::Outputs ShadowMapPass::add_to_frame_graph(FrameGraph& fg, const P
 
             // Light VP matrices
             auto vp_buf = exec.get(vp_buf_decl).buffer;
-            for (uint32_t l = 0; l < layer_index; ++l) {
+            for (uint32_t l = 0; l < map_count; ++l) {
                 wgpuQueueWriteBuffer(queue, vp_buf, l * k_uniform_align, &layer_vps[l],
                                      sizeof(glm::mat4));
             }
         });
 
     // Render each shadow layer
-    for (uint32_t layer = 0; layer < layer_index; ++layer) {
+    for (uint32_t layer = 0; layer < map_count; ++layer) {
         fg.add_pass("shadow_depth_" + std::to_string(layer))
             .depth(shadow_array, layer)
             .execute([=, &world](ExecuteContext& exec, WGPURenderPassEncoder pass) {

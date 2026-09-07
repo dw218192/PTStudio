@@ -2,8 +2,10 @@
 
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/renderPass.h>
+#include <core/rendering/shadowData.h>
 #include <core/rendering/webgpu/webgpu.h>
 
+#include <array>
 #include <cstdint>
 
 namespace pts::rendering {
@@ -11,6 +13,18 @@ namespace pts::rendering {
 // Cap shadow-casting lights; each area light occupies six array layers.
 inline constexpr uint32_t k_max_shadow_maps = 8;
 inline constexpr uint32_t k_default_shadow_resolution = 2048;
+
+struct LightData;
+
+struct ShadowProjection {
+    ShadowInfo info;
+    std::array<glm::mat4, 6> layer_vps{};
+    uint32_t layer_count = 0;
+};
+
+// Returns one distant-light map, six area-light faces, or no maps for unsupported lights.
+ShadowProjection compute_shadow_projection(const LightData& light, const glm::vec3& aabb_min,
+                                           const glm::vec3& aabb_max, bool pcss = true);
 
 /// Renders depth maps for shadow-casting lights.
 /// Distant lights use an orthographic projection fit to the scene AABB.

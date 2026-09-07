@@ -4,6 +4,7 @@
 #include <core/rendering/frameGraph.h>
 #include <core/rendering/passContext.h>
 #include <core/rendering/shaderc/shaderLoader.h>
+#include <core/rendering/shadowData.h>
 #include <core/rendering/shadowVisibilityPass.h>
 #include <core/rendering/webgpu/device.h>
 #include <imgui.h>
@@ -14,16 +15,6 @@
 #include <glm/gtc/matrix_inverse.hpp>
 
 namespace pts::rendering {
-
-// Must match ShadowVisibilityUniforms in shadow/shadow_visibility.slang.
-struct ShadowVisibilityUniforms {
-    glm::mat4 inv_view_proj;      // 0:  64
-    glm::vec2 viewport_size;      // 64: 8
-    uint32_t shadow_light_index;  // 72: 4
-    uint32_t frame_index;         // 76: 4 -> total 80
-};
-static_assert(sizeof(ShadowVisibilityUniforms) == 80,
-              "ShadowVisibilityUniforms must match shader std140 layout");
 
 ShadowVisibilityPass::Outputs ShadowVisibilityPass::add_to_frame_graph(FrameGraph& fg,
                                                                        const PassContext& ctx,
