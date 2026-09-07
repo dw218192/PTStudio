@@ -14,6 +14,7 @@
 
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace slang {
 struct ShaderReflection;
@@ -34,6 +35,12 @@ std::string run_slang_metadata_header(slang::IGlobalSession* global_session,
                                       slang::ShaderReflection* reflection,
                                       slang::IComponentType* linked, std::string_view ns,
                                       int target_index = 0);
+
+// Emit named structs and their dependencies from reflected WGSL buffer layouts.
+// Missing types and incompatible or conflicting layouts fail with a diagnostic.
+bool run_slang_types_header(slang::ShaderReflection* reflection,
+                            const std::vector<std::string>& names, std::string_view ns,
+                            std::string& header, std::string& diagnostics);
 
 }  // namespace pts::rendering
 

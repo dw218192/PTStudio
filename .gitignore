@@ -11,6 +11,7 @@ __pycache__/
 # Generated Slang shaders
 /assets/shaders/test/*.wgsl
 /assets/shaders/test/*.wgsl.deps
+/assets/shaders/test/*.wgsl.args
 
 # Generated embedded resources
 **/generated/

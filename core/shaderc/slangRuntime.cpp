@@ -31,6 +31,28 @@ void ensure_pts_attrs_registered(slang::IGlobalSession* gs) {
     gs->addBuiltins("pts_attrs.slang", k_pts_attrs_builtins);
 }
 
+void adapt_cpp_prelude(std::string& code) {
+    // Slang 2026.5.2's embedded prelude has no Emscripten platform case and
+    // treats Clang's FLT16_MIN as proof that _Float16 is supported. wasm32 in
+    // our emsdk cannot use that type. Use the prelude's platform override and
+    // software-half fallback, preserving the caller's float.h macros afterward.
+    // Keep this in the emitted artifacts so cross-builds need no host SDK paths
+    // or consumer-specific compiler flags. The generated algorithms are intact.
+    code =
+        "#if defined(__EMSCRIPTEN__) && !defined(SLANG_CPP_PRELUDE_H)\n"
+        "#ifndef SLANG_PLATFORM\n#define SLANG_PLATFORM\n#endif\n"
+        "#include <float.h>\n"
+        "#pragma push_macro(\"FLT16_MIN\")\n"
+        "#undef FLT16_MIN\n"
+        "#define PTS_RESTORE_FLT16_MIN\n"
+        "#endif\n" +
+        code +
+        "\n#ifdef PTS_RESTORE_FLT16_MIN\n"
+        "#pragma pop_macro(\"FLT16_MIN\")\n"
+        "#undef PTS_RESTORE_FLT16_MIN\n"
+        "#endif\n";
+}
+
 }  // namespace
 
 SlangCompileOutput run_slang(slang::IGlobalSession* global_session,
@@ -38,16 +60,22 @@ SlangCompileOutput run_slang(slang::IGlobalSession* global_session,
                              const std::filesystem::path& slang_source,
                              const std::vector<std::string>& entry_points,
                              boost::span<const std::string_view> defines,
-                             std::string_view metadata_namespace) {
+                             std::string_view metadata_namespace,
+                             const SlangCompileOptions& options) {
     SlangCompileOutput out;
 
     ensure_pts_attrs_registered(global_session);
 
     slang::SessionDesc session_desc = {};
-    slang::TargetDesc target_desc = {};
-    target_desc.format = SLANG_WGSL;
-    session_desc.targets = &target_desc;
-    session_desc.targetCount = 1;
+    slang::TargetDesc targets[2] = {};
+    targets[0].format = options.cpp ? SLANG_CPP_SOURCE : SLANG_WGSL;
+    targets[1].format = SLANG_CPP_HEADER;
+    session_desc.targets = targets;
+    session_desc.targetCount = options.cpp ? 2 : 1;
+    if (options.cpp && (!metadata_namespace.empty() || !options.type_names.empty())) {
+        out.diagnostics = "GPU metadata requires the WGSL target";
+        return out;
+    }
     // Match CLI slangc default: column-major matrix layout
     session_desc.defaultMatrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR;
 
@@ -161,7 +189,26 @@ SlangCompileOutput run_slang(slang::IGlobalSession* global_session,
     }
     if (SLANG_FAILED(hr) || !code) return out;
 
-    out.wgsl.assign(static_cast<const char*>(code->getBufferPointer()), code->getBufferSize());
+    auto& source_output = options.cpp ? out.cpp : out.wgsl;
+    source_output.assign(static_cast<const char*>(code->getBufferPointer()), code->getBufferSize());
+    if (options.cpp) {
+        hr = linked->getTargetCode(1, code.writeRef(), diagnostics.writeRef());
+        if (diagnostics) {
+            out.diagnostics += static_cast<const char*>(diagnostics->getBufferPointer());
+        }
+        if (SLANG_FAILED(hr) || !code) return out;
+        out.cpp_header.assign(static_cast<const char*>(code->getBufferPointer()),
+                              code->getBufferSize());
+        adapt_cpp_prelude(out.cpp);
+        adapt_cpp_prelude(out.cpp_header);
+    }
+
+    if (!options.type_names.empty()) {
+        auto* layout = linked->getLayout(0, diagnostics.writeRef());
+        if (!run_slang_types_header(layout, options.type_names, options.types_namespace,
+                                    out.types_header, out.diagnostics))
+            return out;
+    }
 
     if (!metadata_namespace.empty()) {
         auto* layout = linked->getLayout(0, diagnostics.writeRef());

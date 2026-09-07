@@ -17,6 +17,7 @@ if(NOT EMSCRIPTEN)
     list(APPEND _core_shaderc_sources
         slangRuntime.cpp
         slangMetadata.cpp
+        slangBufferTypes.cpp
     )
 endif()
 

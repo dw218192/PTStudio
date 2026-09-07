@@ -20,11 +20,23 @@ struct SlangCompileOutput {
     bool success = false;
     std::string wgsl;
     std::string metadata_header;  // populated when metadata_namespace is non-empty
+    std::string cpp;
+    std::string cpp_header;
+    std::string types_header;
     std::vector<std::filesystem::path> dependencies;
     std::string diagnostics;
 };
 
-/// Compile a single Slang source file to WGSL via libslang.
+struct SlangCompileOptions {
+    bool cpp = false;
+    // Emit these named structs and dependencies using their WGSL buffer layouts.
+    std::vector<std::string> type_names;
+    std::string types_namespace;
+};
+
+/// Compile a single Slang source file via libslang. The default target is WGSL;
+/// options.cpp generates portable C++ source and a header for host execution.
+/// options.type_names selects named structs reflected in WGSL buffer layouts.
 ///
 /// When `metadata_namespace` is non-empty, the linked reflection is walked
 /// in-process and a C++ metadata header is written to `metadata_header`.
@@ -37,7 +49,8 @@ SlangCompileOutput run_slang(slang::IGlobalSession* global_session,
                              const std::filesystem::path& slang_source,
                              const std::vector<std::string>& entry_points,
                              boost::span<const std::string_view> defines,
-                             std::string_view metadata_namespace = {});
+                             std::string_view metadata_namespace = {},
+                             const SlangCompileOptions& options = {});
 
 }  // namespace pts::rendering
 

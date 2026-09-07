@@ -2,7 +2,7 @@
 
 Thin driver over the `pts_shaderc` CLI (tools/pts_shaderc/). Resolves
 config.yaml `slangc.shaders` entries -- glob expansion, variant suffixes,
-optional metadata-header emission -- and invokes pts_shaderc once per
+optional metadata/upload headers and C++ output -- and invokes pts_shaderc once per
 (input x variant). pts_shaderc handles compile, metadata-header emission,
 and staleness checks in-process via libslang.
 """
@@ -107,6 +107,8 @@ def run(ctx: ProjectContext, args: dict[str, Any]) -> None:
         if not input_value or not output_value:
             continue
         metadata = shader.get("metadata")
+        cpp_header = shader.get("cpp_header")
+        types = shader.get("types")
         variants = _variants(shader)
 
         input_pattern = resolve_path(root, str(input_value), tokens)
@@ -140,6 +142,20 @@ def run(ctx: ProjectContext, args: dict[str, Any]) -> None:
                     cmd += ["-D", d]
                 for sp in search_paths:
                     cmd += ["-I", str(sp)]
+                if cpp_header:
+                    header_path = _insert_suffix(
+                        resolve_path(root, str(cpp_header), tokens), variant["suffix"]
+                    )
+                    cmd += ["--cpp-header", str(header_path)]
+                if types and not variant["suffix"]:
+                    cmd += [
+                        "--types-header",
+                        str(resolve_path(root, str(types["output"]), tokens)),
+                        "--types-namespace",
+                        str(types["namespace"]),
+                    ]
+                    for name in types["names"]:
+                        cmd += ["--type", str(name)]
                 # Metadata emits only for the base (no-suffix) variant --
                 # the C++ header is define-agnostic.
                 if metadata and not variant["suffix"]:
@@ -162,7 +178,7 @@ def run(ctx: ProjectContext, args: dict[str, Any]) -> None:
 
 @click.command(
     name="slangc",
-    help="Compile Slang shaders via pts_shaderc (WGSL + optional metadata header)",
+    help="Compile Slang to WGSL or C++, with optional metadata and upload headers",
 )
 @project_options
 @click.option(
